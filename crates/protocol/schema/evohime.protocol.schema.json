@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evohime.local/schema/evohime.protocol.schema.json",
+  "title": "EvoHimeProtocol",
+  "oneOf": [
+    { "$ref": "#/$defs/ServerEvent" },
+    { "$ref": "#/$defs/ClientCommand" }
+  ],
+  "$defs": {
+    "Uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "DateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "ServerEvent": {
+      "oneOf": [
+        { "$ref": "#/$defs/SessionCreatedEvent" },
+        { "$ref": "#/$defs/TaskStartedEvent" },
+        { "$ref": "#/$defs/AgentMessageDeltaEvent" },
+        { "$ref": "#/$defs/AgentPlanUpdatedEvent" },
+        { "$ref": "#/$defs/ToolStartedEvent" },
+        { "$ref": "#/$defs/ToolOutputEvent" },
+        { "$ref": "#/$defs/ToolCompletedEvent" },
+        { "$ref": "#/$defs/TaskCompletedEvent" },
+        { "$ref": "#/$defs/TaskFailedEvent" }
+      ]
+    },
+    "ClientCommand": {
+      "oneOf": [
+        { "$ref": "#/$defs/UserMessageCommand" }
+      ]
+    },
+    "SessionCreatedEvent": {
+      "type": "object",
+      "required": ["type", "session_id", "created_at"],
+      "properties": {
+        "type": { "const": "session.created" },
+        "session_id": { "$ref": "#/$defs/Uuid" },
+        "created_at": { "$ref": "#/$defs/DateTime" }
+      },
+      "additionalProperties": false
+    },
+    "TaskStartedEvent": {
+      "type": "object",
+      "required": ["type", "task_id", "session_id", "user_message", "created_at"],
+      "properties": {
+        "type": { "const": "task.started" },
+        "task_id": { "$ref": "#/$defs/Uuid" },
+        "session_id": { "$ref": "#/$defs/Uuid" },
+        "user_message": { "type": "string" },
+        "created_at": { "$ref": "#/$defs/DateTime" }
+      },
+      "additionalProperties": false
+    },
+    "AgentMessageDeltaEvent": {
+      "type": "object",
+      "required": ["type", "task_id", "delta"],
+      "properties": {
+        "type": { "const": "agent.message.delta" },
+        "task_id": { "$ref": "#/$defs/Uuid" },
+        "delta": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "AgentPlanUpdatedEvent": {
+      "type": "object",
+      "required": ["type", "task_id", "plan"],
+      "properties": {
+        "type": { "const": "agent.plan.updated" },
+        "task_id": { "$ref": "#/$defs/Uuid" },
+        "plan": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ToolStartedEvent": {
+      "type": "object",
+      "required": ["type", "task_id", "tool_name"],
+      "properties": {
+        "type": { "const": "tool.started" },
+        "task_id": { "$ref": "#/$defs/Uuid" },
+        "tool_name": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "ToolOutputEvent": {
+      "type": "object",
+      "required": ["type", "task_id", "tool_name", "output"],
+      "properties": {
+        "type": { "const": "tool.output" },
+        "task_id": { "$ref": "#/$defs/Uuid" },
+        "tool_name": { "type": "string" },
+        "output": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "ToolCompletedEvent": {
+      "type": "object",
+      "required": ["type", "task_id", "tool_name", "success"],
+      "properties": {
+        "type": { "const": "tool.completed" },
+        "task_id": { "$ref": "#/$defs/Uuid" },
+        "tool_name": { "type": "string" },
+        "success": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "TaskCompletedEvent": {
+      "type": "object",
+      "required": ["type", "task_id", "final_message", "completed_at"],
+      "properties": {
+        "type": { "const": "task.completed" },
+        "task_id": { "$ref": "#/$defs/Uuid" },
+        "final_message": { "type": "string" },
+        "completed_at": { "$ref": "#/$defs/DateTime" }
+      },
+      "additionalProperties": false
+    },
+    "TaskFailedEvent": {
+      "type": "object",
+      "required": ["type", "task_id", "error"],
+      "properties": {
+        "type": { "const": "task.failed" },
+        "task_id": { "$ref": "#/$defs/Uuid" },
+        "error": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "UserMessageCommand": {
+      "type": "object",
+      "required": ["type", "content"],
+      "properties": {
+        "type": { "const": "user.message" },
+        "content": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
+
