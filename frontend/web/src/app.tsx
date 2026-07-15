@@ -1189,23 +1189,9 @@ export function App() {
         });
         break;
       case "tool.started":
-        setLines((current) => [
-          ...current,
-          {
-            role: "tool",
-            text: `Инструмент запущен: ${event.tool_name}`,
-          },
-        ]);
         break;
       case "tool.output":
         if (event.tool_name === "shell.execute") setTerminalEntries((current) => [...current, { stream: "stdout", text: event.output }]);
-        setLines((current) => [
-          ...current,
-          {
-            role: "tool",
-            text: `Результат из ${event.tool_name}:\n${event.output}`,
-          },
-        ]);
         break;
       case "approval.required":
         setApproval(event);
@@ -1220,13 +1206,6 @@ export function App() {
             },
           ]);
         }
-        setLines((current) => [
-          ...current,
-          {
-            role: "tool",
-            text: `Инструмент ${event.tool_name} завершён`,
-          },
-        ]);
         break;
       case "task.completed":
         setTasks((current) => current[event.task_id] ? { ...current, [event.task_id]: { ...current[event.task_id], status: "completed" } } : current);
