@@ -653,6 +653,13 @@ h1 {
 .modelRouteKey {
   grid-column: 1 / -1;
 }
+
+.modelKeyStatus {
+  display: block;
+  margin-top: 5px;
+  color: var(--accent-1);
+  font-size: 11px;
+}
 .permissionList { display: grid; gap: 8px; margin-top: 12px; }
 .permissionList label { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid rgba(255,255,255,.07); border-radius: 10px; }
 .permissionList select { background: #111a31; color: #edf4ff; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 6px 8px; }

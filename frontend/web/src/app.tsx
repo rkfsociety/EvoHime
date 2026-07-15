@@ -52,6 +52,7 @@ type ModelRouteDraft = {
   model: string;
   base_url: string;
   api_key: string;
+  configured?: boolean;
 };
 
 type ChatSessionSummary = {
@@ -467,7 +468,7 @@ export function App() {
       if (!cancelled) {
         setModelConfig(data);
         setModelDefaultRoute(data.default_route);
-        setModelDrafts(data.routes.map((route) => ({ ...route, api_key: "" })));
+        setModelDrafts(data.routes.map((route) => ({ ...route, api_key: "", configured: route.configured })));
       }
     };
     fetch("/api/permissions").then((response) => response.json()).then((data: PermissionSettings) => setPermissionSettings(data)).catch(() => undefined);
@@ -1150,7 +1151,7 @@ export function App() {
       const data = (await response.json()) as ModelConfig;
       setModelConfig(data);
       setModelDefaultRoute(data.default_route);
-      setModelDrafts(data.routes.map((route) => ({ ...route, api_key: "" })));
+      setModelDrafts(data.routes.map((route) => ({ ...route, api_key: "", configured: route.configured })));
       setSelectedModelRoute(data.default_route);
       setModelNotice("Настройки модели применены к агенту.");
     } catch (error) {
@@ -1491,7 +1492,13 @@ export function App() {
                       </label>
                       <label className="modelRouteKey">
                         <span>API-ключ</span>
-                        <input type="password" value={route.api_key} onChange={(event) => updateModelDraft(index, { api_key: event.target.value })} placeholder="Оставь пустым, чтобы сохранить текущий" />
+                        <input
+                          type="password"
+                          value={route.api_key}
+                          onChange={(event) => updateModelDraft(index, { api_key: event.target.value })}
+                          placeholder={route.configured ? "Ключ сохранён — оставь пустым" : "Введи API-ключ"}
+                        />
+                        {route.configured && !route.api_key ? <small className="modelKeyStatus">Ключ сохранён</small> : null}
                       </label>
                     </div>
                   </article>
