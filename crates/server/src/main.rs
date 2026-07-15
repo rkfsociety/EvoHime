@@ -410,7 +410,9 @@ struct SessionSummary {
     last_role: Option<String>,
 }
 
-async fn list_sessions(State(state): State<Arc<AppState>>) -> Result<Json<Vec<SessionSummary>>, ApiError> {
+async fn list_sessions(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<SessionSummary>>, ApiError> {
     let rows = evohime_storage::list_sessions(&state.pool, 20)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
@@ -494,18 +496,16 @@ async fn list_pull_requests(
     let scope = query.scope.unwrap_or(PullRequestScope::All);
     let result = tokio::task::spawn_blocking(move || {
         let mut command = std::process::Command::new("gh");
-        command
-            .current_dir(&workspace_root)
-            .args([
-                "pr",
-                "list",
-                "--state",
-                "all",
-                "--limit",
-                "40",
-                "--json",
-                "number,title,url,state,author,headRefName,baseRefName,createdAt,updatedAt",
-            ]);
+        command.current_dir(&workspace_root).args([
+            "pr",
+            "list",
+            "--state",
+            "all",
+            "--limit",
+            "40",
+            "--json",
+            "number,title,url,state,author,headRefName,baseRefName,createdAt,updatedAt",
+        ]);
 
         match scope {
             PullRequestScope::All => {}

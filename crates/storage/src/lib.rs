@@ -100,7 +100,10 @@ pub async fn create_session(pool: &PgPool) -> Result<SessionRow, StorageError> {
     Ok(row)
 }
 
-pub async fn list_sessions(pool: &PgPool, limit: i64) -> Result<Vec<SessionSummaryRow>, StorageError> {
+pub async fn list_sessions(
+    pool: &PgPool,
+    limit: i64,
+) -> Result<Vec<SessionSummaryRow>, StorageError> {
     let rows = sqlx::query_as::<_, SessionSummaryRow>(
         r#"
         SELECT
