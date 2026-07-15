@@ -365,41 +365,6 @@ function translateGitAction(action: GitAction) {
   }
 }
 
-function translateEventType(type: ServerEvent["type"]) {
-  switch (type) {
-    case "session.created":
-      return "Сессия создана";
-    case "task.started":
-      return "Задача запущена";
-    case "agent.message.delta":
-      return "Частичный ответ агента";
-    case "agent.plan.updated":
-      return "План агента обновлён";
-    case "tool.started":
-      return "Инструмент запущен";
-    case "tool.output":
-      return "Вывод инструмента";
-    case "tool.completed":
-      return "Инструмент завершён";
-    case "task.completed":
-      return "Задача завершена";
-    case "task.failed":
-      return "Задача завершилась с ошибкой";
-    case "task.status.changed":
-      return "Статус задачи изменён";
-    case "task.step.changed":
-      return "Шаг задачи изменён";
-    case "action.logged":
-      return "Действие записано";
-    case "file.changed":
-      return "Файл изменён";
-    case "git.diff.changed":
-      return "Изменения Гит обновлены";
-    case "approval.required":
-      return "Требуется разрешение";
-  }
-}
-
 function translateChatRole(role: ChatLine["role"]) {
   switch (role) {
     case "assistant":
@@ -475,7 +440,6 @@ export function App() {
   >("idle");
   const [input, setInput] = useState("");
   const [lines, setLines] = useState<ChatLine[]>(initialLines);
-  const [events, setEvents] = useState<ServerEvent[]>([]);
   const [stream, setStream] = useState("");
   const [activePanel, setActivePanel] = useState<WorkspacePanel>("chat");
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
@@ -734,7 +698,6 @@ export function App() {
 
     socket.onmessage = (event) => {
       const parsed = JSON.parse(event.data as string) as ServerEvent;
-      setEvents((current) => [...current, parsed]);
       applyEventRef.current(parsed);
     };
 
@@ -821,7 +784,6 @@ export function App() {
       events: history,
     });
     setLines(initialLines);
-    setEvents(history.map((item) => item.event));
     setStream("");
     setTasks({});
     setActions([]);
@@ -2252,20 +2214,6 @@ export function App() {
           {renderPanelContent()}
         </div>
 
-        <div className="panel timelinePanel">
-          <header>
-            <h2>События</h2>
-            <span>{events.length}</span>
-          </header>
-          <div className="eventList">
-            {events.map((event, index) => (
-              <article key={`${event.type}-${index}`} className="eventItem">
-                <strong>{translateEventType(event.type)}</strong>
-                <code>{JSON.stringify(event, null, 2)}</code>
-              </article>
-            ))}
-          </div>
-        </div>
       </section>
       {settingsOpen ? (
         <div

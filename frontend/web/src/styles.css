@@ -149,10 +149,6 @@ h1 {
   overflow: hidden;
 }
 
-.timelinePanel {
-  display: none;
-}
-
 .sidebar {
   display: flex;
   flex-direction: column;
