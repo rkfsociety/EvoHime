@@ -1834,4 +1834,36 @@ mod tests {
         assert_eq!(config.routes["default"].literouter.api_key, "lr_test_key");
         assert_eq!(config.routes["orchestrator"].literouter.api_key, "lr_test_key");
     }
+
+    #[test]
+    fn preserves_saved_api_key_when_autosave_sends_empty_fields() {
+        let current = evohime_model_gateway::ModelGatewayConfig {
+            default_route: "default".to_string(),
+            routes: HashMap::from([(
+                "default".to_string(),
+                ModelRouteConfig::literouter(
+                    "lr_saved_key",
+                    "https://api.literouter.com/v1",
+                    "deepseek:free",
+                ),
+            )]),
+        };
+        let config = build_model_config(
+            ModelSettingsRequest {
+                default_route: "default".to_string(),
+                routes: vec![ModelRouteRequest {
+                    name: "default".to_string(),
+                    provider: "literouter".to_string(),
+                    model: "deepseek:free".to_string(),
+                    base_url: "https://api.literouter.com/v1".to_string(),
+                    api_key: Some(String::new()),
+                    billing_mode: "free".to_string(),
+                }],
+            },
+            &current,
+        )
+        .expect("model config is valid");
+
+        assert_eq!(config.routes["default"].literouter.api_key, "lr_saved_key");
+    }
 }
