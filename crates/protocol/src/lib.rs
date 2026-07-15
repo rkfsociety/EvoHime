@@ -18,20 +18,11 @@ pub enum ServerEvent {
         created_at: DateTime<Utc>,
     },
     #[serde(rename = "agent.message.delta")]
-    AgentMessageDelta {
-        task_id: Uuid,
-        delta: String,
-    },
+    AgentMessageDelta { task_id: Uuid, delta: String },
     #[serde(rename = "agent.plan.updated")]
-    AgentPlanUpdated {
-        task_id: Uuid,
-        plan: Vec<String>,
-    },
+    AgentPlanUpdated { task_id: Uuid, plan: Vec<String> },
     #[serde(rename = "tool.started")]
-    ToolStarted {
-        task_id: Uuid,
-        tool_name: String,
-    },
+    ToolStarted { task_id: Uuid, tool_name: String },
     #[serde(rename = "tool.output")]
     ToolOutput {
         task_id: Uuid,
@@ -51,10 +42,7 @@ pub enum ServerEvent {
         completed_at: DateTime<Utc>,
     },
     #[serde(rename = "task.failed")]
-    TaskFailed {
-        task_id: Uuid,
-        error: String,
-    },
+    TaskFailed { task_id: Uuid, error: String },
     #[serde(rename = "file.changed")]
     FileChanged {
         path: String,
@@ -70,9 +58,28 @@ pub enum ServerEvent {
     #[serde(rename = "task.status.changed")]
     TaskStatusChanged { task_id: Uuid, status: String },
     #[serde(rename = "task.step.changed")]
-    TaskStepChanged { task_id: Uuid, step_id: Uuid, status: String, tool_name: String },
+    TaskStepChanged {
+        task_id: Uuid,
+        step_id: Uuid,
+        status: String,
+        tool_name: String,
+    },
     #[serde(rename = "action.logged")]
-    ActionLogged { task_id: Uuid, action: String, detail: String, created_at: DateTime<Utc> },
+    ActionLogged {
+        task_id: Uuid,
+        action: String,
+        detail: String,
+        created_at: DateTime<Utc>,
+    },
+    #[serde(rename = "approval.required")]
+    ApprovalRequired {
+        approval_id: Uuid,
+        task_id: Uuid,
+        tool_name: String,
+        permission: String,
+        scope: String,
+        created_at: DateTime<Utc>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,15 +93,33 @@ pub enum ClientCommand {
     TaskResume { task_id: Uuid },
     #[serde(rename = "task.retry")]
     TaskRetry { task_id: Uuid },
+    #[serde(rename = "approval.granted")]
+    ApprovalGranted { approval_id: Uuid },
+    #[serde(rename = "approval.denied")]
+    ApprovalDenied { approval_id: Uuid },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum TaskStatus { Running, Cancelling, Cancelled, Paused, Failed, Retrying, Completed }
+pub enum TaskStatus {
+    Running,
+    Cancelling,
+    Cancelled,
+    Paused,
+    Failed,
+    Retrying,
+    Completed,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum StepStatus { Pending, Running, Completed, Failed, Cancelled }
+pub enum StepStatus {
+    Pending,
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionBootstrap {
@@ -153,5 +178,34 @@ mod tests {
         let json = serde_json::to_value(&event).expect("event serializes");
         assert_eq!(json["type"], "file.changed");
         assert_eq!(json["path"], "src/main.rs");
+    }
+
+    #[test]
+    fn round_trips_approval_event_and_commands() {
+        let event = ServerEvent::ApprovalRequired {
+            approval_id: Uuid::nil(),
+            task_id: Uuid::nil(),
+            tool_name: "shell.execute".into(),
+            permission: "shell_execute".into(),
+            scope: "workspace".into(),
+            created_at: Utc::now(),
+        };
+        let json = serde_json::to_value(&event).unwrap();
+        assert_eq!(json["type"], "approval.required");
+        for command in [
+            ClientCommand::ApprovalGranted {
+                approval_id: Uuid::nil(),
+            },
+            ClientCommand::ApprovalDenied {
+                approval_id: Uuid::nil(),
+            },
+        ] {
+            let decoded: ClientCommand =
+                serde_json::from_value(serde_json::to_value(command).unwrap()).unwrap();
+            assert!(matches!(
+                decoded,
+                ClientCommand::ApprovalGranted { .. } | ClientCommand::ApprovalDenied { .. }
+            ));
+        }
     }
 }

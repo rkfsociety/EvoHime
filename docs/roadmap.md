@@ -13,7 +13,7 @@
 | --- | --- | --- | --- |
 | 1 | Фундамент | ✅ Готово | Vertical slice работает |
 | 2 | Чат с моделью | ✅ Готово | LiteRouter streaming |
-| 3 | Tools + shell | 🔜 Следующий | Файлы, терминал, permissions |
+| 3 | Tools + shell | 🟡 В работе | Sandbox, filesystem tools, shell, approvals, terminal |
 | 4 | Editor + Git | 🟡 Частично | Git backend готов, UI и редактор впереди |
 | 5 | Оркестрация | 🟡 Основа готова | Lifecycle, команды и storage заготовлены |
 | 6 | Advanced | 📋 Запланирован | Index, MCP, workers |

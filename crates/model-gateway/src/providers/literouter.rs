@@ -1,7 +1,5 @@
 use crate::config::LiteRouterConfig;
-use crate::providers::{
-    ChatMessage, ModelProvider, ProviderError, ProviderKind, TokenStream,
-};
+use crate::providers::{ChatMessage, ModelProvider, ProviderError, ProviderKind, TokenStream};
 use async_stream::stream;
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -10,6 +8,7 @@ use serde::Deserialize;
 /// LiteRouter — OpenAI-compatible provider.
 ///
 /// API docs: `docs/providers/literouter.md`
+#[derive(Debug)]
 pub struct LiteRouterProvider {
     config: LiteRouterConfig,
     client: Client,
@@ -222,11 +221,9 @@ mod tests {
 
     #[test]
     fn parses_sse_delta() {
-        let result = parse_sse_line(
-            r#"data: {"choices":[{"delta":{"content":"Hi"}}]}"#,
-        )
-        .expect("parsed")
-        .expect("ok");
+        let result = parse_sse_line(r#"data: {"choices":[{"delta":{"content":"Hi"}}]}"#)
+            .expect("parsed")
+            .expect("ok");
 
         assert_eq!(result, "Hi");
     }

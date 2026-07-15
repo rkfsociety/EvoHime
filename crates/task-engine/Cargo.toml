@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+evohime-protocol = { path = "../protocol" }
 evohime-storage = { path = "../storage" }
 sqlx = { version = "0.8", features = [
   "postgres",

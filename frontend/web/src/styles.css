@@ -205,6 +205,9 @@ h1 {
 .settingsError {
   margin: 0;
 }
+.permissionList { display: grid; gap: 8px; margin-top: 12px; }
+.permissionList label { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid rgba(255,255,255,.07); border-radius: 10px; }
+.permissionList select { background: #111a31; color: #edf4ff; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 6px 8px; }
 
 .settingsError {
   color: #ff9b9b;
@@ -478,6 +481,14 @@ h1 {
   line-height: 1.55;
   color: #e7eefc;
 }
+
+.terminalPanel { flex: 1; min-height: 0; padding: 16px; }
+.approvalBackdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: rgba(0, 0, 0, .62); }
+.approvalModal { width: min(460px, calc(100vw - 32px)); padding: 24px; border: 1px solid rgba(159, 192, 255, .4); border-radius: 18px; background: #0a1021; box-shadow: 0 24px 80px rgba(0,0,0,.5); }
+.approvalModal h3 { margin: 0 0 18px; }
+.approvalScope { overflow-wrap: anywhere; }
+.approvalActions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+.approvalActions button { border: 0; border-radius: 10px; padding: 10px 16px; cursor: pointer; }
 
 @media (max-width: 1100px) {
   .workspace {

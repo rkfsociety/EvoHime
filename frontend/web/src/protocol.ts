@@ -2,6 +2,7 @@ export type {
   AgentMessageDeltaEvent,
   AgentPlanUpdatedEvent,
   ActionLoggedEvent,
+  ApprovalRequiredEvent,
   ClientCommand,
   FileChangedEvent,
   HistoryItem,
@@ -21,4 +22,6 @@ export type {
   TaskCancelCommand,
   TaskResumeCommand,
   TaskRetryCommand,
+  ApprovalGrantedCommand,
+  ApprovalDeniedCommand,
 } from "./protocol.generated";

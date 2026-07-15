@@ -145,9 +145,7 @@ pub async fn save_file(
     }))
 }
 
-pub async fn git_status(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<GitSnapshot>, ApiError> {
+pub async fn git_status(State(state): State<Arc<AppState>>) -> Result<Json<GitSnapshot>, ApiError> {
     git_snapshot_with_path(&state, None).await.map(Json)
 }
 
@@ -155,7 +153,9 @@ pub async fn git_diff(
     State(state): State<Arc<AppState>>,
     Query(query): Query<FileQuery>,
 ) -> Result<Json<GitSnapshot>, ApiError> {
-    git_snapshot_with_path(&state, query.path.as_deref()).await.map(Json)
+    git_snapshot_with_path(&state, query.path.as_deref())
+        .await
+        .map(Json)
 }
 
 #[derive(Debug, Deserialize)]
@@ -263,7 +263,11 @@ fn relative_label(root: &Path, path: &Path) -> String {
         .ok()
         .map(|value| {
             let text = value.to_string_lossy().replace('\\', "/");
-            if text.is_empty() { ".".to_string() } else { text }
+            if text.is_empty() {
+                ".".to_string()
+            } else {
+                text
+            }
         })
         .unwrap_or_else(|| ".".to_string())
 }

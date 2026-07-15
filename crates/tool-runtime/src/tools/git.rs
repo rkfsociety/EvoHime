@@ -2,7 +2,7 @@ use crate::{ToolContext, ToolError, ToolResult};
 use evohime_permissions::Permission;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::{path::Path, process::Stdio, time::Duration};
+use std::{process::Stdio, time::Duration};
 use tokio::process::Command;
 
 pub const STATUS_NAME: &str = "git.status";
@@ -62,10 +62,11 @@ pub async fn diff(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
 }
 
 pub async fn commit(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
-    let input: CommitInput = serde_json::from_value(input).map_err(|error| ToolError::InvalidInput {
-        tool: COMMIT_NAME.to_string(),
-        message: error.to_string(),
-    })?;
+    let input: CommitInput =
+        serde_json::from_value(input).map_err(|error| ToolError::InvalidInput {
+            tool: COMMIT_NAME.to_string(),
+            message: error.to_string(),
+        })?;
 
     run_git(ctx, &["add", "-A"]).await?;
     run_git(ctx, &["commit", "-m", &input.message]).await
@@ -110,15 +111,17 @@ async fn run_git(ctx: &ToolContext, args: &[&str]) -> Result<ToolResult, ToolErr
 
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let command_text = format!(
-        "git -C {} {}",
-        ctx.workspace_root.display(),
-        args.join(" ")
-    );
+    let command_text = format!("git -C {} {}", ctx.workspace_root.display(), args.join(" "));
 
     if !output.status.success() {
-        let message = if stderr.is_empty() { stdout.clone() } else { stderr.clone() };
-        return Err(ToolError::Execution(format!("{command_text} failed: {message}")));
+        let message = if stderr.is_empty() {
+            stdout.clone()
+        } else {
+            stderr.clone()
+        };
+        return Err(ToolError::Execution(format!(
+            "{command_text} failed: {message}"
+        )));
     }
 
     Ok(ToolResult {
@@ -140,7 +143,12 @@ fn parse_optional_input<T: for<'de> Deserialize<'de> + Default>(
     input: &Value,
     tool: &str,
 ) -> Result<T, ToolError> {
-    if input.is_null() || input.as_object().map(|object| object.is_empty()).unwrap_or(false) {
+    if input.is_null()
+        || input
+            .as_object()
+            .map(|object| object.is_empty())
+            .unwrap_or(false)
+    {
         Ok(T::default())
     } else {
         serde_json::from_value(input.clone()).map_err(|error| ToolError::InvalidInput {
@@ -151,7 +159,12 @@ fn parse_optional_input<T: for<'de> Deserialize<'de> + Default>(
 }
 
 fn ensure_no_input(input: Value) -> Result<(), ToolError> {
-    if input.is_null() || input.as_object().map(|object| object.is_empty()).unwrap_or(false) {
+    if input.is_null()
+        || input
+            .as_object()
+            .map(|object| object.is_empty())
+            .unwrap_or(false)
+    {
         Ok(())
     } else {
         Err(ToolError::InvalidInput {
@@ -164,7 +177,7 @@ fn ensure_no_input(input: Value) -> Result<(), ToolError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs as std_fs, path::PathBuf, process::Command as StdCommand};
+    use std::{fs as std_fs, path::Path, process::Command as StdCommand};
     use tempfile::tempdir;
 
     fn run(workdir: &Path, args: &[&str]) {
@@ -184,17 +197,9 @@ mod tests {
             dir.path(),
             &["git", "config", "user.email", "dev@example.com"],
         );
-        run(
-            dir.path(),
-            &["git", "config", "user.name", "Dev User"],
-        );
-        (
-            dir,
-            ToolContext {
-                workspace_root: PathBuf::from(dir.path()),
-            },
-            "main".to_string(),
-        )
+        run(dir.path(), &["git", "config", "user.name", "Dev User"]);
+        let workspace_root = dir.path().to_path_buf();
+        (dir, ToolContext { workspace_root }, "main".to_string())
     }
 
     #[tokio::test]
@@ -247,7 +252,9 @@ mod tests {
         .await
         .expect("commit succeeds");
 
-        assert!(result.output.contains("Add notes") || result.output.contains("completed successfully"));
+        assert!(
+            result.output.contains("Add notes") || result.output.contains("completed successfully")
+        );
     }
 
     #[tokio::test]
@@ -258,7 +265,13 @@ mod tests {
         let (_dir, ctx, branch) = init_repo();
         run(
             ctx.workspace_root.as_path(),
-            &["git", "remote", "add", "origin", remote.path().to_str().expect("remote path")],
+            &[
+                "git",
+                "remote",
+                "add",
+                "origin",
+                remote.path().to_str().expect("remote path"),
+            ],
         );
 
         std_fs::write(ctx.workspace_root.join("notes.txt"), "hello\n").expect("write");

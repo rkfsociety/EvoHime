@@ -22,8 +22,8 @@ impl LiteRouterConfig {
         let api_key = env::var("LITEROUTER_API_KEY").unwrap_or_default();
         let base_url = env::var("LITEROUTER_BASE_URL")
             .unwrap_or_else(|_| LITEROUTER_DEFAULT_BASE_URL.to_string());
-        let model = env::var("LITEROUTER_MODEL")
-            .unwrap_or_else(|_| LITEROUTER_DEFAULT_MODEL.to_string());
+        let model =
+            env::var("LITEROUTER_MODEL").unwrap_or_else(|_| LITEROUTER_DEFAULT_MODEL.to_string());
 
         Self {
             api_key,

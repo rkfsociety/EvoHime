@@ -1,6 +1,4 @@
-use crate::providers::{
-    ChatMessage, ModelProvider, ProviderError, ProviderKind, TokenStream,
-};
+use crate::providers::{ChatMessage, ModelProvider, ProviderKind, TokenStream};
 use async_stream::stream;
 use std::sync::Arc;
 

@@ -1,12 +1,13 @@
-use evohime_model_gateway::{ModelConfigResponse, ModelGateway, ModelGatewayConfig};
-use evohime_tool_runtime::ToolRegistry;
 use anyhow::Result;
+use evohime_model_gateway::{ModelConfigResponse, ModelGateway, ModelGatewayConfig};
+use evohime_permissions::PermissionEngine;
+use evohime_protocol::ServerEvent;
+use evohime_tool_runtime::ToolRegistry;
+use serde_json::to_value;
 use sqlx::PgPool;
 use std::{collections::HashMap, env, path::PathBuf, sync::Arc};
 use tokio::sync::{broadcast, Mutex};
 use tokio_util::sync::CancellationToken;
-use evohime_protocol::ServerEvent;
-use serde_json::to_value;
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -48,6 +49,7 @@ pub struct AppState {
     pub demo_file_path: PathBuf,
     pub workspace_root: PathBuf,
     pub tools: ToolRegistry,
+    pub permissions: PermissionEngine,
     pub model_gateway: Option<Arc<ModelGateway>>,
     pub model_config: ModelGatewayConfig,
     pub session_buses: Arc<Mutex<HashMap<Uuid, broadcast::Sender<ServerEvent>>>>,
@@ -77,7 +79,8 @@ impl AppState {
         event: ServerEvent,
     ) -> Result<i64> {
         let event_json = to_value(&event)?;
-        let sequence = evohime_storage::insert_event(&self.pool, session_id, &event_json, task_id).await?;
+        let sequence =
+            evohime_storage::insert_event(&self.pool, session_id, &event_json, task_id).await?;
         let sender = self.session_bus(session_id).await;
         let _ = sender.send(event);
         Ok(sequence)

@@ -19,10 +19,17 @@ export type ServerEvent =
   | GitDiffChangedEvent
   | TaskStatusChangedEvent
   | TaskStepChangedEvent
-  | ActionLoggedEvent;
+  | ActionLoggedEvent
+  | ApprovalRequiredEvent;
 export type Uuid = string;
 export type DateTime = string;
-export type ClientCommand = UserMessageCommand | TaskCancelCommand | TaskResumeCommand | TaskRetryCommand;
+export type ClientCommand =
+  | UserMessageCommand
+  | TaskCancelCommand
+  | TaskResumeCommand
+  | TaskRetryCommand
+  | ApprovalGrantedCommand
+  | ApprovalDeniedCommand;
 
 export interface SessionCreatedEvent {
   type: "session.created";
@@ -105,6 +112,15 @@ export interface ActionLoggedEvent {
   detail: string;
   created_at: DateTime;
 }
+export interface ApprovalRequiredEvent {
+  type: "approval.required";
+  approval_id: Uuid;
+  task_id: Uuid;
+  tool_name: string;
+  permission: string;
+  scope: string;
+  created_at: DateTime;
+}
 export interface UserMessageCommand {
   type: "user.message";
   content: string;
@@ -120,6 +136,14 @@ export interface TaskResumeCommand {
 export interface TaskRetryCommand {
   type: "task.retry";
   task_id: Uuid;
+}
+export interface ApprovalGrantedCommand {
+  type: "approval.granted";
+  approval_id: Uuid;
+}
+export interface ApprovalDeniedCommand {
+  type: "approval.denied";
+  approval_id: Uuid;
 }
 
 

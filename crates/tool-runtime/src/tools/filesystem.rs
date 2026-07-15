@@ -2,7 +2,7 @@ use crate::{ToolContext, ToolError, ToolResult};
 use evohime_permissions::Permission;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::{path::Path, time::Duration};
+use std::time::Duration;
 use tokio::fs;
 
 pub const NAME: &str = "filesystem.read";
@@ -21,7 +21,7 @@ pub async fn execute(ctx: &ToolContext, input: Value) -> Result<ToolResult, Tool
         message: error.to_string(),
     })?;
 
-    let resolved = resolve_workspace_path(&ctx.workspace_root, &input.path)?;
+    let resolved = ctx.sandbox()?.resolve_existing(&input.path)?;
     let content = fs::read_to_string(&resolved)
         .await
         .map_err(|error| ToolError::Execution(format!("read failed: {error}")))?;
@@ -35,22 +35,6 @@ pub async fn execute(ctx: &ToolContext, input: Value) -> Result<ToolResult, Tool
             "preview": display,
         }),
     })
-}
-
-fn resolve_workspace_path(workspace_root: &Path, path: &str) -> Result<std::path::PathBuf, ToolError> {
-    let candidate = workspace_root.join(path);
-    let canonical_root = workspace_root
-        .canonicalize()
-        .map_err(|error| ToolError::Execution(format!("workspace root invalid: {error}")))?;
-    let canonical_candidate = candidate
-        .canonicalize()
-        .map_err(|error| ToolError::Execution(format!("path invalid: {error}")))?;
-
-    if !canonical_candidate.starts_with(&canonical_root) {
-        return Err(ToolError::PermissionDenied(Permission::FilesystemRead));
-    }
-
-    Ok(canonical_candidate)
 }
 
 fn truncate_for_display(content: &str) -> String {

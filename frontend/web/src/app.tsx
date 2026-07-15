@@ -6,6 +6,9 @@ import type {
   SessionBootstrap,
 } from "./protocol";
 import type { TaskStatusChangedEvent, TaskStepChangedEvent, ActionLoggedEvent } from "./protocol";
+import type { ApprovalRequiredEvent } from "./protocol";
+import { TerminalPanel, TerminalEntry } from "./components/TerminalPanel";
+import { ApprovalModal } from "./components/ApprovalModal";
 
 type ChatLine = {
   role: "assistant" | "tool" | "system" | "user";
@@ -61,6 +64,8 @@ type GitSnapshot = {
 
 type TaskView = { id: string; message: string; status: string; steps: Record<string, string> };
 type ActionView = { taskId: string; action: string; detail: string; createdAt: string };
+type PermissionMode = "ask" | "allow" | "deny";
+type PermissionSettings = Record<string, { mode: PermissionMode }>;
 
 const initialLines: ChatLine[] = [
   {
@@ -123,6 +128,9 @@ export function App() {
   const [gitDiffPath, setGitDiffPath] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Record<string, TaskView>>({});
   const [actions, setActions] = useState<ActionView[]>([]);
+  const [approval, setApproval] = useState<ApprovalRequiredEvent | null>(null);
+  const [terminalEntries, setTerminalEntries] = useState<TerminalEntry[]>([]);
+  const [permissionSettings, setPermissionSettings] = useState<PermissionSettings>({});
   const socketRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -138,6 +146,7 @@ export function App() {
         setModelConfig(data);
       }
     };
+    fetch("/api/permissions").then((response) => response.json()).then((data: PermissionSettings) => setPermissionSettings(data)).catch(() => undefined);
 
     loadModelConfig().catch((error) => {
       if (!cancelled) {
@@ -295,6 +304,7 @@ export function App() {
         ]);
         break;
       case "tool.output":
+        if (event.tool_name === "shell.execute") setTerminalEntries((current) => [...current, { stream: "stdout", text: event.output }]);
         setLines((current) => [
           ...current,
           {
@@ -302,6 +312,9 @@ export function App() {
             text: `Result from ${event.tool_name}:\n${event.output}`,
           },
         ]);
+        break;
+      case "approval.required":
+        setApproval(event);
         break;
       case "tool.completed":
         setLines((current) => [
@@ -431,6 +444,12 @@ export function App() {
     setGitDiffPath(diffPath === "." ? null : diffPath);
   }
 
+  async function updatePermission(name: string, mode: PermissionMode) {
+    const response = await fetch(`/api/permissions/${name}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode }) });
+    if (!response.ok) throw new Error("Failed to update permission");
+    setPermissionSettings((current) => ({ ...current, [name]: { mode } }));
+  }
+
   async function openFile(path: string) {
     try {
       setActivePanel("editor");
@@ -501,6 +520,13 @@ export function App() {
   function sendTaskCommand(type: "task.cancel" | "task.resume" | "task.retry", taskId: string) {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type, task_id: taskId }));
+    }
+  }
+
+  function resolveApproval(type: "approval.granted" | "approval.denied") {
+    if (approval && socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type, approval_id: approval.approval_id }));
+      setApproval(null);
     }
   }
 
@@ -581,6 +607,8 @@ export function App() {
           <p className="settingsHint">
             LiteRouter is the first provider. Configure via environment variables on the server.
           </p>
+          <h3>Tool permissions</h3>
+          <div className="permissionList">{Object.entries(permissionSettings).map(([name, value]) => <label key={name}><span>{name}</span><select value={value.mode} onChange={(event) => void updatePermission(name, event.target.value as PermissionMode)}><option value="ask">ask</option><option value="allow">allow</option><option value="deny">deny</option></select></label>)}</div>
         </div>
       );
     }
@@ -671,6 +699,8 @@ export function App() {
         </div>
       );
     }
+
+    if (activePanel === "terminal") return <TerminalPanel entries={terminalEntries} />;
 
     if (activePanel === "tasks") {
       return <div className="tasksPanel">{Object.values(tasks).map((task) => <article className="taskCard" key={task.id}>
@@ -785,6 +815,7 @@ export function App() {
           </div>
         </div>
       </section>
+      {approval ? <ApprovalModal request={approval} onGrant={() => resolveApproval("approval.granted")} onDeny={() => resolveApproval("approval.denied")} /> : null}
     </main>
   );
 }

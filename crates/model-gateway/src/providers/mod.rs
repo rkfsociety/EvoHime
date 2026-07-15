@@ -2,7 +2,6 @@ use futures_util::Stream;
 use std::pin::Pin;
 
 pub mod literouter;
-#[cfg(test)]
 pub mod mock;
 
 use serde::{Deserialize, Serialize};
@@ -56,8 +55,7 @@ pub struct ChatMessage {
     pub content: String,
 }
 
-pub type TokenStream =
-    Pin<Box<dyn Stream<Item = Result<String, ProviderError>> + Send>>;
+pub type TokenStream = Pin<Box<dyn Stream<Item = Result<String, ProviderError>> + Send>>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {

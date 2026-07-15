@@ -11,11 +11,11 @@ Last updated: 2026-07-15
 | `server` | Active | HTTP + WebSocket, `/api/models/config` |
 | `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema |
 | `storage` | Active | Sessions, tasks, events, **session_messages** |
-| `tool-runtime` | Active | Registry + `filesystem.read` |
+| `tool-runtime` | Active | Registry + sandboxed `filesystem.read/write/patch/search` and `shell.execute` |
 | `agent-runtime` | Active | `agent_loop.rs` — LLM + tools |
 | `model-gateway` | Active | **LiteRouter** SSE streaming + mock provider |
 | `task-engine` | Active | start/complete/fail task wrappers |
-| `permissions` | Scaffold | Permission enum types |
+| `permissions` | Active | ask/allow/deny policy and one-shot approvals |
 | `project-index` | Scaffold | Stage 6 |
 
 ## API endpoints
@@ -75,4 +75,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 3 / Milestone 2**: `filesystem.write`, `shell.execute`, xterm.js, permissions.
+**Stage 3 / Milestone 2**: backend tools, sandbox, approval protocol/UI and xterm.js foundation are implemented; full LLM tool-calling orchestration and end-to-end approval resume remain to be wired.

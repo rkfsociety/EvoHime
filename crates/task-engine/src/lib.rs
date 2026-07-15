@@ -7,22 +7,35 @@ use uuid::Uuid;
 
 #[derive(Debug, Error)]
 pub enum TaskEngineError {
-    #[error("storage error: {0}")] Storage(#[from] StorageError),
-    #[error("invalid transition from {from} to {to}")] InvalidTransition { from: String, to: String },
+    #[error("storage error: {0}")]
+    Storage(#[from] StorageError),
+    #[error("invalid transition from {from} to {to}")]
+    InvalidTransition { from: String, to: String },
 }
 
 pub fn can_transition(from: &str, to: TaskStatus) -> bool {
-    matches!((from, to),
-        ("running", TaskStatus::Cancelling | TaskStatus::Completed | TaskStatus::Failed | TaskStatus::Paused) |
-        ("cancelling", TaskStatus::Cancelled | TaskStatus::Paused) |
-        ("paused", TaskStatus::Running | TaskStatus::Cancelled) |
-        ("failed", TaskStatus::Retrying) |
-        ("retrying", TaskStatus::Running) |
-        ("completed", TaskStatus::Running) |
-        ("cancelled", TaskStatus::Running))
+    matches!(
+        (from, to),
+        (
+            "running",
+            TaskStatus::Cancelling
+                | TaskStatus::Completed
+                | TaskStatus::Failed
+                | TaskStatus::Paused
+        ) | ("cancelling", TaskStatus::Cancelled | TaskStatus::Paused)
+            | ("paused", TaskStatus::Running | TaskStatus::Cancelled)
+            | ("failed", TaskStatus::Retrying)
+            | ("retrying", TaskStatus::Running)
+            | ("completed", TaskStatus::Running)
+            | ("cancelled", TaskStatus::Running)
+    )
 }
 
-pub async fn start_task(pool: &PgPool, session_id: Uuid, user_message: &str) -> Result<TaskRow, TaskEngineError> {
+pub async fn start_task(
+    pool: &PgPool,
+    session_id: Uuid,
+    user_message: &str,
+) -> Result<TaskRow, TaskEngineError> {
     Ok(evohime_storage::create_task(pool, session_id, user_message).await?)
 }
 
@@ -48,11 +61,23 @@ pub async fn retry_task(pool: &PgPool, task_id: Uuid) -> Result<TaskRow, TaskEng
     Ok(evohime_storage::set_task_status(pool, task.id, "running").await?)
 }
 
-async fn transition(pool: &PgPool, task_id: Uuid, status: &str, target: TaskStatus) -> Result<TaskRow, TaskEngineError> {
+async fn transition(
+    pool: &PgPool,
+    task_id: Uuid,
+    status: &str,
+    target: TaskStatus,
+) -> Result<TaskRow, TaskEngineError> {
     let tasks = evohime_storage::list_tasks(pool, None).await?;
-    let current = tasks.iter().find(|task| task.id == task_id).map(|task| task.status.as_str()).unwrap_or("unknown");
+    let current = tasks
+        .iter()
+        .find(|task| task.id == task_id)
+        .map(|task| task.status.as_str())
+        .unwrap_or("unknown");
     if current != "unknown" && !can_transition(current, target) {
-        return Err(TaskEngineError::InvalidTransition { from: current.to_string(), to: status.to_string() });
+        return Err(TaskEngineError::InvalidTransition {
+            from: current.to_string(),
+            to: status.to_string(),
+        });
     }
     Ok(evohime_storage::set_task_status(pool, task_id, status).await?)
 }
@@ -68,11 +93,36 @@ pub struct InMemoryTask {
 }
 
 impl InMemoryTask {
-    pub fn new() -> Self { Self { status: TaskStatus::Running, steps: HashMap::new() } }
-    pub fn cancel(&mut self) { self.status = TaskStatus::Cancelled; for status in self.steps.values_mut() { if *status == StepStatus::Running || *status == StepStatus::Pending { *status = StepStatus::Cancelled; } } }
-    pub fn pause(&mut self) { if self.status == TaskStatus::Running { self.status = TaskStatus::Paused; } }
-    pub fn resume(&mut self) { if self.status == TaskStatus::Paused { self.status = TaskStatus::Running; } }
-    pub fn retry(&mut self) { if self.status == TaskStatus::Failed { self.status = TaskStatus::Retrying; self.status = TaskStatus::Running; } }
+    pub fn new() -> Self {
+        Self {
+            status: TaskStatus::Running,
+            steps: HashMap::new(),
+        }
+    }
+    pub fn cancel(&mut self) {
+        self.status = TaskStatus::Cancelled;
+        for status in self.steps.values_mut() {
+            if *status == StepStatus::Running || *status == StepStatus::Pending {
+                *status = StepStatus::Cancelled;
+            }
+        }
+    }
+    pub fn pause(&mut self) {
+        if self.status == TaskStatus::Running {
+            self.status = TaskStatus::Paused;
+        }
+    }
+    pub fn resume(&mut self) {
+        if self.status == TaskStatus::Paused {
+            self.status = TaskStatus::Running;
+        }
+    }
+    pub fn retry(&mut self) {
+        if self.status == TaskStatus::Failed {
+            self.status = TaskStatus::Retrying;
+            self.status = TaskStatus::Running;
+        }
+    }
 }
 
 #[cfg(test)]

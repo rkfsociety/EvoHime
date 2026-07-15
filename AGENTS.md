@@ -114,6 +114,8 @@ Each tool must have: unique name, description, JSON Schema input, required permi
 
 ## Environment
 
+Если обязательный инструмент разработки отсутствует в PATH (в частности Rust/Cargo), агент должен установить необходимый toolchain перед проверкой и продолжить работу. Нельзя считать backend-проверки выполненными только потому, что `cargo` не найден.
+
 ```env
 DATABASE_URL=postgres://evohime:evohime@localhost:5432/evohime
 BIND_ADDR=0.0.0.0:3000

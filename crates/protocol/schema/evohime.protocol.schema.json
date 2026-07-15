@@ -31,6 +31,7 @@
         ,{ "$ref": "#/$defs/TaskStatusChangedEvent" }
         ,{ "$ref": "#/$defs/TaskStepChangedEvent" }
         ,{ "$ref": "#/$defs/ActionLoggedEvent" }
+        ,{ "$ref": "#/$defs/ApprovalRequiredEvent" }
       ]
     },
     "ClientCommand": {
@@ -39,6 +40,8 @@
         { "$ref": "#/$defs/TaskCancelCommand" },
         { "$ref": "#/$defs/TaskResumeCommand" },
         { "$ref": "#/$defs/TaskRetryCommand" }
+        ,{ "$ref": "#/$defs/ApprovalGrantedCommand" }
+        ,{ "$ref": "#/$defs/ApprovalDeniedCommand" }
       ]
     },
     "SessionCreatedEvent": {
@@ -202,6 +205,18 @@
       "type": "object", "required": ["type", "task_id", "action", "detail", "created_at"],
       "properties": { "type": { "const": "action.logged" }, "task_id": { "$ref": "#/$defs/Uuid" }, "action": { "type": "string" }, "detail": { "type": "string" }, "created_at": { "$ref": "#/$defs/DateTime" } },
       "additionalProperties": false
+    },
+    "ApprovalRequiredEvent": {
+      "type": "object", "required": ["type", "approval_id", "task_id", "tool_name", "permission", "scope", "created_at"],
+      "properties": {
+        "type": { "const": "approval.required" }, "approval_id": { "$ref": "#/$defs/Uuid" }, "task_id": { "$ref": "#/$defs/Uuid" }, "tool_name": { "type": "string" }, "permission": { "type": "string" }, "scope": { "type": "string" }, "created_at": { "$ref": "#/$defs/DateTime" }
+      }, "additionalProperties": false
+    },
+    "ApprovalGrantedCommand": {
+      "type": "object", "required": ["type", "approval_id"], "properties": { "type": { "const": "approval.granted" }, "approval_id": { "$ref": "#/$defs/Uuid" } }, "additionalProperties": false
+    },
+    "ApprovalDeniedCommand": {
+      "type": "object", "required": ["type", "approval_id"], "properties": { "type": { "const": "approval.denied" }, "approval_id": { "$ref": "#/$defs/Uuid" } }, "additionalProperties": false
     }
   }
 }

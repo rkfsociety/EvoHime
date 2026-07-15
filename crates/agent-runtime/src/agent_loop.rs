@@ -21,10 +21,22 @@ pub fn parse_plan(raw: &str) -> Vec<PlanStep> {
     if let Ok(plan) = serde_json::from_str::<Vec<PlanStep>>(raw) {
         return plan;
     }
-    raw.lines().enumerate().filter_map(|(index, line)| {
-        let description = line.trim().trim_start_matches(['-', '*', ' ']).to_string();
-        if description.is_empty() { None } else { Some(PlanStep { id: format!("step-{}", index + 1), tool_name: "none".to_string(), description, depends_on: Vec::new() }) }
-    }).collect()
+    raw.lines()
+        .enumerate()
+        .filter_map(|(index, line)| {
+            let description = line.trim().trim_start_matches(['-', '*', ' ']).to_string();
+            if description.is_empty() {
+                None
+            } else {
+                Some(PlanStep {
+                    id: format!("step-{}", index + 1),
+                    tool_name: "none".to_string(),
+                    description,
+                    depends_on: Vec::new(),
+                })
+            }
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone)]
@@ -198,7 +210,9 @@ mod tests {
 
     #[test]
     fn parses_model_plan_json_and_dependencies() {
-        let plan = parse_plan(r#"[{"id":"read","tool_name":"filesystem.read","description":"read context","depends_on":[]}]"#);
+        let plan = parse_plan(
+            r#"[{"id":"read","tool_name":"filesystem.read","description":"read context","depends_on":[]}]"#,
+        );
         assert_eq!(plan[0].tool_name, "filesystem.read");
     }
 }
