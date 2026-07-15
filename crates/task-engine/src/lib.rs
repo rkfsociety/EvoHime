@@ -1,7 +1,7 @@
-use evohime_protocol::{StepStatus, TaskStatus};
+use evohime_protocol::{PlanStep, StepStatus, TaskStatus};
 use evohime_storage::{StorageError, TaskRow};
 use sqlx::PgPool;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -11,6 +11,10 @@ pub enum TaskEngineError {
     Storage(#[from] StorageError),
     #[error("invalid transition from {from} to {to}")]
     InvalidTransition { from: String, to: String },
+    #[error("unknown dependency {dependency} for step {step_id}")]
+    UnknownDependency { step_id: String, dependency: String },
+    #[error("dependency cycle detected at step {step_id}")]
+    DependencyCycle { step_id: String },
 }
 
 pub fn can_transition(from: &str, to: TaskStatus) -> bool {
@@ -90,6 +94,58 @@ pub async fn recover_after_restart(pool: &PgPool) -> Result<Vec<TaskRow>, TaskEn
     Ok(evohime_storage::recover_running_tasks(pool).await?)
 }
 
+pub fn dependency_batches(plan: &[PlanStep]) -> Result<Vec<Vec<PlanStep>>, TaskEngineError> {
+    let known_ids: HashSet<&str> = plan.iter().map(|step| step.id.as_str()).collect();
+    let mut remaining: Vec<&PlanStep> = plan.iter().collect();
+    let mut completed: HashSet<String> = HashSet::new();
+    let mut batches = Vec::new();
+
+    while !remaining.is_empty() {
+        let mut ready = Vec::new();
+        let mut blocked = Vec::new();
+
+        for step in remaining {
+            if let Some(missing) = step
+                .depends_on
+                .iter()
+                .map(|dependency| dependency.as_str())
+                .find(|dependency| !known_ids.contains(dependency))
+            {
+                return Err(TaskEngineError::UnknownDependency {
+                    step_id: step.id.clone(),
+                    dependency: missing.to_string(),
+                });
+            }
+
+            if step
+                .depends_on
+                .iter()
+                .all(|dependency| completed.contains(dependency))
+            {
+                ready.push(step.clone());
+            } else {
+                blocked.push(step);
+            }
+        }
+
+        if ready.is_empty() {
+            let cycle_step = blocked
+                .first()
+                .map(|step| step.id.clone())
+                .unwrap_or_default();
+            return Err(TaskEngineError::DependencyCycle {
+                step_id: cycle_step,
+            });
+        }
+
+        completed.extend(ready.iter().map(|step| step.id.clone()));
+        batches.push(ready);
+        remaining = blocked;
+    }
+
+    Ok(batches)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InMemoryTask {
     pub status: TaskStatus,
@@ -163,5 +219,48 @@ mod tests {
     #[test]
     fn pause_transition_is_supported() {
         assert!(can_transition("running", TaskStatus::Paused));
+    }
+
+    #[test]
+    fn dependency_batches_group_independent_steps_together() {
+        let plan = vec![
+            evohime_protocol::PlanStep {
+                id: "step-1".to_string(),
+                tool_name: "filesystem.read".to_string(),
+                description: "Read the context".to_string(),
+                depends_on: Vec::new(),
+            },
+            evohime_protocol::PlanStep {
+                id: "step-2".to_string(),
+                tool_name: "filesystem.search".to_string(),
+                description: "Search for symbols".to_string(),
+                depends_on: Vec::new(),
+            },
+            evohime_protocol::PlanStep {
+                id: "step-3".to_string(),
+                tool_name: "assistant.reply".to_string(),
+                description: "Respond".to_string(),
+                depends_on: vec!["step-1".to_string(), "step-2".to_string()],
+            },
+        ];
+
+        let batches = dependency_batches(&plan).expect("batches");
+        assert_eq!(batches.len(), 2);
+        assert_eq!(batches[0].len(), 2);
+        assert_eq!(batches[1].len(), 1);
+        assert_eq!(batches[1][0].id, "step-3");
+    }
+
+    #[test]
+    fn dependency_batches_reject_unknown_dependencies() {
+        let plan = vec![evohime_protocol::PlanStep {
+            id: "step-1".to_string(),
+            tool_name: "filesystem.read".to_string(),
+            description: "Read the context".to_string(),
+            depends_on: vec!["missing-step".to_string()],
+        }];
+
+        let error = dependency_batches(&plan).expect_err("missing dependency should fail");
+        assert!(matches!(error, TaskEngineError::UnknownDependency { .. }));
     }
 }

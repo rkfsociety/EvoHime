@@ -10,16 +10,16 @@ use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
 pub fn parse_plan(raw: &str) -> Vec<PlanStep> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
+    let normalized = unwrap_code_fence(raw);
+    if normalized.is_empty() {
         return default_plan();
     }
 
-    if let Ok(plan) = serde_json::from_str::<Vec<PlanStep>>(trimmed) {
+    if let Some(plan) = parse_plan_json(&normalized) {
         return normalize_plan(plan);
     }
 
-    let parsed: Vec<PlanStep> = trimmed
+    let parsed: Vec<PlanStep> = normalized
         .lines()
         .enumerate()
         .filter_map(|(index, line)| parse_plan_line(index, line))
@@ -245,6 +245,78 @@ async fn run_agent_loop_inner(
 const SYSTEM_PROMPT: &str = "You are EvoHime, a helpful AI coding assistant. Answer concisely using the provided workspace context when relevant.";
 const PLANNING_PROMPT: &str = "You are EvoHime's task planner. Return only JSON: an array of objects with fields id, tool_name, description, and depends_on. Use stable step ids like step-1, step-2, and keep depends_on empty unless a step truly depends on another step. If no tool call is needed, use assistant.reply as the tool_name for the final response step.";
 
+#[derive(Debug, serde::Deserialize)]
+struct PlanEnvelope {
+    #[serde(default)]
+    steps: Vec<PlanStepDraft>,
+    #[serde(default)]
+    plan: Vec<PlanStepDraft>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct PlanStepDraft {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    tool_name: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    depends_on: Vec<String>,
+}
+
+fn parse_plan_json(raw: &str) -> Option<Vec<PlanStep>> {
+    serde_json::from_str::<Vec<PlanStep>>(raw).ok().or_else(|| {
+        serde_json::from_str::<PlanEnvelope>(raw)
+            .ok()
+            .map(|envelope| {
+                let drafts = if !envelope.steps.is_empty() {
+                    envelope.steps
+                } else {
+                    envelope.plan
+                };
+                drafts
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, draft)| PlanStep {
+                        id: draft.id.unwrap_or_else(|| format!("step-{}", index + 1)),
+                        tool_name: draft
+                            .tool_name
+                            .unwrap_or_else(|| "assistant.reply".to_string()),
+                        description: draft
+                            .description
+                            .unwrap_or_else(|| format!("Execute step-{}", index + 1)),
+                        depends_on: draft
+                            .depends_on
+                            .into_iter()
+                            .filter(|dependency| !dependency.trim().is_empty())
+                            .collect(),
+                    })
+                    .collect()
+            })
+    })
+}
+
+fn unwrap_code_fence(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if !trimmed.starts_with("```") {
+        return trimmed.to_string();
+    }
+
+    let mut lines = trimmed.lines();
+    let first = lines.next().unwrap_or_default();
+    if !first.starts_with("```") {
+        return trimmed.to_string();
+    }
+
+    let body = lines
+        .take_while(|line| !line.trim_start().starts_with("```"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    body.trim().to_string()
+}
+
 fn emit(event_tx: &UnboundedSender<ServerEvent>, event: ServerEvent) -> Result<(), AgentError> {
     event_tx.send(event).map_err(|_| AgentError::EventChannel)
 }
@@ -416,6 +488,26 @@ mod tests {
         let plan = parse_plan(
             r#"[{"id":"read","tool_name":"filesystem.read","description":"read context","depends_on":[]}]"#,
         );
+        assert_eq!(plan[0].tool_name, "filesystem.read");
+    }
+
+    #[test]
+    fn parses_fenced_json_plan_blocks() {
+        let plan = parse_plan(
+            "```json\n[{\"id\":\"read\",\"tool_name\":\"filesystem.read\",\"description\":\"read context\",\"depends_on\":[]}]\n```",
+        );
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].id, "read");
+        assert_eq!(plan[0].tool_name, "filesystem.read");
+    }
+
+    #[test]
+    fn parses_wrapped_plan_objects() {
+        let plan = parse_plan(
+            r#"{"steps":[{"tool_name":"filesystem.read","description":"read context","depends_on":[]} ]}"#,
+        );
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].id, "step-1");
         assert_eq!(plan[0].tool_name, "filesystem.read");
     }
 
