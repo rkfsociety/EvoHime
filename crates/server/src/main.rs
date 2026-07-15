@@ -18,7 +18,7 @@ use evohime_agent_runtime::{
 use evohime_model_gateway::providers::{ChatMessage, ChatRole};
 use evohime_model_gateway::ModelGateway;
 use evohime_permissions::{Permission, PermissionMode};
-use evohime_protocol::{ClientCommand, HistoryItem, ServerEvent, SessionBootstrap};
+use evohime_protocol::{ClientCommand, HistoryItem, PlanStep, ServerEvent, SessionBootstrap};
 use evohime_task_engine::{
     complete_task, fail_task, pause_task, resume_task, retry_task, start_task,
 };
@@ -427,6 +427,7 @@ async fn handle_socket(
                                 token.cancel();
                             }
                             let _ = evohime_task_engine::cancel_task(&state.pool, task_id).await;
+                            let _ = finalize_open_task_steps(&state, task_id, "cancelled").await;
                             emit_event(
                                 &state,
                                 session_id,
@@ -754,26 +755,72 @@ async fn run_task_pipeline(
         tokio::select! {
             _ = cancellation.cancelled() => {
                 agent_handle.abort();
+                let _ = finalize_open_task_steps(state, task.id, "cancelled").await;
                 return Err((task.id, ApiError::BadRequest("task cancelled".to_string())));
             }
             event = event_rx.recv() => match event {
                 Some(event) => {
-                    if let ServerEvent::ToolOutput {
-                        task_id,
-                        tool_name,
-                        output,
-                    } = &event
-                    {
-                        if *task_id == task.id && tool_name == "filesystem.read" {
-                            let checkpoint_state = json!({"workspace_context": output});
-                            let _ = evohime_storage::upsert_checkpoint(
-                                &state.pool,
+                    match &event {
+                        ServerEvent::AgentPlanUpdated { plan, .. } => {
+                            persist_task_plan(state, task.id, plan)
+                                .await
+                                .map_err(|error| (task.id, error))?;
+                        }
+                        ServerEvent::ToolStarted { tool_name, .. } => {
+                            let _ = update_task_step_status(
+                                state,
                                 task.id,
-                                1,
-                                &checkpoint_state,
+                                tool_name,
+                                "running",
+                                None,
+                                None,
                             )
                             .await;
                         }
+                        ServerEvent::ToolOutput {
+                            tool_name, output, ..
+                        } => {
+                            if tool_name == "filesystem.read" {
+                                let checkpoint_state = json!({"workspace_context": output});
+                                let _ = evohime_storage::upsert_checkpoint(
+                                    &state.pool,
+                                    task.id,
+                                    1,
+                                    &checkpoint_state,
+                                )
+                                .await;
+                            }
+                            let _ = update_task_step_status(
+                                state,
+                                task.id,
+                                tool_name,
+                                "running",
+                                Some(output.as_str()),
+                                None,
+                            )
+                            .await;
+                        }
+                        ServerEvent::ToolCompleted {
+                            tool_name, success, ..
+                        } => {
+                            let status = if *success { "completed" } else { "failed" };
+                            let _ = update_task_step_status(
+                                state,
+                                task.id,
+                                tool_name,
+                                status,
+                                None,
+                                None,
+                            )
+                            .await;
+                        }
+                        ServerEvent::TaskCompleted { .. } => {
+                            let _ = finalize_open_task_steps(state, task.id, "completed").await;
+                        }
+                        ServerEvent::TaskFailed { .. } => {
+                            let _ = finalize_open_task_steps(state, task.id, "failed").await;
+                        }
+                        _ => {}
                     }
                     emit_event(state, session_id, Some(task.id), event).await?;
                 }
@@ -916,4 +963,199 @@ async fn emit_event(
             )
         })?;
     Ok(())
+}
+
+async fn persist_task_plan(
+    state: &Arc<AppState>,
+    task_id: Uuid,
+    plan: &[PlanStep],
+) -> Result<(), ApiError> {
+    if !evohime_storage::list_task_steps(&state.pool, task_id)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?
+        .is_empty()
+    {
+        return Ok(());
+    }
+
+    let existing_checkpoint = evohime_storage::load_checkpoint(&state.pool, task_id)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let workspace_context = existing_checkpoint
+        .as_ref()
+        .and_then(|checkpoint| {
+            checkpoint
+                .state_json
+                .get("workspace_context")
+                .and_then(|value| value.as_str())
+        })
+        .map(|value| value.to_string());
+
+    let mut step_ids = HashMap::new();
+    for (index, step) in plan.iter().enumerate() {
+        let depends_on = step
+            .depends_on
+            .iter()
+            .filter_map(|dependency| step_ids.get(dependency).copied())
+            .collect::<Vec<_>>();
+        let input = json!({
+            "plan_step_id": step.id,
+            "description": step.description,
+            "tool_name": step.tool_name,
+            "depends_on": step.depends_on,
+        });
+        let row = evohime_storage::create_task_step(
+            &state.pool,
+            task_id,
+            index as i32,
+            &step.tool_name,
+            &input,
+            &depends_on,
+        )
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+        step_ids.insert(step.id.clone(), row.id);
+        emit_task_step_changed(state, task_id, row.id, "pending", step.tool_name.as_str()).await?;
+    }
+
+    let checkpoint_state = match workspace_context {
+        Some(workspace_context) => json!({
+            "plan": plan,
+            "workspace_context": workspace_context,
+        }),
+        None => json!({
+            "plan": plan,
+        }),
+    };
+    evohime_storage::upsert_checkpoint(&state.pool, task_id, 0, &checkpoint_state)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+
+    if let Some(first_step) = plan.first() {
+        if first_step.tool_name == "filesystem.read" {
+            if let Some(output) = checkpoint_state
+                .get("workspace_context")
+                .and_then(|value| value.as_str())
+            {
+                if let Some(step_id) = step_ids.get(&first_step.id).copied() {
+                    evohime_storage::set_step_status(
+                        &state.pool,
+                        step_id,
+                        "completed",
+                        Some(output),
+                        None,
+                    )
+                    .await
+                    .map_err(|error| ApiError::Internal(error.to_string()))?;
+                    emit_task_step_changed(
+                        state,
+                        task_id,
+                        step_id,
+                        "completed",
+                        first_step.tool_name.as_str(),
+                    )
+                    .await?;
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn update_task_step_status(
+    state: &Arc<AppState>,
+    task_id: Uuid,
+    tool_name: &str,
+    status: &str,
+    output: Option<&str>,
+    error: Option<&str>,
+) -> Result<(), ApiError> {
+    let steps = evohime_storage::list_task_steps(&state.pool, task_id)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let step = steps
+        .iter()
+        .find(|step| {
+            step.tool_name == tool_name
+                && match status {
+                    "running" => step.status == "pending",
+                    "completed" | "failed" | "cancelled" => {
+                        step.status == "running" || step.status == "pending"
+                    }
+                    _ => true,
+                }
+        })
+        .or_else(|| {
+            steps.iter().find(|step| {
+                step.tool_name == tool_name
+                    && match status {
+                        "running" => step.status == "running",
+                        "completed" | "failed" | "cancelled" => true,
+                        _ => true,
+                    }
+            })
+        });
+
+    if let Some(step) = step {
+        evohime_storage::set_step_status(&state.pool, step.id, status, output, error)
+            .await
+            .map_err(|error| ApiError::Internal(error.to_string()))?;
+        emit_task_step_changed(state, task_id, step.id, status, tool_name).await?;
+    }
+
+    Ok(())
+}
+
+async fn finalize_open_task_steps(
+    state: &Arc<AppState>,
+    task_id: Uuid,
+    status: &str,
+) -> Result<(), ApiError> {
+    let steps = evohime_storage::list_task_steps(&state.pool, task_id)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+
+    for step in steps
+        .into_iter()
+        .filter(|step| step.status == "pending" || step.status == "running")
+    {
+        evohime_storage::set_step_status(&state.pool, step.id, status, None, None)
+            .await
+            .map_err(|error| ApiError::Internal(error.to_string()))?;
+        emit_task_step_changed(state, task_id, step.id, status, step.tool_name.as_str()).await?;
+    }
+
+    Ok(())
+}
+
+async fn emit_task_step_changed(
+    state: &Arc<AppState>,
+    task_id: Uuid,
+    step_id: Uuid,
+    status: &str,
+    tool_name: &str,
+) -> Result<(), ApiError> {
+    let session_id = find_session_for_task(state, task_id).await?;
+    emit_event(
+        state,
+        session_id,
+        Some(task_id),
+        ServerEvent::TaskStepChanged {
+            task_id,
+            step_id,
+            status: status.to_string(),
+            tool_name: tool_name.to_string(),
+        },
+    )
+    .await
+    .map_err(|(_, error)| error)
+}
+
+async fn find_session_for_task(state: &Arc<AppState>, task_id: Uuid) -> Result<Uuid, ApiError> {
+    let task = evohime_storage::load_task(&state.pool, task_id)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?
+        .ok_or_else(|| ApiError::BadRequest("unknown task".to_string()))?;
+    Ok(task.session_id)
 }
