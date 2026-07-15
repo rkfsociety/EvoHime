@@ -670,6 +670,13 @@ export function App() {
     if (!route) {
       return;
     }
+    if (!route.configured) {
+      setComposerModels([]);
+      setSelectedComposerModel("");
+      setComposerModelsError("Сначала укажите API-ключ провайдера в настройках");
+      setComposerModelsLoading(false);
+      return;
+    }
     let cancelled = false;
     setComposerModelsLoading(true);
     setComposerModelsError(null);
@@ -690,9 +697,8 @@ export function App() {
       })
       .catch((error) => {
         if (!cancelled) {
-          const fallback = route.available_models.length > 0 ? route.available_models : [route.model];
-          setComposerModels(fallback);
-          setSelectedComposerModel((current) => fallback.includes(current) ? current : route.model);
+          setComposerModels([]);
+          setSelectedComposerModel("");
           setComposerModelsError(String(error));
         }
       })
@@ -2489,7 +2495,7 @@ export function App() {
                 aria-label="Модель агента"
                 title={composerModelsError ?? "Модель агента"}
               >
-                {composerModels.length === 0 ? <option value="">Модель не настроена</option> : null}
+                {composerModels.length === 0 ? <option value="">Модели недоступны</option> : null}
                 {composerModels.map((model) => <option key={model} value={model}>{model}</option>)}
               </select>
               <button

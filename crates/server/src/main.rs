@@ -408,6 +408,20 @@ fn build_model_config(
         ));
     }
     let mut routes = HashMap::new();
+    let requested_default_key = request
+        .routes
+        .iter()
+        .find(|route| route.name.trim() == request.default_route)
+        .and_then(|route| route.api_key.as_deref())
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            current
+                .routes
+                .get(&request.default_route)
+                .map(|route| route.literouter.api_key.clone())
+        })
+        .unwrap_or_default();
     for route in request.routes {
         let name = route.name.trim().to_string();
         let model = route.model.trim().to_string();
@@ -454,11 +468,12 @@ fn build_model_config(
             .map(|item| item.literouter.api_key.clone())
             .or_else(|| {
                 (name == "orchestrator").then(|| {
-                    current
-                        .routes
-                        .get(&current.default_route)
-                        .map(|item| item.literouter.api_key.clone())
-                        .unwrap_or_default()
+            current
+                .routes
+                .get(&current.default_route)
+                .map(|item| item.literouter.api_key.clone())
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| requested_default_key.clone())
                 })
             })
             .unwrap_or_default();
@@ -1755,6 +1770,7 @@ async fn find_session_for_task(state: &Arc<AppState>, task_id: Uuid) -> Result<U
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn summarizes_task_memory() {
@@ -1773,5 +1789,44 @@ mod tests {
     fn resolves_model_route_with_default_fallback() {
         assert_eq!(resolve_model_route(Some("planner"), "default"), "planner");
         assert_eq!(resolve_model_route(None, "default"), "default");
+    }
+
+    #[test]
+    fn carries_default_api_key_to_new_orchestrator_route() {
+        let current = evohime_model_gateway::ModelGatewayConfig {
+            default_route: "default".to_string(),
+            routes: HashMap::from([(
+                "default".to_string(),
+                ModelRouteConfig::literouter("", "https://api.literouter.com/v1", "deepseek:free"),
+            )]),
+        };
+        let config = build_model_config(
+            ModelSettingsRequest {
+                default_route: "default".to_string(),
+                routes: vec![
+                    ModelRouteRequest {
+                        name: "default".to_string(),
+                        provider: "literouter".to_string(),
+                        model: "deepseek:free".to_string(),
+                        base_url: "https://api.literouter.com/v1".to_string(),
+                        api_key: Some("lr_test_key".to_string()),
+                        billing_mode: "free".to_string(),
+                    },
+                    ModelRouteRequest {
+                        name: "orchestrator".to_string(),
+                        provider: "literouter".to_string(),
+                        model: "deepseek:free".to_string(),
+                        base_url: "https://api.literouter.com/v1".to_string(),
+                        api_key: None,
+                        billing_mode: "free".to_string(),
+                    },
+                ],
+            },
+            &current,
+        )
+        .expect("model config is valid");
+
+        assert_eq!(config.routes["default"].literouter.api_key, "lr_test_key");
+        assert_eq!(config.routes["orchestrator"].literouter.api_key, "lr_test_key");
     }
 }
