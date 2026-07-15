@@ -30,7 +30,7 @@ input {
 
 .shell {
   min-height: 100vh;
-  padding: 32px;
+  padding: 0 32px 32px;
   display: grid;
   gap: 24px;
 }
@@ -40,9 +40,9 @@ input {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  padding: 18px 20px;
+  padding: 10px 16px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 24px;
+  border-radius: 20px;
   background: linear-gradient(135deg, rgba(10, 16, 33, 0.88), rgba(14, 24, 49, 0.72));
   backdrop-filter: blur(18px);
   box-shadow: 0 18px 48px rgba(3, 8, 22, 0.24);
@@ -50,7 +50,7 @@ input {
 
 .agentBrand {
   display: grid;
-  gap: 6px;
+  gap: 2px;
 }
 
 .eyebrow {
@@ -69,7 +69,7 @@ p {
 
 h1 {
   font-size: clamp(1.4rem, 2.4vw, 2rem);
-  line-height: 1.05;
+  line-height: 1;
   max-width: 12ch;
 }
 
@@ -84,9 +84,9 @@ h1 {
   display: flex;
   gap: 14px;
   align-items: center;
-  padding: 16px 18px;
+  padding: 10px 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 18px;
+  border-radius: 14px;
   background: rgba(10, 16, 33, 0.65);
   backdrop-filter: blur(18px);
 }
@@ -932,7 +932,7 @@ h1 {
 
 @media (max-width: 720px) {
   .shell {
-    padding: 16px;
+    padding: 0 16px 16px;
   }
 
   .topBar {
