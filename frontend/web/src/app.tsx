@@ -78,6 +78,23 @@ type ProjectSummary = {
   path: string;
 };
 
+const selectedProjectStorageKey = "evohime.selectedProject";
+
+function loadSelectedProject(): ProjectSelection {
+  try {
+    const stored = localStorage.getItem(selectedProjectStorageKey);
+    if (stored) {
+      const project = JSON.parse(stored) as ProjectSelection;
+      if (typeof project.label === "string" && (typeof project.path === "string" || project.path === null)) {
+        return project;
+      }
+    }
+  } catch {
+    // Ignore malformed browser state and use the current workspace.
+  }
+  return { label: "EvoHime", path: "." };
+}
+
 type GithubAuthInfo = {
   authenticated: boolean;
   login: string | null;
@@ -407,7 +424,7 @@ export function App() {
   const [lines, setLines] = useState<ChatLine[]>(initialLines);
   const [stream, setStream] = useState("");
   const [activePanel, setActivePanel] = useState<WorkspacePanel>("chat");
-  const [selectedProject, setSelectedProject] = useState<ProjectSelection>({ label: "EvoHime", path: "." });
+  const [selectedProject, setSelectedProject] = useState<ProjectSelection>(loadSelectedProject);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
@@ -639,6 +656,10 @@ export function App() {
       .then((data) => setProjects(data))
       .catch(() => undefined);
   }, [projectPickerOpen]);
+
+  useEffect(() => {
+    localStorage.setItem(selectedProjectStorageKey, JSON.stringify(selectedProject));
+  }, [selectedProject]);
 
   useEffect(() => {
     const route = modelDrafts.find((item) => item.name === "orchestrator");
