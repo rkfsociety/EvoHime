@@ -59,6 +59,7 @@ mod tests {
 
         let ctx = ToolContext {
             workspace_root: dir.path().to_path_buf(),
+            task_id: uuid::Uuid::nil(),
         };
         let result = execute(&ctx, json!({ "path": "demo.txt" }))
             .await
@@ -73,6 +74,7 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         let ctx = ToolContext {
             workspace_root: dir.path().to_path_buf(),
+            task_id: uuid::Uuid::nil(),
         };
 
         let error = execute(&ctx, json!({ "path": ".." }))

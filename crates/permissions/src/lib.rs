@@ -166,14 +166,16 @@ mod tests {
     #[tokio::test]
     async fn approval_is_one_shot() {
         let engine = PermissionEngine::new();
+        let task_id = Uuid::new_v4();
         let request = engine
             .create_approval(
-                Uuid::nil(),
+                task_id,
                 "filesystem.write",
                 Permission::FilesystemWrite,
                 "a.txt",
             )
             .await;
+        assert_eq!(request.task_id, task_id);
         assert_eq!(
             engine.resolve(request.id, true).await,
             Some(ApprovalState::Granted)

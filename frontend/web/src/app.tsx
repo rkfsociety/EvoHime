@@ -317,6 +317,15 @@ export function App() {
         setApproval(event);
         break;
       case "tool.completed":
+        if (event.tool_name === "shell.execute") {
+          setTerminalEntries((current) => [
+            ...current,
+            {
+              stream: event.success ? "status" : "stderr",
+              text: event.success ? "shell.execute completed" : "shell.execute failed",
+            },
+          ]);
+        }
         setLines((current) => [
           ...current,
           {

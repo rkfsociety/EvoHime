@@ -24,7 +24,7 @@ Browser
 EvoHime Server (crates/server)
 ├── agent-runtime/     — agent orchestration
 ├── task-engine/       — task lifecycle
-├── model-gateway/     — LLM providers (stage 2)
+├── model-gateway/     — LiteRouter + mock LLM providers
 ├── tool-runtime/      — tool registry + execution
 ├── permissions/       — permission types
 ├── project-index/     — semantic search (stage 6)
@@ -32,7 +32,7 @@ EvoHime Server (crates/server)
 └── storage/           — PostgreSQL access
 ```
 
-## Current state (Stage 1 — done)
+## Current state (Stage 2 complete; stages 3-5 foundations in place)
 
 Vertical slice works end-to-end:
 
@@ -41,8 +41,8 @@ User message
   → POST /api/sessions
   → WS /ws/:session_id
   → task-engine creates task
-  → agent-runtime runs demo flow
-  → tool-runtime executes filesystem.read
+  → agent-runtime loads history and runs the agent loop
+  → tool-runtime executes sandboxed tools
   → events persisted in PostgreSQL
   → browser shows chat + event timeline
 ```
@@ -52,19 +52,19 @@ User message
 - Monorepo with all crate scaffolds
 - HTTP: `/health`, `POST /api/sessions`, `GET /api/sessions/:id/history`
 - WebSocket: typed event protocol
-- Tool: `filesystem.read` (with path traversal protection)
-- Frontend: workspace shell (chat active, other panels are placeholders)
+- Tools: filesystem read/write/patch/search, shell, and Git operations with workspace sandboxing
+- Frontend: chat, settings, event timeline, basic Tasks and Actions panels; file/editor/terminal/Git panels remain incomplete
 - Protocol codegen: JSON Schema → TypeScript
 - Tests: `crates/protocol`, `crates/tool-runtime`
 - Docker Compose: db + server + web
 
-### Not yet implemented
+### Incomplete or not yet implemented
 
-- Real LLM integration (stage 2)
-- Shell, terminal, permission approvals (stage 3)
-- Monaco editor, file tree, Git (stage 4)
-- Task planning, parallel tools, cancel/resume (stage 5)
-- Project index, MCP, multi-model, Python workers (stage 6)
+- General LLM tool-calling orchestration across all registered tools
+- Server emission of `approval.required` and end-to-end approval resume
+- Terminal streaming, file tree, Monaco editor, and Git UI
+- Parallel tool execution and restart recovery for tasks
+- Project index, MCP, additional providers, and Python workers (stage 6)
 
 ## WebSocket events
 
@@ -80,7 +80,7 @@ task.completed
 task.failed
 ```
 
-Planned later: `file.changed`, `git.diff.changed`, `approval.required`
+Implemented in the schema/runtime: `file.changed`, `git.diff.changed`, task status/step events, and action log events. `approval.required` exists in the protocol and UI, but server-side emission and resume are incomplete.
 
 ## Protocol workflow
 
@@ -91,11 +91,11 @@ Planned later: `file.changed`, `git.diff.changed`, `approval.required`
 
 **Never edit `protocol.generated.ts` by hand.**
 
-## Tools (planned full list)
+## Tools
 
-Current: `filesystem.read`
+Implemented: `filesystem.read`, `filesystem.write`, `filesystem.patch`, `filesystem.search`, `shell.execute`, `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push`
 
-Future: `filesystem.write`, `filesystem.patch`, `filesystem.search`, `shell.execute`, `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push`, `browser.open`, `browser.extract`, `mcp.call`
+Planned: `browser.open`, `browser.extract`, `mcp.call`
 
 Each tool must have: unique name, description, JSON Schema input, required permissions, timeout, cancellation, structured result, execution log.
 
@@ -147,13 +147,13 @@ See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](d
 | Stage | Status |
 | --- | --- |
 | 1 Foundation | ✅ Done |
-| 2 Chat with model (LiteRouter) | 🔜 Next |
-| 3 Tools + shell | Planned |
-| 4 Editor + Git | Planned |
-| 5 Task orchestration | Planned |
+| 2 Chat with model (LiteRouter) | ✅ Done |
+| 3 Tools + shell | 🟡 Backend base |
+| 4 Editor + Git | 🟡 Git backend |
+| 5 Task orchestration | 🟡 Lifecycle base |
 | 6 Advanced (MCP, index) | Planned |
 
-## LLM Provider — LiteRouter (stage 2)
+## LLM Provider — LiteRouter
 
 First provider: **LiteRouter** — OpenAI-compatible API.
 
@@ -173,8 +173,8 @@ LITEROUTER_MODEL=deepseek:free
 | --- | --- |
 | `crates/server/src/main.rs` | HTTP + WS handlers |
 | `crates/agent-runtime/src/vertical_slice.rs` | Demo agent flow |
-| `crates/tool-runtime/src/tools/filesystem.rs` | filesystem.read |
+| `crates/tool-runtime/src/tools/` | filesystem, shell, and Git tools |
 | `frontend/web/src/app.tsx` | Workspace UI |
 | `migrations/0001_init.sql` | DB schema |
-| `crates/model-gateway/src/providers/literouter.rs` | LiteRouter provider (stage 2) |
+| `crates/model-gateway/src/providers/literouter.rs` | LiteRouter provider |
 | `docker-compose.yml` | Local deployment |

@@ -14,7 +14,7 @@ Browser
 EvoHime Server (crates/server)
 ├── Agent Runtime (crates/agent-runtime)
 ├── Task Engine (crates/task-engine)
-├── Model Gateway (crates/model-gateway) — phase 2
+├── Model Gateway (crates/model-gateway) — LiteRouter + mock
 ├── Tool Runtime (crates/tool-runtime)
 ├── Permission Engine (crates/permissions)
 ├── Project Index (crates/project-index) — phase 6
@@ -22,14 +22,14 @@ EvoHime Server (crates/server)
 └── Storage (crates/storage)
 ```
 
-## Stage 1 vertical slice
+## End-to-end foundation
 
 ```text
 User message
   → POST /api/sessions + WS /ws/:session_id
   → task-engine creates task
-  → agent-runtime orchestrates demo flow
-  → tool-runtime executes filesystem.read
+  → agent-runtime loads history and runs the agent loop
+  → tool-runtime executes sandboxed tools
   → events persisted in PostgreSQL
   → browser renders chat + event timeline
 ```
@@ -62,11 +62,11 @@ docker compose up --build
 | Stage | Scope | Status |
 | --- | --- | --- |
 | 1 | Monorepo, server, web UI, PostgreSQL, WebSocket protocol | ✅ Done |
-| 2 | Chat with model, streaming, sessions/history | 🔜 Next |
-| 3 | Filesystem/shell tools, terminal, permissions | Planned |
-| 4 | Monaco editor, file tree, Git diff | Planned |
-| 5 | Task planning, parallel tools, cancel/resume | Planned |
-| 6 | Project index, MCP, multi-model, Python workers | Planned |
+| 2 | Chat with model, streaming, sessions/history | ✅ Done |
+| 3 | Filesystem/shell tools, terminal, permissions | 🟡 Backend base |
+| 4 | Monaco editor, file tree, Git diff | 🟡 Git backend |
+| 5 | Task planning, parallel tools, cancel/resume | 🟡 Lifecycle base |
+| 6 | Project index, MCP, multi-model, Python workers | 📋 Planned |
 
 - [development-plan.md](development-plan.md) — полный план
 - [roadmap.md](roadmap.md) — дорожная карта с milestones

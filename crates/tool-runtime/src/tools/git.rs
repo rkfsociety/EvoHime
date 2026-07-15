@@ -4,6 +4,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{process::Stdio, time::Duration};
 use tokio::process::Command;
+use uuid::Uuid;
 
 pub const STATUS_NAME: &str = "git.status";
 pub const STATUS_DESCRIPTION: &str = "Show repository status";
@@ -199,7 +200,14 @@ mod tests {
         );
         run(dir.path(), &["git", "config", "user.name", "Dev User"]);
         let workspace_root = dir.path().to_path_buf();
-        (dir, ToolContext { workspace_root }, "main".to_string())
+        (
+            dir,
+            ToolContext {
+                workspace_root,
+                task_id: Uuid::nil(),
+            },
+            "main".to_string(),
+        )
     }
 
     #[tokio::test]

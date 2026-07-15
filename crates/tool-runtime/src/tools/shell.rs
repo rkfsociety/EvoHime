@@ -58,6 +58,7 @@ pub async fn execute(
     command
         .args(&input.args)
         .current_dir(cwd.clone())
+        .kill_on_drop(true)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -71,8 +72,14 @@ pub async fn execute(
             .min(TIMEOUT.as_millis() as u64),
     );
     let result = select! {
-        _ = cancellation.cancelled() => return Err(ToolError::Execution("tool cancelled".into())),
-        result = timeout(duration, child.wait_with_output()) => result.map_err(|_| ToolError::TimedOut(duration))?.map_err(|e| ToolError::Execution(format!("process failed: {e}")))?
+        _ = cancellation.cancelled() => {
+            return Err(ToolError::Execution("tool cancelled".into()));
+        }
+        result = timeout(duration, child.wait_with_output()) => {
+            result
+                .map_err(|_| ToolError::TimedOut(duration))?
+                .map_err(|e| ToolError::Execution(format!("process failed: {e}")))?
+        }
     };
     let stdout = String::from_utf8_lossy(&result.stdout)
         .chars()
@@ -82,8 +89,34 @@ pub async fn execute(
         .chars()
         .take(MAX_OUTPUT)
         .collect::<String>();
+    let exit_code = result.status.code();
+    let output = format!(
+        "program: {}\ncwd: {}\nexit_code: {}\nstdout:\n{}\nstderr:\n{}",
+        input.program,
+        cwd.display(),
+        exit_code
+            .map(|code| code.to_string())
+            .unwrap_or_else(|| "terminated".to_string()),
+        if stdout.is_empty() {
+            "<empty>"
+        } else {
+            &stdout
+        },
+        if stderr.is_empty() {
+            "<empty>"
+        } else {
+            &stderr
+        }
+    );
     Ok(ToolResult {
-        output: format!("{stdout}{stderr}"),
-        structured: json!({"cwd": cwd.display().to_string(), "stdout": stdout, "stderr": stderr, "exit_code": result.status.code(), "timed_out": false}),
+        output,
+        structured: json!({
+            "program": input.program,
+            "cwd": cwd.display().to_string(),
+            "stdout": stdout,
+            "stderr": stderr,
+            "exit_code": exit_code,
+            "timed_out": false
+        }),
     })
 }

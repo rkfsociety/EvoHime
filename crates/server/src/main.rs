@@ -428,6 +428,12 @@ async fn handle_socket(
                         ClientCommand::ApprovalGranted { approval_id } => {
                             let granted = true;
                             let status = state.permissions.resolve(approval_id, granted).await;
+                            let task_id = state
+                                .permissions
+                                .approval(approval_id)
+                                .await
+                                .map(|(request, _)| request.task_id)
+                                .unwrap_or(Uuid::nil());
                             let detail = if status.is_some() {
                                 "Approval granted"
                             } else {
@@ -436,9 +442,9 @@ async fn handle_socket(
                             emit_event(
                                 &state,
                                 session_id,
-                                None,
+                                Some(task_id),
                                 ServerEvent::ActionLogged {
-                                    task_id: Uuid::nil(),
+                                    task_id,
                                     action: "approval.granted".into(),
                                     detail: detail.into(),
                                     created_at: chrono::Utc::now(),
@@ -448,6 +454,12 @@ async fn handle_socket(
                         }
                         ClientCommand::ApprovalDenied { approval_id } => {
                             let status = state.permissions.resolve(approval_id, false).await;
+                            let task_id = state
+                                .permissions
+                                .approval(approval_id)
+                                .await
+                                .map(|(request, _)| request.task_id)
+                                .unwrap_or(Uuid::nil());
                             let detail = if status.is_some() {
                                 "Approval denied"
                             } else {
@@ -456,9 +468,9 @@ async fn handle_socket(
                             emit_event(
                                 &state,
                                 session_id,
-                                None,
+                                Some(task_id),
                                 ServerEvent::ActionLogged {
-                                    task_id: Uuid::nil(),
+                                    task_id,
                                     action: "approval.denied".into(),
                                     detail: detail.into(),
                                     created_at: chrono::Utc::now(),

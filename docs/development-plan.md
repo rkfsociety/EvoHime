@@ -63,15 +63,15 @@ EvoHime Server — Rust
 
 ## Фактический статус на 2026-07-15
 
-Этапы 1 и 2 завершены. В репозитории также появились заделы следующих этапов:
+Этапы 1 и 2 завершены. Этапы 3-5 частично реализованы на уровне backend и протокола:
 
-- Git-инструменты `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push` уже реализованы в `tool-runtime` и покрыты тестами;
+- файловые инструменты `filesystem.read`, `filesystem.write`, `filesystem.patch`, `filesystem.search`, shell `shell.execute` и Git-инструменты `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push` уже реализованы в `tool-runtime`;
 - task-engine и storage поддерживают жизненный цикл задач, статусы шагов, checkpoint API и поиск задач для recovery;
 - протокол содержит команды `task.cancel`, `task.resume`, `task.retry`, а frontend уже отображает панели Tasks и Actions;
-- `permissions` пока содержит только типы разрешений — полноценный approval flow ещё не подключён;
+- `permissions` содержит policy engine и one-shot решения; генерация `approval.required` и сквозное продолжение после ответа UI ещё не подключены;
 - `project-index` и Python worker пока являются каркасами.
 
-Следующий сквозной приоритет — этап 3: безопасные операции записи, shell, разрешения и терминал.
+Следующий сквозной приоритет — этап 3: подключить существующие tools к общему LLM tool-calling циклу, завершить approval flow и вывести shell в терминал.
 
 ---
 
@@ -115,10 +115,10 @@ task.step.changed
 action.logged
 ```
 
-### События (запланированные)
+### События (ожидают сквозной интеграции)
 
 ```text
-approval.required
+approval.required       — схема и UI готовы, server emission впереди
 ```
 
 ### Команды клиента
@@ -152,10 +152,10 @@ task.retry            — повторить failed-задачу (этап 5)
 | Инструмент | Этап | Статус |
 | --- | --- | --- |
 | `filesystem.read` | 1 | ✅ |
-| `filesystem.write` | 3 | — |
-| `filesystem.patch` | 3 | — |
-| `filesystem.search` | 3 | — |
-| `shell.execute` | 3 | — |
+| `filesystem.write` | 3 | ✅ Backend |
+| `filesystem.patch` | 3 | ✅ Backend |
+| `filesystem.search` | 3 | ✅ Backend |
+| `shell.execute` | 3 | ✅ Backend |
 | `git.status` | 4 | ✅ Backend |
 | `git.diff` | 4 | ✅ Backend |
 | `git.commit` | 4 | ✅ Backend |
@@ -248,15 +248,14 @@ LITEROUTER_MODEL=deepseek:free
 - UI панели Settings с текущей конфигурацией модели;
 - тесты model-gateway и agent-runtime.
 
-### Этап 3 — Инструменты, shell, терминал, разрешения 🔜
+### Этап 3 — Инструменты, shell, терминал, разрешения 🟡
 
-- `filesystem.write`, `filesystem.patch`, `filesystem.search`
-- `shell.execute` с песочницей
-- xterm.js терминал в UI
-- Permission engine + `approval.required`
+- подключить `filesystem.write`, `filesystem.patch`, `filesystem.search`, `shell.execute` к LLM tool-calling
+- завершить server emission `approval.required` и resume после `approval.granted` / `approval.denied`
+- xterm.js терминал и поток shell output в UI
 - UI настроек разрешений
 
-**Результат:** агент может читать/писать файлы и выполнять команды с подтверждением.
+**Результат:** агент может читать/писать файлы и выполнять команды с подтверждением в браузере.
 
 ### Этап 4 — Редактор, файлы, Git 🟡
 

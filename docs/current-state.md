@@ -2,7 +2,7 @@
 
 Last updated: 2026-07-15
 
-## Stage: 2 (Milestone 1 complete)
+## Stage: 2 complete, stages 3-5 foundations in place
 
 ## Crates
 
@@ -11,11 +11,11 @@ Last updated: 2026-07-15
 | `server` | Active | HTTP + WebSocket, `/api/models/config` |
 | `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema |
 | `storage` | Active | Sessions, tasks, events, **session_messages** |
-| `tool-runtime` | Active | Registry + sandboxed `filesystem.read/write/patch/search` and `shell.execute` |
+| `tool-runtime` | Active | Registry + sandboxed filesystem, shell, and Git tools |
 | `agent-runtime` | Active | `agent_loop.rs` — LLM + tools |
 | `model-gateway` | Active | **LiteRouter** SSE streaming + mock provider |
-| `task-engine` | Active | start/complete/fail task wrappers |
-| `permissions` | Active | ask/allow/deny policy and one-shot approvals |
+| `task-engine` | Active | lifecycle wrappers, steps, checkpoints, cancel/resume/retry foundation |
+| `permissions` | Active | ask/allow/deny policy and one-shot approvals; server event delivery remains |
 | `project-index` | Scaffold | Stage 6 |
 
 ## API endpoints
@@ -27,6 +27,8 @@ Last updated: 2026-07-15
 | POST | `/api/sessions` | Create session + bootstrap events |
 | GET | `/api/sessions/:id/history` | Event history |
 | WS | `/ws/:session_id` | Real-time streaming events |
+
+The current API is intentionally small. File browsing/editing, terminal streaming, Git views, and approval resolution still need dedicated end-to-end HTTP/WebSocket flows.
 
 ## Agent flow
 
@@ -64,15 +66,17 @@ user.message
 | Chat | ✅ Active |
 | Settings | ✅ Active (read-only model config) |
 | Events timeline | ✅ Active |
-| Files, Editor, Terminal, Git, Tasks, Actions | Placeholder |
+| Tasks | ✅ Basic list/status view |
+| Actions | ✅ Basic action log |
+| Files, Editor, Terminal, Git | Placeholder |
 
 ## Tests
 
 - `crates/model-gateway` — mock stream, LiteRouter SSE (wiremock)
 - `crates/agent-runtime` — agent loop with mock gateway
 - `crates/protocol` — event serialization
-- `crates/tool-runtime` — filesystem.read
+- `crates/tool-runtime` — filesystem, shell, and Git tool coverage
 
 ## Next recommended step
 
-**Stage 3 / Milestone 2**: backend tools, sandbox, approval protocol/UI and xterm.js foundation are implemented; full LLM tool-calling orchestration and end-to-end approval resume remain to be wired.
+**Stage 3 / Milestone 2**: wire the existing tool registry into general LLM tool calls, emit `approval.required` from the server, resume paused tasks after approval, and connect terminal output to the browser. Then complete file/editor/Git UI and task recovery as separate vertical slices.

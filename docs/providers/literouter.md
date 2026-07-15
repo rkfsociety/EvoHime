@@ -1,6 +1,6 @@
 # LiteRouter — первый LLM-провайдер EvoHime
 
-> **Статус:** запланирован (этап 2, Milestone 1)  
+> **Статус:** активен (этап 2, Milestone 1 завершён)
 > **Приоритет:** первый провайдер для `model-gateway`
 
 LiteRouter — OpenAI-compatible API. EvoHime использует его как основной провайдер на этапе 2.

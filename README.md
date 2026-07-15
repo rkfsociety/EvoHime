@@ -23,22 +23,25 @@ evohime/
 │   ├── permissions/       # Permission types
 │   ├── protocol/          # Shared event schema
 │   └── storage/           # PostgreSQL access
-├── workers/python/        # Future ML workers
+├── workers/python/        # Planned ML workers (stage 6)
 ├── migrations/            # SQL migrations
 ├── docker/                # Container images
-└── docs/                  # Architecture notes
+└── docs/                  # Architecture, roadmap, and status
 ```
 
-## Vertical slice (stage 1)
+## Current state
 
 ```text
 User message
   → task created
-  → streamed agent response
-  → filesystem.read executed
+  → agent loop loads history
+  → filesystem tool reads the workspace
+  → streamed model response
   → events shown in browser
   → history stored in PostgreSQL
 ```
+
+LiteRouter is the active model provider. The tool runtime currently includes sandboxed filesystem read/write/patch/search, shell execution, and Git operations. Task lifecycle, task steps, checkpoints, cancel/resume/retry commands, and the Tasks/Actions UI are present at foundation level. Approval delivery, end-to-end tool-calling orchestration, terminal streaming, file editor, and Git UI still need completion.
 
 ## Local development
 
@@ -81,10 +84,10 @@ See `.env.example`:
 - `BIND_ADDR`
 - `WORKSPACE_ROOT`
 - `DEMO_FILE_PATH`
-- `LITEROUTER_API_KEY` — LiteRouter API key (stage 2)
+- `LITEROUTER_API_KEY` — LiteRouter API key
 - `LITEROUTER_MODEL` — default `deepseek:free`
 
-## Next stages
+## Documentation
 
 - [docs/development-plan.md](docs/development-plan.md) — полный план разработки
 - [docs/providers/literouter.md](docs/providers/literouter.md) — первый LLM-провайдер (LiteRouter)
@@ -92,3 +95,5 @@ See `.env.example`:
 - [docs/current-state.md](docs/current-state.md) — текущий статус
 - [docs/architecture.md](docs/architecture.md) — архитектура
 - [AGENTS.md](AGENTS.md) — гайд для AI-агентов
+
+The implementation status is tracked in [docs/current-state.md](docs/current-state.md). The roadmap separates backend foundations from end-to-end browser milestones.

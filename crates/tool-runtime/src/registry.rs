@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 use crate::tools;
 
@@ -30,6 +31,7 @@ pub enum ToolError {
 #[derive(Debug, Clone)]
 pub struct ToolContext {
     pub workspace_root: PathBuf,
+    pub task_id: Uuid,
 }
 
 impl ToolContext {
@@ -159,7 +161,7 @@ impl ToolRegistry {
                 PermissionDecision::NeedsApproval => {
                     let approval = self
                         .permissions
-                        .create_approval(uuid::Uuid::nil(), name, *permission, "workspace")
+                        .create_approval(ctx.task_id, name, *permission, "workspace")
                         .await;
                     return Err(ToolError::NeedsApproval {
                         tool: name.to_string(),
@@ -257,6 +259,7 @@ mod tests {
         let registry = ToolRegistry::bootstrap();
         let context = ToolContext {
             workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
         };
         let results = registry
             .execute_parallel(
@@ -285,6 +288,7 @@ mod tests {
         let registry = ToolRegistry::bootstrap();
         let context = ToolContext {
             workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
         };
         let token = tokio_util::sync::CancellationToken::new();
         token.cancel();

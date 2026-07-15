@@ -103,6 +103,7 @@ pub async fn run_agent_loop(
     let relative_path = relative_workspace_path(&config.workspace_root, &config.demo_file_path);
     let tool_ctx = ToolContext {
         workspace_root: config.workspace_root.clone(),
+        task_id: config.task_id,
     };
     let tool_result = tools
         .execute(

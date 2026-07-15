@@ -181,6 +181,7 @@ async fn git_snapshot_with_path_and_session(
 ) -> Result<GitSnapshot, ApiError> {
     let ctx = evohime_tool_runtime::ToolContext {
         workspace_root: state.workspace_root.clone(),
+        task_id: Uuid::nil(),
     };
 
     let status = state
