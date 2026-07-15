@@ -665,6 +665,21 @@ export function App() {
   }, [selectedProject]);
 
   useEffect(() => {
+    const closeFloatingMenus = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest(".composerMenu")) {
+        setWorkModeOpen(false);
+        setModelPickerOpen(false);
+      }
+      if (!target?.closest(".projectContext")) {
+        setProjectPickerOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", closeFloatingMenus);
+    return () => document.removeEventListener("pointerdown", closeFloatingMenus);
+  }, []);
+
+  useEffect(() => {
     const route = modelDrafts.find((item) => item.name === "orchestrator");
     if (!route) {
       return;
@@ -2584,7 +2599,7 @@ export function App() {
                 <button
                   type="button"
                   className={workMode === "allow" ? "workModeSelect workModeAllow" : "workModeSelect"}
-                  onClick={() => setWorkModeOpen((open) => !open)}
+                  onClick={() => { setModelPickerOpen(false); setWorkModeOpen((open) => !open); }}
                   disabled={permissionModeSaving || Object.keys(permissionSettings).length === 0}
                   aria-label="Режим работы агента"
                   aria-expanded={workModeOpen}
@@ -2624,7 +2639,7 @@ export function App() {
                 <button
                   type="button"
                   className="composerModelSelect"
-                  onClick={() => setModelPickerOpen((open) => !open)}
+                  onClick={() => { setWorkModeOpen(false); setModelPickerOpen((open) => !open); }}
                   disabled={composerModelsLoading || composerModels.length === 0}
                   aria-label="Модель агента"
                   aria-expanded={modelPickerOpen}
