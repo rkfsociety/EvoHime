@@ -133,6 +133,18 @@ impl ToolRegistry {
             permissions: tools::mcp::PERMISSIONS,
             timeout: tools::mcp::TIMEOUT,
         });
+        registry.register(ToolDefinition {
+            name: tools::browser::OPEN_NAME,
+            description: tools::browser::OPEN_DESCRIPTION,
+            permissions: tools::browser::OPEN_PERMISSIONS,
+            timeout: tools::browser::OPEN_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::browser::EXTRACT_NAME,
+            description: tools::browser::EXTRACT_DESCRIPTION,
+            permissions: tools::browser::EXTRACT_PERMISSIONS,
+            timeout: tools::browser::EXTRACT_TIMEOUT,
+        });
         registry
     }
 
@@ -266,18 +278,20 @@ mod tests {
     fn bootstrap_registers_filesystem_read() {
         let registry = ToolRegistry::bootstrap();
         let tools = registry.list();
-        assert_eq!(tools.len(), 11);
-        assert_eq!(tools[0].name, "filesystem.patch");
-        assert_eq!(tools[1].name, "filesystem.read");
-        assert_eq!(tools[2].name, "filesystem.search");
-        assert_eq!(tools[3].name, "filesystem.write");
-        assert_eq!(tools[4].name, "git.commit");
-        assert_eq!(tools[5].name, "git.diff");
-        assert_eq!(tools[6].name, "git.pull");
-        assert_eq!(tools[7].name, "git.push");
-        assert_eq!(tools[8].name, "git.status");
-        assert_eq!(tools[9].name, "mcp.call");
-        assert_eq!(tools[10].name, "shell.execute");
+        assert_eq!(tools.len(), 13);
+        assert_eq!(tools[0].name, "browser.extract");
+        assert_eq!(tools[1].name, "browser.open");
+        assert_eq!(tools[2].name, "filesystem.patch");
+        assert_eq!(tools[3].name, "filesystem.read");
+        assert_eq!(tools[4].name, "filesystem.search");
+        assert_eq!(tools[5].name, "filesystem.write");
+        assert_eq!(tools[6].name, "git.commit");
+        assert_eq!(tools[7].name, "git.diff");
+        assert_eq!(tools[8].name, "git.pull");
+        assert_eq!(tools[9].name, "git.push");
+        assert_eq!(tools[10].name, "git.status");
+        assert_eq!(tools[11].name, "mcp.call");
+        assert_eq!(tools[12].name, "shell.execute");
     }
 
     #[tokio::test]

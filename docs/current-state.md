@@ -11,7 +11,7 @@ Last updated: 2026-07-15
 | `server` | Active | HTTP + WebSocket, workspace file and Git APIs |
 | `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema |
 | `storage` | Active | Sessions, tasks, events, **session_messages**, **session_memory** |
-| `tool-runtime` | Active | Registry + sandboxed filesystem, shell, Git, and MCP call tools |
+| `tool-runtime` | Active | Registry + sandboxed filesystem, shell, Git, browser, and MCP call tools |
 | `agent-runtime` | Active | `agent_loop.rs` — LLM + tool planning parser + project/memory context |
 | `model-gateway` | Active | Route-based gateway, **LiteRouter** + OpenAI-compatible endpoints, and mock provider |
 | `task-engine` | Active | lifecycle wrappers, dependency batching, checkpoints, cancel/resume/retry foundation |
@@ -93,11 +93,11 @@ user.message
 - `crates/model-gateway` — route-based mock stream, LiteRouter SSE (wiremock)
 - `crates/agent-runtime` — agent loop with mock gateway, plan parser fallback
 - `crates/protocol` — event serialization
-- `crates/tool-runtime` — filesystem, shell, and Git tool coverage
+- `crates/tool-runtime` — filesystem, shell, Git, browser, and MCP tool coverage
 - `crates/task-engine` — cancel/resume/retry state machine, dependency batching
 - `crates/server` — task plan persistence and step status propagation
 - `crates/permissions` — policy engine and approval flow
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: continue with MCP management UI, Python workers, browser automation tools, and any remaining route-specific settings after the project index, MCP call bridge, session memory, and task-scoped multi-model routing slice.
+**Stage 6 / Milestone 5**: continue with MCP management UI, Python workers, and any remaining route-specific settings after the project index, MCP call bridge, session memory, task-scoped multi-model routing slice, and browser automation tools.

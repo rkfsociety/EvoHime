@@ -174,7 +174,7 @@
 | 6.5 | Agent memory (persistent context) | ✅ `crates/storage/`, `crates/agent-runtime/` |
 | 6.6 | Multi-model routing: task-scoped routes + OpenAI-compatible providers | ✅ `crates/model-gateway/`, `frontend/web/`, `crates/server/` |
 | 6.7 | Python workers (HTTP/queue) | `workers/python/` |
-| 6.8 | `browser.open`, `browser.extract` | `crates/tool-runtime/` |
+| 6.8 | `browser.open`, `browser.extract` | ✅ `crates/tool-runtime/` |
 | 6.9 | Settings: models, permissions, MCP, tools | `frontend/web/` |
 | 6.10 | Тесты: index, MCP, workers | respective crates |
 
@@ -214,8 +214,8 @@
 | `git.commit` | 4 | M3 | ✅ Backend |
 | `git.pull` | 4 | M3 | ✅ Backend |
 | `git.push` | 4 | M3 | ✅ Backend |
-| `browser.open` | 6 | M5 | — |
-| `browser.extract` | 6 | M5 | — |
+| `browser.open` | 6 | M5 | ✅ |
+| `browser.extract` | 6 | M5 | ✅ |
 | `mcp.call` | 6 | M5 | — |
 
 ---
