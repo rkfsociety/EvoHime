@@ -59,7 +59,7 @@
 - [ ] **Step 2: Run** `cargo test -p evohime-tool-runtime filesystem::tests::writes`; expected: FAIL.
 - [ ] **Step 3: Implement write through `resolve_for_write`**, create parent directories only after validation, write UTF-8 content, and report change type.
 - [ ] **Step 4: Register the tool with `FilesystemWrite` and a 10-second timeout.**
-- [ ] **Step 5: Run targeted and full tool-runtime tests; commit** `feat: add filesystem write tool`.
+- [ ] **Step 5: Run** `cargo test -p evohime-tool-runtime filesystem`; then run `cargo test -p evohime-tool-runtime`; commit `feat: add filesystem write tool`.
 
 ### Task 3: filesystem.patch and filesystem.search
 
@@ -146,7 +146,7 @@
 - [ ] **Step 2: Add failing component tests or deterministic reducer tests** for approval-required state, grant/deny payloads, and shell output accumulation.
 - [ ] **Step 3: Implement terminal state derived from `tool.output` and `tool.completed`; keep raw events as the source of truth.**
 - [ ] **Step 4: Implement modal and WebSocket command handlers; never render untrusted scope as executable HTML.**
-- [ ] **Step 5: Replace Terminal placeholder and add approval modal overlay; run** `cd frontend/web; npm run build`.
+- [ ] **Step 5: Replace Terminal placeholder and add approval modal overlay; from `frontend/web` run** `npm run build`.
 - [ ] **Step 6: Commit** `feat: add terminal and approval UI`.
 
 ### Task 7: Permission settings
@@ -172,14 +172,13 @@
 
 **Files:**
 - Modify: `docs/roadmap.md`
-- Modify: `docs/current-state.md` if stage status is tracked there
-- Modify: `README.md` only if command documentation is stale
+- Modify: `docs/current-state.md`
 - Test: repository verification commands
 
 - [ ] **Step 1: Run** `cargo fmt --all -- --check`.
 - [ ] **Step 2: Run** `cargo test --workspace`.
 - [ ] **Step 3: Run** `npm run generate:protocol` and verify generated diff is intentional.
-- [ ] **Step 4: Run** `cd frontend/web; npm run build`.
+- [ ] **Step 4: From `frontend/web`, run** `npm run build`.
 - [ ] **Step 5: Execute a real local smoke flow**: start server with a temp workspace, issue write/search/shell calls, verify approval.required, grant/deny, and inspect returned filesystem/output state.
 - [ ] **Step 6: Mark deliverables 3.1–3.11 complete only when the smoke flow and tests pass; run `git diff --check` and verify no generated file was hand-edited.**
 - [ ] **Step 7: Commit** `docs: mark stage 3 complete`.
