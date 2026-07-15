@@ -26,14 +26,14 @@ use evohime_tool_runtime::ToolError;
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde_json::{json, to_value, Value};
 use sqlx::PgPool;
-use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::sync::{mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
 use tower_http::cors::CorsLayer;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use crate::app::{AppConfig, AppState};
+use crate::app::{AppConfig, AppState, McpServerConfig};
 
 #[derive(Debug, thiserror::Error)]
 enum ApiError {
@@ -111,6 +111,7 @@ async fn main() -> anyhow::Result<()> {
         permissions,
         model_gateway,
         model_config: config.model_config.clone(),
+        mcp_servers: Arc::new(Mutex::new(config.mcp_servers.clone())),
         session_buses: Arc::new(Mutex::new(HashMap::new())),
         task_cancellations: Arc::new(Mutex::new(HashMap::new())),
     });
@@ -200,6 +201,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/tasks", get(list_tasks))
         .route("/api/permissions", get(list_permissions))
         .route("/api/permissions/:permission", put(update_permission))
+        .route("/api/tools", get(list_tools))
+        .route(
+            "/api/mcp/servers",
+            get(list_mcp_servers).put(update_mcp_servers),
+        )
         .route("/ws/:session_id", get(ws_handler))
         .layer(CorsLayer::permissive())
         .with_state(state.clone());
@@ -250,6 +256,49 @@ async fn list_permissions(State(state): State<Arc<AppState>>) -> Json<Value> {
     Json(Value::Object(result))
 }
 
+#[derive(serde::Serialize)]
+struct ToolSummary {
+    name: String,
+    description: String,
+    permissions: Vec<String>,
+    timeout_ms: u64,
+}
+
+async fn list_tools(State(state): State<Arc<AppState>>) -> Json<Vec<ToolSummary>> {
+    let tools = state
+        .tools
+        .list()
+        .into_iter()
+        .map(|tool| ToolSummary {
+            name: tool.name.to_string(),
+            description: tool.description.to_string(),
+            permissions: tool
+                .permissions
+                .iter()
+                .map(|permission| permission_name(*permission).to_string())
+                .collect(),
+            timeout_ms: duration_to_ms(tool.timeout),
+        })
+        .collect();
+    Json(tools)
+}
+
+async fn list_mcp_servers(State(state): State<Arc<AppState>>) -> Json<Vec<McpServerConfig>> {
+    Json(state.mcp_servers.lock().await.clone())
+}
+
+async fn update_mcp_servers(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<Vec<McpServerConfig>>,
+) -> Result<Json<Vec<McpServerConfig>>, ApiError> {
+    let servers = body
+        .into_iter()
+        .map(validate_mcp_server)
+        .collect::<Result<Vec<_>, _>>()?;
+    *state.mcp_servers.lock().await = servers.clone();
+    Ok(Json(servers))
+}
+
 async fn update_permission(
     State(state): State<Arc<AppState>>,
     Path(permission): Path<String>,
@@ -287,6 +336,40 @@ fn permission_name(permission: Permission) -> &'static str {
         Permission::BrowserAccess => "browser_access",
         Permission::McpCall => "mcp_call",
     }
+}
+
+fn duration_to_ms(duration: Duration) -> u64 {
+    duration.as_millis().min(u128::from(u64::MAX)) as u64
+}
+
+fn validate_mcp_server(mut server: McpServerConfig) -> Result<McpServerConfig, ApiError> {
+    server.name = server.name.trim().to_string();
+    server.url = server.url.trim().to_string();
+    if server.name.is_empty() {
+        return Err(ApiError::BadRequest("mcp server name is required".into()));
+    }
+
+    let parsed = url::Url::parse(&server.url)
+        .map_err(|error| ApiError::BadRequest(format!("invalid MCP server url: {error}")))?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        _ => {
+            return Err(ApiError::BadRequest(
+                "mcp server url must use http or https".into(),
+            ))
+        }
+    }
+
+    if let Some(description) = server.description.as_mut() {
+        let trimmed = description.trim().to_string();
+        if trimmed.is_empty() {
+            server.description = None;
+        } else {
+            *description = trimmed;
+        }
+    }
+
+    Ok(server)
 }
 
 async fn create_session(

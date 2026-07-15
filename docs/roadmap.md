@@ -170,12 +170,12 @@
 | 6.1 | Project index (embedding / ripgrep) | ✅ `crates/project-index/` |
 | 6.2 | Контекстный поиск для агента | ✅ `crates/agent-runtime/` |
 | 6.3 | `mcp.call` tool | ✅ `crates/tool-runtime/` |
-| 6.4 | MCP server management UI | `frontend/web/` |
+| 6.4 | MCP server management UI | ✅ `frontend/web/`, `crates/server/` |
 | 6.5 | Agent memory (persistent context) | ✅ `crates/storage/`, `crates/agent-runtime/` |
 | 6.6 | Multi-model routing: task-scoped routes + OpenAI-compatible providers | ✅ `crates/model-gateway/`, `frontend/web/`, `crates/server/` |
 | 6.7 | Python workers (HTTP/queue) | `workers/python/` |
 | 6.8 | `browser.open`, `browser.extract` | ✅ `crates/tool-runtime/` |
-| 6.9 | Settings: models, permissions, MCP, tools | `frontend/web/` |
+| 6.9 | Settings: models, permissions, MCP, tools | ✅ `frontend/web/`, `crates/server/` |
 | 6.10 | Тесты: index, MCP, workers | respective crates |
 
 ### Критерий готовности
@@ -216,7 +216,7 @@
 | `git.push` | 4 | M3 | ✅ Backend |
 | `browser.open` | 6 | M5 | ✅ |
 | `browser.extract` | 6 | M5 | ✅ |
-| `mcp.call` | 6 | M5 | — |
+| `mcp.call` | 6 | M5 | ✅ |
 
 ---
 

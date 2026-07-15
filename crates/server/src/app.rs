@@ -3,6 +3,7 @@ use evohime_model_gateway::{ModelConfigResponse, ModelGateway, ModelGatewayConfi
 use evohime_permissions::PermissionEngine;
 use evohime_protocol::ServerEvent;
 use evohime_tool_runtime::ToolRegistry;
+use serde::{Deserialize, Serialize};
 use serde_json::to_value;
 use sqlx::PgPool;
 use std::{collections::HashMap, env, path::PathBuf, sync::Arc};
@@ -17,6 +18,7 @@ pub struct AppConfig {
     pub demo_file_path: PathBuf,
     pub workspace_root: PathBuf,
     pub model_config: ModelGatewayConfig,
+    pub mcp_servers: Vec<McpServerConfig>,
 }
 
 impl AppConfig {
@@ -32,6 +34,10 @@ impl AppConfig {
             .map(PathBuf::from)
             .unwrap_or_else(|_| workspace_root.join("docs/sample-context.md"));
         let model_config = ModelGatewayConfig::from_env()?;
+        let mcp_servers = match env::var("MCP_SERVERS_JSON") {
+            Ok(value) => serde_json::from_str::<Vec<McpServerConfig>>(&value)?,
+            Err(_) => Vec::new(),
+        };
 
         Ok(Self {
             database_url,
@@ -39,8 +45,23 @@ impl AppConfig {
             demo_file_path,
             workspace_root,
             model_config,
+            mcp_servers,
         })
     }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct McpServerConfig {
+    pub name: String,
+    pub url: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Clone)]
@@ -52,6 +73,7 @@ pub struct AppState {
     pub permissions: PermissionEngine,
     pub model_gateway: Option<Arc<ModelGateway>>,
     pub model_config: ModelGatewayConfig,
+    pub mcp_servers: Arc<Mutex<Vec<McpServerConfig>>>,
     pub session_buses: Arc<Mutex<HashMap<Uuid, broadcast::Sender<ServerEvent>>>>,
     pub task_cancellations: Arc<Mutex<HashMap<Uuid, CancellationToken>>>,
 }

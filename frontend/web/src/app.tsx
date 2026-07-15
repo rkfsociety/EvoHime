@@ -78,6 +78,18 @@ type TaskView = { id: string; message: string; status: string; steps: Record<str
 type ActionView = { taskId: string; action: string; detail: string; createdAt: string };
 type PermissionMode = "ask" | "allow" | "deny";
 type PermissionSettings = Record<string, { mode: PermissionMode }>;
+type ToolDefinition = {
+  name: string;
+  description: string;
+  permissions: string[];
+  timeout_ms: number;
+};
+type McpServerConfig = {
+  name: string;
+  url: string;
+  enabled: boolean;
+  description?: string | null;
+};
 
 const initialLines: ChatLine[] = [
   {
@@ -203,6 +215,12 @@ export function App() {
   const [approval, setApproval] = useState<ApprovalRequiredEvent | null>(null);
   const [terminalEntries, setTerminalEntries] = useState<TerminalEntry[]>([]);
   const [permissionSettings, setPermissionSettings] = useState<PermissionSettings>({});
+  const [toolCatalog, setToolCatalog] = useState<ToolDefinition[]>([]);
+  const [toolCatalogError, setToolCatalogError] = useState<string | null>(null);
+  const [mcpServers, setMcpServers] = useState<McpServerConfig[]>([]);
+  const [mcpServersError, setMcpServersError] = useState<string | null>(null);
+  const [mcpServersSaving, setMcpServersSaving] = useState(false);
+  const [mcpServersNotice, setMcpServersNotice] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const applyEventRef = useRef<(event: ServerEvent) => void>(() => undefined);
   const saveFileRef = useRef<() => void>(() => undefined);
@@ -221,6 +239,40 @@ export function App() {
       }
     };
     fetch("/api/permissions").then((response) => response.json()).then((data: PermissionSettings) => setPermissionSettings(data)).catch(() => undefined);
+    fetch("/api/tools")
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Failed to load tool catalog");
+        }
+        return response.json();
+      })
+      .then((data: ToolDefinition[]) => {
+        if (!cancelled) {
+          setToolCatalog(data);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setToolCatalogError(String(error));
+        }
+      });
+    fetch("/api/mcp/servers")
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Failed to load MCP servers");
+        }
+        return response.json();
+      })
+      .then((data: McpServerConfig[]) => {
+        if (!cancelled) {
+          setMcpServers(data);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setMcpServersError(String(error));
+        }
+      });
 
     loadModelConfig().catch((error) => {
       if (!cancelled) {
@@ -559,6 +611,57 @@ export function App() {
     setPermissionSettings((current) => ({ ...current, [name]: { mode } }));
   }
 
+  async function saveMcpServers() {
+    setMcpServersSaving(true);
+    setMcpServersNotice(null);
+    try {
+      const response = await fetch("/api/mcp/servers", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(mcpServers),
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const data = (await response.json()) as McpServerConfig[];
+      setMcpServers(data);
+      setMcpServersNotice("MCP-серверы сохранены.");
+    } catch (error) {
+      setMcpServersNotice(`Не удалось сохранить MCP-серверы: ${String(error)}`);
+    } finally {
+      setMcpServersSaving(false);
+    }
+  }
+
+  function addMcpServer() {
+    setMcpServers((current) => [
+      ...current,
+      {
+        name: "",
+        url: "https://",
+        enabled: true,
+        description: "",
+      },
+    ]);
+  }
+
+  function updateMcpServer(index: number, patch: Partial<McpServerConfig>) {
+    setMcpServers((current) =>
+      current.map((server, currentIndex) =>
+        currentIndex === index
+          ? {
+              ...server,
+              ...patch,
+            }
+          : server,
+      ),
+    );
+  }
+
+  function removeMcpServer(index: number) {
+    setMcpServers((current) => current.filter((_, currentIndex) => currentIndex !== index));
+  }
+
   async function openFile(path: string) {
     try {
       setActivePanel("editor");
@@ -756,55 +859,165 @@ export function App() {
     if (activePanel === "settings") {
       return (
         <div className="settingsPanel">
-          <h3>Model provider</h3>
-          {modelConfigError ? (
-            <p className="settingsError">{modelConfigError}</p>
-          ) : null}
-          {modelConfig ? (
-            <dl className="settingsGrid">
+          <section className="settingsSection">
+            <h3>Model provider</h3>
+            {modelConfigError ? <p className="settingsError">{modelConfigError}</p> : null}
+            {modelConfig ? (
+              <dl className="settingsGrid">
+                <div>
+                  <dt>Default route</dt>
+                  <dd>{modelConfig.default_route}</dd>
+                </div>
+                <div>
+                  <dt>Provider</dt>
+                  <dd>{modelConfig.provider}</dd>
+                </div>
+                <div>
+                  <dt>Model</dt>
+                  <dd>{modelConfig.model}</dd>
+                </div>
+                <div>
+                  <dt>Base URL</dt>
+                  <dd>{modelConfig.base_url}</dd>
+                </div>
+                <div>
+                  <dt>API key</dt>
+                  <dd data-configured={modelConfig.configured}>
+                    {modelConfig.configured ? "configured" : "missing - set LITEROUTER_API_KEY"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Available models</dt>
+                  <dd>{modelConfig.available_models.join(", ")}</dd>
+                </div>
+                <div>
+                  <dt>Routes</dt>
+                  <dd>
+                    {modelConfig.routes
+                      .map((route) => `${route.name} (${route.provider}:${route.model})`)
+                      .join(", ")}
+                  </dd>
+                </div>
+              </dl>
+            ) : (
+              <p>Loading model configuration...</p>
+            )}
+            <p className="settingsHint">
+              Set MODEL_ROUTES_JSON on the server to configure multiple routes and pick one per task.
+            </p>
+          </section>
+
+          <section className="settingsSection">
+            <h3>Tool permissions</h3>
+            <div className="permissionList">
+              {Object.entries(permissionSettings).map(([name, value]) => (
+                <label key={name}>
+                  <span>{name}</span>
+                  <select
+                    value={value.mode}
+                    onChange={(event) =>
+                      void updatePermission(name, event.target.value as PermissionMode)
+                    }
+                  >
+                    <option value="ask">ask</option>
+                    <option value="allow">allow</option>
+                    <option value="deny">deny</option>
+                  </select>
+                </label>
+              ))}
+            </div>
+          </section>
+
+          <section className="settingsSection">
+            <div className="settingsHeaderRow">
               <div>
-                <dt>Default route</dt>
-                <dd>{modelConfig.default_route}</dd>
+                <h3>MCP servers</h3>
+                <p className="settingsHint">
+                  These endpoints are editable in-memory and drive the MCP management UI.
+                </p>
               </div>
-              <div>
-                <dt>Provider</dt>
-                <dd>{modelConfig.provider}</dd>
+              <div className="toolbarActions">
+                <button type="button" onClick={addMcpServer}>
+                  Add server
+                </button>
+                <button type="button" onClick={() => void saveMcpServers()} disabled={mcpServersSaving}>
+                  {mcpServersSaving ? "Saving..." : "Save servers"}
+                </button>
               </div>
-              <div>
-                <dt>Model</dt>
-                <dd>{modelConfig.model}</dd>
-              </div>
-              <div>
-                <dt>Base URL</dt>
-                <dd>{modelConfig.base_url}</dd>
-              </div>
-              <div>
-                <dt>API key</dt>
-                <dd data-configured={modelConfig.configured}>
-                  {modelConfig.configured ? "configured" : "missing - set LITEROUTER_API_KEY"}
-                </dd>
-              </div>
-              <div>
-                <dt>Available models</dt>
-                <dd>{modelConfig.available_models.join(", ")}</dd>
-              </div>
-              <div>
-                <dt>Routes</dt>
-                <dd>
-                  {modelConfig.routes
-                    .map((route) => `${route.name} (${route.provider}:${route.model})`)
-                    .join(", ")}
-                </dd>
-              </div>
-            </dl>
-          ) : (
-            <p>Loading model configuration...</p>
-          )}
-          <p className="settingsHint">
-            Set MODEL_ROUTES_JSON on the server to configure multiple routes and pick one per task.
-          </p>
-          <h3>Tool permissions</h3>
-          <div className="permissionList">{Object.entries(permissionSettings).map(([name, value]) => <label key={name}><span>{name}</span><select value={value.mode} onChange={(event) => void updatePermission(name, event.target.value as PermissionMode)}><option value="ask">ask</option><option value="allow">allow</option><option value="deny">deny</option></select></label>)}</div>
+            </div>
+            {mcpServersError ? <p className="settingsError">{mcpServersError}</p> : null}
+            {mcpServersNotice ? <p className="settingsHint">{mcpServersNotice}</p> : null}
+            <div className="mcpServerList">
+              {mcpServers.length === 0 ? (
+                <div className="emptyState">
+                  <strong>No MCP servers yet</strong>
+                  <p>Add your first server to keep common endpoints handy for agents.</p>
+                </div>
+              ) : null}
+              {mcpServers.map((server, index) => (
+                <article className="mcpServerCard" key={`${server.name || "server"}-${index}`}>
+                  <div className="mcpServerRow">
+                    <label>
+                      <span>Name</span>
+                      <input
+                        value={server.name}
+                        onChange={(event) => updateMcpServer(index, { name: event.target.value })}
+                        placeholder="docs"
+                      />
+                    </label>
+                    <label>
+                      <span>URL</span>
+                      <input
+                        value={server.url}
+                        onChange={(event) => updateMcpServer(index, { url: event.target.value })}
+                        placeholder="https://example.com/rpc"
+                      />
+                    </label>
+                  </div>
+                  <label className="mcpServerDescription">
+                    <span>Description</span>
+                    <input
+                      value={server.description ?? ""}
+                      onChange={(event) =>
+                        updateMcpServer(index, { description: event.target.value })
+                      }
+                      placeholder="Optional note"
+                    />
+                  </label>
+                  <div className="mcpServerFooter">
+                    <label className="toggleRow">
+                      <input
+                        type="checkbox"
+                        checked={server.enabled}
+                        onChange={(event) =>
+                          updateMcpServer(index, { enabled: event.target.checked })
+                        }
+                      />
+                      <span>Enabled</span>
+                    </label>
+                    <button type="button" onClick={() => removeMcpServer(index)}>
+                      Remove
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="settingsSection">
+            <h3>Tool catalog</h3>
+            {toolCatalogError ? <p className="settingsError">{toolCatalogError}</p> : null}
+            <div className="toolCatalog">
+              {toolCatalog.map((tool) => (
+                <article className="toolCard" key={tool.name}>
+                  <strong>{tool.name}</strong>
+                  <p>{tool.description}</p>
+                  <small>{tool.permissions.join(", ") || "no permissions"}</small>
+                  <span>{tool.timeout_ms} ms timeout</span>
+                </article>
+              ))}
+            </div>
+          </section>
         </div>
       );
     }

@@ -8,7 +8,7 @@ Last updated: 2026-07-15
 
 | Crate | Status | Notes |
 | --- | --- | --- |
-| `server` | Active | HTTP + WebSocket, workspace file and Git APIs |
+| `server` | Active | HTTP + WebSocket, workspace file, Git, MCP servers, and tool catalog APIs |
 | `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema |
 | `storage` | Active | Sessions, tasks, events, **session_messages**, **session_memory** |
 | `tool-runtime` | Active | Registry + sandboxed filesystem, shell, Git, browser, and MCP call tools |
@@ -26,6 +26,8 @@ Last updated: 2026-07-15
 | GET | `/api/models/config` | Route-based model configuration |
 | GET | `/api/permissions` | Current permission policy snapshot |
 | PUT | `/api/permissions/:permission` | Update a permission mode |
+| GET | `/api/tools` | Tool catalog for Settings |
+| GET/PUT | `/api/mcp/servers` | MCP server management list |
 | POST | `/api/sessions` | Create session + bootstrap events |
 | GET | `/api/sessions/:id/history` | Event history |
 | GET | `/api/files` | List workspace directory entries |
@@ -35,7 +37,7 @@ Last updated: 2026-07-15
 | POST | `/api/git/commit`, `/api/git/pull`, `/api/git/push` | Permission-controlled Git mutations |
 | WS | `/ws/:session_id` | Real-time streaming events |
 
-Workspace APIs now cover file browsing, reading, saving/creating files, Git status/diff, and Git commit/pull/push actions. File and Git mutations publish synchronization events through the session bus. Permissions are editable through the API, and approval-required tool calls round-trip through the browser.
+Workspace APIs now cover file browsing, reading, saving/creating files, Git status/diff, Git commit/pull/push actions, tool catalog inspection, and MCP server management. File and Git mutations publish synchronization events through the session bus. Permissions are editable through the API, and approval-required tool calls round-trip through the browser.
 
 ## Agent flow
 
@@ -95,9 +97,9 @@ user.message
 - `crates/protocol` — event serialization
 - `crates/tool-runtime` — filesystem, shell, Git, browser, and MCP tool coverage
 - `crates/task-engine` — cancel/resume/retry state machine, dependency batching
-- `crates/server` — task plan persistence and step status propagation
+- `crates/server` — task plan persistence, step status propagation, tool catalog, and MCP server management
 - `crates/permissions` — policy engine and approval flow
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: continue with MCP management UI, Python workers, and any remaining route-specific settings after the project index, MCP call bridge, session memory, task-scoped multi-model routing slice, and browser automation tools.
+**Stage 6 / Milestone 5**: continue with Python workers and any remaining route-specific settings after the project index, MCP call bridge, session memory, task-scoped multi-model routing slice, browser automation tools, and MCP management UI.

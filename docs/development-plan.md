@@ -163,9 +163,9 @@ task.retry            — повторить failed-задачу (этап 5)
 | `git.commit` | 4 | ✅ Backend |
 | `git.pull` | 4 | ✅ Backend |
 | `git.push` | 4 | ✅ Backend |
-| `browser.open` | 6 | — |
-| `browser.extract` | 6 | — |
-| `mcp.call` | 6 | — |
+| `browser.open` | 6 | ✅ |
+| `browser.extract` | 6 | ✅ |
+| `mcp.call` | 6 | ✅ |
 
 ---
 
@@ -286,7 +286,7 @@ Task lifecycle реализован: start/complete/fail/cancel/resume/retry. St
 ### Этап 6 — Индексация, MCP, память, workers 📋
 
 - Project index для контекстного поиска
-- MCP-интеграции (`mcp.call`) уже есть на уровне tool-runtime; остаётся UI управления серверами
+- MCP-интеграции (`mcp.call`) уже есть на уровне tool-runtime и UI управления серверами
 - Память агента
 - Multi-model routing с task-scoped `model_route` и OpenAI-compatible маршрутами — после LiteRouter
 - Python workers для ML-задач

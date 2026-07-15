@@ -162,11 +162,26 @@ h1 {
   padding: 28px;
   color: #a9b8d9;
   line-height: 1.6;
+  display: grid;
+  gap: 24px;
 }
 
 .settingsPanel h3 {
   margin: 0 0 16px;
   color: #e7eefc;
+}
+
+.settingsSection {
+  display: grid;
+  gap: 16px;
+}
+
+.settingsHeaderRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .settingsGrid {
@@ -208,6 +223,88 @@ h1 {
 .permissionList { display: grid; gap: 8px; margin-top: 12px; }
 .permissionList label { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid rgba(255,255,255,.07); border-radius: 10px; }
 .permissionList select { background: #111a31; color: #edf4ff; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 6px 8px; }
+
+.mcpServerList,
+.toolCatalog {
+  display: grid;
+  gap: 12px;
+}
+
+.mcpServerCard,
+.toolCard {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.mcpServerRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mcpServerCard label {
+  display: grid;
+  gap: 8px;
+}
+
+.mcpServerCard span,
+.toolCard small {
+  color: #8fa4cd;
+  font-size: 12px;
+}
+
+.mcpServerCard input {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background: rgba(4, 8, 18, 0.8);
+  color: #fff;
+  padding: 10px 12px;
+}
+
+.mcpServerFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.toggleRow {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+}
+
+.emptyState {
+  padding: 18px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  color: #a9b8d9;
+}
+
+.emptyState strong {
+  display: block;
+  color: #edf4ff;
+  margin-bottom: 6px;
+}
+
+.toolCard strong {
+  color: #edf4ff;
+}
+
+.toolCard p {
+  margin: 0;
+  color: #d8e5ff;
+}
+
+.toolCard span {
+  color: #7f95bf;
+  font-size: 11px;
+}
 
 .settingsError {
   color: #ff9b9b;
