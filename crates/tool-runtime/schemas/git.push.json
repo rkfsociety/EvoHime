@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evohime.local/tools/git.push.json",
+  "title": "git.push",
+  "type": "object",
+  "properties": {
+    "remote": {
+      "type": "string",
+      "description": "Optional remote name"
+    },
+    "branch": {
+      "type": "string",
+      "description": "Optional branch name"
+    }
+  },
+  "additionalProperties": false
+}

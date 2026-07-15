@@ -1,6 +1,6 @@
 :root {
   color-scheme: dark;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   background:
     radial-gradient(circle at top left, rgba(68, 134, 255, 0.35), transparent 35%),
     radial-gradient(circle at top right, rgba(0, 209, 178, 0.18), transparent 30%),
@@ -111,8 +111,104 @@ h1 {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1.8fr) minmax(320px, 1fr);
+  grid-template-columns: 220px minmax(0, 1.6fr) minmax(320px, 1fr);
   gap: 24px;
+}
+
+.sidebar {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.navItem {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(10, 16, 33, 0.55);
+  color: #d8e5ff;
+  padding: 14px 16px;
+  cursor: pointer;
+}
+
+.navItem small {
+  color: #7f95bf;
+  font-size: 11px;
+}
+
+.navItem.active {
+  border-color: rgba(76, 125, 255, 0.55);
+  background: rgba(76, 125, 255, 0.16);
+}
+
+.mainPanel {
+  min-height: 72vh;
+}
+
+.placeholderPanel {
+  padding: 28px;
+  color: #a9b8d9;
+  line-height: 1.6;
+}
+
+.placeholderPanel h3 {
+  margin: 0 0 10px;
+  color: #e7eefc;
+}
+
+.settingsPanel {
+  padding: 28px;
+  color: #a9b8d9;
+  line-height: 1.6;
+}
+
+.settingsPanel h3 {
+  margin: 0 0 16px;
+  color: #e7eefc;
+}
+
+.settingsGrid {
+  display: grid;
+  gap: 14px;
+  margin: 0 0 20px;
+}
+
+.settingsGrid div {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 14px 16px;
+}
+
+.settingsGrid dt {
+  margin: 0 0 6px;
+  color: #9fc0ff;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.settingsGrid dd {
+  margin: 0;
+  color: #ecf3ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+}
+
+.settingsGrid dd[data-configured="false"] {
+  color: #ff9b9b;
+}
+
+.settingsHint,
+.settingsError {
+  margin: 0;
+}
+
+.settingsError {
+  color: #ff9b9b;
+  margin-bottom: 12px;
 }
 
 .panel {
@@ -125,6 +221,10 @@ h1 {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.panel > * {
+  min-height: 0;
 }
 
 .panel header {
@@ -219,13 +319,185 @@ h1 {
   opacity: 0.5;
 }
 
+.filesPanel,
+.editorPanel,
+.gitPanel {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  flex: 1;
+}
+
+.panelToolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.panelToolbar strong,
+.panelToolbar span {
+  display: block;
+}
+
+.panelToolbar strong {
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: #edf4ff;
+}
+
+.panelToolbar span {
+  color: #8fa4cd;
+  font-size: 12px;
+}
+
+.panelToolbar button {
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #4c7dff, #39d8b2);
+  color: #04111d;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.panelToolbar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.fileTree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 6px;
+}
+
+.treeBranch {
+  display: grid;
+  gap: 8px;
+  padding-left: 10px;
+}
+
+.treeNode {
+  display: grid;
+  gap: 8px;
+}
+
+.treeButton {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #e7eefc;
+  text-align: left;
+  padding: 10px 12px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.treeButton:hover {
+  border-color: rgba(76, 125, 255, 0.45);
+  background: rgba(76, 125, 255, 0.1);
+}
+
+.treeName {
+  font-weight: 600;
+}
+
+.treeMeta {
+  color: #7f95bf;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.treeNode[data-kind="dir"] > .treeButton .treeName::before {
+  content: "▸ ";
+  color: #9fc0ff;
+}
+
+.treeNode[data-kind="file"] > .treeButton .treeName::before {
+  content: "• ";
+  color: #67d7be;
+}
+
+.treeBranch[data-depth="1"],
+.treeBranch[data-depth="2"],
+.treeBranch[data-depth="3"] {
+  margin-left: 14px;
+  padding-left: 14px;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.editorPanel {
+  overflow: hidden;
+}
+
+.editorPanel > .monaco-editor {
+  flex: 1;
+  min-height: 0;
+}
+
+.editorPanel .monaco-editor {
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.gitSummary {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  min-height: 0;
+}
+
+.gitSummary h3 {
+  margin: 0;
+  color: #edf4ff;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.gitSummary pre {
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #e7eefc;
+}
+
 @media (max-width: 1100px) {
   .workspace {
     grid-template-columns: 1fr;
   }
 
-  .panel {
+  .sidebar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .panel,
+  .mainPanel {
     min-height: 52vh;
+  }
+
+  .treeBranch[data-depth="1"],
+  .treeBranch[data-depth="2"],
+  .treeBranch[data-depth="3"] {
+    margin-left: 10px;
+    padding-left: 10px;
   }
 }
 
@@ -243,4 +515,3 @@ h1 {
     grid-template-columns: 1fr;
   }
 }
-

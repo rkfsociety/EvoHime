@@ -1,0 +1,11 @@
+{
+  "name": "evohime",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate:protocol": "node scripts/generate-protocol-types.mjs"
+  },
+  "devDependencies": {
+    "json-schema-to-typescript": "^15.0.4"
+  }
+}

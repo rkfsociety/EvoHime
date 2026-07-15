@@ -1,4 +1,7 @@
 # tool-runtime
 
-TODO for phase 3.
+Tool registry and execution runtime.
 
+Stage 1 tools:
+
+- `filesystem.read`

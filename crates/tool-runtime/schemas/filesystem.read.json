@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evohime.local/tools/filesystem.read.json",
+  "title": "filesystem.read",
+  "type": "object",
+  "required": ["path"],
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "Path relative to workspace root"
+    }
+  },
+  "additionalProperties": false
+}

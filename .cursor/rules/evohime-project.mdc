@@ -1,0 +1,39 @@
+---
+description: EvoHime project context, constraints, and architecture
+alwaysApply: true
+---
+
+# EvoHime
+
+Web-first AI-agent. **Browser only** — no Electron/desktop/mobile.
+
+## Stack
+
+React+TS+Vite frontend, Rust/Axum backend, PostgreSQL, WebSocket, Docker Compose.
+
+## Rules
+
+1. No business logic in frontend — render server events only
+2. Shared protocol: edit JSON Schema → update Rust → `npm run generate:protocol`
+3. One concern per crate under `crates/`
+4. Tests for core logic and tools
+5. Minimize diff scope
+
+## Current stage: 2 (Milestone 1 done)
+
+LiteRouter streaming LLM + message history + Settings panel.
+
+## Key paths
+
+- Agent flow: `crates/agent-runtime/src/agent_loop.rs`
+- LLM provider: `crates/model-gateway/src/providers/literouter.rs`
+- Tools: `crates/tool-runtime/`
+- Protocol schema: `crates/protocol/schema/evohime.protocol.schema.json`
+- UI: `frontend/web/src/app.tsx`
+- Plan: `docs/development-plan.md`
+- Roadmap: `docs/roadmap.md`
+- LiteRouter: `docs/providers/literouter.md`
+
+## Next: Stage 3
+
+Filesystem write, shell, terminal, permissions. See `docs/roadmap.md` → Milestone 2.

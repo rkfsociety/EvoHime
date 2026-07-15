@@ -1,8 +1,13 @@
 [workspace]
 members = [
   "crates/protocol",
+  "crates/permissions",
   "crates/storage",
+  "crates/tool-runtime",
+  "crates/agent-runtime",
+  "crates/task-engine",
+  "crates/model-gateway",
+  "crates/project-index",
   "crates/server",
 ]
 resolver = "2"
-

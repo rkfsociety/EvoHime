@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evohime.local/tools/git.commit.json",
+  "title": "git.commit",
+  "type": "object",
+  "required": ["message"],
+  "properties": {
+    "message": {
+      "type": "string",
+      "description": "Commit message"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,136 @@
+/* eslint-disable */
+/**
+ * Generated from crates/protocol/schema/evohime.protocol.schema.json.
+ * Do not edit by hand. Run: npm run generate:protocol
+ */
+
+export type EvoHimeProtocol = ServerEvent | ClientCommand;
+export type ServerEvent =
+  | SessionCreatedEvent
+  | TaskStartedEvent
+  | AgentMessageDeltaEvent
+  | AgentPlanUpdatedEvent
+  | ToolStartedEvent
+  | ToolOutputEvent
+  | ToolCompletedEvent
+  | TaskCompletedEvent
+  | TaskFailedEvent
+  | FileChangedEvent
+  | GitDiffChangedEvent
+  | TaskStatusChangedEvent
+  | TaskStepChangedEvent
+  | ActionLoggedEvent;
+export type Uuid = string;
+export type DateTime = string;
+export type ClientCommand = UserMessageCommand | TaskCancelCommand | TaskResumeCommand | TaskRetryCommand;
+
+export interface SessionCreatedEvent {
+  type: "session.created";
+  session_id: Uuid;
+  created_at: DateTime;
+}
+export interface TaskStartedEvent {
+  type: "task.started";
+  task_id: Uuid;
+  session_id: Uuid;
+  user_message: string;
+  created_at: DateTime;
+}
+export interface AgentMessageDeltaEvent {
+  type: "agent.message.delta";
+  task_id: Uuid;
+  delta: string;
+}
+export interface AgentPlanUpdatedEvent {
+  type: "agent.plan.updated";
+  task_id: Uuid;
+  plan: string[];
+}
+export interface ToolStartedEvent {
+  type: "tool.started";
+  task_id: Uuid;
+  tool_name: string;
+}
+export interface ToolOutputEvent {
+  type: "tool.output";
+  task_id: Uuid;
+  tool_name: string;
+  output: string;
+}
+export interface ToolCompletedEvent {
+  type: "tool.completed";
+  task_id: Uuid;
+  tool_name: string;
+  success: boolean;
+}
+export interface TaskCompletedEvent {
+  type: "task.completed";
+  task_id: Uuid;
+  final_message: string;
+  completed_at: DateTime;
+}
+export interface TaskFailedEvent {
+  type: "task.failed";
+  task_id: Uuid;
+  error: string;
+}
+export interface FileChangedEvent {
+  type: "file.changed";
+  path: string;
+  change: "created" | "updated" | "deleted";
+  created_at: DateTime;
+}
+export interface GitDiffChangedEvent {
+  type: "git.diff.changed";
+  status: string;
+  diff: string;
+  created_at: DateTime;
+}
+export interface TaskStatusChangedEvent {
+  type: "task.status.changed";
+  task_id: Uuid;
+  status: string;
+}
+export interface TaskStepChangedEvent {
+  type: "task.step.changed";
+  task_id: Uuid;
+  step_id: Uuid;
+  status: string;
+  tool_name: string;
+}
+export interface ActionLoggedEvent {
+  type: "action.logged";
+  task_id: Uuid;
+  action: string;
+  detail: string;
+  created_at: DateTime;
+}
+export interface UserMessageCommand {
+  type: "user.message";
+  content: string;
+}
+export interface TaskCancelCommand {
+  type: "task.cancel";
+  task_id: Uuid;
+}
+export interface TaskResumeCommand {
+  type: "task.resume";
+  task_id: Uuid;
+}
+export interface TaskRetryCommand {
+  type: "task.retry";
+  task_id: Uuid;
+}
+
+
+export type HistoryItem = {
+  sequence: number;
+  created_at: string;
+  event: ServerEvent;
+};
+
+export type SessionBootstrap = {
+  session_id: string;
+  created_at: string;
+  events: HistoryItem[];
+};

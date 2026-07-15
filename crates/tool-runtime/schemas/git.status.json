@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evohime.local/tools/git.status.json",
+  "title": "git.status",
+  "type": "object",
+  "additionalProperties": false
+}

@@ -1,0 +1,32 @@
+---
+description: Frontend conventions for EvoHime web UI
+globs: frontend/**/*.{ts,tsx,css}
+alwaysApply: false
+---
+
+# Frontend conventions
+
+## Principles
+
+- **No business logic** — only render WebSocket events and send `ClientCommand`
+- Import types from `./protocol` (re-exports generated types)
+- Never edit `protocol.generated.ts` — run `npm run generate:protocol`
+
+## Structure
+
+- `app.tsx` — workspace shell, chat panel, event timeline
+- `protocol.ts` — re-exports from `protocol.generated.ts`
+- `styles.css` — global styles, dark theme
+
+## Adding a panel
+
+1. Add to `workspacePanels` array in `app.tsx`
+2. Implement `renderPanelContent()` branch
+3. Handle relevant `ServerEvent` types in `applyEvent()`
+4. Mark panel phase in sidebar (e.g. "stage 4")
+
+## WebSocket
+
+- Bootstrap: `POST /api/sessions` → connect `WS /ws/:session_id`
+- Send: `{ type: "user.message", content: "..." }`
+- Receive: typed `ServerEvent` objects

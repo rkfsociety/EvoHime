@@ -1,4 +1,3 @@
 # task-engine
 
-TODO for phase 5.
-
+Task lifecycle helpers over PostgreSQL storage.

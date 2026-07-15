@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evohime.local/tools/git.pull.json",
+  "title": "git.pull",
+  "type": "object",
+  "properties": {
+    "remote": {
+      "type": "string",
+      "description": "Optional remote name"
+    },
+    "branch": {
+      "type": "string",
+      "description": "Optional branch name"
+    }
+  },
+  "additionalProperties": false
+}

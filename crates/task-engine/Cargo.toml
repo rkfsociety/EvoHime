@@ -1,0 +1,15 @@
+[package]
+name = "evohime-task-engine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+evohime-storage = { path = "../storage" }
+sqlx = { version = "0.8", features = [
+  "postgres",
+  "runtime-tokio-rustls",
+  "chrono",
+  "uuid",
+] }
+thiserror = "2"
+uuid = { version = "1", features = ["serde", "v4"] }

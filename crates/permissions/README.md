@@ -1,4 +1,3 @@
 # permissions
 
-TODO for phase 3.
-
+Permission types used by the tool runtime and future approval engine.

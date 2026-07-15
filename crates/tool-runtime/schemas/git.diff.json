@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evohime.local/tools/git.diff.json",
+  "title": "git.diff",
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "Optional workspace-relative path to limit the diff"
+    }
+  },
+  "additionalProperties": false
+}

@@ -55,6 +55,24 @@ pub enum ServerEvent {
         task_id: Uuid,
         error: String,
     },
+    #[serde(rename = "file.changed")]
+    FileChanged {
+        path: String,
+        change: String,
+        created_at: DateTime<Utc>,
+    },
+    #[serde(rename = "git.diff.changed")]
+    GitDiffChanged {
+        status: String,
+        diff: String,
+        created_at: DateTime<Utc>,
+    },
+    #[serde(rename = "task.status.changed")]
+    TaskStatusChanged { task_id: Uuid, status: String },
+    #[serde(rename = "task.step.changed")]
+    TaskStepChanged { task_id: Uuid, step_id: Uuid, status: String, tool_name: String },
+    #[serde(rename = "action.logged")]
+    ActionLogged { task_id: Uuid, action: String, detail: String, created_at: DateTime<Utc> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,7 +80,21 @@ pub enum ServerEvent {
 pub enum ClientCommand {
     #[serde(rename = "user.message")]
     UserMessage { content: String },
+    #[serde(rename = "task.cancel")]
+    TaskCancel { task_id: Uuid },
+    #[serde(rename = "task.resume")]
+    TaskResume { task_id: Uuid },
+    #[serde(rename = "task.retry")]
+    TaskRetry { task_id: Uuid },
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskStatus { Running, Cancelling, Cancelled, Paused, Failed, Retrying, Completed }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum StepStatus { Pending, Running, Completed, Failed, Cancelled }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionBootstrap {
@@ -106,6 +138,20 @@ mod tests {
 
         match decoded {
             ClientCommand::UserMessage { content } => assert_eq!(content, "hello"),
+            _ => panic!("unexpected command variant"),
         }
+    }
+
+    #[test]
+    fn serializes_file_changed_event() {
+        let event = ServerEvent::FileChanged {
+            path: "src/main.rs".to_string(),
+            change: "updated".to_string(),
+            created_at: Utc::now(),
+        };
+
+        let json = serde_json::to_value(&event).expect("event serializes");
+        assert_eq!(json["type"], "file.changed");
+        assert_eq!(json["path"], "src/main.rs");
     }
 }

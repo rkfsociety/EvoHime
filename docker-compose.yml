@@ -17,7 +17,12 @@ services:
     environment:
       DATABASE_URL: postgres://evohime:evohime@db:5432/evohime
       BIND_ADDR: 0.0.0.0:3000
+      WORKSPACE_ROOT: /workspace
       DEMO_FILE_PATH: /workspace/docs/sample-context.md
+      MODEL_PROVIDER: literouter
+      LITEROUTER_BASE_URL: https://api.literouter.com/v1
+      LITEROUTER_MODEL: deepseek:free
+      LITEROUTER_API_KEY: ${LITEROUTER_API_KEY:-}
     volumes:
       - ./:/workspace
     ports:

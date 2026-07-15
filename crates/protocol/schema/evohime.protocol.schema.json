@@ -25,12 +25,20 @@
         { "$ref": "#/$defs/ToolOutputEvent" },
         { "$ref": "#/$defs/ToolCompletedEvent" },
         { "$ref": "#/$defs/TaskCompletedEvent" },
-        { "$ref": "#/$defs/TaskFailedEvent" }
+        { "$ref": "#/$defs/TaskFailedEvent" },
+        { "$ref": "#/$defs/FileChangedEvent" },
+        { "$ref": "#/$defs/GitDiffChangedEvent" }
+        ,{ "$ref": "#/$defs/TaskStatusChangedEvent" }
+        ,{ "$ref": "#/$defs/TaskStepChangedEvent" }
+        ,{ "$ref": "#/$defs/ActionLoggedEvent" }
       ]
     },
     "ClientCommand": {
       "oneOf": [
-        { "$ref": "#/$defs/UserMessageCommand" }
+        { "$ref": "#/$defs/UserMessageCommand" },
+        { "$ref": "#/$defs/TaskCancelCommand" },
+        { "$ref": "#/$defs/TaskResumeCommand" },
+        { "$ref": "#/$defs/TaskRetryCommand" }
       ]
     },
     "SessionCreatedEvent": {
@@ -131,6 +139,31 @@
       },
       "additionalProperties": false
     },
+    "FileChangedEvent": {
+      "type": "object",
+      "required": ["type", "path", "change", "created_at"],
+      "properties": {
+        "type": { "const": "file.changed" },
+        "path": { "type": "string" },
+        "change": {
+          "type": "string",
+          "enum": ["created", "updated", "deleted"]
+        },
+        "created_at": { "$ref": "#/$defs/DateTime" }
+      },
+      "additionalProperties": false
+    },
+    "GitDiffChangedEvent": {
+      "type": "object",
+      "required": ["type", "status", "diff", "created_at"],
+      "properties": {
+        "type": { "const": "git.diff.changed" },
+        "status": { "type": "string" },
+        "diff": { "type": "string" },
+        "created_at": { "$ref": "#/$defs/DateTime" }
+      },
+      "additionalProperties": false
+    },
     "UserMessageCommand": {
       "type": "object",
       "required": ["type", "content"],
@@ -139,7 +172,36 @@
         "content": { "type": "string" }
       },
       "additionalProperties": false
+    },
+    "TaskCancelCommand": {
+      "type": "object", "required": ["type", "task_id"],
+      "properties": { "type": { "const": "task.cancel" }, "task_id": { "$ref": "#/$defs/Uuid" } },
+      "additionalProperties": false
+    },
+    "TaskResumeCommand": {
+      "type": "object", "required": ["type", "task_id"],
+      "properties": { "type": { "const": "task.resume" }, "task_id": { "$ref": "#/$defs/Uuid" } },
+      "additionalProperties": false
+    },
+    "TaskRetryCommand": {
+      "type": "object", "required": ["type", "task_id"],
+      "properties": { "type": { "const": "task.retry" }, "task_id": { "$ref": "#/$defs/Uuid" } },
+      "additionalProperties": false
+    },
+    "TaskStatusChangedEvent": {
+      "type": "object", "required": ["type", "task_id", "status"],
+      "properties": { "type": { "const": "task.status.changed" }, "task_id": { "$ref": "#/$defs/Uuid" }, "status": { "type": "string" } },
+      "additionalProperties": false
+    },
+    "TaskStepChangedEvent": {
+      "type": "object", "required": ["type", "task_id", "step_id", "status", "tool_name"],
+      "properties": { "type": { "const": "task.step.changed" }, "task_id": { "$ref": "#/$defs/Uuid" }, "step_id": { "$ref": "#/$defs/Uuid" }, "status": { "type": "string" }, "tool_name": { "type": "string" } },
+      "additionalProperties": false
+    },
+    "ActionLoggedEvent": {
+      "type": "object", "required": ["type", "task_id", "action", "detail", "created_at"],
+      "properties": { "type": { "const": "action.logged" }, "task_id": { "$ref": "#/$defs/Uuid" }, "action": { "type": "string" }, "detail": { "type": "string" }, "created_at": { "$ref": "#/$defs/DateTime" } },
+      "additionalProperties": false
     }
   }
 }
-
