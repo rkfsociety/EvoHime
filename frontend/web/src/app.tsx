@@ -631,6 +631,16 @@ export function App() {
   }, [modelConfig, selectedModelRoute]);
 
   useEffect(() => {
+    if (!projectPickerOpen) {
+      return;
+    }
+    fetch("/api/projects")
+      .then((response) => response.ok ? response.json() as Promise<ProjectSummary[]> : Promise.reject(new Error("Не удалось обновить список проектов")))
+      .then((data) => setProjects(data))
+      .catch(() => undefined);
+  }, [projectPickerOpen]);
+
+  useEffect(() => {
     const route = modelDrafts.find((item) => item.name === "orchestrator");
     if (!route) {
       return;

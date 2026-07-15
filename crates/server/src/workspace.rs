@@ -81,12 +81,19 @@ pub async fn list_projects(
         }
         projects.push(ProjectSummary {
             name,
-            path: path.to_string_lossy().replace('\\', "/"),
+            path: public_project_path(&path),
         });
     }
 
     projects.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
     Ok(Json(projects))
+}
+
+fn public_project_path(path: &Path) -> String {
+    path.to_string_lossy()
+        .replace('\\', "/")
+        .trim_start_matches("//?/")
+        .to_string()
 }
 
 async fn looks_like_project(path: &Path) -> bool {
@@ -140,7 +147,7 @@ pub async fn create_project(
 
     Ok(Json(ProjectSummary {
         name: name.to_string(),
-        path: path.to_string_lossy().replace('\\', "/"),
+        path: public_project_path(&path),
     }))
 }
 
