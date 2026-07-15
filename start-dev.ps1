@@ -188,13 +188,15 @@ if ($Web) {
   exit $LASTEXITCODE
 }
 
-function Get-LauncherProcesses {
+function Get-EvoHimeProcesses {
   $scriptPath = [regex]::Escape($PSCommandPath)
-  Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" |
+  $serverPath = [regex]::Escape((Join-Path $root 'target\debug\evohime-server.exe'))
+  $webPath = [regex]::Escape((Join-Path $root 'frontend\web'))
+  Get-CimInstance Win32_Process |
     Where-Object {
       $_.ProcessId -ne $PID -and
-      $_.CommandLine -match $scriptPath -and
-      $_.CommandLine -notmatch '(?i)(?:^|\s)-(?:Server|Web|Setup)(?:\s|$)'
+      $_.CommandLine -and
+      ($_.Name -eq 'evohime-server.exe' -or $_.CommandLine -match $scriptPath -or $_.CommandLine -match $serverPath -or $_.CommandLine -match $webPath)
     } |
     ForEach-Object {
       Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
@@ -202,8 +204,8 @@ function Get-LauncherProcesses {
 }
 
 function Stop-PreviousLaunchers {
-  foreach ($process in @(Get-LauncherProcesses)) {
-    Write-Host "[EvoHime] Останавливаю старый launcher (PID $($process.Id))..."
+  foreach ($process in @(Get-EvoHimeProcesses)) {
+    Write-Host "[EvoHime] Останавливаю старый процесс EvoHime (PID $($process.Id))..."
     Stop-Tree $process
     Wait-ForExit $process
   }
