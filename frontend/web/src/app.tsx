@@ -2039,9 +2039,15 @@ export function App() {
                 Опиши задачу обычным языком — я помогу разобраться в проекте, изменить файлы или проверить результат.
               </p>
               <div className="chatWelcomeHints">
-                <span>Разобраться в коде</span>
-                <span>Изменить файл</span>
-                <span>Запустить проверку</span>
+                <button type="button" onClick={() => setInput("Разберись в коде проекта и объясни, с чего начать.")}>
+                  Разобраться в коде
+                </button>
+                <button type="button" onClick={() => setInput("Измени нужный файл в проекте.")}>
+                  Изменить файл
+                </button>
+                <button type="button" onClick={() => setInput("Запусти проверку проекта и покажи результат.")}>
+                  Запустить проверку
+                </button>
               </div>
             </div>
           ) : (
