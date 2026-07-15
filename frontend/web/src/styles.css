@@ -15,8 +15,10 @@
 html,
 body,
 #root {
-  min-height: 100%;
+  width: 100%;
+  height: 100%;
   margin: 0;
+  overflow: hidden;
 }
 
 body {
@@ -29,10 +31,12 @@ input {
 }
 
 .shell {
-  min-height: 100vh;
+  height: 100vh;
   padding: 0 32px 32px;
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 24px;
+  overflow: hidden;
 }
 
 .topBar {
@@ -124,13 +128,16 @@ h1 {
   display: grid;
   grid-template-columns: 280px minmax(0, 1.6fr) minmax(320px, 1fr);
   gap: 24px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar {
   display: grid;
   gap: 18px;
   align-content: start;
-  min-height: 72vh;
+  min-height: 0;
+  overflow: auto;
   padding: 18px 16px;
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 24px;
@@ -360,7 +367,7 @@ h1 {
 }
 
 .mainPanel {
-  min-height: 72vh;
+  min-height: 0;
 }
 
 .placeholderPanel {
@@ -380,6 +387,7 @@ h1 {
   line-height: 1.6;
   display: grid;
   gap: 24px;
+  min-height: 0;
 }
 
 .settingsPanel h3 {
@@ -528,7 +536,7 @@ h1 {
 }
 
 .panel {
-  min-height: 72vh;
+  min-height: 0;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 24px;
   background: rgba(10, 16, 33, 0.72);
@@ -562,6 +570,7 @@ h1 {
   display: grid;
   gap: 14px;
   overflow: auto;
+  min-height: 0;
 }
 
 .chatLog {
@@ -644,6 +653,7 @@ h1 {
   gap: 14px;
   min-height: 0;
   flex: 1;
+  overflow: hidden;
 }
 
 .panelToolbar {
@@ -998,11 +1008,13 @@ h1 {
 
   .sidebar {
     min-height: 0;
+    max-height: 38vh;
   }
 
   .panel,
   .mainPanel {
-    min-height: 52vh;
+    min-height: 0;
+    max-height: 34vh;
   }
 
   .settingsModal {
@@ -1029,15 +1041,18 @@ h1 {
 
   .workspace {
     grid-template-columns: 1fr;
+    min-height: 0;
   }
 
   .sidebar {
     order: 2;
     min-height: 0;
+    max-height: 34vh;
   }
 
   .panel {
-    min-height: 60vh;
+    min-height: 0;
+    max-height: 44vh;
   }
 
   .settingsBackdrop {
