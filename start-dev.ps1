@@ -142,9 +142,12 @@ function Start-ManagedProcess([string]$switchName) {
 
 function Restart-ServerProcess {
   Write-Host '[EvoHime] Restarting server...'
+  $script:serverRestartEnabled = $true
+  $script:serverWasRunning = $false
   Stop-Tree $script:serverProcess
   Wait-ForExit $script:serverProcess
   $script:serverProcess = Start-ManagedProcess '-Server'
+  $script:serverWasRunning = $true
 }
 
 function Set-NotifyIconState {
@@ -190,13 +193,14 @@ if ($Web) {
 
 function Get-EvoHimeProcesses {
   $scriptPath = [regex]::Escape($PSCommandPath)
+  $launcherCommandPattern = '(?i)(?:^|\s)-File\s+["'']?' + $scriptPath + '(?:["'']?\s|$)'
   $serverPath = [regex]::Escape((Join-Path $root 'target\debug\evohime-server.exe'))
   $webPath = [regex]::Escape((Join-Path $root 'frontend\web'))
   Get-CimInstance Win32_Process |
     Where-Object {
       $_.ProcessId -ne $PID -and
       $_.CommandLine -and
-      ($_.Name -eq 'evohime-server.exe' -or $_.CommandLine -match $scriptPath -or $_.CommandLine -match $serverPath -or $_.CommandLine -match $webPath)
+      ($_.Name -eq 'evohime-server.exe' -or $_.CommandLine -match $launcherCommandPattern -or $_.CommandLine -match $serverPath -or $_.CommandLine -match $webPath)
     } |
     ForEach-Object {
       Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
@@ -321,17 +325,21 @@ $serverRestart.Add_Click({
   Restart-ServerProcess
 })
 $serverStop.Add_Click({
+  $script:serverRestartEnabled = $false
   Stop-Tree $script:serverProcess
 })
 $serverExit.Add_Click({
+  $script:serverRestartEnabled = $false
   $form.Close()
 })
 
 $webOpen.Add_Click({ Open-Url $webUrl })
 $webStop.Add_Click({
+  $script:webRestartEnabled = $false
   Stop-Tree $script:webProcess
 })
 $webExit.Add_Click({
+  $script:webRestartEnabled = $false
   $form.Close()
 })
 
@@ -360,6 +368,8 @@ $webIcon.Add_MouseUp({
 
 $script:serverWasRunning = $true
 $script:webWasRunning = $true
+$script:serverRestartEnabled = $true
+$script:webRestartEnabled = $true
 
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 1000
@@ -372,9 +382,19 @@ $timer.Add_Tick({
 
   if ($script:serverWasRunning -and -not $serverRunning) {
     $serverIcon.ShowBalloonTip(3000, 'EvoHime', 'Сервер остановлен', [System.Windows.Forms.ToolTipIcon]::Error)
+    if ($script:serverRestartEnabled) {
+      Write-Host '[EvoHime] Сервер завершился неожиданно, перезапускаю...'
+      $script:serverProcess = Start-ManagedProcess '-Server'
+      $serverRunning = -not $script:serverProcess.HasExited
+    }
   }
   if ($script:webWasRunning -and -not $webRunning) {
     $webIcon.ShowBalloonTip(3000, 'EvoHime', 'Панель остановлена', [System.Windows.Forms.ToolTipIcon]::Error)
+    if ($script:webRestartEnabled) {
+      Write-Host '[EvoHime] Панель завершилась неожиданно, перезапускаю...'
+      $script:webProcess = Start-ManagedProcess '-Web'
+      $webRunning = -not $script:webProcess.HasExited
+    }
   }
 
   $script:serverWasRunning = $serverRunning
@@ -387,6 +407,8 @@ $form.Add_Shown({
 
 $form.Add_FormClosing({
   $timer.Stop()
+  $script:serverRestartEnabled = $false
+  $script:webRestartEnabled = $false
   Stop-Tree $script:webProcess
   Stop-Tree $script:serverProcess
   Stop-LocalDatabase
