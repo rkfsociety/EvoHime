@@ -1904,15 +1904,49 @@ export function App() {
     if (activePanel === "terminal") return <TerminalPanel entries={terminalEntries} />;
 
     if (activePanel === "tasks") {
-      return <div className="tasksPanel">{Object.values(tasks).map((task) => <article className="taskCard" key={task.id}>
-        <strong>{translateTaskStatus(task.status)}</strong><p>{task.message}</p><small>{task.id}</small>
-        <div className="taskActions">
-          {(task.status === "running" || task.status === "cancelling") && <button type="button" onClick={() => sendTaskCommand("task.cancel", task.id)}>Отменить</button>}
-          {(task.status === "paused" || task.status === "cancelled") && <button type="button" onClick={() => sendTaskCommand("task.resume", task.id)}>Продолжить</button>}
-          {task.status === "failed" && <button type="button" onClick={() => sendTaskCommand("task.retry", task.id)}>Повторить</button>}
+      return (
+        <div className="standaloneChatsPanel">
+          <div className="panelToolbar">
+            <div>
+              <strong>Чаты без проектов</strong>
+              <span>Личные задачи и разговоры, не привязанные к проекту</span>
+            </div>
+            <button type="button" onClick={() => setActivePanel("chat")}>Новый чат</button>
+          </div>
+          {chatSessions.length > 0 ? (
+            <div className="standaloneChatList">
+              {chatSessions.map((chat, index) => (
+                <button
+                  key={chat.session_id}
+                  type="button"
+                  className={chat.session_id === activeSessionId ? "standaloneChatItem active" : "standaloneChatItem"}
+                  onClick={() => {
+                    setActivePanel("chat");
+                    void openSession(chat).catch((error) => {
+                      setSocketState("failed");
+                      setLines((current) => [...current, { role: "system", text: String(error) }]);
+                    });
+                  }}
+                >
+                  <span className="standaloneChatIcon">⊕</span>
+                  <span className="standaloneChatDetails">
+                    <strong>{formatSessionTitle(chat, index)}</strong>
+                    <span>{formatSessionPreview(chat)}</span>
+                  </span>
+                  <time dateTime={chat.last_message_at ?? chat.created_at}>
+                    {formatSessionTimestamp(chat.last_message_at ?? chat.created_at)}
+                  </time>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="emptyPanelState">
+              <strong>Пока нет чатов без проекта</strong>
+              <span>Создай новый чат, и он появится здесь.</span>
+            </div>
+          )}
         </div>
-        <ul>{Object.entries(task.steps).map(([name, status]) => <li key={name}>{name}: {translateStepStatus(status)}</li>)}</ul>
-      </article>)}</div>;
+      );
     }
 
     if (activePanel === "actions") {

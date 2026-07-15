@@ -984,6 +984,71 @@ h1 {
   cursor: not-allowed;
 }
 
+.standaloneChatsPanel,
+.standaloneChatList {
+  display: grid;
+  gap: 12px;
+}
+
+.standaloneChatItem {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--border-0);
+  border-radius: 16px;
+  background: var(--surface-3);
+  color: var(--text-1);
+  text-align: left;
+  cursor: pointer;
+}
+
+.standaloneChatItem:hover,
+.standaloneChatItem.active {
+  border-color: rgba(143, 180, 255, 0.36);
+  background: var(--surface-4);
+}
+
+.standaloneChatIcon {
+  color: var(--accent-2);
+  font-size: 20px;
+}
+
+.standaloneChatDetails {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.standaloneChatDetails strong,
+.standaloneChatDetails span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.standaloneChatDetails span,
+.standaloneChatItem time {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.emptyPanelState {
+  display: grid;
+  gap: 6px;
+  padding: 40px 20px;
+  border: 1px dashed var(--border-0);
+  border-radius: 16px;
+  color: var(--text-2);
+  text-align: center;
+}
+
+.emptyPanelState strong {
+  color: var(--text-1);
+}
+
 .toolbarActions {
   display: flex;
   gap: 10px;
