@@ -228,6 +228,8 @@ async fn list_permissions(State(state): State<Arc<AppState>>) -> Json<Value> {
         ("shell_execute", Permission::ShellExecute),
         ("git_read", Permission::GitRead),
         ("git_write", Permission::GitWrite),
+        ("browser_access", Permission::BrowserAccess),
+        ("mcp_call", Permission::McpCall),
     ];
     let mut result = serde_json::Map::new();
     for (name, permission) in names {
@@ -250,6 +252,8 @@ async fn update_permission(
         "shell_execute" => Permission::ShellExecute,
         "git_read" => Permission::GitRead,
         "git_write" => Permission::GitWrite,
+        "browser_access" => Permission::BrowserAccess,
+        "mcp_call" => Permission::McpCall,
         _ => return Err(ApiError::BadRequest("unknown permission".into())),
     };
     let mode: PermissionMode = serde_json::from_value(

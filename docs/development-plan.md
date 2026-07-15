@@ -286,7 +286,7 @@ Task lifecycle реализован: start/complete/fail/cancel/resume/retry. St
 ### Этап 6 — Индексация, MCP, память, workers 📋
 
 - Project index для контекстного поиска
-- MCP-интеграции (`mcp.call`)
+- MCP-интеграции (`mcp.call`) уже есть на уровне tool-runtime; остаётся UI управления серверами
 - Память агента
 - Multi-model routing и дополнительные провайдеры (OpenAI, Anthropic, Ollama) — после LiteRouter
 - Python workers для ML-задач

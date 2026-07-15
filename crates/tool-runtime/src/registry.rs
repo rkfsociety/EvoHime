@@ -127,6 +127,12 @@ impl ToolRegistry {
             permissions: tools::git::PUSH_PERMISSIONS,
             timeout: tools::git::PUSH_TIMEOUT,
         });
+        registry.register(ToolDefinition {
+            name: tools::mcp::NAME,
+            description: tools::mcp::DESCRIPTION,
+            permissions: tools::mcp::PERMISSIONS,
+            timeout: tools::mcp::TIMEOUT,
+        });
         registry
     }
 
@@ -204,6 +210,7 @@ impl ToolRegistry {
                 tools::git::COMMIT_NAME => tools::git::commit(ctx, input).await,
                 tools::git::PULL_NAME => tools::git::pull(ctx, input).await,
                 tools::git::PUSH_NAME => tools::git::push(ctx, input).await,
+                tools::mcp::NAME => tools::mcp::execute(ctx, input).await,
                 _ => Err(ToolError::UnknownTool(name.to_string())),
             }
         };
@@ -259,7 +266,7 @@ mod tests {
     fn bootstrap_registers_filesystem_read() {
         let registry = ToolRegistry::bootstrap();
         let tools = registry.list();
-        assert_eq!(tools.len(), 10);
+        assert_eq!(tools.len(), 11);
         assert_eq!(tools[0].name, "filesystem.patch");
         assert_eq!(tools[1].name, "filesystem.read");
         assert_eq!(tools[2].name, "filesystem.search");
@@ -269,7 +276,8 @@ mod tests {
         assert_eq!(tools[6].name, "git.pull");
         assert_eq!(tools[7].name, "git.push");
         assert_eq!(tools[8].name, "git.status");
-        assert_eq!(tools[9].name, "shell.execute");
+        assert_eq!(tools[9].name, "mcp.call");
+        assert_eq!(tools[10].name, "shell.execute");
     }
 
     #[tokio::test]

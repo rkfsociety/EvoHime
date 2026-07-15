@@ -1,5 +1,6 @@
 pub mod filesystem;
 pub mod git;
+pub mod mcp;
 pub mod patch;
 pub mod search;
 pub mod shell;

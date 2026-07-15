@@ -11,7 +11,7 @@ Last updated: 2026-07-15
 | `server` | Active | HTTP + WebSocket, workspace file and Git APIs |
 | `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema |
 | `storage` | Active | Sessions, tasks, events, **session_messages** |
-| `tool-runtime` | Active | Registry + sandboxed filesystem, shell, and Git tools |
+| `tool-runtime` | Active | Registry + sandboxed filesystem, shell, Git, and MCP call tools |
 | `agent-runtime` | Active | `agent_loop.rs` — LLM + tool planning parser |
 | `model-gateway` | Active | **LiteRouter** SSE streaming + mock provider |
 | `task-engine` | Active | lifecycle wrappers, dependency batching, checkpoints, cancel/resume/retry foundation |
@@ -96,4 +96,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: continue with MCP, persistent memory, multi-model routing, Python workers, and browser automation tools after the project index slice.
+**Stage 6 / Milestone 5**: continue with MCP management UI, persistent memory, multi-model routing, Python workers, and browser automation tools after the project index slice and MCP call bridge.

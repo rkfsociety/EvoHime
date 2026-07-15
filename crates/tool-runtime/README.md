@@ -10,5 +10,6 @@ Implemented tools:
 - `filesystem.search`
 - `shell.execute`
 - `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push`
+- `mcp.call`
 
-All tools run through the registry and workspace sandbox. Permission checks, approval resumption, and task orchestration now work through the browser runtime; stage 6 will add more tools rather than finish the existing base.
+All tools run through the registry and workspace sandbox. Permission checks, approval resumption, and task orchestration now work through the browser runtime; stage 6 will add more tools and management UI rather than finish the existing base.

@@ -556,6 +556,7 @@ version = "0.1.0"
 dependencies = [
  "evohime-permissions",
  "futures-util",
+ "reqwest",
  "serde",
  "serde_json",
  "tempfile",
@@ -563,6 +564,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "uuid",
+ "wiremock",
 ]
 
 [[package]]
