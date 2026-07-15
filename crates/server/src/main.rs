@@ -60,6 +60,12 @@ struct ModelRouteRequest {
     base_url: String,
     #[serde(default)]
     api_key: Option<String>,
+    #[serde(default = "default_billing_mode")]
+    billing_mode: String,
+}
+
+fn default_billing_mode() -> String {
+    "free".to_string()
 }
 
 impl From<(Uuid, ApiError)> for ApiError {
@@ -331,6 +337,29 @@ fn build_model_config(
         let provider = ProviderKind::parse(&route.provider).ok_or_else(|| {
             ApiError::BadRequest(format!("Неизвестный провайдер: {}", route.provider))
         })?;
+        let billing_mode = if provider == ProviderKind::LiteRouter {
+            route.billing_mode.as_str()
+        } else {
+            "paid"
+        };
+        if !matches!(billing_mode, "free" | "paid") {
+            return Err(ApiError::BadRequest(
+                "Режим LiteRouter должен быть free или paid".to_string(),
+            ));
+        }
+        if provider == ProviderKind::LiteRouter {
+            let is_free_model = model.ends_with(":free");
+            if billing_mode == "free" && !is_free_model {
+                return Err(ApiError::BadRequest(
+                    "В бесплатном режиме LiteRouter доступны только модели с суффиксом :free".to_string(),
+                ));
+            }
+            if billing_mode == "paid" && is_free_model {
+                return Err(ApiError::BadRequest(
+                    "В платном режиме выбери модель без суффикса :free".to_string(),
+                ));
+            }
+        }
         let existing_key = current
             .routes
             .get(&name)

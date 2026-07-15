@@ -35,6 +35,7 @@ pub struct ModelRouteResponse {
     pub base_url: String,
     pub configured: bool,
     pub available_models: Vec<String>,
+    pub billing_mode: String,
 }
 
 impl ModelGateway {
@@ -88,6 +89,11 @@ impl ModelGateway {
                 base_url: route.literouter.base_url.clone(),
                 configured: route.configured(),
                 available_models: route.available_models(),
+                billing_mode: if route.provider == ProviderKind::LiteRouter && route.literouter.model.ends_with(":free") {
+                    "free".to_string()
+                } else {
+                    "paid".to_string()
+                },
             })
             .collect();
         routes.sort_by(|left, right| left.name.cmp(&right.name));

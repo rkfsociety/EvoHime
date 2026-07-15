@@ -35,6 +35,7 @@ type ModelConfig = {
   base_url: string;
   configured: boolean;
   available_models: string[];
+  billing_mode: "free" | "paid";
   default_route: string;
   routes: Array<{
     name: string;
@@ -43,6 +44,7 @@ type ModelConfig = {
     base_url: string;
     configured: boolean;
     available_models: string[];
+    billing_mode: "free" | "paid";
   }>;
 };
 
@@ -52,6 +54,7 @@ type ModelRouteDraft = {
   model: string;
   base_url: string;
   api_key: string;
+  billing_mode: "free" | "paid";
   configured?: boolean;
 };
 
@@ -1132,6 +1135,7 @@ export function App() {
         model: "",
         base_url: "https://api.openai.com/v1",
         api_key: "",
+        billing_mode: "paid",
       },
     ]);
   }
@@ -1491,6 +1495,18 @@ export function App() {
                         <span>Модель</span>
                         <input value={route.model} onChange={(event) => updateModelDraft(index, { model: event.target.value })} placeholder="deepseek:free" />
                       </label>
+                      {route.provider === "literouter" ? (
+                        <label>
+                          <span>Режим LiteRouter</span>
+                          <select
+                            value={route.billing_mode}
+                            onChange={(event) => updateModelDraft(index, { billing_mode: event.target.value as "free" | "paid" })}
+                          >
+                            <option value="free">Бесплатный — только :free</option>
+                            <option value="paid">Платный — без :free</option>
+                          </select>
+                        </label>
+                      ) : null}
                       <label>
                         <span>Base URL</span>
                         <input value={route.base_url} onChange={(event) => updateModelDraft(index, { base_url: event.target.value })} placeholder="https://api.example.com/v1" />
