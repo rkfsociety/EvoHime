@@ -1439,7 +1439,6 @@ export function App() {
       <section className="hero">
         <div>
           <p className="eyebrow">EvoHime</p>
-          <h1>Рабочее пространство ИИ-агента в браузере</h1>
         </div>
         <div className="statusCard">
           <span className="statusDot" data-state={socketState} />
