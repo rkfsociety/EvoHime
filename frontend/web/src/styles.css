@@ -143,10 +143,14 @@ h1 {
 
 .workspace {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1.6fr) minmax(320px, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   gap: 24px;
   min-height: 0;
   overflow: hidden;
+}
+
+.timelinePanel {
+  display: none;
 }
 
 .sidebar {
