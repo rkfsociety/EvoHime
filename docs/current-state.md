@@ -24,6 +24,8 @@ Last updated: 2026-07-15
 | --- | --- | --- |
 | GET | `/health` | Health check |
 | GET | `/api/models/config` | LiteRouter model configuration |
+| GET | `/api/permissions` | Current permission policy snapshot |
+| PUT | `/api/permissions/:permission` | Update a permission mode |
 | POST | `/api/sessions` | Create session + bootstrap events |
 | GET | `/api/sessions/:id/history` | Event history |
 | GET | `/api/files` | List workspace directory entries |
@@ -33,7 +35,7 @@ Last updated: 2026-07-15
 | POST | `/api/git/commit`, `/api/git/pull`, `/api/git/push` | Permission-controlled Git mutations |
 | WS | `/ws/:session_id` | Real-time streaming events |
 
-Workspace APIs now cover file browsing, reading, saving/creating files, Git status/diff, and Git commit/pull/push actions. File and Git mutations publish synchronization events through the session bus.
+Workspace APIs now cover file browsing, reading, saving/creating files, Git status/diff, and Git commit/pull/push actions. File and Git mutations publish synchronization events through the session bus. Permissions are editable through the API, and approval-required tool calls round-trip through the browser.
 
 ## Agent flow
 
@@ -73,11 +75,11 @@ user.message
 | Panel | Status |
 | --- | --- |
 | Chat | ✅ Active |
-| Settings | ✅ Active (read-only model config) |
+| Settings | ✅ Active (model config + permission policies) |
 | Events timeline | ✅ Active |
 | Tasks | ✅ Task list, statuses, plan steps, cancel/resume/retry |
 | Actions | ✅ Action log + task orchestration events |
-| Terminal | ✅ Active |
+| Terminal | ✅ Active shell output view |
 | Files | ✅ Active lazy workspace tree and file creation |
 | Editor | ✅ Active Monaco editor with save/reload and dirty-state conflict notice |
 | Git | ✅ Active status/diff viewer with commit/pull/push controls |
@@ -94,4 +96,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: extend the orchestrator with project index, MCP, memory, and worker integrations.
+**Stage 6 / Milestone 5**: extend the orchestrator with project index, contextual retrieval, MCP, persistent memory, multi-model routing, Python workers, and browser automation tools.

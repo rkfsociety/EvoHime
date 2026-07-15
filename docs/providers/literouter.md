@@ -1,9 +1,9 @@
 # LiteRouter — первый LLM-провайдер EvoHime
 
-> **Статус:** активен (этап 2, Milestone 1 завершён)
+> **Статус:** активен, используется как текущий default provider
 > **Приоритет:** первый провайдер для `model-gateway`
 
-LiteRouter — OpenAI-compatible API. EvoHime использует его как основной провайдер на этапе 2.
+LiteRouter — OpenAI-compatible API. EvoHime использует его как основной провайдер в текущем browser-first runtime.
 
 ---
 
@@ -50,13 +50,13 @@ agent-runtime
 
 `crates/model-gateway/src/providers/literouter.rs`
 
-### Задачи (Milestone 1)
+### Реализовано в EvoHime
 
-- [ ] `LiteRouterConfig` из env
-- [ ] OpenAI-compatible chat completions client
-- [ ] Streaming (SSE) → токены
-- [ ] Обработка ошибок API
-- [ ] Тесты с mock HTTP
+- [x] `LiteRouterConfig` из env
+- [x] OpenAI-compatible chat completions client
+- [x] Streaming (SSE) → токены
+- [x] Обработка ошибок API
+- [x] Тесты с mock HTTP
 
 ---
 

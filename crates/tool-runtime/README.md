@@ -11,4 +11,4 @@ Implemented tools:
 - `shell.execute`
 - `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push`
 
-All tools run through the registry and workspace sandbox. Permission checks and approval resumption are the next integration boundary; a tool implementation does not yet mean it is callable from the full LLM tool-calling loop.
+All tools run through the registry and workspace sandbox. Permission checks, approval resumption, and task orchestration now work through the browser runtime; stage 6 will add more tools rather than finish the existing base.

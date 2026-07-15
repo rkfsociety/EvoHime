@@ -10,4 +10,4 @@ workers/python/
 └── worker.py
 ```
 
-The Rust server will enqueue jobs and consume structured results over HTTP or a message queue.
+The Rust server will enqueue jobs and consume structured results over HTTP or a message queue once stage 6 starts.

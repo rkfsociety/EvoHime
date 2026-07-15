@@ -90,7 +90,7 @@ EvoHime Server — Rust
 | Git | Diff, status, операции | 4 |
 | Tasks | Список задач | 5, базовая версия уже есть |
 | Actions | Журнал действий агента | 5, базовая версия уже есть |
-| Settings | Модели, разрешения, MCP | 2, read-only конфигурация уже есть |
+| Settings | Модели, разрешения, MCP | 2, конфиг и policies уже доступны |
 
 ---
 
@@ -259,9 +259,9 @@ LITEROUTER_MODEL=deepseek:free
 
 **Результат:** агент читает и пишет файлы, выполняет shell-команды и запрашивает подтверждение опасных действий в UI.
 
-### Этап 4 — Редактор, файлы, Git 🟡
+### Этап 4 — Редактор, файлы, Git ✅
 
-Git backend уже частично реализован: `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push`.
+Git backend реализован: `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push`.
 
 - Monaco Editor
 - Дерево файлов
@@ -271,9 +271,9 @@ Git backend уже частично реализован: `git.status`, `git.dif
 
 **Результат:** полноценная работа с кодом и Git через браузер.
 
-### Этап 5 — Планирование задач и оркестрация 🟡
+### Этап 5 — Планирование задач и оркестрация ✅
 
-Базовый task lifecycle уже реализован: start/complete/fail/cancel/resume/retry. Storage содержит `task_steps` и `task_checkpoints`, `agent-runtime` строит structured plan steps, а `server` материализует план в историю шагов и публикует `task.step.changed`.
+Task lifecycle реализован: start/complete/fail/cancel/resume/retry. Storage содержит `task_steps` и `task_checkpoints`, `agent-runtime` строит structured plan steps, а `server` материализует план в историю шагов и публикует `task.step.changed`.
 
 - Реальное планирование (`agent.plan.updated`) с fallback-парсингом JSON, fenced JSON и wrapper-объектов
 - Параллельное выполнение независимых инструментов через dependency batching
@@ -288,12 +288,12 @@ Git backend уже частично реализован: `git.status`, `git.dif
 - Project index для контекстного поиска
 - MCP-интеграции (`mcp.call`)
 - Память агента
-- Дополнительные провайдеры (OpenAI, Anthropic, Ollama) — после LiteRouter
+- Multi-model routing и дополнительные провайдеры (OpenAI, Anthropic, Ollama) — после LiteRouter
 - Python workers для ML-задач
 - `browser.open`, `browser.extract`
 - UI управления MCP и инструментами
 
-**Результат:** production-ready агент с расширяемой экосистемой.
+**Результат:** production-ready агент с расширяемой экосистемой, multi-model support и worker integrations.
 
 ---
 

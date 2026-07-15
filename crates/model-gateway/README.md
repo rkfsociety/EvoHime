@@ -1,6 +1,6 @@
 # model-gateway
 
-LLM provider abstraction. **First provider: LiteRouter.**
+LLM provider abstraction. **Current default provider: LiteRouter.**
 
 ## Configuration
 
@@ -16,7 +16,7 @@ LITEROUTER_MODEL=deepseek:free
 - `ModelGateway::stream_chat(messages)` — token stream
 - `GET /api/models/config` — exposed by server
 
-## Status (Milestone 1)
+## Status
 
 - [x] Provider trait + `TokenStream`
 - [x] LiteRouter HTTP client + SSE parsing

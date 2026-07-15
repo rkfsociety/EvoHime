@@ -1,6 +1,6 @@
 # EvoHime
 
-Web-first AI-agent monorepo.
+Web-first AI-agent monorepo. Browser-only: no Electron, desktop, or mobile clients.
 
 ## Stack
 
@@ -32,16 +32,16 @@ evohime/
 ## Current state
 
 ```text
-User message
-  → task created
-  → agent loop loads history
-  → filesystem tool reads the workspace
-  → streamed model response
-  → events shown in browser
+Browser workspace
+  → session/task lifecycle
+  → streamed LiteRouter response
+  → filesystem/shell/git tools
+  → approval flow
+  → chat, settings, events, tasks, actions, terminal, files, editor, git panels
   → history stored in PostgreSQL
 ```
 
-LiteRouter is the active model provider. The tool runtime currently includes sandboxed filesystem read/write/patch/search, shell execution, and Git operations. Task lifecycle, task steps, checkpoints, cancel/resume/retry commands, and the Tasks/Actions UI are present at foundation level. Approval delivery, end-to-end tool-calling orchestration, terminal streaming, file editor, and Git UI still need completion.
+Stage 5 is complete. LiteRouter is the active model provider. The tool runtime includes sandboxed filesystem read/write/patch/search, shell execution, and Git operations. Task lifecycle, task steps, checkpoints, cancel/resume/retry commands, approval flow, and the Tasks/Actions UI are available in the current browser workflow. Stage 6 remains planned for project index, MCP, memory, additional providers, Python workers, and browser automation tools.
 
 ## Local development
 

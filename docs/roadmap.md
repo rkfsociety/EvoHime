@@ -15,8 +15,8 @@
 | 2 | Чат с моделью | ✅ Готово | LiteRouter streaming |
 | 3 | Tools + shell | ✅ Готово | Sandbox, filesystem tools, shell, approvals, terminal, permissions |
 | 4 | Editor + Git | ✅ Done | Browser file tree, Monaco editor, Git status/diff/actions, and synchronization events |
-| 5 | Оркестрация | 🟡 Основа готова | Lifecycle, команды и storage заготовлены |
-| 6 | Advanced | 📋 Запланирован | Index, MCP, workers |
+| 5 | Оркестрация | ✅ Complete | Lifecycle, команды, storage и recovery готовы |
+| 6 | Advanced | 📋 Запланирован | Index, MCP, memory, multi-model, workers |
 
 ---
 
@@ -172,7 +172,7 @@
 | 6.3 | `mcp.call` tool | `crates/tool-runtime/` |
 | 6.4 | MCP server management UI | `frontend/web/` |
 | 6.5 | Agent memory (persistent context) | `crates/storage/`, `crates/agent-runtime/` |
-| 6.6 | Multi-model: LiteRouter + другие провайдеры per-task | `crates/model-gateway/` |
+| 6.6 | Multi-model routing: LiteRouter + additional providers per task | `crates/model-gateway/` |
 | 6.7 | Python workers (HTTP/queue) | `workers/python/` |
 | 6.8 | `browser.open`, `browser.extract` | `crates/tool-runtime/` |
 | 6.9 | Settings: models, permissions, MCP, tools | `frontend/web/` |
@@ -192,11 +192,11 @@
 | Events (timeline) | 1 | M0 | ✅ Активна |
 | Files | 4 | M3 | ✅ Complete |
 | Editor | 4 | M3 | ✅ Complete |
-| Terminal | 3 | M2 | Placeholder |
+| Terminal | 3 | M2 | ✅ Active |
 | Git | 4 | M3 | ✅ Complete |
 | Tasks | 5 | M4 | ✅ Активна, базовая |
 | Actions | 5 | M4 | ✅ Активна, базовая |
-| Settings | 2 | M1 | ✅ Активна, read-only |
+| Settings | 2 | M1 | ✅ Активна, модели + permissions |
 
 ---
 
