@@ -938,7 +938,7 @@ h1 {
   position: relative;
   width: min(100%, 920px);
   margin: 0 auto;
-  padding: 14px clamp(20px, 4vw, 56px) 0;
+  padding: 12px clamp(20px, 4vw, 56px) 0;
 }
 
 .projectContextButton {
@@ -946,7 +946,7 @@ h1 {
   align-items: center;
   gap: 10px;
   min-width: 220px;
-  padding: 8px 12px;
+  padding: 9px 12px;
   border: 1px solid rgba(143, 180, 255, 0.18);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.035);

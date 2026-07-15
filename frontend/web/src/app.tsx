@@ -706,7 +706,7 @@ export function App() {
     () => (directoryCache["."] ?? []).filter((entry) => entry.kind === "dir"),
     [directoryCache],
   );
-  const hasConversation = lines.some((line) => line.role !== "system") || Boolean(stream);
+  const hasConversation = lines.some((line) => line.role !== "system" && line.text.trim()) || Boolean(stream.trim());
   const selectedFileLanguage = useMemo(
     () => inferMonacoLanguage(selectedFilePath),
     [selectedFilePath],
