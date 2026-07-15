@@ -2,15 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Запускать EvoHime на Windows без Docker с нативным PostgreSQL, локальными Rust/Vite процессами и доступом backend к авторизации `gh` хоста.
+**Goal:** Запускать EvoHime на Windows нативно с PostgreSQL, локальными Rust/Vite процессами и доступом backend к авторизации `gh` хоста.
 
-**Architecture:** `scripts/setup-local.ps1` загружает официальный portable PostgreSQL 16 без прав администратора, подготавливает data directory, роль, базу и миграции. `start-dev.ps1` проверяет инструменты и базу, затем управляет локальными server/web процессами и PostgreSQL. Docker Compose остаётся альтернативным deployment-путём.
+**Architecture:** `scripts/setup-local.ps1` загружает официальный portable PostgreSQL 16 без прав администратора, подготавливает data directory, роль, базу и миграции. `start-dev.ps1` проверяет инструменты и базу, затем управляет локальными server/web процессами и PostgreSQL. Контейнерный deployment исключён.
 
 **Tech Stack:** PowerShell 5.1+, PostgreSQL 16, Rust/Cargo, Node.js/npm, React/Vite, Axum/SQLx.
 
 ## Global Constraints
 
-- Не удалять и не ломать Docker Compose.
+- Не добавлять контейнерный deployment.
 - Не затирать `LITEROUTER_API_KEY`, заданный пользователем.
 - Не запускать frontend/backend, если PostgreSQL недоступен.
 - Все команды и сообщения launcher должны работать в Windows PowerShell.
@@ -62,7 +62,7 @@
 
 - [ ] **Step 1: Описать первичный запуск**: `.\scripts\setup-local.ps1 -InstallPostgres -ApplyMigrations`, затем `.\start-dev.ps1`.
 - [ ] **Step 2: Описать проверку GitHub** через `gh auth status` и `/api/auth/github`.
-- [ ] **Step 3: Переместить Docker Compose в раздел альтернативного запуска**, сохранив команды compose.
+- [ ] **Step 3: Удалить контейнерную конфигурацию и образы из проекта.**
 - [ ] **Step 4: Проверить документацию на противоречия** с реальными скриптами.
 - [ ] **Step 5: Commit** `docs: document native local launch`.
 
@@ -77,5 +77,5 @@
 - [ ] **Step 3: Запустить** `npm run generate:protocol`, затем выполнить `Push-Location frontend/web; npm run build; Pop-Location`.
 - [ ] **Step 4: Запустить** нативный setup и проверить `pg_isready`, `/health`, `/api/auth/github` и frontend `http://localhost:5173`.
 - [ ] **Step 5: Проверить** совпадение `gh api user --jq .login` и поля `login` API.
-- [ ] **Step 6: Убедиться**, что `git status` содержит только намеренные изменения и Docker Compose не повреждён.
+- [ ] **Step 6: Убедиться**, что `git status` содержит только намеренные изменения и контейнерных артефактов не осталось.
 - [ ] **Step 7: Commit** `test: verify native local launch` только если появились отдельные тестовые изменения.

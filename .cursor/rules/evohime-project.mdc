@@ -9,7 +9,7 @@ Web-first AI-agent. **Browser only** — no Electron/desktop/mobile.
 
 ## Stack
 
-React+TS+Vite frontend, Rust/Axum backend, PostgreSQL, WebSocket, Docker Compose.
+React+TS+Vite frontend, Rust/Axum backend, PostgreSQL, WebSocket, native Windows launcher.
 
 ## Rules
 

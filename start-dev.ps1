@@ -194,7 +194,7 @@ if ($Setup) {
   exit 0
 }
 
-Write-Host '[EvoHime] Local start without Docker'
+Write-Host '[EvoHime] Native local start'
 Write-Host ''
 Write-Host 'Important: PostgreSQL must already be running locally.'
 Write-Host ''

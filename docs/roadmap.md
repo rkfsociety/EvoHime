@@ -40,7 +40,7 @@
 - [x] `filesystem.read` с защитой path traversal
 - [x] История в `session_events` (PostgreSQL)
 - [x] Frontend: чат + timeline событий
-- [x] Docker Compose: db + server + web
+- [x] Native local launcher: PostgreSQL + server + web
 - [x] JSON Schema → TypeScript codegen
 
 ### Критерий готовности

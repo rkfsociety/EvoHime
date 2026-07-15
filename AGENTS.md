@@ -19,7 +19,7 @@ Web-first AI-agent platform. **Browser only** — no Electron, desktop, or mobil
 | API | HTTP/REST |
 | Database | PostgreSQL (`migrations/`, `crates/storage/`) |
 | ML workers | Python (`workers/python/`) — stage 6 |
-| Deploy | Docker Compose |
+| Deploy | Native Windows launcher |
 
 ## Architecture
 
@@ -65,7 +65,7 @@ User message
 - GitHub auth: `/api/auth/github` reads the active local `gh` account and the sidebar should show the login when the backend is running
 - Protocol codegen: JSON Schema → TypeScript
 - Tests: `crates/protocol`, `crates/tool-runtime`
-- Docker Compose: db + server + web
+- Native local stack: PostgreSQL + server + web
 
 ### Incomplete or not yet implemented
 
@@ -137,12 +137,9 @@ DEMO_FILE_PATH=docs/sample-context.md
 ## Commands
 
 ```bash
-# Native Windows local stack (no Docker; PowerShell)
+# Native Windows local stack (PowerShell)
 .\scripts\setup-local.ps1 -InstallPostgres -ApplyMigrations
 .\start-dev.ps1
-
-# Full stack
-docker compose up --build
 
 # Backend
 cargo run -p evohime-server
@@ -192,4 +189,4 @@ LITEROUTER_MODEL=deepseek:free
 | `frontend/web/src/app.tsx` | Workspace UI |
 | `migrations/0001_init.sql` | DB schema |
 | `crates/model-gateway/src/providers/literouter.rs` | LiteRouter provider |
-| `docker-compose.yml` | Local deployment |
+| `start-dev.ps1` | Local development launcher |

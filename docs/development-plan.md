@@ -18,7 +18,7 @@
 | API | HTTP/REST |
 | База данных | PostgreSQL |
 | AI/ML workers | Изолированные Python workers |
-| Развёртывание | Docker Compose |
+| Развёртывание | Native Windows launcher |
 
 ---
 
@@ -188,7 +188,6 @@ evohime/
 ├── workers/
 │   └── python/                 # ML workers
 ├── migrations/                 # SQL migrations
-├── docker/                     # Container images
 ├── docs/                       # Documentation
 ├── scripts/                    # Codegen, utilities
 └── .cursor/rules/              # AI agent rules
@@ -217,7 +216,7 @@ evohime/
 
 ### Этап 1 — Фундамент ✅
 
-Monorepo, Rust-сервер, React-интерфейс, PostgreSQL, Docker Compose, базовый WebSocket-протокол.
+Monorepo, Rust-сервер, React-интерфейс, PostgreSQL, native launcher, базовый WebSocket-протокол.
 
 **Результат:** вертикальный сценарий работает end-to-end.
 

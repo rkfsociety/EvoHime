@@ -8,7 +8,7 @@ Web-first AI-agent monorepo. Browser-only: no Electron, desktop, or mobile clien
 - Backend: Rust (Axum)
 - Database: PostgreSQL
 - Real-time: WebSocket
-- Deploy: Docker Compose
+- Deploy: native Windows launcher
 
 ## Repository layout
 
@@ -25,7 +25,6 @@ evohime/
 │   └── storage/           # PostgreSQL access
 ├── workers/python/        # HTTP job workers for heavier processing
 ├── migrations/            # SQL migrations
-├── docker/                # Container images
 └── docs/                  # Architecture, roadmap, and status
 ```
 
@@ -43,9 +42,9 @@ Browser workspace
 
 Stages 1–5 are complete. LiteRouter is the active model provider. Stage 6 already includes project index, MCP, persistent memory, task-scoped model routing, browser tools, and MCP management. The Python worker now exposes a bounded HTTP job queue with health, submit, poll, and structured failure states; the remaining work is expanding real ML task handlers and their production persistence.
 
-## Local development without Docker
+## Local development
 
-The recommended Windows path runs Rust, Vite, and a portable PostgreSQL 16 process directly on the host. Administrator rights and Docker are not required.
+The supported path runs Rust, Vite, and a portable PostgreSQL 16 process directly on the host.
 
 First setup:
 
@@ -90,12 +89,6 @@ Generate protocol types:
 ```bash
 npm install
 npm run generate:protocol
-```
-
-## Alternative Docker Compose deployment
-
-```bash
-docker compose up --build
 ```
 
 - Web: http://localhost:5173

@@ -51,9 +51,9 @@ npm run generate:protocol
 
 ## Deployment
 
-```bash
-docker compose up --build
-```
+The supported deployment path is the native Windows launcher. It starts the
+portable PostgreSQL process, Rust server, and Vite frontend directly on the
+host.
 
 - Web UI: http://localhost:5173
 - API: http://localhost:3000
