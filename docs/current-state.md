@@ -98,6 +98,8 @@ user.message
 ## Launcher notes
 
 - `start-dev.ps1` is the local tray launcher for server + web
+- Native launcher mode uses portable PostgreSQL 16 under `%LOCALAPPDATA%\EvoHime` and does not require Docker or administrator rights
+- Run `scripts/setup-local.tests.ps1` to verify PostgreSQL, migrations, and the local SQL connection
 - Tray menu now includes a server restart action
 - The server tray state should reflect the local `gh` auth snapshot when the backend is up
 

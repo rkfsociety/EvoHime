@@ -137,6 +137,10 @@ DEMO_FILE_PATH=docs/sample-context.md
 ## Commands
 
 ```bash
+# Native Windows local stack (no Docker; PowerShell)
+.\scripts\setup-local.ps1 -InstallPostgres -ApplyMigrations
+.\start-dev.ps1
+
 # Full stack
 docker compose up --build
 

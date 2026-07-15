@@ -1,12 +1,75 @@
 ﻿param(
   [switch]$Server,
-  [switch]$Web
+  [switch]$Web,
+  [switch]$Setup
 )
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $serverUrl = 'http://localhost:3000/health'
 $webUrl = 'http://localhost:5173'
+$setupScript = Join-Path $root 'scripts\setup-local.ps1'
+
+function Import-DotEnv {
+  $envPath = Join-Path $root '.env'
+  if (-not (Test-Path -LiteralPath $envPath)) {
+    return
+  }
+
+  foreach ($line in Get-Content -LiteralPath $envPath) {
+    if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$') {
+      $name = $Matches[1]
+      $value = $Matches[2].Trim()
+      if (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'"))) {
+        $value = $value.Substring(1, $value.Length - 2)
+      }
+      Set-Item -Path "Env:$name" -Value $value
+    }
+  }
+}
+
+function Invoke-LocalSetup {
+  if (-not (Test-Path -LiteralPath $setupScript)) {
+    throw "Не найден setup-скрипт: $setupScript"
+  }
+  & $setupScript -InstallPostgres -ApplyMigrations
+  if ($LASTEXITCODE -ne 0) {
+    throw "Подготовка локального PostgreSQL завершилась с кодом $LASTEXITCODE."
+  }
+}
+
+function Stop-LocalDatabase {
+  if (Test-Path -LiteralPath $setupScript) {
+    & $setupScript -Stop
+  }
+}
+
+function Test-PortAvailable([int]$port) {
+  $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
+  try {
+    $listener.Start()
+    return $true
+  } catch {
+    return $false
+  } finally {
+    $listener.Stop()
+  }
+}
+
+function Wait-ForHttp([string]$url, [int]$timeoutSeconds = 60) {
+  $deadline = [DateTime]::UtcNow.AddSeconds($timeoutSeconds)
+  do {
+    try {
+      $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 3
+      if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500) {
+        return
+      }
+    } catch {
+    }
+    Start-Sleep -Milliseconds 500
+  } while ([DateTime]::UtcNow -lt $deadline)
+  throw "Сервис не ответил за $timeoutSeconds секунд: $url"
+}
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -105,14 +168,15 @@ function Set-NotifyIconState {
 
 if ($Server) {
   Set-Location $root
-  $env:DATABASE_URL = 'postgres://evohime:evohime@localhost:5432/evohime'
-  $env:BIND_ADDR = '0.0.0.0:3000'
-  $env:WORKSPACE_ROOT = '.'
-  $env:DEMO_FILE_PATH = 'docs/sample-context.md'
-  $env:MODEL_PROVIDER = 'literouter'
-  $env:LITEROUTER_API_KEY = ''
-  $env:LITEROUTER_BASE_URL = 'https://api.literouter.com/v1'
-  $env:LITEROUTER_MODEL = 'deepseek:free'
+  Import-DotEnv
+  if (-not $env:DATABASE_URL) { $env:DATABASE_URL = 'postgres://evohime:evohime@localhost:5432/evohime' }
+  if (-not $env:BIND_ADDR) { $env:BIND_ADDR = '0.0.0.0:3000' }
+  if (-not $env:WORKSPACE_ROOT) { $env:WORKSPACE_ROOT = '.' }
+  if (-not $env:DEMO_FILE_PATH) { $env:DEMO_FILE_PATH = 'docs/sample-context.md' }
+  if (-not $env:MODEL_PROVIDER) { $env:MODEL_PROVIDER = 'literouter' }
+  if (-not $env:LITEROUTER_BASE_URL) { $env:LITEROUTER_BASE_URL = 'https://api.literouter.com/v1' }
+  if (-not $env:LITEROUTER_MODEL) { $env:LITEROUTER_MODEL = 'deepseek:free' }
+  Invoke-LocalSetup
 
   & (Get-CargoExe) run -p evohime-server
   exit $LASTEXITCODE
@@ -124,12 +188,29 @@ if ($Web) {
   exit $LASTEXITCODE
 }
 
+if ($Setup) {
+  Set-Location $root
+  Invoke-LocalSetup
+  exit 0
+}
+
 Write-Host '[EvoHime] Local start without Docker'
 Write-Host ''
 Write-Host 'Important: PostgreSQL must already be running locally.'
 Write-Host ''
 
 Set-Location $root
+
+Import-DotEnv
+
+if (-not (Test-PortAvailable 3000)) {
+  throw 'Порт 3000 уже занят. Останови старый backend перед запуском EvoHime.'
+}
+if (-not (Test-PortAvailable 5173)) {
+  throw 'Порт 5173 уже занят. Останови старый frontend перед запуском EvoHime.'
+}
+
+Invoke-LocalSetup
 
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
   throw 'npm not found in PATH.'
@@ -150,6 +231,15 @@ if (-not (Test-Path (Join-Path $root 'frontend\web\node_modules'))) {
 
 $script:serverProcess = Start-ManagedProcess '-Server'
 $script:webProcess = Start-ManagedProcess '-Web'
+try {
+  Wait-ForHttp $serverUrl
+  Wait-ForHttp $webUrl
+} catch {
+  Stop-Tree $script:webProcess
+  Stop-Tree $script:serverProcess
+  Stop-LocalDatabase
+  throw
+}
 
 $form = New-Object System.Windows.Forms.Form
 $form.ShowInTaskbar = $false
@@ -248,6 +338,7 @@ $form.Add_FormClosing({
   $timer.Stop()
   Stop-Tree $script:webProcess
   Stop-Tree $script:serverProcess
+  Stop-LocalDatabase
   $serverIcon.Visible = $false
   $webIcon.Visible = $false
   $serverIcon.Dispose()

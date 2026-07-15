@@ -4,7 +4,7 @@
 
 **Goal:** Запускать EvoHime на Windows без Docker с нативным PostgreSQL, локальными Rust/Vite процессами и доступом backend к авторизации `gh` хоста.
 
-**Architecture:** `scripts/setup-local.ps1` подготавливает PostgreSQL 16, роль, базу и миграции. `start-dev.ps1` проверяет инструменты и базу, затем управляет локальными server/web процессами. Docker Compose остаётся альтернативным deployment-путём.
+**Architecture:** `scripts/setup-local.ps1` загружает официальный portable PostgreSQL 16 без прав администратора, подготавливает data directory, роль, базу и миграции. `start-dev.ps1` проверяет инструменты и базу, затем управляет локальными server/web процессами и PostgreSQL. Docker Compose остаётся альтернативным deployment-путём.
 
 **Tech Stack:** PowerShell 5.1+, PostgreSQL 16, Rust/Cargo, Node.js/npm, React/Vite, Axum/SQLx.
 
@@ -24,12 +24,12 @@
 - Test: `scripts/setup-local.tests.ps1`
 
 **Interfaces:**
-- `setup-local.ps1` принимает `-InstallPostgres`, `-ApplyMigrations` и использует `localhost:5432`, базу `evohime`, роль `evohime`, пароль `evohime`.
+- `setup-local.ps1` принимает `-InstallPostgres`, `-ApplyMigrations` и использует portable PostgreSQL в `%LOCALAPPDATA%\EvoHime\postgresql-16`, data directory `%LOCALAPPDATA%\EvoHime\postgres-data`, `localhost:5432`, базу `evohime`, роль `evohime`, пароль `evohime`.
 - Launcher вызывает setup без повторной установки уже работающего PostgreSQL.
 
 - [ ] **Step 1: Write the failing checks** для отсутствующего `psql`, недоступного порта и успешного подключения к базе.
 - [ ] **Step 2: Run checks** и убедиться, что чистая машина получает диагностируемый FAIL.
-- [ ] **Step 3: Реализовать установку PostgreSQL 16** через официальный Windows installer, если `psql.exe` и служба PostgreSQL 16 отсутствуют; после установки добавить `bin` в текущий PATH.
+- [ ] **Step 3: Реализовать загрузку portable PostgreSQL 16** из официального EDB URL, если `psql.exe` отсутствует; распаковать архив в `%LOCALAPPDATA%\EvoHime\postgresql-16` и добавить `bin` в текущий PATH.
 - [ ] **Step 4: Создать роль и базу** через `psql`, используя `CREATE ROLE ...`, `CREATE DATABASE ...` с идемпотентной проверкой существования.
 - [ ] **Step 5: Применить миграции** последовательно из `migrations/*.sql` через `psql` к `DATABASE_URL`.
 - [ ] **Step 6: Повторно выполнить проверки** и убедиться, что setup идемпотентен.

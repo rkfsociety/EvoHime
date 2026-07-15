@@ -43,7 +43,32 @@ Browser workspace
 
 Stage 5 is complete. LiteRouter is the active model provider. The tool runtime includes sandboxed filesystem read/write/patch/search, shell execution, and Git operations. Task lifecycle, task steps, checkpoints, cancel/resume/retry commands, approval flow, and the Tasks/Actions UI are available in the current browser workflow. Stage 6 remains planned for project index, MCP, memory, additional providers, Python workers, and browser automation tools.
 
-## Local development
+## Local development without Docker
+
+The recommended Windows path runs Rust, Vite, and a portable PostgreSQL 16 process directly on the host. Administrator rights and Docker are not required.
+
+First setup:
+
+```powershell
+.\scripts\setup-local.ps1 -InstallPostgres -ApplyMigrations
+```
+
+Start the tray launcher:
+
+```powershell
+.\start-dev.ps1
+```
+
+The launcher starts PostgreSQL, the Rust backend, and the Vite frontend. The backend can read the host GitHub CLI login:
+
+```powershell
+gh auth status
+Invoke-RestMethod http://localhost:3000/api/auth/github
+```
+
+The convenience files `start-dev.bat` and `start-dev.vbs` start the same local launcher.
+
+## Manual local development
 
 Frontend:
 
@@ -67,7 +92,7 @@ npm install
 npm run generate:protocol
 ```
 
-Docker Compose:
+## Alternative Docker Compose deployment
 
 ```bash
 docker compose up --build
