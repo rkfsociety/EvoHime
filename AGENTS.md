@@ -120,10 +120,11 @@ Each tool must have: unique name, description, JSON Schema input, required permi
 10. **Security** — sandbox filesystem and shell operations
 11. **Commit after completion** — after finishing any coding task, completed change, or other finished work, make a git commit before handing off.
 12. **Keep CI current** — when changing Rust workspace members, dependencies, lint rules, or test expectations, update `.github/workflows/rust.yml` in the same change and keep the workflow aligned with the codebase.
+13. **Fix missing tools first** — if a required tool or command is not available in `PATH`, install or configure it before claiming a backend/frontend check passed.
 
 ## Environment
 
-Если обязательный инструмент разработки отсутствует в PATH (в частности Rust/Cargo), агент должен установить необходимый toolchain перед проверкой и продолжить работу. Нельзя считать backend-проверки выполненными только потому, что `cargo` не найден.
+Если обязательный инструмент разработки отсутствует в `PATH`, агент должен сначала установить или настроить его, а затем продолжить работу. Нельзя считать проверку выполненной, пока нужный инструмент не был реально запущен. Для Rust это включает установку/настройку toolchain, если `cargo` или `rustc` отсутствуют.
 
 ```env
 DATABASE_URL=postgres://evohime:evohime@localhost:5432/evohime

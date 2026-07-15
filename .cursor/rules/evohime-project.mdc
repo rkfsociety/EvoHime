@@ -19,6 +19,7 @@ React+TS+Vite frontend, Rust/Axum backend, PostgreSQL, WebSocket, Docker Compose
 4. Tests for core logic and tools
 5. Minimize diff scope
 6. Keep GitHub Actions workflows current with code changes, especially `.github/workflows/rust.yml` for Rust workspace, dependency, lint, or test updates
+7. If a required tool or command is missing from `PATH`, install or configure it before continuing or claiming verification
 
 ## Current stage: 2 (Milestone 1 done)
 

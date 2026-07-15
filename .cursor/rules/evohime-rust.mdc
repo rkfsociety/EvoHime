@@ -23,6 +23,7 @@ alwaysApply: false
 - Never panic on user input — return errors
 - Add `#[cfg(test)]` for tool and protocol logic
 - Keep `.github/workflows/rust.yml` in sync with workspace, dependency, lint, and test changes so CI reflects the current Rust codebase
+- If `cargo`, `rustc`, or related Rust tools are missing from `PATH`, install or configure the toolchain before treating Rust verification as complete
 
 ## Adding a tool
 
