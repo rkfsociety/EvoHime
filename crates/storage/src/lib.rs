@@ -87,6 +87,27 @@ pub async fn run_migrations(pool: &PgPool) -> Result<(), StorageError> {
     Ok(())
 }
 
+pub async fn load_setting(pool: &PgPool, key: &str) -> Result<Option<Value>, StorageError> {
+    let row = sqlx::query_scalar::<_, Value>(
+        "SELECT value_json FROM app_settings WHERE key = $1",
+    )
+    .bind(key)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
+}
+
+pub async fn save_setting(pool: &PgPool, key: &str, value: &Value) -> Result<(), StorageError> {
+    sqlx::query(
+        "INSERT INTO app_settings (key, value_json) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = now()",
+    )
+    .bind(key)
+    .bind(value)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn create_session(pool: &PgPool) -> Result<SessionRow, StorageError> {
     let row = sqlx::query_as::<_, SessionRow>(
         r#"

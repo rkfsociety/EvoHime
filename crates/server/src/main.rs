@@ -25,7 +25,7 @@ use evohime_task_engine::{
 use evohime_tool_runtime::ToolError;
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde_json::{json, to_value, Value};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::sync::{mpsc, Mutex, RwLock};
@@ -46,13 +46,13 @@ enum ApiError {
     Internal(String),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct ModelSettingsRequest {
     default_route: String,
     routes: Vec<ModelRouteRequest>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct ModelRouteRequest {
     name: String,
     provider: String,
@@ -101,17 +101,38 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("run migrations")?;
 
-    let default_route_name = config.model_config.default_route.clone();
-    let default_route_config = config.model_config.routes.get(&default_route_name);
+    let active_model_config = match evohime_storage::load_setting(&pool, "model_config").await? {
+        Some(value) => match serde_json::from_value::<ModelSettingsRequest>(value) {
+            Ok(request) => build_model_config(request, &config.model_config).unwrap_or_else(|error| {
+                warn!(error = %error, "stored model settings are invalid; using environment defaults");
+                config.model_config.clone()
+            }),
+            Err(error) => {
+                warn!(error = %error, "stored model settings could not be read; using environment defaults");
+                config.model_config.clone()
+            }
+        },
+        None => config.model_config.clone(),
+    };
+    let default_route_name = active_model_config.default_route.clone();
+    let default_route_config = active_model_config.routes.get(&default_route_name).cloned();
+    let default_model_name = default_route_config
+        .as_ref()
+        .map(|route| route.literouter.model.clone())
+        .unwrap_or_default();
+    let default_provider_name = default_route_config
+        .as_ref()
+        .map(|route| route.provider.as_str().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
     let model_gateway = match default_route_config {
-        Some(route) if !route.configured() => {
+        Some(ref route) if !route.configured() => {
             warn!(
                 "default model route is not configured — LLM requests will fail until a key is set"
             );
             None
         }
         Some(_) => Some(Arc::new(
-            ModelGateway::from_config(&config.model_config).context("init model gateway")?,
+            ModelGateway::from_config(&active_model_config).context("init model gateway")?,
         )),
         None => {
             warn!("default model route '{}' is missing", default_route_name);
@@ -127,7 +148,7 @@ async fn main() -> anyhow::Result<()> {
         tools: evohime_tool_runtime::ToolRegistry::bootstrap_with_permissions(permissions.clone()),
         permissions,
         model_gateway: Arc::new(RwLock::new(model_gateway)),
-        model_config: Arc::new(RwLock::new(config.model_config.clone())),
+        model_config: Arc::new(RwLock::new(active_model_config)),
         mcp_servers: Arc::new(Mutex::new(config.mcp_servers.clone())),
         session_buses: Arc::new(Mutex::new(HashMap::new())),
         task_cancellations: Arc::new(Mutex::new(HashMap::new())),
@@ -233,8 +254,8 @@ async fn main() -> anyhow::Result<()> {
     info!(
         workspace_root = %config.workspace_root.display(),
         demo_file = %config.demo_file_path.display(),
-        model = %default_route_config.map(|route| route.literouter.model.as_str()).unwrap_or(""),
-        provider = %default_route_config.map(|route| route.provider.as_str()).unwrap_or("unknown"),
+        model = %default_model_name,
+        provider = %default_provider_name,
         llm_configured = %state.model_gateway.read().await.is_some(),
         "listening on {}",
         addr
@@ -259,13 +280,36 @@ async fn update_model_config(
     State(state): State<Arc<AppState>>,
     Json(request): Json<ModelSettingsRequest>,
 ) -> Result<Json<evohime_model_gateway::ModelConfigResponse>, ApiError> {
+    let current = state.model_config.read().await;
+    let request_value = serde_json::to_value(&request).map_err(|error| ApiError::Internal(error.to_string()))?;
+    let config = build_model_config(request, &current)?;
+    drop(current);
+    let gateway = if config.routes.values().all(ModelRouteConfig::configured) {
+        Some(Arc::new(
+            ModelGateway::from_config(&config)
+                .map_err(|error| ApiError::BadRequest(error.to_string()))?,
+        ))
+    } else {
+        None
+    };
+    evohime_storage::save_setting(&state.pool, "model_config", &request_value)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    *state.model_config.write().await = config;
+    *state.model_gateway.write().await = gateway;
+
+    Ok(Json(state.model_config_response().await))
+}
+
+fn build_model_config(
+    request: ModelSettingsRequest,
+    current: &evohime_model_gateway::ModelGatewayConfig,
+) -> Result<evohime_model_gateway::ModelGatewayConfig, ApiError> {
     if request.default_route.trim().is_empty() || request.routes.is_empty() {
         return Err(ApiError::BadRequest(
             "Нужен хотя бы один маршрут и маршрут по умолчанию".to_string(),
         ));
     }
-
-    let current = state.model_config.read().await;
     let mut routes = HashMap::new();
     for route in request.routes {
         let name = route.name.trim().to_string();
@@ -281,7 +325,6 @@ async fn update_model_config(
                 "Маршрут '{name}' указан несколько раз"
             )));
         }
-
         let provider = ProviderKind::parse(&route.provider).ok_or_else(|| {
             ApiError::BadRequest(format!("Неизвестный провайдер: {}", route.provider))
         })?;
@@ -295,9 +338,7 @@ async fn update_model_config(
             .filter(|value| !value.trim().is_empty())
             .unwrap_or(existing_key);
         let config = match provider {
-            ProviderKind::LiteRouter => {
-                ModelRouteConfig::literouter(api_key, base_url, model)
-            }
+            ProviderKind::LiteRouter => ModelRouteConfig::literouter(api_key, base_url, model),
             ProviderKind::OpenAICompatible => {
                 ModelRouteConfig::openai_compatible(api_key, base_url, model)
             }
@@ -305,30 +346,15 @@ async fn update_model_config(
         };
         routes.insert(name, config);
     }
-    drop(current);
-
     if !routes.contains_key(&request.default_route) {
         return Err(ApiError::BadRequest(
             "Маршрут по умолчанию должен существовать в списке маршрутов".to_string(),
         ));
     }
-
-    let config = evohime_model_gateway::ModelGatewayConfig {
+    Ok(evohime_model_gateway::ModelGatewayConfig {
         default_route: request.default_route,
         routes,
-    };
-    let gateway = if config.routes.values().all(ModelRouteConfig::configured) {
-        Some(Arc::new(
-            ModelGateway::from_config(&config)
-                .map_err(|error| ApiError::BadRequest(error.to_string()))?,
-        ))
-    } else {
-        None
-    };
-    *state.model_config.write().await = config;
-    *state.model_gateway.write().await = gateway;
-
-    Ok(Json(state.model_config_response().await))
+    })
 }
 
 async fn list_permissions(State(state): State<Arc<AppState>>) -> Json<Value> {

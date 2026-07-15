@@ -40,7 +40,7 @@ Browser workspace
   → history stored in PostgreSQL
 ```
 
-Stages 1–5 are complete. LiteRouter is the active model provider. Stage 6 already includes project index, MCP, persistent memory, task-scoped model routing, browser tools, and MCP management. The Python worker now exposes a bounded HTTP job queue with health, submit, poll, and structured failure states; the remaining work is expanding real ML task handlers and their production persistence.
+Stages 1–5 are complete. LiteRouter is the active model provider. Stage 6 already includes project index, MCP, persistent memory, task-scoped model routing, browser tools, and MCP management. Agent model routes are configured and persisted from the web panel; env values are only bootstrap defaults. The Python worker now exposes a bounded HTTP job queue with health, submit, poll, and structured failure states; the remaining work is expanding real ML task handlers.
 
 ## Local development
 

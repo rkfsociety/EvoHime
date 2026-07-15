@@ -10,7 +10,7 @@ Last updated: 2026-07-15
 | --- | --- | --- |
 | `server` | Active | HTTP + WebSocket, workspace file, Git, MCP servers, and tool catalog APIs |
 | `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema |
-| `storage` | Active | Sessions, tasks, events, **session_messages**, **session_memory** |
+| `storage` | Active | Sessions, tasks, events, **session_messages**, **session_memory**, **app_settings** |
 | `tool-runtime` | Active | Registry + sandboxed filesystem, shell, Git, browser, and MCP call tools |
 | `agent-runtime` | Active | `agent_loop.rs` — LLM + tool planning parser + project/memory context |
 | `model-gateway` | Active | Route-based gateway, **LiteRouter** + OpenAI-compatible endpoints, and mock provider |
@@ -68,6 +68,7 @@ user.message
 - `session_events` — ordered event log (JSONB)
 - `session_messages` — chat history for LLM context
 - `session_memory` — persistent short notes for future agent runs
+- `app_settings` — persisted web-panel configuration, including model routes
 
 ## LLM provider
 
