@@ -930,7 +930,7 @@ h1 {
 .composer {
   width: min(100%, 920px);
   margin: 0 auto;
-  padding: 16px clamp(20px, 4vw, 56px) 22px;
+  padding: 18px clamp(20px, 4vw, 56px) 24px;
   border-top: 1px solid var(--border-0);
 }
 
@@ -938,13 +938,13 @@ h1 {
   position: relative;
   display: flex;
   align-items: flex-end;
-  gap: 4px;
+  gap: 8px;
   flex-wrap: wrap;
-  min-height: 58px;
-  border: 1px solid var(--border-1);
-  border-radius: 18px;
-  background: rgba(8, 12, 23, 0.92);
-  box-shadow: 0 12px 30px rgba(3, 8, 20, 0.18);
+  min-height: 64px;
+  border: 1px solid rgba(143, 180, 255, 0.24);
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(20, 29, 52, 0.96), rgba(8, 13, 27, 0.98));
+  box-shadow: 0 16px 34px rgba(3, 8, 20, 0.24);
 }
 
 .composerField:focus-within {
@@ -959,14 +959,15 @@ h1 {
   outline: 0;
   background: transparent;
   color: var(--text-0);
-  padding: 17px 14px 17px 18px;
+  padding: 18px 8px;
+  font-size: 14px;
 }
 
 .composerLeading {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding-left: 8px;
+  gap: 6px;
+  padding-left: 10px;
 }
 
 .attachmentInput {
@@ -993,33 +994,40 @@ h1 {
 }
 
 .workModeSelect {
-  max-width: 140px;
-  border: 0;
+  max-width: 148px;
+  border: 1px solid rgba(143, 180, 255, 0.16);
+  border-radius: 10px;
   outline: 0;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.06);
   color: var(--text-2);
+  padding: 8px 10px;
   font-size: 12px;
   cursor: pointer;
+  color-scheme: dark;
 }
 
 .composerControls {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px;
+  gap: 10px;
+  padding: 8px 10px 8px 0;
 }
 
 .composerControls select {
   max-width: 150px;
-  border: 0;
+  border: 1px solid rgba(143, 180, 255, 0.16);
+  border-radius: 10px;
   outline: 0;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.06);
   color: var(--text-2);
+  padding: 8px 10px;
   font-size: 12px;
+  color-scheme: dark;
 }
 
 .modelRouteSelect {
-  max-width: 120px !important;
+  width: 112px;
+  max-width: 112px !important;
 }
 
 .attachmentList {
