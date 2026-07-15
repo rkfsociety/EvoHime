@@ -952,7 +952,7 @@ h1 {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  min-width: 220px;
+  min-width: 0;
   padding: 9px 12px;
   border: 1px solid rgba(143, 180, 255, 0.18);
   border-radius: 12px;
@@ -976,6 +976,11 @@ h1 {
 .projectContextButton small,
 .projectContextButton strong {
   display: block;
+}
+
+.projectContextMeta {
+  color: var(--text-2);
+  font-size: 12px;
 }
 
 .projectContextButton small {
@@ -1014,6 +1019,25 @@ h1 {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+.projectPickerSearch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-3);
+}
+
+.projectPickerSearch input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-0);
+  font-size: 12px;
 }
 
 .projectOption {

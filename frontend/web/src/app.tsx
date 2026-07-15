@@ -402,6 +402,7 @@ export function App() {
   const [activePanel, setActivePanel] = useState<WorkspacePanel>("chat");
   const [selectedProject, setSelectedProject] = useState<ProjectSelection>({ label: "EvoHime", path: "." });
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [projectSearch, setProjectSearch] = useState("");
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
   const [modelConfigError, setModelConfigError] = useState<string | null>(null);
   const [selectedModelRoute, setSelectedModelRoute] = useState("");
@@ -714,8 +715,10 @@ export function App() {
     [chatSessions, activeSessionId],
   );
   const projectFolders = useMemo(
-    () => (directoryCache["."] ?? []).filter((entry) => entry.kind === "dir"),
-    [directoryCache],
+    () => (directoryCache["."] ?? [])
+      .filter((entry) => entry.kind === "dir")
+      .filter((entry) => entry.name.toLowerCase().includes(projectSearch.trim().toLowerCase())),
+    [directoryCache, projectSearch],
   );
   const hasConversation = lines.some((line) => line.role !== "system" && line.text.trim()) || Boolean(stream.trim());
   const selectedFileLanguage = useMemo(
@@ -2186,22 +2189,30 @@ export function App() {
               onClick={() => setProjectPickerOpen((open) => !open)}
               aria-expanded={projectPickerOpen}
             >
-              <span className="projectContextMark">⌂</span>
-              <span>
-                <small>Проект для этой задачи</small>
-                <strong>{selectedProject.label}</strong>
-              </span>
+              <span className="projectContextMark">▱</span>
+              <strong>{selectedProject.label}</strong>
+              <span className="projectContextMeta">Локальный</span>
+              <span className="projectContextMeta">main</span>
               <span className="projectContextChevron">⌄</span>
             </button>
             {projectPickerOpen ? (
               <div className="projectPicker" role="menu">
-                <div className="projectPickerHeader">Выбери рабочий контекст</div>
+                <label className="projectPickerSearch">
+                  <span>⌕</span>
+                  <input
+                    value={projectSearch}
+                    onChange={(event) => setProjectSearch(event.target.value)}
+                    placeholder="Поиск проектов"
+                    autoFocus
+                  />
+                </label>
                 <button
                   type="button"
                   className={selectedProject.path === "." ? "projectOption active" : "projectOption"}
                   onClick={() => {
                     setSelectedProject({ label: "EvoHime", path: "." });
                     setProjectPickerOpen(false);
+                    setProjectSearch("");
                   }}
                 >
                   <span>⌂</span>
@@ -2215,6 +2226,7 @@ export function App() {
                     onClick={() => {
                       setSelectedProject({ label: folder.name, path: folder.path });
                       setProjectPickerOpen(false);
+                      setProjectSearch("");
                     }}
                   >
                     <span>▱</span>
@@ -2227,10 +2239,11 @@ export function App() {
                   onClick={() => {
                     setSelectedProject({ label: "Без проекта", path: null });
                     setProjectPickerOpen(false);
+                    setProjectSearch("");
                   }}
                 >
-                  <span>＋</span>
-                  <span><strong>Начать с нуля</strong><small>Без выбранной папки</small></span>
+                  <span>×</span>
+                  <span><strong>Работать без проекта</strong><small>Без выбранной папки</small></span>
                 </button>
               </div>
             ) : null}
