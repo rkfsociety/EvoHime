@@ -1192,6 +1192,12 @@ h1 {
   box-shadow: 0 16px 34px rgba(3, 8, 20, 0.24);
 }
 
+.composerNotice {
+  margin: 0 0 10px;
+  color: #ffbd8a;
+  font-size: 12px;
+}
+
 .composerField:focus-within {
   border-color: rgba(143, 180, 255, 0.5);
   box-shadow: 0 0 0 3px rgba(91, 134, 255, 0.1);

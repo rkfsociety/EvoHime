@@ -423,6 +423,7 @@ export function App() {
   const [input, setInput] = useState("");
   const [lines, setLines] = useState<ChatLine[]>(initialLines);
   const [stream, setStream] = useState("");
+  const [composerNotice, setComposerNotice] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<WorkspacePanel>("chat");
   const [selectedProject, setSelectedProject] = useState<ProjectSelection>(loadSelectedProject);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -1359,6 +1360,7 @@ export function App() {
       setModelDrafts(data.routes.map((route) => ({ ...route, api_key: "", configured: route.configured })));
       setSelectedModelRoute(data.default_route);
       setModelNotice("Настройки модели применены к агенту.");
+      setComposerNotice(null);
     } catch (error) {
       setModelNotice(String(error));
     } finally {
@@ -1540,6 +1542,11 @@ export function App() {
     if (!text || !socketRef.current || socketState !== "connected") {
       return;
     }
+    if (!modelConfig?.configured) {
+      setComposerNotice("Сначала укажите API-ключ провайдера в настройках модели.");
+      return;
+    }
+    setComposerNotice(null);
 
     const attachmentNote = attachments.length > 0
       ? `\n\nВложения: ${attachments.map((file) => file.name).join(", ")}`
@@ -2550,6 +2557,7 @@ export function App() {
             ) : null}
           </div>
         ) : null}
+        {composerNotice ? <p className="composerNotice">{composerNotice}</p> : null}
         <form onSubmit={sendMessage} className="composer">
           <div className="composerField">
             <div className="composerLeading">
