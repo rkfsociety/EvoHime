@@ -123,6 +123,20 @@ const workspacePanels: Array<{ id: WorkspacePanel; label: string; phase: string 
   { id: "settings", label: "Настройки", phase: "этап 2" },
 ];
 
+const sidebarQuickLinks: Array<{
+  id: "new-task" | "scheduled" | "plugins" | "sites" | "pull-requests" | "chat";
+  label: string;
+  icon: string;
+  panel: WorkspacePanel;
+}> = [
+  { id: "new-task", label: "Новая задача", icon: "✎", panel: "chat" },
+  { id: "scheduled", label: "Запланировано", icon: "◷", panel: "tasks" },
+  { id: "plugins", label: "Плагины", icon: "◌", panel: "settings" },
+  { id: "sites", label: "Сайты", icon: "▦", panel: "files" },
+  { id: "pull-requests", label: "Пулл-реквесты", icon: "⟡", panel: "git" },
+  { id: "chat", label: "Чат", icon: "⊕", panel: "chat" },
+];
+
 function normalizePath(path?: string) {
   if (!path || path === ".") {
     return ".";
@@ -343,6 +357,17 @@ function formatSessionPreview(session: ChatSessionSummary) {
     return trimmed.length > 64 ? `${trimmed.slice(0, 64)}…` : trimmed;
   }
   return "Пока без сообщений";
+}
+
+function formatProfileInitials(login: string | null) {
+  if (!login) {
+    return "??";
+  }
+  const compact = login.trim();
+  if (!compact) {
+    return "??";
+  }
+  return compact.slice(0, 2).toUpperCase();
 }
 
 export function App() {
@@ -611,11 +636,16 @@ export function App() {
     () => workspacePanels.find((panel) => panel.id === activePanel)?.label ?? "Рабочее пространство",
     [activePanel],
   );
+  const activeProjectLabel = "EvoHime";
   const selectedFileLanguage = useMemo(
     () => inferMonacoLanguage(selectedFilePath),
     [selectedFilePath],
   );
   const gitSummary = useMemo(() => summarizeGitStatus(gitStatus), [gitStatus]);
+  const pendingTaskCount = useMemo(
+    () => Object.values(tasks).filter((task) => task.status === "running" || task.status === "paused" || task.status === "cancelling").length,
+    [tasks],
+  );
   applyEventRef.current = applyEvent;
   saveFileRef.current = () => {
     void handleSave();
@@ -1587,17 +1617,49 @@ export function App() {
 
       <section className="workspace">
         <nav className="sidebar">
+          <div className="sidebarTop">
+            <div className="sidebarBrand">
+              <strong>Codex</strong>
+            </div>
+            <button type="button" className="sidebarSearchButton" aria-label="Поиск">
+              ⌕
+            </button>
+          </div>
+
+          <section className="sidebarSection">
+            <div className="quickLinks">
+              {sidebarQuickLinks.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={item.panel === activePanel ? "quickLink active" : "quickLink"}
+                  onClick={() => setActivePanel(item.panel)}
+                >
+                  <span className="quickLinkIcon">{item.icon}</span>
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
           <section className="sidebarSection">
             <header className="sidebarHeader">
-              <strong>Чаты</strong>
-              <span>{chatSessions.length}</span>
+              <strong>Проекты</strong>
             </header>
-            <div className="chatList">
+            <button
+              type="button"
+              className="projectCard"
+              onClick={() => setActivePanel("chat")}
+            >
+              <span className="projectIcon">⌂</span>
+              <span className="projectName">{activeProjectLabel}</span>
+            </button>
+            <div className="projectChatList">
               {chatSessions.map((chat, index) => (
                 <button
                   key={chat.session_id}
                   type="button"
-                  className={chat.session_id === activeSessionId ? "chatItem active" : "chatItem"}
+                  className={chat.session_id === activeSessionId ? "projectChatItem active" : "projectChatItem"}
                   onClick={() => {
                     void openSession(chat).catch((error) => {
                       setSocketState("failed");
@@ -1608,35 +1670,45 @@ export function App() {
                     });
                   }}
                 >
-                  <span className="chatTitle">{formatSessionTitle(chat, index)}</span>
-                  <small>{formatSessionTimestamp(chat.last_message_at ?? chat.created_at)}</small>
-                  <p>{formatSessionPreview(chat)}</p>
+                  <span className="projectChatTitle">{formatSessionTitle(chat, index)}</span>
+                  <span className="projectChatStatus" />
                 </button>
               ))}
             </div>
           </section>
+
           <section className="sidebarSection">
             <header className="sidebarHeader">
-              <strong>Панели</strong>
-              <span>{workspacePanels.length}</span>
+              <strong>Задачи</strong>
             </header>
-            <div className="panelList">
-              {workspacePanels.map((panel) => (
-                <button
-                  key={panel.id}
-                  type="button"
-                  className={panel.id === activePanel ? "navItem active" : "navItem"}
-                  onClick={() => setActivePanel(panel.id)}
-                >
-                  <span>{panel.label}</span>
-                  <small>{panel.phase}</small>
-                </button>
-              ))}
-            </div>
+            <button
+              type="button"
+              className="taskSummaryCard"
+              onClick={() => setActivePanel("tasks")}
+            >
+              {pendingTaskCount > 0 ? (
+                <>
+                  <strong>{pendingTaskCount}</strong>
+                  <span>активных задач</span>
+                </>
+              ) : (
+                <>
+                  <strong>Нет задач</strong>
+                  <span>Пока тихо, не нагружайся раньше времени</span>
+                </>
+              )}
+            </button>
           </section>
+
           <section className="sidebarFooter">
             <div className="sidebarFooterTop">
-              <strong>{githubAuth?.login ?? "не авторизован"}</strong>
+              <div className="profileChip">
+                <span className="profileAvatar">{formatProfileInitials(githubAuth?.login ?? null)}</span>
+                <div className="profileText">
+                  <strong>{githubAuth?.login ?? "не авторизован"}</strong>
+                  <small>{githubAuth?.authenticated ? `gh` : "Вход через gh"}</small>
+                </div>
+              </div>
               <button
                 type="button"
                 className="settingsGear"
@@ -1647,8 +1719,6 @@ export function App() {
                 ⚙
               </button>
             </div>
-            <span className="sidebarFooterLabel">GitHub</span>
-            <small>{githubAuth?.authenticated ? `Авторизация через ${githubAuth.source}` : "Вход через gh"}</small>
           </section>
         </nav>
 
