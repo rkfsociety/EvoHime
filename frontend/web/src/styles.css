@@ -1263,11 +1263,70 @@ h1 {
   font-size: 12px;
   cursor: pointer;
   color-scheme: dark;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  white-space: nowrap;
 }
 
 .workModeAllow {
   border-color: rgba(255, 137, 67, 0.32);
   color: #ff995e;
+}
+
+.composerMenu {
+  position: relative;
+}
+
+.composerMenuChevron {
+  flex: 0 0 auto;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.composerMenuPopover {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: grid;
+  min-width: 178px;
+  padding: 5px;
+  border: 1px solid rgba(143, 180, 255, 0.28);
+  border-radius: 12px;
+  background: #111b32;
+  box-shadow: 0 14px 32px rgba(2, 6, 18, 0.46);
+}
+
+.composerMenuPopover button {
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composerMenuPopover button:hover,
+.composerMenuPopover button[aria-selected="true"] {
+  background: rgba(91, 134, 255, 0.2);
+  color: var(--text-0);
+}
+
+.workModePopover {
+  left: 0;
+  right: auto;
+}
+
+.modelPopover {
+  width: 220px;
+  max-height: 260px;
+  overflow-y: auto;
 }
 
 .composerControls {
@@ -1294,6 +1353,19 @@ h1 {
   cursor: pointer;
   text-overflow: ellipsis;
   transition: border-color 140ms ease, background 140ms ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  overflow: hidden;
+  text-align: left;
+}
+
+.composerModelSelect > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .composerModelSelect:hover:not(:disabled),

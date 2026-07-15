@@ -483,6 +483,8 @@ export function App() {
   const [permissionSettings, setPermissionSettings] = useState<PermissionSettings>({});
   const [permissionModeSaving, setPermissionModeSaving] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
+  const [workModeOpen, setWorkModeOpen] = useState(false);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [archivedChats, setArchivedChats] = useState<ChatSessionSummary[]>([]);
   const [toolCatalog, setToolCatalog] = useState<ToolDefinition[]>([]);
@@ -2578,18 +2580,38 @@ export function App() {
               >
                 +
               </button>
-              <select
-                className={workMode === "allow" ? "workModeSelect workModeAllow" : "workModeSelect"}
-                value={workMode}
-                onChange={(event) => void updateWorkMode(event.target.value as PermissionMode)}
-                disabled={permissionModeSaving || Object.keys(permissionSettings).length === 0}
-                aria-label="Режим работы агента"
-              >
-                <option value="ask">Спрашивать всё</option>
-                <option value="allow">Полный доступ</option>
-                <option value="deny">Запретить всё</option>
-                {workMode === "mixed" ? <option value="mixed" disabled>Смешанный режим</option> : null}
-              </select>
+              <div className="composerMenu">
+                <button
+                  type="button"
+                  className={workMode === "allow" ? "workModeSelect workModeAllow" : "workModeSelect"}
+                  onClick={() => setWorkModeOpen((open) => !open)}
+                  disabled={permissionModeSaving || Object.keys(permissionSettings).length === 0}
+                  aria-label="Режим работы агента"
+                  aria-expanded={workModeOpen}
+                >
+                  {workMode === "allow" ? "Полный доступ" : workMode === "deny" ? "Запретить всё" : workMode === "mixed" ? "Смешанный режим" : "Спрашивать всё"}
+                  <span className="composerMenuChevron">⌄</span>
+                </button>
+                {workModeOpen ? (
+                  <div className="composerMenuPopover workModePopover" role="listbox">
+                    {[
+                      ["ask", "Спрашивать всё"],
+                      ["allow", "Полный доступ"],
+                      ["deny", "Запретить всё"],
+                    ].map(([value, label]) => (
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={workMode === value}
+                        key={value}
+                        onClick={() => { void updateWorkMode(value as PermissionMode); setWorkModeOpen(false); }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             </div>
             <textarea
               rows={1}
@@ -2598,17 +2620,35 @@ export function App() {
               placeholder="Введите сообщение..."
             />
             <div className="composerControls">
-              <select
-                className="composerModelSelect"
-                value={selectedComposerModel}
-                onChange={(event) => setSelectedComposerModel(event.target.value)}
-                disabled={composerModelsLoading || composerModels.length === 0}
-                aria-label="Модель агента"
-                title={composerModelsError ?? "Модель агента"}
-              >
-                {composerModels.length === 0 ? <option value="">Модели недоступны</option> : null}
-                {composerModels.map((model) => <option key={model} value={model}>{model}</option>)}
-              </select>
+              <div className="composerMenu composerModelMenu">
+                <button
+                  type="button"
+                  className="composerModelSelect"
+                  onClick={() => setModelPickerOpen((open) => !open)}
+                  disabled={composerModelsLoading || composerModels.length === 0}
+                  aria-label="Модель агента"
+                  aria-expanded={modelPickerOpen}
+                  title={composerModelsError ?? "Модель агента"}
+                >
+                  <span>{selectedComposerModel || "Модели недоступны"}</span>
+                  <span className="composerMenuChevron">⌄</span>
+                </button>
+                {modelPickerOpen ? (
+                  <div className="composerMenuPopover modelPopover" role="listbox">
+                    {composerModels.map((model) => (
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={selectedComposerModel === model}
+                        key={model}
+                        onClick={() => { setSelectedComposerModel(model); setModelPickerOpen(false); }}
+                      >
+                        {model}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
               <button
                 type={activeTaskId ? "button" : "submit"}
                 className={activeTaskId ? "sendButton stopButton" : "sendButton"}
