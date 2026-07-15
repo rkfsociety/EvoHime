@@ -142,12 +142,7 @@ type PluginCard = {
   actionLabel?: string;
 };
 
-const initialLines: ChatLine[] = [
-  {
-    role: "system",
-    text: "EvoHime готова. Отправь сообщение, чтобы создать задачу и посмотреть поток событий.",
-  },
-];
+const initialLines: ChatLine[] = [];
 
 const workspacePanels: Array<{ id: WorkspacePanel; label: string; phase: string }> = [
   { id: "chat", label: "Чат", phase: "активно" },
@@ -2072,8 +2067,8 @@ export function App() {
 
     return (
       <>
-        <div className={`chatLog${lines.length === 1 && lines[0]?.role === "system" && !stream ? " empty" : ""}`}>
-          {lines.length === 1 && lines[0]?.role === "system" && !stream ? (
+        <div className={`chatLog${lines.every((line) => line.role === "system") && !stream ? " empty" : ""}`}>
+          {lines.every((line) => line.role === "system") && !stream ? (
             <div className="chatWelcome">
               <span className="chatWelcomeIcon">✦</span>
               <p className="eyebrow">Новая задача</p>
@@ -2088,7 +2083,7 @@ export function App() {
               </div>
             </div>
           ) : (
-            lines.map((line, index) => (
+            lines.filter((line) => line.role !== "system").map((line, index) => (
               <article className={`line ${line.role}`} key={`${line.role}-${index}`}>
                 <strong>{translateChatRole(line.role)}</strong>
                 <pre>{line.text}</pre>
