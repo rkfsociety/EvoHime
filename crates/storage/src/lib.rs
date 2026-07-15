@@ -121,6 +121,14 @@ pub async fn create_session(pool: &PgPool) -> Result<SessionRow, StorageError> {
     Ok(row)
 }
 
+pub async fn delete_session(pool: &PgPool, session_id: Uuid) -> Result<bool, StorageError> {
+    let result = sqlx::query("DELETE FROM sessions WHERE id = $1")
+        .bind(session_id)
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected() > 0)
+}
+
 pub async fn list_sessions(
     pool: &PgPool,
     limit: i64,

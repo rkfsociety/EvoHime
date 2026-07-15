@@ -9,7 +9,7 @@ use axum::{
     },
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, post, put},
+    routing::{delete, get, post, put},
     Json, Router,
 };
 use evohime_agent_runtime::{
@@ -223,6 +223,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health))
         .route("/api/models/config", get(model_config).put(update_model_config))
         .route("/api/sessions", get(list_sessions).post(create_session))
+        .route("/api/sessions/:session_id", delete(delete_session))
         .route("/api/sessions/:session_id/history", get(session_history))
         .route("/api/auth/github", get(github_auth))
         .route("/api/github/pull-requests", get(list_pull_requests))
@@ -518,6 +519,21 @@ async fn create_session(
             event,
         }],
     }))
+}
+
+async fn delete_session(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    let deleted = evohime_storage::delete_session(&state.pool, session_id)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    if !deleted {
+        return Err(ApiError::BadRequest("Чат не найден".to_string()));
+    }
+
+    state.session_buses.lock().await.remove(&session_id);
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Debug, serde::Serialize)]

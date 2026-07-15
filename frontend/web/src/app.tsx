@@ -434,6 +434,7 @@ export function App() {
   const [permissionSettings, setPermissionSettings] = useState<PermissionSettings>({});
   const [permissionModeSaving, setPermissionModeSaving] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [toolCatalog, setToolCatalog] = useState<ToolDefinition[]>([]);
   const [toolCatalogError, setToolCatalogError] = useState<string | null>(null);
   const [mcpServers, setMcpServers] = useState<McpServerConfig[]>([]);
@@ -772,6 +773,51 @@ export function App() {
     }
 
     hydrateSession(summary, history);
+  }
+
+  async function deleteSession(summary: ChatSessionSummary) {
+    if (!window.confirm(`Удалить ${formatSessionTitle(summary, 0)}? История чата будет потеряна.`)) {
+      return;
+    }
+
+    setDeletingSessionId(summary.session_id);
+    try {
+      const response = await fetch(`/api/sessions/${summary.session_id}`, { method: "DELETE" });
+      if (!response.ok) {
+        throw new Error("Не удалось удалить чат");
+      }
+
+      const remaining = chatSessions.filter((chat) => chat.session_id !== summary.session_id);
+      setChatSessions(remaining);
+      if (summary.session_id !== activeSessionId) {
+        return;
+      }
+
+      const next = remaining[0];
+      if (next) {
+        await openSession(next);
+        return;
+      }
+
+      const createdResponse = await fetch("/api/sessions", { method: "POST" });
+      if (!createdResponse.ok) {
+        throw new Error("Не удалось создать новый чат");
+      }
+      const bootstrap = (await createdResponse.json()) as SessionBootstrap;
+      const createdSummary: ChatSessionSummary = {
+        session_id: bootstrap.session_id,
+        created_at: bootstrap.created_at,
+        last_message_at: null,
+        last_message: null,
+        last_role: null,
+      };
+      setChatSessions([createdSummary]);
+      hydrateSession(createdSummary, bootstrap.events);
+    } catch (error) {
+      setLines((current) => [...current, { role: "system", text: String(error) }]);
+    } finally {
+      setDeletingSessionId(null);
+    }
   }
 
   function applyEvent(event: ServerEvent) {
@@ -2159,23 +2205,33 @@ export function App() {
             </button>
             <div className="projectChatList">
               {chatSessions.map((chat, index) => (
-                <button
+                <div
                   key={chat.session_id}
-                  type="button"
-                  className={chat.session_id === activeSessionId ? "projectChatItem active" : "projectChatItem"}
-                  onClick={() => {
-                    void openSession(chat).catch((error) => {
-                      setSocketState("failed");
-                      setLines((current) => [
-                        ...current,
-                        { role: "system", text: String(error) },
-                      ]);
-                    });
-                  }}
+                  className="projectChatRow"
                 >
-                  <span className="projectChatTitle">{formatSessionTitle(chat, index)}</span>
-                  <span className="projectChatStatus" />
-                </button>
+                  <button
+                    type="button"
+                    className={chat.session_id === activeSessionId ? "projectChatItem active" : "projectChatItem"}
+                    onClick={() => {
+                      void openSession(chat).catch((error) => {
+                        setSocketState("failed");
+                        setLines((current) => [...current, { role: "system", text: String(error) }]);
+                      });
+                    }}
+                  >
+                    <span className="projectChatTitle">{formatSessionTitle(chat, index)}</span>
+                    <span className="projectChatStatus" />
+                  </button>
+                  <button
+                    type="button"
+                    className="chatDeleteButton"
+                    onClick={() => void deleteSession(chat)}
+                    disabled={deletingSessionId === chat.session_id}
+                    aria-label={`Удалить ${formatSessionTitle(chat, index)}`}
+                  >
+                    ×
+                  </button>
+                </div>
               ))}
             </div>
           </section>

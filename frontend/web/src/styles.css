@@ -194,9 +194,15 @@ h1 {
 }
 
 .quickLinks,
-.projectChatList {
+.projectChatList,
+.projectChatRow {
   display: grid;
   gap: 4px;
+}
+
+.projectChatRow {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
 }
 
 .quickLink {
@@ -402,6 +408,35 @@ h1 {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+}
+
+.chatDeleteButton {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 18px;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.projectChatRow:hover .chatDeleteButton,
+.chatDeleteButton:focus-visible {
+  opacity: 1;
+}
+
+.chatDeleteButton:hover {
+  background: rgba(255, 104, 118, 0.12);
+  color: #ff8b96;
+}
+
+.chatDeleteButton:disabled {
+  cursor: wait;
+  opacity: 0.5;
 }
 
 .settingsTabs {
