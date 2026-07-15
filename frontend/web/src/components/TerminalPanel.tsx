@@ -20,5 +20,5 @@ export function TerminalPanel({ entries }: { entries: TerminalEntry[] }) {
     instance.clear();
     for (const entry of entries) instance.writeln(entry.stream === "stderr" ? `\x1b[31m${entry.text}\x1b[0m` : entry.text);
   }, [entries]);
-  return <div className="terminalPanel" ref={host} aria-label="Terminal output" />;
+  return <div className="terminalPanel" ref={host} aria-label="Вывод терминала" />;
 }

@@ -94,19 +94,19 @@ type McpServerConfig = {
 const initialLines: ChatLine[] = [
   {
     role: "system",
-    text: "EvoHime is ready. Send a message to create a task and watch the event stream.",
+    text: "EvoHime готова. Отправь сообщение, чтобы создать задачу и посмотреть поток событий.",
   },
 ];
 
 const workspacePanels: Array<{ id: WorkspacePanel; label: string; phase: string }> = [
-  { id: "chat", label: "Chat", phase: "active" },
-  { id: "files", label: "Files", phase: "stage 4" },
-  { id: "editor", label: "Editor", phase: "stage 4" },
-  { id: "terminal", label: "Terminal", phase: "stage 3" },
-  { id: "git", label: "Git", phase: "stage 4" },
-  { id: "tasks", label: "Tasks", phase: "stage 5" },
-  { id: "actions", label: "Actions", phase: "stage 5" },
-  { id: "settings", label: "Settings", phase: "stage 2" },
+  { id: "chat", label: "Чат", phase: "активно" },
+  { id: "files", label: "Файлы", phase: "этап 4" },
+  { id: "editor", label: "Редактор", phase: "этап 4" },
+  { id: "terminal", label: "Терминал", phase: "этап 3" },
+  { id: "git", label: "Гит", phase: "этап 4" },
+  { id: "tasks", label: "Задачи", phase: "этап 5" },
+  { id: "actions", label: "Действия", phase: "этап 5" },
+  { id: "settings", label: "Настройки", phase: "этап 2" },
 ];
 
 function normalizePath(path?: string) {
@@ -167,13 +167,147 @@ function sortFileNodes(entries: FileNode[]) {
 
 function summarizeGitStatus(status: string) {
   const lines = status.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const branch = lines[0] ?? "No status";
+  const branch = lines[0] ?? "Нет статуса";
   const changed = lines.filter((line) => !line.startsWith("##")).length;
   return {
     branch,
     changed,
     lines,
   };
+}
+
+function translateSocketState(state: "idle" | "connecting" | "connected" | "failed") {
+  switch (state) {
+    case "idle":
+      return "Ожидание";
+    case "connecting":
+      return "Подключение";
+    case "connected":
+      return "Подключено";
+    case "failed":
+      return "Ошибка подключения";
+  }
+}
+
+function translateTaskStatus(status: string) {
+  switch (status) {
+    case "running":
+      return "Выполняется";
+    case "cancelling":
+      return "Отмена";
+    case "paused":
+      return "На паузе";
+    case "cancelled":
+      return "Отменена";
+    case "failed":
+      return "Сбой";
+    case "completed":
+      return "Завершена";
+    default:
+      return status;
+  }
+}
+
+function translateStepStatus(status: string) {
+  switch (status) {
+    case "pending":
+      return "Ожидание";
+    case "running":
+      return "Выполняется";
+    case "completed":
+      return "Завершён";
+    case "failed":
+      return "Сбой";
+    case "cancelled":
+      return "Отменён";
+    default:
+      return status;
+  }
+}
+
+function translatePermissionMode(mode: PermissionMode) {
+  switch (mode) {
+    case "ask":
+      return "спрашивать";
+    case "allow":
+      return "разрешать";
+    case "deny":
+      return "запрещать";
+  }
+}
+
+function translateSaveState(state: "idle" | "saving" | "saved") {
+  switch (state) {
+    case "idle":
+      return "Готово";
+    case "saving":
+      return "Сохранение...";
+    case "saved":
+      return "Сохранено";
+  }
+}
+
+function translateGitAction(action: GitAction) {
+  switch (action) {
+    case "commit":
+      return "коммит";
+    case "pull":
+      return "загрузка";
+    case "push":
+      return "отправка";
+  }
+}
+
+function translateEventType(type: ServerEvent["type"]) {
+  switch (type) {
+    case "session.created":
+      return "Сессия создана";
+    case "task.started":
+      return "Задача запущена";
+    case "agent.message.delta":
+      return "Частичный ответ агента";
+    case "agent.plan.updated":
+      return "План агента обновлён";
+    case "tool.started":
+      return "Инструмент запущен";
+    case "tool.output":
+      return "Вывод инструмента";
+    case "tool.completed":
+      return "Инструмент завершён";
+    case "task.completed":
+      return "Задача завершена";
+    case "task.failed":
+      return "Задача завершилась с ошибкой";
+    case "task.status.changed":
+      return "Статус задачи изменён";
+    case "task.step.changed":
+      return "Шаг задачи изменён";
+    case "action.logged":
+      return "Действие записано";
+    case "file.changed":
+      return "Файл изменён";
+    case "git.diff.changed":
+      return "Изменения Гит обновлены";
+    case "approval.required":
+      return "Требуется разрешение";
+  }
+}
+
+function translateChatRole(role: ChatLine["role"]) {
+  switch (role) {
+    case "assistant":
+      return "Ассистент";
+    case "tool":
+      return "Инструмент";
+    case "system":
+      return "Система";
+    case "user":
+      return "Пользователь";
+  }
+}
+
+function translateModelConfigStatus(configured: boolean) {
+  return configured ? "настроено" : "не хватает LITEROUTER_API_KEY";
 }
 
 export function App() {
@@ -199,8 +333,8 @@ export function App() {
   const [selectedFileLoading, setSelectedFileLoading] = useState(false);
   const [selectedFileNotice, setSelectedFileNotice] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
-  const [gitStatus, setGitStatus] = useState("Loading git status...");
-  const [gitDiff, setGitDiff] = useState("Loading git diff...");
+  const [gitStatus, setGitStatus] = useState("Загрузка статуса Гит...");
+  const [gitDiff, setGitDiff] = useState("Загрузка изменений Гит...");
   const [gitDiffPath, setGitDiffPath] = useState<string | null>(null);
   const [gitDiffPathInput, setGitDiffPathInput] = useState("");
   const [newFilePath, setNewFilePath] = useState("");
@@ -231,7 +365,7 @@ export function App() {
     const loadModelConfig = async () => {
       const response = await fetch("/api/models/config");
       if (!response.ok) {
-        throw new Error("Failed to load model config");
+        throw new Error("Не удалось загрузить конфигурацию модели");
       }
       const data = (await response.json()) as ModelConfig;
       if (!cancelled) {
@@ -242,7 +376,7 @@ export function App() {
     fetch("/api/tools")
       .then((response) => {
         if (!response.ok) {
-          throw new Error("Failed to load tool catalog");
+          throw new Error("Не удалось загрузить каталог инструментов");
         }
         return response.json();
       })
@@ -259,7 +393,7 @@ export function App() {
     fetch("/api/mcp/servers")
       .then((response) => {
         if (!response.ok) {
-          throw new Error("Failed to load MCP servers");
+          throw new Error("Не удалось загрузить MCP-серверы");
         }
         return response.json();
       })
@@ -302,7 +436,7 @@ export function App() {
     const bootstrap = async () => {
       const response = await fetch("/api/sessions", { method: "POST" });
       if (!response.ok) {
-        throw new Error("Failed to create session");
+        throw new Error("Не удалось создать сессию");
       }
       const data = (await response.json()) as SessionBootstrap;
       if (!cancelled) {
@@ -379,19 +513,19 @@ export function App() {
 
   const connectedLabel = useMemo(() => {
     if (!session) {
-      return "Creating session...";
+      return "Создание сессии...";
     }
     if (socketState === "connected") {
-      return "Connected";
+      return "Подключено";
     }
     if (socketState === "failed") {
-      return "Connection failed";
+      return "Ошибка подключения";
     }
-    return "Connecting...";
+    return "Подключение...";
   }, [session, socketState]);
 
   const currentPanelLabel = useMemo(
-    () => workspacePanels.find((panel) => panel.id === activePanel)?.label ?? "Workspace",
+    () => workspacePanels.find((panel) => panel.id === activePanel)?.label ?? "Рабочее пространство",
     [activePanel],
   );
   const selectedFileLanguage = useMemo(
@@ -411,7 +545,7 @@ export function App() {
           ...current,
           {
             role: "system",
-            text: `Session created: ${event.session_id}`,
+            text: `Сессия создана: ${event.session_id}`,
           },
         ]);
         break;
@@ -445,7 +579,7 @@ export function App() {
           ...current,
           {
             role: "tool",
-            text: `Tool started: ${event.tool_name}`,
+            text: `Инструмент запущен: ${event.tool_name}`,
           },
         ]);
         break;
@@ -455,7 +589,7 @@ export function App() {
           ...current,
           {
             role: "tool",
-            text: `Result from ${event.tool_name}:\n${event.output}`,
+            text: `Результат из ${event.tool_name}:\n${event.output}`,
           },
         ]);
         break;
@@ -468,7 +602,7 @@ export function App() {
             ...current,
             {
               stream: event.success ? "status" : "stderr",
-              text: event.success ? "shell.execute completed" : "shell.execute failed",
+              text: event.success ? "shell.execute выполнен" : "shell.execute завершился с ошибкой",
             },
           ]);
         }
@@ -476,7 +610,7 @@ export function App() {
           ...current,
           {
             role: "tool",
-            text: `Tool ${event.tool_name} completed`,
+            text: `Инструмент ${event.tool_name} завершён`,
           },
         ]);
         break;
@@ -492,7 +626,7 @@ export function App() {
         setTasks((current) => current[event.task_id] ? { ...current, [event.task_id]: { ...current[event.task_id], status: "failed" } } : current);
         setLines((current) => [
           ...current,
-          { role: "system", text: `Task failed: ${event.error}` },
+          { role: "system", text: `Задача завершилась с ошибкой: ${event.error}` },
         ]);
         setStream("");
         break;
@@ -543,7 +677,7 @@ export function App() {
     const query = normalized === "." ? "" : `?path=${encodeURIComponent(normalized)}`;
     const response = await fetch(`/api/files${query}`);
     if (!response.ok) {
-      throw new Error("Failed to load file tree");
+      throw new Error("Не удалось загрузить дерево файлов");
     }
     const data = (await response.json()) as FileListing;
     const key = normalizePath(data.path);
@@ -573,7 +707,7 @@ export function App() {
         `/api/files/content?path=${encodeURIComponent(normalizePath(path))}`,
       );
       if (!response.ok) {
-        throw new Error("Failed to load file content");
+        throw new Error("Не удалось загрузить содержимое файла");
       }
       const data = (await response.json()) as FileContent;
       setSelectedFilePath(data.path);
@@ -589,14 +723,14 @@ export function App() {
     const diffPath = normalizePath(path ?? gitDiffPathInput ?? gitDiffPath ?? selectedFilePath ?? undefined);
     const statusResponse = await fetch("/api/git/status");
     if (!statusResponse.ok) {
-      throw new Error("Failed to load git status");
+      throw new Error("Не удалось загрузить статус Гит");
     }
     const statusData = (await statusResponse.json()) as GitSnapshot;
     const diffResponse = await fetch(
       diffPath === "." ? "/api/git/diff" : `/api/git/diff?path=${encodeURIComponent(diffPath)}`,
     );
     if (!diffResponse.ok) {
-      throw new Error("Failed to load git diff");
+      throw new Error("Не удалось загрузить изменения Гит");
     }
     const diffData = (await diffResponse.json()) as GitSnapshot;
     setGitStatus(statusData.status);
@@ -607,7 +741,7 @@ export function App() {
 
   async function updatePermission(name: string, mode: PermissionMode) {
     const response = await fetch(`/api/permissions/${name}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode }) });
-    if (!response.ok) throw new Error("Failed to update permission");
+    if (!response.ok) throw new Error("Не удалось обновить разрешение");
     setPermissionSettings((current) => ({ ...current, [name]: { mode } }));
   }
 
@@ -697,7 +831,7 @@ export function App() {
       );
 
       if (!response.ok) {
-        throw new Error("Failed to save file");
+        throw new Error("Не удалось сохранить файл");
       }
 
       const data = (await response.json()) as SaveResponse;
@@ -748,8 +882,8 @@ export function App() {
       return;
     }
 
-    setGitAction(action);
-    setGitActionNotice(null);
+      setGitAction(action);
+      setGitActionNotice(null);
     const payload = action === "commit"
       ? { message: gitCommitMessage }
       : { remote: gitRemote || undefined, branch: gitBranch || undefined };
@@ -764,16 +898,16 @@ export function App() {
       );
       if (!response.ok) {
         const detail = await response.text();
-        throw new Error(detail || `Git ${action} failed`);
+        throw new Error(detail || `Гит-действие ${action} завершилось с ошибкой`);
       }
-      setGitActionNotice(`Git ${action} завершён.`);
+      setGitActionNotice(`Операция Гит «${translateGitAction(action)}» завершена.`);
       if (action === "commit") {
         setGitCommitMessage("");
       }
       await refreshGitSnapshot(gitDiffPath);
       await refreshDirectory(".");
     } catch (error) {
-      setGitActionNotice(`Git ${action}: ${String(error)}`);
+      setGitActionNotice(`Операция Гит «${translateGitAction(action)}»: ${String(error)}`);
     } finally {
       setGitAction(null);
     }
@@ -860,38 +994,38 @@ export function App() {
       return (
         <div className="settingsPanel">
           <section className="settingsSection">
-            <h3>Model provider</h3>
+            <h3>Провайдер модели</h3>
             {modelConfigError ? <p className="settingsError">{modelConfigError}</p> : null}
             {modelConfig ? (
               <dl className="settingsGrid">
                 <div>
-                  <dt>Default route</dt>
+                  <dt>Маршрут по умолчанию</dt>
                   <dd>{modelConfig.default_route}</dd>
                 </div>
                 <div>
-                  <dt>Provider</dt>
+                  <dt>Провайдер</dt>
                   <dd>{modelConfig.provider}</dd>
                 </div>
                 <div>
-                  <dt>Model</dt>
+                  <dt>Модель</dt>
                   <dd>{modelConfig.model}</dd>
                 </div>
                 <div>
-                  <dt>Base URL</dt>
+                  <dt>Базовый URL</dt>
                   <dd>{modelConfig.base_url}</dd>
                 </div>
                 <div>
-                  <dt>API key</dt>
+                  <dt>API-ключ</dt>
                   <dd data-configured={modelConfig.configured}>
-                    {modelConfig.configured ? "configured" : "missing - set LITEROUTER_API_KEY"}
+                    {translateModelConfigStatus(modelConfig.configured)}
                   </dd>
                 </div>
                 <div>
-                  <dt>Available models</dt>
+                  <dt>Доступные модели</dt>
                   <dd>{modelConfig.available_models.join(", ")}</dd>
                 </div>
                 <div>
-                  <dt>Routes</dt>
+                  <dt>Маршруты</dt>
                   <dd>
                     {modelConfig.routes
                       .map((route) => `${route.name} (${route.provider}:${route.model})`)
@@ -900,15 +1034,15 @@ export function App() {
                 </div>
               </dl>
             ) : (
-              <p>Loading model configuration...</p>
+              <p>Загрузка конфигурации модели...</p>
             )}
             <p className="settingsHint">
-              Set MODEL_ROUTES_JSON on the server to configure multiple routes and pick one per task.
+              Укажи `MODEL_ROUTES_JSON` на сервере, чтобы настроить несколько маршрутов и выбирать один для каждой задачи.
             </p>
           </section>
 
           <section className="settingsSection">
-            <h3>Tool permissions</h3>
+            <h3>Разрешения инструментов</h3>
             <div className="permissionList">
               {Object.entries(permissionSettings).map(([name, value]) => (
                 <label key={name}>
@@ -919,9 +1053,9 @@ export function App() {
                       void updatePermission(name, event.target.value as PermissionMode)
                     }
                   >
-                    <option value="ask">ask</option>
-                    <option value="allow">allow</option>
-                    <option value="deny">deny</option>
+                    <option value="ask">спрашивать</option>
+                    <option value="allow">разрешать</option>
+                    <option value="deny">запрещать</option>
                   </select>
                 </label>
               ))}
@@ -931,17 +1065,17 @@ export function App() {
           <section className="settingsSection">
             <div className="settingsHeaderRow">
               <div>
-                <h3>MCP servers</h3>
+                <h3>MCP-серверы</h3>
                 <p className="settingsHint">
-                  These endpoints are editable in-memory and drive the MCP management UI.
+                  Эти конечные точки редактируются в памяти и управляют интерфейсом MCP.
                 </p>
               </div>
               <div className="toolbarActions">
                 <button type="button" onClick={addMcpServer}>
-                  Add server
+                  Добавить сервер
                 </button>
                 <button type="button" onClick={() => void saveMcpServers()} disabled={mcpServersSaving}>
-                  {mcpServersSaving ? "Saving..." : "Save servers"}
+                  {mcpServersSaving ? "Сохранение..." : "Сохранить серверы"}
                 </button>
               </div>
             </div>
@@ -950,15 +1084,15 @@ export function App() {
             <div className="mcpServerList">
               {mcpServers.length === 0 ? (
                 <div className="emptyState">
-                  <strong>No MCP servers yet</strong>
-                  <p>Add your first server to keep common endpoints handy for agents.</p>
+                  <strong>Пока нет MCP-серверов</strong>
+                  <p>Добавь первый сервер, чтобы держать общие точки доступа под рукой для агентов.</p>
                 </div>
               ) : null}
               {mcpServers.map((server, index) => (
                 <article className="mcpServerCard" key={`${server.name || "server"}-${index}`}>
                   <div className="mcpServerRow">
                     <label>
-                      <span>Name</span>
+                      <span>Название</span>
                       <input
                         value={server.name}
                         onChange={(event) => updateMcpServer(index, { name: event.target.value })}
@@ -966,7 +1100,7 @@ export function App() {
                       />
                     </label>
                     <label>
-                      <span>URL</span>
+                      <span>Ссылка</span>
                       <input
                         value={server.url}
                         onChange={(event) => updateMcpServer(index, { url: event.target.value })}
@@ -975,13 +1109,13 @@ export function App() {
                     </label>
                   </div>
                   <label className="mcpServerDescription">
-                    <span>Description</span>
+                    <span>Описание</span>
                     <input
                       value={server.description ?? ""}
                       onChange={(event) =>
                         updateMcpServer(index, { description: event.target.value })
                       }
-                      placeholder="Optional note"
+                      placeholder="Необязательная заметка"
                     />
                   </label>
                   <div className="mcpServerFooter">
@@ -993,10 +1127,10 @@ export function App() {
                           updateMcpServer(index, { enabled: event.target.checked })
                         }
                       />
-                      <span>Enabled</span>
+                      <span>Включён</span>
                     </label>
                     <button type="button" onClick={() => removeMcpServer(index)}>
-                      Remove
+                      Удалить
                     </button>
                   </div>
                 </article>
@@ -1005,15 +1139,15 @@ export function App() {
           </section>
 
           <section className="settingsSection">
-            <h3>Tool catalog</h3>
+            <h3>Каталог инструментов</h3>
             {toolCatalogError ? <p className="settingsError">{toolCatalogError}</p> : null}
             <div className="toolCatalog">
               {toolCatalog.map((tool) => (
                 <article className="toolCard" key={tool.name}>
                   <strong>{tool.name}</strong>
                   <p>{tool.description}</p>
-                  <small>{tool.permissions.join(", ") || "no permissions"}</small>
-                  <span>{tool.timeout_ms} ms timeout</span>
+                  <small>{tool.permissions.join(", ") || "нет разрешений"}</small>
+                  <span>Таймаут {tool.timeout_ms} мс</span>
                 </article>
               ))}
             </div>
@@ -1028,26 +1162,26 @@ export function App() {
         <div className="filesPanel">
           <div className="panelToolbar">
             <div>
-              <strong>Workspace tree</strong>
-              <span>{rootEntries.length} items at root</span>
+              <strong>Дерево рабочего пространства</strong>
+              <span>{rootEntries.length} элементов в корне</span>
             </div>
-            <button type="button" onClick={() => void refreshDirectory(".")}>Refresh tree</button>
+            <button type="button" onClick={() => void refreshDirectory(".")}>Обновить дерево</button>
           </div>
           <div className="createFileForm">
             <input
               value={newFilePath}
               onChange={(event) => setNewFilePath(event.target.value)}
-              placeholder="path/to/new-file.ts"
-              aria-label="New file path"
+              placeholder="путь/до/нового-файла.ts"
+              aria-label="Путь нового файла"
             />
             <input
               value={newFileContent}
               onChange={(event) => setNewFileContent(event.target.value)}
-              placeholder="Initial content"
-              aria-label="New file content"
+              placeholder="Начальное содержимое"
+              aria-label="Содержимое нового файла"
             />
             <button type="button" onClick={() => void handleCreateFile()} disabled={!newFilePath.trim()}>
-              Create file
+              Создать файл
             </button>
           </div>
           <div className="fileTree">
@@ -1062,17 +1196,17 @@ export function App() {
         <div className="editorPanel">
           <div className="panelToolbar">
             <div>
-              <strong>{selectedFilePath ?? "No file selected"}</strong>
+              <strong>{selectedFilePath ?? "Файл не выбран"}</strong>
               <span>
                 {selectedFileLoading
-                  ? "Loading..."
+                  ? "Загрузка..."
                   : saveState === "saving"
-                    ? "Saving..."
+                    ? "Сохранение..."
                     : saveState === "saved"
-                      ? "Saved"
+                      ? "Сохранено"
                       : selectedFilePath && selectedFileContent !== selectedFileOriginal
-                        ? "Unsaved changes"
-                        : "Ready"}
+                        ? "Есть несохранённые изменения"
+                        : "Готово"}
               </span>
             </div>
             <div className="toolbarActions">
@@ -1081,23 +1215,23 @@ export function App() {
                 onClick={() => void refreshSelectedFile(selectedFilePath ?? ".")}
                 disabled={!selectedFilePath || selectedFileLoading}
               >
-                Reload
+                Перезагрузить
               </button>
               <button
                 type="button"
                 onClick={() => void handleSave()}
                 disabled={!selectedFilePath || selectedFileContent === selectedFileOriginal}
               >
-                Save
+                Сохранить
               </button>
             </div>
           </div>
           {selectedFileNotice ? <div className="editorNotice">{selectedFileNotice}</div> : null}
           {selectedFilePath ? (
             <div className="editorMeta">
-              <span>Language: {selectedFileLanguage}</span>
-              <span>Size: {formatFileSize(selectedFileContent.length)}</span>
-              <span>{selectedFileContent === selectedFileOriginal ? "Clean" : "Dirty"}</span>
+              <span>Язык: {selectedFileLanguage}</span>
+              <span>Размер: {formatFileSize(selectedFileContent.length)}</span>
+              <span>{selectedFileContent === selectedFileOriginal ? "Чисто" : "Есть изменения"}</span>
             </div>
           ) : null}
           {selectedFilePath ? (
@@ -1113,7 +1247,7 @@ export function App() {
               onMount={(editor, monaco) => {
                 editor.addAction({
                   id: "evohime-save-file",
-                  label: "Save file",
+                  label: "Сохранить файл",
                   keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
                   run: () => saveFileRef.current(),
                 });
@@ -1128,8 +1262,8 @@ export function App() {
             />
           ) : (
             <div className="placeholderPanel">
-              <h3>Select a file</h3>
-              <p>Choose a file from Files to open it in Monaco Editor.</p>
+              <h3>Выберите файл</h3>
+              <p>Выбери файл во вкладке «Файлы», чтобы открыть его в редакторе Monaco.</p>
             </div>
           )}
         </div>
@@ -1141,30 +1275,30 @@ export function App() {
         <div className="gitPanel">
           <div className="panelToolbar">
             <div>
-              <strong>Repository status</strong>
+              <strong>Состояние репозитория</strong>
               <span>
                 {gitSummary.branch}
-                {gitSummary.changed ? ` • ${gitSummary.changed} changed` : " • clean"}
+                {gitSummary.changed ? ` • изменено: ${gitSummary.changed}` : " • чисто"}
               </span>
             </div>
             <div className="toolbarActions">
               <button type="button" onClick={() => void refreshGitSnapshot(gitDiffPathInput || undefined)}>
-                Refresh git
+                Обновить Гит
               </button>
             </div>
           </div>
           <div className="gitControls">
             <label>
-              <span>Diff path</span>
+              <span>Путь diff</span>
               <input
                 value={gitDiffPathInput}
                 onChange={(event) => setGitDiffPathInput(event.target.value)}
-                placeholder="Repository root or file path"
+                placeholder="Корень репозитория или путь к файлу"
               />
             </label>
             <div className="gitControlButtons">
               <button type="button" onClick={() => void refreshGitSnapshot(gitDiffPathInput || undefined)}>
-                Load diff
+                Загрузить diff
               </button>
               <button
                 type="button"
@@ -1175,48 +1309,48 @@ export function App() {
                 }}
                 disabled={!selectedFilePath}
               >
-                Use selected file
+                Использовать выбранный файл
               </button>
             </div>
             <label>
-              <span>Commit message</span>
+              <span>Сообщение коммита</span>
               <input
                 value={gitCommitMessage}
                 onChange={(event) => setGitCommitMessage(event.target.value)}
-                placeholder="Describe the change"
+                placeholder="Опиши изменение"
               />
             </label>
             <div className="gitRemoteFields">
               <label>
-                <span>Remote</span>
+                <span>Удалённый репозиторий</span>
                 <input value={gitRemote} onChange={(event) => setGitRemote(event.target.value)} />
               </label>
               <label>
-                <span>Branch</span>
-                <input value={gitBranch} onChange={(event) => setGitBranch(event.target.value)} placeholder="Current" />
+                <span>Ветка</span>
+                <input value={gitBranch} onChange={(event) => setGitBranch(event.target.value)} placeholder="Текущая" />
               </label>
             </div>
             <div className="gitControlButtons">
               <button type="button" onClick={() => void handleGitAction("commit")} disabled={!gitCommitMessage.trim() || Boolean(gitAction)}>
-                {gitAction === "commit" ? "Committing..." : "Commit"}
+                {gitAction === "commit" ? "Коммитим..." : "Коммит"}
               </button>
               <button type="button" onClick={() => void handleGitAction("pull")} disabled={Boolean(gitAction)}>
-                {gitAction === "pull" ? "Pulling..." : "Pull"}
+                {gitAction === "pull" ? "Забираем..." : "Забрать"}
               </button>
               <button type="button" onClick={() => void handleGitAction("push")} disabled={Boolean(gitAction)}>
-                {gitAction === "push" ? "Pushing..." : "Push"}
+                {gitAction === "push" ? "Отправляем..." : "Отправить"}
               </button>
             </div>
             {gitActionNotice ? <p className="gitActionNotice">{gitActionNotice}</p> : null}
           </div>
           <div className="gitSummary">
-            <h3>Status</h3>
+            <h3>Статус</h3>
             <pre>{gitStatus}</pre>
           </div>
           <div className="gitSummary">
-            <h3>Diff{gitDiffPath ? ` · ${gitDiffPath}` : ""}</h3>
+            <h3>Изменения{gitDiffPath ? ` · ${gitDiffPath}` : ""}</h3>
             <pre className="gitDiffViewer">
-              {(gitDiff || "No diff").split("\n").map((line, index) => (
+              {(gitDiff || "Нет изменений").split("\n").map((line, index) => (
                 <span
                   className={line.startsWith("+") && !line.startsWith("+++") ? "diffAdded" : line.startsWith("-") && !line.startsWith("---") ? "diffRemoved" : line.startsWith("@@") ? "diffContext" : ""}
                   key={`${index}-${line}`}
@@ -1234,13 +1368,13 @@ export function App() {
 
     if (activePanel === "tasks") {
       return <div className="tasksPanel">{Object.values(tasks).map((task) => <article className="taskCard" key={task.id}>
-        <strong>{task.status}</strong><p>{task.message}</p><small>{task.id}</small>
+        <strong>{translateTaskStatus(task.status)}</strong><p>{task.message}</p><small>{task.id}</small>
         <div className="taskActions">
-          {(task.status === "running" || task.status === "cancelling") && <button type="button" onClick={() => sendTaskCommand("task.cancel", task.id)}>Cancel</button>}
-          {(task.status === "paused" || task.status === "cancelled") && <button type="button" onClick={() => sendTaskCommand("task.resume", task.id)}>Resume</button>}
-          {task.status === "failed" && <button type="button" onClick={() => sendTaskCommand("task.retry", task.id)}>Retry</button>}
+          {(task.status === "running" || task.status === "cancelling") && <button type="button" onClick={() => sendTaskCommand("task.cancel", task.id)}>Отменить</button>}
+          {(task.status === "paused" || task.status === "cancelled") && <button type="button" onClick={() => sendTaskCommand("task.resume", task.id)}>Продолжить</button>}
+          {task.status === "failed" && <button type="button" onClick={() => sendTaskCommand("task.retry", task.id)}>Повторить</button>}
         </div>
-        <ul>{Object.entries(task.steps).map(([name, status]) => <li key={name}>{name}: {status}</li>)}</ul>
+        <ul>{Object.entries(task.steps).map(([name, status]) => <li key={name}>{name}: {translateStepStatus(status)}</li>)}</ul>
       </article>)}</div>;
     }
 
@@ -1253,7 +1387,7 @@ export function App() {
       return (
         <div className="placeholderPanel">
           <h3>{panel?.label}</h3>
-          <p>Planned for {panel?.phase}.</p>
+          <p>Запланировано на {panel?.phase}.</p>
         </div>
       );
     }
@@ -1263,13 +1397,13 @@ export function App() {
         <div className="chatLog">
           {lines.map((line, index) => (
             <article className={`line ${line.role}`} key={`${line.role}-${index}`}>
-              <strong>{line.role}</strong>
+              <strong>{translateChatRole(line.role)}</strong>
               <pre>{line.text}</pre>
             </article>
           ))}
           {stream ? (
             <article className="line assistant streaming">
-              <strong>assistant</strong>
+              <strong>Ассистент</strong>
               <pre>{stream}</pre>
             </article>
           ) : null}
@@ -1279,7 +1413,7 @@ export function App() {
             value={selectedModelRoute}
             onChange={(event) => setSelectedModelRoute(event.target.value)}
             disabled={!modelConfig || modelConfig.routes.length === 0}
-            aria-label="Model route"
+            aria-label="Маршрут модели"
           >
             {modelConfig?.routes.map((route) => (
               <option key={route.name} value={route.name}>
@@ -1290,10 +1424,10 @@ export function App() {
           <input
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder="Type a message..."
+            placeholder="Введите сообщение..."
           />
           <button type="submit" disabled={socketState !== "connected"}>
-            Send
+            Отправить
           </button>
         </form>
       </>
@@ -1305,16 +1439,13 @@ export function App() {
       <section className="hero">
         <div>
           <p className="eyebrow">EvoHime</p>
-          <h1>Web-first AI-agent workspace</h1>
-          <p className="lede">
-            Stage 4: files, Monaco editor, and Git diff flow through the browser and websocket bus.
-          </p>
+          <h1>Рабочее пространство ИИ-агента в браузере</h1>
         </div>
         <div className="statusCard">
           <span className="statusDot" data-state={socketState} />
           <div>
             <strong>{connectedLabel}</strong>
-            <span>{session ? session.session_id : "no session yet"}</span>
+            <span>{session ? session.session_id : "сессия ещё не создана"}</span>
           </div>
         </div>
       </section>
@@ -1337,20 +1468,20 @@ export function App() {
         <div className="panel mainPanel">
           <header>
             <h2>{currentPanelLabel}</h2>
-            <span>WebSocket</span>
+            <span>Веб-сокет</span>
           </header>
           {renderPanelContent()}
         </div>
 
         <div className="panel timelinePanel">
           <header>
-            <h2>Events</h2>
+            <h2>События</h2>
             <span>{events.length}</span>
           </header>
           <div className="eventList">
             {events.map((event, index) => (
               <article key={`${event.type}-${index}`} className="eventItem">
-                <strong>{event.type}</strong>
+                <strong>{translateEventType(event.type)}</strong>
                 <code>{JSON.stringify(event, null, 2)}</code>
               </article>
             ))}
@@ -1364,14 +1495,14 @@ export function App() {
 
 function formatPlan(plan: PlanStep[]) {
   if (plan.length === 0) {
-    return "Agent plan: empty";
+    return "План агента: пусто";
   }
 
   return [
-    "Agent plan:",
+    "План агента:",
     ...plan.map((step) => {
       const dependencies = step.depends_on ?? [];
-      const deps = dependencies.length > 0 ? ` depends on ${dependencies.join(", ")}` : "";
+      const deps = dependencies.length > 0 ? ` зависит от ${dependencies.join(", ")}` : "";
       return `- ${step.id}: ${step.tool_name} — ${step.description}${deps}`;
     }),
   ].join("\n");
