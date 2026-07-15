@@ -78,7 +78,38 @@ type ProjectSummary = {
   path: string;
 };
 
+type ProjectComposerPreference = {
+  model?: string;
+  workMode?: PermissionMode;
+};
+
 const selectedProjectStorageKey = "evohime.selectedProject";
+const projectComposerPreferencesStorageKey = "evohime.projectComposerPreferences";
+
+function projectPreferenceKey(path: string | null) {
+  return path ?? "__no_project__";
+}
+
+function loadProjectComposerPreference(path: string | null): ProjectComposerPreference {
+  try {
+    const stored = localStorage.getItem(projectComposerPreferencesStorageKey);
+    const preferences = stored ? JSON.parse(stored) as Record<string, ProjectComposerPreference> : {};
+    return preferences[projectPreferenceKey(path)] ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function saveProjectComposerPreference(path: string | null, preference: ProjectComposerPreference) {
+  try {
+    const stored = localStorage.getItem(projectComposerPreferencesStorageKey);
+    const preferences = stored ? JSON.parse(stored) as Record<string, ProjectComposerPreference> : {};
+    preferences[projectPreferenceKey(path)] = preference;
+    localStorage.setItem(projectComposerPreferencesStorageKey, JSON.stringify(preferences));
+  } catch {
+    // Browser storage can be unavailable; the in-memory state still works.
+  }
+}
 
 function loadSelectedProject(): ProjectSelection {
   try {
@@ -436,7 +467,7 @@ export function App() {
   const [modelConfigError, setModelConfigError] = useState<string | null>(null);
   const [selectedModelRoute, setSelectedModelRoute] = useState("");
   const [composerModels, setComposerModels] = useState<string[]>([]);
-  const [selectedComposerModel, setSelectedComposerModel] = useState("");
+  const [selectedComposerModel, setSelectedComposerModel] = useState(() => loadProjectComposerPreference(loadSelectedProject().path).model ?? "");
   const [composerModelsLoading, setComposerModelsLoading] = useState(false);
   const [composerModelsError, setComposerModelsError] = useState<string | null>(null);
   const [directoryCache, setDirectoryCache] = useState<Record<string, FileNode[]>>({});
@@ -485,6 +516,7 @@ export function App() {
   const [attachments, setAttachments] = useState<File[]>([]);
   const [workModeOpen, setWorkModeOpen] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const restoredProjectPreferenceRef = useRef<string | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
   const [archivedChats, setArchivedChats] = useState<ChatSessionSummary[]>([]);
   const [toolCatalog, setToolCatalog] = useState<ToolDefinition[]>([]);
@@ -917,6 +949,30 @@ export function App() {
     }
     return "mixed";
   }, [permissionSettings]);
+  useEffect(() => {
+    const preference = loadProjectComposerPreference(selectedProject.path);
+    const key = projectPreferenceKey(selectedProject.path);
+    if (restoredProjectPreferenceRef.current === key || Object.keys(permissionSettings).length === 0) {
+      return;
+    }
+    restoredProjectPreferenceRef.current = key;
+    if (preference.model) {
+      setSelectedComposerModel(preference.model);
+    }
+    if (preference.workMode && preference.workMode !== workMode) {
+      void updateWorkMode(preference.workMode);
+    }
+  }, [selectedProject.path, permissionSettings, workMode]);
+
+  useEffect(() => {
+    if (restoredProjectPreferenceRef.current !== projectPreferenceKey(selectedProject.path)) {
+      return;
+    }
+    saveProjectComposerPreference(selectedProject.path, {
+      model: selectedComposerModel || undefined,
+      workMode: workMode === "mixed" ? undefined : workMode,
+    });
+  }, [selectedProject.path, selectedComposerModel, workMode]);
   const activeModelRouteIndex = Math.max(
     0,
     modelDrafts.findIndex((route) => route.name === modelDefaultRoute),
