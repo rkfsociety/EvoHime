@@ -51,7 +51,13 @@ export interface AgentMessageDeltaEvent {
 export interface AgentPlanUpdatedEvent {
   type: "agent.plan.updated";
   task_id: Uuid;
-  plan: string[];
+  plan: PlanStep[];
+}
+export interface PlanStep {
+  id: string;
+  tool_name: string;
+  description: string;
+  depends_on?: string[];
 }
 export interface ToolStartedEvent {
   type: "tool.started";

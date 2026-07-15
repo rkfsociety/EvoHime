@@ -3,8 +3,6 @@ use evohime_model_gateway::mock_gateway;
 use evohime_model_gateway::providers::{ChatMessage, ChatRole};
 use evohime_protocol::ServerEvent;
 use evohime_tool_runtime::ToolRegistry;
-use futures_util::StreamExt;
-use std::path::PathBuf;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 

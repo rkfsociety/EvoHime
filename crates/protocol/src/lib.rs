@@ -2,6 +2,15 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PlanStep {
+    pub id: String,
+    pub tool_name: String,
+    pub description: String,
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ServerEvent {
@@ -20,7 +29,7 @@ pub enum ServerEvent {
     #[serde(rename = "agent.message.delta")]
     AgentMessageDelta { task_id: Uuid, delta: String },
     #[serde(rename = "agent.plan.updated")]
-    AgentPlanUpdated { task_id: Uuid, plan: Vec<String> },
+    AgentPlanUpdated { task_id: Uuid, plan: Vec<PlanStep> },
     #[serde(rename = "tool.started")]
     ToolStarted { task_id: Uuid, tool_name: String },
     #[serde(rename = "tool.output")]
@@ -150,6 +159,24 @@ mod tests {
         let json = serde_json::to_value(&event).expect("event serializes");
         assert_eq!(json["type"], "task.completed");
         assert_eq!(json["final_message"], "done");
+    }
+
+    #[test]
+    fn serializes_structured_plan_steps() {
+        let event = ServerEvent::AgentPlanUpdated {
+            task_id: Uuid::nil(),
+            plan: vec![PlanStep {
+                id: "step-1".to_string(),
+                tool_name: "filesystem.read".to_string(),
+                description: "Read the workspace context".to_string(),
+                depends_on: vec!["step-0".to_string()],
+            }],
+        };
+
+        let json = serde_json::to_value(&event).expect("event serializes");
+        assert_eq!(json["type"], "agent.plan.updated");
+        assert_eq!(json["plan"][0]["tool_name"], "filesystem.read");
+        assert_eq!(json["plan"][0]["depends_on"][0], "step-0");
     }
 
     #[test]

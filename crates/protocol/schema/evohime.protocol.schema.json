@@ -15,6 +15,20 @@
       "type": "string",
       "format": "date-time"
     },
+    "PlanStep": {
+      "type": "object",
+      "required": ["id", "tool_name", "description"],
+      "properties": {
+        "id": { "type": "string" },
+        "tool_name": { "type": "string" },
+        "description": { "type": "string" },
+        "depends_on": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
     "ServerEvent": {
       "oneOf": [
         { "$ref": "#/$defs/SessionCreatedEvent" },
@@ -84,7 +98,7 @@
         "task_id": { "$ref": "#/$defs/Uuid" },
         "plan": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": { "$ref": "#/$defs/PlanStep" }
         }
       },
       "additionalProperties": false

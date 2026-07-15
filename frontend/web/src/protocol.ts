@@ -3,6 +3,7 @@ export type {
   AgentPlanUpdatedEvent,
   ActionLoggedEvent,
   ApprovalRequiredEvent,
+  PlanStep,
   ClientCommand,
   FileChangedEvent,
   HistoryItem,

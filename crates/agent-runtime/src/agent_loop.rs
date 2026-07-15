@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use evohime_model_gateway::{providers::ChatMessage, providers::ChatRole, ModelGateway};
-use evohime_protocol::ServerEvent;
+use evohime_protocol::{PlanStep, ServerEvent};
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use futures_util::StreamExt;
 use serde_json::json;
@@ -9,34 +9,27 @@ use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-pub struct PlanStep {
-    pub id: String,
-    pub tool_name: String,
-    pub description: String,
-    pub depends_on: Vec<String>,
-}
-
 pub fn parse_plan(raw: &str) -> Vec<PlanStep> {
-    if let Ok(plan) = serde_json::from_str::<Vec<PlanStep>>(raw) {
-        return plan;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return default_plan();
     }
-    raw.lines()
+
+    if let Ok(plan) = serde_json::from_str::<Vec<PlanStep>>(trimmed) {
+        return normalize_plan(plan);
+    }
+
+    let parsed: Vec<PlanStep> = trimmed
+        .lines()
         .enumerate()
-        .filter_map(|(index, line)| {
-            let description = line.trim().trim_start_matches(['-', '*', ' ']).to_string();
-            if description.is_empty() {
-                None
-            } else {
-                Some(PlanStep {
-                    id: format!("step-{}", index + 1),
-                    tool_name: "none".to_string(),
-                    description,
-                    depends_on: Vec::new(),
-                })
-            }
-        })
-        .collect()
+        .filter_map(|(index, line)| parse_plan_line(index, line))
+        .collect();
+
+    if parsed.is_empty() {
+        default_plan()
+    } else {
+        normalize_plan(parsed)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -83,17 +76,6 @@ pub async fn run_agent_loop(
 
     emit(
         &event_tx,
-        ServerEvent::AgentPlanUpdated {
-            task_id: config.task_id,
-            plan: vec![
-                "read workspace context".to_string(),
-                "stream response from model".to_string(),
-            ],
-        },
-    )?;
-
-    emit(
-        &event_tx,
         ServerEvent::ToolStarted {
             task_id: config.task_id,
             tool_name: "filesystem.read".to_string(),
@@ -131,7 +113,34 @@ pub async fn run_agent_loop(
         },
     )?;
 
-    let mut messages = Vec::with_capacity(history.len() + 2);
+    let mut planning_messages = Vec::with_capacity(history.len() + 3);
+    planning_messages.push(ChatMessage {
+        role: ChatRole::System,
+        content: PLANNING_PROMPT.to_string(),
+    });
+    planning_messages.extend(history.clone());
+    planning_messages.push(ChatMessage {
+        role: ChatRole::User,
+        content: format!(
+            "User request:\n{}\n\nWorkspace context from `{}`:\n```\n{}\n```",
+            config.user_message,
+            config.demo_file_path.display(),
+            tool_result.output
+        ),
+    });
+
+    let raw_plan = collect_stream_text(gateway.stream_chat(&planning_messages)).await?;
+    let plan = parse_plan(&raw_plan);
+
+    emit(
+        &event_tx,
+        ServerEvent::AgentPlanUpdated {
+            task_id: config.task_id,
+            plan: plan.clone(),
+        },
+    )?;
+
+    let mut messages = Vec::with_capacity(history.len() + 3);
     messages.push(ChatMessage {
         role: ChatRole::System,
         content: SYSTEM_PROMPT.to_string(),
@@ -140,8 +149,9 @@ pub async fn run_agent_loop(
     messages.push(ChatMessage {
         role: ChatRole::User,
         content: format!(
-            "{}\n\nContext from `{}`:\n```\n{}\n```",
+            "{}\n\nPlan:\n{}\n\nContext from `{}`:\n```\n{}\n```",
             config.user_message,
+            format_plan(&plan),
             config.demo_file_path.display(),
             tool_result.output
         ),
@@ -186,6 +196,7 @@ pub async fn run_agent_loop(
 }
 
 const SYSTEM_PROMPT: &str = "You are EvoHime, a helpful AI coding assistant. Answer concisely using the provided workspace context when relevant.";
+const PLANNING_PROMPT: &str = "You are EvoHime's task planner. Return only JSON: an array of objects with fields id, tool_name, description, and depends_on. Use stable step ids like step-1, step-2, and keep depends_on empty unless a step truly depends on another step. If no tool call is needed, use assistant.reply as the tool_name for the final response step.";
 
 fn emit(event_tx: &UnboundedSender<ServerEvent>, event: ServerEvent) -> Result<(), AgentError> {
     event_tx.send(event).map_err(|_| AgentError::EventChannel)
@@ -196,6 +207,150 @@ fn relative_workspace_path(workspace_root: &PathBuf, file_path: &PathBuf) -> Str
         .strip_prefix(workspace_root)
         .map(|path| path.display().to_string())
         .unwrap_or_else(|_| file_path.display().to_string())
+}
+
+async fn collect_stream_text(
+    mut stream: impl futures_util::Stream<Item = Result<String, evohime_model_gateway::providers::ProviderError>>
+        + Unpin,
+) -> Result<String, AgentError> {
+    let mut output = String::new();
+    while let Some(chunk) = stream.next().await {
+        output.push_str(&chunk?);
+    }
+    Ok(output)
+}
+
+fn format_plan(plan: &[PlanStep]) -> String {
+    plan.iter()
+        .map(|step| {
+            if step.depends_on.is_empty() {
+                format!("{}: {} ({})", step.id, step.description, step.tool_name)
+            } else {
+                format!(
+                    "{}: {} ({}) depends on {}",
+                    step.id,
+                    step.description,
+                    step.tool_name,
+                    step.depends_on.join(", ")
+                )
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn default_plan() -> Vec<PlanStep> {
+    vec![
+        PlanStep {
+            id: "step-1".to_string(),
+            tool_name: "filesystem.read".to_string(),
+            description: "Read workspace context".to_string(),
+            depends_on: Vec::new(),
+        },
+        PlanStep {
+            id: "step-2".to_string(),
+            tool_name: "assistant.reply".to_string(),
+            description: "Write the response using the collected context".to_string(),
+            depends_on: vec!["step-1".to_string()],
+        },
+    ]
+}
+
+fn normalize_plan(mut plan: Vec<PlanStep>) -> Vec<PlanStep> {
+    if plan.is_empty() {
+        return default_plan();
+    }
+
+    for (index, step) in plan.iter_mut().enumerate() {
+        if step.id.trim().is_empty() {
+            step.id = format!("step-{}", index + 1);
+        }
+        if step.tool_name.trim().is_empty() {
+            step.tool_name = "assistant.reply".to_string();
+        }
+        if step.description.trim().is_empty() {
+            step.description = format!("Execute {}", step.tool_name);
+        }
+        step.depends_on
+            .retain(|dependency| !dependency.trim().is_empty());
+    }
+
+    plan
+}
+
+fn parse_plan_line(index: usize, line: &str) -> Option<PlanStep> {
+    let mut text = line.trim();
+    if text.is_empty() {
+        return None;
+    }
+
+    while let Some(stripped) = text.strip_prefix(|ch: char| ch == '-' || ch == '*' || ch == '•') {
+        text = stripped.trim_start();
+    }
+
+    if let Some((numbered, rest)) = text.split_once('.') {
+        if numbered.chars().all(|ch| ch.is_ascii_digit()) {
+            text = rest.trim_start();
+        }
+    }
+
+    if text.is_empty() {
+        return None;
+    }
+
+    let (body, depends_on) = split_dependencies(text);
+    let (tool_name, description) = extract_tool_and_description(body, index);
+
+    Some(PlanStep {
+        id: format!("step-{}", index + 1),
+        tool_name,
+        description,
+        depends_on,
+    })
+}
+
+fn split_dependencies(text: &str) -> (&str, Vec<String>) {
+    let lowered = text.to_lowercase();
+    for marker in ["depends on", "after"] {
+        if let Some(position) = lowered.find(marker) {
+            let head = text[..position].trim().trim_end_matches([':', '-', ' ']);
+            let tail = text[position + marker.len()..].trim();
+            let depends_on = tail
+                .split([',', ';'])
+                .map(|item| item.trim().trim_start_matches("step ").trim().to_string())
+                .filter(|item| !item.is_empty())
+                .collect();
+            return (head, depends_on);
+        }
+    }
+    (text, Vec::new())
+}
+
+fn extract_tool_and_description(text: &str, index: usize) -> (String, String) {
+    for separator in ["|", ":", " - ", " => "] {
+        if let Some((left, right)) = text.split_once(separator) {
+            let left = left.trim();
+            let right = right.trim();
+            if left.contains('.') || left.contains('_') || left == "assistant.reply" {
+                return (left.to_string(), right.to_string());
+            }
+            if right.contains('.') && !left.contains('.') && index == 0 {
+                return (right.to_string(), left.to_string());
+            }
+        }
+    }
+
+    let lower = text.to_lowercase();
+    if lower.starts_with("filesystem.read") {
+        return (
+            "filesystem.read".to_string(),
+            text["filesystem.read".len()..]
+                .trim_start_matches([':', '-', ' '])
+                .to_string(),
+        );
+    }
+
+    ("assistant.reply".to_string(), text.to_string())
 }
 
 #[cfg(test)]

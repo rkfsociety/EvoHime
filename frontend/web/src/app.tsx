@@ -2,6 +2,7 @@ import Editor from "@monaco-editor/react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ClientCommand,
+  PlanStep,
   ServerEvent,
   SessionBootstrap,
 } from "./protocol";
@@ -442,7 +443,7 @@ export function App() {
           ...current,
           {
             role: "system",
-            text: `Agent plan: ${event.plan.join(" -> ")}`,
+            text: formatPlan(event.plan),
           },
         ]);
         break;
@@ -1100,4 +1101,19 @@ export function App() {
       {approval ? <ApprovalModal request={approval} onGrant={() => resolveApproval("approval.granted")} onDeny={() => resolveApproval("approval.denied")} /> : null}
     </main>
   );
+}
+
+function formatPlan(plan: PlanStep[]) {
+  if (plan.length === 0) {
+    return "Agent plan: empty";
+  }
+
+  return [
+    "Agent plan:",
+    ...plan.map((step) => {
+      const dependencies = step.depends_on ?? [];
+      const deps = dependencies.length > 0 ? ` depends on ${dependencies.join(", ")}` : "";
+      return `- ${step.id}: ${step.tool_name} — ${step.description}${deps}`;
+    }),
+  ].join("\n");
 }
