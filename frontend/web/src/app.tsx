@@ -1705,6 +1705,7 @@ export function App() {
                       type="password"
                       value={activeModelRoute.api_key}
                       onChange={(event) => updateModelDraft(activeModelRouteIndex, { api_key: event.target.value })}
+                      onBlur={() => void saveModelConfig()}
                       placeholder={activeModelRoute.configured ? "Ключ сохранён — оставь пустым" : "Введи API-ключ"}
                     />
                     {activeModelRoute.configured && !activeModelRoute.api_key ? <small className="modelKeyStatus">Ключ сохранён</small> : null}
