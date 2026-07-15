@@ -60,7 +60,9 @@ User message
 - HTTP: `/health`, `POST /api/sessions`, `GET /api/sessions/:id/history`
 - WebSocket: typed event protocol
 - Tools: filesystem read/write/patch/search, shell, and Git operations with workspace sandboxing
-- Frontend: chat, settings, event timeline, basic Tasks and Actions panels; file/editor/terminal/Git panels remain incomplete
+- Frontend: chat, settings, event timeline, Tasks, Actions, terminal, files, editor, Git, and dedicated Plugins/Pull Requests/Sites panels
+- Local launcher: `start-dev.ps1` owns the tray icons for server/web and now includes a server restart menu item
+- GitHub auth: `/api/auth/github` reads the active local `gh` account and the sidebar should show the login when the backend is running
 - Protocol codegen: JSON Schema → TypeScript
 - Tests: `crates/protocol`, `crates/tool-runtime`
 - Docker Compose: db + server + web
@@ -69,7 +71,6 @@ User message
 
 - General LLM tool-calling orchestration across all registered tools
 - Server emission of `approval.required` and end-to-end approval resume
-- Terminal streaming, file tree, Monaco editor, and Git UI
 - Parallel tool execution and restart recovery for tasks
 - Project index, MCP, additional providers, and Python workers (stage 6)
 

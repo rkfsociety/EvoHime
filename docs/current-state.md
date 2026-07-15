@@ -24,6 +24,7 @@ Last updated: 2026-07-15
 | --- | --- | --- |
 | GET | `/health` | Health check |
 | GET | `/api/models/config` | Route-based model configuration |
+| GET | `/api/auth/github` | GitHub auth snapshot via local `gh` CLI |
 | GET | `/api/permissions` | Current permission policy snapshot |
 | PUT | `/api/permissions/:permission` | Update a permission mode |
 | GET | `/api/tools` | Tool catalog for Settings |
@@ -35,9 +36,10 @@ Last updated: 2026-07-15
 | GET | `/api/git/status` | Repository status and full diff snapshot |
 | GET | `/api/git/diff` | Repository diff, optionally scoped to a path |
 | POST | `/api/git/commit`, `/api/git/pull`, `/api/git/push` | Permission-controlled Git mutations |
+| GET | `/api/github/pull-requests` | GitHub pull request dashboard data |
 | WS | `/ws/:session_id` | Real-time streaming events |
 
-Workspace APIs now cover file browsing, reading, saving/creating files, Git status/diff, Git commit/pull/push actions, tool catalog inspection, and MCP server management. File and Git mutations publish synchronization events through the session bus. Permissions are editable through the API, and approval-required tool calls round-trip through the browser.
+Workspace APIs now cover file browsing, reading, saving/creating files, Git status/diff, Git commit/pull/push actions, tool catalog inspection, GitHub auth and pull request views, and MCP server management. File and Git mutations publish synchronization events through the session bus. Permissions are editable through the API, and approval-required tool calls round-trip through the browser.
 
 ## Agent flow
 
@@ -89,6 +91,15 @@ user.message
 | Files | ✅ Active lazy workspace tree and file creation |
 | Editor | ✅ Active Monaco editor with save/reload and dirty-state conflict notice |
 | Git | ✅ Active status/diff viewer with commit/pull/push controls |
+| Plugins | ✅ Active catalog-style panel |
+| Pull Requests | ✅ Active GitHub dashboard panel |
+| Sites | ✅ Active empty-state landing panel |
+
+## Launcher notes
+
+- `start-dev.ps1` is the local tray launcher for server + web
+- Tray menu now includes a server restart action
+- The server tray state should reflect the local `gh` auth snapshot when the backend is up
 
 ## Tests
 
