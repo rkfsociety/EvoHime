@@ -775,6 +775,25 @@ export function App() {
     hydrateSession(summary, history);
   }
 
+  async function createNewChat() {
+    const response = await fetch("/api/sessions", { method: "POST" });
+    if (!response.ok) {
+      throw new Error("Не удалось создать новый чат");
+    }
+
+    const bootstrap = (await response.json()) as SessionBootstrap;
+    const createdSummary: ChatSessionSummary = {
+      session_id: bootstrap.session_id,
+      created_at: bootstrap.created_at,
+      last_message_at: null,
+      last_message: null,
+      last_role: null,
+    };
+    setChatSessions((current) => [createdSummary, ...current]);
+    setActivePanel("chat");
+    hydrateSession(createdSummary, bootstrap.events);
+  }
+
   async function deleteSession(summary: ChatSessionSummary) {
     if (!window.confirm(`Удалить ${formatSessionTitle(summary, 0)}? История чата будет потеряна.`)) {
       return;
@@ -799,20 +818,7 @@ export function App() {
         return;
       }
 
-      const createdResponse = await fetch("/api/sessions", { method: "POST" });
-      if (!createdResponse.ok) {
-        throw new Error("Не удалось создать новый чат");
-      }
-      const bootstrap = (await createdResponse.json()) as SessionBootstrap;
-      const createdSummary: ChatSessionSummary = {
-        session_id: bootstrap.session_id,
-        created_at: bootstrap.created_at,
-        last_message_at: null,
-        last_message: null,
-        last_role: null,
-      };
-      setChatSessions([createdSummary]);
-      hydrateSession(createdSummary, bootstrap.events);
+      await createNewChat();
     } catch (error) {
       setLines((current) => [...current, { role: "system", text: String(error) }]);
     } finally {
@@ -2182,7 +2188,15 @@ export function App() {
                   key={item.id}
                   type="button"
                   className={item.panel === activePanel ? "quickLink active" : "quickLink"}
-                  onClick={() => setActivePanel(item.panel)}
+                  onClick={() => {
+                    if (item.id === "new-task") {
+                      void createNewChat().catch((error) => {
+                        setLines((current) => [...current, { role: "system", text: String(error) }]);
+                      });
+                      return;
+                    }
+                    setActivePanel(item.panel);
+                  }}
                 >
                   <span className="quickLinkIcon">{item.icon}</span>
                   <span>{item.label}</span>
