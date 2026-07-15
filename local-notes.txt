@@ -1,0 +1,9 @@
+# EvoHime local launch notes
+DATABASE_URL=postgres://evohime:evohime@localhost:5432/evohime
+BIND_ADDR=0.0.0.0:3000
+WORKSPACE_ROOT=.
+DEMO_FILE_PATH=docs/sample-context.md
+MODEL_PROVIDER=literouter
+LITEROUTER_API_KEY=
+LITEROUTER_BASE_URL=https://api.literouter.com/v1
+LITEROUTER_MODEL=deepseek:free
