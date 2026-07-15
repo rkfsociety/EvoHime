@@ -188,6 +188,52 @@ if ($Web) {
   exit $LASTEXITCODE
 }
 
+function Get-LauncherProcesses {
+  $scriptPath = [regex]::Escape($PSCommandPath)
+  Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe' OR Name = 'pwsh.exe'" |
+    Where-Object {
+      $_.ProcessId -ne $PID -and
+      $_.CommandLine -match $scriptPath -and
+      $_.CommandLine -notmatch '(?i)(?:^|\s)-(?:Server|Web|Setup)(?:\s|$)'
+    } |
+    ForEach-Object {
+      Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
+    }
+}
+
+function Stop-PreviousLaunchers {
+  foreach ($process in @(Get-LauncherProcesses)) {
+    Write-Host "[EvoHime] Останавливаю старый launcher (PID $($process.Id))..."
+    Stop-Tree $process
+    Wait-ForExit $process
+  }
+}
+
+function Acquire-LauncherLock {
+  $script:launcherMutex = New-Object System.Threading.Mutex($false, 'Global\EvoHime.NativeLauncher')
+  try {
+    $acquired = $script:launcherMutex.WaitOne(0)
+  } catch [System.Threading.AbandonedMutexException] {
+    $acquired = $true
+  }
+
+  if (-not $acquired) {
+    Stop-PreviousLaunchers
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    do {
+      try {
+        $acquired = $script:launcherMutex.WaitOne(250)
+      } catch [System.Threading.AbandonedMutexException] {
+        $acquired = $true
+      }
+    } while (-not $acquired -and [DateTime]::UtcNow -lt $deadline)
+  }
+
+  if (-not $acquired) {
+    throw 'Не удалось остановить предыдущий launcher EvoHime.'
+  }
+}
+
 if ($Setup) {
   Set-Location $root
   Invoke-LocalSetup
@@ -203,11 +249,14 @@ Set-Location $root
 
 Import-DotEnv
 
+Acquire-LauncherLock
+Stop-PreviousLaunchers
+
 if (-not (Test-PortAvailable 3000)) {
-  throw 'Порт 3000 уже занят. Останови старый backend перед запуском EvoHime.'
+  throw 'Порт 3000 уже занят процессом, который не принадлежит launcher EvoHime.'
 }
 if (-not (Test-PortAvailable 5173)) {
-  throw 'Порт 5173 уже занят. Останови старый frontend перед запуском EvoHime.'
+  throw 'Порт 5173 уже занят процессом, который не принадлежит launcher EvoHime.'
 }
 
 Invoke-LocalSetup
@@ -346,6 +395,10 @@ $form.Add_FormClosing({
   $serverMenu.Dispose()
   $webMenu.Dispose()
   $timer.Dispose()
+  if ($script:launcherMutex) {
+    $script:launcherMutex.ReleaseMutex()
+    $script:launcherMutex.Dispose()
+  }
 })
 
 $timer.Start()
