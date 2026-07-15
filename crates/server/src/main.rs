@@ -5,7 +5,7 @@ use anyhow::Context;
 use axum::{
     extract::{
         ws::{Message, WebSocket},
-        Path, State, WebSocketUpgrade,
+        Path, Query, State, WebSocketUpgrade,
     },
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -187,6 +187,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/sessions", get(list_sessions).post(create_session))
         .route("/api/sessions/:session_id/history", get(session_history))
         .route("/api/auth/github", get(github_auth))
+        .route("/api/github/pull-requests", get(list_pull_requests))
         .route("/api/files", get(workspace::list_files))
         .route(
             "/api/files/content",
@@ -450,6 +451,86 @@ async fn github_auth() -> Json<GithubAuthResponse> {
         login,
         source: "gh",
     })
+}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum PullRequestScope {
+    All,
+    Created,
+    ReviewRequested,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct GithubPullRequestUser {
+    login: String,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GithubPullRequestSummary {
+    number: u64,
+    title: String,
+    url: String,
+    state: String,
+    author: Option<GithubPullRequestUser>,
+    head_ref_name: String,
+    base_ref_name: String,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct GithubPullRequestQuery {
+    #[serde(default)]
+    scope: Option<PullRequestScope>,
+}
+
+async fn list_pull_requests(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<GithubPullRequestQuery>,
+) -> Result<Json<Vec<GithubPullRequestSummary>>, ApiError> {
+    let workspace_root = state.workspace_root.clone();
+    let scope = query.scope.unwrap_or(PullRequestScope::All);
+    let result = tokio::task::spawn_blocking(move || {
+        let mut command = std::process::Command::new("gh");
+        command
+            .current_dir(&workspace_root)
+            .args([
+                "pr",
+                "list",
+                "--state",
+                "all",
+                "--limit",
+                "40",
+                "--json",
+                "number,title,url,state,author,headRefName,baseRefName,createdAt,updatedAt",
+            ]);
+
+        match scope {
+            PullRequestScope::All => {}
+            PullRequestScope::Created => {
+                command.args(["--search", "author:@me"]);
+            }
+            PullRequestScope::ReviewRequested => {
+                command.args(["--search", "review-requested:@me"]);
+            }
+        }
+
+        let output = command.output().map_err(|error| error.to_string())?;
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+        }
+
+        let prs = serde_json::from_slice::<Vec<GithubPullRequestSummary>>(&output.stdout)
+            .map_err(|error| error.to_string())?;
+        Ok::<_, String>(prs)
+    })
+    .await
+    .map_err(|error| ApiError::Internal(error.to_string()))?;
+
+    let prs = result.map_err(|error| ApiError::Internal(error))?;
+    Ok(Json(prs))
 }
 
 async fn session_history(

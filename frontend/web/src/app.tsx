@@ -22,6 +22,7 @@ type WorkspacePanel =
   | "editor"
   | "terminal"
   | "git"
+  | "pull-requests"
   | "tasks"
   | "actions"
   | "settings";
@@ -56,6 +57,24 @@ type GithubAuthInfo = {
   login: string | null;
   source: string;
 };
+
+type PullRequestAuthor = {
+  login: string;
+};
+
+type PullRequestSummary = {
+  number: number;
+  title: string;
+  url: string;
+  state: string;
+  author: PullRequestAuthor | null;
+  headRefName: string;
+  baseRefName: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type PullRequestScope = "all" | "created" | "review_requested";
 
 type FileNode = {
   name: string;
@@ -118,6 +137,7 @@ const workspacePanels: Array<{ id: WorkspacePanel; label: string; phase: string 
   { id: "editor", label: "Редактор", phase: "этап 4" },
   { id: "terminal", label: "Терминал", phase: "этап 3" },
   { id: "git", label: "Гит", phase: "этап 4" },
+  { id: "pull-requests", label: "Пулл-реквесты", phase: "GitHub" },
   { id: "tasks", label: "Задачи", phase: "этап 5" },
   { id: "actions", label: "Действия", phase: "этап 5" },
   { id: "settings", label: "Настройки", phase: "этап 2" },
@@ -133,7 +153,7 @@ const sidebarQuickLinks: Array<{
   { id: "scheduled", label: "Запланировано", icon: "◷", panel: "tasks" },
   { id: "plugins", label: "Плагины", icon: "◌", panel: "settings" },
   { id: "sites", label: "Сайты", icon: "▦", panel: "files" },
-  { id: "pull-requests", label: "Пулл-реквесты", icon: "⟡", panel: "git" },
+  { id: "pull-requests", label: "Пулл-реквесты", icon: "⟡", panel: "pull-requests" },
   { id: "chat", label: "Чат", icon: "⊕", panel: "chat" },
 ];
 
@@ -370,6 +390,23 @@ function formatProfileInitials(login: string | null) {
   return compact.slice(0, 2).toUpperCase();
 }
 
+function formatRelativeAge(value: string) {
+  const diffMs = Date.now() - new Date(value).getTime();
+  const diffDays = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+  if (diffDays > 0) {
+    return `${diffDays}д`;
+  }
+  const diffHours = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
+  if (diffHours > 0) {
+    return `${diffHours}ч`;
+  }
+  const diffMinutes = Math.max(0, Math.floor(diffMs / (1000 * 60)));
+  if (diffMinutes > 0) {
+    return `${diffMinutes}м`;
+  }
+  return "только что";
+}
+
 export function App() {
   const [session, setSession] = useState<SessionBootstrap | null>(null);
   const [chatSessions, setChatSessions] = useState<ChatSessionSummary[]>([]);
@@ -411,6 +448,11 @@ export function App() {
   const [approval, setApproval] = useState<ApprovalRequiredEvent | null>(null);
   const [githubAuth, setGithubAuth] = useState<GithubAuthInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pullRequests, setPullRequests] = useState<PullRequestSummary[]>([]);
+  const [pullRequestsLoading, setPullRequestsLoading] = useState(false);
+  const [pullRequestsError, setPullRequestsError] = useState<string | null>(null);
+  const [pullRequestScope, setPullRequestScope] = useState<PullRequestScope>("all");
+  const [pullRequestSearch, setPullRequestSearch] = useState("");
   const [terminalEntries, setTerminalEntries] = useState<TerminalEntry[]>([]);
   const [permissionSettings, setPermissionSettings] = useState<PermissionSettings>({});
   const [toolCatalog, setToolCatalog] = useState<ToolDefinition[]>([]);
@@ -566,6 +608,40 @@ export function App() {
   }, [modelConfig, selectedModelRoute]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    const loadPullRequests = async (scope: PullRequestScope) => {
+      setPullRequestsLoading(true);
+      setPullRequestsError(null);
+      try {
+        const response = await fetch(`/api/github/pull-requests?scope=${encodeURIComponent(scope)}`);
+        if (!response.ok) {
+          throw new Error("Не удалось загрузить pull request'ы");
+        }
+        const data = (await response.json()) as PullRequestSummary[];
+        if (!cancelled) {
+          setPullRequests(data);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setPullRequests([]);
+          setPullRequestsError(String(error));
+        }
+      } finally {
+        if (!cancelled) {
+          setPullRequestsLoading(false);
+        }
+      }
+    };
+
+    void loadPullRequests(pullRequestScope);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pullRequestScope]);
+
+  useEffect(() => {
     if (!session) {
       return;
     }
@@ -646,6 +722,25 @@ export function App() {
     () => Object.values(tasks).filter((task) => task.status === "running" || task.status === "paused" || task.status === "cancelling").length,
     [tasks],
   );
+  const visiblePullRequests = useMemo(() => {
+    const query = pullRequestSearch.trim().toLowerCase();
+    if (!query) {
+      return pullRequests;
+    }
+    return pullRequests.filter((pullRequest) => {
+      const haystack = [
+        `#${pullRequest.number}`,
+        pullRequest.title,
+        pullRequest.state,
+        pullRequest.author?.login ?? "",
+        pullRequest.headRefName,
+        pullRequest.baseRefName,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [pullRequests, pullRequestSearch]);
   applyEventRef.current = applyEvent;
   saveFileRef.current = () => {
     void handleSave();
@@ -1548,6 +1643,104 @@ export function App() {
       return <div className="actionsPanel">{actions.map((action, index) => <article className="actionItem" key={`${action.taskId}-${index}`}><strong>{action.action}</strong><span>{action.detail}</span><small>{action.createdAt}</small></article>)}</div>;
     }
 
+    if (activePanel === "pull-requests") {
+      return (
+        <div className="pullRequestsPage">
+          <section className="pullRequestsHero">
+            <div>
+              <h3>Пул-реквесты</h3>
+              <p>
+                Просматривайте и отслеживайте работу на GitHub от имени {githubAuth?.login ?? "вашего аккаунта"}.
+              </p>
+            </div>
+            <div className="pullRequestsMeta">
+              <strong>{pullRequestsLoading ? "…" : `${visiblePullRequests.length}`}</strong>
+              <span>pull request'ов</span>
+            </div>
+          </section>
+
+          <div className="pullRequestsSearchRow">
+            <label className="pullRequestsSearch">
+              <span>Поиск pull-request'ов</span>
+              <input
+                value={pullRequestSearch}
+                onChange={(event) => setPullRequestSearch(event.target.value)}
+                placeholder="Поиск pull-request'ов"
+              />
+            </label>
+            <button type="button" className="pullRequestsFilterButton" aria-label="Фильтр">
+              ⌕
+            </button>
+          </div>
+
+          <div className="pullRequestsTabs">
+            <button
+              type="button"
+              className={pullRequestScope === "all" ? "pullRequestsTab active" : "pullRequestsTab"}
+              onClick={() => setPullRequestScope("all")}
+            >
+              Все
+            </button>
+            <button
+              type="button"
+              className={pullRequestScope === "review_requested" ? "pullRequestsTab active" : "pullRequestsTab"}
+              onClick={() => setPullRequestScope("review_requested")}
+            >
+              Проверяемые мной
+            </button>
+            <button
+              type="button"
+              className={pullRequestScope === "created" ? "pullRequestsTab active" : "pullRequestsTab"}
+              onClick={() => setPullRequestScope("created")}
+            >
+              Созданные мной
+            </button>
+          </div>
+
+          <div className="pullRequestsBody">
+            {pullRequestsError ? <p className="pullRequestsError">{pullRequestsError}</p> : null}
+            <div className="pullRequestsList">
+              {visiblePullRequests.length === 0 ? (
+                <div className="pullRequestsEmpty">
+                  <strong>Пока нет pull request'ов</strong>
+                  <p>
+                    {pullRequestsLoading
+                      ? "Подтягиваю список из GitHub..."
+                      : "Если в репозитории будут pull request'ы, они появятся здесь."}
+                  </p>
+                </div>
+              ) : (
+                visiblePullRequests.map((pullRequest) => (
+                  <a
+                    key={pullRequest.number}
+                    className="pullRequestItem"
+                    href={pullRequest.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <div className="pullRequestLine">
+                      <strong>{pullRequest.title}</strong>
+                      <span>{formatRelativeAge(pullRequest.updatedAt)}</span>
+                    </div>
+                    <div className="pullRequestSubline">
+                      <span>
+                        {pullRequest.author?.login ?? "unknown"} / {pullRequest.headRefName}
+                      </span>
+                      <span>{pullRequest.baseRefName}</span>
+                    </div>
+                    <div className="pullRequestFooter">
+                      <span className="pullRequestState">{pullRequest.state}</span>
+                      <span>#{pullRequest.number}</span>
+                    </div>
+                  </a>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     if (activePanel !== "chat") {
       const panel = workspacePanels.find((item) => item.id === activePanel);
       return (
@@ -1720,10 +1913,12 @@ export function App() {
         </nav>
 
         <div className="panel mainPanel">
-          <header>
-            <h2>{currentPanelLabel}</h2>
-            <span>Веб-сокет</span>
-          </header>
+          {activePanel !== "pull-requests" ? (
+            <header>
+              <h2>{currentPanelLabel}</h2>
+              <span>Веб-сокет</span>
+            </header>
+          ) : null}
           {renderPanelContent()}
         </div>
 
