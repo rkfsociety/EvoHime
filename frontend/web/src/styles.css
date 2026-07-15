@@ -983,6 +983,10 @@ h1 {
   font-size: 12px;
 }
 
+.modelRouteSelect {
+  max-width: 120px !important;
+}
+
 .attachmentList {
   display: flex;
   flex-basis: 100%;
