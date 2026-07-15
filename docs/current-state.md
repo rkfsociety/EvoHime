@@ -24,7 +24,7 @@ Last updated: 2026-07-15
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/health` | Health check |
-| GET | `/api/models/config` | Route-based model configuration |
+| GET/PUT | `/api/models/config` | View and apply route-based model configuration from the web panel |
 | GET | `/api/auth/github` | GitHub auth snapshot via local `gh` CLI |
 | GET | `/api/permissions` | Current permission policy snapshot |
 | PUT | `/api/permissions/:permission` | Update a permission mode |

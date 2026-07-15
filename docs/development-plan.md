@@ -243,7 +243,7 @@ LITEROUTER_MODEL=deepseek:free
 Реализовано:
 
 - абстракция model gateway и LiteRouter SSE-адаптер;
-- конфигурация модели через env и endpoint `/api/models/config`;
+- bootstrap-конфигурация модели через env и рабочее редактирование маршрутов через `/api/models/config` из web-панели;
 - `session_messages` для истории диалога;
 - agent loop с вызовом `filesystem.read` и потоковыми `agent.message.delta`;
 - UI панели Settings с текущей конфигурацией модели;

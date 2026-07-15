@@ -46,6 +46,14 @@ type ModelConfig = {
   }>;
 };
 
+type ModelRouteDraft = {
+  name: string;
+  provider: string;
+  model: string;
+  base_url: string;
+  api_key: string;
+};
+
 type ChatSessionSummary = {
   session_id: string;
   created_at: string;
@@ -505,6 +513,10 @@ export function App() {
   const [githubAuth, setGithubAuth] = useState<GithubAuthInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"model" | "permissions" | "mcp" | "tools">("model");
+  const [modelDefaultRoute, setModelDefaultRoute] = useState("default");
+  const [modelDrafts, setModelDrafts] = useState<ModelRouteDraft[]>([]);
+  const [modelSaving, setModelSaving] = useState(false);
+  const [modelNotice, setModelNotice] = useState<string | null>(null);
   const [pullRequests, setPullRequests] = useState<PullRequestSummary[]>([]);
   const [pullRequestsLoading, setPullRequestsLoading] = useState(false);
   const [pullRequestsError, setPullRequestsError] = useState<string | null>(null);
@@ -535,6 +547,8 @@ export function App() {
       const data = (await response.json()) as ModelConfig;
       if (!cancelled) {
         setModelConfig(data);
+        setModelDefaultRoute(data.default_route);
+        setModelDrafts(data.routes.map((route) => ({ ...route, api_key: "" })));
       }
     };
     fetch("/api/permissions").then((response) => response.json()).then((data: PermissionSettings) => setPermissionSettings(data)).catch(() => undefined);
@@ -1060,6 +1074,55 @@ export function App() {
     setPermissionSettings((current) => ({ ...current, [name]: { mode } }));
   }
 
+  function updateModelDraft(index: number, patch: Partial<ModelRouteDraft>) {
+    setModelDrafts((current) =>
+      current.map((route, routeIndex) => (routeIndex === index ? { ...route, ...patch } : route)),
+    );
+  }
+
+  function addModelRoute() {
+    setModelDrafts((current) => [
+      ...current,
+      {
+        name: `route-${current.length + 1}`,
+        provider: "openai-compatible",
+        model: "",
+        base_url: "https://api.openai.com/v1",
+        api_key: "",
+      },
+    ]);
+  }
+
+  function removeModelRoute(index: number) {
+    setModelDrafts((current) => current.filter((_, routeIndex) => routeIndex !== index));
+  }
+
+  async function saveModelConfig() {
+    setModelSaving(true);
+    setModelNotice(null);
+    try {
+      const response = await fetch("/api/models/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ default_route: modelDefaultRoute, routes: modelDrafts }),
+      });
+      if (!response.ok) {
+        const detail = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(detail?.error ?? "Не удалось сохранить настройки модели");
+      }
+      const data = (await response.json()) as ModelConfig;
+      setModelConfig(data);
+      setModelDefaultRoute(data.default_route);
+      setModelDrafts(data.routes.map((route) => ({ ...route, api_key: "" })));
+      setSelectedModelRoute(data.default_route);
+      setModelNotice("Настройки модели применены к агенту.");
+    } catch (error) {
+      setModelNotice(String(error));
+    } finally {
+      setModelSaving(false);
+    }
+  }
+
   async function saveMcpServers() {
     setMcpServersSaving(true);
     setMcpServersNotice(null);
@@ -1333,42 +1396,64 @@ export function App() {
           <h3>Провайдер модели</h3>
           {modelConfigError ? <p className="settingsError">{modelConfigError}</p> : null}
           {modelConfig ? (
-            <dl className="settingsGrid">
-              <div>
-                <dt>Маршрут по умолчанию</dt>
-                <dd>{modelConfig.default_route}</dd>
+            <div className="modelSettingsEditor">
+              <div className="settingsInlineBar">
+                <label>
+                  <span>Маршрут по умолчанию</span>
+                  <select value={modelDefaultRoute} onChange={(event) => setModelDefaultRoute(event.target.value)}>
+                    {modelDrafts.map((route) => <option key={route.name} value={route.name}>{route.name}</option>)}
+                  </select>
+                </label>
+                <span className={modelConfig.configured ? "modelStatus configured" : "modelStatus"}>
+                  {modelConfig.configured ? "Агент готов" : "Нужен API-ключ"}
+                </span>
               </div>
-              <div>
-                <dt>Провайдер</dt>
-                <dd>{modelConfig.provider}</dd>
+              <div className="modelRouteList">
+                {modelDrafts.map((route, index) => (
+                  <article className="modelRouteCard" key={`${route.name}-${index}`}>
+                    <div className="modelRouteHeader">
+                      <strong>{route.name || "Новый маршрут"}</strong>
+                      <button type="button" onClick={() => removeModelRoute(index)} disabled={modelDrafts.length === 1}>
+                        Удалить
+                      </button>
+                    </div>
+                    <div className="modelRouteFields">
+                      <label>
+                        <span>Название</span>
+                        <input value={route.name} onChange={(event) => updateModelDraft(index, { name: event.target.value })} />
+                      </label>
+                      <label>
+                        <span>Провайдер</span>
+                        <select value={route.provider} onChange={(event) => updateModelDraft(index, { provider: event.target.value })}>
+                          <option value="literouter">LiteRouter</option>
+                          <option value="openai-compatible">OpenAI-compatible</option>
+                          <option value="mock">Mock</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>Модель</span>
+                        <input value={route.model} onChange={(event) => updateModelDraft(index, { model: event.target.value })} placeholder="deepseek:free" />
+                      </label>
+                      <label>
+                        <span>Base URL</span>
+                        <input value={route.base_url} onChange={(event) => updateModelDraft(index, { base_url: event.target.value })} placeholder="https://api.example.com/v1" />
+                      </label>
+                      <label className="modelRouteKey">
+                        <span>API-ключ</span>
+                        <input type="password" value={route.api_key} onChange={(event) => updateModelDraft(index, { api_key: event.target.value })} placeholder="Оставь пустым, чтобы сохранить текущий" />
+                      </label>
+                    </div>
+                  </article>
+                ))}
               </div>
-              <div>
-                <dt>Модель</dt>
-                <dd>{modelConfig.model}</dd>
+              <div className="modelSettingsActions">
+                <button type="button" onClick={addModelRoute}>Добавить маршрут</button>
+                <button type="button" onClick={() => void saveModelConfig()} disabled={modelSaving || modelDrafts.length === 0}>
+                  {modelSaving ? "Применяем..." : "Применить настройки"}
+                </button>
               </div>
-              <div>
-                <dt>Базовый URL</dt>
-                <dd>{modelConfig.base_url}</dd>
-              </div>
-              <div>
-                <dt>API-ключ</dt>
-                <dd data-configured={modelConfig.configured}>
-                  {translateModelConfigStatus(modelConfig.configured)}
-                </dd>
-              </div>
-              <div>
-                <dt>Доступные модели</dt>
-                <dd>{modelConfig.available_models.join(", ")}</dd>
-              </div>
-              <div>
-                <dt>Маршруты</dt>
-                <dd>
-                  {modelConfig.routes
-                    .map((route) => `${route.name} (${route.provider}:${route.model})`)
-                    .join(", ")}
-                </dd>
-              </div>
-            </dl>
+              {modelNotice ? <p className={modelNotice.startsWith("Настройки") ? "settingsHint" : "settingsError"}>{modelNotice}</p> : null}
+            </div>
           ) : (
             <p>Загрузка конфигурации модели...</p>
           )}

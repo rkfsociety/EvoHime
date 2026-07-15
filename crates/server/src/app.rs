@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::to_value;
 use sqlx::PgPool;
 use std::{collections::HashMap, env, path::PathBuf, sync::Arc};
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{broadcast, Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -71,16 +71,17 @@ pub struct AppState {
     pub workspace_root: PathBuf,
     pub tools: ToolRegistry,
     pub permissions: PermissionEngine,
-    pub model_gateway: Option<Arc<ModelGateway>>,
-    pub model_config: ModelGatewayConfig,
+    pub model_gateway: Arc<RwLock<Option<Arc<ModelGateway>>>>,
+    pub model_config: Arc<RwLock<ModelGatewayConfig>>,
     pub mcp_servers: Arc<Mutex<Vec<McpServerConfig>>>,
     pub session_buses: Arc<Mutex<HashMap<Uuid, broadcast::Sender<ServerEvent>>>>,
     pub task_cancellations: Arc<Mutex<HashMap<Uuid, CancellationToken>>>,
 }
 
 impl AppState {
-    pub fn model_config_response(&self) -> ModelConfigResponse {
-        ModelGateway::config_response(&self.model_config)
+    pub async fn model_config_response(&self) -> ModelConfigResponse {
+        let config = self.model_config.read().await;
+        ModelGateway::config_response(&config)
     }
 
     pub async fn session_bus(&self, session_id: Uuid) -> broadcast::Sender<ServerEvent> {

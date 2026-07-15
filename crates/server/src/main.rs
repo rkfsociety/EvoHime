@@ -15,8 +15,8 @@ use axum::{
 use evohime_agent_runtime::{
     run_agent_loop, run_agent_loop_resumed, AgentConfig, AgentError, AgentResumeContext,
 };
-use evohime_model_gateway::providers::{ChatMessage, ChatRole};
-use evohime_model_gateway::ModelGateway;
+use evohime_model_gateway::providers::{ChatMessage, ChatRole, ProviderKind};
+use evohime_model_gateway::{ModelGateway, ModelRouteConfig};
 use evohime_permissions::{Permission, PermissionMode};
 use evohime_protocol::{ClientCommand, HistoryItem, PlanStep, ServerEvent, SessionBootstrap};
 use evohime_task_engine::{
@@ -25,9 +25,10 @@ use evohime_task_engine::{
 use evohime_tool_runtime::ToolError;
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde_json::{json, to_value, Value};
+use serde::Deserialize;
 use sqlx::PgPool;
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 use tower_http::cors::CorsLayer;
 use tracing::{error, info, warn};
@@ -43,6 +44,22 @@ enum ApiError {
     ApprovalRequired { tool: String, approval_id: Uuid },
     #[error("{0}")]
     Internal(String),
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelSettingsRequest {
+    default_route: String,
+    routes: Vec<ModelRouteRequest>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelRouteRequest {
+    name: String,
+    provider: String,
+    model: String,
+    base_url: String,
+    #[serde(default)]
+    api_key: Option<String>,
 }
 
 impl From<(Uuid, ApiError)> for ApiError {
@@ -109,8 +126,8 @@ async fn main() -> anyhow::Result<()> {
         workspace_root: config.workspace_root.clone(),
         tools: evohime_tool_runtime::ToolRegistry::bootstrap_with_permissions(permissions.clone()),
         permissions,
-        model_gateway,
-        model_config: config.model_config.clone(),
+        model_gateway: Arc::new(RwLock::new(model_gateway)),
+        model_config: Arc::new(RwLock::new(config.model_config.clone())),
         mcp_servers: Arc::new(Mutex::new(config.mcp_servers.clone())),
         session_buses: Arc::new(Mutex::new(HashMap::new())),
         task_cancellations: Arc::new(Mutex::new(HashMap::new())),
@@ -183,7 +200,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/health", get(health))
-        .route("/api/models/config", get(model_config))
+        .route("/api/models/config", get(model_config).put(update_model_config))
         .route("/api/sessions", get(list_sessions).post(create_session))
         .route("/api/sessions/:session_id/history", get(session_history))
         .route("/api/auth/github", get(github_auth))
@@ -218,7 +235,7 @@ async fn main() -> anyhow::Result<()> {
         demo_file = %config.demo_file_path.display(),
         model = %default_route_config.map(|route| route.literouter.model.as_str()).unwrap_or(""),
         provider = %default_route_config.map(|route| route.provider.as_str()).unwrap_or("unknown"),
-        llm_configured = %state.model_gateway.is_some(),
+        llm_configured = %state.model_gateway.read().await.is_some(),
         "listening on {}",
         addr
     );
@@ -235,7 +252,83 @@ async fn health() -> Json<Value> {
 async fn model_config(
     State(state): State<Arc<AppState>>,
 ) -> Json<evohime_model_gateway::ModelConfigResponse> {
-    Json(state.model_config_response())
+    Json(state.model_config_response().await)
+}
+
+async fn update_model_config(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<ModelSettingsRequest>,
+) -> Result<Json<evohime_model_gateway::ModelConfigResponse>, ApiError> {
+    if request.default_route.trim().is_empty() || request.routes.is_empty() {
+        return Err(ApiError::BadRequest(
+            "Нужен хотя бы один маршрут и маршрут по умолчанию".to_string(),
+        ));
+    }
+
+    let current = state.model_config.read().await;
+    let mut routes = HashMap::new();
+    for route in request.routes {
+        let name = route.name.trim().to_string();
+        let model = route.model.trim().to_string();
+        let base_url = route.base_url.trim().to_string();
+        if name.is_empty() || model.is_empty() {
+            return Err(ApiError::BadRequest(
+                "Название маршрута и модель не могут быть пустыми".to_string(),
+            ));
+        }
+        if routes.contains_key(&name) {
+            return Err(ApiError::BadRequest(format!(
+                "Маршрут '{name}' указан несколько раз"
+            )));
+        }
+
+        let provider = ProviderKind::parse(&route.provider).ok_or_else(|| {
+            ApiError::BadRequest(format!("Неизвестный провайдер: {}", route.provider))
+        })?;
+        let existing_key = current
+            .routes
+            .get(&name)
+            .map(|item| item.literouter.api_key.clone())
+            .unwrap_or_default();
+        let api_key = route
+            .api_key
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or(existing_key);
+        let config = match provider {
+            ProviderKind::LiteRouter => {
+                ModelRouteConfig::literouter(api_key, base_url, model)
+            }
+            ProviderKind::OpenAICompatible => {
+                ModelRouteConfig::openai_compatible(api_key, base_url, model)
+            }
+            ProviderKind::Mock => ModelRouteConfig::mock(model),
+        };
+        routes.insert(name, config);
+    }
+    drop(current);
+
+    if !routes.contains_key(&request.default_route) {
+        return Err(ApiError::BadRequest(
+            "Маршрут по умолчанию должен существовать в списке маршрутов".to_string(),
+        ));
+    }
+
+    let config = evohime_model_gateway::ModelGatewayConfig {
+        default_route: request.default_route,
+        routes,
+    };
+    let gateway = if config.routes.values().all(ModelRouteConfig::configured) {
+        Some(Arc::new(
+            ModelGateway::from_config(&config)
+                .map_err(|error| ApiError::BadRequest(error.to_string()))?,
+        ))
+    } else {
+        None
+    };
+    *state.model_config.write().await = config;
+    *state.model_gateway.write().await = gateway;
+
+    Ok(Json(state.model_config_response().await))
 }
 
 async fn list_permissions(State(state): State<Arc<AppState>>) -> Json<Value> {
@@ -908,7 +1001,7 @@ async fn run_task_pipeline(
     cancellation: CancellationToken,
     emit_started: bool,
 ) -> Result<(), (Uuid, ApiError)> {
-    let gateway = state.model_gateway.clone().ok_or_else(|| {
+    let gateway = state.model_gateway.read().await.clone().ok_or_else(|| {
         (
             task.id,
             ApiError::Internal("LITEROUTER_API_KEY is not configured — set it in .env".to_string()),
@@ -952,10 +1045,8 @@ async fn run_task_pipeline(
     });
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
-    let model_route = resolve_model_route(
-        task.model_route.as_deref(),
-        &state.model_config.default_route,
-    );
+    let default_route = state.model_config.read().await.default_route.clone();
+    let model_route = resolve_model_route(task.model_route.as_deref(), &default_route);
     let agent_config = AgentConfig {
         task_id: task.id,
         session_id,

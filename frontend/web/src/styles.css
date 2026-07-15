@@ -517,6 +517,107 @@ h1 {
 .settingsError {
   margin: 0;
 }
+
+.modelSettingsEditor {
+  display: grid;
+  gap: 16px;
+}
+
+.settingsInlineBar,
+.modelRouteHeader,
+.modelSettingsActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settingsInlineBar label,
+.modelRouteFields label {
+  display: grid;
+  gap: 7px;
+}
+
+.settingsInlineBar label {
+  grid-template-columns: auto minmax(180px, 260px);
+  align-items: center;
+}
+
+.settingsInlineBar span,
+.modelRouteFields span {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.settingsInlineBar select,
+.modelRouteFields input,
+.modelRouteFields select {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(4, 8, 18, 0.8);
+  color: var(--text-0);
+  padding: 10px 12px;
+}
+
+.modelStatus {
+  color: #f3c969 !important;
+}
+
+.modelStatus.configured {
+  color: var(--accent-1) !important;
+}
+
+.modelRouteList {
+  display: grid;
+  gap: 12px;
+}
+
+.modelRouteCard {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.modelRouteHeader strong {
+  color: var(--text-0);
+}
+
+.modelRouteHeader button,
+.modelSettingsActions button {
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: var(--surface-4);
+  color: var(--text-0);
+  cursor: pointer;
+}
+
+.modelRouteHeader button:disabled,
+.modelSettingsActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.modelSettingsActions button:last-child {
+  background: linear-gradient(135deg, var(--accent-0), var(--accent-1));
+  color: #07111c;
+  font-weight: 700;
+}
+
+.modelRouteFields {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(170px, 1fr) minmax(180px, 1fr);
+  gap: 12px;
+}
+
+.modelRouteKey {
+  grid-column: 1 / -1;
+}
 .permissionList { display: grid; gap: 8px; margin-top: 12px; }
 .permissionList label { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid rgba(255,255,255,.07); border-radius: 10px; }
 .permissionList select { background: #111a31; color: #edf4ff; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 6px 8px; }
