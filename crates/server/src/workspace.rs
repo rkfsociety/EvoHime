@@ -40,6 +40,64 @@ pub struct FileListing {
 }
 
 #[derive(Debug, Serialize)]
+pub struct ProjectSummary {
+    pub name: String,
+    pub path: String,
+}
+
+pub async fn list_projects(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<ProjectSummary>>, ApiError> {
+    let parent = state
+        .workspace_root
+        .parent()
+        .ok_or_else(|| ApiError::Internal("workspace parent is unavailable".to_string()))?;
+    let mut directory = fs::read_dir(parent)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let mut projects = Vec::new();
+
+    while let Some(entry) = directory
+        .next_entry()
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?
+    {
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .await
+            .map_err(|error| ApiError::Internal(error.to_string()))?;
+        if !file_type.is_dir() || path == state.workspace_root {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || !looks_like_project(&path).await {
+            continue;
+        }
+        projects.push(ProjectSummary {
+            name,
+            path: path.to_string_lossy().replace('\\', "/"),
+        });
+    }
+
+    projects.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+    Ok(Json(projects))
+}
+
+async fn looks_like_project(path: &Path) -> bool {
+    [
+        ".git",
+        "Cargo.toml",
+        "package.json",
+        "pyproject.toml",
+        "go.mod",
+        "README.md",
+    ]
+    .iter()
+    .any(|marker| path.join(marker).exists())
+}
+
+#[derive(Debug, Serialize)]
 pub struct FileContent {
     pub path: String,
     pub content: String,

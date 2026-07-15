@@ -73,6 +73,11 @@ type ProjectSelection = {
   path: string | null;
 };
 
+type ProjectSummary = {
+  name: string;
+  path: string;
+};
+
 type GithubAuthInfo = {
   authenticated: boolean;
   login: string | null;
@@ -403,6 +408,7 @@ export function App() {
   const [stream, setStream] = useState("");
   const [activePanel, setActivePanel] = useState<WorkspacePanel>("chat");
   const [selectedProject, setSelectedProject] = useState<ProjectSelection>({ label: "EvoHime", path: "." });
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
@@ -642,6 +648,19 @@ export function App() {
     return () => {
       cancelled = true;
     };
+    fetch("/api/projects")
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Не удалось загрузить список проектов");
+        }
+        return response.json();
+      })
+      .then((data: ProjectSummary[]) => {
+        if (!cancelled) {
+          setProjects(data);
+        }
+      })
+      .catch(() => undefined);
   }, [modelDrafts.find((route) => route.name === "orchestrator")?.provider, modelDrafts.find((route) => route.name === "orchestrator")?.base_url, modelDrafts.find((route) => route.name === "orchestrator")?.billing_mode]);
 
   useEffect(() => {
@@ -822,10 +841,8 @@ export function App() {
     [chatSessions, activeSessionId],
   );
   const projectFolders = useMemo(
-    () => (directoryCache["."] ?? [])
-      .filter((entry) => entry.kind === "dir")
-      .filter((entry) => entry.name.toLowerCase().includes(projectSearch.trim().toLowerCase())),
-    [directoryCache, projectSearch],
+    () => projects.filter((project) => project.name.toLowerCase().includes(projectSearch.trim().toLowerCase())),
+    [projects, projectSearch],
   );
   const hasConversation = lines.some((line) => line.role !== "system" && line.text.trim()) || Boolean(stream.trim());
   const selectedFileLanguage = useMemo(
@@ -2429,7 +2446,7 @@ export function App() {
                     }}
                   >
                     <span>▱</span>
-                    <span><strong>{folder.name}</strong><small>{folder.path}</small></span>
+                    <span><strong>{folder.name}</strong><small>Проект</small></span>
                   </button>
                 ))}
                 <button

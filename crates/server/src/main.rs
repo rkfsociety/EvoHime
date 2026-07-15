@@ -237,6 +237,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/auth/github", get(github_auth))
         .route("/api/github/pull-requests", get(list_pull_requests))
         .route("/api/files", get(workspace::list_files))
+        .route("/api/projects", get(workspace::list_projects))
         .route(
             "/api/files/content",
             get(workspace::read_file)
