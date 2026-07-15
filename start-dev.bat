@@ -51,7 +51,7 @@ if not exist "frontend\web\node_modules" (
   popd
 )
 
-start "EvoHime Server" /D "%ROOT%" cmd /k "set DATABASE_URL=%DATABASE_URL%&& set BIND_ADDR=%BIND_ADDR%&& set WORKSPACE_ROOT=%WORKSPACE_ROOT%&& set DEMO_FILE_PATH=%DEMO_FILE_PATH%&& set MODEL_PROVIDER=%MODEL_PROVIDER%&& set LITEROUTER_API_KEY=%LITEROUTER_API_KEY%&& set LITEROUTER_BASE_URL=%LITEROUTER_BASE_URL%&& set LITEROUTER_MODEL=%LITEROUTER_MODEL%&& \"%CARGO_EXE%\" run -p evohime-server"
+start "EvoHime Server" /D "%ROOT%" cmd /k "set DATABASE_URL=%DATABASE_URL%&& set BIND_ADDR=%BIND_ADDR%&& set WORKSPACE_ROOT=%WORKSPACE_ROOT%&& set DEMO_FILE_PATH=%DEMO_FILE_PATH%&& set MODEL_PROVIDER=%MODEL_PROVIDER%&& set LITEROUTER_API_KEY=%LITEROUTER_API_KEY%&& set LITEROUTER_BASE_URL=%LITEROUTER_BASE_URL%&& set LITEROUTER_MODEL=%LITEROUTER_MODEL%&& call ""%CARGO_EXE%"" run -p evohime-server"
 start "EvoHime Web" /D "%ROOT%\frontend\web" cmd /k "npm run dev"
 
 echo.
