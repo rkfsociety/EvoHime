@@ -223,7 +223,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health))
         .route("/api/models/config", get(model_config).put(update_model_config))
         .route("/api/sessions", get(list_sessions).post(create_session))
+        .route("/api/sessions/archived", get(list_archived_sessions))
         .route("/api/sessions/:session_id", delete(delete_session))
+        .route("/api/sessions/:session_id/archive", post(archive_session))
         .route("/api/sessions/:session_id/history", get(session_history))
         .route("/api/auth/github", get(github_auth))
         .route("/api/github/pull-requests", get(list_pull_requests))
@@ -536,6 +538,19 @@ async fn delete_session(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn archive_session(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    let archived = evohime_storage::archive_session(&state.pool, session_id)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    if !archived {
+        return Err(ApiError::BadRequest("Чат не найден или уже архивирован".to_string()));
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
 #[derive(Debug, serde::Serialize)]
 struct SessionSummary {
     session_id: Uuid,
@@ -545,6 +560,16 @@ struct SessionSummary {
     last_role: Option<String>,
 }
 
+fn session_summary(row: evohime_storage::SessionSummaryRow) -> SessionSummary {
+    SessionSummary {
+        session_id: row.id,
+        created_at: row.created_at,
+        last_message_at: row.last_message_at,
+        last_message: row.last_message,
+        last_role: row.last_role,
+    }
+}
+
 async fn list_sessions(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<SessionSummary>>, ApiError> {
@@ -552,18 +577,18 @@ async fn list_sessions(
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
 
-    let sessions = rows
-        .into_iter()
-        .map(|row| SessionSummary {
-            session_id: row.id,
-            created_at: row.created_at,
-            last_message_at: row.last_message_at,
-            last_message: row.last_message,
-            last_role: row.last_role,
-        })
-        .collect();
+    let sessions = rows.into_iter().map(session_summary).collect();
 
     Ok(Json(sessions))
+}
+
+async fn list_archived_sessions(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<SessionSummary>>, ApiError> {
+    let rows = evohime_storage::list_archived_sessions(&state.pool, 100)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    Ok(Json(rows.into_iter().map(session_summary).collect()))
 }
 
 #[derive(Debug, serde::Serialize)]

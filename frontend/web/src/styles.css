@@ -410,7 +410,7 @@ h1 {
   overflow: hidden;
 }
 
-.chatDeleteButton {
+.chatArchiveButton {
   display: grid;
   place-items: center;
   width: 26px;
@@ -424,17 +424,17 @@ h1 {
   opacity: 0;
 }
 
-.projectChatRow:hover .chatDeleteButton,
-.chatDeleteButton:focus-visible {
+.projectChatRow:hover .chatArchiveButton,
+.chatArchiveButton:focus-visible {
   opacity: 1;
 }
 
-.chatDeleteButton:hover {
-  background: rgba(255, 104, 118, 0.12);
-  color: #ff8b96;
+.chatArchiveButton:hover {
+  background: rgba(143, 180, 255, 0.12);
+  color: var(--accent-2);
 }
 
-.chatDeleteButton:disabled {
+.chatArchiveButton:disabled {
   cursor: wait;
   opacity: 0.5;
 }
@@ -1305,6 +1305,51 @@ h1 {
 
 .emptyPanelState strong {
   color: var(--text-1);
+}
+
+.archivedChatList {
+  display: grid;
+  gap: 10px;
+}
+
+.archivedChatItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-0);
+  border-radius: 14px;
+  background: var(--surface-3);
+}
+
+.archivedChatItem strong,
+.archivedChatItem span {
+  display: block;
+}
+
+.archivedChatItem span {
+  margin-top: 4px;
+  max-width: 52ch;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archivedChatItem button {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 104, 118, 0.25);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgba(255, 104, 118, 0.08);
+  color: #ff9aa4;
+  cursor: pointer;
+}
+
+.archivedChatItem button:hover {
+  background: rgba(255, 104, 118, 0.16);
 }
 
 .toolbarActions {

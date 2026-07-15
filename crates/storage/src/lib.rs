@@ -149,6 +149,7 @@ pub async fn list_sessions(
             ORDER BY created_at DESC
             LIMIT 1
         ) AS last_message ON TRUE
+        WHERE s.archived_at IS NULL
         ORDER BY s.created_at DESC
         LIMIT $1
         "#,
@@ -158,6 +159,48 @@ pub async fn list_sessions(
     .await?;
 
     Ok(rows)
+}
+
+pub async fn list_archived_sessions(
+    pool: &PgPool,
+    limit: i64,
+) -> Result<Vec<SessionSummaryRow>, StorageError> {
+    let rows = sqlx::query_as::<_, SessionSummaryRow>(
+        r#"
+        SELECT
+            s.id,
+            s.created_at,
+            last_message.created_at AS last_message_at,
+            last_message.content AS last_message,
+            last_message.role AS last_role
+        FROM sessions AS s
+        LEFT JOIN LATERAL (
+            SELECT role, content, created_at
+            FROM session_messages
+            WHERE session_id = s.id
+            ORDER BY created_at DESC
+            LIMIT 1
+        ) AS last_message ON TRUE
+        WHERE s.archived_at IS NOT NULL
+        ORDER BY s.archived_at DESC
+        LIMIT $1
+        "#,
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
+}
+
+pub async fn archive_session(pool: &PgPool, session_id: Uuid) -> Result<bool, StorageError> {
+    let result = sqlx::query(
+        "UPDATE sessions SET archived_at = now() WHERE id = $1 AND archived_at IS NULL",
+    )
+    .bind(session_id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
 }
 
 pub async fn load_session(

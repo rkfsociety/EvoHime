@@ -426,7 +426,7 @@ export function App() {
   const [approval, setApproval] = useState<ApprovalRequiredEvent | null>(null);
   const [githubAuth, setGithubAuth] = useState<GithubAuthInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<"model" | "permissions" | "mcp" | "tools">("model");
+  const [settingsTab, setSettingsTab] = useState<"model" | "permissions" | "mcp" | "tools" | "archive">("model");
   const [modelDefaultRoute, setModelDefaultRoute] = useState("default");
   const [modelDrafts, setModelDrafts] = useState<ModelRouteDraft[]>([]);
   const [modelSaving, setModelSaving] = useState(false);
@@ -442,6 +442,7 @@ export function App() {
   const [permissionModeSaving, setPermissionModeSaving] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
+  const [archivedChats, setArchivedChats] = useState<ChatSessionSummary[]>([]);
   const [toolCatalog, setToolCatalog] = useState<ToolDefinition[]>([]);
   const [toolCatalogError, setToolCatalogError] = useState<string | null>(null);
   const [mcpServers, setMcpServers] = useState<McpServerConfig[]>([]);
@@ -470,6 +471,7 @@ export function App() {
       }
     };
     fetch("/api/permissions").then((response) => response.json()).then((data: PermissionSettings) => setPermissionSettings(data)).catch(() => undefined);
+    fetch("/api/sessions/archived").then((response) => response.json()).then((data: ChatSessionSummary[]) => setArchivedChats(data)).catch(() => undefined);
     fetch("/api/tools")
       .then((response) => {
         if (!response.ok) {
@@ -806,11 +808,32 @@ export function App() {
     hydrateSession(createdSummary, bootstrap.events);
   }
 
-  async function deleteSession(summary: ChatSessionSummary) {
-    if (!window.confirm(`Удалить ${formatSessionTitle(summary, 0)}? История чата будет потеряна.`)) {
-      return;
-    }
+  async function archiveChat(summary: ChatSessionSummary) {
+    setDeletingSessionId(summary.session_id);
+    try {
+      const response = await fetch(`/api/sessions/${summary.session_id}/archive`, { method: "POST" });
+      if (!response.ok) {
+        throw new Error("Не удалось архивировать чат");
+      }
 
+      setChatSessions((current) => current.filter((chat) => chat.session_id !== summary.session_id));
+      setArchivedChats((current) => [summary, ...current]);
+      if (summary.session_id === activeSessionId) {
+        const next = chatSessions.find((chat) => chat.session_id !== summary.session_id);
+        if (next) {
+          await openSession(next);
+        } else {
+          await createNewChat();
+        }
+      }
+    } catch (error) {
+      setLines((current) => [...current, { role: "system", text: String(error) }]);
+    } finally {
+      setDeletingSessionId(null);
+    }
+  }
+
+  async function deleteSession(summary: ChatSessionSummary) {
     setDeletingSessionId(summary.session_id);
     try {
       const response = await fetch(`/api/sessions/${summary.session_id}`, { method: "DELETE" });
@@ -818,6 +841,7 @@ export function App() {
         throw new Error("Не удалось удалить чат");
       }
 
+      setArchivedChats((current) => current.filter((chat) => chat.session_id !== summary.session_id));
       const remaining = chatSessions.filter((chat) => chat.session_id !== summary.session_id);
       setChatSessions(remaining);
       if (summary.session_id !== activeSessionId) {
@@ -1402,6 +1426,7 @@ export function App() {
             ["permissions", "Разрешения", "Доступ инструментов"],
             ["mcp", "MCP", "Подключённые серверы"],
             ["tools", "Инструменты", "Каталог и таймауты"],
+            ["archive", "Архив", "Скрытые чаты"],
           ].map(([id, label, hint]) => (
             <button
               key={id}
@@ -1595,6 +1620,33 @@ export function App() {
                 <p>{tool.description}</p>
                 <small>{tool.permissions.join(", ") || "нет разрешений"}</small>
                 <span>Таймаут {tool.timeout_ms} мс</span>
+              </article>
+            ))}
+          </div>
+        </section> : null}
+
+        {settingsTab === "archive" ? <section className="settingsSection">
+          <h3>Архивированные чаты</h3>
+          <p className="settingsHint">Архивация скрывает чат из левого бара. Здесь его можно удалить окончательно.</p>
+          <div className="archivedChatList">
+            {archivedChats.length === 0 ? (
+              <div className="emptyState">
+                <strong>Архив пуст</strong>
+                <p>Архивированные чаты появятся здесь.</p>
+              </div>
+            ) : archivedChats.map((chat, index) => (
+              <article className="archivedChatItem" key={chat.session_id}>
+                <div>
+                  <strong>{formatSessionTitle(chat, index)}</strong>
+                  <span>{formatSessionPreview(chat)}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void deleteSession(chat)}
+                  disabled={deletingSessionId === chat.session_id}
+                >
+                  {deletingSessionId === chat.session_id ? "Удаляем..." : "Удалить навсегда"}
+                </button>
               </article>
             ))}
           </div>
@@ -2308,12 +2360,12 @@ export function App() {
                   </button>
                   <button
                     type="button"
-                    className="chatDeleteButton"
-                    onClick={() => void deleteSession(chat)}
+                    className="chatArchiveButton"
+                    onClick={() => void archiveChat(chat)}
                     disabled={deletingSessionId === chat.session_id}
-                    aria-label={`Удалить ${formatSessionTitle(chat, index)}`}
+                    aria-label={`Архивировать ${formatSessionTitle(chat, index)}`}
                   >
-                    ×
+                    ▱
                   </button>
                 </div>
               ))}
