@@ -134,14 +134,6 @@ type McpServerConfig = {
   description?: string | null;
 };
 
-type PluginCard = {
-  name: string;
-  description: string;
-  icon: string;
-  tag: string;
-  actionLabel?: string;
-};
-
 const initialLines: ChatLine[] = [];
 
 const workspacePanels: Array<{ id: WorkspacePanel; label: string; phase: string }> = [
@@ -170,50 +162,6 @@ const sidebarQuickLinks: Array<{
   { id: "sites", label: "Сайты", icon: "▦", panel: "sites" },
   { id: "pull-requests", label: "Пулл-реквесты", icon: "⟡", panel: "pull-requests" },
   { id: "chat", label: "Чат", icon: "⊕", panel: "chat" },
-];
-
-const featuredPlugins: PluginCard[] = [
-  {
-    name: "Computer Use",
-    description: "Управление Windows-приложениями через Codex.",
-    icon: "⌘",
-    tag: "Инструменты",
-    actionLabel: "Установить",
-  },
-  {
-    name: "Chrome",
-    description: "Контроль вкладок и действий в Chrome.",
-    icon: "⌖",
-    tag: "Браузер",
-    actionLabel: "Установить",
-  },
-  {
-    name: "Spreadsheets",
-    description: "Создание и редактирование таблиц.",
-    icon: "▦",
-    tag: "Документы",
-    actionLabel: "Установить",
-  },
-  {
-    name: "Presentations",
-    description: "Сборка и правка презентаций.",
-    icon: "▤",
-    tag: "Документы",
-    actionLabel: "Установить",
-  },
-  {
-    name: "GitHub",
-    description: "Разбор PR, issues, CI и публикация изменений.",
-    icon: "⌂",
-    tag: "Разработка",
-  },
-  {
-    name: "Notion",
-    description: "Поиск и чтение заметок и баз знаний.",
-    icon: "◫",
-    tag: "Продуктивность",
-    actionLabel: "Установить",
-  },
 ];
 
 function normalizePath(path?: string) {
@@ -1541,23 +1489,20 @@ export function App() {
         <section className="pluginsHero">
           <div>
             <h3>Плагины</h3>
-            <p>Работайте с EvoHime в ваших любимых инструментах.</p>
-          </div>
-          <div className="pluginsActions">
-            <button type="button" className="pluginsGearButton" aria-label="Настройки плагинов">
-              ⚙
-            </button>
+            <p>Каталог плагинов пока не подключён.</p>
           </div>
         </section>
 
-        <div className="pluginsSearchRow">
-          <label className="pluginsSearch">
-            <span>Искать плагины</span>
-            <input placeholder="Искать плагины" />
-          </label>
-        </div>
-
         <div className="pluginsBody">
+          <section className="pluginsCatalog pluginsCatalogEmpty">
+            <div className="pluginsSectionHeader">
+              <h4>Каталог</h4>
+            </div>
+            <div className="pluginsInstalledEmpty">
+              <strong>Каталог ещё не настроен</strong>
+              <p>Здесь появятся реальные плагины после подключения источника каталога.</p>
+            </div>
+          </section>
           <section className="pluginsInstalled">
             <div className="pluginsSectionHeader">
               <h4>Установленные</h4>
@@ -1565,78 +1510,11 @@ export function App() {
             <div className="pluginsInstalledList">
               <div className="pluginsInstalledEmpty">
                 <strong>Пока нет плагинов</strong>
-                <p>Когда подключим каталог, они появятся здесь.</p>
+                <p>Установленные плагины появятся здесь.</p>
               </div>
             </div>
           </section>
-
-          <section className="pluginsSwitcherRow">
-            <div className="pluginsTabs">
-              <button type="button" className="pluginsTab active">
-                Общедоступные
-              </button>
-              <button type="button" className="pluginsTab">
-                Личные
-              </button>
-            </div>
-            <button type="button" className="pluginsFilterButton" aria-label="Фильтр">
-              ≡
-            </button>
-          </section>
-
-          <section className="pluginsCatalog">
-            <div className="pluginsSectionHeader">
-              <h4>Featured</h4>
-            </div>
-            <div className="pluginsGrid">
-              {featuredPlugins.map((plugin) => (
-                <article key={plugin.name} className="pluginCard">
-                  <span className="pluginIcon">{plugin.icon}</span>
-                  <div className="pluginBody">
-                    <div className="pluginTopRow">
-                      <strong>{plugin.name}</strong>
-                      <button type="button" className="pluginMenuButton" aria-label={`Меню ${plugin.name}`}>
-                        ···
-                      </button>
-                    </div>
-                    <p>{plugin.description}</p>
-                    <small>{plugin.tag}</small>
-                  </div>
-                  {plugin.actionLabel ? (
-                    <button type="button" className="pluginInstallButton">
-                      {plugin.actionLabel}
-                    </button>
-                  ) : null}
-                </article>
-              ))}
-            </div>
-          </section>
-
-          <section className="pluginsCatalog">
-            <div className="pluginsSectionHeader">
-              <h4>Productivity</h4>
-            </div>
-            <div className="pluginsGrid pluginsGridCompact">
-              {["Notion", "Google Calendar", "Linear", "ClickUp"].map((name) => (
-                <article key={name} className="pluginCard pluginCardCompact">
-                  <span className="pluginIcon">◌</span>
-                  <div className="pluginBody">
-                    <div className="pluginTopRow">
-                      <strong>{name}</strong>
-                      <button type="button" className="pluginMenuButton" aria-label={`Меню ${name}`}>
-                        ···
-                      </button>
-                    </div>
-                    <p>Подключение к {name} для работы из Codex.</p>
-                  </div>
-                  <button type="button" className="pluginInstallButton">
-                    Установить
-                  </button>
-                </article>
-              ))}
-            </div>
-          </section>
-          </div>
+        </div>
       </div>
     );
   }
