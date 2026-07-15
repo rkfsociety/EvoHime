@@ -896,33 +896,73 @@ h1 {
   width: min(100%, 920px);
   margin: 0 auto;
   padding: 16px clamp(20px, 4vw, 56px) 22px;
-  display: grid;
-  grid-template-columns: 170px minmax(0, 1fr) auto;
-  gap: 12px;
   border-top: 1px solid var(--border-0);
 }
 
-.composer select,
-.composer input {
+.composerField {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  min-height: 58px;
   border: 1px solid var(--border-1);
-  border-radius: 12px;
+  border-radius: 18px;
   background: rgba(8, 12, 23, 0.92);
+  box-shadow: 0 12px 30px rgba(3, 8, 20, 0.18);
+}
+
+.composerField:focus-within {
+  border-color: rgba(143, 180, 255, 0.5);
+  box-shadow: 0 0 0 3px rgba(91, 134, 255, 0.1);
+}
+
+.composer input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
   color: var(--text-0);
-  padding: 14px 16px;
+  padding: 17px 14px 17px 18px;
+}
+
+.composerControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
 }
 
 .composer select {
-  min-width: 0;
+  max-width: 150px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
 }
 
-.composer button {
+.sendButton {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
   border: 0;
   border-radius: 12px;
-  padding: 0 20px;
+  padding: 0;
   background: linear-gradient(135deg, var(--accent-0), var(--accent-1));
   color: #07111c;
   font-weight: 700;
   cursor: pointer;
+}
+
+.sendButton span {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.stopButton {
+  background: var(--surface-4);
+  color: var(--text-0);
 }
 
 .composer button:disabled {

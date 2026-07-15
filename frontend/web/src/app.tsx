@@ -700,6 +700,10 @@ export function App() {
     () => Object.values(tasks).filter((task) => task.status === "running" || task.status === "paused" || task.status === "cancelling").length,
     [tasks],
   );
+  const activeTaskId = useMemo(
+    () => Object.values(tasks).find((task) => task.status === "running" || task.status === "cancelling")?.id ?? null,
+    [tasks],
+  );
   const visiblePullRequests = useMemo(() => {
     const query = pullRequestSearch.trim().toLowerCase();
     if (!query) {
@@ -1216,6 +1220,12 @@ export function App() {
   function sendTaskCommand(type: "task.cancel" | "task.resume" | "task.retry", taskId: string) {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type, task_id: taskId }));
+    }
+  }
+
+  function stopCurrentTask() {
+    if (activeTaskId) {
+      sendTaskCommand("task.cancel", activeTaskId);
     }
   }
 
@@ -1978,26 +1988,36 @@ export function App() {
           ) : null}
         </div>
         <form onSubmit={sendMessage} className="composer">
-          <select
-            value={selectedModelRoute}
-            onChange={(event) => setSelectedModelRoute(event.target.value)}
-            disabled={!modelConfig || modelConfig.routes.length === 0}
-            aria-label="Маршрут модели"
-          >
-            {modelConfig?.routes.map((route) => (
-              <option key={route.name} value={route.name}>
-                {route.name}
-              </option>
-            ))}
-          </select>
-          <input
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            placeholder="Введите сообщение..."
-          />
-          <button type="submit" disabled={socketState !== "connected"}>
-            Отправить
-          </button>
+          <div className="composerField">
+            <input
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              placeholder="Введите сообщение..."
+            />
+            <div className="composerControls">
+              <select
+                value={selectedModelRoute}
+                onChange={(event) => setSelectedModelRoute(event.target.value)}
+                disabled={!modelConfig || modelConfig.routes.length === 0}
+                aria-label="Маршрут модели"
+              >
+                {modelConfig?.routes.map((route) => (
+                  <option key={route.name} value={route.name}>
+                    {route.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type={activeTaskId ? "button" : "submit"}
+                className={activeTaskId ? "sendButton stopButton" : "sendButton"}
+                onClick={activeTaskId ? stopCurrentTask : undefined}
+                disabled={socketState !== "connected"}
+                aria-label={activeTaskId ? "Остановить ответ" : "Отправить сообщение"}
+              >
+                <span aria-hidden="true">{activeTaskId ? "■" : "↑"}</span>
+              </button>
+            </div>
+          </div>
         </form>
       </>
     );
