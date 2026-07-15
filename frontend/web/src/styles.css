@@ -49,7 +49,7 @@ input {
 
 .shell {
   height: 100vh;
-  padding: 0 32px 32px;
+  padding: 0 0 32px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 24px;
