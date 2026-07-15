@@ -63,15 +63,15 @@ EvoHime Server — Rust
 
 ## Фактический статус на 2026-07-15
 
-Этапы 1 и 2 завершены. Этапы 3-5 частично реализованы на уровне backend и протокола:
+Этапы 1, 2 и 3 завершены. Этапы 4-5 частично реализованы на уровне backend и протокола:
 
 - файловые инструменты `filesystem.read`, `filesystem.write`, `filesystem.patch`, `filesystem.search`, shell `shell.execute` и Git-инструменты `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push` уже реализованы в `tool-runtime`;
 - task-engine и storage поддерживают жизненный цикл задач, статусы шагов, checkpoint API и поиск задач для recovery;
 - протокол содержит команды `task.cancel`, `task.resume`, `task.retry`, а frontend уже отображает панели Tasks и Actions;
-- `permissions` содержит policy engine и one-shot решения; генерация `approval.required` и сквозное продолжение после ответа UI ещё не подключены;
+- `permissions` содержит policy engine и one-shot решения; `approval.required` публикуется сервером, а `approval.granted` / `approval.denied` продолжают paused task;
 - `project-index` и Python worker пока являются каркасами.
 
-Следующий сквозной приоритет — этап 3: подключить существующие tools к общему LLM tool-calling циклу, завершить approval flow и вывести shell в терминал.
+Следующий сквозной приоритет — этап 4: довести файловый браузер, Monaco Editor и Git UI до полноценного browser-first сценария.
 
 ---
 
@@ -118,7 +118,7 @@ action.logged
 ### События (ожидают сквозной интеграции)
 
 ```text
-approval.required       — схема и UI готовы, server emission впереди
+approval.required
 ```
 
 ### Команды клиента
@@ -248,14 +248,14 @@ LITEROUTER_MODEL=deepseek:free
 - UI панели Settings с текущей конфигурацией модели;
 - тесты model-gateway и agent-runtime.
 
-### Этап 3 — Инструменты, shell, терминал, разрешения 🟡
+### Этап 3 — Инструменты, shell, терминал, разрешения ✅
 
-- подключить `filesystem.write`, `filesystem.patch`, `filesystem.search`, `shell.execute` к LLM tool-calling
-- завершить server emission `approval.required` и resume после `approval.granted` / `approval.denied`
-- xterm.js терминал и поток shell output в UI
-- UI настроек разрешений
+- `filesystem.write`, `filesystem.patch`, `filesystem.search`, `shell.execute` подключены к `tool-runtime`
+- сервер публикует `approval.required`, принимает `approval.granted` / `approval.denied` и переводит задачу в `paused`
+- xterm.js терминал и поток shell output доступны в UI
+- UI настроек разрешений доступен в браузере
 
-**Результат:** агент может читать/писать файлы и выполнять команды с подтверждением в браузере.
+**Результат:** агент читает и пишет файлы, выполняет shell-команды и запрашивает подтверждение опасных действий в UI.
 
 ### Этап 4 — Редактор, файлы, Git 🟡
 

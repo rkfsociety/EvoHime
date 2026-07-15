@@ -149,37 +149,42 @@ impl PermissionEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures_executor::block_on;
 
-    #[tokio::test]
-    async fn default_policy_allows_read_and_asks_for_write() {
-        let engine = PermissionEngine::new();
-        assert_eq!(
-            engine.check(Permission::FilesystemRead).await,
-            PermissionDecision::Allowed
-        );
-        assert_eq!(
-            engine.check(Permission::FilesystemWrite).await,
-            PermissionDecision::NeedsApproval
-        );
+    #[test]
+    fn default_policy_allows_read_and_asks_for_write() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            assert_eq!(
+                engine.check(Permission::FilesystemRead).await,
+                PermissionDecision::Allowed
+            );
+            assert_eq!(
+                engine.check(Permission::FilesystemWrite).await,
+                PermissionDecision::NeedsApproval
+            );
+        });
     }
 
-    #[tokio::test]
-    async fn approval_is_one_shot() {
-        let engine = PermissionEngine::new();
-        let task_id = Uuid::new_v4();
-        let request = engine
-            .create_approval(
-                task_id,
-                "filesystem.write",
-                Permission::FilesystemWrite,
-                "a.txt",
-            )
-            .await;
-        assert_eq!(request.task_id, task_id);
-        assert_eq!(
-            engine.resolve(request.id, true).await,
-            Some(ApprovalState::Granted)
-        );
-        assert_eq!(engine.resolve(request.id, false).await, None);
+    #[test]
+    fn approval_is_one_shot() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let task_id = Uuid::new_v4();
+            let request = engine
+                .create_approval(
+                    task_id,
+                    "filesystem.write",
+                    Permission::FilesystemWrite,
+                    "a.txt",
+                )
+                .await;
+            assert_eq!(request.task_id, task_id);
+            assert_eq!(
+                engine.resolve(request.id, true).await,
+                Some(ApprovalState::Granted)
+            );
+            assert_eq!(engine.resolve(request.id, false).await, None);
+        });
     }
 }

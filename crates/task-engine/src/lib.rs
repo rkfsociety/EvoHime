@@ -47,6 +47,10 @@ pub async fn fail_task(pool: &PgPool, task_id: Uuid) -> Result<TaskRow, TaskEngi
     transition(pool, task_id, "failed", TaskStatus::Failed).await
 }
 
+pub async fn pause_task(pool: &PgPool, task_id: Uuid) -> Result<TaskRow, TaskEngineError> {
+    transition(pool, task_id, "paused", TaskStatus::Paused).await
+}
+
 pub async fn cancel_task(pool: &PgPool, task_id: Uuid) -> Result<TaskRow, TaskEngineError> {
     let task = evohime_storage::set_task_status(pool, task_id, "cancelling").await?;
     Ok(evohime_storage::set_task_status(pool, task.id, "cancelled").await?)
@@ -148,5 +152,10 @@ mod tests {
         let mut task = InMemoryTask::new();
         task.pause();
         assert_eq!(task.status, TaskStatus::Paused);
+    }
+
+    #[test]
+    fn pause_transition_is_supported() {
+        assert!(can_transition("running", TaskStatus::Paused));
     }
 }

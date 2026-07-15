@@ -2,7 +2,7 @@
 
 Last updated: 2026-07-15
 
-## Stage: 2 complete, stages 3-5 foundations in place
+## Stage: 3 complete, stage 4 foundations in place
 
 ## Crates
 
@@ -15,7 +15,7 @@ Last updated: 2026-07-15
 | `agent-runtime` | Active | `agent_loop.rs` — LLM + tools |
 | `model-gateway` | Active | **LiteRouter** SSE streaming + mock provider |
 | `task-engine` | Active | lifecycle wrappers, steps, checkpoints, cancel/resume/retry foundation |
-| `permissions` | Active | ask/allow/deny policy and one-shot approvals; server event delivery remains |
+| `permissions` | Active | ask/allow/deny policy and one-shot approvals; approval events and resume flow wired |
 | `project-index` | Scaffold | Stage 6 |
 
 ## API endpoints
@@ -28,7 +28,7 @@ Last updated: 2026-07-15
 | GET | `/api/sessions/:id/history` | Event history |
 | WS | `/ws/:session_id` | Real-time streaming events |
 
-The current API is intentionally small. File browsing/editing, terminal streaming, Git views, and approval resolution still need dedicated end-to-end HTTP/WebSocket flows.
+The current API is intentionally small. File browsing/editing and Git views still need dedicated end-to-end HTTP/WebSocket flows.
 
 ## Agent flow
 
@@ -68,7 +68,8 @@ user.message
 | Events timeline | ✅ Active |
 | Tasks | ✅ Basic list/status view |
 | Actions | ✅ Basic action log |
-| Files, Editor, Terminal, Git | Placeholder |
+| Terminal | ✅ Active |
+| Files, Editor, Git | Placeholder |
 
 ## Tests
 
@@ -76,7 +77,8 @@ user.message
 - `crates/agent-runtime` — agent loop with mock gateway
 - `crates/protocol` — event serialization
 - `crates/tool-runtime` — filesystem, shell, and Git tool coverage
+- `crates/permissions` — policy engine and approval flow
 
 ## Next recommended step
 
-**Stage 3 / Milestone 2**: wire the existing tool registry into general LLM tool calls, emit `approval.required` from the server, resume paused tasks after approval, and connect terminal output to the browser. Then complete file/editor/Git UI and task recovery as separate vertical slices.
+**Stage 4 / Milestone 3**: finish file browsing, Monaco editing, and Git UI in the browser. Then harden task recovery and orchestration as a separate vertical slice.

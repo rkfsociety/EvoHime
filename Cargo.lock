@@ -474,6 +474,7 @@ dependencies = [
 name = "evohime-permissions"
 version = "0.1.0"
 dependencies = [
+ "futures-executor",
  "serde",
  "tokio",
  "uuid",

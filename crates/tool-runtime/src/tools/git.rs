@@ -4,7 +4,6 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{process::Stdio, time::Duration};
 use tokio::process::Command;
-use uuid::Uuid;
 
 pub const STATUS_NAME: &str = "git.status";
 pub const STATUS_DESCRIPTION: &str = "Show repository status";
@@ -180,6 +179,7 @@ mod tests {
     use super::*;
     use std::{fs as std_fs, path::Path, process::Command as StdCommand};
     use tempfile::tempdir;
+    use uuid::Uuid;
 
     fn run(workdir: &Path, args: &[&str]) {
         let status = StdCommand::new(args[0])

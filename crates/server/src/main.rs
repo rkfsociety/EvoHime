@@ -17,7 +17,8 @@ use evohime_model_gateway::providers::{ChatMessage, ChatRole};
 use evohime_model_gateway::ModelGateway;
 use evohime_permissions::{Permission, PermissionMode};
 use evohime_protocol::{ClientCommand, HistoryItem, ServerEvent, SessionBootstrap};
-use evohime_task_engine::{complete_task, fail_task, start_task};
+use evohime_task_engine::{complete_task, fail_task, pause_task, start_task};
+use evohime_tool_runtime::ToolError;
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde_json::{json, to_value, Value};
 use sqlx::PgPool;
@@ -554,9 +555,65 @@ async fn process_user_message(
             return Err((task.id, ApiError::BadRequest("task cancelled".to_string())));
         }
         result = &mut agent_handle => result
-    }
-    .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?
-    .map_err(|error| (task.id, map_agent_error(error)))?;
+    };
+
+    let agent_result = match agent_result {
+        Ok(result) => match result {
+            Ok(result) => result,
+            Err(AgentError::Tool(ToolError::NeedsApproval {
+                tool,
+                permission,
+                scope,
+                approval_id,
+            })) => {
+                emit_event(
+                    state,
+                    session_id,
+                    Some(task.id),
+                    ServerEvent::ApprovalRequired {
+                        approval_id,
+                        task_id: task.id,
+                        tool_name: tool.clone(),
+                        permission: permission_name(permission).to_string(),
+                        scope: scope.clone(),
+                        created_at: chrono::Utc::now(),
+                    },
+                )
+                .await?;
+                let _ = pause_task(&state.pool, task.id).await;
+                emit_event(
+                    state,
+                    session_id,
+                    Some(task.id),
+                    ServerEvent::TaskStatusChanged {
+                        task_id: task.id,
+                        status: "paused".to_string(),
+                    },
+                )
+                .await?;
+                emit_event(
+                    state,
+                    session_id,
+                    Some(task.id),
+                    ServerEvent::ActionLogged {
+                        task_id: task.id,
+                        action: "approval.required".into(),
+                        detail: format!(
+                            "Waiting for approval on {} ({}) in scope {}",
+                            tool,
+                            permission_name(permission),
+                            scope
+                        ),
+                        created_at: chrono::Utc::now(),
+                    },
+                )
+                .await?;
+                return Ok(());
+            }
+            Err(error) => return Err((task.id, map_agent_error(error))),
+        },
+        Err(error) => return Err((task.id, ApiError::Internal(error.to_string()))),
+    };
 
     evohime_storage::insert_message(
         &state.pool,

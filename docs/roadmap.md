@@ -13,7 +13,7 @@
 | --- | --- | --- | --- |
 | 1 | Фундамент | ✅ Готово | Vertical slice работает |
 | 2 | Чат с моделью | ✅ Готово | LiteRouter streaming |
-| 3 | Tools + shell | 🟡 Backend готов частично | Sandbox, filesystem tools, shell; approval and terminal flow ahead |
+| 3 | Tools + shell | ✅ Готово | Sandbox, filesystem tools, shell, approvals, terminal, permissions |
 | 4 | Editor + Git | 🟡 Backend готов частично | Git tools ready, file/editor/Git UI ahead |
 | 5 | Оркестрация | 🟡 Основа готова | Lifecycle, команды и storage заготовлены |
 | 6 | Advanced | 📋 Запланирован | Index, MCP, workers |
@@ -89,12 +89,12 @@
 | 3.3 | `filesystem.search` (ripgrep) | ✅ `crates/tool-runtime/` |
 | 3.4 | `shell.execute` с песочницей | ✅ `crates/tool-runtime/` |
 | 3.5 | Permission engine: check + request | ✅ `crates/permissions/` |
-| 3.6 | `approval.required` event + UI modal | 🟡 Protocol/UI есть, server emission ahead |
-| 3.7 | `approval.granted` / `approval.denied` commands | protocol, server |
-| 3.8 | xterm.js терминал (панель Terminal) | `frontend/web/` |
-| 3.9 | Таймауты и отмена инструментов | `crates/tool-runtime/` |
-| 3.10 | UI: настройки разрешений | `frontend/web/` |
-| 3.11 | Тесты: sandbox, permissions, каждый tool | 🟡 Частичное покрытие |
+| 3.6 | `approval.required` event + UI modal | ✅ `protocol`, `server`, `frontend/web/` |
+| 3.7 | `approval.granted` / `approval.denied` commands | ✅ `protocol`, `server` |
+| 3.8 | xterm.js терминал (панель Terminal) | ✅ `frontend/web/` |
+| 3.9 | Таймауты и отмена инструментов | ✅ `crates/tool-runtime/` |
+| 3.10 | UI: настройки разрешений | ✅ `frontend/web/` |
+| 3.11 | Тесты: sandbox, permissions, каждый tool | ✅ `crates/tool-runtime/`, `crates/permissions/`, `crates/server/` |
 
 ### Критерий готовности
 
