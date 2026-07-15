@@ -441,6 +441,7 @@ export function App() {
   const [modelDrafts, setModelDrafts] = useState<ModelRouteDraft[]>([]);
   const [modelSaving, setModelSaving] = useState(false);
   const [modelNotice, setModelNotice] = useState<string | null>(null);
+  const [orchestratorModels, setOrchestratorModels] = useState<string[]>([]);
   const modelAutosaveInitializedRef = useRef(false);
   const skipNextModelAutosaveRef = useRef(false);
   const [pullRequests, setPullRequests] = useState<PullRequestSummary[]>([]);
@@ -477,9 +478,16 @@ export function App() {
       }
       const data = (await response.json()) as ModelConfig;
       if (!cancelled) {
+        const routes = data.routes.map((route) => ({ ...route, api_key: "", configured: route.configured }));
+        if (!routes.some((route) => route.name === "orchestrator")) {
+          const mainRoute = routes.find((route) => route.name === data.default_route) ?? routes[0];
+          if (mainRoute) {
+            routes.push({ ...mainRoute, name: "orchestrator", api_key: "" });
+          }
+        }
         setModelConfig(data);
         setModelDefaultRoute(data.default_route);
-        setModelDrafts(data.routes.map((route) => ({ ...route, api_key: "", configured: route.configured })));
+        setModelDrafts(routes);
       }
     };
     fetch("/api/permissions").then((response) => response.json()).then((data: PermissionSettings) => setPermissionSettings(data)).catch(() => undefined);
@@ -610,6 +618,29 @@ export function App() {
       setSelectedModelRoute(modelConfig.default_route);
     }
   }, [modelConfig, selectedModelRoute]);
+
+  useEffect(() => {
+    const route = modelDrafts.find((item) => item.name === "orchestrator");
+    if (!route) {
+      return;
+    }
+    let cancelled = false;
+    fetch("/api/models/available?route=orchestrator")
+      .then((response) => response.ok ? response.json() as Promise<{ models: string[] }> : Promise.reject(new Error("Не удалось загрузить модели оркестратора")))
+      .then((data) => {
+        if (!cancelled) {
+          setOrchestratorModels(data.models);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOrchestratorModels([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [modelDrafts.find((route) => route.name === "orchestrator")?.provider, modelDrafts.find((route) => route.name === "orchestrator")?.base_url, modelDrafts.find((route) => route.name === "orchestrator")?.billing_mode]);
 
   useEffect(() => {
     if (!modelConfig || modelDrafts.length === 0) {
@@ -814,6 +845,8 @@ export function App() {
     modelDrafts.findIndex((route) => route.name === modelDefaultRoute),
   );
   const activeModelRoute = modelDrafts[activeModelRouteIndex] ?? null;
+  const orchestratorRouteIndex = modelDrafts.findIndex((route) => route.name === "orchestrator");
+  const orchestratorRoute = orchestratorRouteIndex >= 0 ? modelDrafts[orchestratorRouteIndex] : null;
   const visiblePullRequests = useMemo(() => {
     const query = pullRequestSearch.trim().toLowerCase();
     if (!query) {
@@ -1587,6 +1620,55 @@ export function App() {
               ) : null}
               <p className="settingsHint">Изменения сохраняются автоматически.</p>
               {modelNotice ? <p className={modelNotice.startsWith("Настройки") ? "settingsHint" : "settingsError"}>{modelNotice}</p> : null}
+              {orchestratorRoute ? (
+                <section className="orchestratorSettings">
+                  <div>
+                    <h3>Оркестратор</h3>
+                    <p className="settingsHint">Модель, которая строит план действий перед выполнением задачи.</p>
+                  </div>
+                  <div className="modelProviderForm">
+                    <label>
+                      <span>Провайдер</span>
+                      <select
+                        value={orchestratorRoute.provider}
+                        onChange={(event) => {
+                          const provider = event.target.value;
+                          updateModelDraft(orchestratorRouteIndex, {
+                            provider,
+                            base_url: provider === "literouter" ? "https://api.literouter.com/v1" : "https://api.openai.com/v1",
+                            model: provider === "literouter" ? "deepseek:free" : "gpt-4o-mini",
+                            billing_mode: provider === "literouter" ? "free" : "paid",
+                          });
+                        }}
+                      >
+                        <option value="literouter">LiteRouter</option>
+                        <option value="openai-compatible">OpenAI-compatible</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Модель</span>
+                      <select
+                        value={orchestratorRoute.model}
+                        onChange={(event) => updateModelDraft(orchestratorRouteIndex, { model: event.target.value })}
+                      >
+                        {[orchestratorRoute.model, ...orchestratorModels]
+                          .filter((model, index, models) => model && models.indexOf(model) === index)
+                          .map((model) => <option key={model} value={model}>{model}</option>)}
+                      </select>
+                    </label>
+                    <label className="modelProviderKey">
+                      <span>API-ключ</span>
+                      <input
+                        type="password"
+                        value={orchestratorRoute.api_key}
+                        onChange={(event) => updateModelDraft(orchestratorRouteIndex, { api_key: event.target.value })}
+                        placeholder={orchestratorRoute.configured ? "Ключ сохранён — оставь пустым" : "Введи API-ключ"}
+                      />
+                      {orchestratorRoute.configured && !orchestratorRoute.api_key ? <small className="modelKeyStatus">Ключ сохранён</small> : null}
+                    </label>
+                  </div>
+                </section>
+              ) : null}
             </div>
           ) : (
             <p>Загрузка конфигурации модели...</p>

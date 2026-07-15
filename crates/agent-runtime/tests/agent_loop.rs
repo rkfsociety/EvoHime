@@ -26,6 +26,8 @@ async fn agent_loop_streams_model_tokens() {
             workspace_root: temp.path().to_path_buf(),
             model_route: "default".to_string(),
             model: None,
+            planning_model_route: "default".to_string(),
+            planning_model: None,
         },
         &gateway,
         &tools,

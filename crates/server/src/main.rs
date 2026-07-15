@@ -301,9 +301,14 @@ async fn available_models(
     let default_route = state.model_config.read().await.default_route.clone();
     let route_name = query.get("route").cloned().unwrap_or(default_route);
     let config = state.model_config.read().await;
+    let effective_route_name = if route_name == "orchestrator" && !config.routes.contains_key(&route_name) {
+        config.default_route.clone()
+    } else {
+        route_name.clone()
+    };
     let route = config
         .routes
-        .get(&route_name)
+        .get(&effective_route_name)
         .ok_or_else(|| ApiError::BadRequest(format!("unknown model route: {route_name}")))?;
     let provider = route.provider.as_str().to_string();
     let billing_mode = if route.provider == ProviderKind::LiteRouter
@@ -447,6 +452,15 @@ fn build_model_config(
             .routes
             .get(&name)
             .map(|item| item.literouter.api_key.clone())
+            .or_else(|| {
+                (name == "orchestrator").then(|| {
+                    current
+                        .routes
+                        .get(&current.default_route)
+                        .map(|item| item.literouter.api_key.clone())
+                        .unwrap_or_default()
+                })
+            })
             .unwrap_or_default();
         let api_key = route
             .api_key
@@ -1228,6 +1242,19 @@ async fn run_task_pipeline(
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let default_route = state.model_config.read().await.default_route.clone();
     let model_route = resolve_model_route(task.model_route.as_deref(), &default_route);
+    let (planning_model_route, planning_model) = {
+        let config = state.model_config.read().await;
+        let route_name = if config.routes.contains_key("orchestrator") {
+            "orchestrator".to_string()
+        } else {
+            default_route.clone()
+        };
+        let model = config
+            .routes
+            .get(&route_name)
+            .map(|route| route.literouter.model.clone());
+        (route_name, model)
+    };
     let agent_config = AgentConfig {
         task_id: task.id,
         session_id,
@@ -1237,6 +1264,8 @@ async fn run_task_pipeline(
         workspace_root: state.workspace_root.clone(),
         model_route,
         model: task.model.clone(),
+        planning_model_route,
+        planning_model,
     };
 
     let tools = state.tools.clone();
