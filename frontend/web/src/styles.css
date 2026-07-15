@@ -1107,6 +1107,245 @@ h1 {
   text-transform: capitalize;
 }
 
+.pluginsPage {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  flex: 1;
+  min-height: 0;
+  padding: 20px;
+}
+
+.pluginsHero {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: end;
+}
+
+.pluginsHero h3 {
+  margin: 0 0 8px;
+  font-size: clamp(1.8rem, 3vw, 2.5rem);
+  line-height: 1.02;
+  color: #eef2f7;
+  letter-spacing: -0.03em;
+}
+
+.pluginsHero p {
+  color: #9ba3ae;
+  line-height: 1.5;
+  max-width: 50ch;
+}
+
+.pluginsActions {
+  display: flex;
+  align-items: center;
+}
+
+.pluginsGearButton {
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #d5d7db;
+  cursor: pointer;
+}
+
+.pluginsSearchRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.pluginsSearch {
+  flex: 1;
+  display: grid;
+  gap: 8px;
+}
+
+.pluginsSearch span {
+  color: #75808c;
+  font-size: 12px;
+}
+
+.pluginsSearch input {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(19, 22, 28, 0.96);
+  color: #eef2f7;
+  padding: 12px 16px;
+  outline: none;
+}
+
+.pluginsInstalled,
+.pluginsCatalog {
+  display: grid;
+  gap: 12px;
+}
+
+.pluginsSectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.pluginsSectionHeader h4 {
+  margin: 0;
+  color: #eef2f7;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.pluginsInstalledList {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 8px;
+}
+
+.pluginsInstalledEmpty {
+  padding: 12px 0 8px;
+  color: #75808c;
+}
+
+.pluginsInstalledEmpty strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #eef2f7;
+}
+
+.pluginsSwitcherRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+
+.pluginsTabs {
+  display: flex;
+  gap: 10px;
+}
+
+.pluginsTab {
+  border: 0;
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: transparent;
+  color: #75808c;
+  cursor: pointer;
+}
+
+.pluginsTab.active {
+  background: #1f2329;
+  color: #eef2f7;
+}
+
+.pluginsFilterButton {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: #8b94a1;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.pluginsBody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.pluginsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.pluginsGridCompact .pluginCard {
+  min-height: 106px;
+}
+
+.pluginCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(18, 21, 26, 0.92);
+}
+
+.pluginCardCompact {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.pluginIcon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #eef2f7;
+  font-size: 20px;
+  flex: 0 0 auto;
+}
+
+.pluginBody {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.pluginTopRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.pluginTopRow strong {
+  color: #eef2f7;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.pluginBody p {
+  margin: 0;
+  color: #8b94a1;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.pluginBody small {
+  color: #75808c;
+  font-size: 12px;
+}
+
+.pluginMenuButton,
+.pluginInstallButton {
+  border: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #eef2f7;
+  cursor: pointer;
+}
+
+.pluginMenuButton {
+  width: 28px;
+  height: 28px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.pluginInstallButton {
+  padding: 10px 14px;
+  font-weight: 600;
+}
+
 .terminalPanel { flex: 1; min-height: 0; padding: 16px; }
 .approvalBackdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: rgba(0, 0, 0, .62); }
 .approvalModal { width: min(460px, calc(100vw - 32px)); padding: 24px; border: 1px solid rgba(159, 192, 255, .4); border-radius: 18px; background: #0a1021; box-shadow: 0 24px 80px rgba(0,0,0,.5); }
@@ -1187,6 +1426,10 @@ h1 {
     max-height: 34vh;
   }
 
+  .pluginsPage {
+    max-height: 34vh;
+  }
+
   .settingsModal {
     max-height: 92vh;
   }
@@ -1226,6 +1469,10 @@ h1 {
   }
 
   .pullRequestsPage {
+    max-height: 44vh;
+  }
+
+  .pluginsPage {
     max-height: 44vh;
   }
 
