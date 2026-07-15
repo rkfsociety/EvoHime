@@ -154,7 +154,7 @@ pub async fn save_file(
 
     Ok(Json(SaveResponse {
         path: relative,
-        bytes: payload.content.as_bytes().len(),
+        bytes: payload.content.len(),
         change: change.to_string(),
     }))
 }

@@ -362,7 +362,7 @@ async fn handle_socket(
                     break;
                 }
             };
-            if sender.send(Message::Text(serialized.into())).await.is_err() {
+            if sender.send(Message::Text(serialized)).await.is_err() {
                 break;
             }
         }

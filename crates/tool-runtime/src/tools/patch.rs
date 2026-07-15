@@ -79,8 +79,8 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
                     return Err(ToolError::Execution("patch removal mismatch".into()));
                 }
                 old_index += 1;
-            } else if item.starts_with('+') {
-                replacements.push(item[1..].to_string());
+            } else if let Some(stripped) = item.strip_prefix('+') {
+                replacements.push(stripped.to_string());
             } else if !item.starts_with('\\') {
                 return Err(ToolError::InvalidInput {
                     tool: NAME.into(),

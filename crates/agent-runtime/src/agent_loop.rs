@@ -4,7 +4,7 @@ use evohime_protocol::{PlanStep, ServerEvent};
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use futures_util::StreamExt;
 use serde_json::json;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
@@ -249,7 +249,7 @@ fn emit(event_tx: &UnboundedSender<ServerEvent>, event: ServerEvent) -> Result<(
     event_tx.send(event).map_err(|_| AgentError::EventChannel)
 }
 
-fn relative_workspace_path(workspace_root: &PathBuf, file_path: &PathBuf) -> String {
+fn relative_workspace_path(workspace_root: &Path, file_path: &Path) -> String {
     file_path
         .strip_prefix(workspace_root)
         .map(|path| path.display().to_string())
