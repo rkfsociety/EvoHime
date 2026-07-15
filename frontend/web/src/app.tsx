@@ -1438,7 +1438,6 @@ export function App() {
     <main className="shell">
       <header className="topBar">
         <div className="agentBrand">
-          <p className="eyebrow">Название агента</p>
           <h1>EvoHime</h1>
         </div>
         <div className="statusCard">
