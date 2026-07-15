@@ -2,7 +2,7 @@
 
 Last updated: 2026-07-15
 
-## Stage: 5 in progress
+## Stage: 5 complete
 
 ## Crates
 
@@ -94,4 +94,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 5 / Milestone 4**: finish automatic resume/recovery worker behavior after restart and close any remaining gaps in cooperative tool cancellation.
+**Stage 6 / Milestone 5**: extend the orchestrator with project index, MCP, memory, and worker integrations.

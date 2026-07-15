@@ -63,7 +63,7 @@ EvoHime Server — Rust
 
 ## Фактический статус на 2026-07-15
 
-Этапы 1, 2 и 3 завершены. Этап 4 завершён на backend и UI, а этап 5 частично реализован и теперь включает планирование шагов и состояние шагов в истории задач:
+Этапы 1, 2, 3, 4 и 5 завершены. Stage 5 теперь включает планирование шагов, состояние шагов в истории задач, resume/recovery и cooperative cancellation:
 
 - файловые инструменты `filesystem.read`, `filesystem.write`, `filesystem.patch`, `filesystem.search`, shell `shell.execute` и Git-инструменты `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push` уже реализованы в `tool-runtime`;
 - `agent-runtime` парсит план модели в структурированные `PlanStep`, принимает fenced JSON и wrapper-объекты как fallback;
@@ -73,7 +73,7 @@ EvoHime Server — Rust
 - `permissions` содержит policy engine и one-shot решения; `approval.required` публикуется сервером, а `approval.granted` / `approval.denied` продолжают paused task;
 - `project-index` и Python worker пока являются каркасами.
 
-Следующий сквозной приоритет — этап 5: закрыть auto-resume/recovery worker path после рестарта и довести cooperative cancellation running tools до конца.
+Следующий сквозной приоритет — этап 6: project index, MCP, memory и worker integrations.
 
 ---
 

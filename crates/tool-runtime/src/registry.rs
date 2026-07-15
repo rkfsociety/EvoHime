@@ -157,6 +157,17 @@ impl ToolRegistry {
         name: &str,
         input: Value,
     ) -> Result<ToolResult, ToolError> {
+        self.execute_with_cancellation(ctx, name, input, CancellationToken::new())
+            .await
+    }
+
+    async fn execute_with_cancellation(
+        &self,
+        ctx: &ToolContext,
+        name: &str,
+        input: Value,
+        cancellation: CancellationToken,
+    ) -> Result<ToolResult, ToolError> {
         let definition = self
             .tools
             .get(name)
@@ -187,9 +198,7 @@ impl ToolRegistry {
                 tools::write::NAME => tools::write::execute(ctx, input).await,
                 tools::patch::NAME => tools::patch::execute(ctx, input).await,
                 tools::search::NAME => tools::search::execute(ctx, input).await,
-                tools::shell::NAME => {
-                    tools::shell::execute(ctx, input, CancellationToken::new()).await
-                }
+                tools::shell::NAME => tools::shell::execute(ctx, input, cancellation).await,
                 tools::git::STATUS_NAME => tools::git::status(ctx, input).await,
                 tools::git::DIFF_NAME => tools::git::diff(ctx, input).await,
                 tools::git::COMMIT_NAME => tools::git::commit(ctx, input).await,
@@ -212,9 +221,10 @@ impl ToolRegistry {
         input: Value,
         cancellation: CancellationToken,
     ) -> Result<ToolResult, ToolError> {
+        let cancellation_wait = cancellation.clone();
         tokio::select! {
-            _ = cancellation.cancelled() => Err(ToolError::Execution("tool cancelled".to_string())),
-            result = self.execute(ctx, name, input) => result,
+            _ = cancellation_wait.cancelled() => Err(ToolError::Execution("tool cancelled".to_string())),
+            result = self.execute_with_cancellation(ctx, name, input, cancellation) => result,
         }
     }
 
@@ -226,7 +236,10 @@ impl ToolRegistry {
     ) -> Vec<Result<ToolResult, ToolError>> {
         let futures = calls.into_iter().map(|(name, input)| {
             let token = cancellation.clone();
-            async move { self.execute_cancellable(ctx, &name, input, token).await }
+            async move {
+                self.execute_with_cancellation(ctx, &name, input, token)
+                    .await
+            }
         });
         futures_util::future::join_all(futures).await
     }
@@ -293,7 +306,14 @@ mod tests {
     async fn cancellation_stops_call() {
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(dir.path().join("a.txt"), "a").expect("write");
-        let registry = ToolRegistry::bootstrap();
+        let permissions = PermissionEngine::new();
+        permissions
+            .set_mode(
+                evohime_permissions::Permission::ShellExecute,
+                evohime_permissions::PermissionMode::Allow,
+            )
+            .await;
+        let registry = ToolRegistry::bootstrap_with_permissions(permissions);
         let context = ToolContext {
             workspace_root: dir.path().to_path_buf(),
             task_id: Uuid::nil(),
@@ -308,6 +328,50 @@ mod tests {
                 token,
             )
             .await;
+        assert!(
+            matches!(result, Err(ToolError::Execution(message)) if message == "tool cancelled")
+        );
+    }
+
+    #[tokio::test]
+    async fn cancellation_propagates_into_shell_execution() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let permissions = PermissionEngine::new();
+        permissions
+            .set_mode(
+                evohime_permissions::Permission::ShellExecute,
+                evohime_permissions::PermissionMode::Allow,
+            )
+            .await;
+        let registry = ToolRegistry::bootstrap_with_permissions(permissions);
+        let context = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+        };
+        let token = CancellationToken::new();
+        let (program, args) = if cfg!(windows) {
+            ("ping", vec!["-n", "5", "127.0.0.1"])
+        } else {
+            ("sleep", vec!["2"])
+        };
+        let handle = tokio::spawn({
+            let registry = registry.clone();
+            let context = context.clone();
+            let token = token.clone();
+            async move {
+                registry
+                    .execute_cancellable(
+                        &context,
+                        "shell.execute",
+                        serde_json::json!({"program":program,"args":args}),
+                        token,
+                    )
+                    .await
+            }
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        token.cancel();
+        let result = handle.await.expect("task join");
         assert!(
             matches!(result, Err(ToolError::Execution(message)) if message == "tool cancelled")
         );
