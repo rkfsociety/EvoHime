@@ -16,7 +16,7 @@ Last updated: 2026-07-15
 | `model-gateway` | Active | **LiteRouter** SSE streaming + mock provider |
 | `task-engine` | Active | lifecycle wrappers, dependency batching, checkpoints, cancel/resume/retry foundation |
 | `permissions` | Active | ask/allow/deny policy and one-shot approvals; approval events and resume flow wired |
-| `project-index` | Scaffold | Stage 6 |
+| `project-index` | Active | Workspace text search for agent context |
 
 ## API endpoints
 
@@ -96,4 +96,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: extend the orchestrator with project index, contextual retrieval, MCP, persistent memory, multi-model routing, Python workers, and browser automation tools.
+**Stage 6 / Milestone 5**: continue with MCP, persistent memory, multi-model routing, Python workers, and browser automation tools after the project index slice.

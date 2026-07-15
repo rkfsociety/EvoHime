@@ -1,6 +1,6 @@
 # project-index
 
-Project indexing is reserved for stage 6.
+Project indexing is part of stage 6 and now provides workspace text search for agent context.
 
-The crate is currently a scaffold. Embedding/ripgrep indexing, contextual retrieval, and integration with `agent-runtime` will land in stage 6.
+The crate exposes a lightweight on-demand index over the workspace. It searches text files, skips heavy directories like `target` and `node_modules`, and returns ranked snippets for `agent-runtime`.
 

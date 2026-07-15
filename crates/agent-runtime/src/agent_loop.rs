@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use evohime_model_gateway::{providers::ChatMessage, providers::ChatRole, ModelGateway};
+use evohime_project_index::ProjectIndex;
 use evohime_protocol::{PlanStep, ServerEvent};
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use futures_util::StreamExt;
@@ -159,12 +160,20 @@ async fn run_agent_loop_inner(
             tool_result.output
         }
     };
+    let project_context =
+        ProjectIndex::new(config.workspace_root.clone()).build_context(&config.user_message, 5);
 
     let mut planning_messages = Vec::with_capacity(history.len() + 3);
     planning_messages.push(ChatMessage {
         role: ChatRole::System,
         content: PLANNING_PROMPT.to_string(),
     });
+    if let Some(context) = &project_context {
+        planning_messages.push(ChatMessage {
+            role: ChatRole::System,
+            content: context.clone(),
+        });
+    }
     planning_messages.extend(history.clone());
     planning_messages.push(ChatMessage {
         role: ChatRole::User,
@@ -192,6 +201,12 @@ async fn run_agent_loop_inner(
         role: ChatRole::System,
         content: SYSTEM_PROMPT.to_string(),
     });
+    if let Some(context) = &project_context {
+        messages.push(ChatMessage {
+            role: ChatRole::System,
+            content: context.clone(),
+        });
+    }
     messages.extend(history);
     messages.push(ChatMessage {
         role: ChatRole::User,
@@ -483,6 +498,60 @@ mod tests {
         assert_eq!(relative_workspace_path(&root, &file), "docs/a.md");
     }
 
+    #[tokio::test]
+    async fn adds_project_index_context_to_model_prompt() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(temp.path().join("docs")).expect("create docs dir");
+        std::fs::write(
+            temp.path().join("docs/notes.md"),
+            "project index context and agent runtime notes",
+        )
+        .expect("write");
+
+        let provider = RecordingProvider::new(vec![
+            vec![
+                r#"[{"id":"step-1","tool_name":"assistant.reply","description":"Respond","depends_on":[] }]"#
+                    .to_string(),
+            ],
+            vec!["Indexed answer".to_string()],
+        ]);
+        let gateway = evohime_model_gateway::ModelGateway::from_provider(std::sync::Arc::new(
+            provider.clone(),
+        ));
+        let tools = evohime_tool_runtime::ToolRegistry::bootstrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let result = run_agent_loop(
+            AgentConfig {
+                task_id: Uuid::new_v4(),
+                session_id: Uuid::new_v4(),
+                user_message: "project index".to_string(),
+                created_at: chrono::Utc::now(),
+                demo_file_path: temp.path().join("docs/notes.md"),
+                workspace_root: temp.path().to_path_buf(),
+            },
+            &gateway,
+            &tools,
+            vec![ChatMessage {
+                role: ChatRole::User,
+                content: "previous".to_string(),
+            }],
+            tx,
+        )
+        .await
+        .expect("agent completes");
+
+        assert_eq!(result.final_message, "Indexed answer");
+
+        let calls = provider.calls.lock().expect("calls");
+        assert!(calls.iter().any(|messages| messages
+            .iter()
+            .any(|message| message.content.contains("Relevant project context"))));
+        assert!(calls.iter().any(|messages| messages
+            .iter()
+            .any(|message| message.content.contains("docs/notes.md"))));
+    }
+
     #[test]
     fn parses_model_plan_json_and_dependencies() {
         let plan = parse_plan(
@@ -564,5 +633,56 @@ mod tests {
         assert!(!saw_task_started);
         assert!(!saw_tool_started);
         assert!(!saw_tool_output);
+    }
+}
+
+#[cfg(test)]
+#[derive(Clone)]
+struct RecordingProvider {
+    responses: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<Vec<String>>>>,
+    calls: std::sync::Arc<std::sync::Mutex<Vec<Vec<ChatMessage>>>>,
+}
+
+#[cfg(test)]
+impl RecordingProvider {
+    fn new(responses: Vec<Vec<String>>) -> Self {
+        Self {
+            responses: std::sync::Arc::new(std::sync::Mutex::new(responses.into())),
+            calls: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+        }
+    }
+}
+
+#[cfg(test)]
+impl evohime_model_gateway::providers::ModelProvider for RecordingProvider {
+    fn kind(&self) -> evohime_model_gateway::providers::ProviderKind {
+        evohime_model_gateway::providers::ProviderKind::Mock
+    }
+
+    fn model_name(&self) -> &str {
+        "recording-model"
+    }
+
+    fn base_url(&self) -> &str {
+        "mock://recording"
+    }
+
+    fn stream_chat(
+        &self,
+        messages: &[ChatMessage],
+    ) -> evohime_model_gateway::providers::TokenStream {
+        self.calls.lock().expect("calls").push(messages.to_vec());
+
+        let response = self
+            .responses
+            .lock()
+            .expect("responses")
+            .pop_front()
+            .unwrap_or_default();
+        Box::pin(futures_util::stream::iter(
+            response
+                .into_iter()
+                .map(Ok::<_, evohime_model_gateway::providers::ProviderError>),
+        ))
     }
 }

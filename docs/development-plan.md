@@ -71,7 +71,7 @@ EvoHime Server — Rust
 - `storage` хранит `task_steps` и `task_checkpoints`, а `server` материализует план в шаги и публикует `task.step.changed`;
 - протокол содержит команды `task.cancel`, `task.resume`, `task.retry`, а frontend уже отображает панели Tasks и Actions;
 - `permissions` содержит policy engine и one-shot решения; `approval.required` публикуется сервером, а `approval.granted` / `approval.denied` продолжают paused task;
-- `project-index` и Python worker пока являются каркасами.
+- `project-index` уже даёт workspace text search для контекста; Python worker пока является каркасом.
 
 Следующий сквозной приоритет — этап 6: project index, MCP, memory и worker integrations.
 
