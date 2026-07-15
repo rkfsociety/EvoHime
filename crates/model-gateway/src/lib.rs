@@ -73,6 +73,13 @@ impl ModelGateway {
     }
 
     pub fn config_response(config: &ModelGatewayConfig) -> ModelConfigResponse {
+        Self::config_response_with_models(config, &HashMap::new())
+    }
+
+    pub fn config_response_with_models(
+        config: &ModelGatewayConfig,
+        available_models: &HashMap<String, Vec<String>>,
+    ) -> ModelConfigResponse {
         let default_route = config.routes.get(&config.default_route).unwrap_or_else(|| {
             panic!(
                 "default model route '{}' not configured",
@@ -88,8 +95,13 @@ impl ModelGateway {
                 model: route.literouter.model.clone(),
                 base_url: route.literouter.base_url.clone(),
                 configured: route.configured(),
-                available_models: route.available_models(),
-                billing_mode: if route.provider == ProviderKind::LiteRouter && route.literouter.model.ends_with(":free") {
+                available_models: available_models
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_else(|| route.available_models()),
+                billing_mode: if route.provider == ProviderKind::LiteRouter
+                    && route.literouter.model.ends_with(":free")
+                {
                     "free".to_string()
                 } else {
                     "paid".to_string()
@@ -103,7 +115,10 @@ impl ModelGateway {
             model: default_route.literouter.model.clone(),
             base_url: default_route.literouter.base_url.clone(),
             configured: default_route.configured(),
-            available_models: default_route.available_models(),
+            available_models: available_models
+                .get(&config.default_route)
+                .cloned()
+                .unwrap_or_else(|| default_route.available_models()),
             default_route: config.default_route.clone(),
             routes,
         }
@@ -146,7 +161,9 @@ impl ModelGateway {
     ) -> Result<TokenStream, ProviderError> {
         let provider = self.provider_for_route(route)?;
         Ok(match model {
-            Some(model) if !model.trim().is_empty() => provider.stream_chat_with_model(model, messages),
+            Some(model) if !model.trim().is_empty() => {
+                provider.stream_chat_with_model(model, messages)
+            }
             _ => provider.stream_chat(messages),
         })
     }

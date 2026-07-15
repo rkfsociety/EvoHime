@@ -1,4 +1,5 @@
 use anyhow::Result;
+use evohime_model_gateway::providers::ProviderKind;
 use evohime_model_gateway::{ModelConfigResponse, ModelGateway, ModelGatewayConfig};
 use evohime_permissions::PermissionEngine;
 use evohime_protocol::ServerEvent;
@@ -80,8 +81,42 @@ pub struct AppState {
 
 impl AppState {
     pub async fn model_config_response(&self) -> ModelConfigResponse {
-        let config = self.model_config.read().await;
-        ModelGateway::config_response(&config)
+        let config = self.model_config.read().await.clone();
+        let client = reqwest::Client::new();
+        let mut available_models = HashMap::new();
+
+        for (name, route) in &config.routes {
+            if !route.configured() || route.provider == ProviderKind::Mock {
+                continue;
+            }
+            let endpoint = format!("{}/models", route.literouter.base_url.trim_end_matches('/'));
+            let response = match client
+                .get(endpoint)
+                .bearer_auth(&route.literouter.api_key)
+                .send()
+                .await
+            {
+                Ok(response) if response.status().is_success() => response,
+                _ => continue,
+            };
+            let payload = match response.json::<OpenAiModelsResponse>().await {
+                Ok(payload) => payload,
+                Err(_) => continue,
+            };
+            let billing_mode = route.provider == ProviderKind::LiteRouter
+                && route.literouter.model.ends_with(":free");
+            let mut models = payload
+                .data
+                .into_iter()
+                .map(|model| model.id)
+                .filter(|model| model.ends_with(":free") == billing_mode)
+                .collect::<Vec<_>>();
+            models.sort();
+            models.dedup();
+            available_models.insert(name.clone(), models);
+        }
+
+        ModelGateway::config_response_with_models(&config, &available_models)
     }
 
     pub async fn session_bus(&self, session_id: Uuid) -> broadcast::Sender<ServerEvent> {
@@ -108,4 +143,15 @@ impl AppState {
         let _ = sender.send(event);
         Ok(sequence)
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiModelsResponse {
+    #[serde(default)]
+    data: Vec<OpenAiModelEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiModelEntry {
+    id: String,
 }

@@ -93,3 +93,33 @@ fn config_response_lists_routes() {
     assert!(response.routes.iter().any(|route| route.name == "planner"));
     assert_eq!(response.routes[0].name, "default");
 }
+
+#[test]
+fn config_response_uses_provider_model_catalog() {
+    let config = ModelGatewayConfig {
+        default_route: "default".to_string(),
+        routes: HashMap::from([(
+            "default".to_string(),
+            ModelRouteConfig::literouter(
+                "lr_default",
+                "https://api.literouter.com/v1",
+                "deepseek-v3.2:free",
+            ),
+        )]),
+    };
+    let available_models = HashMap::from([(
+        "default".to_string(),
+        vec![
+            "deepseek-v3.2:free".to_string(),
+            "gpt-oss-20b:free".to_string(),
+        ],
+    )]);
+
+    let response = ModelGateway::config_response_with_models(&config, &available_models);
+
+    assert_eq!(response.available_models, available_models["default"]);
+    assert_eq!(
+        response.routes[0].available_models,
+        available_models["default"]
+    );
+}
