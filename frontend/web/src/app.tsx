@@ -1618,9 +1618,6 @@ export function App() {
       <section className="workspace">
         <nav className="sidebar">
           <div className="sidebarTop">
-            <div className="sidebarBrand">
-              <strong>Codex</strong>
-            </div>
             <button type="button" className="sidebarSearchButton" aria-label="Поиск">
               ⌕
             </button>

@@ -152,12 +152,6 @@ h1 {
   align-items: center;
 }
 
-.sidebarBrand strong {
-  color: #f1f3f5;
-  font-size: 20px;
-  letter-spacing: -0.03em;
-}
-
 .sidebarSearchButton {
   border: 0;
   background: transparent;
