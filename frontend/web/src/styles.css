@@ -1045,11 +1045,12 @@ h1 {
 
 .composerField {
   position: relative;
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(54px, auto) auto;
+  gap: 0;
   flex-wrap: wrap;
-  min-height: 64px;
+  min-height: 92px;
   border: 1px solid rgba(143, 180, 255, 0.24);
   border-radius: 20px;
   background: linear-gradient(135deg, rgba(20, 29, 52, 0.96), rgba(8, 13, 27, 0.98));
@@ -1061,18 +1062,26 @@ h1 {
   box-shadow: 0 0 0 3px rgba(91, 134, 255, 0.1);
 }
 
-.composer input {
-  flex: 1;
+.composer input,
+.composer textarea {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  width: 100%;
   min-width: 0;
   border: 0;
   outline: 0;
+  resize: none;
   background: transparent;
   color: var(--text-0);
-  padding: 18px 8px;
+  padding: 16px 18px 8px;
   font-size: 14px;
+  line-height: 1.45;
+  font-family: inherit;
 }
 
 .composerLeading {
+  grid-column: 1;
+  grid-row: 2;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1115,7 +1124,14 @@ h1 {
   color-scheme: dark;
 }
 
+.workModeAllow {
+  border-color: rgba(255, 137, 67, 0.32);
+  color: #ff995e;
+}
+
 .composerControls {
+  grid-column: 2;
+  grid-row: 2;
   display: flex;
   align-items: center;
   gap: 10px;

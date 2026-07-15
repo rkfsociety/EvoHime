@@ -2228,7 +2228,7 @@ export function App() {
                 +
               </button>
               <select
-                className="workModeSelect"
+                className={workMode === "allow" ? "workModeSelect workModeAllow" : "workModeSelect"}
                 value={workMode}
                 onChange={(event) => void updateWorkMode(event.target.value as PermissionMode)}
                 disabled={permissionModeSaving || Object.keys(permissionSettings).length === 0}
@@ -2240,7 +2240,8 @@ export function App() {
                 {workMode === "mixed" ? <option value="mixed" disabled>Смешанный режим</option> : null}
               </select>
             </div>
-            <input
+            <textarea
+              rows={1}
               value={input}
               onChange={(event) => setInput(event.target.value)}
               placeholder="Введите сообщение..."
