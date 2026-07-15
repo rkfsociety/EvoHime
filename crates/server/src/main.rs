@@ -478,10 +478,14 @@ fn build_model_config(
                 })
             })
             .unwrap_or_default();
-        let api_key = route
-            .api_key
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or(existing_key);
+        let api_key = if name == "orchestrator" {
+            requested_default_key.clone()
+        } else {
+            route
+                .api_key
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or(existing_key)
+        };
         let config = match provider {
             ProviderKind::LiteRouter => ModelRouteConfig::literouter(api_key, base_url, model),
             ProviderKind::OpenAICompatible => {
@@ -1818,7 +1822,7 @@ mod tests {
                         provider: "literouter".to_string(),
                         model: "deepseek:free".to_string(),
                         base_url: "https://api.literouter.com/v1".to_string(),
-                        api_key: None,
+                        api_key: Some("old_orchestrator_key".to_string()),
                         billing_mode: "free".to_string(),
                     },
                 ],

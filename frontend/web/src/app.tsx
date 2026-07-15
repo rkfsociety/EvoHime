@@ -1681,16 +1681,6 @@ export function App() {
                           .map((model) => <option key={model} value={model}>{model}</option>)}
                       </select>
                     </label>
-                    <label className="modelProviderKey">
-                      <span>API-ключ</span>
-                      <input
-                        type="password"
-                        value={orchestratorRoute.api_key}
-                        onChange={(event) => updateModelDraft(orchestratorRouteIndex, { api_key: event.target.value })}
-                        placeholder={orchestratorRoute.configured ? "Ключ сохранён — оставь пустым" : "Введи API-ключ"}
-                      />
-                      {orchestratorRoute.configured && !orchestratorRoute.api_key ? <small className="modelKeyStatus">Ключ сохранён</small> : null}
-                    </label>
                   </div>
                 </section>
               ) : null}
