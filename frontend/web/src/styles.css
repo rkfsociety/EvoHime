@@ -1107,6 +1107,112 @@ h1 {
   text-transform: capitalize;
 }
 
+.sitesPage {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  flex: 1;
+  min-height: 0;
+  padding: 20px;
+  overflow: hidden;
+}
+
+.sitesHero {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: end;
+}
+
+.sitesHero h3 {
+  margin: 0 0 8px;
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+  line-height: 1.02;
+  color: #eef2f7;
+  letter-spacing: -0.03em;
+}
+
+.sitesHero p {
+  color: #9ba3ae;
+  line-height: 1.5;
+  max-width: 50ch;
+}
+
+.sitesSearchRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.sitesSearch {
+  flex: 1;
+  position: relative;
+}
+
+.sitesSearchIcon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #75808c;
+  font-size: 15px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.sitesSearch input {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(19, 22, 28, 0.96);
+  color: #eef2f7;
+  padding: 12px 16px 12px 38px;
+  outline: none;
+}
+
+.sitesBody {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+
+.sitesEmptyState {
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  text-align: center;
+  color: #75808c;
+  transform: translateY(-18px);
+}
+
+.sitesEmptyIcon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: #b9c3d4;
+  font-size: 22px;
+}
+
+.sitesEmptyState strong {
+  color: #eef2f7;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.sitesCreateButton {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 9px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #eef2f7;
+  cursor: pointer;
+}
+
 .pluginsPage {
   display: flex;
   flex-direction: column;
@@ -1430,6 +1536,10 @@ h1 {
     max-height: 34vh;
   }
 
+  .sitesPage {
+    max-height: 34vh;
+  }
+
   .settingsModal {
     max-height: 92vh;
   }
@@ -1473,6 +1583,10 @@ h1 {
   }
 
   .pluginsPage {
+    max-height: 44vh;
+  }
+
+  .sitesPage {
     max-height: 44vh;
   }
 

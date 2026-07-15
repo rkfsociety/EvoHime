@@ -19,6 +19,7 @@ type ChatLine = {
 type WorkspacePanel =
   | "chat"
   | "files"
+  | "sites"
   | "editor"
   | "terminal"
   | "git"
@@ -143,6 +144,7 @@ const initialLines: ChatLine[] = [
 const workspacePanels: Array<{ id: WorkspacePanel; label: string; phase: string }> = [
   { id: "chat", label: "Чат", phase: "активно" },
   { id: "files", label: "Файлы", phase: "этап 4" },
+  { id: "sites", label: "Сайты", phase: "этап 6" },
   { id: "editor", label: "Редактор", phase: "этап 4" },
   { id: "terminal", label: "Терминал", phase: "этап 3" },
   { id: "git", label: "Гит", phase: "этап 4" },
@@ -162,7 +164,7 @@ const sidebarQuickLinks: Array<{
   { id: "new-task", label: "Новая задача", icon: "✎", panel: "chat" },
   { id: "scheduled", label: "Запланировано", icon: "◷", panel: "tasks" },
   { id: "plugins", label: "Плагины", icon: "◌", panel: "plugins" },
-  { id: "sites", label: "Сайты", icon: "▦", panel: "files" },
+  { id: "sites", label: "Сайты", icon: "▦", panel: "sites" },
   { id: "pull-requests", label: "Пулл-реквесты", icon: "⟡", panel: "pull-requests" },
   { id: "chat", label: "Чат", icon: "⊕", panel: "chat" },
 ];
@@ -507,6 +509,7 @@ export function App() {
   const [pullRequestsError, setPullRequestsError] = useState<string | null>(null);
   const [pullRequestScope, setPullRequestScope] = useState<PullRequestScope>("all");
   const [pullRequestSearch, setPullRequestSearch] = useState("");
+  const [siteSearch, setSiteSearch] = useState("");
   const [terminalEntries, setTerminalEntries] = useState<TerminalEntry[]>([]);
   const [permissionSettings, setPermissionSettings] = useState<PermissionSettings>({});
   const [toolCatalog, setToolCatalog] = useState<ToolDefinition[]>([]);
@@ -1572,6 +1575,45 @@ export function App() {
     );
   }
 
+  function renderSitesContent() {
+    return (
+      <div className="sitesPage">
+        <section className="sitesHero">
+          <div>
+            <h3>Сайты</h3>
+            <p>Превратите свои идеи в готовые сайты.</p>
+          </div>
+        </section>
+
+        <div className="sitesSearchRow">
+          <label className="sitesSearch">
+            <span className="sitesSearchIcon" aria-hidden="true">
+              ⌕
+            </span>
+            <input
+              value={siteSearch}
+              onChange={(event) => setSiteSearch(event.target.value)}
+              placeholder="Поиск сайтов"
+              aria-label="Поиск сайтов"
+            />
+          </label>
+        </div>
+
+        <div className="sitesBody">
+          <div className="sitesEmptyState">
+            <div className="sitesEmptyIcon" aria-hidden="true">
+              ▢
+            </div>
+            <strong>Сайтов пока нет</strong>
+            <button type="button" className="sitesCreateButton">
+              Создать новый сайт
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function renderPanelContent() {
     if (activePanel === "settings") {
       return renderSettingsContent();
@@ -1579,6 +1621,10 @@ export function App() {
 
     if (activePanel === "plugins") {
       return renderPluginsContent();
+    }
+
+    if (activePanel === "sites") {
+      return renderSitesContent();
     }
 
     if (activePanel === "files") {
@@ -2077,7 +2123,7 @@ export function App() {
         </nav>
 
         <div className="panel mainPanel">
-          {activePanel !== "pull-requests" && activePanel !== "plugins" ? (
+          {activePanel !== "pull-requests" && activePanel !== "plugins" && activePanel !== "sites" ? (
             <header>
               <h2>{currentPanelLabel}</h2>
               <span>Веб-сокет</span>
