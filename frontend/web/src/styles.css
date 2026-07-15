@@ -130,6 +130,7 @@ h1 {
   display: grid;
   gap: 16px;
   align-content: start;
+  min-height: 72vh;
 }
 
 .sidebarSection {
@@ -195,6 +196,33 @@ h1 {
 .chatItem.active {
   border-color: rgba(57, 216, 178, 0.55);
   background: rgba(57, 216, 178, 0.12);
+}
+
+.sidebarFooter {
+  margin-top: auto;
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  background: rgba(10, 16, 33, 0.55);
+}
+
+.sidebarFooterLabel {
+  color: #89a0ca;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.sidebarFooter strong {
+  color: #edf4ff;
+  font-size: 15px;
+}
+
+.sidebarFooter small {
+  color: #7f95bf;
+  font-size: 12px;
 }
 
 .navItem {
@@ -837,6 +865,7 @@ h1 {
 
   .sidebar {
     order: 2;
+    min-height: 0;
   }
 
   .panel {

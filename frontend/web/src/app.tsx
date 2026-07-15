@@ -51,6 +51,12 @@ type ChatSessionSummary = {
   last_role: string | null;
 };
 
+type GithubAuthInfo = {
+  authenticated: boolean;
+  login: string | null;
+  source: string;
+};
+
 type FileNode = {
   name: string;
   path: string;
@@ -378,6 +384,7 @@ export function App() {
   const [tasks, setTasks] = useState<Record<string, TaskView>>({});
   const [actions, setActions] = useState<ActionView[]>([]);
   const [approval, setApproval] = useState<ApprovalRequiredEvent | null>(null);
+  const [githubAuth, setGithubAuth] = useState<GithubAuthInfo | null>(null);
   const [terminalEntries, setTerminalEntries] = useState<TerminalEntry[]>([]);
   const [permissionSettings, setPermissionSettings] = useState<PermissionSettings>({});
   const [toolCatalog, setToolCatalog] = useState<ToolDefinition[]>([]);
@@ -437,6 +444,23 @@ export function App() {
       .catch((error) => {
         if (!cancelled) {
           setMcpServersError(String(error));
+        }
+      });
+    fetch("/api/auth/github")
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Не удалось загрузить GitHub-авторизацию");
+        }
+        return response.json();
+      })
+      .then((data: GithubAuthInfo) => {
+        if (!cancelled) {
+          setGithubAuth(data);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setGithubAuth({ authenticated: false, login: null, source: "gh" });
         }
       });
 
@@ -1597,6 +1621,11 @@ export function App() {
                 </button>
               ))}
             </div>
+          </section>
+          <section className="sidebarFooter">
+            <span className="sidebarFooterLabel">GitHub</span>
+            <strong>{githubAuth?.login ?? "не авторизован"}</strong>
+            <small>{githubAuth?.authenticated ? `Авторизация через ${githubAuth.source}` : "Вход через gh"}</small>
           </section>
         </nav>
 

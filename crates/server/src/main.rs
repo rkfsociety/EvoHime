@@ -186,6 +186,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/models/config", get(model_config))
         .route("/api/sessions", get(list_sessions).post(create_session))
         .route("/api/sessions/:session_id/history", get(session_history))
+        .route("/api/auth/github", get(github_auth))
         .route("/api/files", get(workspace::list_files))
         .route(
             "/api/files/content",
@@ -425,6 +426,30 @@ async fn list_sessions(State(state): State<Arc<AppState>>) -> Result<Json<Vec<Se
         .collect();
 
     Ok(Json(sessions))
+}
+
+#[derive(Debug, serde::Serialize)]
+struct GithubAuthResponse {
+    authenticated: bool,
+    login: Option<String>,
+    source: &'static str,
+}
+
+async fn github_auth() -> Json<GithubAuthResponse> {
+    let login = std::process::Command::new("gh")
+        .args(["api", "user", "--jq", ".login"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    Json(GithubAuthResponse {
+        authenticated: login.is_some(),
+        login,
+        source: "gh",
+    })
 }
 
 async fn session_history(
