@@ -1183,11 +1183,6 @@ h1 {
   color-scheme: dark;
 }
 
-.modelRouteSelect {
-  width: 112px;
-  max-width: 112px !important;
-}
-
 .attachmentList {
   display: flex;
   flex-basis: 100%;

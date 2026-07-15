@@ -2288,19 +2288,6 @@ export function App() {
               placeholder="Введите сообщение..."
             />
             <div className="composerControls">
-              <select
-                className="modelRouteSelect"
-                value={selectedModelRoute}
-                onChange={(event) => setSelectedModelRoute(event.target.value)}
-                disabled={!modelConfig || modelConfig.routes.length === 0}
-                aria-label="Модель"
-              >
-                {modelConfig?.routes.map((route) => (
-                  <option key={route.name} value={route.name}>
-                    {route.name}
-                  </option>
-                ))}
-              </select>
               <button
                 type={activeTaskId ? "button" : "submit"}
                 className={activeTaskId ? "sendButton stopButton" : "sendButton"}
