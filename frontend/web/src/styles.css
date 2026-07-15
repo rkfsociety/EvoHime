@@ -375,6 +375,13 @@ h1 {
   cursor: not-allowed;
 }
 
+.toolbarActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .fileTree {
   flex: 1;
   min-height: 0;
@@ -412,6 +419,11 @@ h1 {
   background: rgba(76, 125, 255, 0.1);
 }
 
+.treeNode[data-selected="true"] > .treeButton {
+  border-color: rgba(57, 216, 178, 0.6);
+  background: rgba(57, 216, 178, 0.12);
+}
+
 .treeName {
   font-weight: 600;
 }
@@ -425,6 +437,10 @@ h1 {
 .treeNode[data-kind="dir"] > .treeButton .treeName::before {
   content: "▸ ";
   color: #9fc0ff;
+}
+
+.treeNode[data-kind="dir"][data-expanded="true"] > .treeButton .treeName::before {
+  content: "▾ ";
 }
 
 .treeNode[data-kind="file"] > .treeButton .treeName::before {
@@ -442,6 +458,26 @@ h1 {
 
 .editorPanel {
   overflow: hidden;
+}
+
+.editorNotice {
+  margin: 0 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(243, 201, 105, 0.25);
+  border-radius: 14px;
+  background: rgba(243, 201, 105, 0.08);
+  color: #f7e4b3;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.editorMeta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 0 16px;
+  color: #8fa4cd;
+  font-size: 12px;
 }
 
 .editorPanel > .monaco-editor {
@@ -480,6 +516,39 @@ h1 {
   font-size: 13px;
   line-height: 1.55;
   color: #e7eefc;
+}
+
+.gitControls {
+  display: grid;
+  gap: 12px;
+}
+
+.gitControls label {
+  display: grid;
+  gap: 8px;
+  color: #d8e5ff;
+  font-size: 12px;
+}
+
+.gitControls label span {
+  color: #8fa4cd;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+}
+
+.gitControls input {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
+  background: rgba(4, 8, 18, 0.8);
+  color: #fff;
+  padding: 12px 14px;
+}
+
+.gitControlButtons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .terminalPanel { flex: 1; min-height: 0; padding: 16px; }

@@ -102,6 +102,56 @@ function parentPath(path: string) {
   return segments.length > 0 ? segments.join("/") : ".";
 }
 
+function inferMonacoLanguage(path: string | null) {
+  if (!path) {
+    return "plaintext";
+  }
+
+  const lower = path.toLowerCase();
+  if (lower.endsWith(".ts") || lower.endsWith(".tsx")) return "typescript";
+  if (lower.endsWith(".js") || lower.endsWith(".jsx") || lower.endsWith(".mjs")) return "javascript";
+  if (lower.endsWith(".json")) return "json";
+  if (lower.endsWith(".md") || lower.endsWith(".markdown")) return "markdown";
+  if (lower.endsWith(".rs")) return "rust";
+  if (lower.endsWith(".toml")) return "toml";
+  if (lower.endsWith(".yml") || lower.endsWith(".yaml")) return "yaml";
+  if (lower.endsWith(".css")) return "css";
+  if (lower.endsWith(".html") || lower.endsWith(".htm")) return "html";
+  if (lower.endsWith(".sh") || lower.endsWith(".bash")) return "shell";
+  if (lower.endsWith(".sql")) return "sql";
+  return "plaintext";
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function sortFileNodes(entries: FileNode[]) {
+  return [...entries].sort((left, right) => {
+    if (left.kind !== right.kind) {
+      return left.kind === "dir" ? -1 : 1;
+    }
+    return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+  });
+}
+
+function summarizeGitStatus(status: string) {
+  const lines = status.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const branch = lines[0] ?? "No status";
+  const changed = lines.filter((line) => !line.startsWith("##")).length;
+  return {
+    branch,
+    changed,
+    lines,
+  };
+}
+
 export function App() {
   const [session, setSession] = useState<SessionBootstrap | null>(null);
   const [socketState, setSocketState] = useState<
@@ -122,16 +172,20 @@ export function App() {
   const [selectedFileContent, setSelectedFileContent] = useState("");
   const [selectedFileOriginal, setSelectedFileOriginal] = useState("");
   const [selectedFileLoading, setSelectedFileLoading] = useState(false);
+  const [selectedFileNotice, setSelectedFileNotice] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
   const [gitStatus, setGitStatus] = useState("Loading git status...");
   const [gitDiff, setGitDiff] = useState("Loading git diff...");
   const [gitDiffPath, setGitDiffPath] = useState<string | null>(null);
+  const [gitDiffPathInput, setGitDiffPathInput] = useState("");
   const [tasks, setTasks] = useState<Record<string, TaskView>>({});
   const [actions, setActions] = useState<ActionView[]>([]);
   const [approval, setApproval] = useState<ApprovalRequiredEvent | null>(null);
   const [terminalEntries, setTerminalEntries] = useState<TerminalEntry[]>([]);
   const [permissionSettings, setPermissionSettings] = useState<PermissionSettings>({});
   const socketRef = useRef<WebSocket | null>(null);
+  const applyEventRef = useRef<(event: ServerEvent) => void>(() => undefined);
+  const saveFileRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -220,7 +274,7 @@ export function App() {
     socket.onmessage = (event) => {
       const parsed = JSON.parse(event.data as string) as ServerEvent;
       setEvents((current) => [...current, parsed]);
-      applyEvent(parsed);
+      applyEventRef.current(parsed);
     };
 
     return () => {
@@ -257,6 +311,15 @@ export function App() {
     () => workspacePanels.find((panel) => panel.id === activePanel)?.label ?? "Workspace",
     [activePanel],
   );
+  const selectedFileLanguage = useMemo(
+    () => inferMonacoLanguage(selectedFilePath),
+    [selectedFilePath],
+  );
+  const gitSummary = useMemo(() => summarizeGitStatus(gitStatus), [gitStatus]);
+  applyEventRef.current = applyEvent;
+  saveFileRef.current = () => {
+    void handleSave();
+  };
 
   function applyEvent(event: ServerEvent) {
     switch (event.type) {
@@ -378,7 +441,11 @@ export function App() {
         void refreshDirectory(".").catch(() => undefined);
         void refreshDirectory(parentPath(event.path)).catch(() => undefined);
         if (normalizePath(selectedFilePath ?? undefined) === normalizePath(event.path)) {
-          void refreshSelectedFile(event.path).catch(() => undefined);
+          if (selectedFileContent !== selectedFileOriginal) {
+            setSelectedFileNotice("Файл изменился на диске. Сохрани или перезагрузи, чтобы не потерять правки.");
+          } else {
+            void refreshSelectedFile(event.path).catch(() => undefined);
+          }
         }
         break;
       case "git.diff.changed":
@@ -399,7 +466,7 @@ export function App() {
     const key = normalizePath(data.path);
     setDirectoryCache((current) => ({
       ...current,
-      [key]: data.entries,
+      [key]: sortFileNodes(data.entries),
     }));
   }
 
@@ -417,6 +484,7 @@ export function App() {
 
   async function refreshSelectedFile(path: string) {
     setSelectedFileLoading(true);
+    setSelectedFileNotice(null);
     try {
       const response = await fetch(
         `/api/files/content?path=${encodeURIComponent(normalizePath(path))}`,
@@ -435,7 +503,7 @@ export function App() {
   }
 
   async function refreshGitSnapshot(path?: string | null) {
-    const diffPath = normalizePath(path ?? gitDiffPath ?? selectedFilePath ?? undefined);
+    const diffPath = normalizePath(path ?? gitDiffPathInput ?? gitDiffPath ?? selectedFilePath ?? undefined);
     const statusResponse = await fetch("/api/git/status");
     if (!statusResponse.ok) {
       throw new Error("Failed to load git status");
@@ -451,6 +519,7 @@ export function App() {
     setGitStatus(statusData.status);
     setGitDiff(diffData.diff);
     setGitDiffPath(diffPath === "." ? null : diffPath);
+    setGitDiffPathInput(diffPath === "." ? "" : diffPath);
   }
 
   async function updatePermission(name: string, mode: PermissionMode) {
@@ -462,6 +531,7 @@ export function App() {
   async function openFile(path: string) {
     try {
       setActivePanel("editor");
+      setSelectedFileNotice(null);
       await refreshSelectedFile(path);
       await refreshGitSnapshot(path);
     } catch (error) {
@@ -499,6 +569,7 @@ export function App() {
       const data = (await response.json()) as SaveResponse;
       setSelectedFileOriginal(selectedFileContent);
       setSaveState("saved");
+      setSelectedFileNotice(data.change === "created" ? "Новый файл создан в рабочем пространстве." : "Изменения сохранены.");
       await refreshDirectory(parentPath(data.path));
       await refreshGitSnapshot(data.path);
     } catch (error) {
@@ -542,16 +613,23 @@ export function App() {
   function renderTree(path = ".", depth = 0) {
     const normalized = normalizePath(path);
     const entries = directoryCache[normalized] ?? [];
-    const isExpanded = expandedDirectories[normalized] ?? normalized === ".";
 
     return (
       <div className="treeBranch" data-depth={depth}>
         {entries.map((entry) => {
           const key = entry.path;
           const expanded = expandedDirectories[key] ?? false;
+          const isSelected = normalizePath(selectedFilePath ?? undefined) === normalizePath(key);
 
           return (
-            <div key={key} className="treeNode" data-kind={entry.kind} data-depth={depth}>
+            <div
+              key={key}
+              className="treeNode"
+              data-kind={entry.kind}
+              data-depth={depth}
+              data-selected={isSelected}
+              data-expanded={expanded}
+            >
               <button
                 type="button"
                 className="treeButton"
@@ -566,6 +644,7 @@ export function App() {
                 <span className="treeName">{entry.name}</span>
                 <span className="treeMeta">
                   {entry.kind}
+                  {entry.size ? ` • ${formatFileSize(entry.size)}` : ""}
                   {entry.modified_at ? ` • ${entry.modified_at}` : ""}
                 </span>
               </button>
@@ -623,11 +702,15 @@ export function App() {
     }
 
     if (activePanel === "files") {
+      const rootEntries = directoryCache["."] ?? [];
       return (
         <div className="filesPanel">
           <div className="panelToolbar">
-            <button type="button" onClick={() => refreshDirectory(".")}>Refresh tree</button>
-            <span>{directoryCache["."]?.length ?? 0} items</span>
+            <div>
+              <strong>Workspace tree</strong>
+              <span>{rootEntries.length} items at root</span>
+            </div>
+            <button type="button" onClick={() => void refreshDirectory(".")}>Refresh tree</button>
           </div>
           <div className="fileTree">
             {renderTree(".")}
@@ -654,23 +737,48 @@ export function App() {
                         : "Ready"}
               </span>
             </div>
-            <button
-              type="button"
-              onClick={() => void handleSave()}
-              disabled={!selectedFilePath || selectedFileContent === selectedFileOriginal}
-            >
-              Save
-            </button>
+            <div className="toolbarActions">
+              <button
+                type="button"
+                onClick={() => void refreshSelectedFile(selectedFilePath ?? ".")}
+                disabled={!selectedFilePath || selectedFileLoading}
+              >
+                Reload
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSave()}
+                disabled={!selectedFilePath || selectedFileContent === selectedFileOriginal}
+              >
+                Save
+              </button>
+            </div>
           </div>
+          {selectedFileNotice ? <div className="editorNotice">{selectedFileNotice}</div> : null}
+          {selectedFilePath ? (
+            <div className="editorMeta">
+              <span>Language: {selectedFileLanguage}</span>
+              <span>Size: {formatFileSize(selectedFileContent.length)}</span>
+              <span>{selectedFileContent === selectedFileOriginal ? "Clean" : "Dirty"}</span>
+            </div>
+          ) : null}
           {selectedFilePath ? (
             <Editor
               height="100%"
               theme="vs-dark"
-              language="typescript"
+              language={selectedFileLanguage}
               value={selectedFileContent}
               onChange={(value) => {
                 setSelectedFileContent(value ?? "");
                 setSaveState("idle");
+              }}
+              onMount={(editor, monaco) => {
+                editor.addAction({
+                  id: "evohime-save-file",
+                  label: "Save file",
+                  keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
+                  run: () => saveFileRef.current(),
+                });
               }}
               options={{
                 minimap: { enabled: false },
@@ -694,15 +802,51 @@ export function App() {
       return (
         <div className="gitPanel">
           <div className="panelToolbar">
-            <button type="button" onClick={() => void refreshGitSnapshot()}>Refresh git</button>
-            <span>{gitDiffPath ? `Diff: ${gitDiffPath}` : "Repository diff"}</span>
+            <div>
+              <strong>Repository status</strong>
+              <span>
+                {gitSummary.branch}
+                {gitSummary.changed ? ` • ${gitSummary.changed} changed` : " • clean"}
+              </span>
+            </div>
+            <div className="toolbarActions">
+              <button type="button" onClick={() => void refreshGitSnapshot(gitDiffPathInput || undefined)}>
+                Refresh git
+              </button>
+            </div>
+          </div>
+          <div className="gitControls">
+            <label>
+              <span>Diff path</span>
+              <input
+                value={gitDiffPathInput}
+                onChange={(event) => setGitDiffPathInput(event.target.value)}
+                placeholder="Repository root or file path"
+              />
+            </label>
+            <div className="gitControlButtons">
+              <button type="button" onClick={() => void refreshGitSnapshot(gitDiffPathInput || undefined)}>
+                Load diff
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const nextPath = selectedFilePath ?? "";
+                  setGitDiffPathInput(nextPath);
+                  void refreshGitSnapshot(nextPath || undefined);
+                }}
+                disabled={!selectedFilePath}
+              >
+                Use selected file
+              </button>
+            </div>
           </div>
           <div className="gitSummary">
             <h3>Status</h3>
             <pre>{gitStatus}</pre>
           </div>
           <div className="gitSummary">
-            <h3>Diff</h3>
+            <h3>Diff{gitDiffPath ? ` · ${gitDiffPath}` : ""}</h3>
             <pre>{gitDiff || "No diff"}</pre>
           </div>
         </div>
