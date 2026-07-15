@@ -530,6 +530,7 @@ export function App() {
   const applyEventRef = useRef<(event: ServerEvent) => void>(() => undefined);
   const saveFileRef = useRef<() => void>(() => undefined);
   const sessionLoadRef = useRef(0);
+  const activeAssistantLineRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1165,11 +1166,8 @@ export function App() {
           ),
         );
         setTasks((current) => ({ ...current, [event.task_id]: { id: event.task_id, message: event.user_message, status: "running", steps: {} } }));
-        setLines((current) => [
-          ...current,
-          { role: "user", text: event.user_message },
-          { role: "assistant", text: "" },
-        ]);
+        setLines((current) => [...current, { role: "user", text: event.user_message }]);
+        activeAssistantLineRef.current = null;
         setStream("");
         break;
       case "agent.message.delta":
@@ -1177,12 +1175,13 @@ export function App() {
           const next = `${current}${event.delta}`;
           setLines((items) => {
             const copy = [...items];
-            for (let index = copy.length - 1; index >= 0; index -= 1) {
-              if (copy[index]?.role === "assistant") {
-                copy[index] = { role: "assistant", text: next };
-                break;
-              }
+            const index = activeAssistantLineRef.current;
+            if (index !== null && copy[index]?.role === "assistant") {
+              copy[index] = { role: "assistant", text: next };
+              return copy;
             }
+            activeAssistantLineRef.current = copy.length;
+            copy.push({ role: "assistant", text: next });
             return copy;
           });
           return next;
@@ -1209,10 +1208,18 @@ export function App() {
         break;
       case "task.completed":
         setTasks((current) => current[event.task_id] ? { ...current, [event.task_id]: { ...current[event.task_id], status: "completed" } } : current);
-        setLines((current) => [
-          ...current,
-          { role: "assistant", text: event.final_message },
-        ]);
+        setLines((current) => {
+          const copy = [...current];
+          const index = activeAssistantLineRef.current;
+          if (index !== null && copy[index]?.role === "assistant") {
+            copy[index] = { role: "assistant", text: event.final_message };
+            return copy;
+          }
+          activeAssistantLineRef.current = copy.length;
+          copy.push({ role: "assistant", text: event.final_message });
+          return copy;
+        });
+        activeAssistantLineRef.current = null;
         setStream("");
         break;
       case "task.failed":
