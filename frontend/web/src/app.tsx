@@ -441,6 +441,8 @@ export function App() {
   const [modelDrafts, setModelDrafts] = useState<ModelRouteDraft[]>([]);
   const [modelSaving, setModelSaving] = useState(false);
   const [modelNotice, setModelNotice] = useState<string | null>(null);
+  const modelAutosaveInitializedRef = useRef(false);
+  const skipNextModelAutosaveRef = useRef(false);
   const [pullRequests, setPullRequests] = useState<PullRequestSummary[]>([]);
   const [pullRequestsLoading, setPullRequestsLoading] = useState(false);
   const [pullRequestsError, setPullRequestsError] = useState<string | null>(null);
@@ -608,6 +610,24 @@ export function App() {
       setSelectedModelRoute(modelConfig.default_route);
     }
   }, [modelConfig, selectedModelRoute]);
+
+  useEffect(() => {
+    if (!modelConfig || modelDrafts.length === 0) {
+      return;
+    }
+    if (!modelAutosaveInitializedRef.current) {
+      modelAutosaveInitializedRef.current = true;
+      return;
+    }
+    if (skipNextModelAutosaveRef.current) {
+      skipNextModelAutosaveRef.current = false;
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void saveModelConfig();
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [modelConfig, modelDrafts, modelDefaultRoute]);
 
   useEffect(() => {
     if (!modelConfig || !selectedModelRoute) {
@@ -789,6 +809,11 @@ export function App() {
     }
     return "mixed";
   }, [permissionSettings]);
+  const activeModelRouteIndex = Math.max(
+    0,
+    modelDrafts.findIndex((route) => route.name === modelDefaultRoute),
+  );
+  const activeModelRoute = modelDrafts[activeModelRouteIndex] ?? null;
   const visiblePullRequests = useMemo(() => {
     const query = pullRequestSearch.trim().toLowerCase();
     if (!query) {
@@ -1209,6 +1234,7 @@ export function App() {
         throw new Error(detail?.error ?? "Не удалось сохранить настройки модели");
       }
       const data = (await response.json()) as ModelConfig;
+      skipNextModelAutosaveRef.current = true;
       setModelConfig(data);
       setModelDefaultRoute(data.default_route);
       setModelDrafts(data.routes.map((route) => ({ ...route, api_key: "", configured: route.configured })));
@@ -1511,86 +1537,60 @@ export function App() {
           {modelConfig ? (
             <div className="modelSettingsEditor">
               <div className="settingsInlineBar">
-                <label>
-                  <span>Маршрут по умолчанию</span>
-                  <select value={modelDefaultRoute} onChange={(event) => setModelDefaultRoute(event.target.value)}>
-                    {modelDrafts.map((route) => <option key={route.name} value={route.name}>{route.name}</option>)}
-                  </select>
-                </label>
                 <span className={modelConfig.configured ? "modelStatus configured" : "modelStatus"}>
-                  {modelConfig.configured ? "Агент готов" : "Нужен API-ключ"}
+                  {modelSaving ? "Сохранение..." : modelConfig.configured ? "Агент готов" : "Нужен API-ключ"}
                 </span>
               </div>
-              <div className="modelRouteList">
-                {modelDrafts.map((route, index) => (
-                  <article className="modelRouteCard" key={`${route.name}-${index}`}>
-                    <div className="modelRouteHeader">
-                      <strong>{route.name || "Новый маршрут"}</strong>
-                      <button type="button" onClick={() => removeModelRoute(index)} disabled={modelDrafts.length === 1}>
-                        Удалить
-                      </button>
-                    </div>
-                    <div className="modelRouteFields">
-                      <label>
-                        <span>Название</span>
-                        <input value={route.name} onChange={(event) => updateModelDraft(index, { name: event.target.value })} />
-                      </label>
-                      <label>
-                        <span>Провайдер</span>
-                        <select value={route.provider} onChange={(event) => updateModelDraft(index, { provider: event.target.value })}>
-                          <option value="literouter">LiteRouter</option>
-                          <option value="openai-compatible">OpenAI-compatible</option>
-                          <option value="mock">Mock</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>Модель</span>
-                        <input value={route.model} onChange={(event) => updateModelDraft(index, { model: event.target.value })} placeholder="deepseek:free" />
-                      </label>
-                      {route.provider === "literouter" ? (
-                        <label>
-                          <span>Режим LiteRouter</span>
-                          <select
-                            value={route.billing_mode}
-                            onChange={(event) => updateModelDraft(index, { billing_mode: event.target.value as "free" | "paid" })}
-                          >
-                            <option value="free">Бесплатный — только :free</option>
-                            <option value="paid">Платный — без :free</option>
-                          </select>
-                        </label>
-                      ) : null}
-                      <label>
-                        <span>Base URL</span>
-                        <input value={route.base_url} onChange={(event) => updateModelDraft(index, { base_url: event.target.value })} placeholder="https://api.example.com/v1" />
-                      </label>
-                      <label className="modelRouteKey">
-                        <span>API-ключ</span>
-                        <input
-                          type="password"
-                          value={route.api_key}
-                          onChange={(event) => updateModelDraft(index, { api_key: event.target.value })}
-                          placeholder={route.configured ? "Ключ сохранён — оставь пустым" : "Введи API-ключ"}
-                        />
-                        {route.configured && !route.api_key ? <small className="modelKeyStatus">Ключ сохранён</small> : null}
-                      </label>
-                    </div>
-                  </article>
-                ))}
-              </div>
-              <div className="modelSettingsActions">
-                <button type="button" onClick={addModelRoute}>Добавить маршрут</button>
-                <button type="button" onClick={() => void saveModelConfig()} disabled={modelSaving || modelDrafts.length === 0}>
-                  {modelSaving ? "Применяем..." : "Применить настройки"}
-                </button>
-              </div>
+              {activeModelRoute ? (
+                <div className="modelProviderForm">
+                  <label>
+                    <span>Провайдер</span>
+                    <select
+                      value={activeModelRoute.provider}
+                      onChange={(event) => {
+                        const provider = event.target.value;
+                        updateModelDraft(activeModelRouteIndex, {
+                          provider,
+                          base_url: provider === "literouter" ? "https://api.literouter.com/v1" : "https://api.openai.com/v1",
+                          model: provider === "literouter" ? "deepseek:free" : "gpt-4o-mini",
+                          billing_mode: provider === "literouter" ? "free" : "paid",
+                        });
+                      }}
+                    >
+                      <option value="literouter">LiteRouter</option>
+                      <option value="openai-compatible">OpenAI-compatible</option>
+                    </select>
+                  </label>
+                  {activeModelRoute.provider === "literouter" ? (
+                    <label>
+                      <span>Режим LiteRouter</span>
+                      <select
+                        value={activeModelRoute.billing_mode}
+                        onChange={(event) => updateModelDraft(activeModelRouteIndex, { billing_mode: event.target.value as "free" | "paid" })}
+                      >
+                        <option value="free">Бесплатный — только :free</option>
+                        <option value="paid">Платный — без :free</option>
+                      </select>
+                    </label>
+                  ) : null}
+                  <label className="modelProviderKey">
+                    <span>API-ключ</span>
+                    <input
+                      type="password"
+                      value={activeModelRoute.api_key}
+                      onChange={(event) => updateModelDraft(activeModelRouteIndex, { api_key: event.target.value })}
+                      placeholder={activeModelRoute.configured ? "Ключ сохранён — оставь пустым" : "Введи API-ключ"}
+                    />
+                    {activeModelRoute.configured && !activeModelRoute.api_key ? <small className="modelKeyStatus">Ключ сохранён</small> : null}
+                  </label>
+                </div>
+              ) : null}
+              <p className="settingsHint">Изменения сохраняются автоматически.</p>
               {modelNotice ? <p className={modelNotice.startsWith("Настройки") ? "settingsHint" : "settingsError"}>{modelNotice}</p> : null}
             </div>
           ) : (
             <p>Загрузка конфигурации модели...</p>
           )}
-          <p className="settingsHint">
-            Укажи `MODEL_ROUTES_JSON` на сервере, чтобы настроить несколько маршрутов и выбирать один для каждой задачи.
-          </p>
         </section> : null}
 
         {settingsTab === "permissions" ? <section className="settingsSection">
