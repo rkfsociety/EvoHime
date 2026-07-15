@@ -228,6 +228,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/api/models/config", get(model_config).put(update_model_config))
+        .route("/api/models/available", get(available_models))
         .route("/api/sessions", get(list_sessions).post(create_session))
         .route("/api/sessions/archived", get(list_archived_sessions))
         .route("/api/sessions/:session_id", delete(delete_session))
@@ -283,6 +284,88 @@ async fn model_config(
     State(state): State<Arc<AppState>>,
 ) -> Json<evohime_model_gateway::ModelConfigResponse> {
     Json(state.model_config_response().await)
+}
+
+#[derive(Debug, Serialize)]
+struct AvailableModelsResponse {
+    route: String,
+    provider: String,
+    billing_mode: String,
+    models: Vec<String>,
+}
+
+async fn available_models(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<Json<AvailableModelsResponse>, ApiError> {
+    let default_route = state.model_config.read().await.default_route.clone();
+    let route_name = query.get("route").cloned().unwrap_or(default_route);
+    let config = state.model_config.read().await;
+    let route = config
+        .routes
+        .get(&route_name)
+        .ok_or_else(|| ApiError::BadRequest(format!("unknown model route: {route_name}")))?;
+    let provider = route.provider.as_str().to_string();
+    let billing_mode = if route.provider == ProviderKind::LiteRouter
+        && route.literouter.model.ends_with(":free")
+    {
+        "free"
+    } else {
+        "paid"
+    };
+    let models = if route.provider == ProviderKind::Mock {
+        Vec::new()
+    } else {
+        let client = reqwest::Client::new();
+        let response = client
+            .get(format!("{}/models", route.literouter.base_url.trim_end_matches('/')))
+            .bearer_auth(&route.literouter.api_key)
+            .send()
+            .await
+            .map_err(|error| ApiError::Internal(format!("не удалось получить список моделей: {error}")))?;
+        if !response.status().is_success() {
+            return Err(ApiError::BadRequest(format!(
+                "провайдер вернул ошибку списка моделей: {}",
+                response.status()
+            )));
+        }
+        let payload: OpenAiModelsResponse = response
+            .json()
+            .await
+            .map_err(|error| ApiError::Internal(format!("некорректный ответ списка моделей: {error}")))?;
+        let mut models = payload
+            .data
+            .into_iter()
+            .map(|model| model.id)
+            .filter(|model| {
+                if billing_mode == "free" {
+                    model.ends_with(":free")
+                } else {
+                    !model.ends_with(":free")
+                }
+            })
+            .collect::<Vec<_>>();
+        models.sort();
+        models.dedup();
+        models
+    };
+    Ok(Json(AvailableModelsResponse {
+        route: route_name,
+        provider,
+        billing_mode: billing_mode.to_string(),
+        models,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiModelsResponse {
+    #[serde(default)]
+    data: Vec<OpenAiModelEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAiModelEntry {
+    id: String,
 }
 
 async fn update_model_config(
@@ -801,12 +884,14 @@ async fn handle_socket(
                         ClientCommand::UserMessage {
                             content,
                             model_route,
+                            model,
                         } => {
                             let task = match start_task(
                                 &state.pool,
                                 session_id,
                                 &content,
                                 model_route.as_deref(),
+                                model.as_deref(),
                             )
                             .await
                             {
@@ -1151,6 +1236,7 @@ async fn run_task_pipeline(
         demo_file_path: state.demo_file_path.clone(),
         workspace_root: state.workspace_root.clone(),
         model_route,
+        model: task.model.clone(),
     };
 
     let tools = state.tools.clone();

@@ -406,6 +406,10 @@ export function App() {
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
   const [modelConfigError, setModelConfigError] = useState<string | null>(null);
   const [selectedModelRoute, setSelectedModelRoute] = useState("");
+  const [composerModels, setComposerModels] = useState<string[]>([]);
+  const [selectedComposerModel, setSelectedComposerModel] = useState("");
+  const [composerModelsLoading, setComposerModelsLoading] = useState(false);
+  const [composerModelsError, setComposerModelsError] = useState<string | null>(null);
   const [directoryCache, setDirectoryCache] = useState<Record<string, FileNode[]>>({});
   const [expandedDirectories, setExpandedDirectories] = useState<Record<string, boolean>>({
     ".": true,
@@ -603,6 +607,50 @@ export function App() {
     if (!selectedModelRoute || !routeNames.has(selectedModelRoute)) {
       setSelectedModelRoute(modelConfig.default_route);
     }
+  }, [modelConfig, selectedModelRoute]);
+
+  useEffect(() => {
+    if (!modelConfig || !selectedModelRoute) {
+      return;
+    }
+    const route = modelConfig.routes.find((item) => item.name === selectedModelRoute);
+    if (!route) {
+      return;
+    }
+    let cancelled = false;
+    setComposerModelsLoading(true);
+    setComposerModelsError(null);
+    fetch(`/api/models/available?route=${encodeURIComponent(selectedModelRoute)}`)
+      .then(async (response) => {
+        if (!response.ok) {
+          const detail = await response.text();
+          throw new Error(detail || "Не удалось получить список моделей");
+        }
+        return response.json() as Promise<{ models: string[] }>;
+      })
+      .then((data) => {
+        if (!cancelled) {
+          const models = data.models.length > 0 ? data.models : [route.model];
+          setComposerModels(models);
+          setSelectedComposerModel((current) => models.includes(current) ? current : route.model);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          const fallback = route.available_models.length > 0 ? route.available_models : [route.model];
+          setComposerModels(fallback);
+          setSelectedComposerModel((current) => fallback.includes(current) ? current : route.model);
+          setComposerModelsError(String(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setComposerModelsLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [modelConfig, selectedModelRoute]);
 
   useEffect(() => {
@@ -1355,6 +1403,7 @@ export function App() {
       type: "user.message",
       content: `${text}${attachmentNote}`,
       model_route: selectedModelRoute || undefined,
+      model: selectedComposerModel || undefined,
     };
 
     socketRef.current.send(JSON.stringify(payload));
@@ -2279,6 +2328,17 @@ export function App() {
                 <option value="allow">Полный доступ</option>
                 <option value="deny">Запретить всё</option>
                 {workMode === "mixed" ? <option value="mixed" disabled>Смешанный режим</option> : null}
+              </select>
+              <select
+                className="modelSelect"
+                value={selectedComposerModel}
+                onChange={(event) => setSelectedComposerModel(event.target.value)}
+                disabled={composerModelsLoading || composerModels.length === 0}
+                aria-label="Модель агента"
+                title={composerModelsError ?? "Модель агента"}
+              >
+                {composerModels.length === 0 ? <option value="">Модель не настроена</option> : null}
+                {composerModels.map((model) => <option key={model} value={model}>{model}</option>)}
               </select>
             </div>
             <textarea

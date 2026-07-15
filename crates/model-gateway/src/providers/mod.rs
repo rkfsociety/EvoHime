@@ -78,4 +78,9 @@ pub trait ModelProvider: Send + Sync {
     fn base_url(&self) -> &str;
 
     fn stream_chat(&self, messages: &[ChatMessage]) -> TokenStream;
+
+    fn stream_chat_with_model(&self, model: &str, messages: &[ChatMessage]) -> TokenStream {
+        let _ = model;
+        self.stream_chat(messages)
+    }
 }

@@ -660,6 +660,7 @@ dependencies = [
  "evohime-task-engine",
  "evohime-tool-runtime",
  "futures-util",
+ "reqwest",
  "serde",
  "serde_json",
  "sqlx",

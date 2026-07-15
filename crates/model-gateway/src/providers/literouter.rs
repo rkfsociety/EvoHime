@@ -52,13 +52,18 @@ impl ModelProvider for LiteRouterProvider {
     }
 
     fn stream_chat(&self, messages: &[ChatMessage]) -> TokenStream {
+        self.stream_chat_with_model(&self.config.model, messages)
+    }
+
+    fn stream_chat_with_model(&self, model: &str, messages: &[ChatMessage]) -> TokenStream {
         let config = self.config.clone();
         let client = self.client.clone();
         let request_messages = messages.to_vec();
+        let model = model.to_string();
 
         Box::pin(stream! {
             let body = ChatCompletionRequest {
-                model: config.model.clone(),
+                model,
                 messages: request_messages
                     .iter()
                     .map(|message| ApiMessage {

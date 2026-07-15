@@ -138,6 +138,19 @@ impl ModelGateway {
         Ok(self.provider_for_route(route)?.stream_chat(messages))
     }
 
+    pub fn stream_chat_for_route_with_model(
+        &self,
+        route: &str,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+    ) -> Result<TokenStream, ProviderError> {
+        let provider = self.provider_for_route(route)?;
+        Ok(match model {
+            Some(model) if !model.trim().is_empty() => provider.stream_chat_with_model(model, messages),
+            _ => provider.stream_chat(messages),
+        })
+    }
+
     fn provider_for_route(&self, route: &str) -> Result<&Arc<dyn ModelProvider>, ProviderError> {
         self.routes
             .get(route)

@@ -25,6 +25,7 @@ async fn agent_loop_streams_model_tokens() {
             demo_file_path: demo_file.clone(),
             workspace_root: temp.path().to_path_buf(),
             model_route: "default".to_string(),
+            model: None,
         },
         &gateway,
         &tools,

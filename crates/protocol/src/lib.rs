@@ -99,6 +99,8 @@ pub enum ClientCommand {
         content: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model_route: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
     },
     #[serde(rename = "task.cancel")]
     TaskCancel { task_id: Uuid },
@@ -188,6 +190,7 @@ mod tests {
         let command = ClientCommand::UserMessage {
             content: "hello".to_string(),
             model_route: Some("planner".to_string()),
+            model: Some("deepseek:free".to_string()),
         };
 
         let json = serde_json::to_string(&command).expect("command serializes");
@@ -197,9 +200,11 @@ mod tests {
             ClientCommand::UserMessage {
                 content,
                 model_route,
+                model,
             } => {
                 assert_eq!(content, "hello");
                 assert_eq!(model_route.as_deref(), Some("planner"));
+                assert_eq!(model.as_deref(), Some("deepseek:free"));
             }
             _ => panic!("unexpected command variant"),
         }

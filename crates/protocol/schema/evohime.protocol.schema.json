@@ -187,7 +187,8 @@
       "properties": {
         "type": { "const": "user.message" },
         "content": { "type": "string" },
-        "model_route": { "type": "string" }
+        "model_route": { "type": "string" },
+        "model": { "type": "string" }
       },
       "additionalProperties": false
     },
