@@ -138,20 +138,20 @@
 
 | # | Задача | Crate / Path |
 | --- | --- | --- |
-| 5.1 | Реальное планирование (LLM → plan steps) | `crates/agent-runtime/` |
-| 5.2 | Параллельное выполнение независимых tools | `crates/tool-runtime/` |
+| 5.1 | Реальное планирование (LLM → plan steps) | ✅ `crates/agent-runtime/` |
+| 5.2 | Параллельное выполнение независимых tools | ✅ `crates/tool-runtime/`, `crates/task-engine/` |
 | 5.3 | `task.cancel` command | ✅ protocol, server |
-| 5.4 | Отмена running tools | 🟡 `crates/tool-runtime/` |
-| 5.5 | `task.resume` — продолжение с checkpoint | 🟡 `crates/task-engine/` |
+| 5.4 | Отмена running tools | 🟡 `crates/tool-runtime/`, `crates/server/` |
+| 5.5 | `task.resume` — продолжение с checkpoint | 🟡 `crates/task-engine/`, `crates/server/` |
 | 5.6 | Повторный запуск failed tasks | ✅ `crates/task-engine/` |
-| 5.7 | Recovery после restart сервера | 🟡 `crates/task-engine/`, `crates/storage/` |
+| 5.7 | Recovery после restart сервера | 🟡 `crates/task-engine/`, `crates/storage/`, `crates/server/` |
 | 5.8 | Панель Tasks — список и статусы | ✅ `frontend/web/` |
 | 5.9 | Панель Actions — журнал действий | ✅ `frontend/web/` |
-| 5.10 | Тесты: cancel, resume, recovery | `crates/task-engine/` |
+| 5.10 | Тесты: cancel, resume, recovery | ✅ `crates/task-engine/`, `crates/agent-runtime/`, `crates/server/` |
 
 ### Критерий готовности
 
-Задачи можно остановить, продолжить и перезапустить. После рестарта сервера running tasks восстанавливаются. Независимые tools выполняются параллельно.
+Задачи можно остановить, продолжить и перезапустить. После рестарта сервера running tasks восстанавливаются. Независимые tools выполняются параллельно, а план шагов сохраняется в `task_steps` и отображается в history/events.
 
 ---
 

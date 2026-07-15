@@ -2,7 +2,7 @@
 
 Last updated: 2026-07-15
 
-## Stage: 4 complete
+## Stage: 5 in progress
 
 ## Crates
 
@@ -12,9 +12,9 @@ Last updated: 2026-07-15
 | `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema |
 | `storage` | Active | Sessions, tasks, events, **session_messages** |
 | `tool-runtime` | Active | Registry + sandboxed filesystem, shell, and Git tools |
-| `agent-runtime` | Active | `agent_loop.rs` — LLM + tools |
+| `agent-runtime` | Active | `agent_loop.rs` — LLM + tool planning parser |
 | `model-gateway` | Active | **LiteRouter** SSE streaming + mock provider |
-| `task-engine` | Active | lifecycle wrappers, steps, checkpoints, cancel/resume/retry foundation |
+| `task-engine` | Active | lifecycle wrappers, dependency batching, checkpoints, cancel/resume/retry foundation |
 | `permissions` | Active | ask/allow/deny policy and one-shot approvals; approval events and resume flow wired |
 | `project-index` | Scaffold | Stage 6 |
 
@@ -42,6 +42,8 @@ user.message
   → save user message (session_messages)
   → load prior chat history
   → filesystem.read (tool-runtime)
+  → persist task plan + task_steps
+  → emit task.step.changed updates
   → LiteRouter stream_chat (model-gateway)
   → agent.message.delta per token
   → save assistant message
@@ -51,7 +53,9 @@ user.message
 ## Database tables
 
 - `sessions` — agent sessions
-- `tasks` — user tasks (status: running/completed/failed)
+- `tasks` — user tasks (status: running/completed/failed/paused/cancelled/retrying)
+- `task_steps` — structured plan steps + step status history
+- `task_checkpoints` — resume state and workspace context
 - `session_events` — ordered event log (JSONB)
 - `session_messages` — chat history for LLM context
 
@@ -71,8 +75,8 @@ user.message
 | Chat | ✅ Active |
 | Settings | ✅ Active (read-only model config) |
 | Events timeline | ✅ Active |
-| Tasks | ✅ Basic list/status view |
-| Actions | ✅ Basic action log |
+| Tasks | ✅ Task list, statuses, plan steps, cancel/resume/retry |
+| Actions | ✅ Action log + task orchestration events |
 | Terminal | ✅ Active |
 | Files | ✅ Active lazy workspace tree and file creation |
 | Editor | ✅ Active Monaco editor with save/reload and dirty-state conflict notice |
@@ -81,11 +85,13 @@ user.message
 ## Tests
 
 - `crates/model-gateway` — mock stream, LiteRouter SSE (wiremock)
-- `crates/agent-runtime` — agent loop with mock gateway
+- `crates/agent-runtime` — agent loop with mock gateway, plan parser fallback
 - `crates/protocol` — event serialization
 - `crates/tool-runtime` — filesystem, shell, and Git tool coverage
+- `crates/task-engine` — cancel/resume/retry state machine, dependency batching
+- `crates/server` — task plan persistence and step status propagation
 - `crates/permissions` — policy engine and approval flow
 
 ## Next recommended step
 
-**Stage 5 / Milestone 4**: harden task recovery and orchestration as a separate vertical slice.
+**Stage 5 / Milestone 4**: finish automatic resume/recovery worker behavior after restart and close any remaining gaps in cooperative tool cancellation.

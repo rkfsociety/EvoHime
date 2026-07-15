@@ -63,15 +63,17 @@ EvoHime Server — Rust
 
 ## Фактический статус на 2026-07-15
 
-Этапы 1, 2 и 3 завершены. Этапы 4-5 частично реализованы на уровне backend и протокола:
+Этапы 1, 2 и 3 завершены. Этап 4 завершён на backend и UI, а этап 5 частично реализован и теперь включает планирование шагов и состояние шагов в истории задач:
 
 - файловые инструменты `filesystem.read`, `filesystem.write`, `filesystem.patch`, `filesystem.search`, shell `shell.execute` и Git-инструменты `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push` уже реализованы в `tool-runtime`;
-- task-engine и storage поддерживают жизненный цикл задач, статусы шагов, checkpoint API и поиск задач для recovery;
+- `agent-runtime` парсит план модели в структурированные `PlanStep`, принимает fenced JSON и wrapper-объекты как fallback;
+- `task-engine` поддерживает жизненный цикл задач, статусы шагов, checkpoint API, recovery и batching зависимых шагов для параллельного выполнения независимых tools;
+- `storage` хранит `task_steps` и `task_checkpoints`, а `server` материализует план в шаги и публикует `task.step.changed`;
 - протокол содержит команды `task.cancel`, `task.resume`, `task.retry`, а frontend уже отображает панели Tasks и Actions;
 - `permissions` содержит policy engine и one-shot решения; `approval.required` публикуется сервером, а `approval.granted` / `approval.denied` продолжают paused task;
 - `project-index` и Python worker пока являются каркасами.
 
-Следующий сквозной приоритет — этап 4: довести файловый браузер, Monaco Editor и Git UI до полноценного browser-first сценария.
+Следующий сквозной приоритет — этап 5: закрыть auto-resume/recovery worker path после рестарта и довести cooperative cancellation running tools до конца.
 
 ---
 
@@ -271,15 +273,15 @@ Git backend уже частично реализован: `git.status`, `git.dif
 
 ### Этап 5 — Планирование задач и оркестрация 🟡
 
-Базовый task lifecycle уже реализован: start/complete/fail/cancel/resume/retry. Storage содержит task steps и checkpoint API, а recovery после рестарта возвращает running-задачи для дальнейшей обработки.
+Базовый task lifecycle уже реализован: start/complete/fail/cancel/resume/retry. Storage содержит `task_steps` и `task_checkpoints`, `agent-runtime` строит structured plan steps, а `server` материализует план в историю шагов и публикует `task.step.changed`.
 
-- Реальное планирование (`agent.plan.updated`)
-- Параллельное выполнение независимых инструментов
+- Реальное планирование (`agent.plan.updated`) с fallback-парсингом JSON, fenced JSON и wrapper-объектов
+- Параллельное выполнение независимых инструментов через dependency batching
 - Отмена инструментов и задач
 - Остановка / продолжение / повторный запуск
 - Восстановление задач после перезапуска сервера
 
-**Результат:** надёжный task orchestrator с recovery.
+**Результат:** надёжный task orchestrator с recovery и видимыми шагами в UI.
 
 ### Этап 6 — Индексация, MCP, память, workers 📋
 
