@@ -25,6 +25,7 @@ type WorkspacePanel =
   | "git"
   | "plugins"
   | "pull-requests"
+  | "scheduled"
   | "tasks"
   | "actions"
   | "settings";
@@ -155,6 +156,7 @@ const workspacePanels: Array<{ id: WorkspacePanel; label: string; phase: string 
   { id: "git", label: "Гит", phase: "этап 4" },
   { id: "plugins", label: "Плагины", phase: "этап 6" },
   { id: "pull-requests", label: "Пулл-реквесты", phase: "GitHub" },
+  { id: "scheduled", label: "Запланировано", phase: "этап 5" },
   { id: "tasks", label: "Задачи", phase: "этап 5" },
   { id: "actions", label: "Действия", phase: "этап 5" },
   { id: "settings", label: "Настройки", phase: "этап 2" },
@@ -167,7 +169,7 @@ const sidebarQuickLinks: Array<{
   panel: WorkspacePanel;
 }> = [
   { id: "new-task", label: "Новая задача", icon: "✎", panel: "chat" },
-  { id: "scheduled", label: "Запланировано", icon: "◷", panel: "tasks" },
+  { id: "scheduled", label: "Запланировано", icon: "◷", panel: "scheduled" },
   { id: "plugins", label: "Плагины", icon: "◌", panel: "plugins" },
   { id: "sites", label: "Сайты", icon: "▦", panel: "sites" },
   { id: "pull-requests", label: "Пулл-реквесты", icon: "⟡", panel: "pull-requests" },
@@ -2115,6 +2117,66 @@ export function App() {
     }
 
     if (activePanel === "terminal") return <TerminalPanel entries={terminalEntries} />;
+
+    if (activePanel === "scheduled") {
+      const scheduledRecommendations = [
+        {
+          icon: "♧",
+          title: "Ежедневная сводка",
+          schedule: "В будние дни в 8:00",
+          description: "Начинайте каждый рабочий день со сводки календаря, непрочитанных писем и приоритетов",
+          prompt: "Каждый будний день в 8:00 присылай мне сводку календаря, непрочитанных писем и приоритетов.",
+        },
+        {
+          icon: "▤",
+          title: "Еженедельный обзор",
+          schedule: "По пятницам в 16:00",
+          description: "Каждую пятницу создавайте краткий отчёт о проделанной работе",
+          prompt: "Каждую пятницу в 16:00 создавай краткий отчёт о проделанной за неделю работе.",
+        },
+        {
+          icon: "⌕",
+          title: "Мониторинг дальнейших действий",
+          schedule: "В будние дни в 9:00",
+          description: "Проверяйте недавнюю активность в электронной почте и календаре и отмечайте всё, что требует вашего внимания",
+          prompt: "Каждый будний день в 9:00 проверяй почту и календарь и отмечай действия, требующие моего внимания.",
+        },
+      ];
+
+      return (
+        <div className="scheduledPage">
+          <section className="scheduledHero">
+            <h2>Запланированные задачи</h2>
+            <p>Попросите EvoHime планировать задачи, ставить напоминания или отслеживать обновления</p>
+          </section>
+          <section className="scheduledRecommendations">
+            <h3>Рекомендации</h3>
+            <div className="scheduledRecommendationList">
+              {scheduledRecommendations.map((recommendation) => (
+                <button
+                  type="button"
+                  className="scheduledRecommendation"
+                  key={recommendation.title}
+                  onClick={() => {
+                    setInput(recommendation.prompt);
+                    setActivePanel("chat");
+                  }}
+                >
+                  <span className="scheduledRecommendationIcon" aria-hidden="true">{recommendation.icon}</span>
+                  <span className="scheduledRecommendationBody">
+                    <span className="scheduledRecommendationTitle">
+                      <strong>{recommendation.title}</strong>
+                      <em>{recommendation.schedule}</em>
+                    </span>
+                    <span>{recommendation.description}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
+      );
+    }
 
     if (activePanel === "tasks") {
       return (

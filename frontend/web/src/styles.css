@@ -1416,6 +1416,106 @@ h1 {
   color: var(--text-1);
 }
 
+.scheduledPage {
+  width: min(100%, 820px);
+  margin: 0 auto;
+  padding: 26px 24px 44px;
+  overflow: auto;
+}
+
+.scheduledHero h2 {
+  margin: 0;
+  color: var(--text-0);
+  font-size: clamp(26px, 3vw, 32px);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+
+.scheduledHero p {
+  margin: 10px 0 0;
+  color: var(--text-2);
+  font-size: 15px;
+}
+
+.scheduledRecommendations {
+  margin-top: 42px;
+}
+
+.scheduledRecommendations h3 {
+  margin: 0 0 18px;
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.scheduledRecommendationList {
+  display: grid;
+  gap: 8px;
+}
+
+.scheduledRecommendation {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 9px;
+  width: 100%;
+  padding: 9px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.scheduledRecommendation:hover {
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-1);
+}
+
+.scheduledRecommendationIcon {
+  padding-top: 2px;
+  color: var(--accent-2);
+  font-size: 18px;
+  text-align: center;
+}
+
+.scheduledRecommendationBody {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.scheduledRecommendationTitle {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  color: var(--text-0);
+}
+
+.scheduledRecommendationTitle strong {
+  font-weight: 600;
+}
+
+.scheduledRecommendationTitle em {
+  color: var(--text-2);
+  font-style: normal;
+  font-weight: 400;
+}
+
+@media (max-width: 720px) {
+  .scheduledPage {
+    padding: 22px 18px 32px;
+  }
+
+  .scheduledRecommendations {
+    margin-top: 32px;
+  }
+}
+
 .archivedChatList {
   display: grid;
   gap: 10px;
