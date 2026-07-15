@@ -411,6 +411,9 @@ export function App() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
+  const [newProjectName, setNewProjectName] = useState("");
+  const [projectCreating, setProjectCreating] = useState(false);
+  const [projectCreateError, setProjectCreateError] = useState<string | null>(null);
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
   const [modelConfigError, setModelConfigError] = useState<string | null>(null);
   const [selectedModelRoute, setSelectedModelRoute] = useState("");
@@ -949,6 +952,35 @@ export function App() {
     setChatSessions((current) => [createdSummary, ...current]);
     setActivePanel("chat");
     hydrateSession(createdSummary, bootstrap.events);
+  }
+
+  async function createProject() {
+    const name = newProjectName.trim();
+    if (!name) {
+      return;
+    }
+    setProjectCreating(true);
+    setProjectCreateError(null);
+    try {
+      const response = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!response.ok) {
+        const detail = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(detail?.error ?? "Не удалось создать проект");
+      }
+      const project = (await response.json()) as ProjectSummary;
+      setProjects((current) => [...current, project].sort((left, right) => left.name.localeCompare(right.name)));
+      setSelectedProject({ label: project.name, path: project.path });
+      setNewProjectName("");
+      setProjectPickerOpen(false);
+    } catch (error) {
+      setProjectCreateError(String(error));
+    } finally {
+      setProjectCreating(false);
+    }
   }
 
   async function archiveChat(summary: ChatSessionSummary) {
@@ -2437,8 +2469,42 @@ export function App() {
                   >
                     <span>▱</span>
                     <span><strong>{folder.name}</strong><small>Проект</small></span>
+                    </button>
+                  ))}
+                {projectCreating ? (
+                  <div className="projectCreateForm">
+                    <input
+                      value={newProjectName}
+                      onChange={(event) => setNewProjectName(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void createProject();
+                        }
+                      }}
+                      placeholder="Название проекта"
+                      autoFocus
+                    />
+                    <div>
+                      <button type="button" onClick={() => void createProject()} disabled={!newProjectName.trim()}>
+                        Создать
+                      </button>
+                      <button type="button" onClick={() => { setProjectCreating(false); setProjectCreateError(null); }}>
+                        Отмена
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="projectOption projectCreateOption"
+                    onClick={() => { setProjectCreating(true); setProjectCreateError(null); }}
+                  >
+                    <span>＋</span>
+                    <span><strong>Новый проект</strong><small>Создать отдельную папку</small></span>
                   </button>
-                ))}
+                )}
+                {projectCreateError ? <small className="projectCreateError">{projectCreateError}</small> : null}
                 <button
                   type="button"
                   className={selectedProject.path === null ? "projectOption active" : "projectOption"}

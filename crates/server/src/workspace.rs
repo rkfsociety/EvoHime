@@ -45,6 +45,11 @@ pub struct ProjectSummary {
     pub path: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CreateProjectRequest {
+    pub name: String,
+}
+
 pub async fn list_projects(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<ProjectSummary>>, ApiError> {
@@ -87,6 +92,7 @@ pub async fn list_projects(
 async fn looks_like_project(path: &Path) -> bool {
     [
         ".git",
+        ".evohime-project",
         "Cargo.toml",
         "package.json",
         "pyproject.toml",
@@ -95,6 +101,47 @@ async fn looks_like_project(path: &Path) -> bool {
     ]
     .iter()
     .any(|marker| path.join(marker).exists())
+}
+
+pub async fn create_project(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<CreateProjectRequest>,
+) -> Result<Json<ProjectSummary>, ApiError> {
+    let name = payload.name.trim();
+    if name.is_empty()
+        || name.starts_with('.')
+        || ['/', '\\', ':'].iter().any(|character| name.contains(*character))
+        || name == "."
+        || name == ".."
+    {
+        return Err(ApiError::BadRequest(
+            "Название проекта должно быть обычным именем папки".to_string(),
+        ));
+    }
+
+    let parent = state
+        .workspace_root
+        .parent()
+        .ok_or_else(|| ApiError::Internal("workspace parent is unavailable".to_string()))?;
+    let path = parent.join(name);
+    if fs::try_exists(&path)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?
+    {
+        return Err(ApiError::BadRequest("Проект с таким именем уже существует".to_string()));
+    }
+
+    fs::create_dir(&path)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    fs::write(path.join(".evohime-project"), b"created by EvoHime\n")
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+
+    Ok(Json(ProjectSummary {
+        name: name.to_string(),
+        path: path.to_string_lossy().replace('\\', "/"),
+    }))
 }
 
 #[derive(Debug, Serialize)]

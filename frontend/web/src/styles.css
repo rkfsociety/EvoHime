@@ -1114,6 +1114,64 @@ h1 {
   display: block;
 }
 
+.projectCreateOption {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 0 0 12px 12px;
+}
+
+.projectCreateForm {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.projectCreateForm input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(143, 180, 255, 0.28);
+  border-radius: 9px;
+  outline: 0;
+  background: rgba(4, 8, 18, 0.75);
+  color: var(--text-0);
+  padding: 9px 10px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.projectCreateForm div {
+  display: flex;
+  gap: 7px;
+}
+
+.projectCreateForm button {
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: var(--surface-4);
+  color: var(--text-1);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.projectCreateForm button:first-child {
+  background: linear-gradient(135deg, var(--accent-0), var(--accent-1));
+  color: #07111c;
+  font-weight: 700;
+}
+
+.projectCreateForm button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.projectCreateError {
+  display: block;
+  padding: 5px 12px 8px;
+  color: #ff9b9b;
+  font-size: 11px;
+}
+
 .projectOption small {
   margin-top: 2px;
   color: var(--text-3);
