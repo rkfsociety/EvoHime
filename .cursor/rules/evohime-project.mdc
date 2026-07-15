@@ -18,6 +18,7 @@ React+TS+Vite frontend, Rust/Axum backend, PostgreSQL, WebSocket, Docker Compose
 3. One concern per crate under `crates/`
 4. Tests for core logic and tools
 5. Minimize diff scope
+6. Keep GitHub Actions workflows current with code changes, especially `.github/workflows/rust.yml` for Rust workspace, dependency, lint, or test updates
 
 ## Current stage: 2 (Milestone 1 done)
 

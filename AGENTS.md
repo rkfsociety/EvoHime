@@ -119,6 +119,7 @@ Each tool must have: unique name, description, JSON Schema input, required permi
 9. **Resource limits** — timeouts on tools
 10. **Security** — sandbox filesystem and shell operations
 11. **Commit after completion** — after finishing any coding task, completed change, or other finished work, make a git commit before handing off.
+12. **Keep CI current** — when changing Rust workspace members, dependencies, lint rules, or test expectations, update `.github/workflows/rust.yml` in the same change and keep the workflow aligned with the codebase.
 
 ## Environment
 

@@ -22,6 +22,7 @@ alwaysApply: false
 - Tools: JSON Schema input, structured JSON output, permission check, timeout
 - Never panic on user input — return errors
 - Add `#[cfg(test)]` for tool and protocol logic
+- Keep `.github/workflows/rust.yml` in sync with workspace, dependency, lint, and test changes so CI reflects the current Rust codebase
 
 ## Adding a tool
 
