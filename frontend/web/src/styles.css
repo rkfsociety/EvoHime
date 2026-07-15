@@ -1215,16 +1215,37 @@ h1 {
   padding: 8px 10px 8px 0;
 }
 
-.composerControls select {
-  max-width: 150px;
-  border: 1px solid rgba(143, 180, 255, 0.16);
-  border-radius: 10px;
+.composerModelSelect {
+  width: min(220px, 28vw);
+  min-width: 150px;
+  border: 1px solid rgba(143, 180, 255, 0.2);
+  border-radius: 11px;
   outline: 0;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-2);
-  padding: 8px 10px;
+  background: rgba(17, 27, 50, 0.92);
+  color: var(--text-1);
+  padding: 9px 30px 9px 11px;
   font-size: 12px;
+  font-family: inherit;
   color-scheme: dark;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.composerModelSelect:hover:not(:disabled),
+.composerModelSelect:focus-visible {
+  border-color: rgba(143, 180, 255, 0.5);
+  background: rgba(28, 42, 74, 0.96);
+}
+
+.composerModelSelect:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.composerModelSelect option {
+  background: #111b32;
+  color: var(--text-0);
 }
 
 .attachmentList {
@@ -2348,6 +2369,11 @@ h1 {
 
   .composer {
     grid-template-columns: 1fr;
+  }
+
+  .composerModelSelect {
+    width: min(190px, calc(100vw - 120px));
+    min-width: 0;
   }
 
   .createFileForm,

@@ -2411,8 +2411,16 @@ export function App() {
                 <option value="deny">Запретить всё</option>
                 {workMode === "mixed" ? <option value="mixed" disabled>Смешанный режим</option> : null}
               </select>
+            </div>
+            <textarea
+              rows={1}
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              placeholder="Введите сообщение..."
+            />
+            <div className="composerControls">
               <select
-                className="modelSelect"
+                className="composerModelSelect"
                 value={selectedComposerModel}
                 onChange={(event) => setSelectedComposerModel(event.target.value)}
                 disabled={composerModelsLoading || composerModels.length === 0}
@@ -2422,14 +2430,6 @@ export function App() {
                 {composerModels.length === 0 ? <option value="">Модель не настроена</option> : null}
                 {composerModels.map((model) => <option key={model} value={model}>{model}</option>)}
               </select>
-            </div>
-            <textarea
-              rows={1}
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              placeholder="Введите сообщение..."
-            />
-            <div className="composerControls">
               <button
                 type={activeTaskId ? "button" : "submit"}
                 className={activeTaskId ? "sendButton stopButton" : "sendButton"}
