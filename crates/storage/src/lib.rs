@@ -197,11 +197,32 @@ pub async fn list_tasks(
     Ok(rows)
 }
 
+pub async fn load_task(pool: &PgPool, task_id: Uuid) -> Result<Option<TaskRow>, StorageError> {
+    Ok(sqlx::query_as::<_, TaskRow>(
+        "SELECT id, session_id, user_message, status, created_at, completed_at FROM tasks WHERE id = $1",
+    )
+    .bind(task_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
 pub async fn recover_running_tasks(pool: &PgPool) -> Result<Vec<TaskRow>, StorageError> {
     sqlx::query("UPDATE tasks SET status = 'paused' WHERE status IN ('running','cancelling')")
         .execute(pool)
         .await?;
     Ok(sqlx::query_as::<_, TaskRow>("SELECT id, session_id, user_message, status, created_at, completed_at FROM tasks WHERE status = 'paused' ORDER BY created_at ASC").fetch_all(pool).await?)
+}
+
+pub async fn load_checkpoint(
+    pool: &PgPool,
+    task_id: Uuid,
+) -> Result<Option<TaskCheckpointRow>, StorageError> {
+    Ok(sqlx::query_as::<_, TaskCheckpointRow>(
+        "SELECT task_id, next_step, state_json, updated_at FROM task_checkpoints WHERE task_id = $1",
+    )
+    .bind(task_id)
+    .fetch_optional(pool)
+    .await?)
 }
 
 pub async fn upsert_checkpoint(

@@ -12,12 +12,16 @@ use axum::{
     routing::{get, post, put},
     Json, Router,
 };
-use evohime_agent_runtime::{run_agent_loop, AgentConfig, AgentError};
+use evohime_agent_runtime::{
+    run_agent_loop, run_agent_loop_resumed, AgentConfig, AgentError, AgentResumeContext,
+};
 use evohime_model_gateway::providers::{ChatMessage, ChatRole};
 use evohime_model_gateway::ModelGateway;
 use evohime_permissions::{Permission, PermissionMode};
 use evohime_protocol::{ClientCommand, HistoryItem, ServerEvent, SessionBootstrap};
-use evohime_task_engine::{complete_task, fail_task, pause_task, start_task};
+use evohime_task_engine::{
+    complete_task, fail_task, pause_task, resume_task, retry_task, start_task,
+};
 use evohime_tool_runtime::ToolError;
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde_json::{json, to_value, Value};
@@ -107,6 +111,64 @@ async fn main() -> anyhow::Result<()> {
         .context("recover tasks after restart")?;
     if !recovered.is_empty() {
         info!(count = recovered.len(), "tasks marked paused for recovery");
+        for task in recovered {
+            let task_id = task.id;
+            let session_id = task.session_id;
+            let _ = resume_task(&state.pool, task_id).await;
+            emit_event(
+                &state,
+                session_id,
+                Some(task_id),
+                ServerEvent::TaskStatusChanged {
+                    task_id,
+                    status: "running".to_string(),
+                },
+            )
+            .await
+            .map_err(|(_, error)| error)?;
+            emit_event(
+                &state,
+                session_id,
+                Some(task_id),
+                ServerEvent::ActionLogged {
+                    task_id,
+                    action: "task.recovered".to_string(),
+                    detail: "Task restored after server restart".to_string(),
+                    created_at: chrono::Utc::now(),
+                },
+            )
+            .await
+            .map_err(|(_, error)| error)?;
+            let state_for_task = state.clone();
+            let token = CancellationToken::new();
+            state
+                .task_cancellations
+                .lock()
+                .await
+                .insert(task_id, token.clone());
+            tokio::spawn(async move {
+                if let Err((failed_task_id, error)) =
+                    resume_task_run(&state_for_task, task, token, false).await
+                {
+                    let _ = emit_event(
+                        &state_for_task,
+                        session_id,
+                        Some(failed_task_id),
+                        ServerEvent::TaskFailed {
+                            task_id: failed_task_id,
+                            error: error.to_string(),
+                        },
+                    )
+                    .await;
+                    let _ = fail_task(&state_for_task.pool, failed_task_id).await;
+                }
+                state_for_task
+                    .task_cancellations
+                    .lock()
+                    .await
+                    .remove(&task_id);
+            });
+        }
     }
 
     let app = Router::new()
@@ -389,7 +451,14 @@ async fn handle_socket(
                             .await?;
                         }
                         ClientCommand::TaskResume { task_id } => {
-                            let _ = evohime_task_engine::resume_task(&state.pool, task_id).await;
+                            let task = match evohime_storage::load_task(&state.pool, task_id)
+                                .await
+                                .map_err(|error| ApiError::Internal(error.to_string()))?
+                            {
+                                Some(task) => task,
+                                None => continue,
+                            };
+                            let _ = resume_task(&state.pool, task_id).await;
                             emit_event(
                                 &state,
                                 session_id,
@@ -412,9 +481,46 @@ async fn handle_socket(
                                 },
                             )
                             .await?;
+
+                            let token = CancellationToken::new();
+                            state
+                                .task_cancellations
+                                .lock()
+                                .await
+                                .insert(task_id, token.clone());
+                            let state_for_task = state.clone();
+                            tokio::spawn(async move {
+                                if let Err((task_id, error)) =
+                                    resume_task_run(&state_for_task, task, token, false).await
+                                {
+                                    let _ = emit_event(
+                                        &state_for_task,
+                                        session_id,
+                                        Some(task_id),
+                                        ServerEvent::TaskFailed {
+                                            task_id,
+                                            error: error.to_string(),
+                                        },
+                                    )
+                                    .await;
+                                    let _ = fail_task(&state_for_task.pool, task_id).await;
+                                }
+                                state_for_task
+                                    .task_cancellations
+                                    .lock()
+                                    .await
+                                    .remove(&task_id);
+                            });
                         }
                         ClientCommand::TaskRetry { task_id } => {
-                            let _ = evohime_task_engine::retry_task(&state.pool, task_id).await;
+                            let task = match evohime_storage::load_task(&state.pool, task_id)
+                                .await
+                                .map_err(|error| ApiError::Internal(error.to_string()))?
+                            {
+                                Some(task) => task,
+                                None => continue,
+                            };
+                            let _ = retry_task(&state.pool, task_id).await;
                             emit_event(
                                 &state,
                                 session_id,
@@ -437,6 +543,36 @@ async fn handle_socket(
                                 },
                             )
                             .await?;
+
+                            let token = CancellationToken::new();
+                            state
+                                .task_cancellations
+                                .lock()
+                                .await
+                                .insert(task_id, token.clone());
+                            let state_for_task = state.clone();
+                            tokio::spawn(async move {
+                                if let Err((task_id, error)) =
+                                    resume_task_run(&state_for_task, task, token, false).await
+                                {
+                                    let _ = emit_event(
+                                        &state_for_task,
+                                        session_id,
+                                        Some(task_id),
+                                        ServerEvent::TaskFailed {
+                                            task_id,
+                                            error: error.to_string(),
+                                        },
+                                    )
+                                    .await;
+                                    let _ = fail_task(&state_for_task.pool, task_id).await;
+                                }
+                                state_for_task
+                                    .task_cancellations
+                                    .lock()
+                                    .await
+                                    .remove(&task_id);
+                            });
                         }
                         ClientCommand::ApprovalGranted { approval_id } => {
                             let granted = true;
@@ -512,6 +648,25 @@ async fn process_user_message(
     task: evohime_storage::TaskRow,
     cancellation: CancellationToken,
 ) -> Result<(), (Uuid, ApiError)> {
+    run_task_pipeline(state, session_id, task, cancellation, true).await
+}
+
+async fn resume_task_run(
+    state: &Arc<AppState>,
+    task: evohime_storage::TaskRow,
+    cancellation: CancellationToken,
+    emit_started: bool,
+) -> Result<(), (Uuid, ApiError)> {
+    run_task_pipeline(state, task.session_id, task, cancellation, emit_started).await
+}
+
+async fn run_task_pipeline(
+    state: &Arc<AppState>,
+    session_id: Uuid,
+    task: evohime_storage::TaskRow,
+    cancellation: CancellationToken,
+    emit_started: bool,
+) -> Result<(), (Uuid, ApiError)> {
     let gateway = state.model_gateway.clone().ok_or_else(|| {
         (
             task.id,
@@ -523,15 +678,34 @@ async fn process_user_message(
         .await
         .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
 
-    evohime_storage::insert_message(
-        &state.pool,
-        session_id,
-        Some(task.id),
-        "user",
-        &task.user_message,
-    )
-    .await
-    .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
+    if emit_started {
+        evohime_storage::insert_message(
+            &state.pool,
+            session_id,
+            Some(task.id),
+            "user",
+            &task.user_message,
+        )
+        .await
+        .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
+    }
+
+    let checkpoint = if emit_started {
+        None
+    } else {
+        evohime_storage::load_checkpoint(&state.pool, task.id)
+            .await
+            .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?
+    };
+
+    let resume_context = checkpoint.and_then(|row| {
+        row.state_json
+            .get("workspace_context")
+            .and_then(Value::as_str)
+            .map(|value| AgentResumeContext {
+                workspace_context: Some(value.to_string()),
+            })
+    });
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let agent_config = AgentConfig {
@@ -545,7 +719,35 @@ async fn process_user_message(
 
     let tools = state.tools.clone();
     let mut agent_handle = tokio::spawn(async move {
-        run_agent_loop(agent_config, &gateway, &tools, prior_messages, event_tx).await
+        match resume_context {
+            Some(resume) => {
+                run_agent_loop_resumed(
+                    agent_config,
+                    &gateway,
+                    &tools,
+                    prior_messages,
+                    event_tx,
+                    resume,
+                )
+                .await
+            }
+            None if emit_started => {
+                run_agent_loop(agent_config, &gateway, &tools, prior_messages, event_tx).await
+            }
+            None => {
+                run_agent_loop_resumed(
+                    agent_config,
+                    &gateway,
+                    &tools,
+                    prior_messages,
+                    event_tx,
+                    AgentResumeContext {
+                        workspace_context: None,
+                    },
+                )
+                .await
+            }
+        }
     });
 
     loop {
@@ -555,7 +757,26 @@ async fn process_user_message(
                 return Err((task.id, ApiError::BadRequest("task cancelled".to_string())));
             }
             event = event_rx.recv() => match event {
-                Some(event) => emit_event(state, session_id, Some(task.id), event).await?,
+                Some(event) => {
+                    if let ServerEvent::ToolOutput {
+                        task_id,
+                        tool_name,
+                        output,
+                    } = &event
+                    {
+                        if *task_id == task.id && tool_name == "filesystem.read" {
+                            let checkpoint_state = json!({"workspace_context": output});
+                            let _ = evohime_storage::upsert_checkpoint(
+                                &state.pool,
+                                task.id,
+                                1,
+                                &checkpoint_state,
+                            )
+                            .await;
+                        }
+                    }
+                    emit_event(state, session_id, Some(task.id), event).await?;
+                }
                 None => break,
             }
         }

@@ -47,6 +47,11 @@ pub struct AgentRunResult {
     pub final_message: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct AgentResumeContext {
+    pub workspace_context: Option<String>,
+}
+
 #[derive(Debug, Error)]
 pub enum AgentError {
     #[error("tool error: {0}")]
@@ -64,54 +69,96 @@ pub async fn run_agent_loop(
     history: Vec<ChatMessage>,
     event_tx: UnboundedSender<ServerEvent>,
 ) -> Result<AgentRunResult, AgentError> {
-    emit(
-        &event_tx,
-        ServerEvent::TaskStarted {
-            task_id: config.task_id,
-            session_id: config.session_id,
-            user_message: config.user_message.clone(),
-            created_at: config.created_at,
-        },
-    )?;
+    run_agent_loop_inner(config, gateway, tools, history, event_tx, true, None).await
+}
 
-    emit(
-        &event_tx,
-        ServerEvent::ToolStarted {
-            task_id: config.task_id,
-            tool_name: "filesystem.read".to_string(),
-        },
-    )?;
+pub async fn run_agent_loop_resumed(
+    config: AgentConfig,
+    gateway: &ModelGateway,
+    tools: &ToolRegistry,
+    history: Vec<ChatMessage>,
+    event_tx: UnboundedSender<ServerEvent>,
+    resume: AgentResumeContext,
+) -> Result<AgentRunResult, AgentError> {
+    run_agent_loop_inner(
+        config,
+        gateway,
+        tools,
+        history,
+        event_tx,
+        false,
+        resume.workspace_context,
+    )
+    .await
+}
 
-    let relative_path = relative_workspace_path(&config.workspace_root, &config.demo_file_path);
-    let tool_ctx = ToolContext {
-        workspace_root: config.workspace_root.clone(),
-        task_id: config.task_id,
+async fn run_agent_loop_inner(
+    config: AgentConfig,
+    gateway: &ModelGateway,
+    tools: &ToolRegistry,
+    history: Vec<ChatMessage>,
+    event_tx: UnboundedSender<ServerEvent>,
+    emit_started: bool,
+    workspace_context: Option<String>,
+) -> Result<AgentRunResult, AgentError> {
+    if emit_started {
+        emit(
+            &event_tx,
+            ServerEvent::TaskStarted {
+                task_id: config.task_id,
+                session_id: config.session_id,
+                user_message: config.user_message.clone(),
+                created_at: config.created_at,
+            },
+        )?;
+    }
+
+    let tool_output = match workspace_context {
+        Some(output) => output,
+        None => {
+            emit(
+                &event_tx,
+                ServerEvent::ToolStarted {
+                    task_id: config.task_id,
+                    tool_name: "filesystem.read".to_string(),
+                },
+            )?;
+
+            let relative_path =
+                relative_workspace_path(&config.workspace_root, &config.demo_file_path);
+            let tool_ctx = ToolContext {
+                workspace_root: config.workspace_root.clone(),
+                task_id: config.task_id,
+            };
+            let tool_result = tools
+                .execute(
+                    &tool_ctx,
+                    "filesystem.read",
+                    json!({ "path": relative_path }),
+                )
+                .await?;
+
+            emit(
+                &event_tx,
+                ServerEvent::ToolOutput {
+                    task_id: config.task_id,
+                    tool_name: "filesystem.read".to_string(),
+                    output: tool_result.output.clone(),
+                },
+            )?;
+
+            emit(
+                &event_tx,
+                ServerEvent::ToolCompleted {
+                    task_id: config.task_id,
+                    tool_name: "filesystem.read".to_string(),
+                    success: true,
+                },
+            )?;
+
+            tool_result.output
+        }
     };
-    let tool_result = tools
-        .execute(
-            &tool_ctx,
-            "filesystem.read",
-            json!({ "path": relative_path }),
-        )
-        .await?;
-
-    emit(
-        &event_tx,
-        ServerEvent::ToolOutput {
-            task_id: config.task_id,
-            tool_name: "filesystem.read".to_string(),
-            output: tool_result.output.clone(),
-        },
-    )?;
-
-    emit(
-        &event_tx,
-        ServerEvent::ToolCompleted {
-            task_id: config.task_id,
-            tool_name: "filesystem.read".to_string(),
-            success: true,
-        },
-    )?;
 
     let mut planning_messages = Vec::with_capacity(history.len() + 3);
     planning_messages.push(ChatMessage {
@@ -125,7 +172,7 @@ pub async fn run_agent_loop(
             "User request:\n{}\n\nWorkspace context from `{}`:\n```\n{}\n```",
             config.user_message,
             config.demo_file_path.display(),
-            tool_result.output
+            tool_output
         ),
     });
 
@@ -153,7 +200,7 @@ pub async fn run_agent_loop(
             config.user_message,
             format_plan(&plan),
             config.demo_file_path.display(),
-            tool_result.output
+            tool_output
         ),
     });
 
@@ -370,5 +417,60 @@ mod tests {
             r#"[{"id":"read","tool_name":"filesystem.read","description":"read context","depends_on":[]}]"#,
         );
         assert_eq!(plan[0].tool_name, "filesystem.read");
+    }
+
+    #[tokio::test]
+    async fn resumed_runs_skip_workspace_read() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let demo_file = temp.path().join("context.md");
+        std::fs::write(&demo_file, "# Demo\nHello from workspace.").expect("write");
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let gateway = evohime_model_gateway::mock_gateway(vec![
+            r#"[{"id":"step-1","tool_name":"assistant.reply","description":"Respond","depends_on":[] }]"#.into(),
+            "Recovered response".into(),
+        ]);
+        let tools = evohime_tool_runtime::ToolRegistry::bootstrap();
+
+        let result = run_agent_loop_resumed(
+            AgentConfig {
+                task_id: Uuid::new_v4(),
+                session_id: Uuid::new_v4(),
+                user_message: "Explain the file".to_string(),
+                created_at: chrono::Utc::now(),
+                demo_file_path: demo_file.clone(),
+                workspace_root: temp.path().to_path_buf(),
+            },
+            &gateway,
+            &tools,
+            vec![ChatMessage {
+                role: ChatRole::User,
+                content: "previous".to_string(),
+            }],
+            tx,
+            AgentResumeContext {
+                workspace_context: Some("Recovered workspace context".to_string()),
+            },
+        )
+        .await
+        .expect("agent completes");
+
+        assert!(result.final_message.contains("Recovered response"));
+
+        let mut saw_task_started = false;
+        let mut saw_tool_started = false;
+        let mut saw_tool_output = false;
+        while let Some(event) = rx.recv().await {
+            match event {
+                ServerEvent::TaskStarted { .. } => saw_task_started = true,
+                ServerEvent::ToolStarted { .. } => saw_tool_started = true,
+                ServerEvent::ToolOutput { .. } => saw_tool_output = true,
+                _ => {}
+            }
+        }
+
+        assert!(!saw_task_started);
+        assert!(!saw_tool_started);
+        assert!(!saw_tool_output);
     }
 }
