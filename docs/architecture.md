@@ -14,7 +14,7 @@ Browser
 EvoHime Server (crates/server)
 ├── Agent Runtime (crates/agent-runtime)
 ├── Task Engine (crates/task-engine)
-├── Model Gateway (crates/model-gateway) — LiteRouter + mock
+├── Model Gateway (crates/model-gateway) — route-based LiteRouter / OpenAI-compatible + mock
 ├── Tool Runtime (crates/tool-runtime)
 ├── Permission Engine (crates/permissions)
 ├── Project Index (crates/project-index) — stage 6
@@ -67,7 +67,7 @@ docker compose up --build
 | 3 | Filesystem/shell tools, terminal, permissions | ✅ Complete |
 | 4 | Monaco editor, file tree, Git diff | ✅ Complete |
 | 5 | Task planning, parallel tools, cancel/resume | ✅ Complete |
-| 6 | Project index, MCP, multi-model, Python workers | 📋 Planned |
+| 6 | Project index, MCP, multi-model, Python workers | 🟡 In progress |
 
 - [development-plan.md](development-plan.md) — полный план
 - [roadmap.md](roadmap.md) — дорожная карта с milestones

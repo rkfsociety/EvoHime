@@ -186,7 +186,8 @@
       "required": ["type", "content"],
       "properties": {
         "type": { "const": "user.message" },
-        "content": { "type": "string" }
+        "content": { "type": "string" },
+        "model_route": { "type": "string" }
       },
       "additionalProperties": false
     },

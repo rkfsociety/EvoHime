@@ -84,13 +84,22 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("run migrations")?;
 
-    let model_gateway = if config.model_config.literouter.api_key.is_empty() {
-        warn!("LITEROUTER_API_KEY is not set — LLM requests will fail until configured");
-        None
-    } else {
-        Some(Arc::new(
+    let default_route_name = config.model_config.default_route.clone();
+    let default_route_config = config.model_config.routes.get(&default_route_name);
+    let model_gateway = match default_route_config {
+        Some(route) if !route.configured() => {
+            warn!(
+                "default model route is not configured — LLM requests will fail until a key is set"
+            );
+            None
+        }
+        Some(_) => Some(Arc::new(
             ModelGateway::from_config(&config.model_config).context("init model gateway")?,
-        ))
+        )),
+        None => {
+            warn!("default model route '{}' is missing", default_route_name);
+            None
+        }
     };
 
     let permissions = evohime_permissions::PermissionEngine::new();
@@ -199,8 +208,8 @@ async fn main() -> anyhow::Result<()> {
     info!(
         workspace_root = %config.workspace_root.display(),
         demo_file = %config.demo_file_path.display(),
-        model = %config.model_config.literouter.model,
-        provider = %config.model_config.provider.as_str(),
+        model = %default_route_config.map(|route| route.literouter.model.as_str()).unwrap_or(""),
+        provider = %default_route_config.map(|route| route.provider.as_str()).unwrap_or("unknown"),
         llm_configured = %state.model_gateway.is_some(),
         "listening on {}",
         addr
@@ -383,8 +392,18 @@ async fn handle_socket(
                     let command: ClientCommand = serde_json::from_str(&text)
                         .map_err(|error| ApiError::BadRequest(error.to_string()))?;
                     match command {
-                        ClientCommand::UserMessage { content } => {
-                            let task = match start_task(&state.pool, session_id, &content).await {
+                        ClientCommand::UserMessage {
+                            content,
+                            model_route,
+                        } => {
+                            let task = match start_task(
+                                &state.pool,
+                                session_id,
+                                &content,
+                                model_route.as_deref(),
+                            )
+                            .await
+                            {
                                 Ok(task) => task,
                                 Err(error) => {
                                     error!("failed to create task: {error}");
@@ -716,6 +735,10 @@ async fn run_task_pipeline(
     });
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let model_route = resolve_model_route(
+        task.model_route.as_deref(),
+        &state.model_config.default_route,
+    );
     let agent_config = AgentConfig {
         task_id: task.id,
         session_id,
@@ -723,6 +746,7 @@ async fn run_task_pipeline(
         created_at: task.created_at,
         demo_file_path: state.demo_file_path.clone(),
         workspace_root: state.workspace_root.clone(),
+        model_route,
     };
 
     let tools = state.tools.clone();
@@ -990,6 +1014,12 @@ fn summarize_task_memory(user_message: &str, final_message: &str) -> String {
     summary.chars().take(LIMIT).collect()
 }
 
+fn resolve_model_route(model_route: Option<&str>, default_route: &str) -> String {
+    model_route
+        .map(|route| route.to_string())
+        .unwrap_or_else(|| default_route.to_string())
+}
+
 async fn emit_event(
     state: &Arc<AppState>,
     session_id: Uuid,
@@ -1218,5 +1248,11 @@ mod tests {
         assert!(
             note.contains("assistant replied: Done. Project index and MCP bridge are in place.")
         );
+    }
+
+    #[test]
+    fn resolves_model_route_with_default_fallback() {
+        assert_eq!(resolve_model_route(Some("planner"), "default"), "planner");
+        assert_eq!(resolve_model_route(None, "default"), "default");
     }
 }

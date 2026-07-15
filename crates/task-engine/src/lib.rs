@@ -39,8 +39,9 @@ pub async fn start_task(
     pool: &PgPool,
     session_id: Uuid,
     user_message: &str,
+    model_route: Option<&str>,
 ) -> Result<TaskRow, TaskEngineError> {
-    Ok(evohime_storage::create_task(pool, session_id, user_message).await?)
+    Ok(evohime_storage::create_task(pool, session_id, user_message, model_route).await?)
 }
 
 pub async fn complete_task(pool: &PgPool, task_id: Uuid) -> Result<TaskRow, TaskEngineError> {

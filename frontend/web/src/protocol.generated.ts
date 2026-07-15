@@ -130,6 +130,7 @@ export interface ApprovalRequiredEvent {
 export interface UserMessageCommand {
   type: "user.message";
   content: string;
+  model_route?: string;
 }
 export interface TaskCancelCommand {
   type: "task.cancel";

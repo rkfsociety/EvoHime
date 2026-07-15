@@ -32,6 +32,15 @@ type ModelConfig = {
   base_url: string;
   configured: boolean;
   available_models: string[];
+  default_route: string;
+  routes: Array<{
+    name: string;
+    provider: string;
+    model: string;
+    base_url: string;
+    configured: boolean;
+    available_models: string[];
+  }>;
 };
 
 type FileNode = {
@@ -167,6 +176,7 @@ export function App() {
   const [activePanel, setActivePanel] = useState<WorkspacePanel>("chat");
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
   const [modelConfigError, setModelConfigError] = useState<string | null>(null);
+  const [selectedModelRoute, setSelectedModelRoute] = useState("");
   const [directoryCache, setDirectoryCache] = useState<Record<string, FileNode[]>>({});
   const [expandedDirectories, setExpandedDirectories] = useState<Record<string, boolean>>({
     ".": true,
@@ -222,6 +232,17 @@ export function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!modelConfig) {
+      return;
+    }
+
+    const routeNames = new Set(modelConfig.routes.map((route) => route.name));
+    if (!selectedModelRoute || !routeNames.has(selectedModelRoute)) {
+      setSelectedModelRoute(modelConfig.default_route);
+    }
+  }, [modelConfig, selectedModelRoute]);
 
   useEffect(() => {
     let cancelled = false;
@@ -665,6 +686,7 @@ export function App() {
     const payload: ClientCommand = {
       type: "user.message",
       content: text,
+      model_route: selectedModelRoute || undefined,
     };
 
     socketRef.current.send(JSON.stringify(payload));
@@ -741,6 +763,10 @@ export function App() {
           {modelConfig ? (
             <dl className="settingsGrid">
               <div>
+                <dt>Default route</dt>
+                <dd>{modelConfig.default_route}</dd>
+              </div>
+              <div>
                 <dt>Provider</dt>
                 <dd>{modelConfig.provider}</dd>
               </div>
@@ -762,12 +788,20 @@ export function App() {
                 <dt>Available models</dt>
                 <dd>{modelConfig.available_models.join(", ")}</dd>
               </div>
+              <div>
+                <dt>Routes</dt>
+                <dd>
+                  {modelConfig.routes
+                    .map((route) => `${route.name} (${route.provider}:${route.model})`)
+                    .join(", ")}
+                </dd>
+              </div>
             </dl>
           ) : (
             <p>Loading model configuration...</p>
           )}
           <p className="settingsHint">
-            LiteRouter is the first provider. Configure via environment variables on the server.
+            Set MODEL_ROUTES_JSON on the server to configure multiple routes and pick one per task.
           </p>
           <h3>Tool permissions</h3>
           <div className="permissionList">{Object.entries(permissionSettings).map(([name, value]) => <label key={name}><span>{name}</span><select value={value.mode} onChange={(event) => void updatePermission(name, event.target.value as PermissionMode)}><option value="ask">ask</option><option value="allow">allow</option><option value="deny">deny</option></select></label>)}</div>
@@ -1028,6 +1062,18 @@ export function App() {
           ) : null}
         </div>
         <form onSubmit={sendMessage} className="composer">
+          <select
+            value={selectedModelRoute}
+            onChange={(event) => setSelectedModelRoute(event.target.value)}
+            disabled={!modelConfig || modelConfig.routes.length === 0}
+            aria-label="Model route"
+          >
+            {modelConfig?.routes.map((route) => (
+              <option key={route.name} value={route.name}>
+                {route.name}
+              </option>
+            ))}
+          </select>
           <input
             value={input}
             onChange={(event) => setInput(event.target.value)}

@@ -41,6 +41,7 @@ pub struct AgentConfig {
     pub created_at: DateTime<Utc>,
     pub demo_file_path: PathBuf,
     pub workspace_root: PathBuf,
+    pub model_route: String,
 }
 
 #[derive(Debug, Clone)]
@@ -206,7 +207,10 @@ async fn run_agent_loop_inner(
         ),
     });
 
-    let raw_plan = collect_stream_text(gateway.stream_chat(&planning_messages)).await?;
+    let raw_plan = collect_stream_text(
+        gateway.stream_chat_for_route(&config.model_route, &planning_messages)?,
+    )
+    .await?;
     let plan = parse_plan(&raw_plan);
 
     emit(
@@ -247,7 +251,7 @@ async fn run_agent_loop_inner(
     });
 
     let mut final_message = String::new();
-    let mut stream = gateway.stream_chat(&messages);
+    let mut stream = gateway.stream_chat_for_route(&config.model_route, &messages)?;
 
     while let Some(chunk) = stream.next().await {
         let delta = chunk?;
@@ -586,6 +590,7 @@ mod tests {
                 created_at: chrono::Utc::now(),
                 demo_file_path: temp.path().join("docs/notes.md"),
                 workspace_root: temp.path().to_path_buf(),
+                model_route: "default".to_string(),
             },
             &gateway,
             &tools,
@@ -659,6 +664,7 @@ mod tests {
                 created_at: chrono::Utc::now(),
                 demo_file_path: demo_file.clone(),
                 workspace_root: temp.path().to_path_buf(),
+                model_route: "default".to_string(),
             },
             &gateway,
             &tools,

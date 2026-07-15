@@ -95,7 +95,11 @@ pub enum ServerEvent {
 #[serde(tag = "type")]
 pub enum ClientCommand {
     #[serde(rename = "user.message")]
-    UserMessage { content: String },
+    UserMessage {
+        content: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model_route: Option<String>,
+    },
     #[serde(rename = "task.cancel")]
     TaskCancel { task_id: Uuid },
     #[serde(rename = "task.resume")]
@@ -183,13 +187,20 @@ mod tests {
     fn round_trips_client_command() {
         let command = ClientCommand::UserMessage {
             content: "hello".to_string(),
+            model_route: Some("planner".to_string()),
         };
 
         let json = serde_json::to_string(&command).expect("command serializes");
         let decoded: ClientCommand = serde_json::from_str(&json).expect("command deserializes");
 
         match decoded {
-            ClientCommand::UserMessage { content } => assert_eq!(content, "hello"),
+            ClientCommand::UserMessage {
+                content,
+                model_route,
+            } => {
+                assert_eq!(content, "hello");
+                assert_eq!(model_route.as_deref(), Some("planner"));
+            }
             _ => panic!("unexpected command variant"),
         }
     }

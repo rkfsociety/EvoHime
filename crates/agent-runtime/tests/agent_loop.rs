@@ -24,6 +24,7 @@ async fn agent_loop_streams_model_tokens() {
             created_at: chrono::Utc::now(),
             demo_file_path: demo_file.clone(),
             workspace_root: temp.path().to_path_buf(),
+            model_route: "default".to_string(),
         },
         &gateway,
         &tools,

@@ -13,7 +13,7 @@ Last updated: 2026-07-15
 | `storage` | Active | Sessions, tasks, events, **session_messages**, **session_memory** |
 | `tool-runtime` | Active | Registry + sandboxed filesystem, shell, Git, and MCP call tools |
 | `agent-runtime` | Active | `agent_loop.rs` — LLM + tool planning parser + project/memory context |
-| `model-gateway` | Active | **LiteRouter** SSE streaming + mock provider |
+| `model-gateway` | Active | Route-based gateway, **LiteRouter** + OpenAI-compatible endpoints, and mock provider |
 | `task-engine` | Active | lifecycle wrappers, dependency batching, checkpoints, cancel/resume/retry foundation |
 | `permissions` | Active | ask/allow/deny policy and one-shot approvals; approval events and resume flow wired |
 | `project-index` | Active | Workspace text search for agent context |
@@ -23,7 +23,7 @@ Last updated: 2026-07-15
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/health` | Health check |
-| GET | `/api/models/config` | LiteRouter model configuration |
+| GET | `/api/models/config` | Route-based model configuration |
 | GET | `/api/permissions` | Current permission policy snapshot |
 | PUT | `/api/permissions/:permission` | Update a permission mode |
 | POST | `/api/sessions` | Create session + bootstrap events |
@@ -46,7 +46,7 @@ user.message
   → filesystem.read (tool-runtime)
   → persist task plan + task_steps
   → emit task.step.changed updates
-  → LiteRouter stream_chat (model-gateway)
+  → model route stream_chat (model-gateway)
   → agent.message.delta per token
   → save assistant message
   → store session memory summary
@@ -57,6 +57,7 @@ user.message
 
 - `sessions` — agent sessions
 - `tasks` — user tasks (status: running/completed/failed/paused/cancelled/retrying)
+- `tasks.model_route` — selected model route for the task
 - `task_steps` — structured plan steps + step status history
 - `task_checkpoints` — resume state and workspace context
 - `session_events` — ordered event log (JSONB)
@@ -67,6 +68,7 @@ user.message
 
 | Setting | Default |
 | --- | --- |
+| Default route | default |
 | Provider | LiteRouter |
 | Base URL | `https://api.literouter.com/v1` |
 | Model | `deepseek:free` |
@@ -77,7 +79,7 @@ user.message
 | Panel | Status |
 | --- | --- |
 | Chat | ✅ Active |
-| Settings | ✅ Active (model config + permission policies) |
+| Settings | ✅ Active (model routes + permission policies) |
 | Events timeline | ✅ Active |
 | Tasks | ✅ Task list, statuses, plan steps, cancel/resume/retry |
 | Actions | ✅ Action log + task orchestration events |
@@ -88,7 +90,7 @@ user.message
 
 ## Tests
 
-- `crates/model-gateway` — mock stream, LiteRouter SSE (wiremock)
+- `crates/model-gateway` — route-based mock stream, LiteRouter SSE (wiremock)
 - `crates/agent-runtime` — agent loop with mock gateway, plan parser fallback
 - `crates/protocol` — event serialization
 - `crates/tool-runtime` — filesystem, shell, and Git tool coverage
@@ -98,4 +100,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: continue with MCP management UI, multi-model routing, Python workers, and browser automation tools after the project index, MCP call bridge, and session memory slice.
+**Stage 6 / Milestone 5**: continue with MCP management UI, Python workers, browser automation tools, and any remaining route-specific settings after the project index, MCP call bridge, session memory, and task-scoped multi-model routing slice.

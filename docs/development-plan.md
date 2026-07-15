@@ -288,12 +288,12 @@ Task lifecycle реализован: start/complete/fail/cancel/resume/retry. St
 - Project index для контекстного поиска
 - MCP-интеграции (`mcp.call`) уже есть на уровне tool-runtime; остаётся UI управления серверами
 - Память агента
-- Multi-model routing и дополнительные провайдеры (OpenAI, Anthropic, Ollama) — после LiteRouter
+- Multi-model routing с task-scoped `model_route` и OpenAI-compatible маршрутами — после LiteRouter
 - Python workers для ML-задач
 - `browser.open`, `browser.extract`
 - UI управления MCP и инструментами
 
-**Результат:** production-ready агент с расширяемой экосистемой, multi-model support и worker integrations.
+**Результат:** production-ready агент с расширяемой экосистемой, multi-model support и worker integrations. Маршруты модели выбираются на уровне задачи и могут указывать на отдельные OpenAI-compatible endpoints.
 
 ---
 
