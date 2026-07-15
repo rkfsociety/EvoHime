@@ -44,6 +44,21 @@ function Stop-Tree([System.Diagnostics.Process]$process) {
   }
 }
 
+function Wait-ForExit([System.Diagnostics.Process]$process, [int]$timeoutMs = 15000) {
+  if (-not $process) {
+    return
+  }
+
+  $deadline = [DateTime]::UtcNow.AddMilliseconds($timeoutMs)
+  while (-not $process.HasExited -and [DateTime]::UtcNow -lt $deadline) {
+    Start-Sleep -Milliseconds 200
+    try {
+      $process.Refresh()
+    } catch {
+    }
+  }
+}
+
 function Start-ManagedProcess([string]$switchName) {
   $powershell = Join-Path $PSHOME 'powershell.exe'
   $logRoot = Join-Path $root '.launcher-logs'
@@ -60,6 +75,13 @@ function Start-ManagedProcess([string]$switchName) {
     $PSCommandPath,
     $switchName
   ) -WorkingDirectory $root -RedirectStandardOutput (Join-Path $logRoot "$name.out.log") -RedirectStandardError (Join-Path $logRoot "$name.err.log")
+}
+
+function Restart-ServerProcess {
+  Write-Host '[EvoHime] Restarting server...'
+  Stop-Tree $script:serverProcess
+  Wait-ForExit $script:serverProcess
+  $script:serverProcess = Start-ManagedProcess '-Server'
 }
 
 function Set-NotifyIconState {
@@ -145,6 +167,7 @@ $serverMenu = New-Object System.Windows.Forms.ContextMenuStrip
 $webMenu = New-Object System.Windows.Forms.ContextMenuStrip
 
 $serverOpen = $serverMenu.Items.Add('Открыть health')
+$serverRestart = $serverMenu.Items.Add('Перезапустить сервер')
 $serverStop = $serverMenu.Items.Add('Остановить сервер')
 $serverExit = $serverMenu.Items.Add('Выйти')
 
@@ -153,6 +176,9 @@ $webStop = $webMenu.Items.Add('Остановить панель')
 $webExit = $webMenu.Items.Add('Выйти')
 
 $serverOpen.Add_Click({ Open-Url $serverUrl })
+$serverRestart.Add_Click({
+  Restart-ServerProcess
+})
 $serverStop.Add_Click({
   Stop-Tree $script:serverProcess
 })
