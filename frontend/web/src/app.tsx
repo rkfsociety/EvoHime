@@ -504,6 +504,7 @@ export function App() {
   const [approval, setApproval] = useState<ApprovalRequiredEvent | null>(null);
   const [githubAuth, setGithubAuth] = useState<GithubAuthInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<"model" | "permissions" | "mcp" | "tools">("model");
   const [pullRequests, setPullRequests] = useState<PullRequestSummary[]>([]);
   const [pullRequestsLoading, setPullRequestsLoading] = useState(false);
   const [pullRequestsError, setPullRequestsError] = useState<string | null>(null);
@@ -1306,7 +1307,29 @@ export function App() {
   function renderSettingsContent() {
     return (
       <div className="settingsPanel">
-        <section className="settingsSection">
+        <nav className="settingsTabs" aria-label="Разделы настроек">
+          {[
+            ["model", "Модель", "Провайдер и маршруты"],
+            ["permissions", "Разрешения", "Доступ инструментов"],
+            ["mcp", "MCP", "Подключённые серверы"],
+            ["tools", "Инструменты", "Каталог и таймауты"],
+          ].map(([id, label, hint]) => (
+            <button
+              key={id}
+              type="button"
+              className={settingsTab === id ? "settingsTab active" : "settingsTab"}
+              onClick={() => setSettingsTab(id as typeof settingsTab)}
+              aria-selected={settingsTab === id}
+              role="tab"
+            >
+              <strong>{label}</strong>
+              <span>{hint}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="settingsTabContent">
+        {settingsTab === "model" ? <section className="settingsSection">
           <h3>Провайдер модели</h3>
           {modelConfigError ? <p className="settingsError">{modelConfigError}</p> : null}
           {modelConfig ? (
@@ -1352,9 +1375,9 @@ export function App() {
           <p className="settingsHint">
             Укажи `MODEL_ROUTES_JSON` на сервере, чтобы настроить несколько маршрутов и выбирать один для каждой задачи.
           </p>
-        </section>
+        </section> : null}
 
-        <section className="settingsSection">
+        {settingsTab === "permissions" ? <section className="settingsSection">
           <h3>Разрешения инструментов</h3>
           <div className="permissionList">
             {Object.entries(permissionSettings).map(([name, value]) => (
@@ -1373,9 +1396,9 @@ export function App() {
               </label>
             ))}
           </div>
-        </section>
+        </section> : null}
 
-        <section className="settingsSection">
+        {settingsTab === "mcp" ? <section className="settingsSection">
           <div className="settingsHeaderRow">
             <div>
               <h3>MCP-серверы</h3>
@@ -1449,9 +1472,9 @@ export function App() {
               </article>
             ))}
           </div>
-        </section>
+        </section> : null}
 
-        <section className="settingsSection">
+        {settingsTab === "tools" ? <section className="settingsSection">
           <h3>Каталог инструментов</h3>
           {toolCatalogError ? <p className="settingsError">{toolCatalogError}</p> : null}
           <div className="toolCatalog">
@@ -1464,7 +1487,8 @@ export function App() {
               </article>
             ))}
           </div>
-        </section>
+        </section> : null}
+        </div>
       </div>
     );
   }

@@ -395,12 +395,72 @@ h1 {
 }
 
 .settingsPanel {
-  padding: 28px;
+  padding: 0;
   color: #a9b8d9;
   line-height: 1.6;
-  display: grid;
-  gap: 24px;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
+  overflow: hidden;
+}
+
+.settingsTabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 14px 22px 0;
+  border-bottom: 1px solid var(--border-0);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.settingsTab {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 12px 14px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 12px 12px 0 0;
+  background: transparent;
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.settingsTab:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+
+.settingsTab.active {
+  border-bottom-color: var(--accent-0);
+  background: rgba(91, 134, 255, 0.1);
+  color: var(--text-0);
+}
+
+.settingsTab strong {
+  font-size: 13px;
+}
+
+.settingsTab span {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settingsTab.active span {
+  color: var(--accent-2);
+}
+
+.settingsTabContent {
+  min-height: 0;
+  overflow: auto;
+  padding: 28px;
+  display: grid;
+  align-content: start;
+  gap: 24px;
 }
 
 .settingsPanel h3 {
