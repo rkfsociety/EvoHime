@@ -682,6 +682,9 @@ async fn run_task_pipeline(
     let prior_messages = load_chat_history(&state.pool, session_id)
         .await
         .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
+    let memory_notes = load_memory_notes(&state.pool, session_id)
+        .await
+        .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
 
     if emit_started {
         evohime_storage::insert_message(
@@ -731,13 +734,22 @@ async fn run_task_pipeline(
                     &gateway,
                     &tools,
                     prior_messages,
+                    memory_notes.clone(),
                     event_tx,
                     resume,
                 )
                 .await
             }
             None if emit_started => {
-                run_agent_loop(agent_config, &gateway, &tools, prior_messages, event_tx).await
+                run_agent_loop(
+                    agent_config,
+                    &gateway,
+                    &tools,
+                    prior_messages,
+                    memory_notes.clone(),
+                    event_tx,
+                )
+                .await
             }
             None => {
                 run_agent_loop_resumed(
@@ -745,6 +757,7 @@ async fn run_task_pipeline(
                     &gateway,
                     &tools,
                     prior_messages,
+                    memory_notes,
                     event_tx,
                     AgentResumeContext {
                         workspace_context: None,
@@ -909,6 +922,11 @@ async fn run_task_pipeline(
     .await
     .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
 
+    let memory_note = summarize_task_memory(&task.user_message, &agent_result.final_message);
+    evohime_storage::insert_session_memory(&state.pool, session_id, Some(task.id), &memory_note)
+        .await
+        .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
+
     complete_task(&state.pool, task.id)
         .await
         .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
@@ -949,6 +967,27 @@ async fn load_chat_history(
 
 fn map_agent_error(error: AgentError) -> ApiError {
     ApiError::Internal(error.to_string())
+}
+
+async fn load_memory_notes(
+    pool: &PgPool,
+    session_id: Uuid,
+) -> Result<Vec<String>, evohime_storage::StorageError> {
+    Ok(evohime_storage::list_session_memory(pool, session_id)
+        .await?
+        .into_iter()
+        .map(|row| row.note)
+        .collect())
+}
+
+fn summarize_task_memory(user_message: &str, final_message: &str) -> String {
+    const LIMIT: usize = 400;
+    let summary = format!(
+        "User asked: {}; assistant replied: {}",
+        user_message.trim(),
+        final_message.trim()
+    );
+    summary.chars().take(LIMIT).collect()
 }
 
 async fn emit_event(
@@ -1162,4 +1201,22 @@ async fn find_session_for_task(state: &Arc<AppState>, task_id: Uuid) -> Result<U
         .map_err(|error| ApiError::Internal(error.to_string()))?
         .ok_or_else(|| ApiError::BadRequest("unknown task".to_string()))?;
     Ok(task.session_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn summarizes_task_memory() {
+        let note = summarize_task_memory(
+            "Find the project index slice and make it work",
+            "Done. Project index and MCP bridge are in place.",
+        );
+
+        assert!(note.contains("User asked: Find the project index slice and make it work"));
+        assert!(
+            note.contains("assistant replied: Done. Project index and MCP bridge are in place.")
+        );
+    }
 }

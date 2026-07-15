@@ -10,9 +10,9 @@ Last updated: 2026-07-15
 | --- | --- | --- |
 | `server` | Active | HTTP + WebSocket, workspace file and Git APIs |
 | `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema |
-| `storage` | Active | Sessions, tasks, events, **session_messages** |
+| `storage` | Active | Sessions, tasks, events, **session_messages**, **session_memory** |
 | `tool-runtime` | Active | Registry + sandboxed filesystem, shell, Git, and MCP call tools |
-| `agent-runtime` | Active | `agent_loop.rs` — LLM + tool planning parser |
+| `agent-runtime` | Active | `agent_loop.rs` — LLM + tool planning parser + project/memory context |
 | `model-gateway` | Active | **LiteRouter** SSE streaming + mock provider |
 | `task-engine` | Active | lifecycle wrappers, dependency batching, checkpoints, cancel/resume/retry foundation |
 | `permissions` | Active | ask/allow/deny policy and one-shot approvals; approval events and resume flow wired |
@@ -49,6 +49,7 @@ user.message
   → LiteRouter stream_chat (model-gateway)
   → agent.message.delta per token
   → save assistant message
+  → store session memory summary
   → task.completed
 ```
 
@@ -60,6 +61,7 @@ user.message
 - `task_checkpoints` — resume state and workspace context
 - `session_events` — ordered event log (JSONB)
 - `session_messages` — chat history for LLM context
+- `session_memory` — persistent short notes for future agent runs
 
 ## LLM provider
 
@@ -96,4 +98,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: continue with MCP management UI, persistent memory, multi-model routing, Python workers, and browser automation tools after the project index slice and MCP call bridge.
+**Stage 6 / Milestone 5**: continue with MCP management UI, multi-model routing, Python workers, and browser automation tools after the project index, MCP call bridge, and session memory slice.

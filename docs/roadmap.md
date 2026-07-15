@@ -171,7 +171,7 @@
 | 6.2 | Контекстный поиск для агента | ✅ `crates/agent-runtime/` |
 | 6.3 | `mcp.call` tool | ✅ `crates/tool-runtime/` |
 | 6.4 | MCP server management UI | `frontend/web/` |
-| 6.5 | Agent memory (persistent context) | `crates/storage/`, `crates/agent-runtime/` |
+| 6.5 | Agent memory (persistent context) | ✅ `crates/storage/`, `crates/agent-runtime/` |
 | 6.6 | Multi-model routing: LiteRouter + additional providers per task | `crates/model-gateway/` |
 | 6.7 | Python workers (HTTP/queue) | `workers/python/` |
 | 6.8 | `browser.open`, `browser.extract` | `crates/tool-runtime/` |

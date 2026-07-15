@@ -68,9 +68,20 @@ pub async fn run_agent_loop(
     gateway: &ModelGateway,
     tools: &ToolRegistry,
     history: Vec<ChatMessage>,
+    memory_notes: Vec<String>,
     event_tx: UnboundedSender<ServerEvent>,
 ) -> Result<AgentRunResult, AgentError> {
-    run_agent_loop_inner(config, gateway, tools, history, event_tx, true, None).await
+    run_agent_loop_inner(
+        config,
+        gateway,
+        tools,
+        history,
+        memory_notes,
+        event_tx,
+        true,
+        None,
+    )
+    .await
 }
 
 pub async fn run_agent_loop_resumed(
@@ -78,6 +89,7 @@ pub async fn run_agent_loop_resumed(
     gateway: &ModelGateway,
     tools: &ToolRegistry,
     history: Vec<ChatMessage>,
+    memory_notes: Vec<String>,
     event_tx: UnboundedSender<ServerEvent>,
     resume: AgentResumeContext,
 ) -> Result<AgentRunResult, AgentError> {
@@ -86,6 +98,7 @@ pub async fn run_agent_loop_resumed(
         gateway,
         tools,
         history,
+        memory_notes,
         event_tx,
         false,
         resume.workspace_context,
@@ -98,6 +111,7 @@ async fn run_agent_loop_inner(
     gateway: &ModelGateway,
     tools: &ToolRegistry,
     history: Vec<ChatMessage>,
+    memory_notes: Vec<String>,
     event_tx: UnboundedSender<ServerEvent>,
     emit_started: bool,
     workspace_context: Option<String>,
@@ -162,13 +176,20 @@ async fn run_agent_loop_inner(
     };
     let project_context =
         ProjectIndex::new(config.workspace_root.clone()).build_context(&config.user_message, 5);
+    let memory_context = build_memory_context(&memory_notes);
 
-    let mut planning_messages = Vec::with_capacity(history.len() + 3);
+    let mut planning_messages = Vec::with_capacity(history.len() + 4);
     planning_messages.push(ChatMessage {
         role: ChatRole::System,
         content: PLANNING_PROMPT.to_string(),
     });
     if let Some(context) = &project_context {
+        planning_messages.push(ChatMessage {
+            role: ChatRole::System,
+            content: context.clone(),
+        });
+    }
+    if let Some(context) = &memory_context {
         planning_messages.push(ChatMessage {
             role: ChatRole::System,
             content: context.clone(),
@@ -196,12 +217,18 @@ async fn run_agent_loop_inner(
         },
     )?;
 
-    let mut messages = Vec::with_capacity(history.len() + 3);
+    let mut messages = Vec::with_capacity(history.len() + 4);
     messages.push(ChatMessage {
         role: ChatRole::System,
         content: SYSTEM_PROMPT.to_string(),
     });
     if let Some(context) = &project_context {
+        messages.push(ChatMessage {
+            role: ChatRole::System,
+            content: context.clone(),
+        });
+    }
+    if let Some(context) = &memory_context {
         messages.push(ChatMessage {
             role: ChatRole::System,
             content: context.clone(),
@@ -487,6 +514,26 @@ fn extract_tool_and_description(text: &str, index: usize) -> (String, String) {
     ("assistant.reply".to_string(), text.to_string())
 }
 
+fn build_memory_context(notes: &[String]) -> Option<String> {
+    let entries = notes
+        .iter()
+        .map(|note| note.trim())
+        .filter(|note| !note.is_empty())
+        .collect::<Vec<_>>();
+    if entries.is_empty() {
+        return None;
+    }
+
+    let mut output = String::from("Relevant session memory:\n");
+    for note in entries {
+        output.push_str("- ");
+        output.push_str(note);
+        output.push('\n');
+    }
+
+    Some(output.trim_end().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -496,6 +543,16 @@ mod tests {
         let root = PathBuf::from("/workspace");
         let file = PathBuf::from("/workspace/docs/a.md");
         assert_eq!(relative_workspace_path(&root, &file), "docs/a.md");
+    }
+
+    #[test]
+    fn builds_memory_context_block() {
+        let context =
+            build_memory_context(&[" first fact ".into(), "".into(), "second fact".into()])
+                .expect("context");
+        assert!(context.contains("Relevant session memory:"));
+        assert!(context.contains("first fact"));
+        assert!(context.contains("second fact"));
     }
 
     #[tokio::test]
@@ -536,6 +593,7 @@ mod tests {
                 role: ChatRole::User,
                 content: "previous".to_string(),
             }],
+            vec!["memory fact".to_string()],
             tx,
         )
         .await
@@ -608,6 +666,7 @@ mod tests {
                 role: ChatRole::User,
                 content: "previous".to_string(),
             }],
+            vec!["memory fact".to_string()],
             tx,
             AgentResumeContext {
                 workspace_context: Some("Recovered workspace context".to_string()),

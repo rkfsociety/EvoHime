@@ -31,6 +31,7 @@ async fn agent_loop_streams_model_tokens() {
             role: ChatRole::User,
             content: "previous".to_string(),
         }],
+        vec![],
         tx,
     )
     .await

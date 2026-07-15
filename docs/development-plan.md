@@ -68,10 +68,10 @@ EvoHime Server — Rust
 - файловые инструменты `filesystem.read`, `filesystem.write`, `filesystem.patch`, `filesystem.search`, shell `shell.execute` и Git-инструменты `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push` уже реализованы в `tool-runtime`;
 - `agent-runtime` парсит план модели в структурированные `PlanStep`, принимает fenced JSON и wrapper-объекты как fallback;
 - `task-engine` поддерживает жизненный цикл задач, статусы шагов, checkpoint API, recovery и batching зависимых шагов для параллельного выполнения независимых tools;
-- `storage` хранит `task_steps` и `task_checkpoints`, а `server` материализует план в шаги и публикует `task.step.changed`;
+- `storage` хранит `task_steps`, `task_checkpoints` и `session_memory`, а `server` материализует план в шаги, пишет memory notes и публикует `task.step.changed`;
 - протокол содержит команды `task.cancel`, `task.resume`, `task.retry`, а frontend уже отображает панели Tasks и Actions;
 - `permissions` содержит policy engine и one-shot решения; `approval.required` публикуется сервером, а `approval.granted` / `approval.denied` продолжают paused task;
-- `project-index` уже даёт workspace text search для контекста; Python worker пока является каркасом.
+- `project-index` уже даёт workspace text search для контекста; `session_memory` уже подмешивается в prompt; Python worker пока является каркасом.
 
 Следующий сквозной приоритет — этап 6: project index, MCP, memory и worker integrations.
 

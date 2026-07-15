@@ -66,6 +66,12 @@ pub struct MessageRow {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, FromRow)]
+pub struct MemoryRow {
+    pub note: String,
+    pub created_at: DateTime<Utc>,
+}
+
 pub async fn run_migrations(pool: &PgPool) -> Result<(), StorageError> {
     sqlx::migrate!("../../migrations").run(pool).await?;
     Ok(())
@@ -322,6 +328,46 @@ pub async fn list_session_messages(
         r#"
         SELECT role, content, created_at
         FROM session_messages
+        WHERE session_id = $1
+        ORDER BY created_at ASC
+        "#,
+    )
+    .bind(session_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
+}
+
+pub async fn insert_session_memory(
+    pool: &PgPool,
+    session_id: Uuid,
+    source_task_id: Option<Uuid>,
+    note: &str,
+) -> Result<(), StorageError> {
+    sqlx::query(
+        r#"
+        INSERT INTO session_memory (session_id, source_task_id, note)
+        VALUES ($1, $2, $3)
+        "#,
+    )
+    .bind(session_id)
+    .bind(source_task_id)
+    .bind(note)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn list_session_memory(
+    pool: &PgPool,
+    session_id: Uuid,
+) -> Result<Vec<MemoryRow>, StorageError> {
+    let rows = sqlx::query_as::<_, MemoryRow>(
+        r#"
+        SELECT note, created_at
+        FROM session_memory
         WHERE session_id = $1
         ORDER BY created_at ASC
         "#,
