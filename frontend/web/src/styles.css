@@ -584,18 +584,105 @@ h1 {
   gap: 14px;
   overflow: auto;
   min-height: 0;
+  align-content: start;
 }
 
 .chatLog {
   flex: 1;
+  width: min(100%, 920px);
+  margin: 0 auto;
+  padding: 28px clamp(20px, 4vw, 56px);
+  grid-auto-rows: max-content;
+}
+
+.chatLog.empty {
+  align-content: center;
+  justify-items: center;
+}
+
+.chatWelcome {
+  width: min(100%, 620px);
+  padding: 28px 32px;
+  text-align: center;
+  border: 1px solid rgba(143, 180, 255, 0.16);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 50% 0, rgba(91, 134, 255, 0.16), transparent 58%),
+    rgba(255, 255, 255, 0.025);
+  box-shadow: 0 18px 60px rgba(5, 12, 30, 0.24);
+}
+
+.chatWelcomeIcon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin: 0 auto 18px;
+  border: 1px solid rgba(143, 180, 255, 0.24);
+  border-radius: 14px;
+  color: var(--accent-2);
+  background: rgba(91, 134, 255, 0.12);
+  font-size: 20px;
+}
+
+.chatWelcome .eyebrow {
+  margin-bottom: 8px;
+  color: var(--accent-2);
+}
+
+.chatWelcome h3 {
+  margin: 0;
+  font-size: clamp(1.35rem, 2vw, 1.7rem);
+}
+
+.chatWelcomeText {
+  max-width: 48ch;
+  margin: 10px auto 0;
+  color: var(--text-2);
+  line-height: 1.55;
+}
+
+.chatWelcomeHints {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.chatWelcomeHints span {
+  padding: 7px 10px;
+  border: 1px solid var(--border-0);
+  border-radius: 999px;
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 12px;
 }
 
 .line,
 .eventItem {
+  width: min(100%, 760px);
   border: 1px solid var(--border-0);
   border-radius: 18px;
   background: var(--surface-3);
   padding: 14px 16px;
+}
+
+.line.user {
+  justify-self: end;
+  border-color: rgba(91, 134, 255, 0.25);
+  background: rgba(91, 134, 255, 0.12);
+}
+
+.line.assistant {
+  justify-self: start;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.line.system {
+  width: 100%;
+  border-style: dashed;
+  background: transparent;
 }
 
 .line strong,
@@ -627,25 +714,32 @@ h1 {
 }
 
 .composer {
-  padding: 20px;
+  width: min(100%, 920px);
+  margin: 0 auto;
+  padding: 16px clamp(20px, 4vw, 56px) 22px;
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 170px minmax(0, 1fr) auto;
   gap: 12px;
   border-top: 1px solid var(--border-0);
 }
 
+.composer select,
 .composer input {
   border: 1px solid var(--border-1);
-  border-radius: 14px;
+  border-radius: 12px;
   background: rgba(8, 12, 23, 0.92);
   color: var(--text-0);
   padding: 14px 16px;
 }
 
+.composer select {
+  min-width: 0;
+}
+
 .composer button {
   border: 0;
-  border-radius: 14px;
-  padding: 0 18px;
+  border-radius: 12px;
+  padding: 0 20px;
   background: linear-gradient(135deg, var(--accent-0), var(--accent-1));
   color: #07111c;
   font-weight: 700;

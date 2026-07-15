@@ -1963,13 +1963,29 @@ export function App() {
 
     return (
       <>
-        <div className="chatLog">
-          {lines.map((line, index) => (
-            <article className={`line ${line.role}`} key={`${line.role}-${index}`}>
-              <strong>{translateChatRole(line.role)}</strong>
-              <pre>{line.text}</pre>
-            </article>
-          ))}
+        <div className={`chatLog${lines.length === 1 && lines[0]?.role === "system" && !stream ? " empty" : ""}`}>
+          {lines.length === 1 && lines[0]?.role === "system" && !stream ? (
+            <div className="chatWelcome">
+              <span className="chatWelcomeIcon">✦</span>
+              <p className="eyebrow">Новая задача</p>
+              <h3>Что будем делать?</h3>
+              <p className="chatWelcomeText">
+                Опиши задачу обычным языком — я помогу разобраться в проекте, изменить файлы или проверить результат.
+              </p>
+              <div className="chatWelcomeHints">
+                <span>Разобраться в коде</span>
+                <span>Изменить файл</span>
+                <span>Запустить проверку</span>
+              </div>
+            </div>
+          ) : (
+            lines.map((line, index) => (
+              <article className={`line ${line.role}`} key={`${line.role}-${index}`}>
+                <strong>{translateChatRole(line.role)}</strong>
+                <pre>{line.text}</pre>
+              </article>
+            ))
+          )}
           {stream ? (
             <article className="line assistant streaming">
               <strong>Ассистент</strong>
