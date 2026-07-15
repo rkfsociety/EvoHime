@@ -58,6 +58,7 @@ type ModelRouteDraft = {
 type ChatSessionSummary = {
   session_id: string;
   created_at: string;
+  title?: string | null;
   last_message_at: string | null;
   last_message: string | null;
   last_role: string | null;
@@ -705,6 +706,10 @@ export function App() {
     [activePanel],
   );
   const activeProjectLabel = selectedProject.label;
+  const activeChatTitle = useMemo(
+    () => chatSessions.find((chat) => chat.session_id === activeSessionId)?.title?.trim() ?? "",
+    [chatSessions, activeSessionId],
+  );
   const projectFolders = useMemo(
     () => (directoryCache["."] ?? []).filter((entry) => entry.kind === "dir"),
     [directoryCache],
@@ -2428,7 +2433,7 @@ export function App() {
         <div className="panel mainPanel">
           {activePanel !== "pull-requests" && activePanel !== "plugins" && activePanel !== "sites" ? (
             <header>
-              <h2>{currentPanelLabel}</h2>
+              <h2>{activePanel === "chat" ? activeChatTitle : currentPanelLabel}</h2>
               <span>Веб-сокет</span>
             </header>
           ) : null}
