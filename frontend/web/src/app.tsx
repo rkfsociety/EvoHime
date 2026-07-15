@@ -62,6 +62,11 @@ type ChatSessionSummary = {
   last_role: string | null;
 };
 
+type ProjectSelection = {
+  label: string;
+  path: string | null;
+};
+
 type GithubAuthInfo = {
   authenticated: boolean;
   login: string | null;
@@ -390,6 +395,8 @@ export function App() {
   const [lines, setLines] = useState<ChatLine[]>(initialLines);
   const [stream, setStream] = useState("");
   const [activePanel, setActivePanel] = useState<WorkspacePanel>("chat");
+  const [selectedProject, setSelectedProject] = useState<ProjectSelection>({ label: "EvoHime", path: "." });
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
   const [modelConfigError, setModelConfigError] = useState<string | null>(null);
   const [selectedModelRoute, setSelectedModelRoute] = useState("");
@@ -694,7 +701,12 @@ export function App() {
     () => workspacePanels.find((panel) => panel.id === activePanel)?.label ?? "Рабочее пространство",
     [activePanel],
   );
-  const activeProjectLabel = "EvoHime";
+  const activeProjectLabel = selectedProject.label;
+  const projectFolders = useMemo(
+    () => (directoryCache["."] ?? []).filter((entry) => entry.kind === "dir"),
+    [directoryCache],
+  );
+  const hasConversation = lines.some((line) => line.role !== "system") || Boolean(stream);
   const selectedFileLanguage = useMemo(
     () => inferMonacoLanguage(selectedFilePath),
     [selectedFilePath],
@@ -2086,6 +2098,64 @@ export function App() {
             </article>
           ) : null}
         </div>
+        {!hasConversation ? (
+          <div className="projectContext">
+            <button
+              type="button"
+              className="projectContextButton"
+              onClick={() => setProjectPickerOpen((open) => !open)}
+              aria-expanded={projectPickerOpen}
+            >
+              <span className="projectContextMark">⌂</span>
+              <span>
+                <small>Проект для этой задачи</small>
+                <strong>{selectedProject.label}</strong>
+              </span>
+              <span className="projectContextChevron">⌄</span>
+            </button>
+            {projectPickerOpen ? (
+              <div className="projectPicker" role="menu">
+                <div className="projectPickerHeader">Выбери рабочий контекст</div>
+                <button
+                  type="button"
+                  className={selectedProject.path === "." ? "projectOption active" : "projectOption"}
+                  onClick={() => {
+                    setSelectedProject({ label: "EvoHime", path: "." });
+                    setProjectPickerOpen(false);
+                  }}
+                >
+                  <span>⌂</span>
+                  <span><strong>EvoHime</strong><small>Текущий workspace</small></span>
+                </button>
+                {projectFolders.map((folder) => (
+                  <button
+                    key={folder.path}
+                    type="button"
+                    className={selectedProject.path === folder.path ? "projectOption active" : "projectOption"}
+                    onClick={() => {
+                      setSelectedProject({ label: folder.name, path: folder.path });
+                      setProjectPickerOpen(false);
+                    }}
+                  >
+                    <span>▱</span>
+                    <span><strong>{folder.name}</strong><small>{folder.path}</small></span>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className={selectedProject.path === null ? "projectOption active" : "projectOption"}
+                  onClick={() => {
+                    setSelectedProject({ label: "Без проекта", path: null });
+                    setProjectPickerOpen(false);
+                  }}
+                >
+                  <span>＋</span>
+                  <span><strong>Начать с нуля</strong><small>Без выбранной папки</small></span>
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <form onSubmit={sendMessage} className="composer">
           <div className="composerField">
             <div className="composerLeading">
