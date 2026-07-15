@@ -1436,9 +1436,10 @@ export function App() {
 
   return (
     <main className="shell">
-      <section className="hero">
-        <div>
-          <p className="eyebrow">EvoHime</p>
+      <header className="topBar">
+        <div className="agentBrand">
+          <p className="eyebrow">Название агента</p>
+          <h1>EvoHime</h1>
         </div>
         <div className="statusCard">
           <span className="statusDot" data-state={socketState} />
@@ -1447,7 +1448,7 @@ export function App() {
             <span>{session ? session.session_id : "сессия ещё не создана"}</span>
           </div>
         </div>
-      </section>
+      </header>
 
       <section className="workspace">
         <nav className="sidebar">
