@@ -68,7 +68,6 @@ fn default_true() -> bool {
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
-    pub demo_file_path: PathBuf,
     pub workspace_root: PathBuf,
     pub tools: ToolRegistry,
     pub permissions: PermissionEngine,

@@ -27,7 +27,7 @@ use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde_json::{json, to_value, Value};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 use tower_http::cors::CorsLayer;
@@ -149,7 +149,6 @@ async fn main() -> anyhow::Result<()> {
     let permissions = evohime_permissions::PermissionEngine::new();
     let state = Arc::new(AppState {
         pool,
-        demo_file_path: config.demo_file_path.clone(),
         workspace_root: config.workspace_root.clone(),
         tools: evohime_tool_runtime::ToolRegistry::bootstrap_with_permissions(permissions.clone()),
         permissions,
@@ -919,13 +918,17 @@ async fn handle_socket(
                             content,
                             model_route,
                             model,
+                            workspace_path,
                         } => {
+                            let workspace_path = resolve_workspace_path(&state, workspace_path)?;
+                            let workspace_path = workspace_path.to_string_lossy().to_string();
                             let task = match start_task(
                                 &state.pool,
                                 session_id,
                                 &content,
                                 model_route.as_deref(),
                                 model.as_deref(),
+                                Some(&workspace_path),
                             )
                             .await
                             {
@@ -1280,8 +1283,17 @@ async fn run_task_pipeline(
         session_id,
         user_message: task.user_message.clone(),
         created_at: task.created_at,
-        demo_file_path: state.demo_file_path.clone(),
-        workspace_root: state.workspace_root.clone(),
+        demo_file_path: task
+            .workspace_path
+            .as_deref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| state.workspace_root.clone())
+            .join("docs/sample-context.md"),
+        workspace_root: task
+            .workspace_path
+            .as_deref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| state.workspace_root.clone()),
         model_route,
         model: task.model.clone(),
         planning_model_route,
@@ -1557,6 +1569,43 @@ fn resolve_model_route(model_route: Option<&str>, default_route: &str) -> String
     model_route
         .map(|route| route.to_string())
         .unwrap_or_else(|| default_route.to_string())
+}
+
+fn resolve_workspace_path(
+    state: &Arc<AppState>,
+    requested_path: Option<String>,
+) -> Result<PathBuf, ApiError> {
+    let root = state
+        .workspace_root
+        .canonicalize()
+        .map_err(|error| ApiError::Internal(format!("не удалось определить корень workspace: {error}")))?;
+    let projects_root = root
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.clone());
+    let requested = requested_path
+        .filter(|path| !path.trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.clone());
+    let candidate = if requested.is_absolute() {
+        requested
+    } else if requested == PathBuf::from(".") {
+        root.clone()
+    } else {
+        projects_root.join(requested)
+    };
+    let resolved = candidate
+        .canonicalize()
+        .map_err(|error| ApiError::BadRequest(format!("проект не найден: {error}")))?;
+    if !resolved.starts_with(&projects_root) {
+        return Err(ApiError::BadRequest(
+            "проект должен находиться внутри workspace".to_string(),
+        ));
+    }
+    if !resolved.is_dir() {
+        return Err(ApiError::BadRequest("путь проекта должен быть папкой".to_string()));
+    }
+    Ok(resolved)
 }
 
 async fn emit_event(

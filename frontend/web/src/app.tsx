@@ -1615,6 +1615,7 @@ export function App() {
       content: `${text}${attachmentNote}`,
       model_route: selectedModelRoute || undefined,
       model: selectedComposerModel || undefined,
+      workspace_path: selectedProject.path ?? undefined,
     };
 
     socketRef.current.send(JSON.stringify(payload));

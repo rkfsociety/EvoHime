@@ -37,6 +37,7 @@ pub struct TaskRow {
     pub user_message: String,
     pub model_route: Option<String>,
     pub model: Option<String>,
+    pub workspace_path: Option<String>,
     pub status: String,
     pub created_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
@@ -89,12 +90,10 @@ pub async fn run_migrations(pool: &PgPool) -> Result<(), StorageError> {
 }
 
 pub async fn load_setting(pool: &PgPool, key: &str) -> Result<Option<Value>, StorageError> {
-    let row = sqlx::query_scalar::<_, Value>(
-        "SELECT value_json FROM app_settings WHERE key = $1",
-    )
-    .bind(key)
-    .fetch_optional(pool)
-    .await?;
+    let row = sqlx::query_scalar::<_, Value>("SELECT value_json FROM app_settings WHERE key = $1")
+        .bind(key)
+        .fetch_optional(pool)
+        .await?;
     Ok(row)
 }
 
@@ -247,18 +246,20 @@ pub async fn create_task(
     user_message: &str,
     model_route: Option<&str>,
     model: Option<&str>,
+    workspace_path: Option<&str>,
 ) -> Result<TaskRow, StorageError> {
     let row = sqlx::query_as::<_, TaskRow>(
         r#"
-        INSERT INTO tasks (session_id, user_message, model_route, model, status)
-        VALUES ($1, $2, $3, $4, 'running')
-        RETURNING id, session_id, user_message, model_route, model, status, created_at, completed_at
+        INSERT INTO tasks (session_id, user_message, model_route, model, workspace_path, status)
+        VALUES ($1, $2, $3, $4, $5, 'running')
+        RETURNING id, session_id, user_message, model_route, model, workspace_path, status, created_at, completed_at
         "#,
     )
     .bind(session_id)
     .bind(user_message)
     .bind(model_route)
     .bind(model)
+    .bind(workspace_path)
     .fetch_one(pool)
     .await?;
 
@@ -272,7 +273,7 @@ pub async fn complete_task(pool: &PgPool, task_id: Uuid) -> Result<TaskRow, Stor
         SET status = 'completed',
             completed_at = now()
         WHERE id = $1
-        RETURNING id, session_id, user_message, model_route, model, status, created_at, completed_at
+        RETURNING id, session_id, user_message, model_route, model, workspace_path, status, created_at, completed_at
         "#,
     )
     .bind(task_id)
@@ -289,7 +290,7 @@ pub async fn fail_task(pool: &PgPool, task_id: Uuid) -> Result<TaskRow, StorageE
         SET status = 'failed',
             completed_at = now()
         WHERE id = $1
-        RETURNING id, session_id, user_message, model_route, model, status, created_at, completed_at
+        RETURNING id, session_id, user_message, model_route, model, workspace_path, status, created_at, completed_at
         "#,
     )
     .bind(task_id)
@@ -305,7 +306,7 @@ pub async fn set_task_status(
     status: &str,
 ) -> Result<TaskRow, StorageError> {
     Ok(sqlx::query_as::<_, TaskRow>(
-        "UPDATE tasks SET status = $2, completed_at = CASE WHEN $2 IN ('completed','failed','cancelled') THEN now() ELSE NULL END WHERE id = $1 RETURNING id, session_id, user_message, model_route, model, status, created_at, completed_at",
+    "UPDATE tasks SET status = $2, completed_at = CASE WHEN $2 IN ('completed','failed','cancelled') THEN now() ELSE NULL END WHERE id = $1 RETURNING id, session_id, user_message, model_route, model, workspace_path, status, created_at, completed_at",
     ).bind(task_id).bind(status).fetch_one(pool).await?)
 }
 
@@ -314,16 +315,16 @@ pub async fn list_tasks(
     session_id: Option<Uuid>,
 ) -> Result<Vec<TaskRow>, StorageError> {
     let rows = if let Some(session_id) = session_id {
-        sqlx::query_as::<_, TaskRow>("SELECT id, session_id, user_message, model_route, model, status, created_at, completed_at FROM tasks WHERE session_id = $1 ORDER BY created_at DESC").bind(session_id).fetch_all(pool).await?
+        sqlx::query_as::<_, TaskRow>("SELECT id, session_id, user_message, model_route, model, workspace_path, status, created_at, completed_at FROM tasks WHERE session_id = $1 ORDER BY created_at DESC").bind(session_id).fetch_all(pool).await?
     } else {
-        sqlx::query_as::<_, TaskRow>("SELECT id, session_id, user_message, model_route, model, status, created_at, completed_at FROM tasks ORDER BY created_at DESC").fetch_all(pool).await?
+        sqlx::query_as::<_, TaskRow>("SELECT id, session_id, user_message, model_route, model, workspace_path, status, created_at, completed_at FROM tasks ORDER BY created_at DESC").fetch_all(pool).await?
     };
     Ok(rows)
 }
 
 pub async fn load_task(pool: &PgPool, task_id: Uuid) -> Result<Option<TaskRow>, StorageError> {
     Ok(sqlx::query_as::<_, TaskRow>(
-        "SELECT id, session_id, user_message, model_route, model, status, created_at, completed_at FROM tasks WHERE id = $1",
+        "SELECT id, session_id, user_message, model_route, model, workspace_path, status, created_at, completed_at FROM tasks WHERE id = $1",
     )
     .bind(task_id)
     .fetch_optional(pool)
@@ -334,7 +335,7 @@ pub async fn recover_running_tasks(pool: &PgPool) -> Result<Vec<TaskRow>, Storag
     sqlx::query("UPDATE tasks SET status = 'paused' WHERE status IN ('running','cancelling')")
         .execute(pool)
         .await?;
-    Ok(sqlx::query_as::<_, TaskRow>("SELECT id, session_id, user_message, model_route, model, status, created_at, completed_at FROM tasks WHERE status = 'paused' ORDER BY created_at ASC").fetch_all(pool).await?)
+    Ok(sqlx::query_as::<_, TaskRow>("SELECT id, session_id, user_message, model_route, model, workspace_path, status, created_at, completed_at FROM tasks WHERE status = 'paused' ORDER BY created_at ASC").fetch_all(pool).await?)
 }
 
 pub async fn load_checkpoint(

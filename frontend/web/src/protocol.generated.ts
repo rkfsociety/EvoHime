@@ -132,6 +132,7 @@ export interface UserMessageCommand {
   content: string;
   model_route?: string;
   model?: string;
+  workspace_path?: string;
 }
 export interface TaskCancelCommand {
   type: "task.cancel";

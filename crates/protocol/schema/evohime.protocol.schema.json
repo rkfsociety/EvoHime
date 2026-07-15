@@ -188,7 +188,8 @@
         "type": { "const": "user.message" },
         "content": { "type": "string" },
         "model_route": { "type": "string" },
-        "model": { "type": "string" }
+        "model": { "type": "string" },
+        "workspace_path": { "type": "string" }
       },
       "additionalProperties": false
     },

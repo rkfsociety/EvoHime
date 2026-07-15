@@ -135,47 +135,51 @@ async fn run_agent_loop_inner(
     let tool_output = match workspace_context {
         Some(output) => output,
         None => {
-            emit(
-                &event_tx,
-                ServerEvent::ToolStarted {
+            if !config.demo_file_path.is_file() {
+                "Контекстный файл проекта отсутствует; проект может быть пустым.".to_string()
+            } else {
+                emit(
+                    &event_tx,
+                    ServerEvent::ToolStarted {
+                        task_id: config.task_id,
+                        tool_name: "filesystem.read".to_string(),
+                    },
+                )?;
+
+                let relative_path =
+                    relative_workspace_path(&config.workspace_root, &config.demo_file_path);
+                let tool_ctx = ToolContext {
+                    workspace_root: config.workspace_root.clone(),
                     task_id: config.task_id,
-                    tool_name: "filesystem.read".to_string(),
-                },
-            )?;
+                };
+                let tool_result = tools
+                    .execute(
+                        &tool_ctx,
+                        "filesystem.read",
+                        json!({ "path": relative_path }),
+                    )
+                    .await?;
 
-            let relative_path =
-                relative_workspace_path(&config.workspace_root, &config.demo_file_path);
-            let tool_ctx = ToolContext {
-                workspace_root: config.workspace_root.clone(),
-                task_id: config.task_id,
-            };
-            let tool_result = tools
-                .execute(
-                    &tool_ctx,
-                    "filesystem.read",
-                    json!({ "path": relative_path }),
-                )
-                .await?;
+                emit(
+                    &event_tx,
+                    ServerEvent::ToolOutput {
+                        task_id: config.task_id,
+                        tool_name: "filesystem.read".to_string(),
+                        output: tool_result.output.clone(),
+                    },
+                )?;
 
-            emit(
-                &event_tx,
-                ServerEvent::ToolOutput {
-                    task_id: config.task_id,
-                    tool_name: "filesystem.read".to_string(),
-                    output: tool_result.output.clone(),
-                },
-            )?;
+                emit(
+                    &event_tx,
+                    ServerEvent::ToolCompleted {
+                        task_id: config.task_id,
+                        tool_name: "filesystem.read".to_string(),
+                        success: true,
+                    },
+                )?;
 
-            emit(
-                &event_tx,
-                ServerEvent::ToolCompleted {
-                    task_id: config.task_id,
-                    tool_name: "filesystem.read".to_string(),
-                    success: true,
-                },
-            )?;
-
-            tool_result.output
+                tool_result.output
+            }
         }
     };
     let project_context =
@@ -210,9 +214,11 @@ async fn run_agent_loop_inner(
         ),
     });
 
-    let raw_plan = collect_stream_text(
-        gateway.stream_chat_for_route_with_model(&config.planning_model_route, config.planning_model.as_deref(), &planning_messages)?,
-    )
+    let raw_plan = collect_stream_text(gateway.stream_chat_for_route_with_model(
+        &config.planning_model_route,
+        config.planning_model.as_deref(),
+        &planning_messages,
+    )?)
     .await?;
     let plan = parse_plan(&raw_plan);
 
@@ -254,7 +260,11 @@ async fn run_agent_loop_inner(
     });
 
     let mut final_message = String::new();
-    let mut stream = gateway.stream_chat_for_route_with_model(&config.model_route, config.model.as_deref(), &messages)?;
+    let mut stream = gateway.stream_chat_for_route_with_model(
+        &config.model_route,
+        config.model.as_deref(),
+        &messages,
+    )?;
 
     while let Some(chunk) = stream.next().await {
         let delta = chunk?;

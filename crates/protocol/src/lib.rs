@@ -101,6 +101,8 @@ pub enum ClientCommand {
         model_route: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         model: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        workspace_path: Option<String>,
     },
     #[serde(rename = "task.cancel")]
     TaskCancel { task_id: Uuid },
@@ -191,6 +193,7 @@ mod tests {
             content: "hello".to_string(),
             model_route: Some("planner".to_string()),
             model: Some("deepseek:free".to_string()),
+            workspace_path: Some("F:/github/test".to_string()),
         };
 
         let json = serde_json::to_string(&command).expect("command serializes");
@@ -201,10 +204,12 @@ mod tests {
                 content,
                 model_route,
                 model,
+                workspace_path,
             } => {
                 assert_eq!(content, "hello");
                 assert_eq!(model_route.as_deref(), Some("planner"));
                 assert_eq!(model.as_deref(), Some("deepseek:free"));
+                assert_eq!(workspace_path.as_deref(), Some("F:/github/test"));
             }
             _ => panic!("unexpected command variant"),
         }
