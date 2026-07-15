@@ -831,13 +831,24 @@ h1 {
 
 .line.user {
   justify-self: end;
+  margin-left: auto;
+  margin-right: 0;
   border-color: rgba(91, 134, 255, 0.25);
   background: rgba(91, 134, 255, 0.12);
 }
 
 .line.assistant {
   justify-self: start;
+  margin-left: 0;
+  margin-right: auto;
   background: rgba(255, 255, 255, 0.045);
+}
+
+.line.tool {
+  justify-self: start;
+  margin-left: 0;
+  margin-right: auto;
+  max-width: 680px;
 }
 
 .line.system {
