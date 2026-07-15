@@ -2,7 +2,7 @@
 
 Last updated: 2026-07-15
 
-## Stage: 5 complete
+## Stage: 6 in progress
 
 ## Crates
 
@@ -17,6 +17,7 @@ Last updated: 2026-07-15
 | `task-engine` | Active | lifecycle wrappers, dependency batching, checkpoints, cancel/resume/retry foundation |
 | `permissions` | Active | ask/allow/deny policy and one-shot approvals; approval events and resume flow wired |
 | `project-index` | Active | Workspace text search for agent context |
+| Python worker | Active | Bounded HTTP job queue with health, submit/poll lifecycle, and structured task failures |
 
 ## API endpoints
 
@@ -115,4 +116,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: continue with Python workers and any remaining route-specific settings after the project index, MCP call bridge, session memory, task-scoped multi-model routing slice, browser automation tools, and MCP management UI.
+**Stage 6 / Milestone 5**: the Python worker HTTP/queue baseline is complete. Next is adding real ML task handlers and moving job persistence/retries behind the Rust server while keeping worker execution isolated.

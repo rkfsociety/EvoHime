@@ -29,6 +29,14 @@ services:
       - "3000:3000"
     depends_on:
       - db
+      - worker
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/python-worker.Dockerfile
+    ports:
+      - "8090:8090"
 
   web:
     build:

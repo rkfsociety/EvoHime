@@ -71,7 +71,7 @@ EvoHime Server — Rust
 - `storage` хранит `task_steps`, `task_checkpoints` и `session_memory`, а `server` материализует план в шаги, пишет memory notes и публикует `task.step.changed`;
 - протокол содержит команды `task.cancel`, `task.resume`, `task.retry`, а frontend уже отображает панели Tasks и Actions;
 - `permissions` содержит policy engine и one-shot решения; `approval.required` публикуется сервером, а `approval.granted` / `approval.denied` продолжают paused task;
-- `project-index` уже даёт workspace text search для контекста; `session_memory` уже подмешивается в prompt; Python worker пока является каркасом.
+- `project-index` уже даёт workspace text search для контекста; `session_memory` уже подмешивается в prompt; Python worker уже имеет bounded HTTP job queue, health endpoint, submit/poll lifecycle и structured failure states.
 
 Следующий сквозной приоритет — этап 6: project index, MCP, memory и worker integrations.
 
@@ -283,13 +283,13 @@ Task lifecycle реализован: start/complete/fail/cancel/resume/retry. St
 
 **Результат:** надёжный task orchestrator с recovery и видимыми шагами в UI.
 
-### Этап 6 — Индексация, MCP, память, workers 📋
+### Этап 6 — Индексация, MCP, память, workers 🟡
 
 - Project index для контекстного поиска
 - MCP-интеграции (`mcp.call`) уже есть на уровне tool-runtime и UI управления серверами
 - Память агента
 - Multi-model routing с task-scoped `model_route` и OpenAI-compatible маршрутами — после LiteRouter
-- Python workers для ML-задач
+- HTTP/queue Python worker для изолированных задач; специализированные ML handlers — следующий подэтап
 - `browser.open`, `browser.extract`
 - UI управления MCP и инструментами
 

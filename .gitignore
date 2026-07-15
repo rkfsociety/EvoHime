@@ -7,3 +7,4 @@ frontend/web/node_modules/
 .DS_Store
 *.log
 *.tsbuildinfo
+workers/python/__pycache__/

@@ -23,7 +23,7 @@ evohime/
 │   ├── permissions/       # Permission types
 │   ├── protocol/          # Shared event schema
 │   └── storage/           # PostgreSQL access
-├── workers/python/        # Planned ML workers (stage 6)
+├── workers/python/        # HTTP job workers for heavier processing
 ├── migrations/            # SQL migrations
 ├── docker/                # Container images
 └── docs/                  # Architecture, roadmap, and status
@@ -41,7 +41,7 @@ Browser workspace
   → history stored in PostgreSQL
 ```
 
-Stage 5 is complete. LiteRouter is the active model provider. The tool runtime includes sandboxed filesystem read/write/patch/search, shell execution, and Git operations. Task lifecycle, task steps, checkpoints, cancel/resume/retry commands, approval flow, and the Tasks/Actions UI are available in the current browser workflow. Stage 6 remains planned for project index, MCP, memory, additional providers, Python workers, and browser automation tools.
+Stages 1–5 are complete. LiteRouter is the active model provider. Stage 6 already includes project index, MCP, persistent memory, task-scoped model routing, browser tools, and MCP management. The Python worker now exposes a bounded HTTP job queue with health, submit, poll, and structured failure states; the remaining work is expanding real ML task handlers and their production persistence.
 
 ## Local development without Docker
 
