@@ -43,6 +43,14 @@ type ModelConfig = {
   }>;
 };
 
+type ChatSessionSummary = {
+  session_id: string;
+  created_at: string;
+  last_message_at: string | null;
+  last_message: string | null;
+  last_role: string | null;
+};
+
 type FileNode = {
   name: string;
   path: string;
@@ -310,8 +318,31 @@ function translateModelConfigStatus(configured: boolean) {
   return configured ? "настроено" : "не хватает LITEROUTER_API_KEY";
 }
 
+function formatSessionTitle(session: ChatSessionSummary, index: number) {
+  return `Чат ${index + 1}`;
+}
+
+function formatSessionTimestamp(value: string) {
+  return new Date(value).toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatSessionPreview(session: ChatSessionSummary) {
+  if (session.last_message) {
+    const trimmed = session.last_message.replace(/\s+/g, " ").trim();
+    return trimmed.length > 64 ? `${trimmed.slice(0, 64)}…` : trimmed;
+  }
+  return "Пока без сообщений";
+}
+
 export function App() {
   const [session, setSession] = useState<SessionBootstrap | null>(null);
+  const [chatSessions, setChatSessions] = useState<ChatSessionSummary[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [socketState, setSocketState] = useState<
     "idle" | "connecting" | "connected" | "failed"
   >("idle");
@@ -358,6 +389,7 @@ export function App() {
   const socketRef = useRef<WebSocket | null>(null);
   const applyEventRef = useRef<(event: ServerEvent) => void>(() => undefined);
   const saveFileRef = useRef<() => void>(() => undefined);
+  const sessionLoadRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -414,6 +446,59 @@ export function App() {
       }
     });
 
+    const loadSessions = async () => {
+      const response = await fetch("/api/sessions");
+      if (!response.ok) {
+        throw new Error("Не удалось загрузить список чатов");
+      }
+      const data = (await response.json()) as ChatSessionSummary[];
+      if (cancelled) {
+        return;
+      }
+      setChatSessions(data);
+      if (data.length > 0) {
+        void openSession(data[0]).catch((error) => {
+          if (!cancelled) {
+            setSocketState("failed");
+            setLines((current) => [
+              ...current,
+              { role: "system", text: String(error) },
+            ]);
+          }
+        });
+        return;
+      }
+
+      const createdResponse = await fetch("/api/sessions", { method: "POST" });
+      if (!createdResponse.ok) {
+        throw new Error("Не удалось создать сессию");
+      }
+      const bootstrap = (await createdResponse.json()) as SessionBootstrap;
+      if (cancelled) {
+        return;
+      }
+      const createdSummary: ChatSessionSummary = {
+        session_id: bootstrap.session_id,
+        created_at: bootstrap.created_at,
+        last_message_at: null,
+        last_message: null,
+        last_role: null,
+      };
+      setChatSessions([createdSummary]);
+      setActiveSessionId(createdSummary.session_id);
+      hydrateSession(createdSummary, bootstrap.events);
+    };
+
+    loadSessions().catch((error) => {
+      if (!cancelled) {
+        setSocketState("failed");
+        setLines((current) => [
+          ...current,
+          { role: "system", text: String(error) },
+        ]);
+      }
+    });
+
     return () => {
       cancelled = true;
     };
@@ -429,40 +514,6 @@ export function App() {
       setSelectedModelRoute(modelConfig.default_route);
     }
   }, [modelConfig, selectedModelRoute]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const bootstrap = async () => {
-      const response = await fetch("/api/sessions", { method: "POST" });
-      if (!response.ok) {
-        throw new Error("Не удалось создать сессию");
-      }
-      const data = (await response.json()) as SessionBootstrap;
-      if (!cancelled) {
-        setSession(data);
-        setEvents(data.events.map((item) => item.event));
-        for (const item of data.events) {
-          applyEvent(item.event);
-        }
-      }
-    };
-
-    bootstrap().catch((error) => {
-      if (!cancelled) {
-        setSocketState("failed");
-        setLines((current) => [
-          ...current,
-          { role: "system", text: String(error) },
-        ]);
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     if (!session) {
@@ -513,7 +564,7 @@ export function App() {
 
   const connectedLabel = useMemo(() => {
     if (!session) {
-      return "Создание сессии...";
+      return "Загрузка чатов...";
     }
     if (socketState === "connected") {
       return "Подключено";
@@ -538,6 +589,43 @@ export function App() {
     void handleSave();
   };
 
+  function hydrateSession(summary: ChatSessionSummary, history: SessionBootstrap["events"]) {
+    setActiveSessionId(summary.session_id);
+    setSession({
+      session_id: summary.session_id,
+      created_at: summary.created_at,
+      events: history,
+    });
+    setLines(initialLines);
+    setEvents(history.map((item) => item.event));
+    setStream("");
+    setTasks({});
+    setActions([]);
+    setApproval(null);
+    setTerminalEntries([]);
+    for (const item of history) {
+      applyEventRef.current(item.event);
+    }
+  }
+
+  async function openSession(summary: ChatSessionSummary) {
+    const requestId = sessionLoadRef.current + 1;
+    sessionLoadRef.current = requestId;
+    setActiveSessionId(summary.session_id);
+
+    const response = await fetch(`/api/sessions/${summary.session_id}/history`);
+    if (!response.ok) {
+      throw new Error("Не удалось загрузить чат");
+    }
+
+    const history = (await response.json()) as SessionBootstrap["events"];
+    if (requestId !== sessionLoadRef.current) {
+      return;
+    }
+
+    hydrateSession(summary, history);
+  }
+
   function applyEvent(event: ServerEvent) {
     switch (event.type) {
       case "session.created":
@@ -550,6 +638,18 @@ export function App() {
         ]);
         break;
       case "task.started":
+        setChatSessions((current) =>
+          current.map((chat) =>
+            chat.session_id === event.session_id
+              ? {
+                  ...chat,
+                  last_message: event.user_message,
+                  last_message_at: event.created_at,
+                  last_role: "user",
+                }
+              : chat,
+          ),
+        );
         setTasks((current) => ({ ...current, [event.task_id]: { id: event.task_id, message: event.user_message, status: "running", steps: {} } }));
         setLines((current) => [
           ...current,
@@ -1451,17 +1551,53 @@ export function App() {
 
       <section className="workspace">
         <nav className="sidebar">
-          {workspacePanels.map((panel) => (
-            <button
-              key={panel.id}
-              type="button"
-              className={panel.id === activePanel ? "navItem active" : "navItem"}
-              onClick={() => setActivePanel(panel.id)}
-            >
-              <span>{panel.label}</span>
-              <small>{panel.phase}</small>
-            </button>
-          ))}
+          <section className="sidebarSection">
+            <header className="sidebarHeader">
+              <strong>Чаты</strong>
+              <span>{chatSessions.length}</span>
+            </header>
+            <div className="chatList">
+              {chatSessions.map((chat, index) => (
+                <button
+                  key={chat.session_id}
+                  type="button"
+                  className={chat.session_id === activeSessionId ? "chatItem active" : "chatItem"}
+                  onClick={() => {
+                    void openSession(chat).catch((error) => {
+                      setSocketState("failed");
+                      setLines((current) => [
+                        ...current,
+                        { role: "system", text: String(error) },
+                      ]);
+                    });
+                  }}
+                  >
+                  <span className="chatTitle">{formatSessionTitle(chat, index)}</span>
+                  <small>{formatSessionTimestamp(chat.last_message_at ?? chat.created_at)}</small>
+                  <p>{formatSessionPreview(chat)}</p>
+                </button>
+              ))}
+            </div>
+          </section>
+          <section className="sidebarSection">
+            <header className="sidebarHeader">
+              <strong>Панели</strong>
+              <span>{workspacePanels.length}</span>
+            </header>
+            <div className="panelList">
+              {workspacePanels.map((panel) => (
+                <button
+                  key={panel.id}
+                  type="button"
+                  className={panel.id === activePanel ? "navItem active" : "navItem"}
+                  onClick={() => setActivePanel(panel.id)}
+                >
+                  <span>{panel.label}</span>
+                  <small>{panel.phase}</small>
+                </button>
+              ))}
+            </div>
+          </section>
         </nav>
 
         <div className="panel mainPanel">

@@ -122,14 +122,79 @@ h1 {
 
 .workspace {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1.6fr) minmax(320px, 1fr);
+  grid-template-columns: 280px minmax(0, 1.6fr) minmax(320px, 1fr);
   gap: 24px;
 }
 
 .sidebar {
   display: grid;
-  gap: 10px;
+  gap: 16px;
   align-content: start;
+}
+
+.sidebarSection {
+  display: grid;
+  gap: 10px;
+}
+
+.sidebarHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 0 2px;
+}
+
+.sidebarHeader strong {
+  color: #edf4ff;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.sidebarHeader span {
+  color: #89a0ca;
+  font-size: 12px;
+}
+
+.chatList,
+.panelList {
+  display: grid;
+  gap: 10px;
+}
+
+.chatItem {
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  background: rgba(10, 16, 33, 0.55);
+  color: #d8e5ff;
+  padding: 14px 16px;
+  cursor: pointer;
+}
+
+.chatItem .chatTitle {
+  display: block;
+  color: #edf4ff;
+  font-weight: 700;
+}
+
+.chatItem small {
+  color: #7f95bf;
+  font-size: 11px;
+}
+
+.chatItem p {
+  color: #a9b8d9;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.chatItem.active {
+  border-color: rgba(57, 216, 178, 0.55);
+  background: rgba(57, 216, 178, 0.12);
 }
 
 .navItem {
@@ -764,6 +829,18 @@ h1 {
   .topBar {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    order: 2;
+  }
+
+  .panel {
+    min-height: 60vh;
   }
 
   .statusCard {

@@ -22,6 +22,15 @@ pub struct SessionRow {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct SessionSummaryRow {
+    pub id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub last_message_at: Option<DateTime<Utc>>,
+    pub last_message: Option<String>,
+    pub last_role: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct TaskRow {
     pub id: Uuid,
     pub session_id: Uuid,
@@ -89,6 +98,34 @@ pub async fn create_session(pool: &PgPool) -> Result<SessionRow, StorageError> {
     .await?;
 
     Ok(row)
+}
+
+pub async fn list_sessions(pool: &PgPool, limit: i64) -> Result<Vec<SessionSummaryRow>, StorageError> {
+    let rows = sqlx::query_as::<_, SessionSummaryRow>(
+        r#"
+        SELECT
+            s.id,
+            s.created_at,
+            last_message.created_at AS last_message_at,
+            last_message.content AS last_message,
+            last_message.role AS last_role
+        FROM sessions AS s
+        LEFT JOIN LATERAL (
+            SELECT role, content, created_at
+            FROM session_messages
+            WHERE session_id = s.id
+            ORDER BY created_at DESC
+            LIMIT 1
+        ) AS last_message ON TRUE
+        ORDER BY s.created_at DESC
+        LIMIT $1
+        "#,
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
 }
 
 pub async fn load_session(

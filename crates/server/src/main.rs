@@ -184,7 +184,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/api/models/config", get(model_config))
-        .route("/api/sessions", post(create_session))
+        .route("/api/sessions", get(list_sessions).post(create_session))
         .route("/api/sessions/:session_id/history", get(session_history))
         .route("/api/files", get(workspace::list_files))
         .route(
@@ -397,6 +397,34 @@ async fn create_session(
             event,
         }],
     }))
+}
+
+#[derive(Debug, serde::Serialize)]
+struct SessionSummary {
+    session_id: Uuid,
+    created_at: chrono::DateTime<chrono::Utc>,
+    last_message_at: Option<chrono::DateTime<chrono::Utc>>,
+    last_message: Option<String>,
+    last_role: Option<String>,
+}
+
+async fn list_sessions(State(state): State<Arc<AppState>>) -> Result<Json<Vec<SessionSummary>>, ApiError> {
+    let rows = evohime_storage::list_sessions(&state.pool, 20)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+
+    let sessions = rows
+        .into_iter()
+        .map(|row| SessionSummary {
+            session_id: row.id,
+            created_at: row.created_at,
+            last_message_at: row.last_message_at,
+            last_message: row.last_message,
+            last_role: row.last_role,
+        })
+        .collect();
+
+    Ok(Json(sessions))
 }
 
 async fn session_history(
