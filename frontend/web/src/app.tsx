@@ -977,9 +977,7 @@ export function App() {
       setNewProjectName("");
       setProjectPickerOpen(false);
     } catch (error) {
-      setProjectCreateError(String(error));
-    } finally {
-      setProjectCreating(false);
+      setProjectCreateError(error instanceof Error ? error.message : String(error).replace(/^Error:\s*/, ""));
     }
   }
 
@@ -2493,6 +2491,7 @@ export function App() {
                         Отмена
                       </button>
                     </div>
+                    {projectCreateError ? <small className="projectCreateError">{projectCreateError}</small> : null}
                   </div>
                 ) : (
                   <button
@@ -2504,7 +2503,6 @@ export function App() {
                     <span><strong>Новый проект</strong><small>Создать отдельную папку</small></span>
                   </button>
                 )}
-                {projectCreateError ? <small className="projectCreateError">{projectCreateError}</small> : null}
                 <button
                   type="button"
                   className={selectedProject.path === null ? "projectOption active" : "projectOption"}
