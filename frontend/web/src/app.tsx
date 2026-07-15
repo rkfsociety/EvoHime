@@ -1,5 +1,5 @@
 import Editor from "@monaco-editor/react";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ClientCommand,
   PlanStep,
@@ -432,6 +432,8 @@ export function App() {
   const [siteSearch, setSiteSearch] = useState("");
   const [terminalEntries, setTerminalEntries] = useState<TerminalEntry[]>([]);
   const [permissionSettings, setPermissionSettings] = useState<PermissionSettings>({});
+  const [permissionModeSaving, setPermissionModeSaving] = useState(false);
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [toolCatalog, setToolCatalog] = useState<ToolDefinition[]>([]);
   const [toolCatalogError, setToolCatalogError] = useState<string | null>(null);
   const [mcpServers, setMcpServers] = useState<McpServerConfig[]>([]);
@@ -439,6 +441,7 @@ export function App() {
   const [mcpServersSaving, setMcpServersSaving] = useState(false);
   const [mcpServersNotice, setMcpServersNotice] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const applyEventRef = useRef<(event: ServerEvent) => void>(() => undefined);
   const saveFileRef = useRef<() => void>(() => undefined);
   const sessionLoadRef = useRef(0);
@@ -704,6 +707,13 @@ export function App() {
     () => Object.values(tasks).find((task) => task.status === "running" || task.status === "cancelling")?.id ?? null,
     [tasks],
   );
+  const workMode = useMemo<PermissionMode | "mixed">(() => {
+    const modes = Object.values(permissionSettings).map((setting) => setting.mode);
+    if (modes.length === 0 || modes.every((mode) => mode === modes[0])) {
+      return modes[0] ?? "ask";
+    }
+    return "mixed";
+  }, [permissionSettings]);
   const visiblePullRequests = useMemo(() => {
     const query = pullRequestSearch.trim().toLowerCase();
     if (!query) {
@@ -983,6 +993,36 @@ export function App() {
     setPermissionSettings((current) => ({ ...current, [name]: { mode } }));
   }
 
+  async function updateWorkMode(mode: PermissionMode) {
+    const names = Object.keys(permissionSettings);
+    if (names.length === 0) {
+      return;
+    }
+
+    setPermissionModeSaving(true);
+    try {
+      const responses = await Promise.all(
+        names.map((name) =>
+          fetch(`/api/permissions/${name}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mode }),
+          }),
+        ),
+      );
+      if (responses.some((response) => !response.ok)) {
+        throw new Error("Не удалось применить режим работы");
+      }
+      setPermissionSettings(Object.fromEntries(names.map((name) => [name, { mode }])));
+    } finally {
+      setPermissionModeSaving(false);
+    }
+  }
+
+  function handleAttachmentChange(event: ChangeEvent<HTMLInputElement>) {
+    setAttachments(Array.from(event.target.files ?? []));
+  }
+
   function updateModelDraft(index: number, patch: Partial<ModelRouteDraft>) {
     setModelDrafts((current) =>
       current.map((route, routeIndex) => (routeIndex === index ? { ...route, ...patch } : route)),
@@ -1207,14 +1247,21 @@ export function App() {
       return;
     }
 
+    const attachmentNote = attachments.length > 0
+      ? `\n\nВложения: ${attachments.map((file) => file.name).join(", ")}`
+      : "";
     const payload: ClientCommand = {
       type: "user.message",
-      content: text,
+      content: `${text}${attachmentNote}`,
       model_route: selectedModelRoute || undefined,
     };
 
     socketRef.current.send(JSON.stringify(payload));
     setInput("");
+    setAttachments([]);
+    if (attachmentInputRef.current) {
+      attachmentInputRef.current.value = "";
+    }
   }
 
   function sendTaskCommand(type: "task.cancel" | "task.resume" | "task.retry", taskId: string) {
@@ -1989,24 +2036,42 @@ export function App() {
         </div>
         <form onSubmit={sendMessage} className="composer">
           <div className="composerField">
+            <div className="composerLeading">
+              <input
+                ref={attachmentInputRef}
+                type="file"
+                multiple
+                className="attachmentInput"
+                onChange={handleAttachmentChange}
+                aria-label="Добавить вложения"
+              />
+              <button
+                type="button"
+                className="attachmentButton"
+                onClick={() => attachmentInputRef.current?.click()}
+                aria-label="Добавить вложения"
+              >
+                +
+              </button>
+              <select
+                className="workModeSelect"
+                value={workMode}
+                onChange={(event) => void updateWorkMode(event.target.value as PermissionMode)}
+                disabled={permissionModeSaving || Object.keys(permissionSettings).length === 0}
+                aria-label="Режим работы агента"
+              >
+                <option value="ask">Спрашивать всё</option>
+                <option value="allow">Полный доступ</option>
+                <option value="deny">Запретить всё</option>
+                {workMode === "mixed" ? <option value="mixed" disabled>Смешанный режим</option> : null}
+              </select>
+            </div>
             <input
               value={input}
               onChange={(event) => setInput(event.target.value)}
               placeholder="Введите сообщение..."
             />
             <div className="composerControls">
-              <select
-                value={selectedModelRoute}
-                onChange={(event) => setSelectedModelRoute(event.target.value)}
-                disabled={!modelConfig || modelConfig.routes.length === 0}
-                aria-label="Маршрут модели"
-              >
-                {modelConfig?.routes.map((route) => (
-                  <option key={route.name} value={route.name}>
-                    {route.name}
-                  </option>
-                ))}
-              </select>
               <button
                 type={activeTaskId ? "button" : "submit"}
                 className={activeTaskId ? "sendButton stopButton" : "sendButton"}
@@ -2017,6 +2082,11 @@ export function App() {
                 <span aria-hidden="true">{activeTaskId ? "■" : "↑"}</span>
               </button>
             </div>
+            {attachments.length > 0 ? (
+              <div className="attachmentList" aria-label="Выбранные вложения">
+                {attachments.map((file) => <span key={`${file.name}-${file.size}`}>{file.name}</span>)}
+              </div>
+            ) : null}
           </div>
         </form>
       </>

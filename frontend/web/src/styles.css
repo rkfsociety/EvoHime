@@ -903,6 +903,8 @@ h1 {
   position: relative;
   display: flex;
   align-items: flex-end;
+  gap: 4px;
+  flex-wrap: wrap;
   min-height: 58px;
   border: 1px solid var(--border-1);
   border-radius: 18px;
@@ -925,6 +927,46 @@ h1 {
   padding: 17px 14px 17px 18px;
 }
 
+.composerLeading {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 8px;
+}
+
+.attachmentInput {
+  display: none;
+}
+
+.attachmentButton {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.attachmentButton:hover {
+  background: var(--surface-4);
+  color: var(--text-0);
+}
+
+.workModeSelect {
+  max-width: 140px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .composerControls {
   display: flex;
   align-items: center;
@@ -932,13 +974,33 @@ h1 {
   padding: 8px;
 }
 
-.composer select {
+.composerControls select {
   max-width: 150px;
   border: 0;
   outline: 0;
   background: transparent;
   color: var(--text-2);
   font-size: 12px;
+}
+
+.attachmentList {
+  display: flex;
+  flex-basis: 100%;
+  gap: 6px;
+  padding: 0 14px 8px;
+  overflow: hidden;
+}
+
+.attachmentList span {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--surface-4);
+  color: var(--text-2);
+  font-size: 11px;
 }
 
 .sendButton {
