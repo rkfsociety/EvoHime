@@ -385,6 +385,7 @@ export function App() {
   const [actions, setActions] = useState<ActionView[]>([]);
   const [approval, setApproval] = useState<ApprovalRequiredEvent | null>(null);
   const [githubAuth, setGithubAuth] = useState<GithubAuthInfo | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [terminalEntries, setTerminalEntries] = useState<TerminalEntry[]>([]);
   const [permissionSettings, setPermissionSettings] = useState<PermissionSettings>({});
   const [toolCatalog, setToolCatalog] = useState<ToolDefinition[]>([]);
@@ -575,6 +576,13 @@ export function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
+
+  useEffect(() => {
+    document.body.style.overflow = settingsOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [settingsOpen]);
 
   useEffect(() => {
     if (!session) {
@@ -1113,171 +1121,175 @@ export function App() {
     );
   }
 
-  function renderPanelContent() {
-    if (activePanel === "settings") {
-      return (
-        <div className="settingsPanel">
-          <section className="settingsSection">
-            <h3>Провайдер модели</h3>
-            {modelConfigError ? <p className="settingsError">{modelConfigError}</p> : null}
-            {modelConfig ? (
-              <dl className="settingsGrid">
-                <div>
-                  <dt>Маршрут по умолчанию</dt>
-                  <dd>{modelConfig.default_route}</dd>
-                </div>
-                <div>
-                  <dt>Провайдер</dt>
-                  <dd>{modelConfig.provider}</dd>
-                </div>
-                <div>
-                  <dt>Модель</dt>
-                  <dd>{modelConfig.model}</dd>
-                </div>
-                <div>
-                  <dt>Базовый URL</dt>
-                  <dd>{modelConfig.base_url}</dd>
-                </div>
-                <div>
-                  <dt>API-ключ</dt>
-                  <dd data-configured={modelConfig.configured}>
-                    {translateModelConfigStatus(modelConfig.configured)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Доступные модели</dt>
-                  <dd>{modelConfig.available_models.join(", ")}</dd>
-                </div>
-                <div>
-                  <dt>Маршруты</dt>
-                  <dd>
-                    {modelConfig.routes
-                      .map((route) => `${route.name} (${route.provider}:${route.model})`)
-                      .join(", ")}
-                  </dd>
-                </div>
-              </dl>
-            ) : (
-              <p>Загрузка конфигурации модели...</p>
-            )}
-            <p className="settingsHint">
-              Укажи `MODEL_ROUTES_JSON` на сервере, чтобы настроить несколько маршрутов и выбирать один для каждой задачи.
-            </p>
-          </section>
-
-          <section className="settingsSection">
-            <h3>Разрешения инструментов</h3>
-            <div className="permissionList">
-              {Object.entries(permissionSettings).map(([name, value]) => (
-                <label key={name}>
-                  <span>{name}</span>
-                  <select
-                    value={value.mode}
-                    onChange={(event) =>
-                      void updatePermission(name, event.target.value as PermissionMode)
-                    }
-                  >
-                    <option value="ask">спрашивать</option>
-                    <option value="allow">разрешать</option>
-                    <option value="deny">запрещать</option>
-                  </select>
-                </label>
-              ))}
-            </div>
-          </section>
-
-          <section className="settingsSection">
-            <div className="settingsHeaderRow">
+  function renderSettingsContent() {
+    return (
+      <div className="settingsPanel">
+        <section className="settingsSection">
+          <h3>Провайдер модели</h3>
+          {modelConfigError ? <p className="settingsError">{modelConfigError}</p> : null}
+          {modelConfig ? (
+            <dl className="settingsGrid">
               <div>
-                <h3>MCP-серверы</h3>
-                <p className="settingsHint">
-                  Эти конечные точки редактируются в памяти и управляют интерфейсом MCP.
-                </p>
+                <dt>Маршрут по умолчанию</dt>
+                <dd>{modelConfig.default_route}</dd>
               </div>
-              <div className="toolbarActions">
-                <button type="button" onClick={addMcpServer}>
-                  Добавить сервер
-                </button>
-                <button type="button" onClick={() => void saveMcpServers()} disabled={mcpServersSaving}>
-                  {mcpServersSaving ? "Сохранение..." : "Сохранить серверы"}
-                </button>
+              <div>
+                <dt>Провайдер</dt>
+                <dd>{modelConfig.provider}</dd>
               </div>
+              <div>
+                <dt>Модель</dt>
+                <dd>{modelConfig.model}</dd>
+              </div>
+              <div>
+                <dt>Базовый URL</dt>
+                <dd>{modelConfig.base_url}</dd>
+              </div>
+              <div>
+                <dt>API-ключ</dt>
+                <dd data-configured={modelConfig.configured}>
+                  {translateModelConfigStatus(modelConfig.configured)}
+                </dd>
+              </div>
+              <div>
+                <dt>Доступные модели</dt>
+                <dd>{modelConfig.available_models.join(", ")}</dd>
+              </div>
+              <div>
+                <dt>Маршруты</dt>
+                <dd>
+                  {modelConfig.routes
+                    .map((route) => `${route.name} (${route.provider}:${route.model})`)
+                    .join(", ")}
+                </dd>
+              </div>
+            </dl>
+          ) : (
+            <p>Загрузка конфигурации модели...</p>
+          )}
+          <p className="settingsHint">
+            Укажи `MODEL_ROUTES_JSON` на сервере, чтобы настроить несколько маршрутов и выбирать один для каждой задачи.
+          </p>
+        </section>
+
+        <section className="settingsSection">
+          <h3>Разрешения инструментов</h3>
+          <div className="permissionList">
+            {Object.entries(permissionSettings).map(([name, value]) => (
+              <label key={name}>
+                <span>{name}</span>
+                <select
+                  value={value.mode}
+                  onChange={(event) =>
+                    void updatePermission(name, event.target.value as PermissionMode)
+                  }
+                >
+                  <option value="ask">спрашивать</option>
+                  <option value="allow">разрешать</option>
+                  <option value="deny">запрещать</option>
+                </select>
+              </label>
+            ))}
+          </div>
+        </section>
+
+        <section className="settingsSection">
+          <div className="settingsHeaderRow">
+            <div>
+              <h3>MCP-серверы</h3>
+              <p className="settingsHint">
+                Эти конечные точки редактируются в памяти и управляют интерфейсом MCP.
+              </p>
             </div>
-            {mcpServersError ? <p className="settingsError">{mcpServersError}</p> : null}
-            {mcpServersNotice ? <p className="settingsHint">{mcpServersNotice}</p> : null}
-            <div className="mcpServerList">
-              {mcpServers.length === 0 ? (
-                <div className="emptyState">
-                  <strong>Пока нет MCP-серверов</strong>
-                  <p>Добавь первый сервер, чтобы держать общие точки доступа под рукой для агентов.</p>
-                </div>
-              ) : null}
-              {mcpServers.map((server, index) => (
-                <article className="mcpServerCard" key={`${server.name || "server"}-${index}`}>
-                  <div className="mcpServerRow">
-                    <label>
-                      <span>Название</span>
-                      <input
-                        value={server.name}
-                        onChange={(event) => updateMcpServer(index, { name: event.target.value })}
-                        placeholder="docs"
-                      />
-                    </label>
-                    <label>
-                      <span>Ссылка</span>
-                      <input
-                        value={server.url}
-                        onChange={(event) => updateMcpServer(index, { url: event.target.value })}
-                        placeholder="https://example.com/rpc"
-                      />
-                    </label>
-                  </div>
-                  <label className="mcpServerDescription">
-                    <span>Описание</span>
+            <div className="toolbarActions">
+              <button type="button" onClick={addMcpServer}>
+                Добавить сервер
+              </button>
+              <button type="button" onClick={() => void saveMcpServers()} disabled={mcpServersSaving}>
+                {mcpServersSaving ? "Сохранение..." : "Сохранить серверы"}
+              </button>
+            </div>
+          </div>
+          {mcpServersError ? <p className="settingsError">{mcpServersError}</p> : null}
+          {mcpServersNotice ? <p className="settingsHint">{mcpServersNotice}</p> : null}
+          <div className="mcpServerList">
+            {mcpServers.length === 0 ? (
+              <div className="emptyState">
+                <strong>Пока нет MCP-серверов</strong>
+                <p>Добавь первый сервер, чтобы держать общие точки доступа под рукой для агентов.</p>
+              </div>
+            ) : null}
+            {mcpServers.map((server, index) => (
+              <article className="mcpServerCard" key={`${server.name || "server"}-${index}`}>
+                <div className="mcpServerRow">
+                  <label>
+                    <span>Название</span>
                     <input
-                      value={server.description ?? ""}
-                      onChange={(event) =>
-                        updateMcpServer(index, { description: event.target.value })
-                      }
-                      placeholder="Необязательная заметка"
+                      value={server.name}
+                      onChange={(event) => updateMcpServer(index, { name: event.target.value })}
+                      placeholder="docs"
                     />
                   </label>
-                  <div className="mcpServerFooter">
-                    <label className="toggleRow">
-                      <input
-                        type="checkbox"
-                        checked={server.enabled}
-                        onChange={(event) =>
-                          updateMcpServer(index, { enabled: event.target.checked })
-                        }
-                      />
-                      <span>Включён</span>
-                    </label>
-                    <button type="button" onClick={() => removeMcpServer(index)}>
-                      Удалить
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </section>
+                  <label>
+                    <span>Ссылка</span>
+                    <input
+                      value={server.url}
+                      onChange={(event) => updateMcpServer(index, { url: event.target.value })}
+                      placeholder="https://example.com/rpc"
+                    />
+                  </label>
+                </div>
+                <label className="mcpServerDescription">
+                  <span>Описание</span>
+                  <input
+                    value={server.description ?? ""}
+                    onChange={(event) =>
+                      updateMcpServer(index, { description: event.target.value })
+                    }
+                    placeholder="Необязательная заметка"
+                  />
+                </label>
+                <div className="mcpServerFooter">
+                  <label className="toggleRow">
+                    <input
+                      type="checkbox"
+                      checked={server.enabled}
+                      onChange={(event) =>
+                        updateMcpServer(index, { enabled: event.target.checked })
+                      }
+                    />
+                    <span>Включён</span>
+                  </label>
+                  <button type="button" onClick={() => removeMcpServer(index)}>
+                    Удалить
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
 
-          <section className="settingsSection">
-            <h3>Каталог инструментов</h3>
-            {toolCatalogError ? <p className="settingsError">{toolCatalogError}</p> : null}
-            <div className="toolCatalog">
-              {toolCatalog.map((tool) => (
-                <article className="toolCard" key={tool.name}>
-                  <strong>{tool.name}</strong>
-                  <p>{tool.description}</p>
-                  <small>{tool.permissions.join(", ") || "нет разрешений"}</small>
-                  <span>Таймаут {tool.timeout_ms} мс</span>
-                </article>
-              ))}
-            </div>
-          </section>
-        </div>
-      );
+        <section className="settingsSection">
+          <h3>Каталог инструментов</h3>
+          {toolCatalogError ? <p className="settingsError">{toolCatalogError}</p> : null}
+          <div className="toolCatalog">
+            {toolCatalog.map((tool) => (
+              <article className="toolCard" key={tool.name}>
+                <strong>{tool.name}</strong>
+                <p>{tool.description}</p>
+                <small>{tool.permissions.join(", ") || "нет разрешений"}</small>
+                <span>Таймаут {tool.timeout_ms} мс</span>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  function renderPanelContent() {
+    if (activePanel === "settings") {
+      return renderSettingsContent();
     }
 
     if (activePanel === "files") {
@@ -1595,7 +1607,7 @@ export function App() {
                       ]);
                     });
                   }}
-                  >
+                >
                   <span className="chatTitle">{formatSessionTitle(chat, index)}</span>
                   <small>{formatSessionTimestamp(chat.last_message_at ?? chat.created_at)}</small>
                   <p>{formatSessionPreview(chat)}</p>
@@ -1623,8 +1635,19 @@ export function App() {
             </div>
           </section>
           <section className="sidebarFooter">
+            <div className="sidebarFooterTop">
+              <strong>{githubAuth?.login ?? "не авторизован"}</strong>
+              <button
+                type="button"
+                className="settingsGear"
+                onClick={() => setSettingsOpen(true)}
+                aria-label="Открыть настройки"
+                title="Открыть настройки"
+              >
+                ⚙
+              </button>
+            </div>
             <span className="sidebarFooterLabel">GitHub</span>
-            <strong>{githubAuth?.login ?? "не авторизован"}</strong>
             <small>{githubAuth?.authenticated ? `Авторизация через ${githubAuth.source}` : "Вход через gh"}</small>
           </section>
         </nav>
@@ -1652,6 +1675,26 @@ export function App() {
           </div>
         </div>
       </section>
+      {settingsOpen ? (
+        <div
+          className="settingsBackdrop"
+          onClick={() => setSettingsOpen(false)}
+          role="presentation"
+        >
+          <section className="settingsModal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Настройки">
+            <header className="settingsModalHeader">
+              <div>
+                <span className="sidebarFooterLabel">Настройки</span>
+                <h2>Параметры EvoHime</h2>
+              </div>
+              <button type="button" className="settingsCloseButton" onClick={() => setSettingsOpen(false)}>
+                Закрыть
+              </button>
+            </header>
+            <div className="settingsModalBody">{renderSettingsContent()}</div>
+          </section>
+        </div>
+      ) : null}
       {approval ? <ApprovalModal request={approval} onGrant={() => resolveApproval("approval.granted")} onDeny={() => resolveApproval("approval.denied")} /> : null}
     </main>
   );
