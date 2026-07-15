@@ -2,13 +2,13 @@
 
 Last updated: 2026-07-15
 
-## Stage: 3 complete, stage 4 foundations in place
+## Stage: 4 complete
 
 ## Crates
 
 | Crate | Status | Notes |
 | --- | --- | --- |
-| `server` | Active | HTTP + WebSocket, `/api/models/config` |
+| `server` | Active | HTTP + WebSocket, workspace file and Git APIs |
 | `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema |
 | `storage` | Active | Sessions, tasks, events, **session_messages** |
 | `tool-runtime` | Active | Registry + sandboxed filesystem, shell, and Git tools |
@@ -26,9 +26,14 @@ Last updated: 2026-07-15
 | GET | `/api/models/config` | LiteRouter model configuration |
 | POST | `/api/sessions` | Create session + bootstrap events |
 | GET | `/api/sessions/:id/history` | Event history |
+| GET | `/api/files` | List workspace directory entries |
+| GET/PUT/POST | `/api/files/content` | Read, save, or create a workspace file |
+| GET | `/api/git/status` | Repository status and full diff snapshot |
+| GET | `/api/git/diff` | Repository diff, optionally scoped to a path |
+| POST | `/api/git/commit`, `/api/git/pull`, `/api/git/push` | Permission-controlled Git mutations |
 | WS | `/ws/:session_id` | Real-time streaming events |
 
-The current API is intentionally small. File browsing/editing and Git views still need dedicated end-to-end HTTP/WebSocket flows.
+Workspace APIs now cover file browsing, reading, saving/creating files, Git status/diff, and Git commit/pull/push actions. File and Git mutations publish synchronization events through the session bus.
 
 ## Agent flow
 
@@ -69,7 +74,9 @@ user.message
 | Tasks | ✅ Basic list/status view |
 | Actions | ✅ Basic action log |
 | Terminal | ✅ Active |
-| Files, Editor, Git | Placeholder |
+| Files | ✅ Active lazy workspace tree and file creation |
+| Editor | ✅ Active Monaco editor with save/reload and dirty-state conflict notice |
+| Git | ✅ Active status/diff viewer with commit/pull/push controls |
 
 ## Tests
 
@@ -81,4 +88,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 4 / Milestone 3**: finish file browsing, Monaco editing, and Git UI in the browser. Then harden task recovery and orchestration as a separate vertical slice.
+**Stage 5 / Milestone 4**: harden task recovery and orchestration as a separate vertical slice.

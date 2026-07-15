@@ -5,6 +5,7 @@ use axum::{
 };
 use chrono::Utc;
 use evohime_protocol::ServerEvent;
+use evohime_tool_runtime::ToolError;
 use serde::{Deserialize, Serialize};
 use std::{
     path::{Component, Path, PathBuf},
@@ -55,6 +56,19 @@ pub struct SaveResponse {
 pub struct GitSnapshot {
     pub status: String,
     pub diff: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GitActionRequest {
+    pub message: Option<String>,
+    pub remote: Option<String>,
+    pub branch: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GitActionResponse {
+    pub output: String,
+    pub structured: serde_json::Value,
 }
 
 pub async fn list_files(
@@ -158,10 +172,107 @@ pub async fn git_diff(
         .map(Json)
 }
 
+pub async fn git_commit(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<SessionQuery>,
+    Json(payload): Json<GitActionRequest>,
+) -> Result<Json<GitActionResponse>, ApiError> {
+    let message = payload
+        .message
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| ApiError::BadRequest("commit message is required".to_string()))?;
+    execute_git_action(
+        &state,
+        query.session_id,
+        "git.commit",
+        serde_json::json!({ "message": message }),
+    )
+    .await
+    .map(Json)
+}
+
+pub async fn git_pull(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<SessionQuery>,
+    Json(payload): Json<GitActionRequest>,
+) -> Result<Json<GitActionResponse>, ApiError> {
+    execute_git_action(&state, query.session_id, "git.pull", remote_input(&payload))
+        .await
+        .map(Json)
+}
+
+pub async fn git_push(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<SessionQuery>,
+    Json(payload): Json<GitActionRequest>,
+) -> Result<Json<GitActionResponse>, ApiError> {
+    execute_git_action(&state, query.session_id, "git.push", remote_input(&payload))
+        .await
+        .map(Json)
+}
+
 #[derive(Debug, Deserialize)]
 pub struct SaveQuery {
     pub path: Option<String>,
     pub session_id: Uuid,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SessionQuery {
+    pub session_id: Uuid,
+}
+
+fn remote_input(payload: &GitActionRequest) -> serde_json::Value {
+    serde_json::json!({
+        "remote": payload.remote,
+        "branch": payload.branch,
+    })
+}
+
+async fn execute_git_action(
+    state: &Arc<AppState>,
+    session_id: Uuid,
+    tool: &str,
+    input: serde_json::Value,
+) -> Result<GitActionResponse, ApiError> {
+    let ctx = evohime_tool_runtime::ToolContext {
+        workspace_root: state.workspace_root.clone(),
+        task_id: Uuid::nil(),
+    };
+    let result = state
+        .tools
+        .execute(&ctx, tool, input)
+        .await
+        .map_err(map_tool_error)?;
+
+    if let Ok(snapshot) = git_snapshot_with_path_and_session(state, None).await {
+        let _ = state
+            .publish_event(
+                session_id,
+                None,
+                ServerEvent::GitDiffChanged {
+                    status: snapshot.status,
+                    diff: snapshot.diff,
+                    created_at: Utc::now(),
+                },
+            )
+            .await;
+    }
+
+    Ok(GitActionResponse {
+        output: result.output,
+        structured: result.structured,
+    })
+}
+
+fn map_tool_error(error: ToolError) -> ApiError {
+    match error {
+        ToolError::InvalidInput { message, .. } => ApiError::BadRequest(message),
+        ToolError::NeedsApproval {
+            tool, approval_id, ..
+        } => ApiError::ApprovalRequired { tool, approval_id },
+        other => ApiError::Internal(other.to_string()),
+    }
 }
 
 async fn git_snapshot(state: &Arc<AppState>, _session_id: Uuid) -> Result<GitSnapshot, ApiError> {
@@ -228,6 +339,7 @@ fn resolve_relative_path(input: Option<&str>) -> Result<Option<PathBuf>, ApiErro
 }
 
 fn workspace_path(root: &Path, relative: &Path) -> Result<PathBuf, ApiError> {
+    ensure_safe_relative_path(relative)?;
     let candidate = root.join(relative);
     let canonical_root = root
         .canonicalize()
@@ -244,12 +356,36 @@ fn workspace_path(root: &Path, relative: &Path) -> Result<PathBuf, ApiError> {
 }
 
 fn writable_workspace_path(root: &Path, relative: &Path) -> Result<PathBuf, ApiError> {
+    ensure_safe_relative_path(relative)?;
     let candidate = root.join(relative);
-    if !candidate.starts_with(root) {
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let mut existing_parent = candidate.clone();
+    while !existing_parent.exists() {
+        existing_parent = existing_parent
+            .parent()
+            .ok_or_else(|| ApiError::BadRequest("invalid path".to_string()))?
+            .to_path_buf();
+    }
+    let canonical_parent = existing_parent
+        .canonicalize()
+        .map_err(|error| ApiError::BadRequest(error.to_string()))?;
+    if !canonical_parent.starts_with(&canonical_root) {
         return Err(ApiError::BadRequest("path outside workspace".to_string()));
     }
 
     Ok(candidate)
+}
+
+fn ensure_safe_relative_path(relative: &Path) -> Result<(), ApiError> {
+    if relative
+        .components()
+        .any(|component| matches!(component, Component::Normal(part) if part == ".git"))
+    {
+        return Err(ApiError::BadRequest(".git is not accessible".to_string()));
+    }
+    Ok(())
 }
 
 fn directory_path(root: &Path, relative: Option<&Path>) -> Result<PathBuf, ApiError> {
@@ -284,6 +420,9 @@ async fn read_directory(directory: &Path, root: &Path) -> Result<Vec<FileNode>, 
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?
     {
+        if entry.file_name() == ".git" {
+            continue;
+        }
         let metadata = entry
             .metadata()
             .await
@@ -314,4 +453,77 @@ async fn read_directory(directory: &Path, root: &Path) -> Result<Vec<FileNode>, 
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn rejects_parent_and_absolute_paths() {
+        assert!(resolve_relative_path(Some("../secret.txt")).is_err());
+        assert!(resolve_relative_path(Some("C:/secret.txt")).is_err());
+        assert!(resolve_relative_path(Some("/secret.txt")).is_err());
+    }
+
+    #[tokio::test]
+    async fn directory_listing_hides_git_metadata() {
+        let dir = tempdir().expect("tempdir");
+        std::fs::create_dir(dir.path().join(".git")).expect("git directory");
+        std::fs::write(dir.path().join("README.md"), "readme").expect("file");
+
+        let entries = read_directory(dir.path(), dir.path())
+            .await
+            .expect("listing");
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].path, "README.md");
+    }
+
+    #[tokio::test]
+    async fn writable_path_rejects_symlink_escape() {
+        let workspace = tempdir().expect("workspace");
+        let outside = tempdir().expect("outside");
+        std::fs::create_dir(workspace.path().join("linked")).expect("linked directory");
+        std::fs::write(outside.path().join("secret.txt"), "secret").expect("secret");
+
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(outside.path(), workspace.path().join("linked/out"))
+            .expect("symlink");
+        #[cfg(windows)]
+        if std::os::windows::fs::symlink_dir(outside.path(), workspace.path().join("linked/out"))
+            .is_err()
+        {
+            return;
+        }
+
+        assert!(
+            writable_workspace_path(workspace.path(), Path::new("linked/out/new.txt")).is_err()
+        );
+    }
+
+    #[test]
+    fn builds_remote_input_for_git_actions() {
+        let payload = GitActionRequest {
+            message: None,
+            remote: Some("origin".to_string()),
+            branch: Some("main".to_string()),
+        };
+
+        assert_eq!(remote_input(&payload)["remote"], "origin");
+        assert_eq!(remote_input(&payload)["branch"], "main");
+    }
+
+    #[test]
+    fn maps_git_approval_to_conflict_error() {
+        let error = map_tool_error(ToolError::NeedsApproval {
+            tool: "git.push".to_string(),
+            permission: evohime_permissions::Permission::GitWrite,
+            scope: "workspace".to_string(),
+            approval_id: Uuid::nil(),
+        });
+
+        assert!(matches!(error, ApiError::ApprovalRequired { tool, .. } if tool == "git.push"));
+    }
 }

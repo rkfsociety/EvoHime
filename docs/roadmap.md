@@ -14,7 +14,7 @@
 | 1 | Фундамент | ✅ Готово | Vertical slice работает |
 | 2 | Чат с моделью | ✅ Готово | LiteRouter streaming |
 | 3 | Tools + shell | ✅ Готово | Sandbox, filesystem tools, shell, approvals, terminal, permissions |
-| 4 | Editor + Git | 🟡 Backend готов частично | Git tools ready, file/editor/Git UI ahead |
+| 4 | Editor + Git | ✅ Done | Browser file tree, Monaco editor, Git status/diff/actions, and synchronization events |
 | 5 | Оркестрация | 🟡 Основа готова | Lifecycle, команды и storage заготовлены |
 | 6 | Advanced | 📋 Запланирован | Index, MCP, workers |
 
@@ -102,7 +102,7 @@
 
 ---
 
-## Milestone 3 — Этап 4: Editor, files, Git 🟡
+## Milestone 3 — Этап 4: Editor, files, Git ✅
 
 **Зависимости:** Milestone 2
 
@@ -112,14 +112,14 @@
 
 | # | Задача | Crate / Path |
 | --- | --- | --- |
-| 4.1 | API: список файлов / содержимое / сохранение | `crates/server/` |
-| 4.2 | Дерево файлов (панель Files) | `frontend/web/` |
-| 4.3 | Monaco Editor (панель Editor) | `frontend/web/` |
+| 4.1 | API: список файлов / содержимое / сохранение | ✅ `crates/server/` |
+| 4.2 | Дерево файлов (панель Files) | ✅ `frontend/web/` |
+| 4.3 | Monaco Editor (панель Editor) | ✅ `frontend/web/` |
 | 4.4 | `git.status`, `git.diff` tools | ✅ `crates/tool-runtime/` |
 | 4.5 | `git.commit`, `git.pull`, `git.push` tools | ✅ `crates/tool-runtime/` |
-| 4.6 | Git diff viewer (панель Git) | `frontend/web/` |
-| 4.7 | `file.changed` event | protocol, server |
-| 4.8 | `git.diff.changed` event | protocol, server |
+| 4.6 | Git diff viewer (панель Git) | ✅ `frontend/web/` |
+| 4.7 | `file.changed` event | ✅ protocol, server |
+| 4.8 | `git.diff.changed` event | ✅ protocol, server |
 | 4.9 | Тесты git tools | `crates/tool-runtime/` |
 
 ### Критерий готовности
@@ -188,10 +188,10 @@
 | --- | --- | --- | --- |
 | Chat | 1 | M0 | ✅ Активна |
 | Events (timeline) | 1 | M0 | ✅ Активна |
-| Files | 4 | M3 | Placeholder |
-| Editor | 4 | M3 | Placeholder |
+| Files | 4 | M3 | ✅ Complete |
+| Editor | 4 | M3 | ✅ Complete |
 | Terminal | 3 | M2 | Placeholder |
-| Git | 4 | M3 | Placeholder |
+| Git | 4 | M3 | ✅ Complete |
 | Tasks | 5 | M4 | ✅ Активна, базовая |
 | Actions | 5 | M4 | ✅ Активна, базовая |
 | Settings | 2 | M1 | ✅ Активна, read-only |

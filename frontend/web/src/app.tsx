@@ -62,6 +62,8 @@ type GitSnapshot = {
   diff: string;
 };
 
+type GitAction = "commit" | "pull" | "push";
+
 type TaskView = { id: string; message: string; status: string; steps: Record<string, string> };
 type ActionView = { taskId: string; action: string; detail: string; createdAt: string };
 type PermissionMode = "ask" | "allow" | "deny";
@@ -178,6 +180,13 @@ export function App() {
   const [gitDiff, setGitDiff] = useState("Loading git diff...");
   const [gitDiffPath, setGitDiffPath] = useState<string | null>(null);
   const [gitDiffPathInput, setGitDiffPathInput] = useState("");
+  const [newFilePath, setNewFilePath] = useState("");
+  const [newFileContent, setNewFileContent] = useState("");
+  const [gitCommitMessage, setGitCommitMessage] = useState("");
+  const [gitRemote, setGitRemote] = useState("origin");
+  const [gitBranch, setGitBranch] = useState("");
+  const [gitAction, setGitAction] = useState<GitAction | null>(null);
+  const [gitActionNotice, setGitActionNotice] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Record<string, TaskView>>({});
   const [actions, setActions] = useState<ActionView[]>([]);
   const [approval, setApproval] = useState<ApprovalRequiredEvent | null>(null);
@@ -581,6 +590,70 @@ export function App() {
     }
   }
 
+  async function handleCreateFile() {
+    if (!session || !newFilePath.trim()) {
+      return;
+    }
+
+    const path = normalizePath(newFilePath.trim());
+    try {
+      const response = await fetch(
+        `/api/files/content?path=${encodeURIComponent(path)}&session_id=${encodeURIComponent(session.session_id)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: newFileContent }),
+        },
+      );
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      setNewFilePath("");
+      setNewFileContent("");
+      await refreshDirectory(parentPath(path));
+      await refreshDirectory(".");
+      await openFile(path);
+    } catch (error) {
+      setSelectedFileNotice(`Не удалось создать файл: ${String(error)}`);
+    }
+  }
+
+  async function handleGitAction(action: GitAction) {
+    if (!session || gitAction) {
+      return;
+    }
+
+    setGitAction(action);
+    setGitActionNotice(null);
+    const payload = action === "commit"
+      ? { message: gitCommitMessage }
+      : { remote: gitRemote || undefined, branch: gitBranch || undefined };
+    try {
+      const response = await fetch(
+        `/api/git/${action}?session_id=${encodeURIComponent(session.session_id)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
+      if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(detail || `Git ${action} failed`);
+      }
+      setGitActionNotice(`Git ${action} завершён.`);
+      if (action === "commit") {
+        setGitCommitMessage("");
+      }
+      await refreshGitSnapshot(gitDiffPath);
+      await refreshDirectory(".");
+    } catch (error) {
+      setGitActionNotice(`Git ${action}: ${String(error)}`);
+    } finally {
+      setGitAction(null);
+    }
+  }
+
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = input.trim();
@@ -712,6 +785,23 @@ export function App() {
             </div>
             <button type="button" onClick={() => void refreshDirectory(".")}>Refresh tree</button>
           </div>
+          <div className="createFileForm">
+            <input
+              value={newFilePath}
+              onChange={(event) => setNewFilePath(event.target.value)}
+              placeholder="path/to/new-file.ts"
+              aria-label="New file path"
+            />
+            <input
+              value={newFileContent}
+              onChange={(event) => setNewFileContent(event.target.value)}
+              placeholder="Initial content"
+              aria-label="New file content"
+            />
+            <button type="button" onClick={() => void handleCreateFile()} disabled={!newFilePath.trim()}>
+              Create file
+            </button>
+          </div>
           <div className="fileTree">
             {renderTree(".")}
           </div>
@@ -840,6 +930,36 @@ export function App() {
                 Use selected file
               </button>
             </div>
+            <label>
+              <span>Commit message</span>
+              <input
+                value={gitCommitMessage}
+                onChange={(event) => setGitCommitMessage(event.target.value)}
+                placeholder="Describe the change"
+              />
+            </label>
+            <div className="gitRemoteFields">
+              <label>
+                <span>Remote</span>
+                <input value={gitRemote} onChange={(event) => setGitRemote(event.target.value)} />
+              </label>
+              <label>
+                <span>Branch</span>
+                <input value={gitBranch} onChange={(event) => setGitBranch(event.target.value)} placeholder="Current" />
+              </label>
+            </div>
+            <div className="gitControlButtons">
+              <button type="button" onClick={() => void handleGitAction("commit")} disabled={!gitCommitMessage.trim() || Boolean(gitAction)}>
+                {gitAction === "commit" ? "Committing..." : "Commit"}
+              </button>
+              <button type="button" onClick={() => void handleGitAction("pull")} disabled={Boolean(gitAction)}>
+                {gitAction === "pull" ? "Pulling..." : "Pull"}
+              </button>
+              <button type="button" onClick={() => void handleGitAction("push")} disabled={Boolean(gitAction)}>
+                {gitAction === "push" ? "Pushing..." : "Push"}
+              </button>
+            </div>
+            {gitActionNotice ? <p className="gitActionNotice">{gitActionNotice}</p> : null}
           </div>
           <div className="gitSummary">
             <h3>Status</h3>
@@ -847,7 +967,16 @@ export function App() {
           </div>
           <div className="gitSummary">
             <h3>Diff{gitDiffPath ? ` · ${gitDiffPath}` : ""}</h3>
-            <pre>{gitDiff || "No diff"}</pre>
+            <pre className="gitDiffViewer">
+              {(gitDiff || "No diff").split("\n").map((line, index) => (
+                <span
+                  className={line.startsWith("+") && !line.startsWith("+++") ? "diffAdded" : line.startsWith("-") && !line.startsWith("---") ? "diffRemoved" : line.startsWith("@@") ? "diffContext" : ""}
+                  key={`${index}-${line}`}
+                >
+                  {line || " "}
+                </span>
+              ))}
+            </pre>
           </div>
         </div>
       );

@@ -62,7 +62,11 @@ pub struct ToolRegistry {
 
 impl ToolRegistry {
     pub fn bootstrap() -> Self {
-        let mut registry = Self::new();
+        Self::bootstrap_with_permissions(PermissionEngine::new())
+    }
+
+    pub fn bootstrap_with_permissions(permissions: PermissionEngine) -> Self {
+        let mut registry = Self::with_permissions(permissions);
         registry.register(ToolDefinition {
             name: tools::filesystem::NAME,
             description: tools::filesystem::DESCRIPTION,
@@ -127,9 +131,13 @@ impl ToolRegistry {
     }
 
     pub fn new() -> Self {
+        Self::with_permissions(PermissionEngine::new())
+    }
+
+    pub fn with_permissions(permissions: PermissionEngine) -> Self {
         Self {
             tools: HashMap::new(),
-            permissions: PermissionEngine::new(),
+            permissions,
         }
     }
 

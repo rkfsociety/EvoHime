@@ -419,6 +419,34 @@ h1 {
   background: rgba(76, 125, 255, 0.1);
 }
 
+.createFileForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.createFileForm input,
+.createFileForm button {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background: rgba(4, 8, 18, 0.8);
+  color: #edf4ff;
+  padding: 10px 12px;
+}
+
+.createFileForm button {
+  background: linear-gradient(135deg, #4c7dff, #39d8b2);
+  color: #04111d;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.createFileForm button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .treeNode[data-selected="true"] > .treeButton {
   border-color: rgba(57, 216, 178, 0.6);
   background: rgba(57, 216, 178, 0.12);
@@ -551,6 +579,45 @@ h1 {
   flex-wrap: wrap;
 }
 
+.gitRemoteFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.gitActionNotice {
+  margin: 0;
+  color: #f7e4b3;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.gitDiffViewer {
+  display: grid;
+  gap: 2px;
+}
+
+.gitDiffViewer span {
+  display: block;
+  padding: 0 8px;
+  border-radius: 4px;
+}
+
+.gitDiffViewer .diffAdded {
+  background: rgba(57, 216, 178, 0.14);
+  color: #a5f5dd;
+}
+
+.gitDiffViewer .diffRemoved {
+  background: rgba(255, 101, 125, 0.14);
+  color: #ffb0bd;
+}
+
+.gitDiffViewer .diffContext {
+  color: #9fc0ff;
+}
+
 .terminalPanel { flex: 1; min-height: 0; padding: 16px; }
 .approvalBackdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: rgba(0, 0, 0, .62); }
 .approvalModal { width: min(460px, calc(100vw - 32px)); padding: 24px; border: 1px solid rgba(159, 192, 255, .4); border-radius: 18px; background: #0a1021; box-shadow: 0 24px 80px rgba(0,0,0,.5); }
@@ -592,6 +659,11 @@ h1 {
   }
 
   .composer {
+    grid-template-columns: 1fr;
+  }
+
+  .createFileForm,
+  .gitRemoteFields {
     grid-template-columns: 1fr;
   }
 }

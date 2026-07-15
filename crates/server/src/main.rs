@@ -35,6 +35,8 @@ use crate::app::{AppConfig, AppState};
 enum ApiError {
     #[error("{0}")]
     BadRequest(String),
+    #[error("approval required for {tool}: {approval_id}")]
+    ApprovalRequired { tool: String, approval_id: Uuid },
     #[error("{0}")]
     Internal(String),
 }
@@ -49,6 +51,10 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
             Self::BadRequest(message) => (StatusCode::BAD_REQUEST, message),
+            Self::ApprovalRequired { tool, approval_id } => (
+                StatusCode::CONFLICT,
+                format!("approval required for {tool}: {approval_id}"),
+            ),
             Self::Internal(message) => (StatusCode::INTERNAL_SERVER_ERROR, message),
         };
 
@@ -83,12 +89,13 @@ async fn main() -> anyhow::Result<()> {
         ))
     };
 
+    let permissions = evohime_permissions::PermissionEngine::new();
     let state = Arc::new(AppState {
         pool,
         demo_file_path: config.demo_file_path.clone(),
         workspace_root: config.workspace_root.clone(),
-        tools: evohime_tool_runtime::ToolRegistry::bootstrap(),
-        permissions: evohime_permissions::PermissionEngine::new(),
+        tools: evohime_tool_runtime::ToolRegistry::bootstrap_with_permissions(permissions.clone()),
+        permissions,
         model_gateway,
         model_config: config.model_config.clone(),
         session_buses: Arc::new(Mutex::new(HashMap::new())),
@@ -110,10 +117,15 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/files", get(workspace::list_files))
         .route(
             "/api/files/content",
-            get(workspace::read_file).put(workspace::save_file),
+            get(workspace::read_file)
+                .put(workspace::save_file)
+                .post(workspace::save_file),
         )
         .route("/api/git/status", get(workspace::git_status))
         .route("/api/git/diff", get(workspace::git_diff))
+        .route("/api/git/commit", post(workspace::git_commit))
+        .route("/api/git/pull", post(workspace::git_pull))
+        .route("/api/git/push", post(workspace::git_push))
         .route("/api/tasks", get(list_tasks))
         .route("/api/permissions", get(list_permissions))
         .route("/api/permissions/:permission", put(update_permission))
