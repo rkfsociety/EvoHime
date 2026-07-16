@@ -121,4 +121,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: foundations through checkpoints are in place; frontend shell split (`6.13`) done. Next: observability and remaining Stage 6 polish.
+**Stage 6 / Milestone 5**: foundations + shell split done. Next priority: agent memory (`6.16`–`6.25`, ask-on-uncertainty) and task-pipeline observability.
