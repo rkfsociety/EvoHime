@@ -566,6 +566,7 @@ export function App() {
   const saveFileRef = useRef<() => void>(() => undefined);
   const sessionLoadRef = useRef(0);
   const activeAssistantLineRef = useRef<number | null>(null);
+  const hydratingSessionRef = useRef(false);
   const chatLogRef = useRef<HTMLDivElement | null>(null);
   const chatAutoScrollRef = useRef(true);
 
@@ -1096,8 +1097,13 @@ export function App() {
     setTerminalEntries([]);
     activeAssistantLineRef.current = null;
     chatAutoScrollRef.current = true;
-    for (const item of history) {
-      applyEventRef.current(item.event);
+    hydratingSessionRef.current = true;
+    try {
+      for (const item of history) {
+        applyEventRef.current(item.event);
+      }
+    } finally {
+      hydratingSessionRef.current = false;
     }
   }
 
@@ -1315,6 +1321,14 @@ export function App() {
         });
         activeAssistantLineRef.current = null;
         setStream("");
+        if (!hydratingSessionRef.current && activeSessionId) {
+          const summary = chatSessions.find((chat) => chat.session_id === activeSessionId);
+          if (summary) {
+            void openSession(summary).catch((error) => {
+              setLines((current) => [...current, { role: "system", text: String(error) }]);
+            });
+          }
+        }
         break;
       case "task.failed":
         setTasks((current) => current[event.task_id] ? { ...current, [event.task_id]: { ...current[event.task_id], status: "failed" } } : current);
