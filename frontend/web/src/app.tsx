@@ -1073,6 +1073,7 @@ export function App() {
     setActions([]);
     setApproval(null);
     setTerminalEntries([]);
+    activeAssistantLineRef.current = null;
     for (const item of history) {
       applyEventRef.current(item.event);
     }
@@ -1278,6 +1279,10 @@ export function App() {
         setLines((current) => {
           const copy = [...current];
           const index = activeAssistantLineRef.current;
+          const last = copy[copy.length - 1];
+          if (last?.role === "assistant" && last.text === event.final_message) {
+            return copy;
+          }
           if (index !== null && copy[index]?.role === "assistant") {
             copy[index] = { role: "assistant", text: event.final_message };
             return copy;
