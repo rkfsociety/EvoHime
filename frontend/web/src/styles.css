@@ -126,6 +126,26 @@ h1 {
   box-shadow: 0 0 0 6px rgba(96, 120, 155, 0.12);
 }
 
+.traceToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  padding: 9px 13px;
+  border: 1px solid var(--border-0);
+  border-radius: 12px;
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+}
+
+.traceToggle:hover,
+.traceToggle.active {
+  border-color: rgba(143, 180, 255, 0.4);
+  color: var(--text-0);
+  background: rgba(91, 134, 255, 0.14);
+}
+
 .statusDot[data-state="connected"] {
   background: #43d19e;
   box-shadow: 0 0 0 6px rgba(67, 209, 158, 0.14);
@@ -147,6 +167,95 @@ h1 {
   gap: 24px;
   min-height: 0;
   overflow: hidden;
+}
+
+.workspace.traceOpen {
+  grid-template-columns: 280px minmax(0, 1fr) 320px;
+}
+
+.traceSidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-0);
+  border-radius: 24px;
+  background: var(--surface-0);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+}
+
+.traceHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border-0);
+}
+
+.traceHeader > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.traceHeader span,
+.traceEmpty {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.traceClose {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  color: var(--text-2);
+  background: transparent;
+  cursor: pointer;
+  font-size: 22px;
+}
+
+.traceList {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 14px;
+  overflow: auto;
+}
+
+.traceItem {
+  padding: 11px 12px;
+  border: 1px solid var(--border-0);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.traceItem strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--accent-2);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.traceItem.tool strong {
+  color: var(--accent-1);
+}
+
+.traceItem pre {
+  margin: 0;
+  color: var(--text-1);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+}
+
+.traceEmpty {
+  padding: 16px 4px;
+  line-height: 1.5;
 }
 
 .sidebar {
@@ -195,12 +304,15 @@ h1 {
 
 .quickLinks,
 .projectChatList,
-.projectChatRow {
+.projectChatRow,
+.standaloneSidebarChatRow,
+.standaloneSidebarChatList {
   display: grid;
   gap: 4px;
 }
 
-.projectChatRow {
+.projectChatRow,
+.standaloneSidebarChatRow {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
 }
@@ -259,10 +371,9 @@ h1 {
 }
 
 .projectChatItem {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
   width: 100%;
   padding: 8px 10px;
   border: 0;
@@ -318,6 +429,63 @@ h1 {
 .taskSummaryCard span {
   color: var(--text-3);
   font-size: 13px;
+}
+
+.standaloneSidebarChat {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--text-1);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.projectChatItem strong,
+.projectChatItem span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectChatItem strong {
+  color: var(--text-0);
+  font-size: 13px;
+}
+
+.projectChatItem span {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.standaloneSidebarChat:hover,
+.standaloneSidebarChat.active {
+  background: var(--surface-3);
+}
+
+.standaloneSidebarChat.active {
+  box-shadow: inset 2px 0 0 var(--accent-2);
+}
+
+.standaloneSidebarChat strong,
+.standaloneSidebarChat span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.standaloneSidebarChat strong {
+  color: var(--text-0);
+  font-size: 13px;
+}
+
+.standaloneSidebarChat span {
+  color: var(--text-3);
+  font-size: 11px;
 }
 
 .sidebarFooter {
@@ -425,6 +593,7 @@ h1 {
 }
 
 .projectChatRow:hover .chatArchiveButton,
+.standaloneSidebarChatRow:hover .chatArchiveButton,
 .chatArchiveButton:focus-visible {
   opacity: 1;
 }
@@ -824,6 +993,43 @@ h1 {
   font-size: 13px;
 }
 
+.panelHeaderActions,
+.traceHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.panelHeaderButton {
+  padding: 7px 10px;
+  border: 1px solid var(--border-0);
+  border-radius: 9px;
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.panelHeaderButton:hover {
+  border-color: rgba(143, 180, 255, 0.4);
+  color: var(--text-0);
+  background: rgba(91, 134, 255, 0.14);
+}
+
+.chatActionNotice {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 5;
+  padding: 10px 14px;
+  border: 1px solid var(--border-0);
+  border-radius: 10px;
+  color: var(--text-0);
+  background: var(--surface-1);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24);
+  font-size: 12px;
+}
+
 .chatLog,
 .eventList {
   padding: 20px;
@@ -834,11 +1040,49 @@ h1 {
   align-content: start;
 }
 
+.chatLog,
+.eventList,
+.traceList {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(143, 180, 255, 0.55) transparent;
+}
+
+.chatLog::-webkit-scrollbar,
+.eventList::-webkit-scrollbar,
+.traceList::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.chatLog::-webkit-scrollbar-track,
+.eventList::-webkit-scrollbar-track,
+.traceList::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chatLog::-webkit-scrollbar-thumb,
+.eventList::-webkit-scrollbar-thumb,
+.traceList::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(143, 180, 255, 0.42);
+  background-clip: padding-box;
+}
+
+.chatLog::-webkit-scrollbar-thumb:hover,
+.eventList::-webkit-scrollbar-thumb:hover,
+.traceList::-webkit-scrollbar-thumb:hover {
+  background: rgba(143, 180, 255, 0.7);
+  background-clip: padding-box;
+}
+
 .chatLog {
   flex: 1;
-  width: min(100%, 920px);
+  width: 100%;
   margin: 0 auto;
   padding: 28px clamp(20px, 4vw, 56px);
+  grid-template-columns: minmax(0, min(100%, calc(920px - clamp(40px, 8vw, 112px))));
+  justify-content: center;
   grid-auto-rows: max-content;
 }
 
@@ -915,7 +1159,8 @@ h1 {
 
 .line,
 .eventItem {
-  width: min(100%, 760px);
+  min-width: 0;
+  width: 100%;
   border: 1px solid var(--border-0);
   border-radius: 18px;
   background: var(--surface-3);
@@ -923,6 +1168,8 @@ h1 {
 }
 
 .line.user {
+  width: fit-content;
+  max-width: 100%;
   justify-self: end;
   margin-left: auto;
   margin-right: 0;
@@ -962,12 +1209,124 @@ h1 {
 
 .line pre,
 .eventItem code {
+  min-width: 0;
   margin: 0;
   white-space: pre-wrap;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 14px;
   line-height: 1.55;
   color: var(--text-0);
+  overflow-wrap: anywhere;
+}
+
+.markdownBody {
+  min-width: 0;
+  color: var(--text-0);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.markdownBody > :first-child {
+  margin-top: 0;
+}
+
+.markdownBody > :last-child {
+  margin-bottom: 0;
+}
+
+.markdownBody h1,
+.markdownBody h2,
+.markdownBody h3,
+.markdownBody h4 {
+  max-width: none;
+  margin: 1.1em 0 0.45em;
+  line-height: 1.25;
+}
+
+.markdownBody h1 { font-size: 1.45em; }
+.markdownBody h2 { font-size: 1.25em; }
+.markdownBody h3 { font-size: 1.1em; }
+
+.markdownBody p,
+.markdownBody ul,
+.markdownBody ol,
+.markdownBody blockquote {
+  margin: 0.75em 0;
+}
+
+.markdownBody ul,
+.markdownBody ol {
+  padding-left: 1.5em;
+}
+
+.markdownBody li + li {
+  margin-top: 0.25em;
+}
+
+.markdownBody li > p:first-child {
+  display: inline;
+}
+
+.markdownBody li > p:not(:first-child) {
+  display: block;
+}
+
+.markdownBody blockquote {
+  padding: 0.2em 1em;
+  border-left: 3px solid var(--accent-2);
+  color: var(--text-1);
+  background: rgba(143, 180, 255, 0.06);
+}
+
+.markdownBody a {
+  color: var(--accent-2);
+}
+
+.markdownBody strong {
+  color: var(--text-0);
+}
+
+.inlineCode {
+  padding: 0.12em 0.35em;
+  border: 1px solid var(--border-0);
+  border-radius: 5px;
+  color: var(--accent-1);
+  background: rgba(0, 0, 0, 0.2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.markdownBody .codeBlock {
+  margin: 0.85em 0;
+  padding: 13px 14px;
+  overflow-x: auto;
+  border: 1px solid rgba(143, 180, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(4, 8, 18, 0.72);
+}
+
+.markdownBody .codeBlock code {
+  color: #dbe7ff;
+  font-size: 12px;
+}
+
+.markdownBody table {
+  width: 100%;
+  margin: 0.9em 0;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+
+.markdownBody th,
+.markdownBody td {
+  padding: 8px 10px;
+  border: 1px solid var(--border-0);
+  text-align: left;
+}
+
+.markdownBody th {
+  color: var(--text-0);
+  background: rgba(143, 180, 255, 0.08);
 }
 
 .line.tool strong {
@@ -976,6 +1335,111 @@ h1 {
 
 .line.system strong {
   color: #f3c969;
+}
+
+.chatTraceSummary {
+  min-width: 0;
+  width: 100%;
+  justify-self: start;
+  margin-right: auto;
+  border: 1px solid rgba(143, 180, 255, 0.18);
+  border-radius: 18px;
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(91, 134, 255, 0.1), rgba(255, 255, 255, 0.035));
+}
+
+.chatTraceSummary summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 16px;
+  color: var(--text-1);
+  cursor: pointer;
+  list-style: none;
+}
+
+.chatTraceSummary summary::-webkit-details-marker {
+  display: none;
+}
+
+.chatTraceSummary summary::after {
+  content: "⌄";
+  color: var(--text-2);
+  transition: transform 160ms ease;
+}
+
+.chatTraceSummary[open] summary::after {
+  transform: rotate(180deg);
+}
+
+.chatTraceSummaryTitle,
+.chatTraceSummaryMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.chatTraceSummaryTitle {
+  color: var(--text-0);
+  font-weight: 700;
+}
+
+.chatTraceSummaryMeta {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.thinkingOrb {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6d86ad;
+  box-shadow: 0 0 0 5px rgba(109, 134, 173, 0.12);
+}
+
+.thinkingOrb.active {
+  background: var(--accent-1);
+  box-shadow: 0 0 0 5px rgba(62, 215, 178, 0.12);
+  animation: thinkingPulse 1.25s ease-in-out infinite;
+}
+
+.chatTraceSummaryBody {
+  display: grid;
+  gap: 8px;
+  padding: 0 12px 12px;
+  border-top: 1px solid rgba(143, 180, 255, 0.12);
+}
+
+.chatTraceEntry {
+  padding: 9px 10px;
+  border-radius: 11px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.chatTraceEntry strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--accent-2);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chatTraceEntry.tool strong {
+  color: var(--accent-1);
+}
+
+.chatTraceEntry pre {
+  margin: 0;
+  color: var(--text-1);
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+}
+
+@keyframes thinkingPulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.15); }
 }
 
 .composer {
@@ -2572,6 +3036,10 @@ h1 {
     min-height: 0;
   }
 
+  .workspace.traceOpen {
+    grid-template-columns: 1fr;
+  }
+
   .sidebar {
     order: 2;
     min-height: 0;
@@ -2581,6 +3049,11 @@ h1 {
   .panel {
     min-height: 0;
     max-height: 44vh;
+  }
+
+  .traceSidebar {
+    order: 3;
+    max-height: 34vh;
   }
 
   .pullRequestsPage {

@@ -49,13 +49,13 @@ enum ApiError {
     Unavailable(String),
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct ModelSettingsRequest {
     default_route: String,
     routes: Vec<ModelRouteRequest>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct ModelRouteRequest {
     name: String,
     provider: String,
@@ -170,6 +170,23 @@ async fn main() -> anyhow::Result<()> {
         worker_retention_loop(retention_state, retention_days).await;
     });
     recover_worker_jobs(state.clone()).await;
+    if let Some(value) = evohime_storage::load_setting(&state.pool, "permissions").await? {
+        if let Some(settings) = value.as_object() {
+            for (name, mode) in settings {
+                if let (Some(permission), Ok(mode)) = (
+                    parse_permission_name(name),
+                    serde_json::from_value::<PermissionMode>(mode.clone()),
+                ) {
+                    state.permissions.set_mode(permission, mode).await;
+                }
+            }
+        }
+    }
+    if let Some(value) = evohime_storage::load_setting(&state.pool, "mcp_servers").await? {
+        if let Ok(servers) = serde_json::from_value::<Vec<McpServerConfig>>(value) {
+            *state.mcp_servers.lock().await = servers;
+        }
+    }
 
     let recovered = evohime_task_engine::recover_after_restart(&state.pool)
         .await
@@ -663,9 +680,7 @@ async fn update_model_config(
     Json(request): Json<ModelSettingsRequest>,
 ) -> Result<Json<evohime_model_gateway::ModelConfigResponse>, ApiError> {
     let current = state.model_config.read().await;
-    let request_value =
-        serde_json::to_value(&request).map_err(|error| ApiError::Internal(error.to_string()))?;
-    let config = build_model_config(request, &current)?;
+    let config = build_model_config(request.clone(), &current)?;
     drop(current);
     let gateway = if config.routes.values().all(ModelRouteConfig::configured) {
         Some(Arc::new(
@@ -675,7 +690,24 @@ async fn update_model_config(
     } else {
         None
     };
-    evohime_storage::save_setting(&state.pool, "model_config", &request_value)
+    let mut persisted_request = request;
+    for route in &mut persisted_request.routes {
+        if route
+            .api_key
+            .as_deref()
+            .map(str::trim)
+            .is_none_or(str::is_empty)
+        {
+            route.api_key = config
+                .routes
+                .get(&route.name)
+                .map(|item| item.literouter.api_key.clone())
+                .filter(|key| !key.trim().is_empty());
+        }
+    }
+    let persisted_value = serde_json::to_value(persisted_request)
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    evohime_storage::save_setting(&state.pool, "model_config", &persisted_value)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
     *state.model_config.write().await = config;
@@ -851,6 +883,11 @@ async fn update_mcp_servers(
         .into_iter()
         .map(validate_mcp_server)
         .collect::<Result<Vec<_>, _>>()?;
+    let value =
+        serde_json::to_value(&servers).map_err(|error| ApiError::Internal(error.to_string()))?;
+    evohime_storage::save_setting(&state.pool, "mcp_servers", &value)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
     *state.mcp_servers.lock().await = servers.clone();
     Ok(Json(servers))
 }
@@ -877,6 +914,10 @@ async fn update_permission(
     )
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     state.permissions.set_mode(permission, mode).await;
+    let settings = permission_settings_value(&state).await;
+    evohime_storage::save_setting(&state.pool, "permissions", &settings)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
     Ok(Json(
         json!({"permission": permission_name(permission), "mode": mode}),
     ))
@@ -892,6 +933,38 @@ fn permission_name(permission: Permission) -> &'static str {
         Permission::BrowserAccess => "browser_access",
         Permission::McpCall => "mcp_call",
     }
+}
+
+fn parse_permission_name(name: &str) -> Option<Permission> {
+    match name {
+        "filesystem_read" => Some(Permission::FilesystemRead),
+        "filesystem_write" => Some(Permission::FilesystemWrite),
+        "shell_execute" => Some(Permission::ShellExecute),
+        "git_read" => Some(Permission::GitRead),
+        "git_write" => Some(Permission::GitWrite),
+        "browser_access" => Some(Permission::BrowserAccess),
+        "mcp_call" => Some(Permission::McpCall),
+        _ => None,
+    }
+}
+
+async fn permission_settings_value(state: &AppState) -> Value {
+    let mut settings = serde_json::Map::new();
+    for permission in [
+        Permission::FilesystemRead,
+        Permission::FilesystemWrite,
+        Permission::ShellExecute,
+        Permission::GitRead,
+        Permission::GitWrite,
+        Permission::BrowserAccess,
+        Permission::McpCall,
+    ] {
+        settings.insert(
+            permission_name(permission).to_string(),
+            json!(state.permissions.mode(permission).await),
+        );
+    }
+    Value::Object(settings)
 }
 
 fn duration_to_ms(duration: Duration) -> u64 {
@@ -989,6 +1062,8 @@ async fn archive_session(
 struct SessionSummary {
     session_id: Uuid,
     created_at: chrono::DateTime<chrono::Utc>,
+    title: Option<String>,
+    workspace_path: Option<String>,
     last_message_at: Option<chrono::DateTime<chrono::Utc>>,
     last_message: Option<String>,
     last_role: Option<String>,
@@ -998,10 +1073,35 @@ fn session_summary(row: evohime_storage::SessionSummaryRow) -> SessionSummary {
     SessionSummary {
         session_id: row.id,
         created_at: row.created_at,
+        title: row.title,
+        workspace_path: row.workspace_path,
         last_message_at: row.last_message_at,
         last_message: row.last_message,
         last_role: row.last_role,
     }
+}
+
+fn summarize_session_title(message: &str) -> String {
+    let normalized = message
+        .split("\n\nВложения:")
+        .next()
+        .unwrap_or(message)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let lower = normalized.to_lowercase();
+    let title = if lower.contains("разберись") && lower.contains("код") {
+        "Разбор кода проекта".to_string()
+    } else if lower.contains("запусти") && lower.contains("провер") {
+        "Проверка проекта".to_string()
+    } else if lower.contains("исправ") || lower.contains("почини") {
+        "Исправление проекта".to_string()
+    } else {
+        normalized.chars().take(56).collect()
+    };
+    title
+        .trim_end_matches([' ', '.', ',', ':', ';', '!', '?'])
+        .to_string()
 }
 
 async fn list_sessions(
@@ -1123,7 +1223,7 @@ async fn list_pull_requests(
     .await
     .map_err(|error| ApiError::Internal(error.to_string()))?;
 
-    let prs = result.map_err(|error| ApiError::Internal(error))?;
+    let prs = result.map_err(ApiError::Internal)?;
     Ok(Json(prs))
 }
 
@@ -1521,8 +1621,27 @@ async fn run_task_pipeline(
     let memory_notes = load_memory_notes(&state.pool, session_id)
         .await
         .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
+    let workspace_scope = task
+        .workspace_path
+        .clone()
+        .unwrap_or_else(|| state.workspace_root.to_string_lossy().into_owned());
+    let global_memory = evohime_storage::list_global_memory(&state.pool, &workspace_scope, 20)
+        .await
+        .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
+    let mut memory_notes = memory_notes;
+    memory_notes.extend(
+        global_memory
+            .into_iter()
+            .map(|row| format!("[global workspace memory] {}", row.note)),
+    );
 
     if emit_started {
+        let title = summarize_session_title(&task.user_message);
+        if !title.is_empty() {
+            evohime_storage::set_session_title_if_empty(&state.pool, session_id, &title)
+                .await
+                .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
+        }
         evohime_storage::insert_message(
             &state.pool,
             session_id,
@@ -1554,7 +1673,13 @@ async fn run_task_pipeline(
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let default_route = state.model_config.read().await.default_route.clone();
     let model_route = resolve_model_route(task.model_route.as_deref(), &default_route);
-    let (planning_model_route, planning_model) = {
+    let (planning_model_route, planning_model) = if task
+        .model
+        .as_deref()
+        .is_some_and(|model| !model.trim().is_empty())
+    {
+        (model_route.clone(), task.model.clone())
+    } else {
         let config = state.model_config.read().await;
         let route_name = if config.routes.contains_key("orchestrator") {
             "orchestrator".to_string()
@@ -1790,6 +1915,14 @@ async fn run_task_pipeline(
     evohime_storage::insert_session_memory(&state.pool, session_id, Some(task.id), &memory_note)
         .await
         .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
+    evohime_storage::insert_global_memory(
+        &state.pool,
+        &workspace_scope,
+        Some(task.id),
+        &memory_note,
+    )
+    .await
+    .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
 
     complete_task(&state.pool, task.id)
         .await
@@ -1877,7 +2010,7 @@ fn resolve_workspace_path(
         .unwrap_or_else(|| root.clone());
     let candidate = if requested.is_absolute() {
         requested
-    } else if requested == PathBuf::from(".") {
+    } else if requested.as_os_str() == "." {
         root.clone()
     } else {
         projects_root.join(requested)

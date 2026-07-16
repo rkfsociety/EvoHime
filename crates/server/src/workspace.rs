@@ -85,7 +85,7 @@ pub async fn list_projects(
         });
     }
 
-    projects.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+    projects.sort_by_key(|project| project.name.to_lowercase());
     Ok(Json(projects))
 }
 
@@ -117,7 +117,9 @@ pub async fn create_project(
     let name = payload.name.trim();
     if name.is_empty()
         || name.starts_with('.')
-        || ['/', '\\', ':'].iter().any(|character| name.contains(*character))
+        || ['/', '\\', ':']
+            .iter()
+            .any(|character| name.contains(*character))
         || name == "."
         || name == ".."
     {
@@ -135,7 +137,9 @@ pub async fn create_project(
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?
     {
-        return Err(ApiError::BadRequest("Проект с таким именем уже существует".to_string()));
+        return Err(ApiError::BadRequest(
+            "Проект с таким именем уже существует".to_string(),
+        ));
     }
 
     fs::create_dir(&path)
@@ -433,6 +437,19 @@ fn resolve_relative_path(input: Option<&str>) -> Result<Option<PathBuf>, ApiErro
     match input {
         None | Some("") | Some(".") => Ok(None),
         Some(path) => {
+            let has_windows_drive_prefix = path.len() >= 3
+                && path.as_bytes()[0].is_ascii_alphabetic()
+                && path.as_bytes()[1] == b':'
+                && matches!(path.as_bytes()[2], b'/' | b'\\');
+            if path.starts_with('/')
+                || path.starts_with('\\')
+                || path.starts_with("//")
+                || path.starts_with("\\\\")
+                || has_windows_drive_prefix
+            {
+                return Err(ApiError::BadRequest("invalid path".to_string()));
+            }
+
             let mut relative = PathBuf::new();
             for component in Path::new(path).components() {
                 match component {

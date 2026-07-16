@@ -1,5 +1,7 @@
 import Editor from "@monaco-editor/react";
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, Fragment, UIEvent, useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type {
   ClientCommand,
   PlanStep,
@@ -14,6 +16,7 @@ import { ApprovalModal } from "./components/ApprovalModal";
 type ChatLine = {
   role: "assistant" | "tool" | "system" | "user";
   text: string;
+  taskId?: string;
 };
 
 type WorkspacePanel =
@@ -63,6 +66,7 @@ type ChatSessionSummary = {
   session_id: string;
   created_at: string;
   title?: string | null;
+  workspace_path?: string | null;
   last_message_at: string | null;
   last_message: string | null;
   last_role: string | null;
@@ -85,6 +89,15 @@ type ProjectComposerPreference = {
 
 const selectedProjectStorageKey = "evohime.selectedProject";
 const projectComposerPreferencesStorageKey = "evohime.projectComposerPreferences";
+const traceOpenStorageKey = "evohime.traceOpen";
+
+function loadTraceOpen() {
+  try {
+    return localStorage.getItem(traceOpenStorageKey) === "true";
+  } catch {
+    return false;
+  }
+}
 
 function projectPreferenceKey(path: string | null) {
   return path ?? "__no_project__";
@@ -378,16 +391,16 @@ function translateGitAction(action: GitAction) {
   }
 }
 
-function translateChatRole(role: ChatLine["role"]) {
+function translateChatRole(role: ChatLine["role"], userLogin?: string | null) {
   switch (role) {
     case "assistant":
-      return "Ассистент";
+      return "EvoHime";
     case "tool":
-      return "Инструмент";
+      return "Действие";
     case "system":
-      return "Система";
+      return "Ход работы";
     case "user":
-      return "Пользователь";
+      return userLogin?.trim() || "Пользователь";
   }
 }
 
@@ -396,7 +409,28 @@ function translateModelConfigStatus(configured: boolean) {
 }
 
 function formatSessionTitle(session: ChatSessionSummary, index: number) {
-  return `Чат ${index + 1}`;
+  return session.title?.trim() || `Чат ${index + 1}`;
+}
+
+function summarizeChatTitle(message: string) {
+  const normalized = message.split("\n\nВложения:")[0].replace(/\s+/g, " ").trim();
+  const lower = normalized.toLowerCase();
+  if (lower.includes("разберись") && lower.includes("код")) return "Разбор кода проекта";
+  if (lower.includes("запусти") && lower.includes("провер")) return "Проверка проекта";
+  if (lower.includes("исправ") || lower.includes("почини")) return "Исправление проекта";
+  return normalized.length > 56 ? `${normalized.slice(0, 56).trimEnd()}…` : normalized;
+}
+
+function chatMatchesProject(chat: ChatSessionSummary, project: ProjectSelection) {
+  if (!chat.workspace_path || project.path === null) {
+    return false;
+  }
+  const chatPath = normalizePath(chat.workspace_path).toLowerCase();
+  const projectPath = normalizePath(project.path).toLowerCase();
+  if (projectPath !== ".") {
+    return chatPath === projectPath;
+  }
+  return chatPath.endsWith(`/${project.label.toLowerCase()}`);
 }
 
 function formatSessionTimestamp(value: string) {
@@ -454,8 +488,10 @@ export function App() {
   const [input, setInput] = useState("");
   const [lines, setLines] = useState<ChatLine[]>(initialLines);
   const [stream, setStream] = useState("");
+  const [chatActionNotice, setChatActionNotice] = useState<string | null>(null);
   const [composerNotice, setComposerNotice] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<WorkspacePanel>("chat");
+  const [traceOpen, setTraceOpen] = useState(loadTraceOpen);
   const [selectedProject, setSelectedProject] = useState<ProjectSelection>(loadSelectedProject);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -530,7 +566,8 @@ export function App() {
   const applyEventRef = useRef<(event: ServerEvent) => void>(() => undefined);
   const saveFileRef = useRef<() => void>(() => undefined);
   const sessionLoadRef = useRef(0);
-  const activeAssistantLineRef = useRef<number | null>(null);
+  const chatLogRef = useRef<HTMLDivElement | null>(null);
+  const chatAutoScrollRef = useRef(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -696,6 +733,10 @@ export function App() {
   useEffect(() => {
     localStorage.setItem(selectedProjectStorageKey, JSON.stringify(selectedProject));
   }, [selectedProject]);
+
+  useEffect(() => {
+    localStorage.setItem(traceOpenStorageKey, String(traceOpen));
+  }, [traceOpen]);
 
   useEffect(() => {
     const closeFloatingMenus = (event: PointerEvent) => {
@@ -921,8 +962,16 @@ export function App() {
     [activePanel],
   );
   const activeProjectLabel = selectedProject.label;
+  const projectChatSessions = useMemo(
+    () => chatSessions.filter((chat) => chatMatchesProject(chat, selectedProject)),
+    [chatSessions, selectedProject],
+  );
+  const standaloneChatSessions = useMemo(
+    () => chatSessions.filter((chat) => !chat.workspace_path),
+    [chatSessions],
+  );
   const activeChatTitle = useMemo(
-    () => chatSessions.find((chat) => chat.session_id === activeSessionId)?.title?.trim() ?? "",
+    () => chatSessions.find((chat) => chat.session_id === activeSessionId)?.title?.trim() || "Новый чат",
     [chatSessions, activeSessionId],
   );
   const projectFolders = useMemo(
@@ -930,19 +979,46 @@ export function App() {
     [projects, projectSearch],
   );
   const hasConversation = lines.some((line) => line.role !== "system" && line.text.trim()) || Boolean(stream.trim());
+  const traceLines = useMemo(
+    () => lines.filter((line) => line.role === "system" || line.role === "tool"),
+    [lines],
+  );
+  const visibleChatLines = useMemo(
+    () => lines.filter((line) => line.role !== "system" && line.role !== "tool"),
+    [lines],
+  );
+  const lastAssistantLineIndex = useMemo(
+    () => visibleChatLines.reduce((last, line, index) => line.role === "assistant" ? index : last, -1),
+    [visibleChatLines],
+  );
   const selectedFileLanguage = useMemo(
     () => inferMonacoLanguage(selectedFilePath),
     [selectedFilePath],
   );
   const gitSummary = useMemo(() => summarizeGitStatus(gitStatus), [gitStatus]);
-  const pendingTaskCount = useMemo(
-    () => Object.values(tasks).filter((task) => task.status === "running" || task.status === "paused" || task.status === "cancelling").length,
-    [tasks],
-  );
   const activeTaskId = useMemo(
     () => Object.values(tasks).find((task) => task.status === "running" || task.status === "cancelling")?.id ?? null,
     [tasks],
   );
+  useEffect(() => {
+    if (activePanel !== "chat" || !chatAutoScrollRef.current) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      const chatLog = chatLogRef.current;
+      if (chatLog) {
+        chatLog.scrollTop = chatLog.scrollHeight;
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activePanel, activeSessionId, lines, stream]);
+
+  function handleChatScroll(event: UIEvent<HTMLDivElement>) {
+    const chatLog = event.currentTarget;
+    const distanceFromBottom = chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight;
+    chatAutoScrollRef.current = distanceFromBottom <= 72;
+  }
   const workMode = useMemo<PermissionMode | "mixed">(() => {
     const modes = Object.values(permissionSettings).map((setting) => setting.mode);
     if (modes.length === 0 || modes.every((mode) => mode === modes[0])) {
@@ -1018,6 +1094,7 @@ export function App() {
     setActions([]);
     setApproval(null);
     setTerminalEntries([]);
+    chatAutoScrollRef.current = true;
     for (const item of history) {
       applyEventRef.current(item.event);
     }
@@ -1153,21 +1230,21 @@ export function App() {
         ]);
         break;
       case "task.started":
-        setChatSessions((current) =>
-          current.map((chat) =>
-            chat.session_id === event.session_id
-              ? {
-                  ...chat,
-                  last_message: event.user_message,
-                  last_message_at: event.created_at,
-                  last_role: "user",
-                }
-              : chat,
-          ),
-        );
+        setChatSessions((current) => {
+          const existing = current.find((chat) => chat.session_id === event.session_id);
+          const summary: ChatSessionSummary = {
+            session_id: event.session_id,
+            created_at: existing?.created_at ?? event.created_at,
+            title: existing?.title || summarizeChatTitle(event.user_message),
+            workspace_path: existing?.workspace_path ?? selectedProject.path,
+            last_message: event.user_message,
+            last_message_at: event.created_at,
+            last_role: "user",
+          };
+          return [summary, ...current.filter((chat) => chat.session_id !== event.session_id)];
+        });
         setTasks((current) => ({ ...current, [event.task_id]: { id: event.task_id, message: event.user_message, status: "running", steps: {} } }));
-        setLines((current) => [...current, { role: "user", text: event.user_message }]);
-        activeAssistantLineRef.current = null;
+        setLines((current) => [...current, { role: "user", text: event.user_message, taskId: event.task_id }]);
         setStream("");
         break;
       case "agent.message.delta":
@@ -1175,19 +1252,22 @@ export function App() {
           const next = `${current}${event.delta}`;
           setLines((items) => {
             const copy = [...items];
-            const index = activeAssistantLineRef.current;
-            if (index !== null && copy[index]?.role === "assistant") {
-              copy[index] = { role: "assistant", text: next };
+            const index = copy.findIndex((line) => line.role === "assistant" && line.taskId === event.task_id);
+            if (index !== -1) {
+              copy[index] = { role: "assistant", text: next, taskId: event.task_id };
               return copy;
             }
-            activeAssistantLineRef.current = copy.length;
-            copy.push({ role: "assistant", text: next });
+            copy.push({ role: "assistant", text: next, taskId: event.task_id });
             return copy;
           });
           return next;
         });
         break;
       case "tool.started":
+        setLines((current) => [
+          ...current,
+          { role: "tool", text: `Запускаю инструмент: ${event.tool_name}` },
+        ]);
         break;
       case "tool.output":
         if (event.tool_name === "shell.execute") setTerminalEntries((current) => [...current, { stream: "stdout", text: event.output }]);
@@ -1196,6 +1276,13 @@ export function App() {
         setApproval(event);
         break;
       case "tool.completed":
+        setLines((current) => [
+          ...current,
+          {
+            role: "tool",
+            text: `${event.tool_name}: ${event.success ? "завершён успешно" : "завершён с ошибкой"}`,
+          },
+        ]);
         if (event.tool_name === "shell.execute") {
           setTerminalEntries((current) => [
             ...current,
@@ -1210,16 +1297,14 @@ export function App() {
         setTasks((current) => current[event.task_id] ? { ...current, [event.task_id]: { ...current[event.task_id], status: "completed" } } : current);
         setLines((current) => {
           const copy = [...current];
-          const index = activeAssistantLineRef.current;
-          if (index !== null && copy[index]?.role === "assistant") {
-            copy[index] = { role: "assistant", text: event.final_message };
+          const index = copy.findIndex((line) => line.role === "assistant" && line.taskId === event.task_id);
+          if (index !== -1) {
+            copy[index] = { role: "assistant", text: event.final_message, taskId: event.task_id };
             return copy;
           }
-          activeAssistantLineRef.current = copy.length;
-          copy.push({ role: "assistant", text: event.final_message });
+          copy.push({ role: "assistant", text: event.final_message, taskId: event.task_id });
           return copy;
         });
-        activeAssistantLineRef.current = null;
         setStream("");
         break;
       case "task.failed":
@@ -1618,12 +1703,52 @@ export function App() {
       workspace_path: selectedProject.path ?? undefined,
     };
 
+    setChatSessions((current) => current.map((chat) => chat.session_id === activeSessionId
+      ? { ...chat, workspace_path: selectedProject.path }
+      : chat));
     socketRef.current.send(JSON.stringify(payload));
     setInput("");
     setAttachments([]);
     if (attachmentInputRef.current) {
       attachmentInputRef.current.value = "";
     }
+  }
+
+  async function copyChat() {
+    const content = [
+      ...lines,
+      ...(stream ? [{ role: "assistant" as const, text: stream }] : []),
+    ]
+      .map((line) => `${translateChatRole(line.role, githubAuth?.login)}:\n${line.text}`)
+      .join("\n\n");
+    try {
+      await navigator.clipboard.writeText(content || "Чат пока пуст.");
+      setChatActionNotice("Чат скопирован");
+    } catch {
+      setChatActionNotice("Не удалось скопировать чат");
+    }
+  }
+
+  function exportTrace() {
+    const entries = [
+      ...lines,
+      ...(stream ? [{ role: "assistant" as const, text: stream }] : []),
+    ].map((line) => ({ role: line.role, text: line.text }));
+    const payload = {
+      format: "evohime.trace.v1",
+      exported_at: new Date().toISOString(),
+      session_id: session?.session_id ?? null,
+      task_id: activeTaskId,
+      entries,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `evohime-trace-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setChatActionNotice("Трейс экспортирован");
   }
 
   function sendTaskCommand(type: "task.cancel" | "task.resume" | "task.retry", taskId: string) {
@@ -2480,7 +2605,11 @@ export function App() {
 
     return (
       <>
-        <div className={`chatLog${lines.every((line) => line.role === "system") && !stream ? " empty" : ""}`}>
+        <div
+          ref={chatLogRef}
+          onScroll={handleChatScroll}
+          className={`chatLog${lines.every((line) => line.role === "system") && !stream ? " empty" : ""}`}
+        >
           {lines.every((line) => line.role === "system") && !stream ? (
             <div className="chatWelcome">
               <span className="chatWelcomeIcon">✦</span>
@@ -2502,18 +2631,28 @@ export function App() {
               </div>
             </div>
           ) : (
-            lines.filter((line) => line.role !== "system").map((line, index) => (
-              <article className={`line ${line.role}`} key={`${line.role}-${index}`}>
-                <strong>{translateChatRole(line.role)}</strong>
-                <pre>{line.text}</pre>
-              </article>
+            visibleChatLines.map((line, index) => (
+              <Fragment key={`${line.role}-${index}`}>
+                {index === lastAssistantLineIndex && traceLines.length > 0 && (hasConversation || Boolean(activeTaskId)) ? (
+                  <ChatTraceSummary traceLines={traceLines} active={Boolean(activeTaskId)} userLogin={githubAuth?.login} />
+                ) : null}
+                <article className={`line ${line.role}`}>
+                  <strong>{translateChatRole(line.role, githubAuth?.login)}</strong>
+                  {line.role === "assistant" ? <MarkdownMessage text={line.text} /> : <pre>{line.text}</pre>}
+                </article>
+              </Fragment>
             ))
           )}
-          {stream ? (
-            <article className="line assistant streaming">
-              <strong>Ассистент</strong>
-              <pre>{stream}</pre>
-            </article>
+          {lastAssistantLineIndex === -1 && traceLines.length > 0 && (hasConversation || Boolean(activeTaskId)) ? (
+            <ChatTraceSummary traceLines={traceLines} active={Boolean(activeTaskId)} userLogin={githubAuth?.login} />
+          ) : null}
+          {stream && lastAssistantLineIndex === -1 ? (
+            <>
+              <article className="line assistant streaming">
+                <strong>Ассистент</strong>
+                <MarkdownMessage text={stream} />
+              </article>
+            </>
           ) : null}
         </div>
         {!hasConversation ? (
@@ -2675,6 +2814,12 @@ export function App() {
               rows={1}
               value={input}
               onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  event.currentTarget.form?.requestSubmit();
+                }
+              }}
               placeholder="Введите сообщение..."
             />
             <div className="composerControls">
@@ -2734,6 +2879,16 @@ export function App() {
         <div className="agentBrand">
           <h1>EvoHime</h1>
         </div>
+        <button
+          type="button"
+          className={traceOpen ? "traceToggle active" : "traceToggle"}
+          onClick={() => setTraceOpen((open) => !open)}
+          aria-expanded={traceOpen}
+          aria-controls="task-trace"
+        >
+          <span aria-hidden="true">⌁</span>
+          Трейс
+        </button>
         <div className="statusCard">
           <span className="statusDot" data-state={socketState} />
           <div>
@@ -2743,7 +2898,7 @@ export function App() {
         </div>
       </header>
 
-      <section className="workspace">
+      <section className={traceOpen ? "workspace traceOpen" : "workspace"}>
         <nav className="sidebar">
           <div className="sidebarTop">
             <button type="button" className="sidebarSearchButton" aria-label="Поиск">
@@ -2787,60 +2942,72 @@ export function App() {
               <span className="projectIcon">⌂</span>
               <span className="projectName">{activeProjectLabel}</span>
             </button>
-            <div className="projectChatList">
-              {chatSessions.map((chat, index) => (
-                <div
-                  key={chat.session_id}
-                  className="projectChatRow"
-                >
-                  <button
-                    type="button"
-                    className={chat.session_id === activeSessionId ? "projectChatItem active" : "projectChatItem"}
-                    onClick={() => {
-                      void openSession(chat).catch((error) => {
-                        setSocketState("failed");
-                        setLines((current) => [...current, { role: "system", text: String(error) }]);
-                      });
-                    }}
-                  >
-                    <span className="projectChatTitle">{formatSessionTitle(chat, index)}</span>
-                    <span className="projectChatStatus" />
-                  </button>
-                  <button
-                    type="button"
-                    className="chatArchiveButton"
-                    onClick={() => void archiveChat(chat)}
-                    disabled={deletingSessionId === chat.session_id}
-                    aria-label={`Архивировать ${formatSessionTitle(chat, index)}`}
-                  >
-                    ▱
-                  </button>
-                </div>
-              ))}
-            </div>
+            {projectChatSessions.length > 0 ? (
+              <div className="projectChatList">
+                {projectChatSessions.map((chat, index) => (
+                  <div className="projectChatRow" key={chat.session_id}>
+                    <button
+                      type="button"
+                      className={chat.session_id === activeSessionId ? "projectChatItem active" : "projectChatItem"}
+                      onClick={() => {
+                        setActivePanel("chat");
+                        void openSession(chat).catch((error) => setLines((current) => [...current, { role: "system", text: String(error) }]));
+                      }}
+                    >
+                      <strong>{formatSessionTitle(chat, index)}</strong>
+                    </button>
+                    <button
+                      type="button"
+                      className="chatArchiveButton"
+                      onClick={() => void archiveChat(chat)}
+                      aria-label="Архивировать чат"
+                      title="Архивировать чат"
+                    >
+                      ▱
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </section>
 
           <section className="sidebarSection">
             <header className="sidebarHeader">
-              <strong>Задачи</strong>
+              <strong>Чаты без проекта</strong>
             </header>
-            <button
-              type="button"
-              className="taskSummaryCard"
-              onClick={() => setActivePanel("tasks")}
-            >
-              {pendingTaskCount > 0 ? (
-                <>
-                  <strong>{pendingTaskCount}</strong>
-                  <span>активных задач</span>
-                </>
-              ) : (
-                <>
-                  <strong>Нет задач</strong>
-                  <span>Пока тихо, не нагружайся раньше времени</span>
-                </>
-              )}
-            </button>
+            {standaloneChatSessions.length > 0 ? (
+              <div className="standaloneSidebarChatList">
+                {standaloneChatSessions.slice(0, 5).map((chat, index) => (
+                  <div className="standaloneSidebarChatRow" key={chat.session_id}>
+                    <button
+                      type="button"
+                      className={chat.session_id === activeSessionId ? "standaloneSidebarChat active" : "standaloneSidebarChat"}
+                      onClick={() => {
+                        setActivePanel("chat");
+                        void openSession(chat).catch((error) => setLines((current) => [...current, { role: "system", text: String(error) }]));
+                      }}
+                    >
+                      <strong>{formatSessionTitle(chat, index)}</strong>
+                      <span>{formatSessionPreview(chat)}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="chatArchiveButton"
+                      onClick={() => void archiveChat(chat)}
+                      aria-label="Архивировать чат"
+                      title="Архивировать чат"
+                    >
+                      ▱
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <button type="button" className="taskSummaryCard" onClick={() => void createNewChat()}>
+                <strong>Нет чатов</strong>
+                <span>Создай первый чат без проекта</span>
+              </button>
+            )}
           </section>
 
           <section className="sidebarFooter">
@@ -2869,11 +3036,49 @@ export function App() {
           {activePanel !== "pull-requests" && activePanel !== "plugins" && activePanel !== "sites" ? (
             <header>
               <h2>{activePanel === "chat" ? activeChatTitle : currentPanelLabel}</h2>
-              <span>Веб-сокет</span>
+              <div className="panelHeaderActions">
+                {activePanel === "chat" ? (
+                  <button type="button" className="panelHeaderButton" onClick={() => void copyChat()}>
+                    Копировать чат
+                  </button>
+                ) : null}
+              </div>
             </header>
           ) : null}
           {renderPanelContent()}
         </div>
+
+        {traceOpen ? (
+          <aside className="traceSidebar" id="task-trace" aria-label="Трейс задачи">
+            <header className="traceHeader">
+              <div>
+                <strong>Трейс задачи</strong>
+                <span>{activeTaskId ? "Текущая задача" : "События чата"}</span>
+              </div>
+              <div className="traceHeaderActions">
+                <button type="button" className="panelHeaderButton" onClick={exportTrace}>
+                  Экспорт
+                </button>
+                <button type="button" className="traceClose" onClick={() => setTraceOpen(false)} aria-label="Закрыть трейс">
+                  ×
+                </button>
+              </div>
+            </header>
+            <div className="traceList">
+              {lines.filter((line) => line.role === "system" || line.role === "tool").length > 0 ? (
+                lines.filter((line) => line.role === "system" || line.role === "tool").map((line, index) => (
+                  <article className={`traceItem ${line.role}`} key={`${line.role}-${index}`}>
+                    <strong>{translateChatRole(line.role, githubAuth?.login)}</strong>
+                    <pre>{line.text}</pre>
+                  </article>
+                ))
+              ) : (
+                <div className="traceEmpty">Здесь появятся план, статусы и действия агента.</div>
+              )}
+            </div>
+          </aside>
+        ) : null}
+        {chatActionNotice ? <div className="chatActionNotice" role="status">{chatActionNotice}</div> : null}
 
       </section>
       {settingsOpen ? (
@@ -2914,4 +3119,49 @@ function formatPlan(plan: PlanStep[]) {
       return `- ${step.id}: ${step.tool_name} — ${step.description}${deps}`;
     }),
   ].join("\n");
+}
+
+function MarkdownMessage({ text }: { text: string }) {
+  return (
+    <div className="markdownBody">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+          code: ({ node: _node, className, children, ...props }) => {
+            const inline = !className;
+            return inline ? (
+              <code className="inlineCode" {...props}>{children}</code>
+            ) : (
+              <pre className="codeBlock"><code className={className} {...props}>{children}</code></pre>
+            );
+          },
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function ChatTraceSummary({ traceLines, active, userLogin }: { traceLines: ChatLine[]; active: boolean; userLogin?: string | null }) {
+  return (
+    <details className="chatTraceSummary" open={active}>
+      <summary>
+        <span className="chatTraceSummaryTitle">
+          <span className={active ? "thinkingOrb active" : "thinkingOrb"} aria-hidden="true" />
+          {active ? "Модель работает…" : "Ход работы"}
+        </span>
+        <span className="chatTraceSummaryMeta">{active ? "Выполняю план" : "Завершено"}</span>
+      </summary>
+      <div className="chatTraceSummaryBody">
+        {traceLines.map((line, index) => (
+          <article className={`chatTraceEntry ${line.role}`} key={`${line.role}-${index}`}>
+            <strong>{translateChatRole(line.role, userLogin)}</strong>
+            <pre>{line.text}</pre>
+          </article>
+        ))}
+      </div>
+    </details>
+  );
 }

@@ -25,6 +25,8 @@ pub struct SessionRow {
 pub struct SessionSummaryRow {
     pub id: Uuid,
     pub created_at: DateTime<Utc>,
+    pub title: Option<String>,
+    pub workspace_path: Option<String>,
     pub last_message_at: Option<DateTime<Utc>>,
     pub last_message: Option<String>,
     pub last_role: Option<String>,
@@ -213,6 +215,8 @@ pub async fn list_sessions(
         SELECT
             s.id,
             s.created_at,
+            s.title,
+            s.workspace_path,
             last_message.created_at AS last_message_at,
             last_message.content AS last_message,
             last_message.role AS last_role
@@ -245,6 +249,8 @@ pub async fn list_archived_sessions(
         SELECT
             s.id,
             s.created_at,
+            s.title,
+            s.workspace_path,
             last_message.created_at AS last_message_at,
             last_message.content AS last_message,
             last_message.role AS last_role
@@ -275,6 +281,19 @@ pub async fn archive_session(pool: &PgPool, session_id: Uuid) -> Result<bool, St
     .bind(session_id)
     .execute(pool)
     .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+pub async fn set_session_title_if_empty(
+    pool: &PgPool,
+    session_id: Uuid,
+    title: &str,
+) -> Result<bool, StorageError> {
+    let result = sqlx::query("UPDATE sessions SET title = $2 WHERE id = $1 AND title IS NULL")
+        .bind(session_id)
+        .bind(title)
+        .execute(pool)
+        .await?;
     Ok(result.rows_affected() > 0)
 }
 
@@ -337,6 +356,12 @@ pub async fn create_task(
     .bind(workspace_path)
     .fetch_one(pool)
     .await?;
+
+    sqlx::query("UPDATE sessions SET workspace_path = $2 WHERE id = $1 AND workspace_path IS NULL")
+        .bind(session_id)
+        .bind(workspace_path)
+        .execute(pool)
+        .await?;
 
     Ok(row)
 }
@@ -567,6 +592,50 @@ pub async fn list_session_memory(
         "#,
     )
     .bind(session_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
+}
+
+pub async fn insert_global_memory(
+    pool: &PgPool,
+    scope_key: &str,
+    source_task_id: Option<Uuid>,
+    note: &str,
+) -> Result<(), StorageError> {
+    sqlx::query(
+        r#"
+        INSERT INTO global_memory (scope_key, source_task_id, note)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (scope_key, note) DO NOTHING
+        "#,
+    )
+    .bind(scope_key)
+    .bind(source_task_id)
+    .bind(note)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn list_global_memory(
+    pool: &PgPool,
+    scope_key: &str,
+    limit: i64,
+) -> Result<Vec<MemoryRow>, StorageError> {
+    let rows = sqlx::query_as::<_, MemoryRow>(
+        r#"
+        SELECT note, created_at
+        FROM global_memory
+        WHERE scope_key = $1
+        ORDER BY created_at DESC
+        LIMIT $2
+        "#,
+    )
+    .bind(scope_key)
+    .bind(limit)
     .fetch_all(pool)
     .await?;
 

@@ -1,6 +1,6 @@
 # EvoHime — Current State
 
-Last updated: 2026-07-15
+Last updated: 2026-07-16
 
 ## Stage: 6 in progress
 
@@ -121,4 +121,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: the first ML-oriented `text.keywords` handler and Rust worker-job bridge are in place. Next is adding specialized ML handlers and background polling/retention policies while keeping worker execution isolated.
+**Stage 6 / Milestone 5**: project index, MCP, memory, multi-model routes, browser tools, Python worker integration, background polling, retention, recovery, and bounded retries are in place. Next is adding specialized ML handlers and observability while keeping worker execution isolated.

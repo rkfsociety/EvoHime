@@ -1,6 +1,7 @@
 pub mod browser;
 pub mod filesystem;
 pub mod git;
+pub mod list;
 pub mod mcp;
 pub mod patch;
 pub mod search;

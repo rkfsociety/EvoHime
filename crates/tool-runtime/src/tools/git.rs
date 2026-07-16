@@ -69,7 +69,19 @@ pub async fn commit(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
         })?;
 
     run_git(ctx, &["add", "-A"]).await?;
-    run_git(ctx, &["commit", "-m", &input.message]).await
+    match run_git(ctx, &["commit", "-m", &input.message]).await {
+        Ok(result) => Ok(result),
+        Err(ToolError::Execution(message))
+            if message.contains("nothing to commit")
+                || message.contains("nothing added to commit") =>
+        {
+            Ok(ToolResult {
+                output: "Изменений для коммита нет; коммит не требовался".to_string(),
+                structured: json!({"status": "nothing_to_commit"}),
+            })
+        }
+        Err(error) => Err(error),
+    }
 }
 
 pub async fn pull(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
