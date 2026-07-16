@@ -178,6 +178,43 @@
 | 6.9 | Settings: models, permissions, MCP, tools | ✅ `frontend/web/`, `crates/server/` |
 | 6.10 | Тесты: index, MCP, workers | ✅ respective crates / `workers/python/` |
 
+### 6.16–6.25 — Память, опыт и управляемое самообучение агента
+
+**Цель:** превратить текущие `session_memory` и `global_memory` из журнала коротких заметок в структурированную, проверяемую и управляемую систему памяти. EvoHime не изменяет веса модели: самообучение реализуется через накопление подтверждённых фактов, опыта, ошибок и playbook-инструкций.
+
+| # | Задача | Статус | Crate / Path |
+| --- | --- | --- | --- |
+| 6.16 | Memory model: session, user, project, workspace и experience scopes | 🟡 Planned | `migrations/`, `crates/storage/` |
+| 6.17 | Структурированные memory items: kind, confidence, importance, source, status и supersedes | 🟡 Planned | `migrations/`, `crates/storage/` |
+| 6.18 | Memory service: нормализация, redaction секретов, дедупликация и разрешение конфликтов | 🟡 Planned | новый `crates/memory/` |
+| 6.19 | Memory retrieval: scope filtering, ranking, recency и ограниченный prompt context | 🟡 Planned | `crates/memory/`, `crates/agent-runtime/` |
+| 6.20 | Memory extraction: выделение кандидатов из результатов задач через строгую JSON-схему | 🟡 Planned | `crates/agent-runtime/`, `crates/model-gateway/` |
+| 6.21 | Experience memory: успешные паттерны, failure patterns, verification rules и playbooks | 🟡 Planned | `crates/memory/`, `crates/agent-runtime/` |
+| 6.22 | Подтверждение, исправление, отклонение, архивирование и удаление памяти пользователем | 🟡 Planned | `crates/server/`, `frontend/web/` |
+| 6.23 | Feedback loop: memory used/helpful/corrected/rejected events и confidence decay | 🟡 Planned | `crates/protocol/`, `crates/storage/`, `crates/server/` |
+| 6.24 | Панель Memory: active, candidates, experiences, conflicts и privacy settings | 🟡 Planned | `frontend/web/` |
+| 6.25 | Hybrid semantic retrieval через embeddings после стабилизации lexical retrieval | 🟡 Planned | `crates/project-index/`, `crates/memory/` |
+
+#### Архитектурные правила памяти
+
+- Системные правила и явный текущий запрос пользователя имеют приоритет над памятью.
+- Project memory не смешивается с памятью другого workspace.
+- Неподтверждённые записи получают статус `candidate` и не должны безусловно менять поведение агента.
+- Секреты, токены, пароли, cookies и private keys запрещено сохранять в память.
+- Каждая запись должна иметь источник, confidence и возможность удаления.
+- Конфликтующие и устаревшие записи не должны одновременно попадать в prompt.
+- Embeddings добавляются только после проверки качества структурированной памяти и lexical retrieval.
+
+#### Критерии готовности memory milestone
+
+- Память разделена на session, user, project и experience scopes.
+- Retrieval выбирает только релевантные записи и ограничивает размер контекста.
+- Новые записи проходят redaction, валидацию, дедупликацию и проверку конфликтов.
+- Пользователь может подтвердить, изменить, отклонить и удалить любую запись.
+- Агент использует прошлые успешные и неудачные решения как опыт.
+- Изменение workspace не приводит к утечке памяти между проектами.
+- Полный memory flow покрыт storage, integration и security-тестами.
+
 ### Критерий готовности
 
 Агент использует project index для контекста, вызывает MCP-инструменты, работает с несколькими моделями. Python workers принимают структурированные HTTP jobs с process/job heartbeat, typed payloads и прикладными хендлерами (`text.summarize`, `text.chunk`); следующий шаг — observability и оркестрация/UI к масштабированию.
