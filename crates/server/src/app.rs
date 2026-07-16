@@ -8,13 +8,7 @@ use evohime_tool_runtime::ToolRegistry;
 use serde::{Deserialize, Serialize};
 use serde_json::to_value;
 use sqlx::PgPool;
-use std::{
-    collections::HashMap,
-    env,
-    path::PathBuf,
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, env, path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::{broadcast, Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;

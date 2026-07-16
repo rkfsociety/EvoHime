@@ -376,8 +376,10 @@ async fn run_agent_loop_inner(
             match parse_replan_decision(&raw_replan) {
                 ReplanDecision::Done => break,
                 ReplanDecision::Continue(steps) => {
-                    let existing: HashSet<String> =
-                        accumulated_plan.iter().map(|step| step.id.clone()).collect();
+                    let existing: HashSet<String> = accumulated_plan
+                        .iter()
+                        .map(|step| step.id.clone())
+                        .collect();
                     let new_steps: Vec<PlanStep> = steps
                         .into_iter()
                         .filter(|step| !existing.contains(&step.id))
@@ -393,14 +395,9 @@ async fn run_agent_loop_inner(
                             plan: accumulated_plan.clone(),
                         },
                     )?;
-                    let (outputs, round_mutation, round_satisfied) = execute_plan_steps(
-                        &new_steps,
-                        &satisfied_steps,
-                        &config,
-                        tools,
-                        &event_tx,
-                    )
-                    .await?;
+                    let (outputs, round_mutation, round_satisfied) =
+                        execute_plan_steps(&new_steps, &satisfied_steps, &config, tools, &event_tx)
+                            .await?;
                     plan_outputs.extend(outputs);
                     mutation_executed |= round_mutation;
                     satisfied_steps.extend(round_satisfied);
@@ -717,7 +714,9 @@ async fn execute_plan_steps(
 
 enum StepOutcome {
     SkippedAssistant,
-    SkippedUnsupported { message: String },
+    SkippedUnsupported {
+        message: String,
+    },
     Completed {
         output: String,
         mutation: bool,
@@ -758,7 +757,10 @@ async fn execute_single_plan_step(
                 });
             }
             return Ok(StepOutcome::SkippedUnsupported {
-                message: format!("{}: шаг пропущен — инструмент не поддержан runtime", step.id),
+                message: format!(
+                    "{}: шаг пропущен — инструмент не поддержан runtime",
+                    step.id
+                ),
             });
         }
     };
@@ -2149,7 +2151,11 @@ mod tests {
 
         assert_eq!(result.final_message, "Answer from checkpoint resume");
         let calls = provider.calls.lock().expect("calls");
-        assert_eq!(calls.len(), 1, "planning should be skipped on resume with plan");
+        assert_eq!(
+            calls.len(),
+            1,
+            "planning should be skipped on resume with plan"
+        );
     }
 
     #[tokio::test]

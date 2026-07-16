@@ -470,22 +470,20 @@ async fn recover_worker_jobs(state: Arc<AppState>) {
 
 fn spawn_worker_recovery(state: Arc<AppState>, job: evohime_storage::WorkerJobRow) {
     tokio::spawn(async move {
-        match retry_worker_job_after_error(&state, job.id, "server restart recovery".to_string())
-            .await
+        if let Ok(Some(worker_job)) =
+            retry_worker_job_after_error(&state, job.id, "server restart recovery".to_string())
+                .await
         {
-            Ok(Some(worker_job)) => {
-                if let Err(error) = run_worker_job(&state, job.id, worker_job).await {
-                    let _ = evohime_storage::complete_worker_job(
-                        &state.pool,
-                        job.id,
-                        "failed",
-                        None,
-                        Some(&error),
-                    )
-                    .await;
-                }
+            if let Err(error) = run_worker_job(&state, job.id, worker_job).await {
+                let _ = evohime_storage::complete_worker_job(
+                    &state.pool,
+                    job.id,
+                    "failed",
+                    None,
+                    Some(&error),
+                )
+                .await;
             }
-            Ok(None) | Err(_) => {}
         }
     });
 }

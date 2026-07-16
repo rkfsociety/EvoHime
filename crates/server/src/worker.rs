@@ -95,13 +95,7 @@ pub fn validate_task_payload(task: &str, payload: &Value) -> Result<(), String> 
     match task {
         "text.stats" | "text.keywords" => Ok(()),
         "text.summarize" => {
-            optional_int(
-                payload,
-                "max_sentences",
-                DEFAULT_MAX_SENTENCES,
-                1,
-                Some(20),
-            )?;
+            optional_int(payload, "max_sentences", DEFAULT_MAX_SENTENCES, 1, Some(20))?;
             Ok(())
         }
         "text.chunk" => {
@@ -120,9 +114,7 @@ pub fn validate_task_payload(task: &str, payload: &Value) -> Result<(), String> 
 fn require_text(task: &str, payload: &Value) -> Result<(), String> {
     match payload.get("text") {
         Some(Value::String(text)) if text.len() <= MAX_TEXT_LENGTH => Ok(()),
-        Some(Value::String(_)) => {
-            Err(format!("payload.text exceeds {MAX_TEXT_LENGTH} characters"))
-        }
+        Some(Value::String(_)) => Err(format!("payload.text exceeds {MAX_TEXT_LENGTH} characters")),
         _ => Err(format!("{task} requires a string payload.text")),
     }
 }
@@ -173,10 +165,10 @@ impl WorkerClient {
         if !response.status().is_success() {
             return Err(anyhow!("worker health returned {}", response.status()));
         }
-        Ok(response
+        response
             .json()
             .await
-            .context("decode worker health response")?)
+            .context("decode worker health response")
     }
 
     pub async fn submit(&self, task: &str, payload: &Value) -> Result<WorkerJob> {
@@ -190,10 +182,10 @@ impl WorkerClient {
         if !response.status().is_success() {
             return Err(anyhow!("worker submit returned {}", response.status()));
         }
-        Ok(response
+        response
             .json()
             .await
-            .context("decode worker submit response")?)
+            .context("decode worker submit response")
     }
 
     pub async fn get(&self, id: &str) -> Result<WorkerJob> {
@@ -206,10 +198,7 @@ impl WorkerClient {
         if !response.status().is_success() {
             return Err(anyhow!("worker poll returned {}", response.status()));
         }
-        Ok(response
-            .json()
-            .await
-            .context("decode worker poll response")?)
+        response.json().await.context("decode worker poll response")
     }
 }
 
@@ -239,7 +228,11 @@ mod status_tests {
 
     #[test]
     fn heartbeat_without_timestamp_is_not_stale_yet() {
-        assert!(!heartbeat_is_stale(None, Utc::now(), Duration::from_secs(30)));
+        assert!(!heartbeat_is_stale(
+            None,
+            Utc::now(),
+            Duration::from_secs(30)
+        ));
     }
 
     #[test]
