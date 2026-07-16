@@ -134,11 +134,31 @@ export type GitSnapshot = {
 
 export type GitAction = "commit" | "pull" | "push";
 
+export type TaskStepView = {
+  id: string;
+  runtimeId?: string;
+  toolName: string;
+  description: string;
+  dependsOn: string[];
+  status: string;
+};
+
+export type TaskApprovalWait = {
+  approvalId: string;
+  toolName: string;
+  permission: string;
+  scope: string;
+};
+
 export type TaskView = {
   id: string;
   message: string;
   status: string;
-  steps: Record<string, string>;
+  steps: Record<string, TaskStepView>;
+  retryCount: number;
+  pauseReason: string | null;
+  approvalWait: TaskApprovalWait | null;
+  recovery: string | null;
 };
 
 export type ActionView = {

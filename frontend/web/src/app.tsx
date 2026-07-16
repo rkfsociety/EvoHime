@@ -1276,6 +1276,7 @@ export function App() {
     if (activePanel === "tasks") {
       return (
         <TasksPanel
+          tasks={tasks}
           chatSessions={chatSessions}
           activeSessionId={activeSessionId}
           onNewChat={() => setActivePanel("chat")}

@@ -7,7 +7,7 @@ import type {
   TaskStatusChangedEvent,
   TaskStepChangedEvent,
 } from "../protocol";
-import type { ActionView, ChatLine, ChatSessionSummary, TaskView } from "../types";
+import type { ActionView, ChatLine, ChatSessionSummary, TaskStepView, TaskView } from "../types";
 import { formatPlan, summarizeChatTitle } from "../lib/format";
 import { normalizePath, parentPath } from "../lib/paths";
 
@@ -36,6 +36,30 @@ export type ServerEventHandlerContext = {
   refreshSelectedFile: (path: string) => Promise<void>;
 };
 
+function updateStepStatus(
+  steps: Record<string, TaskStepView>,
+  event: TaskStepChangedEvent,
+): Record<string, TaskStepView> {
+  const entries = Object.entries(steps);
+  const matching = entries.find(([, step]) => step.runtimeId === event.step_id)
+    ?? entries.find(([, step]) => step.toolName === event.tool_name && step.status !== "completed" && step.status !== "failed");
+  if (!matching) {
+    return {
+      ...steps,
+      [event.step_id]: {
+        id: event.step_id,
+        runtimeId: event.step_id,
+        toolName: event.tool_name,
+        description: "",
+        dependsOn: [],
+        status: event.status,
+      },
+    };
+  }
+  const [key, step] = matching;
+  return { ...steps, [key]: { ...step, runtimeId: event.step_id, status: event.status } };
+}
+
 export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerContext): void {
   switch (event.type) {
     case "session.created":
@@ -63,7 +87,16 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
       });
       ctx.setTasks((current) => ({
         ...current,
-        [event.task_id]: { id: event.task_id, message: event.user_message, status: "running", steps: {} },
+        [event.task_id]: {
+          id: event.task_id,
+          message: event.user_message,
+          status: "running",
+          steps: {},
+          retryCount: 0,
+          pauseReason: null,
+          approvalWait: null,
+          recovery: null,
+        },
       }));
       ctx.setLines((current) => [...current, { role: "user", text: event.user_message, taskId: event.task_id }]);
       ctx.setStream("");
@@ -97,6 +130,26 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
       break;
     case "approval.required":
       ctx.setApproval(event);
+      ctx.setTasks((current) => {
+        const task = current[event.task_id];
+        if (!task) {
+          return current;
+        }
+        return {
+          ...current,
+          [event.task_id]: {
+            ...task,
+            status: "paused",
+            pauseReason: "approval_required",
+            approvalWait: {
+              approvalId: event.approval_id,
+              toolName: event.tool_name,
+              permission: event.permission,
+              scope: event.scope,
+            },
+          },
+        };
+      });
       break;
     case "tool.completed":
       ctx.setLines((current) => [
@@ -152,7 +205,17 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
         current[statusEvent.task_id]
           ? {
               ...current,
-              [statusEvent.task_id]: { ...current[statusEvent.task_id], status: statusEvent.status },
+              [statusEvent.task_id]: {
+                ...current[statusEvent.task_id],
+                status: statusEvent.status,
+                pauseReason:
+                  statusEvent.status === "paused"
+                    ? current[statusEvent.task_id].pauseReason ?? "paused"
+                    : statusEvent.status === "running"
+                      ? null
+                      : current[statusEvent.task_id].pauseReason,
+                approvalWait: statusEvent.status === "running" ? null : current[statusEvent.task_id].approvalWait,
+              },
             }
           : current,
       );
@@ -166,7 +229,7 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
               ...current,
               [stepEvent.task_id]: {
                 ...current[stepEvent.task_id],
-                steps: { ...current[stepEvent.task_id].steps, [stepEvent.tool_name]: stepEvent.status },
+                steps: updateStepStatus(current[stepEvent.task_id].steps, stepEvent),
               },
             }
           : current,
@@ -184,9 +247,44 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
           createdAt: actionEvent.created_at,
         },
       ]);
+      ctx.setTasks((current) => {
+        const task = current[actionEvent.task_id];
+        if (!task) {
+          return current;
+        }
+        const isRetry = actionEvent.action === "task.retry";
+        const isRecovery = /recover|restart/i.test(`${actionEvent.action} ${actionEvent.detail}`);
+        return {
+          ...current,
+          [actionEvent.task_id]: {
+            ...task,
+            retryCount: task.retryCount + (isRetry ? 1 : 0),
+            recovery: isRecovery ? actionEvent.detail : task.recovery,
+          },
+        };
+      });
       break;
     }
     case "agent.plan.updated":
+      ctx.setTasks((current) => {
+        const task = current[event.task_id];
+        if (!task) {
+          return current;
+        }
+        const steps = { ...task.steps };
+        for (const step of event.plan as PlanStep[]) {
+          const previous = steps[step.id];
+          steps[step.id] = {
+            id: step.id,
+            runtimeId: previous?.runtimeId,
+            toolName: step.tool_name,
+            description: step.description,
+            dependsOn: step.depends_on ?? [],
+            status: previous?.status ?? "pending",
+          };
+        }
+        return { ...current, [event.task_id]: { ...task, steps } };
+      });
       ctx.setLines((current) => [
         ...current,
         {
