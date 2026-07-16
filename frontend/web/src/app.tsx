@@ -1,5 +1,5 @@
 import Editor from "@monaco-editor/react";
-import { ChangeEvent, FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, Fragment, UIEvent, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
@@ -566,6 +566,8 @@ export function App() {
   const saveFileRef = useRef<() => void>(() => undefined);
   const sessionLoadRef = useRef(0);
   const activeAssistantLineRef = useRef<number | null>(null);
+  const chatLogRef = useRef<HTMLDivElement | null>(null);
+  const chatAutoScrollRef = useRef(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -998,6 +1000,25 @@ export function App() {
     () => Object.values(tasks).find((task) => task.status === "running" || task.status === "cancelling")?.id ?? null,
     [tasks],
   );
+  useEffect(() => {
+    if (activePanel !== "chat" || !chatAutoScrollRef.current) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      const chatLog = chatLogRef.current;
+      if (chatLog) {
+        chatLog.scrollTop = chatLog.scrollHeight;
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activePanel, activeSessionId, lines, stream]);
+
+  function handleChatScroll(event: UIEvent<HTMLDivElement>) {
+    const chatLog = event.currentTarget;
+    const distanceFromBottom = chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight;
+    chatAutoScrollRef.current = distanceFromBottom <= 72;
+  }
   const workMode = useMemo<PermissionMode | "mixed">(() => {
     const modes = Object.values(permissionSettings).map((setting) => setting.mode);
     if (modes.length === 0 || modes.every((mode) => mode === modes[0])) {
@@ -1074,6 +1095,7 @@ export function App() {
     setApproval(null);
     setTerminalEntries([]);
     activeAssistantLineRef.current = null;
+    chatAutoScrollRef.current = true;
     for (const item of history) {
       applyEventRef.current(item.event);
     }
@@ -2591,7 +2613,11 @@ export function App() {
 
     return (
       <>
-        <div className={`chatLog${lines.every((line) => line.role === "system") && !stream ? " empty" : ""}`}>
+        <div
+          ref={chatLogRef}
+          onScroll={handleChatScroll}
+          className={`chatLog${lines.every((line) => line.role === "system") && !stream ? " empty" : ""}`}
+        >
           {lines.every((line) => line.role === "system") && !stream ? (
             <div className="chatWelcome">
               <span className="chatWelcomeIcon">✦</span>
