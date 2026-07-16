@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="EvoHime">
+  <rect width="32" height="32" rx="8" fill="#0b111f"/>
+  <!-- hair silhouette -->
+  <path fill="#C8D4E6" d="M6 14c0-7 4.5-11 10-11s10 4 10 11v6c-1.5 1-4 2-10 2s-8.5-1-10-2v-6z"/>
+  <path fill="#9AABC2" d="M8 12c1-5 3.5-8 8-8 1.2 0 2.3.3 3.3.8C17 6 14 9 13 14c-1.5.2-3.5.2-5-0.5V12z"/>
+  <!-- face -->
+  <ellipse cx="16" cy="17" rx="7" ry="8" fill="#E8EEF7"/>
+  <!-- eyes -->
+  <ellipse cx="13" cy="16.5" rx="1.4" ry="1.8" fill="#1a2438"/>
+  <ellipse cx="19" cy="16.5" rx="1.4" ry="1.8" fill="#1a2438"/>
+  <circle cx="13.4" cy="16.2" r="0.55" fill="#3ed7b2"/>
+  <circle cx="19.4" cy="16.2" r="0.55" fill="#3ed7b2"/>
+  <!-- smirk -->
+  <path d="M14.5 21.2c1.2.9 2.8.9 4 0" fill="none" stroke="#6B7C94" stroke-width="1.1" stroke-linecap="round"/>
+</svg>
