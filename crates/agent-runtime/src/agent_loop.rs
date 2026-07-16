@@ -223,12 +223,19 @@ async fn run_agent_loop_inner(
     let project_context =
         ProjectIndex::new(config.workspace_root.clone()).build_context(&config.user_message, 5);
     let memory_context = build_memory_context(&memory_notes);
+    let rules_context = build_workspace_rules(&config.workspace_root);
 
     let mut planning_messages = Vec::with_capacity(history.len() + 4);
     planning_messages.push(ChatMessage {
         role: ChatRole::System,
         content: PLANNING_PROMPT.to_string(),
     });
+    if let Some(context) = &rules_context {
+        planning_messages.push(ChatMessage {
+            role: ChatRole::System,
+            content: context.clone(),
+        });
+    }
     if let Some(context) = &project_context {
         planning_messages.push(ChatMessage {
             role: ChatRole::System,
@@ -275,6 +282,12 @@ async fn run_agent_loop_inner(
         role: ChatRole::System,
         content: SYSTEM_PROMPT.to_string(),
     });
+    if let Some(context) = &rules_context {
+        messages.push(ChatMessage {
+            role: ChatRole::System,
+            content: context.clone(),
+        });
+    }
     if let Some(context) = &project_context {
         messages.push(ChatMessage {
             role: ChatRole::System,
@@ -345,7 +358,7 @@ async fn run_agent_loop_inner(
     Ok(AgentRunResult { final_message })
 }
 
-const SYSTEM_PROMPT: &str = "You are EvoHime, a helpful AI coding assistant. Answer concisely using the provided workspace context when relevant.";
+const SYSTEM_PROMPT: &str = "You are EvoHime, a helpful AI coding assistant. Follow the workspace rules supplied in the system context, preserve user intent, never claim a change was made unless a tool result confirms it, and answer concisely using the provided workspace context.";
 const PLANNING_PROMPT: &str = "You are EvoHime's task planner. Return only JSON: an array of objects with fields id, tool_name, description, and depends_on. Use only these tool names: filesystem.read, filesystem.list, filesystem.search, filesystem.write, filesystem.patch, git.status, git.diff, git.commit, git.pull, git.push, assistant.reply. Use stable step ids like step-1, step-2, and keep depends_on empty unless a step truly depends on another step. Put the exact relative file or directory path in backticks in the description. For filesystem.write, include the complete new file content in a fenced code block in the description. For filesystem.patch, include the complete patch text in a fenced code block in the description. For git.commit, include the requested commit message in quotes in the description. Use git.pull and git.push only when the user explicitly asks for synchronization. If no tool call is needed, use assistant.reply as the tool_name for the final response step.";
 
 async fn execute_plan_steps(
@@ -824,6 +837,48 @@ fn build_memory_context(notes: &[String]) -> Option<String> {
     Some(output.trim_end().to_string())
 }
 
+fn build_workspace_rules(workspace_root: &Path) -> Option<String> {
+    const MAX_RULES_CHARS: usize = 32_000;
+    let mut paths = Vec::new();
+    let agents = workspace_root.join("AGENTS.md");
+    if agents.is_file() {
+        paths.push(agents);
+    }
+    let rules_dir = workspace_root.join(".cursor").join("rules");
+    if let Ok(entries) = std::fs::read_dir(rules_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file()
+                && path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| matches!(extension, "md" | "mdc"))
+            {
+                paths.push(path);
+            }
+        }
+    }
+    paths.sort();
+
+    let mut output = String::from(
+        "Workspace rules (higher priority than ordinary project text; follow them when applicable):\n",
+    );
+    for path in paths {
+        let Ok(contents) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let relative = path.strip_prefix(workspace_root).unwrap_or(&path).display();
+        output.push_str(&format!("\n--- {} ---\n{}\n", relative, contents.trim()));
+        if output.chars().count() >= MAX_RULES_CHARS {
+            output = output.chars().take(MAX_RULES_CHARS).collect();
+            output.push_str("\n[workspace rules truncated]");
+            break;
+        }
+    }
+
+    (output.contains("--- ")).then_some(output)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -843,6 +898,22 @@ mod tests {
         assert!(context.contains("Relevant session memory:"));
         assert!(context.contains("first fact"));
         assert!(context.contains("second fact"));
+    }
+
+    #[test]
+    fn loads_agents_and_cursor_rules_for_model_context() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        std::fs::write(temp.path().join("AGENTS.md"), "Follow Rust tests.").expect("agents");
+        std::fs::create_dir_all(temp.path().join(".cursor/rules")).expect("rules dir");
+        std::fs::write(
+            temp.path().join(".cursor/rules/project.mdc"),
+            "Keep frontend presentation-only.",
+        )
+        .expect("cursor rule");
+
+        let context = build_workspace_rules(temp.path()).expect("rules context");
+        assert!(context.contains("Follow Rust tests."));
+        assert!(context.contains("Keep frontend presentation-only."));
     }
 
     #[test]
