@@ -16,7 +16,7 @@
 | 3 | Tools + shell | ✅ Готово | Sandbox, filesystem tools, shell, approvals, terminal, permissions |
 | 4 | Editor + Git | ✅ Done | Browser file tree, Monaco editor, Git status/diff/actions, and synchronization events |
 | 5 | Оркестрация | ✅ Complete | Lifecycle, команды, storage и recovery готовы |
-| 6 | Advanced | 🟡 В процессе | Foundations complete; ML handlers, Rust-owned worker jobs, and production hardening remain |
+| 6 | Advanced | 🟡 В процессе | Foundations + memory `6.16`–`6.18`; next retrieval `6.19` + extract/UI |
 
 ---
 
@@ -246,8 +246,8 @@
 | --- | --- | --- |
 | P1 | Декомпозиция `frontend/web/src/app.tsx` | ✅ types + api + lib + panels + event hook (`6.13`) |
 | P1 | Typed API client | ✅ `frontend/web/src/api/*` поверх `apiRequest` |
-| P1 | Более глубокие панели Tasks/Actions | Показывать зависимости шагов, причину паузы, повторные попытки, ожидание approvals и восстановление после restart |
-| P1 | Agent memory 6.16–6.25 | Structured auto memory + ask-on-uncertainty; see memory design spec |
+| P1 | Более глубокие панели Tasks/Actions | ✅ steps/deps/pause/retries/approvals/recovery |
+| P1 | Agent memory 6.16–6.25 | 🟡 `6.16`–`6.18` done; next `6.19` retrieval |
 
 ### P2 — Поиск, разрешения и GitHub workflow
 
@@ -255,13 +255,13 @@
 | --- | --- | --- |
 | P2 | Улучшенный project index | Поиск по чанкам, отдельные веса для path/symbol hits, фильтрация шумных и бинарных файлов, подготовка к semantic search |
 | P2 | Более гибкая permission model | Разрешения per-session / per-task / per-path, аудит approvals и временные allow-решения |
-| P2 | Расширение GitHub/PR панели | Diff конкретного PR, comments/reviews, CI checks, создание PR из UI и связь `task -> branch -> PR` |
+| P2 | Расширение GitHub/PR панели | ✅ diff/comments/reviews/checks/create PR (`6.14`) |
 
 ### P2 — Workers и фоновые процессы
 
 | Приоритет | Улучшение | Что добавить |
 | --- | --- | --- |
-| P2 | Укрепление worker subsystem | Retry/backoff policy, stalled job detection, heartbeat, retention по статусам и typed payload/result schemas |
+| P2 | Укрепление worker subsystem | ✅ process health + per-job heartbeat stall + typed payloads (`6.15`); further retry/retention optional |
 | P2 | Специализированные ML handlers | ✅ `text.summarize` + `text.chunk` (stdlib); дальнейшие handlers по необходимости |
 
 ### Кандидаты на следующий milestone
@@ -269,8 +269,10 @@
 - `6.11` План-исполнитель с реальным графом шагов и повторным планированием ✅ (batches + bounded replan)
 - `6.12` Расширенные checkpoints, approvals recovery и task replay ✅
 - `6.13` Декомпозиция frontend shell (`app.tsx` -> panels/hooks/services) ✅
-- `6.14` GitHub PR workflow: diff, review comments, checks, create PR
-- `6.15` Worker reliability: retries, heartbeat, stalled-job handling ✅ (process health + per-job heartbeat stall + typed payloads)
+- `6.14` GitHub PR workflow: diff, review comments, checks, create PR ✅
+- `6.15` Worker reliability: retries, heartbeat, stalled-job handling ✅
+- `6.16`–`6.18` Memory schema + service ✅
+- **Next:** `6.19` Memory retrieval into agent loop
 
 ---
 
@@ -284,9 +286,10 @@
 | Editor | 4 | M3 | ✅ Complete |
 | Terminal | 3 | M2 | ✅ Active |
 | Git | 4 | M3 | ✅ Complete |
-| Tasks | 5 | M4 | ✅ Активна, базовая |
-| Actions | 5 | M4 | ✅ Активна, базовая |
-| Settings | 2 | M1 | ✅ Активна, модели + permissions |
+| Tasks | 5 | M4 | ✅ Deep: steps, deps, pause, retries, recovery |
+| Actions | 5 | M4 | ✅ Deep: timeline + orchestration metrics |
+| Settings | 2 | M1 | ✅ Модели + permissions + MCP + tools |
+| Pull Requests | 6 | M5 | ✅ List/detail/create (`6.14`) |
 
 ---
 

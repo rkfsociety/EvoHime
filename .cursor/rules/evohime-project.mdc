@@ -21,21 +21,24 @@ React+TS+Vite frontend, Rust/Axum backend, PostgreSQL, WebSocket, native Windows
 6. Keep GitHub Actions workflows current with code changes, especially `.github/workflows/rust.yml` for Rust workspace, dependency, lint, or test updates
 7. If a required tool or command is missing from `PATH`, install or configure it before continuing or claiming verification
 
-## Current stage: 2 (Milestone 1 done)
+## Current stage: 6 (Milestone 5 in progress)
 
-LiteRouter streaming LLM + message history + Settings panel.
+Stages 1–5 done. Stage 6 foundations done; structured memory `6.16`–`6.18` landed. Next: `6.19` retrieval into agent loop, then extract/ask gate (`6.20`).
 
 ## Key paths
 
 - Agent flow: `crates/agent-runtime/src/agent_loop.rs`
 - LLM provider: `crates/model-gateway/src/providers/literouter.rs`
 - Tools: `crates/tool-runtime/`
+- Memory service: `crates/memory/`
+- Memory storage: `crates/storage/src/memory.rs`, `migrations/0013_memory_items.sql`
 - Protocol schema: `crates/protocol/schema/evohime.protocol.schema.json`
-- UI: `frontend/web/src/app.tsx`
+- UI shell: `frontend/web/src/app.tsx` + `frontend/web/src/panels/`, `api/`, `hooks/`
 - Plan: `docs/development-plan.md`
 - Roadmap: `docs/roadmap.md`
+- Memory design: `docs/superpowers/specs/2026-07-16-agent-memory-design.md`
 - LiteRouter: `docs/providers/literouter.md`
 
-## Next: Stage 3
+## Next
 
-Filesystem write, shell, terminal, permissions. See `docs/roadmap.md` → Milestone 2.
+`6.19` memory retrieval + budget + untrusted tagging (wire into agent-runtime). Parallel options: task-pipeline observability, integration tests.

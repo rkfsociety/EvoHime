@@ -34,12 +34,13 @@ EvoHime Server (crates/server)
 ├── model-gateway/     — LiteRouter + mock LLM providers
 ├── tool-runtime/      — tool registry + execution
 ├── permissions/       — permission types
-├── project-index/     — semantic search (stage 6)
+├── memory/            — redact / dedupe / conflict / admit (6.18)
+├── project-index/     — workspace text search
 ├── protocol/          — shared event schema
-└── storage/           — PostgreSQL access
+└── storage/           — PostgreSQL access (incl. memory_items)
 ```
 
-## Current state (Stages 1-5 complete; Stage 6 in progress)
+## Current state (Stages 1–5 ✅; Stage 6 in progress)
 
 Vertical slice works end-to-end:
 
@@ -56,24 +57,26 @@ User message
 
 ### Implemented
 
-- Monorepo with all crate scaffolds
-- HTTP: `/health`, `POST /api/sessions`, `GET /api/sessions/:id/history`
-- WebSocket: typed event protocol
-- Tools: filesystem read/write/patch/search, shell, and Git operations with workspace sandboxing
-- Frontend: chat, settings, event timeline, Tasks, Actions, terminal, files, editor, Git, and dedicated Plugins/Pull Requests/Sites panels
-- Local launcher: `start-dev.ps1` owns the tray icons for server/web and now includes a server restart menu item
-- GitHub auth: `/api/auth/github` reads the active local `gh` account and the sidebar should show the login when the backend is running
-- Protocol codegen: JSON Schema → TypeScript
-- Tests: `crates/protocol`, `crates/tool-runtime`
-- Native local stack: PostgreSQL + server + web
-- Stage 6 foundations: project index, MCP management/call, persistent session memory, multi-model routes, browser tools, and a bounded Python worker HTTP/queue baseline
-- CI: Rust format, Clippy, docs, and stable/beta/nightly tests run through GitHub Actions; the workflow installs `ripgrep` for search-tool tests
+- Monorepo with modular crates (incl. `evohime-memory`)
+- HTTP: health, sessions, files, git, models, permissions, tools, MCP, GitHub PRs, worker jobs
+- WebSocket: typed event protocol + approvals
+- Tools: filesystem, shell, Git, browser, MCP call (sandboxed)
+- Agent loop: plan → dependency batches → bounded replan; checkpoints with pause/resume
+- Frontend shell split (`6.13`): `types` / `api` / `lib` / `hooks` / `panels`
+- Panels: Chat, Settings, Tasks (deep), Actions (deep), Terminal, Files, Editor, Git, Plugins, Pull Requests (detail/diff/checks/create), Sites
+- Structured memory foundation: `memory_items` + `crates/memory` admit pipeline (`6.16`–`6.18`); legacy `session_memory` / `global_memory` still written by agent loop
+- Workers: health/stall reliability + `text.summarize` / `text.chunk`
+- Native launcher + GitHub auth via local `gh`
+- CI: format, Clippy, docs, tests (ripgrep installed for search tools)
 
-### Incomplete or not yet implemented
+### Incomplete / next
 
-- General LLM tool-calling orchestration across all registered tools
-- Production ML handlers for Python workers
-- Rust-owned worker job persistence, retry policy, and deeper observability
+- **`6.19`** Memory retrieval into agent prompt (budget, untrusted tagging, `memory.search`)
+- **`6.20`+** Extract + ask-on-uncertainty, experience/playbooks, Memory UI, feedback loop
+- Task-pipeline observability (correlation ids / metrics)
+- Broader integration tests (approval pause/resume, recovery)
+- General LLM tool-calling across all registered tools (orchestration still plan-driven)
+- More ML handlers / deeper worker observability as needed
 
 ## WebSocket events
 
@@ -89,7 +92,7 @@ task.completed
 task.failed
 ```
 
-Implemented in the schema/runtime: `file.changed`, `git.diff.changed`, task status/step events, and action log events. `approval.required` exists in the protocol and UI, but server-side emission and resume are incomplete.
+Also: `file.changed`, `git.diff.changed`, task status/step events, action log events, `approval.required` / grant / deny (wired).
 
 ## Protocol workflow
 
@@ -102,9 +105,7 @@ Implemented in the schema/runtime: `file.changed`, `git.diff.changed`, task stat
 
 ## Tools
 
-Implemented: `filesystem.read`, `filesystem.write`, `filesystem.patch`, `filesystem.search`, `shell.execute`, `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push`
-
-Planned: `browser.open`, `browser.extract`, `mcp.call`
+Implemented: `filesystem.read`, `filesystem.write`, `filesystem.patch`, `filesystem.search`, `shell.execute`, `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push`, `browser.open`, `browser.extract`, `mcp.call`
 
 Each tool must have: unique name, description, JSON Schema input, required permissions, timeout, cancellation, structured result, execution log.
 
@@ -161,10 +162,12 @@ See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](d
 | --- | --- |
 | 1 Foundation | ✅ Done |
 | 2 Chat with model (LiteRouter) | ✅ Done |
-| 3 Tools + shell | 🟡 Backend base |
-| 4 Editor + Git | 🟡 Git backend |
-| 5 Task orchestration | 🟡 Lifecycle base |
-| 6 Advanced (MCP, index) | Planned |
+| 3 Tools + shell | ✅ Done |
+| 4 Editor + Git | ✅ Done |
+| 5 Task orchestration | ✅ Done |
+| 6 Advanced | 🟡 In progress — memory `6.16`–`6.18` done; next `6.19` |
+
+Memory design: [docs/superpowers/specs/2026-07-16-agent-memory-design.md](docs/superpowers/specs/2026-07-16-agent-memory-design.md)
 
 ## LLM Provider — LiteRouter
 
@@ -185,9 +188,12 @@ LITEROUTER_MODEL=deepseek:free
 | File | Purpose |
 | --- | --- |
 | `crates/server/src/main.rs` | HTTP + WS handlers |
-| `crates/agent-runtime/src/vertical_slice.rs` | Demo agent flow |
-| `crates/tool-runtime/src/tools/` | filesystem, shell, and Git tools |
-| `frontend/web/src/app.tsx` | Workspace UI |
-| `migrations/0001_init.sql` | DB schema |
+| `crates/agent-runtime/src/agent_loop.rs` | Agent orchestration |
+| `crates/memory/` | Memory admit service (redact/dedupe/conflict) |
+| `crates/storage/src/memory.rs` | `memory_items` CRUD |
+| `crates/tool-runtime/src/tools/` | filesystem, shell, Git, browser, MCP |
+| `frontend/web/src/app.tsx` | Workspace shell |
+| `frontend/web/src/panels/` | Extracted panels |
+| `migrations/0013_memory_items.sql` | Structured memory schema |
 | `crates/model-gateway/src/providers/literouter.rs` | LiteRouter provider |
 | `start-dev.ps1` | Local development launcher |

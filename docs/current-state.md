@@ -4,123 +4,95 @@ Last updated: 2026-07-16
 
 ## Stage: 6 in progress
 
+Stages 1–5 complete. Stage 6 foundations + structured memory service (`6.16`–`6.18`) in place. Agent loop still consumes legacy free-text notes; structured retrieval not wired yet.
+
 ## Crates
 
 | Crate | Status | Notes |
 | --- | --- | --- |
-| `server` | Active | HTTP + WebSocket, workspace file, Git, MCP servers, and tool catalog APIs |
+| `server` | Active | HTTP + WebSocket, workspace file/Git/MCP/tools, GitHub PR detail/create, worker jobs |
 | `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema |
 | `memory` | Active | Redaction, normalize, dedupe, conflict + `admit_memory_item` (6.18) |
-| `storage` | Active | Sessions, tasks, events, **session_messages**, legacy notes, **memory_items** (6.16/6.17), **app_settings** |
-| `tool-runtime` | Active | Registry + sandboxed filesystem, shell, Git, browser, and MCP call tools |
-| `agent-runtime` | Active | `agent_loop.rs` — LLM planning, dependency-batch tool execution, bounded replan, project/memory context |
-| `model-gateway` | Active | Route-based gateway, **LiteRouter** + OpenAI-compatible endpoints, and mock provider |
-| `task-engine` | Active | lifecycle wrappers, dependency batching, checkpoints, cancel/resume/retry foundation |
-| `permissions` | Active | ask/allow/deny policy and one-shot approvals; approval events and resume flow wired |
+| `storage` | Active | Sessions, tasks, events, messages, legacy notes, **memory_items**, settings, worker jobs |
+| `tool-runtime` | Active | Sandboxed filesystem, shell, Git, browser, MCP call |
+| `agent-runtime` | Active | Plan → batches → bounded replan; checkpoints; legacy memory context |
+| `model-gateway` | Active | Route-based gateway, LiteRouter + OpenAI-compatible + mock |
+| `task-engine` | Active | Lifecycle, dependency batching, checkpoints, cancel/resume/retry |
+| `permissions` | Active | ask/allow/deny + one-shot approvals; grant/deny resume wired |
 | `project-index` | Active | Workspace text search for agent context |
-| Python worker | Active | Health/stall reliability plus handlers: echo, text.stats, text.keywords, text.summarize, text.chunk |
+| Python worker | Active | Health/stall reliability; handlers incl. `text.summarize`, `text.chunk` |
 
 ## API endpoints
 
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/health` | Health check |
-| GET/PUT | `/api/models/config` | View and apply route-based model configuration from the web panel |
-| GET | `/api/auth/github` | GitHub auth snapshot via local `gh` CLI |
-| GET | `/api/permissions` | Current permission policy snapshot |
-| PUT | `/api/permissions/:permission` | Update a permission mode |
-| GET | `/api/tools` | Tool catalog for Settings |
-| GET/PUT | `/api/mcp/servers` | MCP server management list |
-| POST | `/api/sessions` | Create session + bootstrap events |
+| GET/PUT | `/api/models/config` | Model routes from web panel |
+| GET | `/api/auth/github` | GitHub auth via local `gh` |
+| GET | `/api/permissions` | Permission policy snapshot |
+| PUT | `/api/permissions/:permission` | Update permission mode |
+| GET | `/api/tools` | Tool catalog |
+| GET/PUT | `/api/mcp/servers` | MCP server list |
+| POST | `/api/sessions` | Create session + bootstrap |
 | GET | `/api/sessions/:id/history` | Event history |
-| GET | `/api/files` | List workspace directory entries |
-| GET/PUT/POST | `/api/files/content` | Read, save, or create a workspace file |
-| GET | `/api/git/status` | Repository status and full diff snapshot |
-| GET | `/api/git/diff` | Repository diff, optionally scoped to a path |
-| POST | `/api/git/commit`, `/api/git/pull`, `/api/git/push` | Permission-controlled Git mutations |
-| GET | `/api/github/pull-requests` | GitHub pull request dashboard data |
-| POST | `/api/worker/jobs` | Submit a durable job to the isolated Python worker |
-| GET | `/api/worker/jobs/:id` | Read worker job state/result |
-| POST | `/api/worker/jobs/:id/retry` | Re-submit a worker job and increment attempts |
-| WS | `/ws/:session_id` | Real-time streaming events |
-
-Workspace APIs now cover file browsing, reading, saving/creating files, Git status/diff, Git commit/pull/push actions, tool catalog inspection, GitHub auth and pull request views, and MCP server management. File and Git mutations publish synchronization events through the session bus. Permissions are editable through the API, and approval-required tool calls round-trip through the browser.
+| GET | `/api/files` | List workspace entries |
+| GET/PUT/POST | `/api/files/content` | Read / save / create file |
+| GET | `/api/git/status` | Git status snapshot |
+| GET | `/api/git/diff` | Diff (optional path) |
+| POST | `/api/git/commit`, `/pull`, `/push` | Git mutations |
+| GET | `/api/github/pull-requests` | PR list |
+| GET | `/api/github/pull-requests/:number` | PR detail (diff, comments, reviews, checks) |
+| POST | `/api/github/pull-requests` | Create PR via `gh` |
+| POST | `/api/worker/jobs` | Submit worker job |
+| GET | `/api/worker/jobs/:id` | Job state/result |
+| POST | `/api/worker/jobs/:id/retry` | Retry job |
+| WS | `/ws/:session_id` | Real-time events |
 
 ## Agent flow
 
 ```text
 user.message
   → save user message (session_messages)
-  → load prior chat history
-  → filesystem.read (tool-runtime)
-  → persist task plan + task_steps
-  → emit task.step.changed updates
-  → model route stream_chat (model-gateway)
-  → agent.message.delta per token
-  → save assistant message
-  → store session memory summary
-  → task.completed
+  → load prior chat history + legacy memory notes
+  → plan steps → dependency batches → tools
+  → bounded replan (≤3) → respond
+  → checkpoints / approval pause / resume
+  → task.completed | task.failed
 ```
+
+Structured `memory_items` / `admit_memory_item` exist but are **not yet** injected by the agent loop (`6.19` next).
 
 ## Database tables
 
-- `sessions` — agent sessions
-- `tasks` — user tasks (status: running/completed/failed/paused/cancelled/retrying)
-- `tasks.model_route` — selected model route for the task
-- `task_steps` — structured plan steps + step status history
-- `task_checkpoints` — resume state and workspace context
-- `session_events` — ordered event log (JSONB)
-- `session_messages` — chat history for LLM context
-- `session_memory` / `global_memory` — legacy free-text notes (still written by agent loop)
-- `memory_items` — structured scopes/items for 6.16+ (CRUD in `storage::memory`)
-- `app_settings` — persisted web-panel configuration, including model routes
-- `worker_jobs` — durable Python worker job state, attempts, results, and errors
-
-## LLM provider
-
-| Setting | Default |
-| --- | --- |
-| Default route | default |
-| Provider | LiteRouter |
-| Base URL | `https://api.literouter.com/v1` |
-| Model | `deepseek:free` |
-| Auth | `LITEROUTER_API_KEY` |
+- `sessions`, `tasks`, `task_steps`, `task_checkpoints`
+- `session_events`, `session_messages`
+- `session_memory` / `global_memory` — legacy free-text (still used by agent loop)
+- `memory_items` — structured scopes/items (`6.16`/`6.17`)
+- `app_settings`, `worker_jobs`
 
 ## Frontend panels
 
 | Panel | Status |
 | --- | --- |
-| Chat | ✅ Active |
-| Settings | ✅ Active (model routes + permission policies) |
-| Events timeline | ✅ Active |
-| Tasks | ✅ Task list, statuses, plan steps, cancel/resume/retry |
-| Actions | ✅ Action log + task orchestration events |
-| Terminal | ✅ Active shell output view |
-| Files | ✅ Active lazy workspace tree and file creation |
-| Editor | ✅ Active Monaco editor with save/reload and dirty-state conflict notice |
-| Git | ✅ Active status/diff viewer with commit/pull/push controls |
-| Plugins | ✅ Active catalog-style panel |
-| Pull Requests | ✅ Active GitHub dashboard panel |
-| Sites | ✅ Active empty-state landing panel |
+| Chat | ✅ |
+| Settings | ✅ models, permissions, MCP, tools, archive |
+| Tasks | ✅ deep: steps, deps, pause reason, retries, recovery, approvals |
+| Actions | ✅ deep: timeline + retry/approval/recovery metrics |
+| Terminal / Files / Editor / Git | ✅ |
+| Plugins / Sites | ✅ |
+| Pull Requests | ✅ list + detail (diff/comments/checks) + create |
+| Memory | ❌ planned (`6.22`/`6.24`) |
 
-## Launcher notes
-
-- `start-dev.ps1` is the local tray launcher for server + web
-- Native launcher mode uses portable PostgreSQL 16 under `%LOCALAPPDATA%\EvoHime` and does not require administrator rights
-- Run `scripts/setup-local.tests.ps1` to verify PostgreSQL, migrations, and the local SQL connection
-- Tray menu now includes a server restart action
-- The server tray state should reflect the local `gh` auth snapshot when the backend is up
+Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEventHandler` (`6.13` ✅).
 
 ## Tests
 
-- `crates/model-gateway` — route-based mock stream, LiteRouter SSE (wiremock)
-- `crates/agent-runtime` — agent loop with mock gateway, plan parser fallback
-- `crates/protocol` — event serialization
-- `crates/tool-runtime` — filesystem, shell, Git, browser, and MCP tool coverage
-- `crates/task-engine` — cancel/resume/retry state machine, dependency batching
-- `crates/server` — task plan persistence, step status propagation, tool catalog, and MCP server management
-- `crates/permissions` — policy engine and approval flow
+- `crates/memory` — redact/normalize/dedupe/conflict + admit integration
+- `crates/storage` — memory_items CRUD + legacy import
+- `crates/model-gateway`, `agent-runtime`, `protocol`, `tool-runtime`, `task-engine`, `permissions`, `server`
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: memory schema + service (`6.16`–`6.18`) done. Next: `6.19` retrieval/budget, or parallel UI/PR tracks.
+1. **`6.19`** — lexical retrieval + token budget + untrusted tagging; wire into `agent-runtime` (replace/augment legacy notes)
+2. Then **`6.20`** — extraction + ask-on-uncertainty decision gate
+3. Parallel P1: task-pipeline observability; broader integration tests

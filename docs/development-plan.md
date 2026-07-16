@@ -63,17 +63,15 @@ EvoHime Server — Rust
 
 ## Фактический статус на 2026-07-16
 
-Этапы 1, 2, 3, 4 и 5 завершены. Stage 5 теперь включает планирование шагов, состояние шагов в истории задач, resume/recovery и cooperative cancellation:
+Этапы 1–5 завершены. Stage 6: foundations + PR workflow + shell split + memory schema/service (`6.16`–`6.18`).
 
-- файловые инструменты `filesystem.read`, `filesystem.write`, `filesystem.patch`, `filesystem.search`, shell `shell.execute` и Git-инструменты `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push` уже реализованы в `tool-runtime`;
-- `agent-runtime` парсит план модели в структурированные `PlanStep`, принимает fenced JSON и wrapper-объекты как fallback;
-- `task-engine` поддерживает жизненный цикл задач, статусы шагов, checkpoint API, recovery и batching зависимых шагов для параллельного выполнения независимых tools;
-- `storage` хранит `task_steps`, `task_checkpoints` и `session_memory`, а `server` материализует план в шаги, пишет memory notes и публикует `task.step.changed`;
-- протокол содержит команды `task.cancel`, `task.resume`, `task.retry`, а frontend уже отображает панели Tasks и Actions;
-- `permissions` содержит policy engine и one-shot решения; `approval.required` публикуется сервером, а `approval.granted` / `approval.denied` продолжают paused task;
-- `project-index` уже даёт workspace text search для контекста; `session_memory` уже подмешивается в prompt; Python worker уже имеет bounded HTTP job queue, health endpoint, submit/poll lifecycle и structured failure states.
+- tools: filesystem / shell / Git / browser / MCP в `tool-runtime`;
+- `agent-runtime`: plan → dependency batches → bounded replan; checkpoints; legacy `session_memory` в prompt;
+- `crates/memory`: redact / normalize / dedupe / conflict / `admit_memory_item` (ещё не подключен к agent loop — это `6.19`);
+- `storage`: `memory_items` + legacy notes; frontend: deep Tasks/Actions, PR detail/create, panels split;
+- workers: health/stall + `text.summarize` / `text.chunk`.
 
-Следующий сквозной приоритет — production-срез этапа 6: специализированные ML handlers, observability и подготовка оркестрации/UI к масштабированию.
+**Следующий сквозной приоритет:** `6.19` retrieval структурированной памяти в agent-runtime; затем `6.20` extract + ask-on-uncertainty; параллельно — observability и интеграционные тесты.
 
 ---
 
@@ -88,9 +86,11 @@ EvoHime Server — Rust
 | Editor | Monaco Editor | 4 |
 | Terminal | xterm.js | 3 |
 | Git | Diff, status, операции | 4 |
-| Tasks | Список задач | 5, базовая версия уже есть |
-| Actions | Журнал действий агента | 5, базовая версия уже есть |
-| Settings | Модели, разрешения, MCP | 2, конфиг и policies уже доступны |
+| Tasks | Список задач + план/паузы/retries | 5–6, deep UI ✅ |
+| Actions | Журнал действий агента | 5–6, deep UI ✅ |
+| Settings | Модели, разрешения, MCP | 2+ ✅ |
+| Pull Requests | List/detail/create | 6 ✅ (`6.14`) |
+| Memory | Override / candidates | 6, planned (`6.22`/`6.24`) |
 
 ---
 
