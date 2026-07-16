@@ -716,13 +716,26 @@ fn parse_tagged_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {
 
     while let Some(relative_start) = raw[cursor..].find(OPEN) {
         let body_start = cursor + relative_start + OPEN.len();
-        let body_end = raw[body_start..].find(CLOSE)? + body_start;
-        let value = serde_json::from_str::<Value>(raw[body_start..body_end].trim()).ok()?;
-        let object = value.as_object()?;
-        let tool_name = object
+        let Some(relative_end) = raw[body_start..].find(CLOSE) else {
+            break;
+        };
+        let body_end = relative_end + body_start;
+        let Ok(value) = serde_json::from_str::<Value>(raw[body_start..body_end].trim()) else {
+            cursor = body_end + CLOSE.len();
+            continue;
+        };
+        let Some(object) = value.as_object() else {
+            cursor = body_end + CLOSE.len();
+            continue;
+        };
+        let Some(tool_name) = object
             .get("tool")
             .and_then(Value::as_str)
-            .or_else(|| object.get("type").and_then(Value::as_str))?;
+            .or_else(|| object.get("type").and_then(Value::as_str))
+        else {
+            cursor = body_end + CLOSE.len();
+            continue;
+        };
         let input = object
             .get("input")
             .and_then(Value::as_object)
@@ -1370,6 +1383,18 @@ mod tests {
         assert_eq!(plan[0].tool_name, "filesystem.write");
         assert!(plan[0].description.contains("path: docs/tagged.md"));
         assert!(plan[0].description.contains("tagged"));
+    }
+
+    #[test]
+    fn keeps_valid_tagged_calls_when_a_later_call_is_truncated() {
+        let plan = parse_plan(
+            r#"<tool_call>{"type":"filesystem.write","path":"docs/first.md","content":"ok"}</tool_call>
+<tool_call>{"type":"filesystem.write","path":"docs/broken.md"</tool_call>
+<tool_call>{"type":"filesystem.write","path":"docs/third.md","content":"ok"}</tool_call>"#,
+        );
+        assert_eq!(plan.len(), 2);
+        assert!(plan[0].description.contains("docs/first.md"));
+        assert!(plan[1].description.contains("docs/third.md"));
     }
 
     #[tokio::test]
