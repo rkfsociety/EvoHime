@@ -300,6 +300,7 @@ h1 {
 .quickLinks,
 .projectChatList,
 .projectChatRow,
+.standaloneSidebarChatRow,
 .standaloneSidebarChatList {
   display: grid;
   gap: 4px;
