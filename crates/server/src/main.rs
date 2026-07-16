@@ -774,6 +774,7 @@ async fn archive_session(
 struct SessionSummary {
     session_id: Uuid,
     created_at: chrono::DateTime<chrono::Utc>,
+    title: Option<String>,
     last_message_at: Option<chrono::DateTime<chrono::Utc>>,
     last_message: Option<String>,
     last_role: Option<String>,
@@ -783,10 +784,34 @@ fn session_summary(row: evohime_storage::SessionSummaryRow) -> SessionSummary {
     SessionSummary {
         session_id: row.id,
         created_at: row.created_at,
+        title: row.title,
         last_message_at: row.last_message_at,
         last_message: row.last_message,
         last_role: row.last_role,
     }
+}
+
+fn summarize_session_title(message: &str) -> String {
+    let normalized = message
+        .split("\n\nВложения:")
+        .next()
+        .unwrap_or(message)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let lower = normalized.to_lowercase();
+    let title = if lower.contains("разберись") && lower.contains("код") {
+        "Разбор кода проекта".to_string()
+    } else if lower.contains("запусти") && lower.contains("провер") {
+        "Проверка проекта".to_string()
+    } else if lower.contains("исправ") || lower.contains("почини") {
+        "Исправление проекта".to_string()
+    } else {
+        normalized.chars().take(56).collect()
+    };
+    title
+        .trim_end_matches([' ', '.', ',', ':', ';', '!', '?'])
+        .to_string()
 }
 
 async fn list_sessions(
@@ -1308,6 +1333,12 @@ async fn run_task_pipeline(
         .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
 
     if emit_started {
+        let title = summarize_session_title(&task.user_message);
+        if !title.is_empty() {
+            evohime_storage::set_session_title_if_empty(&state.pool, session_id, &title)
+                .await
+                .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
+        }
         evohime_storage::insert_message(
             &state.pool,
             session_id,

@@ -396,7 +396,16 @@ function translateModelConfigStatus(configured: boolean) {
 }
 
 function formatSessionTitle(session: ChatSessionSummary, index: number) {
-  return `Чат ${index + 1}`;
+  return session.title?.trim() || `Чат ${index + 1}`;
+}
+
+function summarizeChatTitle(message: string) {
+  const normalized = message.split("\n\nВложения:")[0].replace(/\s+/g, " ").trim();
+  const lower = normalized.toLowerCase();
+  if (lower.includes("разберись") && lower.includes("код")) return "Разбор кода проекта";
+  if (lower.includes("запусти") && lower.includes("провер")) return "Проверка проекта";
+  if (lower.includes("исправ") || lower.includes("почини")) return "Исправление проекта";
+  return normalized.length > 56 ? `${normalized.slice(0, 56).trimEnd()}…` : normalized;
 }
 
 function formatSessionTimestamp(value: string) {
@@ -924,7 +933,7 @@ export function App() {
   );
   const activeProjectLabel = selectedProject.label;
   const activeChatTitle = useMemo(
-    () => chatSessions.find((chat) => chat.session_id === activeSessionId)?.title?.trim() ?? "",
+    () => chatSessions.find((chat) => chat.session_id === activeSessionId)?.title?.trim() || "Новый чат",
     [chatSessions, activeSessionId],
   );
   const projectFolders = useMemo(
@@ -1164,6 +1173,7 @@ export function App() {
             chat.session_id === event.session_id
               ? {
                   ...chat,
+                  title: chat.title || summarizeChatTitle(event.user_message),
                   last_message: event.user_message,
                   last_message_at: event.created_at,
                   last_role: "user",

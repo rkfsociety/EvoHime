@@ -25,6 +25,7 @@ pub struct SessionRow {
 pub struct SessionSummaryRow {
     pub id: Uuid,
     pub created_at: DateTime<Utc>,
+    pub title: Option<String>,
     pub last_message_at: Option<DateTime<Utc>>,
     pub last_message: Option<String>,
     pub last_role: Option<String>,
@@ -138,6 +139,7 @@ pub async fn list_sessions(
         SELECT
             s.id,
             s.created_at,
+            s.title,
             last_message.created_at AS last_message_at,
             last_message.content AS last_message,
             last_message.role AS last_role
@@ -170,6 +172,7 @@ pub async fn list_archived_sessions(
         SELECT
             s.id,
             s.created_at,
+            s.title,
             last_message.created_at AS last_message_at,
             last_message.content AS last_message,
             last_message.role AS last_role
@@ -200,6 +203,19 @@ pub async fn archive_session(pool: &PgPool, session_id: Uuid) -> Result<bool, St
     .bind(session_id)
     .execute(pool)
     .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+pub async fn set_session_title_if_empty(
+    pool: &PgPool,
+    session_id: Uuid,
+    title: &str,
+) -> Result<bool, StorageError> {
+    let result = sqlx::query("UPDATE sessions SET title = $2 WHERE id = $1 AND title IS NULL")
+        .bind(session_id)
+        .bind(title)
+        .execute(pool)
+        .await?;
     Ok(result.rows_affected() > 0)
 }
 
