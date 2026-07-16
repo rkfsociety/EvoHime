@@ -669,7 +669,10 @@ fn parse_model_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {
 }
 
 fn parse_json_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {
-    let candidates = extract_json_blocks(raw);
+    let mut candidates = extract_json_blocks(raw);
+    if candidates.is_empty() && serde_json::from_str::<Value>(raw.trim()).is_ok() {
+        candidates.push(raw.trim().to_string());
+    }
     let mut steps = Vec::new();
 
     for candidate in candidates {
