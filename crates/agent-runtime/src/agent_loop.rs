@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
+    time::Duration,
 };
 use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
@@ -102,6 +103,11 @@ pub enum AgentError {
     Model(#[from] evohime_model_gateway::providers::ProviderError),
     #[error("event channel closed")]
     EventChannel,
+    #[error("{phase} model request timed out after {timeout_seconds} seconds")]
+    ModelTimeout {
+        phase: &'static str,
+        timeout_seconds: u64,
+    },
     #[error("plan step {step_id} ({tool_name}) failed: {message}")]
     PlanStepFailed {
         step_id: String,
@@ -265,11 +271,15 @@ async fn run_agent_loop_inner(
         ),
     });
 
-    let raw_plan = collect_stream_text(gateway.stream_chat_for_route_with_model(
-        &config.planning_model_route,
-        config.planning_model.as_deref(),
-        &planning_messages,
-    )?)
+    let raw_plan = collect_stream_text_with_timeout(
+        gateway.stream_chat_for_route_with_model(
+            &config.planning_model_route,
+            config.planning_model.as_deref(),
+            &planning_messages,
+        )?,
+        PLANNING_TIMEOUT,
+        "planning",
+    )
     .await?;
     let plan = parse_plan(&raw_plan);
 
@@ -330,28 +340,28 @@ async fn run_agent_loop_inner(
         &messages,
     )?;
 
-    while let Some(chunk) = stream.next().await {
-        let delta = chunk?;
-        final_message.push_str(&delta);
-        emit(
-            &event_tx,
-            ServerEvent::AgentMessageDelta {
-                task_id: config.task_id,
-                delta,
-            },
-        )?;
-    }
-
-    if let Some(markup_plan) = parse_model_tool_calls(&final_message) {
-        let contains_mutation = markup_plan.iter().any(|step| {
-            matches!(
-                step.tool_name.as_str(),
-                "filesystem.write" | "filesystem.patch" | "git.commit" | "git.pull" | "git.push"
-            )
-        });
-        if contains_mutation {
-            let _ = execute_plan_steps(&markup_plan, &config, tools, &event_tx).await?;
+    tokio::time::timeout(RESPONSE_TIMEOUT, async {
+        while let Some(chunk) = stream.next().await {
+            let delta = chunk?;
+            final_message.push_str(&delta);
+            emit(
+                &event_tx,
+                ServerEvent::AgentMessageDelta {
+                    task_id: config.task_id,
+                    delta,
+                },
+            )?;
         }
+        Ok::<(), AgentError>(())
+    })
+    .await
+    .map_err(|_| AgentError::ModelTimeout {
+        phase: "response",
+        timeout_seconds: RESPONSE_TIMEOUT.as_secs(),
+    })??;
+
+    if let Some(tool_plan) = parse_model_tool_calls(&final_message) {
+        let _ = execute_plan_steps(&tool_plan, &config, tools, &event_tx).await?;
     }
 
     if final_message.trim().is_empty() {
@@ -377,8 +387,10 @@ async fn run_agent_loop_inner(
     Ok(AgentRunResult { final_message })
 }
 
-const SYSTEM_PROMPT: &str = "You are EvoHime, a helpful AI coding assistant. Follow the workspace rules supplied in the system context, preserve user intent, never claim a change was made unless a tool result confirms it, and answer concisely using the provided workspace context.";
-const PLANNING_PROMPT: &str = "You are EvoHime's task planner. Return only JSON: an array of objects with fields id, tool_name, description, and depends_on. Use only these tool names: filesystem.read, filesystem.list, filesystem.search, filesystem.write, filesystem.patch, git.status, git.diff, git.commit, git.pull, git.push, assistant.reply. Use stable step ids like step-1, step-2, and keep depends_on empty unless a step truly depends on another step. Put the exact relative file or directory path in backticks in the description. For filesystem.write, include the complete new file content in a fenced code block in the description. For filesystem.patch, include the complete patch text in a fenced code block in the description. For git.commit, include the requested commit message in quotes in the description. Use git.pull and git.push only when the user explicitly asks for synchronization. If no tool call is needed, use assistant.reply as the tool_name for the final response step.";
+const PLANNING_TIMEOUT: Duration = Duration::from_secs(90);
+const RESPONSE_TIMEOUT: Duration = Duration::from_secs(120);
+const SYSTEM_PROMPT: &str = "You are EvoHime, a helpful AI coding assistant. Follow the workspace rules supplied in the system context, preserve user intent, never claim a change was made unless a tool result confirms it, and answer concisely using the provided workspace context. When an action is required, return an explicit JSON tool.call object with type, tool, and input; do not merely describe the call.";
+const PLANNING_PROMPT: &str = "You are EvoHime's task planner. Return only JSON: an array of objects with fields id, tool_name, description, and depends_on. Use only these tool names: filesystem.read, filesystem.list, filesystem.search, filesystem.write, filesystem.patch, shell.execute, git.status, git.diff, git.commit, git.pull, git.push, assistant.reply. Use stable step ids like step-1, step-2, and keep depends_on empty unless a step truly depends on another step. Put exact relative paths in backticks. For filesystem.write, include complete content in a fenced code block. For filesystem.patch, include complete patch text in a fenced code block. For shell.execute, include a JSON object with program, args, cwd, and timeout_ms in the description. For git.commit, include the requested commit message in quotes. Use git.pull and git.push only when explicitly asked. If no tool call is needed, use assistant.reply.";
 
 async fn execute_plan_steps(
     plan: &[PlanStep],
@@ -514,6 +526,7 @@ fn tool_input(tool_name: &str, description: &str, workspace_root: &Path) -> Opti
             "path": path?,
             "patch": extract_code_block(description).unwrap_or_default(),
         })),
+        "shell.execute" => serde_json::from_str(description).ok(),
         "git.status" => Some(Value::Null),
         "git.diff" => Some(json!({})),
         "git.commit" => Some(json!({"message": extract_commit_message(description)})),
@@ -804,6 +817,20 @@ async fn collect_stream_text(
     Ok(output)
 }
 
+async fn collect_stream_text_with_timeout(
+    stream: impl futures_util::Stream<Item = Result<String, evohime_model_gateway::providers::ProviderError>>
+        + Unpin,
+    timeout: Duration,
+    phase: &'static str,
+) -> Result<String, AgentError> {
+    tokio::time::timeout(timeout, collect_stream_text(stream))
+        .await
+        .map_err(|_| AgentError::ModelTimeout {
+            phase,
+            timeout_seconds: timeout.as_secs(),
+        })?
+}
+
 fn format_plan(plan: &[PlanStep]) -> String {
     plan.iter()
         .map(|step| {
@@ -894,6 +921,7 @@ fn parse_plan_line(index: usize, line: &str) -> Option<PlanStep> {
         "filesystem.search",
         "filesystem.write",
         "filesystem.patch",
+        "shell.execute",
         "git.status",
         "git.diff",
         "git.commit",
@@ -940,6 +968,7 @@ fn extract_tool_and_description(text: &str, index: usize) -> (String, String) {
         "filesystem.search",
         "filesystem.write",
         "filesystem.patch",
+        "shell.execute",
         "git.status",
         "git.diff",
         "git.commit",
@@ -1139,6 +1168,19 @@ mod tests {
             Path::new("C:/workspace"),
         )
         .is_none());
+    }
+
+    #[test]
+    fn builds_shell_input_from_structured_description() {
+        let input = tool_input(
+            "shell.execute",
+            r#"{"program":"python","args":["-c","print('ok')"],"cwd":"workers/python","timeout_ms":30000}"#,
+            Path::new("C:/workspace"),
+        )
+        .expect("shell input");
+        assert_eq!(input["program"], "python");
+        assert_eq!(input["args"][0], "-c");
+        assert_eq!(input["cwd"], "workers/python");
     }
 
     #[test]
