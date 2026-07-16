@@ -296,6 +296,8 @@ async fn run_agent_loop_inner(
 
     let plan_outputs = execute_plan_steps(&plan, &config, tools, &event_tx).await?;
 
+    tokio::time::sleep(MODEL_REQUEST_COOLDOWN).await;
+
     let mut messages = Vec::with_capacity(history.len() + 4);
     messages.push(ChatMessage {
         role: ChatRole::System,
@@ -392,6 +394,7 @@ async fn run_agent_loop_inner(
 
 const PLANNING_TIMEOUT: Duration = Duration::from_secs(90);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(120);
+const MODEL_REQUEST_COOLDOWN: Duration = Duration::from_secs(6);
 const SYSTEM_PROMPT: &str = "You are EvoHime, a helpful AI coding assistant. Follow the workspace rules supplied in the system context, preserve user intent, never claim a change was made unless a tool result confirms it, and answer concisely using the provided workspace context. When an action is required, return an explicit JSON tool.call object with type, tool, and input; do not merely describe the call.";
 const PLANNING_PROMPT: &str = "You are EvoHime's task planner. Return only JSON: an array of objects with fields id, tool_name, description, and depends_on. Use only these tool names: filesystem.read, filesystem.list, filesystem.search, filesystem.write, filesystem.patch, shell.execute, git.status, git.diff, git.commit, git.pull, git.push, assistant.reply. Use stable step ids like step-1, step-2, and keep depends_on empty unless a step truly depends on another step. Put exact relative paths in backticks. For filesystem.write, include complete content in a fenced code block. For filesystem.patch, include complete patch text in a fenced code block. For shell.execute, include a JSON object with program, args, cwd, and timeout_ms in the description. For git.commit, include the requested commit message in quotes. Use git.pull and git.push only when explicitly asked. If no tool call is needed, use assistant.reply.";
 
@@ -1544,6 +1547,11 @@ mod tests {
         assert_eq!(plan.len(), 1);
         assert_eq!(plan[0].tool_name, "filesystem.write");
         assert!(plan[0].description.contains("docs/direct.md"));
+    }
+
+    #[test]
+    fn keeps_model_requests_apart_for_literouter_rate_limit() {
+        assert!(MODEL_REQUEST_COOLDOWN >= Duration::from_secs(5));
     }
 
     #[test]
