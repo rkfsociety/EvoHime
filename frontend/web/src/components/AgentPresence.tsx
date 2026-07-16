@@ -8,7 +8,7 @@ type WalkMode = "idle" | "walk";
 
 const BODY_WIDTH = 150;
 const EDGE_PAD = 8;
-const WALK_FRAMES = 6;
+const WALK_FRAMES = 12;
 
 function randomBetween(min: number, max: number) {
   return min + Math.random() * (max - min);
@@ -155,7 +155,7 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
       setFrame(0);
       return;
     }
-    const ms = busy ? 100 : 130;
+    const ms = busy ? 70 : 95;
     const id = window.setInterval(() => {
       setFrame((current) => (current + 1) % WALK_FRAMES);
     }, ms);
