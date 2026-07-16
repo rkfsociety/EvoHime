@@ -1,7 +1,7 @@
 # Логотип / маскот агента EvoHime
 
 > Дата: 2026-07-16  
-> Статус: draft (ожидает review)  
+> Статус: approved  
 > Связь: frontend brand presence (UI shell)
 
 ## Goal
@@ -99,4 +99,3 @@
 4. Sidebar project chip, Settings, Scheduled empty — марка (или аватар по таблице выше).
 5. На 16px марка читается; портрет не используется как favicon.
 6. Нет регрессии layout top bar / chat на десктопной ширине shell.
-`}
