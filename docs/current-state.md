@@ -10,7 +10,7 @@ Last updated: 2026-07-16
 | --- | --- | --- |
 | `server` | Active | HTTP + WebSocket, workspace file, Git, MCP servers, and tool catalog APIs |
 | `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema |
-| `storage` | Active | Sessions, tasks, events, **session_messages**, **session_memory**, **app_settings** |
+| `storage` | Active | Sessions, tasks, events, **session_messages**, legacy notes, **memory_items** (6.16/6.17), **app_settings** |
 | `tool-runtime` | Active | Registry + sandboxed filesystem, shell, Git, browser, and MCP call tools |
 | `agent-runtime` | Active | `agent_loop.rs` — LLM planning, dependency-batch tool execution, bounded replan, project/memory context |
 | `model-gateway` | Active | Route-based gateway, **LiteRouter** + OpenAI-compatible endpoints, and mock provider |
@@ -70,7 +70,8 @@ user.message
 - `task_checkpoints` — resume state and workspace context
 - `session_events` — ordered event log (JSONB)
 - `session_messages` — chat history for LLM context
-- `session_memory` — persistent short notes for future agent runs
+- `session_memory` / `global_memory` — legacy free-text notes (still written by agent loop)
+- `memory_items` — structured scopes/items for 6.16+ (CRUD in `storage::memory`)
 - `app_settings` — persisted web-panel configuration, including model routes
 - `worker_jobs` — durable Python worker job state, attempts, results, and errors
 
@@ -121,4 +122,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: foundations + shell split done. Next priority: agent memory (`6.16`–`6.25`, ask-on-uncertainty) and task-pipeline observability.
+**Stage 6 / Milestone 5**: memory schema `6.16`/`6.17` landed in storage. Next: `6.18` memory service (redact/dedupe/conflict), or parallel tracks (observability / `6.14` PR workflow).

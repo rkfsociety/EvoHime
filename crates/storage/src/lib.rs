@@ -5,6 +5,14 @@ use sqlx::{FromRow, PgPool};
 use thiserror::Error;
 use uuid::Uuid;
 
+pub mod memory;
+
+pub use memory::{
+    import_legacy_memory_notes, insert_memory_item, get_memory_item, list_memory_items,
+    update_memory_item_status, MemoryItemRow, MemoryKind, MemoryScope, MemoryStatus, NewMemoryItem,
+    LOCAL_OPERATOR_SCOPE_KEY,
+};
+
 #[derive(Debug, Error)]
 pub enum StorageError {
     #[error("database error: {0}")]
@@ -13,6 +21,8 @@ pub enum StorageError {
     Migration(#[from] sqlx::migrate::MigrateError),
     #[error("serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
+    #[error("invalid memory item: {0}")]
+    InvalidMemory(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
