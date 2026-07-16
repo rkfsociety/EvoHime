@@ -92,6 +92,23 @@ function Test-PostgresRunning {
   return $LASTEXITCODE -eq 0
 }
 
+function Test-PostgresPort {
+  $listener = Get-NetTCPConnection -LocalPort 5432 -State Listen -ErrorAction SilentlyContinue
+  if ($listener) {
+    return $true
+  }
+
+  $client = New-Object System.Net.Sockets.TcpClient
+  try {
+    $connection = $client.ConnectAsync('127.0.0.1', 5432)
+    return $connection.Wait(1000) -and $client.Connected
+  } catch {
+    return $false
+  } finally {
+    $client.Dispose()
+  }
+}
+
 function Start-LocalPostgres {
   $initdb = Get-PostgresBin 'initdb'
   $pgCtl = Get-PostgresBin 'pg_ctl'
@@ -111,6 +128,10 @@ function Start-LocalPostgres {
     } finally {
       Remove-Item -LiteralPath $passwordFile -Force -ErrorAction SilentlyContinue
     }
+  }
+
+  if ((Test-PostgresRunning) -or (Test-PostgresPort)) {
+    return
   }
 
   if (-not (Test-PostgresRunning)) {
