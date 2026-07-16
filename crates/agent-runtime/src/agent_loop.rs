@@ -148,6 +148,7 @@ pub async fn run_agent_loop_resumed(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_agent_loop_inner(
     config: AgentConfig,
     gateway: &ModelGateway,
@@ -301,6 +302,11 @@ async fn run_agent_loop_inner(
         });
     }
     messages.extend(history);
+    let context = format!(
+        "{}\n\nPlan tool results:\n{}",
+        tool_output,
+        plan_outputs.join("\n\n")
+    );
     messages.push(ChatMessage {
         role: ChatRole::User,
         content: format!(
@@ -308,11 +314,7 @@ async fn run_agent_loop_inner(
             config.user_message,
             format_plan(&plan),
             config.demo_file_path.display(),
-            format!(
-                "{}\n\nPlan tool results:\n{}",
-                tool_output,
-                plan_outputs.join("\n\n")
-            )
+            context
         ),
     });
 

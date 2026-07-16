@@ -24,8 +24,8 @@ use evohime_task_engine::{
 };
 use evohime_tool_runtime::ToolError;
 use futures_util::{sink::SinkExt, stream::StreamExt};
-use serde_json::{json, to_value, Value};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, to_value, Value};
 use sqlx::PgPool;
 use std::{collections::HashMap, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::{mpsc, Mutex, RwLock};
@@ -244,7 +244,10 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/health", get(health))
-        .route("/api/models/config", get(model_config).put(update_model_config))
+        .route(
+            "/api/models/config",
+            get(model_config).put(update_model_config),
+        )
         .route("/api/models/available", get(available_models))
         .route("/api/sessions", get(list_sessions).post(create_session))
         .route("/api/sessions/archived", get(list_archived_sessions))
@@ -254,7 +257,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/auth/github", get(github_auth))
         .route("/api/github/pull-requests", get(list_pull_requests))
         .route("/api/files", get(workspace::list_files))
-        .route("/api/projects", get(workspace::list_projects).post(workspace::create_project))
+        .route(
+            "/api/projects",
+            get(workspace::list_projects).post(workspace::create_project),
+        )
         .route(
             "/api/files/content",
             get(workspace::read_file)
@@ -319,11 +325,12 @@ async fn available_models(
     let default_route = state.model_config.read().await.default_route.clone();
     let route_name = query.get("route").cloned().unwrap_or(default_route);
     let config = state.model_config.read().await;
-    let effective_route_name = if route_name == "orchestrator" && !config.routes.contains_key(&route_name) {
-        config.default_route.clone()
-    } else {
-        route_name.clone()
-    };
+    let effective_route_name =
+        if route_name == "orchestrator" && !config.routes.contains_key(&route_name) {
+            config.default_route.clone()
+        } else {
+            route_name.clone()
+        };
     let route = config
         .routes
         .get(&effective_route_name)
@@ -341,21 +348,25 @@ async fn available_models(
     } else {
         let client = reqwest::Client::new();
         let response = client
-            .get(format!("{}/models", route.literouter.base_url.trim_end_matches('/')))
+            .get(format!(
+                "{}/models",
+                route.literouter.base_url.trim_end_matches('/')
+            ))
             .bearer_auth(&route.literouter.api_key)
             .send()
             .await
-            .map_err(|error| ApiError::Internal(format!("не удалось получить список моделей: {error}")))?;
+            .map_err(|error| {
+                ApiError::Internal(format!("не удалось получить список моделей: {error}"))
+            })?;
         if !response.status().is_success() {
             return Err(ApiError::BadRequest(format!(
                 "провайдер вернул ошибку списка моделей: {}",
                 response.status()
             )));
         }
-        let payload: OpenAiModelsResponse = response
-            .json()
-            .await
-            .map_err(|error| ApiError::Internal(format!("некорректный ответ списка моделей: {error}")))?;
+        let payload: OpenAiModelsResponse = response.json().await.map_err(|error| {
+            ApiError::Internal(format!("некорректный ответ списка моделей: {error}"))
+        })?;
         let mut models = payload
             .data
             .into_iter()
@@ -487,7 +498,8 @@ fn build_model_config(
             let is_free_model = model.ends_with(":free");
             if billing_mode == "free" && !is_free_model {
                 return Err(ApiError::BadRequest(
-                    "В бесплатном режиме LiteRouter доступны только модели с суффиксом :free".to_string(),
+                    "В бесплатном режиме LiteRouter доступны только модели с суффиксом :free"
+                        .to_string(),
                 ));
             }
             if billing_mode == "paid" && is_free_model {
@@ -502,12 +514,12 @@ fn build_model_config(
             .map(|item| item.literouter.api_key.clone())
             .or_else(|| {
                 (name == "orchestrator").then(|| {
-            current
-                .routes
-                .get(&current.default_route)
-                .map(|item| item.literouter.api_key.clone())
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| requested_default_key.clone())
+                    current
+                        .routes
+                        .get(&current.default_route)
+                        .map(|item| item.literouter.api_key.clone())
+                        .filter(|value| !value.trim().is_empty())
+                        .unwrap_or_else(|| requested_default_key.clone())
                 })
             })
             .unwrap_or_default();
@@ -598,7 +610,8 @@ async fn update_mcp_servers(
         .into_iter()
         .map(validate_mcp_server)
         .collect::<Result<Vec<_>, _>>()?;
-    let value = serde_json::to_value(&servers).map_err(|error| ApiError::Internal(error.to_string()))?;
+    let value =
+        serde_json::to_value(&servers).map_err(|error| ApiError::Internal(error.to_string()))?;
     evohime_storage::save_setting(&state.pool, "mcp_servers", &value)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
@@ -765,7 +778,9 @@ async fn archive_session(
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
     if !archived {
-        return Err(ApiError::BadRequest("Чат не найден или уже архивирован".to_string()));
+        return Err(ApiError::BadRequest(
+            "Чат не найден или уже архивирован".to_string(),
+        ));
     }
     Ok(StatusCode::NO_CONTENT)
 }
@@ -935,7 +950,7 @@ async fn list_pull_requests(
     .await
     .map_err(|error| ApiError::Internal(error.to_string()))?;
 
-    let prs = result.map_err(|error| ApiError::Internal(error))?;
+    let prs = result.map_err(ApiError::Internal)?;
     Ok(Json(prs))
 }
 
@@ -1709,10 +1724,9 @@ fn resolve_workspace_path(
     state: &Arc<AppState>,
     requested_path: Option<String>,
 ) -> Result<PathBuf, ApiError> {
-    let root = state
-        .workspace_root
-        .canonicalize()
-        .map_err(|error| ApiError::Internal(format!("не удалось определить корень workspace: {error}")))?;
+    let root = state.workspace_root.canonicalize().map_err(|error| {
+        ApiError::Internal(format!("не удалось определить корень workspace: {error}"))
+    })?;
     let projects_root = root
         .parent()
         .map(PathBuf::from)
@@ -1723,7 +1737,7 @@ fn resolve_workspace_path(
         .unwrap_or_else(|| root.clone());
     let candidate = if requested.is_absolute() {
         requested
-    } else if requested == PathBuf::from(".") {
+    } else if requested.as_os_str() == "." {
         root.clone()
     } else {
         projects_root.join(requested)
@@ -1737,7 +1751,9 @@ fn resolve_workspace_path(
         ));
     }
     if !resolved.is_dir() {
-        return Err(ApiError::BadRequest("путь проекта должен быть папкой".to_string()));
+        return Err(ApiError::BadRequest(
+            "путь проекта должен быть папкой".to_string(),
+        ));
     }
     Ok(resolved)
 }
@@ -2015,7 +2031,10 @@ mod tests {
         .expect("model config is valid");
 
         assert_eq!(config.routes["default"].literouter.api_key, "lr_test_key");
-        assert_eq!(config.routes["orchestrator"].literouter.api_key, "lr_test_key");
+        assert_eq!(
+            config.routes["orchestrator"].literouter.api_key,
+            "lr_test_key"
+        );
     }
 
     #[test]
