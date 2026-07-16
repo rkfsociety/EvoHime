@@ -617,10 +617,19 @@ fn parse_markup_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {
     let mut cursor = 0;
     while let Some(relative_start) = raw[cursor..].find("<invoke name=\"") {
         let start = cursor + relative_start + "<invoke name=\"".len();
-        let name_end = raw[start..].find('\"')? + start;
+        let Some(relative_name_end) = raw[start..].find('\"') else {
+            break;
+        };
+        let name_end = relative_name_end + start;
         let tool_name = &raw[start..name_end];
-        let body_start = raw[name_end..].find('>')? + name_end + 1;
-        let body_end = raw[body_start..].find("</invoke>")? + body_start;
+        let Some(relative_body_start) = raw[name_end..].find('>') else {
+            break;
+        };
+        let body_start = relative_body_start + name_end + 1;
+        let Some(relative_body_end) = raw[body_start..].find("</invoke>") else {
+            break;
+        };
+        let body_end = relative_body_end + body_start;
         let body = &raw[body_start..body_end];
         let path = markup_parameter(body, "path");
         let content = markup_parameter(body, "content").or_else(|| markup_parameter(body, "patch"));
@@ -1395,6 +1404,16 @@ mod tests {
         assert_eq!(plan.len(), 2);
         assert!(plan[0].description.contains("docs/first.md"));
         assert!(plan[1].description.contains("docs/third.md"));
+    }
+
+    #[test]
+    fn keeps_valid_markup_calls_before_a_truncated_invoke() {
+        let plan = parse_plan(
+            r#"<invoke name="filesystem.write"><parameter name="path">docs/first.md</parameter><parameter name="content">ok</parameter></invoke>
+<invoke name="filesystem.write"><parameter name="path">docs/broken.md</parameter>"#,
+        );
+        assert_eq!(plan.len(), 1);
+        assert!(plan[0].description.contains("docs/first.md"));
     }
 
     #[tokio::test]
