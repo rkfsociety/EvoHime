@@ -496,20 +496,7 @@ async fn execute_plan_steps(
 fn tool_input(tool_name: &str, description: &str, workspace_root: &Path) -> Option<Value> {
     let path = extract_declared_path(description)
         .or_else(|| extract_backticked(description))
-        .map(|path| normalize_plan_path(&path, workspace_root))
-        .or_else(|| {
-            [
-                "package.json",
-                "README.md",
-                "Cargo.toml",
-                "src/",
-                "lib/",
-                "frontend/web/",
-            ]
-            .iter()
-            .find(|candidate| description.contains(**candidate))
-            .map(|candidate| candidate.to_string())
-        });
+        .map(|path| normalize_plan_path(&path, workspace_root));
     match tool_name {
         "filesystem.read" => {
             Some(json!({"path": path.unwrap_or_else(|| "docs/sample-context.md".to_string())}))
@@ -581,10 +568,28 @@ fn extract_backticked(value: &str) -> Option<String> {
 fn extract_declared_path(value: &str) -> Option<String> {
     value.lines().find_map(|line| {
         let trimmed = line.trim();
-        let (_, path) = trimmed
-            .split_once(':')
-            .filter(|(key, path)| matches!(*key, "path" | "file") && !path.trim().is_empty())?;
-        Some(path.trim().trim_matches('`').to_string())
+        let remainder = ["path", "file"].iter().find_map(|key| {
+            let remainder = trimmed.strip_prefix(key)?;
+            let remainder = if let Some(value) = remainder.strip_prefix(':') {
+                value
+            } else if remainder.len() != remainder.trim_start().len() {
+                remainder.trim_start()
+            } else {
+                return None;
+            };
+            (!remainder.trim().is_empty()).then_some(remainder)
+        })?;
+        let raw_path = remainder.trim();
+        let path = if let Some(quoted) = raw_path.strip_prefix('"') {
+            quoted.split('"').next().unwrap_or_default()
+        } else if let Some(quoted) = raw_path.strip_prefix('`') {
+            quoted.split('`').next().unwrap_or_default()
+        } else if let Some(quoted) = raw_path.strip_prefix('\'') {
+            quoted.split('\'').next().unwrap_or_default()
+        } else {
+            raw_path.split_whitespace().next().unwrap_or_default()
+        };
+        (!path.is_empty()).then(|| path.to_string())
     })
 }
 
@@ -1181,6 +1186,33 @@ mod tests {
         assert_eq!(input["program"], "python");
         assert_eq!(input["args"][0], "-c");
         assert_eq!(input["cwd"], "workers/python");
+    }
+
+    #[test]
+    fn reads_quoted_declared_paths_without_guessing() {
+        let input = tool_input(
+            "filesystem.read",
+            r#"path "crates/server/src/main.rs""#,
+            Path::new("C:/workspace"),
+        )
+        .expect("read input");
+        assert_eq!(input["path"], "crates/server/src/main.rs");
+
+        let directory = tool_input(
+            "filesystem.read",
+            r#"path "workers/python" --recursive"#,
+            Path::new("C:/workspace"),
+        )
+        .expect("directory input");
+        assert_eq!(directory["path"], "workers/python");
+
+        let fallback = tool_input(
+            "filesystem.read",
+            "Inspect crates/server/src/main.rs",
+            Path::new("C:/workspace"),
+        )
+        .expect("read fallback");
+        assert_eq!(fallback["path"], "docs/sample-context.md");
     }
 
     #[test]
