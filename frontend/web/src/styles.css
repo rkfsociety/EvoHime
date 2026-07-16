@@ -126,6 +126,26 @@ h1 {
   box-shadow: 0 0 0 6px rgba(96, 120, 155, 0.12);
 }
 
+.traceToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  padding: 9px 13px;
+  border: 1px solid var(--border-0);
+  border-radius: 12px;
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+}
+
+.traceToggle:hover,
+.traceToggle.active {
+  border-color: rgba(143, 180, 255, 0.4);
+  color: var(--text-0);
+  background: rgba(91, 134, 255, 0.14);
+}
+
 .statusDot[data-state="connected"] {
   background: #43d19e;
   box-shadow: 0 0 0 6px rgba(67, 209, 158, 0.14);
@@ -147,6 +167,90 @@ h1 {
   gap: 24px;
   min-height: 0;
   overflow: hidden;
+}
+
+.workspace.traceOpen {
+  grid-template-columns: 280px minmax(0, 1fr) 320px;
+}
+
+.traceSidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-0);
+  border-radius: 24px;
+  background: var(--surface-0);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+}
+
+.traceHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border-0);
+}
+
+.traceHeader div {
+  display: grid;
+  gap: 4px;
+}
+
+.traceHeader span,
+.traceEmpty {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.traceClose {
+  border: 0;
+  color: var(--text-2);
+  background: transparent;
+  cursor: pointer;
+  font-size: 22px;
+}
+
+.traceList {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 14px;
+  overflow: auto;
+}
+
+.traceItem {
+  padding: 11px 12px;
+  border: 1px solid var(--border-0);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.traceItem strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--accent-2);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.traceItem.tool strong {
+  color: var(--accent-1);
+}
+
+.traceItem pre {
+  margin: 0;
+  color: var(--text-1);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+}
+
+.traceEmpty {
+  padding: 16px 4px;
+  line-height: 1.5;
 }
 
 .sidebar {
@@ -2572,6 +2676,10 @@ h1 {
     min-height: 0;
   }
 
+  .workspace.traceOpen {
+    grid-template-columns: 1fr;
+  }
+
   .sidebar {
     order: 2;
     min-height: 0;
@@ -2581,6 +2689,11 @@ h1 {
   .panel {
     min-height: 0;
     max-height: 44vh;
+  }
+
+  .traceSidebar {
+    order: 3;
+    max-height: 34vh;
   }
 
   .pullRequestsPage {

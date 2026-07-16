@@ -456,6 +456,7 @@ export function App() {
   const [stream, setStream] = useState("");
   const [composerNotice, setComposerNotice] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<WorkspacePanel>("chat");
+  const [traceOpen, setTraceOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<ProjectSelection>(loadSelectedProject);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -2745,6 +2746,16 @@ export function App() {
         <div className="agentBrand">
           <h1>EvoHime</h1>
         </div>
+        <button
+          type="button"
+          className={traceOpen ? "traceToggle active" : "traceToggle"}
+          onClick={() => setTraceOpen((open) => !open)}
+          aria-expanded={traceOpen}
+          aria-controls="task-trace"
+        >
+          <span aria-hidden="true">⌁</span>
+          Трейс
+        </button>
         <div className="statusCard">
           <span className="statusDot" data-state={socketState} />
           <div>
@@ -2754,7 +2765,7 @@ export function App() {
         </div>
       </header>
 
-      <section className="workspace">
+      <section className={traceOpen ? "workspace traceOpen" : "workspace"}>
         <nav className="sidebar">
           <div className="sidebarTop">
             <button type="button" className="sidebarSearchButton" aria-label="Поиск">
@@ -2885,6 +2896,32 @@ export function App() {
           ) : null}
           {renderPanelContent()}
         </div>
+
+        {traceOpen ? (
+          <aside className="traceSidebar" id="task-trace" aria-label="Трейс задачи">
+            <header className="traceHeader">
+              <div>
+                <strong>Трейс задачи</strong>
+                <span>{activeTaskId ? "Текущая задача" : "События чата"}</span>
+              </div>
+              <button type="button" className="traceClose" onClick={() => setTraceOpen(false)} aria-label="Закрыть трейс">
+                ×
+              </button>
+            </header>
+            <div className="traceList">
+              {lines.filter((line) => line.role === "system" || line.role === "tool").length > 0 ? (
+                lines.filter((line) => line.role === "system" || line.role === "tool").map((line, index) => (
+                  <article className={`traceItem ${line.role}`} key={`${line.role}-${index}`}>
+                    <strong>{translateChatRole(line.role)}</strong>
+                    <pre>{line.text}</pre>
+                  </article>
+                ))
+              ) : (
+                <div className="traceEmpty">Здесь появятся план, статусы и действия агента.</div>
+              )}
+            </div>
+          </aside>
+        ) : null}
 
       </section>
       {settingsOpen ? (
