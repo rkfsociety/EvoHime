@@ -7,12 +7,17 @@ mod conflict;
 mod dedupe;
 mod normalize;
 mod redact;
+mod retrieve;
 mod service;
 
 pub use conflict::{detect_conflict, ConflictHit};
 pub use dedupe::{content_fingerprint, detect_duplicate};
 pub use normalize::normalize_content;
 pub use redact::{redact_secrets, RedactionOutcome};
+pub use retrieve::{
+    format_untrusted_memory_block, format_untrusted_memory_notes, retrieve_for_prompt, search_memory,
+    select_within_budget, MemoryPromptEntry, RankedMemory, RetrieveRequest, SelectedMemory,
+};
 pub use service::{
     admit_memory_item, AdmitOutcome, ExistingMemory, MemoryError, MemoryService, PreparedMemoryItem,
 };

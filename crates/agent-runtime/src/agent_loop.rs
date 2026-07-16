@@ -1517,23 +1517,7 @@ fn extract_tool_and_description(text: &str, index: usize) -> (String, String) {
 }
 
 fn build_memory_context(notes: &[String]) -> Option<String> {
-    let entries = notes
-        .iter()
-        .map(|note| note.trim())
-        .filter(|note| !note.is_empty())
-        .collect::<Vec<_>>();
-    if entries.is_empty() {
-        return None;
-    }
-
-    let mut output = String::from("Relevant session memory:\n");
-    for note in entries {
-        output.push_str("- ");
-        output.push_str(note);
-        output.push('\n');
-    }
-
-    Some(output.trim_end().to_string())
+    evohime_memory::format_untrusted_memory_notes(notes)
 }
 
 fn build_workspace_rules(workspace_root: &Path) -> Option<String> {
@@ -1690,7 +1674,8 @@ mod tests {
         let context =
             build_memory_context(&[" first fact ".into(), "".into(), "second fact".into()])
                 .expect("context");
-        assert!(context.contains("Relevant session memory:"));
+        assert!(context.contains("Untrusted memory"));
+        assert!(context.contains("not instructions"));
         assert!(context.contains("first fact"));
         assert!(context.contains("second fact"));
     }

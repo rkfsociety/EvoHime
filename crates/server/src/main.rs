@@ -1950,6 +1950,39 @@ async fn run_task_pipeline(
             .map(|row| format!("[global workspace memory] {}", row.note)),
     );
 
+    let structured = evohime_memory::retrieve_for_prompt(
+        &state.pool,
+        evohime_memory::RetrieveRequest {
+            session_id: Some(session_id),
+            workspace_key: &workspace_scope,
+            query: &task.user_message,
+            max_chars: 4_000,
+            max_items: 24,
+        },
+    )
+    .await
+    .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
+    if !structured.used_memory_ids.is_empty() {
+        tracing::info!(
+            session_id = %session_id,
+            task_id = %task.id,
+            used_memory_ids = ?structured.used_memory_ids,
+            "retrieved structured memory for prompt"
+        );
+    }
+    let mut structured_notes = structured
+        .entries
+        .into_iter()
+        .map(|entry| {
+            match (&entry.scope, &entry.status) {
+                (Some(scope), Some(status)) => format!("[{scope}/{status}] {}", entry.content),
+                _ => entry.content,
+            }
+        })
+        .collect::<Vec<_>>();
+    structured_notes.extend(memory_notes);
+    let memory_notes = structured_notes;
+
     if emit_started {
         let title = summarize_session_title(&task.user_message);
         if !title.is_empty() {
@@ -2259,6 +2292,26 @@ async fn run_task_pipeline(
     )
     .await
     .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
+
+    let mut session_item = evohime_storage::NewMemoryItem::candidate_fact(
+        evohime_storage::MemoryScope::Session,
+        session_id.to_string(),
+        &memory_note,
+    );
+    session_item.source_session_id = Some(session_id);
+    session_item.source_task_id = Some(task.id);
+    session_item.source_label = Some(format!("task-summary:session:{task_id}", task_id = task.id));
+    let _ = evohime_memory::admit_memory_item(&state.pool, session_item).await;
+
+    let mut workspace_item = evohime_storage::NewMemoryItem::candidate_fact(
+        evohime_storage::MemoryScope::Workspace,
+        &workspace_scope,
+        &memory_note,
+    );
+    workspace_item.source_session_id = Some(session_id);
+    workspace_item.source_task_id = Some(task.id);
+    workspace_item.source_label = Some(format!("task-summary:workspace:{task_id}", task_id = task.id));
+    let _ = evohime_memory::admit_memory_item(&state.pool, workspace_item).await;
 
     complete_task(&state.pool, task.id)
         .await

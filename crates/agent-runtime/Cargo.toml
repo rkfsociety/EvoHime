@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }
+evohime-memory = { path = "../memory" }
 evohime-model-gateway = { path = "../model-gateway" }
 evohime-protocol = { path = "../protocol" }
 evohime-project-index = { path = "../project-index" }

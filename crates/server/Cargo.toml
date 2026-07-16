@@ -8,6 +8,7 @@ anyhow = "1"
 axum = { version = "0.7", features = ["ws", "json"] }
 chrono = { version = "0.4", features = ["serde"] }
 evohime-agent-runtime = { path = "../agent-runtime" }
+evohime-memory = { path = "../memory" }
 evohime-model-gateway = { path = "../model-gateway" }
 evohime-permissions = { path = "../permissions" }
 evohime-protocol = { path = "../protocol" }

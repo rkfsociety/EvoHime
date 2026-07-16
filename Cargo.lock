@@ -590,6 +590,7 @@ name = "evohime-agent-runtime"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "evohime-memory",
  "evohime-model-gateway",
  "evohime-project-index",
  "evohime-protocol",
@@ -607,6 +608,7 @@ dependencies = [
 name = "evohime-memory"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "evohime-storage",
  "regex",
  "serde",
@@ -666,6 +668,7 @@ dependencies = [
  "axum",
  "chrono",
  "evohime-agent-runtime",
+ "evohime-memory",
  "evohime-model-gateway",
  "evohime-permissions",
  "evohime-protocol",

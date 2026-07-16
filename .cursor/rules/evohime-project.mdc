@@ -23,7 +23,7 @@ React+TS+Vite frontend, Rust/Axum backend, PostgreSQL, WebSocket, native Windows
 
 ## Current stage: 6 (Milestone 5 in progress)
 
-Stages 1–5 done. Stage 6 foundations done; structured memory `6.16`–`6.18` landed. Next: `6.19` retrieval into agent loop, then extract/ask gate (`6.20`).
+Stages 1–5 done. Memory `6.16`–`6.19` landed (schema, service, retrieval into prompt). Next: `6.20` extract + ask-on-uncertainty.
 
 ## Key paths
 
