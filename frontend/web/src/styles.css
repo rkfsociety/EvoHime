@@ -1172,6 +1172,7 @@ h1 {
 .markdownBody h2,
 .markdownBody h3,
 .markdownBody h4 {
+  max-width: none;
   margin: 1.1em 0 0.45em;
   line-height: 1.25;
 }
@@ -1194,6 +1195,14 @@ h1 {
 
 .markdownBody li + li {
   margin-top: 0.25em;
+}
+
+.markdownBody li > p:first-child {
+  display: inline;
+}
+
+.markdownBody li > p:not(:first-child) {
+  display: block;
 }
 
 .markdownBody blockquote {
