@@ -891,23 +891,23 @@ fn parse_plan_json(raw: &str) -> Option<Vec<PlanStep>> {
                 };
                 (!drafts.is_empty()).then(|| {
                     drafts
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, draft)| PlanStep {
-                        id: draft.id.unwrap_or_else(|| format!("step-{}", index + 1)),
-                        tool_name: draft
-                            .tool_name
-                            .unwrap_or_else(|| "assistant.reply".to_string()),
-                        description: draft
-                            .description
-                            .unwrap_or_else(|| format!("Execute step-{}", index + 1)),
-                        depends_on: draft
-                            .depends_on
-                            .into_iter()
-                            .filter(|dependency| !dependency.trim().is_empty())
-                            .collect(),
-                    })
-                    .collect()
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, draft)| PlanStep {
+                            id: draft.id.unwrap_or_else(|| format!("step-{}", index + 1)),
+                            tool_name: draft
+                                .tool_name
+                                .unwrap_or_else(|| "assistant.reply".to_string()),
+                            description: draft
+                                .description
+                                .unwrap_or_else(|| format!("Execute step-{}", index + 1)),
+                            depends_on: draft
+                                .depends_on
+                                .into_iter()
+                                .filter(|dependency| !dependency.trim().is_empty())
+                                .collect(),
+                        })
+                        .collect()
                 })
             })
     })
