@@ -670,6 +670,27 @@ fn parse_plan_line(index: usize, line: &str) -> Option<PlanStep> {
     let (body, depends_on) = split_dependencies(text);
     let (tool_name, description) = extract_tool_and_description(body, index);
 
+    // Plain prose from a model is not a plan step. The old fallback mapped
+    // every unrecognised line to assistant.reply, producing dozens of fake
+    // steps when the model ignored the JSON-only planning instruction.
+    let supported = [
+        "filesystem.read",
+        "filesystem.list",
+        "filesystem.search",
+        "git.status",
+        "git.diff",
+        "git.commit",
+        "git.pull",
+        "git.push",
+        "assistant.reply",
+    ];
+    if !supported.contains(&tool_name.as_str()) {
+        return None;
+    }
+    if tool_name == "assistant.reply" && !body.trim_start().starts_with("assistant.reply") {
+        return None;
+    }
+
     Some(PlanStep {
         id: format!("step-{}", index + 1),
         tool_name,
@@ -761,6 +782,14 @@ mod tests {
         assert!(context.contains("Relevant session memory:"));
         assert!(context.contains("first fact"));
         assert!(context.contains("second fact"));
+    }
+
+    #[test]
+    fn prose_is_not_parsed_as_fake_reply_steps() {
+        let plan = parse_plan(
+            "Я вижу, что нужно исследовать проект.\n\nДавайте начнём с анализа структуры.",
+        );
+        assert_eq!(plan, default_plan());
     }
 
     #[tokio::test]
@@ -857,10 +886,12 @@ mod tests {
         std::fs::write(&demo_file, "# Demo\nHello from workspace.").expect("write");
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let gateway = evohime_model_gateway::mock_gateway(vec![
-            r#"[{"id":"step-1","tool_name":"assistant.reply","description":"Respond","depends_on":[] }]"#.into(),
-            "Recovered response".into(),
-        ]);
+        let gateway = evohime_model_gateway::ModelGateway::from_provider(std::sync::Arc::new(
+            RecordingProvider::new(vec![
+                vec![r#"[{"id":"step-1","tool_name":"assistant.reply","description":"Respond","depends_on":[]}]"#.into()],
+                vec!["Recovered response".into()],
+            ]),
+        ));
         let tools = evohime_tool_runtime::ToolRegistry::bootstrap();
 
         let result = run_agent_loop_resumed(

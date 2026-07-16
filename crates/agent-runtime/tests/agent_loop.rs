@@ -1,10 +1,42 @@
 use evohime_agent_runtime::{run_agent_loop, AgentConfig};
-use evohime_model_gateway::mock_gateway;
-use evohime_model_gateway::providers::{ChatMessage, ChatRole};
+use evohime_model_gateway::providers::{
+    ChatMessage, ChatRole, ModelProvider, ProviderError, ProviderKind, TokenStream,
+};
+use evohime_model_gateway::ModelGateway;
 use evohime_protocol::ServerEvent;
 use evohime_tool_runtime::ToolRegistry;
+use futures_util::stream;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use tokio::sync::mpsc;
 use uuid::Uuid;
+
+struct TwoPhaseProvider {
+    calls: Arc<AtomicUsize>,
+}
+
+impl ModelProvider for TwoPhaseProvider {
+    fn kind(&self) -> ProviderKind {
+        ProviderKind::Mock
+    }
+    fn model_name(&self) -> &str {
+        "test-model"
+    }
+    fn base_url(&self) -> &str {
+        "mock://test"
+    }
+    fn stream_chat(&self, _messages: &[ChatMessage]) -> TokenStream {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        let chunks = if call == 0 {
+            vec![r#"[{"id":"step-1","tool_name":"assistant.reply","description":"Respond","depends_on":[]}]"#.to_string()]
+        } else {
+            vec!["Evo".to_string(), "Hime".to_string()]
+        };
+        Box::pin(stream::iter(chunks.into_iter().map(Ok::<_, ProviderError>)))
+    }
+}
 
 #[tokio::test]
 async fn agent_loop_streams_model_tokens() {
@@ -13,7 +45,9 @@ async fn agent_loop_streams_model_tokens() {
     std::fs::write(&demo_file, "# Demo\nHello from workspace.").expect("write");
 
     let (tx, mut rx) = mpsc::unbounded_channel();
-    let gateway = mock_gateway(vec!["Evo".into(), "Hime".into()]);
+    let gateway = ModelGateway::from_provider(Arc::new(TwoPhaseProvider {
+        calls: Arc::new(AtomicUsize::new(0)),
+    }));
     let tools = ToolRegistry::bootstrap();
 
     let result = run_agent_loop(
