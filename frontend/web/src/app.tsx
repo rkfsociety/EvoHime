@@ -2656,13 +2656,10 @@ export function App() {
           ) : null}
           {stream && lastAssistantLineIndex === -1 ? (
             <>
-              {traceLines.length > 0 && (hasConversation || Boolean(activeTaskId)) ? (
-                <ChatTraceSummary traceLines={traceLines} active={Boolean(activeTaskId)} userLogin={githubAuth?.login} />
-              ) : null}
-            <article className="line assistant streaming">
-              <strong>Ассистент</strong>
-              <MarkdownMessage text={stream} />
-            </article>
+              <article className="line assistant streaming">
+                <strong>Ассистент</strong>
+                <MarkdownMessage text={stream} />
+              </article>
             </>
           ) : null}
         </div>

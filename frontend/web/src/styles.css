@@ -1159,6 +1159,7 @@ h1 {
 
 .line,
 .eventItem {
+  min-width: 0;
   width: 100%;
   border: 1px solid var(--border-0);
   border-radius: 18px;
@@ -1208,17 +1209,21 @@ h1 {
 
 .line pre,
 .eventItem code {
+  min-width: 0;
   margin: 0;
   white-space: pre-wrap;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 14px;
   line-height: 1.55;
   color: var(--text-0);
+  overflow-wrap: anywhere;
 }
 
 .markdownBody {
+  min-width: 0;
   color: var(--text-0);
   line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 .markdownBody > :first-child {
@@ -1333,6 +1338,7 @@ h1 {
 }
 
 .chatTraceSummary {
+  min-width: 0;
   width: 100%;
   justify-self: start;
   margin-right: auto;
