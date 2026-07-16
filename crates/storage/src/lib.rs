@@ -523,6 +523,50 @@ pub async fn list_session_memory(
     Ok(rows)
 }
 
+pub async fn insert_global_memory(
+    pool: &PgPool,
+    scope_key: &str,
+    source_task_id: Option<Uuid>,
+    note: &str,
+) -> Result<(), StorageError> {
+    sqlx::query(
+        r#"
+        INSERT INTO global_memory (scope_key, source_task_id, note)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (scope_key, note) DO NOTHING
+        "#,
+    )
+    .bind(scope_key)
+    .bind(source_task_id)
+    .bind(note)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn list_global_memory(
+    pool: &PgPool,
+    scope_key: &str,
+    limit: i64,
+) -> Result<Vec<MemoryRow>, StorageError> {
+    let rows = sqlx::query_as::<_, MemoryRow>(
+        r#"
+        SELECT note, created_at
+        FROM global_memory
+        WHERE scope_key = $1
+        ORDER BY created_at DESC
+        LIMIT $2
+        "#,
+    )
+    .bind(scope_key)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
+}
+
 async fn next_sequence(pool: &PgPool, session_id: Uuid) -> Result<i64, StorageError> {
     let sequence = sqlx::query_scalar::<_, i64>(
         r#"

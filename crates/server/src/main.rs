@@ -1333,6 +1333,19 @@ async fn run_task_pipeline(
     let memory_notes = load_memory_notes(&state.pool, session_id)
         .await
         .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
+    let workspace_scope = task
+        .workspace_path
+        .clone()
+        .unwrap_or_else(|| state.workspace_root.to_string_lossy().into_owned());
+    let global_memory = evohime_storage::list_global_memory(&state.pool, &workspace_scope, 20)
+        .await
+        .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
+    let mut memory_notes = memory_notes;
+    memory_notes.extend(
+        global_memory
+            .into_iter()
+            .map(|row| format!("[global workspace memory] {}", row.note)),
+    );
 
     if emit_started {
         let title = summarize_session_title(&task.user_message);
@@ -1614,6 +1627,14 @@ async fn run_task_pipeline(
     evohime_storage::insert_session_memory(&state.pool, session_id, Some(task.id), &memory_note)
         .await
         .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
+    evohime_storage::insert_global_memory(
+        &state.pool,
+        &workspace_scope,
+        Some(task.id),
+        &memory_note,
+    )
+    .await
+    .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
 
     complete_task(&state.pool, task.id)
         .await
