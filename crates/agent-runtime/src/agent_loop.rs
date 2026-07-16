@@ -64,7 +64,7 @@ pub fn parse_plan(raw: &str) -> Vec<PlanStep> {
         .collect();
 
     if parsed.is_empty() {
-        parse_markup_tool_calls(&normalized).unwrap_or_else(default_plan)
+        parse_model_tool_calls(&normalized).unwrap_or_else(default_plan)
     } else {
         normalize_plan(parsed)
     }
@@ -342,7 +342,7 @@ async fn run_agent_loop_inner(
         )?;
     }
 
-    if let Some(markup_plan) = parse_markup_tool_calls(&final_message) {
+    if let Some(markup_plan) = parse_model_tool_calls(&final_message) {
         let contains_mutation = markup_plan.iter().any(|step| {
             matches!(
                 step.tool_name.as_str(),
@@ -601,6 +601,97 @@ fn parse_markup_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {
         cursor = body_end + "</invoke>".len();
     }
     (!steps.is_empty()).then(|| normalize_plan(steps))
+}
+
+fn parse_model_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {
+    parse_markup_tool_calls(raw).or_else(|| parse_json_tool_calls(raw))
+}
+
+fn parse_json_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {
+    let candidates = extract_json_blocks(raw);
+    let mut steps = Vec::new();
+
+    for candidate in candidates {
+        let values = match serde_json::from_str::<Value>(&candidate) {
+            Ok(Value::Array(values)) => values,
+            Ok(value) => vec![value],
+            Err(_) => continue,
+        };
+
+        for value in values {
+            let Some(object) = value.as_object() else {
+                continue;
+            };
+            if object.get("type").and_then(Value::as_str) != Some("tool.call") {
+                continue;
+            }
+            let Some(tool_name) = object.get("tool").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(input) = object.get("input").and_then(Value::as_object) else {
+                continue;
+            };
+
+            let description = match tool_name {
+                "filesystem.write" => format!(
+                    "path: {}\n```\n{}\n```",
+                    input
+                        .get("path")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                    input
+                        .get("content")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                ),
+                "filesystem.patch" => format!(
+                    "path: {}\n```\n{}\n```",
+                    input
+                        .get("path")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                    input
+                        .get("patch")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                ),
+                _ => serde_json::to_string(input).unwrap_or_default(),
+            };
+            steps.push(PlanStep {
+                id: format!("step-{}", steps.len() + 1),
+                tool_name: tool_name.to_string(),
+                description,
+                depends_on: Vec::new(),
+            });
+        }
+    }
+
+    (!steps.is_empty()).then(|| normalize_plan(steps))
+}
+
+fn extract_json_blocks(raw: &str) -> Vec<String> {
+    let mut blocks = Vec::new();
+    let mut cursor = 0;
+    while let Some(relative_start) = raw[cursor..].find("```") {
+        let start = cursor + relative_start;
+        let Some(line_end) = raw[start..].find('\n') else {
+            break;
+        };
+        let body_start = start + line_end + 1;
+        let Some(relative_end) = raw[body_start..].find("```") else {
+            break;
+        };
+        let language = raw[start + 3..start + line_end].trim();
+        if language.is_empty() || language.eq_ignore_ascii_case("json") {
+            blocks.push(
+                raw[body_start..body_start + relative_end]
+                    .trim()
+                    .to_string(),
+            );
+        }
+        cursor = body_start + relative_end + 3;
+    }
+    blocks
 }
 
 fn markup_parameter(body: &str, name: &str) -> Option<String> {
@@ -1081,6 +1172,29 @@ mod tests {
         assert_eq!(plan[0].tool_name, "filesystem.write");
         assert!(plan[0].description.contains("workers/python/handler.py"));
         assert!(plan[0].description.contains("print('ok')"));
+    }
+
+    #[test]
+    fn parses_json_tool_call_from_model_output() {
+        let plan = parse_plan(
+            r#"Выполняю:
+```json
+{
+  "type": "tool.call",
+  "tool": "filesystem.write",
+  "input": {
+    "path": "docs/agent-dogfood-check.md",
+    "content": "agent write verified"
+  }
+}
+```"#,
+        );
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].tool_name, "filesystem.write");
+        assert!(plan[0]
+            .description
+            .contains("path: docs/agent-dogfood-check.md"));
+        assert!(plan[0].description.contains("agent write verified"));
     }
 
     #[tokio::test]
