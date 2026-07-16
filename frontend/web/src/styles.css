@@ -365,10 +365,9 @@ h1 {
 }
 
 .projectChatItem {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
   width: 100%;
   padding: 8px 10px;
   border: 0;
@@ -437,6 +436,24 @@ h1 {
   background: transparent;
   text-align: left;
   cursor: pointer;
+}
+
+.projectChatItem strong,
+.projectChatItem span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectChatItem strong {
+  color: var(--text-0);
+  font-size: 13px;
+}
+
+.projectChatItem span {
+  color: var(--text-3);
+  font-size: 11px;
 }
 
 .standaloneSidebarChat:hover,
