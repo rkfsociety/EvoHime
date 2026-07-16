@@ -125,6 +125,8 @@ export type SaveResponse = {
 
 export type SaveState = "idle" | "saving" | "saved";
 
+export type SettingsTab = "model" | "permissions" | "mcp" | "tools" | "archive";
+
 export type GitSnapshot = {
   status: string;
   diff: string;

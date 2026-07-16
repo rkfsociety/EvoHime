@@ -1,7 +1,7 @@
 # Frontend shell decomposition (6.13)
 
 > Дата: 2026-07-16  
-> Статус: approved (approach A)
+> Статус: done
 
 ## Цель
 

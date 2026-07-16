@@ -14,4 +14,4 @@
 - [x] Wire `app.tsx`; `npm run build`; commit
 - [x] Migrate remaining `fetch` → typed API
 - [x] Extract Files/Editor/Git/Tasks/PR/Scheduled panels
-- [ ] Settings panel + optional `useServerEventHandler` hook
+- [x] Settings panel + `useServerEventHandler` / `applyServerEvent`

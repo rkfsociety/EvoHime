@@ -183,3 +183,18 @@ export function formatRelativeAge(value: string) {
   const diffMinutes = Math.max(0, Math.floor(diffMs / (1000 * 60)));
   return `${diffMinutes}м`;
 }
+
+export function formatPlan(plan: { id: string; tool_name: string; description: string; depends_on?: string[] | null }[]) {
+  if (plan.length === 0) {
+    return "План агента: пусто";
+  }
+
+  return [
+    "План агента:",
+    ...plan.map((step) => {
+      const dependencies = step.depends_on ?? [];
+      const deps = dependencies.length > 0 ? ` зависит от ${dependencies.join(", ")}` : "";
+      return `- ${step.id}: ${step.tool_name} — ${step.description}${deps}`;
+    }),
+  ].join("\n");
+}

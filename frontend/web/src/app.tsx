@@ -3,11 +3,9 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
   ClientCommand,
-  PlanStep,
   ServerEvent,
   SessionBootstrap,
 } from "./protocol";
-import type { TaskStatusChangedEvent, TaskStepChangedEvent, ActionLoggedEvent } from "./protocol";
 import type { ApprovalRequiredEvent } from "./protocol";
 import { TerminalPanel, TerminalEntry } from "./components/TerminalPanel";
 import { ApprovalModal } from "./components/ApprovalModal";
@@ -18,8 +16,10 @@ import { GitPanel } from "./panels/GitPanel";
 import { PluginsPanel } from "./panels/PluginsPanel";
 import { PullRequestsPanel } from "./panels/PullRequestsPanel";
 import { ScheduledPanel } from "./panels/ScheduledPanel";
+import { SettingsPanel } from "./panels/SettingsPanel";
 import { SitesPanel } from "./panels/SitesPanel";
 import { TasksPanel } from "./panels/TasksPanel";
+import { useServerEventHandler } from "./hooks/useServerEventHandler";
 import {
   filesApi,
   gitApi,
@@ -78,6 +78,7 @@ import type {
   ProjectSummary,
   PullRequestScope,
   PullRequestSummary,
+  SettingsTab,
   TaskView,
   ToolDefinition,
   WorkspacePanel,
@@ -140,7 +141,7 @@ export function App() {
   const [approval, setApproval] = useState<ApprovalRequiredEvent | null>(null);
   const [githubAuth, setGithubAuth] = useState<GithubAuthInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<"model" | "permissions" | "mcp" | "tools" | "archive">("model");
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("model");
   const [modelDefaultRoute, setModelDefaultRoute] = useState("default");
   const [modelDrafts, setModelDrafts] = useState<ModelRouteDraft[]>([]);
   const [modelSaving, setModelSaving] = useState(false);
@@ -628,6 +629,25 @@ export function App() {
       return haystack.includes(query);
     });
   }, [pullRequests, pullRequestSearch]);
+
+  const applyEvent = useServerEventHandler({
+    selectedProjectPath: selectedProject.path ?? ".",
+    selectedFilePath,
+    selectedFileContent,
+    selectedFileOriginal,
+    setLines,
+    setChatSessions,
+    setTasks,
+    setStream,
+    setTerminalEntries,
+    setApproval,
+    setActions,
+    setSelectedFileNotice,
+    setGitStatus,
+    setGitDiff,
+    refreshDirectory,
+    refreshSelectedFile,
+  });
   applyEventRef.current = applyEvent;
   saveFileRef.current = () => {
     void handleSave();
@@ -744,145 +764,6 @@ export function App() {
       setLines((current) => [...current, { role: "system", text: String(error) }]);
     } finally {
       setDeletingSessionId(null);
-    }
-  }
-
-  function applyEvent(event: ServerEvent) {
-    switch (event.type) {
-      case "session.created":
-        setLines((current) => [
-          ...current,
-          {
-            role: "system",
-            text: `Сессия создана: ${event.session_id}`,
-          },
-        ]);
-        break;
-      case "task.started":
-        setChatSessions((current) => {
-          const existing = current.find((chat) => chat.session_id === event.session_id);
-          const summary: ChatSessionSummary = {
-            session_id: event.session_id,
-            created_at: existing?.created_at ?? event.created_at,
-            title: existing?.title || summarizeChatTitle(event.user_message),
-            workspace_path: existing?.workspace_path ?? selectedProject.path,
-            last_message: event.user_message,
-            last_message_at: event.created_at,
-            last_role: "user",
-          };
-          return [summary, ...current.filter((chat) => chat.session_id !== event.session_id)];
-        });
-        setTasks((current) => ({ ...current, [event.task_id]: { id: event.task_id, message: event.user_message, status: "running", steps: {} } }));
-        setLines((current) => [...current, { role: "user", text: event.user_message, taskId: event.task_id }]);
-        setStream("");
-        break;
-      case "agent.message.delta":
-        setStream((current) => {
-          const next = `${current}${event.delta}`;
-          setLines((items) => {
-            const copy = [...items];
-            const index = copy.findIndex((line) => line.role === "assistant" && line.taskId === event.task_id);
-            if (index !== -1) {
-              copy[index] = { role: "assistant", text: next, taskId: event.task_id };
-              return copy;
-            }
-            copy.push({ role: "assistant", text: next, taskId: event.task_id });
-            return copy;
-          });
-          return next;
-        });
-        break;
-      case "tool.started":
-        setLines((current) => [
-          ...current,
-          { role: "tool", text: `Запускаю инструмент: ${event.tool_name}` },
-        ]);
-        break;
-      case "tool.output":
-        if (event.tool_name === "shell.execute") setTerminalEntries((current) => [...current, { stream: "stdout", text: event.output }]);
-        break;
-      case "approval.required":
-        setApproval(event);
-        break;
-      case "tool.completed":
-        setLines((current) => [
-          ...current,
-          {
-            role: "tool",
-            text: `${event.tool_name}: ${event.success ? "завершён успешно" : "завершён с ошибкой"}`,
-          },
-        ]);
-        if (event.tool_name === "shell.execute") {
-          setTerminalEntries((current) => [
-            ...current,
-            {
-              stream: event.success ? "status" : "stderr",
-              text: event.success ? "shell.execute выполнен" : "shell.execute завершился с ошибкой",
-            },
-          ]);
-        }
-        break;
-      case "task.completed":
-        setTasks((current) => current[event.task_id] ? { ...current, [event.task_id]: { ...current[event.task_id], status: "completed" } } : current);
-        setLines((current) => {
-          const copy = [...current];
-          const index = copy.findIndex((line) => line.role === "assistant" && line.taskId === event.task_id);
-          if (index !== -1) {
-            copy[index] = { role: "assistant", text: event.final_message, taskId: event.task_id };
-            return copy;
-          }
-          copy.push({ role: "assistant", text: event.final_message, taskId: event.task_id });
-          return copy;
-        });
-        setStream("");
-        break;
-      case "task.failed":
-        setTasks((current) => current[event.task_id] ? { ...current, [event.task_id]: { ...current[event.task_id], status: "failed" } } : current);
-        setLines((current) => [
-          ...current,
-          { role: "system", text: `Задача завершилась с ошибкой: ${event.error}` },
-        ]);
-        setStream("");
-        break;
-      case "task.status.changed": {
-        const statusEvent = event as TaskStatusChangedEvent;
-        setTasks((current) => current[statusEvent.task_id] ? { ...current, [statusEvent.task_id]: { ...current[statusEvent.task_id], status: statusEvent.status } } : current);
-        break;
-      }
-      case "task.step.changed": {
-        const stepEvent = event as TaskStepChangedEvent;
-        setTasks((current) => current[stepEvent.task_id] ? { ...current, [stepEvent.task_id]: { ...current[stepEvent.task_id], steps: { ...current[stepEvent.task_id].steps, [stepEvent.tool_name]: stepEvent.status } } } : current);
-        break;
-      }
-      case "action.logged": {
-        const actionEvent = event as ActionLoggedEvent;
-        setActions((current) => [...current, { taskId: actionEvent.task_id, action: actionEvent.action, detail: actionEvent.detail, createdAt: actionEvent.created_at }]);
-        break;
-      }
-      case "agent.plan.updated":
-        setLines((current) => [
-          ...current,
-          {
-            role: "system",
-            text: formatPlan(event.plan),
-          },
-        ]);
-        break;
-      case "file.changed":
-        void refreshDirectory(".").catch(() => undefined);
-        void refreshDirectory(parentPath(event.path)).catch(() => undefined);
-        if (normalizePath(selectedFilePath ?? undefined) === normalizePath(event.path)) {
-          if (selectedFileContent !== selectedFileOriginal) {
-            setSelectedFileNotice("Файл изменился на диске. Сохрани или перезагрузи, чтобы не потерять правки.");
-          } else {
-            void refreshSelectedFile(event.path).catch(() => undefined);
-          }
-        }
-        break;
-      case "git.diff.changed":
-        setGitStatus(event.status);
-        setGitDiff(event.diff);
-        break;
     }
   }
 
@@ -1260,280 +1141,44 @@ export function App() {
     );
   }
 
-  function renderSettingsContent() {
+  function settingsPanelElement() {
     return (
-      <div className="settingsPanel">
-        <nav className="settingsTabs" aria-label="Разделы настроек">
-          {[
-            ["model", "Модель", "Провайдер и маршруты"],
-            ["permissions", "Разрешения", "Доступ инструментов"],
-            ["mcp", "MCP", "Подключённые серверы"],
-            ["tools", "Инструменты", "Каталог и таймауты"],
-            ["archive", "Архив", "Скрытые чаты"],
-          ].map(([id, label, hint]) => (
-            <button
-              key={id}
-              type="button"
-              className={settingsTab === id ? "settingsTab active" : "settingsTab"}
-              onClick={() => setSettingsTab(id as typeof settingsTab)}
-              aria-selected={settingsTab === id}
-              role="tab"
-            >
-              <strong>{label}</strong>
-              <span>{hint}</span>
-            </button>
-          ))}
-        </nav>
-
-        <div className="settingsTabContent">
-        {settingsTab === "model" ? <section className="settingsSection">
-          <h3>Провайдер модели</h3>
-          {modelConfigError ? <p className="settingsError">{modelConfigError}</p> : null}
-          {modelConfig ? (
-            <div className="modelSettingsEditor">
-              <div className="settingsInlineBar">
-                <span className={modelConfig.configured ? "modelStatus configured" : "modelStatus"}>
-                  {modelSaving ? "Сохранение..." : modelConfig.configured ? "Агент готов" : "Нужен API-ключ"}
-                </span>
-              </div>
-              {activeModelRoute ? (
-                <div className="modelProviderForm">
-                  <label>
-                    <span>Провайдер</span>
-                    <select
-                      value={activeModelRoute.provider}
-                      onChange={(event) => {
-                        const provider = event.target.value;
-                        updateModelDraft(activeModelRouteIndex, {
-                          provider,
-                          base_url: provider === "literouter" ? "https://api.literouter.com/v1" : "https://api.openai.com/v1",
-                          model: provider === "literouter" ? "deepseek:free" : "gpt-4o-mini",
-                          billing_mode: provider === "literouter" ? "free" : "paid",
-                        });
-                      }}
-                    >
-                      <option value="literouter">LiteRouter</option>
-                      <option value="openai-compatible">OpenAI-compatible</option>
-                    </select>
-                  </label>
-                  {activeModelRoute.provider === "literouter" ? (
-                    <label>
-                      <span>Режим LiteRouter</span>
-                      <select
-                        value={activeModelRoute.billing_mode}
-                        onChange={(event) => updateModelDraft(activeModelRouteIndex, { billing_mode: event.target.value as "free" | "paid" })}
-                      >
-                        <option value="free">Бесплатный — только :free</option>
-                        <option value="paid">Платный — без :free</option>
-                      </select>
-                    </label>
-                  ) : null}
-                  <label className="modelProviderKey">
-                    <span>API-ключ</span>
-                    <input
-                      type="password"
-                      value={activeModelRoute.api_key}
-                      onChange={(event) => updateModelDraft(activeModelRouteIndex, { api_key: event.target.value })}
-                      onBlur={() => void saveModelConfig()}
-                      placeholder={activeModelRoute.configured ? "Ключ сохранён — оставь пустым" : "Введи API-ключ"}
-                    />
-                    {activeModelRoute.configured && !activeModelRoute.api_key ? <small className="modelKeyStatus">Ключ сохранён</small> : null}
-                  </label>
-                </div>
-              ) : null}
-              <p className="settingsHint">Изменения сохраняются автоматически.</p>
-              {modelNotice ? <p className={modelNotice.startsWith("Настройки") ? "settingsHint" : "settingsError"}>{modelNotice}</p> : null}
-              {orchestratorRoute ? (
-                <section className="orchestratorSettings">
-                  <div>
-                    <h3>Оркестратор</h3>
-                    <p className="settingsHint">Модель, которая строит план действий перед выполнением задачи.</p>
-                  </div>
-                  <div className="modelProviderForm">
-                    <label>
-                      <span>Провайдер</span>
-                      <select
-                        value={orchestratorRoute.provider}
-                        onChange={(event) => {
-                          const provider = event.target.value;
-                          updateModelDraft(orchestratorRouteIndex, {
-                            provider,
-                            base_url: provider === "literouter" ? "https://api.literouter.com/v1" : "https://api.openai.com/v1",
-                            model: provider === "literouter" ? "deepseek:free" : "gpt-4o-mini",
-                            billing_mode: provider === "literouter" ? "free" : "paid",
-                          });
-                        }}
-                      >
-                        <option value="literouter">LiteRouter</option>
-                        <option value="openai-compatible">OpenAI-compatible</option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>Модель</span>
-                      <select
-                        value={orchestratorRoute.model}
-                        onChange={(event) => updateModelDraft(orchestratorRouteIndex, { model: event.target.value })}
-                      >
-                        {[orchestratorRoute.model, ...orchestratorModels]
-                          .filter((model, index, models) => model && models.indexOf(model) === index)
-                          .map((model) => <option key={model} value={model}>{model}</option>)}
-                      </select>
-                    </label>
-                  </div>
-                </section>
-              ) : null}
-            </div>
-          ) : (
-            <p>Загрузка конфигурации модели...</p>
-          )}
-        </section> : null}
-
-        {settingsTab === "permissions" ? <section className="settingsSection">
-          <h3>Разрешения инструментов</h3>
-          <div className="permissionList">
-            {Object.entries(permissionSettings).map(([name, value]) => (
-              <label key={name}>
-                <span>{name}</span>
-                <select
-                  value={value.mode}
-                  onChange={(event) =>
-                    void updatePermission(name, event.target.value as PermissionMode)
-                  }
-                >
-                  <option value="ask">спрашивать</option>
-                  <option value="allow">разрешать</option>
-                  <option value="deny">запрещать</option>
-                </select>
-              </label>
-            ))}
-          </div>
-        </section> : null}
-
-        {settingsTab === "mcp" ? <section className="settingsSection">
-          <div className="settingsHeaderRow">
-            <div>
-              <h3>MCP-серверы</h3>
-              <p className="settingsHint">
-                Эти конечные точки редактируются в памяти и управляют интерфейсом MCP.
-              </p>
-            </div>
-            <div className="toolbarActions">
-              <button type="button" onClick={addMcpServer}>
-                Добавить сервер
-              </button>
-              <button type="button" onClick={() => void saveMcpServers()} disabled={mcpServersSaving}>
-                {mcpServersSaving ? "Сохранение..." : "Сохранить серверы"}
-              </button>
-            </div>
-          </div>
-          {mcpServersError ? <p className="settingsError">{mcpServersError}</p> : null}
-          {mcpServersNotice ? <p className="settingsHint">{mcpServersNotice}</p> : null}
-          <div className="mcpServerList">
-            {mcpServers.length === 0 ? (
-              <div className="emptyState">
-                <strong>Пока нет MCP-серверов</strong>
-                <p>Добавь первый сервер, чтобы держать общие точки доступа под рукой для агентов.</p>
-              </div>
-            ) : null}
-            {mcpServers.map((server, index) => (
-              <article className="mcpServerCard" key={`${server.name || "server"}-${index}`}>
-                <div className="mcpServerRow">
-                  <label>
-                    <span>Название</span>
-                    <input
-                      value={server.name}
-                      onChange={(event) => updateMcpServer(index, { name: event.target.value })}
-                      placeholder="docs"
-                    />
-                  </label>
-                  <label>
-                    <span>Ссылка</span>
-                    <input
-                      value={server.url}
-                      onChange={(event) => updateMcpServer(index, { url: event.target.value })}
-                      placeholder="https://example.com/rpc"
-                    />
-                  </label>
-                </div>
-                <label className="mcpServerDescription">
-                  <span>Описание</span>
-                  <input
-                    value={server.description ?? ""}
-                    onChange={(event) =>
-                      updateMcpServer(index, { description: event.target.value })
-                    }
-                    placeholder="Необязательная заметка"
-                  />
-                </label>
-                <div className="mcpServerFooter">
-                  <label className="toggleRow">
-                    <input
-                      type="checkbox"
-                      checked={server.enabled}
-                      onChange={(event) =>
-                        updateMcpServer(index, { enabled: event.target.checked })
-                      }
-                    />
-                    <span>Включён</span>
-                  </label>
-                  <button type="button" onClick={() => removeMcpServer(index)}>
-                    Удалить
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section> : null}
-
-        {settingsTab === "tools" ? <section className="settingsSection">
-          <h3>Каталог инструментов</h3>
-          {toolCatalogError ? <p className="settingsError">{toolCatalogError}</p> : null}
-          <div className="toolCatalog">
-            {toolCatalog.map((tool) => (
-              <article className="toolCard" key={tool.name}>
-                <strong>{tool.name}</strong>
-                <p>{tool.description}</p>
-                <small>{tool.permissions.join(", ") || "нет разрешений"}</small>
-                <span>Таймаут {tool.timeout_ms} мс</span>
-              </article>
-            ))}
-          </div>
-        </section> : null}
-
-        {settingsTab === "archive" ? <section className="settingsSection">
-          <h3>Архивированные чаты</h3>
-          <p className="settingsHint">Архивация скрывает чат из левого бара. Здесь его можно удалить окончательно.</p>
-          <div className="archivedChatList">
-            {archivedChats.length === 0 ? (
-              <div className="emptyState">
-                <strong>Архив пуст</strong>
-                <p>Архивированные чаты появятся здесь.</p>
-              </div>
-            ) : archivedChats.map((chat, index) => (
-              <article className="archivedChatItem" key={chat.session_id}>
-                <div>
-                  <strong>{formatSessionTitle(chat, index)}</strong>
-                  <span>{formatSessionPreview(chat)}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void deleteSession(chat)}
-                  disabled={deletingSessionId === chat.session_id}
-                >
-                  {deletingSessionId === chat.session_id ? "Удаляем..." : "Удалить навсегда"}
-                </button>
-              </article>
-            ))}
-          </div>
-        </section> : null}
-        </div>
-      </div>
+      <SettingsPanel
+        settingsTab={settingsTab}
+        onSettingsTabChange={setSettingsTab}
+        modelConfig={modelConfig}
+        modelConfigError={modelConfigError}
+        modelSaving={modelSaving}
+        modelNotice={modelNotice}
+        activeModelRoute={activeModelRoute}
+        activeModelRouteIndex={activeModelRouteIndex}
+        orchestratorRoute={orchestratorRoute}
+        orchestratorRouteIndex={orchestratorRouteIndex}
+        orchestratorModels={orchestratorModels}
+        onUpdateModelDraft={updateModelDraft}
+        onSaveModelConfig={() => void saveModelConfig()}
+        permissionSettings={permissionSettings}
+        onUpdatePermission={(name, mode) => void updatePermission(name, mode)}
+        mcpServers={mcpServers}
+        mcpServersError={mcpServersError}
+        mcpServersNotice={mcpServersNotice}
+        mcpServersSaving={mcpServersSaving}
+        onAddMcpServer={addMcpServer}
+        onSaveMcpServers={() => void saveMcpServers()}
+        onUpdateMcpServer={updateMcpServer}
+        onRemoveMcpServer={removeMcpServer}
+        toolCatalog={toolCatalog}
+        toolCatalogError={toolCatalogError}
+        archivedChats={archivedChats}
+        deletingSessionId={deletingSessionId}
+        onDeleteSession={(chat) => void deleteSession(chat)}
+      />
     );
   }
 
   function renderPanelContent() {
     if (activePanel === "settings") {
-      return renderSettingsContent();
+      return settingsPanelElement();
     }
 
     if (activePanel === "plugins") {
@@ -2168,28 +1813,13 @@ export function App() {
                 Закрыть
               </button>
             </header>
-            <div className="settingsModalBody">{renderSettingsContent()}</div>
+            <div className="settingsModalBody">{settingsPanelElement()}</div>
           </section>
         </div>
       ) : null}
       {approval ? <ApprovalModal request={approval} onGrant={() => resolveApproval("approval.granted")} onDeny={() => resolveApproval("approval.denied")} /> : null}
     </main>
   );
-}
-
-function formatPlan(plan: PlanStep[]) {
-  if (plan.length === 0) {
-    return "План агента: пусто";
-  }
-
-  return [
-    "План агента:",
-    ...plan.map((step) => {
-      const dependencies = step.depends_on ?? [];
-      const deps = dependencies.length > 0 ? ` зависит от ${dependencies.join(", ")}` : "";
-      return `- ${step.id}: ${step.tool_name} — ${step.description}${deps}`;
-    }),
-  ].join("\n");
 }
 
 function MarkdownMessage({ text }: { text: string }) {
