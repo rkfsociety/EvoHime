@@ -1209,19 +1209,19 @@ export function App() {
         ]);
         break;
       case "task.started":
-        setChatSessions((current) =>
-          current.map((chat) =>
-            chat.session_id === event.session_id
-              ? {
-                  ...chat,
-                  title: chat.title || summarizeChatTitle(event.user_message),
-                  last_message: event.user_message,
-                  last_message_at: event.created_at,
-                  last_role: "user",
-                }
-              : chat,
-          ),
-        );
+        setChatSessions((current) => {
+          const existing = current.find((chat) => chat.session_id === event.session_id);
+          const summary: ChatSessionSummary = {
+            session_id: event.session_id,
+            created_at: existing?.created_at ?? event.created_at,
+            title: existing?.title || summarizeChatTitle(event.user_message),
+            workspace_path: existing?.workspace_path ?? selectedProject.path,
+            last_message: event.user_message,
+            last_message_at: event.created_at,
+            last_role: "user",
+          };
+          return [summary, ...current.filter((chat) => chat.session_id !== event.session_id)];
+        });
         setTasks((current) => ({ ...current, [event.task_id]: { id: event.task_id, message: event.user_message, status: "running", steps: {} } }));
         setLines((current) => [...current, { role: "user", text: event.user_message }]);
         activeAssistantLineRef.current = null;
