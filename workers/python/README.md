@@ -21,12 +21,31 @@ python -m unittest discover -s workers/python -p "test_*.py"
 
 ## API
 
-- `GET /health` — status, queue metrics, and supported tasks.
-- `POST /v1/jobs` — submit `{ "task": "text.stats", "payload": { "text": "..." } }`.
+- `GET /health` — status, `started_at`, `pid`, queue metrics, and supported tasks.
+- `POST /v1/jobs` — submit `{ "task": "...", "payload": { ... } }`.
+  Invalid task/payload shapes are rejected with `400` before queueing.
 - `GET /v1/jobs/{id}` — poll a queued, running, completed, or failed job.
+  Running/completed snapshots include `heartbeat_at` for Rust stall detection.
 
-The initial task set contains `echo`, `text.stats`, and the ML-oriented
-`text.keywords` handler; new handlers can be
-added behind the same structured job lifecycle without changing the HTTP
-contract. Job state is process-local, so the Rust server remains responsible
-for durable task and checkpoint storage.
+## Supported tasks
+
+| Task | Payload | Result |
+| --- | --- | --- |
+| `echo` | any object | same payload |
+| `text.stats` | `{ text }` | characters / words / lines |
+| `text.keywords` | `{ text }` | top keyword frequencies |
+| `text.summarize` | `{ text, max_sentences? }` | extractive summary (`1..20` sentences, default 3) |
+| `text.chunk` | `{ text, chunk_size?, overlap? }` | overlapping character chunks |
+
+Job state is process-local. The Rust server owns durable `worker_jobs` rows,
+process health watchdog, per-job stall retries, backoff, and retention.
+
+## Server env knobs
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PYTHON_WORKER_URL` | `http://127.0.0.1:8090` | Worker base URL |
+| `WORKER_HEALTH_INTERVAL_SECS` | `5` | Health poll interval |
+| `WORKER_HEALTH_STALE_SECS` | `15` | Unhealthy window before recover |
+| `WORKER_JOB_STALL_SECS` | `30` | Stale `heartbeat_at` → retry |
+| `WORKER_JOB_RETENTION_DAYS` | `7` | Prune completed/failed rows |

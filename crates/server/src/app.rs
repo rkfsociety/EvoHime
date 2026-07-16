@@ -8,7 +8,13 @@ use evohime_tool_runtime::ToolRegistry;
 use serde::{Deserialize, Serialize};
 use serde_json::to_value;
 use sqlx::PgPool;
-use std::{collections::HashMap, env, path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap,
+    env,
+    path::PathBuf,
+    sync::Arc,
+    time::Duration,
+};
 use tokio::sync::{broadcast, Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -23,6 +29,9 @@ pub struct AppConfig {
     pub mcp_servers: Vec<McpServerConfig>,
     pub worker_url: String,
     pub worker_retention_days: i64,
+    pub worker_health_interval: Duration,
+    pub worker_health_stale: Duration,
+    pub worker_job_stall: Duration,
 }
 
 impl AppConfig {
@@ -49,6 +58,9 @@ impl AppConfig {
             .and_then(|value| value.parse().ok())
             .filter(|days: &i64| *days > 0)
             .unwrap_or(7);
+        let worker_health_interval = duration_secs_env("WORKER_HEALTH_INTERVAL_SECS", 5);
+        let worker_health_stale = duration_secs_env("WORKER_HEALTH_STALE_SECS", 15);
+        let worker_job_stall = duration_secs_env("WORKER_JOB_STALL_SECS", 30);
 
         Ok(Self {
             database_url,
@@ -59,8 +71,20 @@ impl AppConfig {
             mcp_servers,
             worker_url,
             worker_retention_days,
+            worker_health_interval,
+            worker_health_stale,
+            worker_job_stall,
         })
     }
+}
+
+fn duration_secs_env(name: &str, default_secs: u64) -> Duration {
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|secs: &u64| *secs > 0)
+        .map(Duration::from_secs)
+        .unwrap_or_else(|| Duration::from_secs(default_secs))
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -89,6 +113,7 @@ pub struct AppState {
     pub session_buses: Arc<Mutex<HashMap<Uuid, broadcast::Sender<ServerEvent>>>>,
     pub task_cancellations: Arc<Mutex<HashMap<Uuid, CancellationToken>>>,
     pub worker: WorkerClient,
+    pub worker_job_stall: Duration,
 }
 
 impl AppState {

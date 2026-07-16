@@ -11,25 +11,180 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import queue
 import re
 import threading
 import uuid
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 LOGGER = logging.getLogger("evohime.worker")
-SUPPORTED_TASKS = ("echo", "text.stats", "text.keywords")
+SUPPORTED_TASKS = (
+    "echo",
+    "text.stats",
+    "text.keywords",
+    "text.summarize",
+    "text.chunk",
+)
 MAX_TEXT_LENGTH = 1_000_000
+PROCESS_STARTED_AT = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+HEARTBEAT_INTERVAL_SECS = 1.0
+DEFAULT_MAX_SENTENCES = 3
+DEFAULT_CHUNK_SIZE = 500
+DEFAULT_CHUNK_OVERLAP = 50
 
 
-def health() -> dict[str, str]:
-    """Keep the original health helper for lightweight process checks."""
+def health() -> dict[str, Any]:
+    """Process liveness payload used by the Rust health watchdog."""
 
-    return {"status": "ok", "worker": "python"}
+    return {
+        "status": "ok",
+        "worker": "python",
+        "started_at": PROCESS_STARTED_AT,
+        "pid": os.getpid(),
+    }
+
+
+def _require_text(task: str, payload: dict[str, Any]) -> str:
+    text = payload.get("text")
+    if not isinstance(text, str):
+        raise ValueError(f"{task} requires a string payload.text")
+    if len(text) > MAX_TEXT_LENGTH:
+        raise ValueError(f"payload.text exceeds {MAX_TEXT_LENGTH} characters")
+    return text
+
+
+def _optional_int(
+    payload: dict[str, Any],
+    key: str,
+    *,
+    default: int,
+    minimum: int,
+    maximum: int | None = None,
+) -> int:
+    if key not in payload or payload[key] is None:
+        return default
+    value = payload[key]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"payload.{key} must be an integer")
+    if value < minimum or (maximum is not None and value > maximum):
+        upper = f"..{maximum}" if maximum is not None else "+"
+        raise ValueError(f"payload.{key} must be in {minimum}{upper}")
+    return value
+
+
+def validate_task_payload(task: str, payload: dict[str, Any]) -> None:
+    """Reject malformed payloads before a job enters the queue."""
+
+    if not isinstance(task, str) or not task:
+        raise ValueError("task must be a non-empty string")
+    if not isinstance(payload, dict):
+        raise ValueError("payload must be an object")
+    if task not in SUPPORTED_TASKS:
+        raise ValueError(f"unsupported task: {task}")
+
+    if task == "echo":
+        return
+
+    if task in {"text.stats", "text.keywords"}:
+        _require_text(task, payload)
+        return
+
+    if task == "text.summarize":
+        _require_text(task, payload)
+        _optional_int(
+            payload,
+            "max_sentences",
+            default=DEFAULT_MAX_SENTENCES,
+            minimum=1,
+            maximum=20,
+        )
+        return
+
+    if task == "text.chunk":
+        _require_text(task, payload)
+        chunk_size = _optional_int(
+            payload,
+            "chunk_size",
+            default=DEFAULT_CHUNK_SIZE,
+            minimum=64,
+            maximum=8000,
+        )
+        overlap = _optional_int(
+            payload,
+            "overlap",
+            default=DEFAULT_CHUNK_OVERLAP,
+            minimum=0,
+            maximum=None,
+        )
+        if overlap >= chunk_size:
+            raise ValueError("payload.overlap must be less than payload.chunk_size")
+        return
+
+    raise ValueError(f"unsupported task: {task}")
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _split_sentences(text: str) -> list[str]:
+    parts = re.split(r"(?<=[.!?])\s+", text.strip())
+    return [part.strip() for part in parts if part.strip()]
+
+
+def summarize_text(text: str, max_sentences: int) -> dict[str, Any]:
+    sentences = _split_sentences(text)
+    if not sentences:
+        return {"summary": "", "sentences_used": 0, "source_sentences": []}
+
+    words = re.findall(r"[\w]+", text.casefold(), flags=re.UNICODE)
+    counts = Counter(word for word in words if len(word) > 2)
+
+    scored: list[tuple[int, float, str]] = []
+    for index, sentence in enumerate(sentences):
+        tokens = re.findall(r"[\w]+", sentence.casefold(), flags=re.UNICODE)
+        score = float(sum(counts.get(token, 0) for token in tokens if len(token) > 2))
+        scored.append((index, score, sentence))
+
+    selected = sorted(scored, key=lambda item: (-item[1], item[0]))[:max_sentences]
+    selected.sort(key=lambda item: item[0])
+    source = [sentence for _, _, sentence in selected]
+    return {
+        "summary": " ".join(source),
+        "sentences_used": len(source),
+        "source_sentences": source,
+    }
+
+
+def chunk_text(text: str, chunk_size: int, overlap: int) -> dict[str, Any]:
+    if not text:
+        return {"chunks": [], "count": 0}
+
+    step = chunk_size - overlap
+    chunks: list[dict[str, Any]] = []
+    start = 0
+    index = 0
+    while start < len(text):
+        end = min(start + chunk_size, len(text))
+        chunks.append(
+            {
+                "index": index,
+                "text": text[start:end],
+                "start": start,
+                "end": end,
+            }
+        )
+        index += 1
+        if end >= len(text):
+            break
+        start += step
+    return {"chunks": chunks, "count": len(chunks)}
 
 
 @dataclass
@@ -40,31 +195,36 @@ class Job:
     status: str = "queued"
     result: Any = None
     error: str | None = None
+    heartbeat_at: str | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+    _stop_heartbeat: threading.Event = field(
+        default_factory=threading.Event, repr=False, compare=False
+    )
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
-            return {
+            payload = {
                 "id": self.id,
                 "task": self.task,
                 "status": self.status,
                 "result": self.result,
                 "error": self.error,
             }
+            if self.heartbeat_at is not None:
+                payload["heartbeat_at"] = self.heartbeat_at
+            return payload
 
 
 def run_task(task: str, payload: dict[str, Any]) -> Any:
     """Run one supported task and return JSON-serializable output."""
 
+    validate_task_payload(task, payload)
+
     if task == "echo":
         return payload
 
     if task == "text.stats":
-        text = payload.get("text")
-        if not isinstance(text, str):
-            raise ValueError("text.stats requires a string payload.text")
-        if len(text) > MAX_TEXT_LENGTH:
-            raise ValueError(f"payload.text exceeds {MAX_TEXT_LENGTH} characters")
+        text = payload["text"]
         return {
             "characters": len(text),
             "words": len(text.split()),
@@ -72,11 +232,7 @@ def run_task(task: str, payload: dict[str, Any]) -> Any:
         }
 
     if task == "text.keywords":
-        text = payload.get("text")
-        if not isinstance(text, str):
-            raise ValueError("text.keywords requires a string payload.text")
-        if len(text) > MAX_TEXT_LENGTH:
-            raise ValueError(f"payload.text exceeds {MAX_TEXT_LENGTH} characters")
+        text = payload["text"]
         words = re.findall(r"[\w]+", text.casefold(), flags=re.UNICODE)
         counts = Counter(words)
         keywords = [
@@ -85,6 +241,33 @@ def run_task(task: str, payload: dict[str, Any]) -> Any:
             if len(word) > 2
         ][:20]
         return {"keywords": keywords}
+
+    if task == "text.summarize":
+        max_sentences = _optional_int(
+            payload,
+            "max_sentences",
+            default=DEFAULT_MAX_SENTENCES,
+            minimum=1,
+            maximum=20,
+        )
+        return summarize_text(payload["text"], max_sentences)
+
+    if task == "text.chunk":
+        chunk_size = _optional_int(
+            payload,
+            "chunk_size",
+            default=DEFAULT_CHUNK_SIZE,
+            minimum=64,
+            maximum=8000,
+        )
+        overlap = _optional_int(
+            payload,
+            "overlap",
+            default=DEFAULT_CHUNK_OVERLAP,
+            minimum=0,
+            maximum=None,
+        )
+        return chunk_text(payload["text"], chunk_size, overlap)
 
     raise ValueError(f"unsupported task: {task}")
 
@@ -108,10 +291,7 @@ class JobService:
             worker.start()
 
     def submit(self, task: str, payload: dict[str, Any]) -> Job:
-        if not isinstance(task, str) or not task:
-            raise ValueError("task must be a non-empty string")
-        if not isinstance(payload, dict):
-            raise ValueError("payload must be an object")
+        validate_task_payload(task, payload)
         job = Job(id=str(uuid.uuid4()), task=task, payload=payload)
         with self._jobs_lock:
             self._jobs[job.id] = job
@@ -146,6 +326,11 @@ class JobService:
                 break
             with job._lock:
                 job.status = "running"
+                job.heartbeat_at = _utc_now_iso()
+            heartbeat = threading.Thread(
+                target=self._heartbeat_loop, args=(job,), name=f"heartbeat-{job.id}", daemon=True
+            )
+            heartbeat.start()
             with self._active_lock:
                 self._active_jobs += 1
             try:
@@ -153,15 +338,26 @@ class JobService:
                 with job._lock:
                     job.result = result
                     job.status = "completed"
+                    job.heartbeat_at = _utc_now_iso()
             except Exception as exc:  # worker errors become inspectable job state
                 with job._lock:
                     job.error = str(exc)
                     job.status = "failed"
+                    job.heartbeat_at = _utc_now_iso()
                 LOGGER.warning("job %s failed: %s", job.id, exc)
             finally:
+                job._stop_heartbeat.set()
+                heartbeat.join(timeout=2)
                 with self._active_lock:
                     self._active_jobs -= 1
                 self._queue.task_done()
+
+    def _heartbeat_loop(self, job: Job) -> None:
+        while not job._stop_heartbeat.wait(HEARTBEAT_INTERVAL_SECS):
+            with job._lock:
+                if job.status != "running":
+                    return
+                job.heartbeat_at = _utc_now_iso()
 
 
 class WorkerHandler(BaseHTTPRequestHandler):

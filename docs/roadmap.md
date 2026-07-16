@@ -173,14 +173,14 @@
 | 6.4 | MCP server management UI | ✅ `frontend/web/`, `crates/server/` |
 | 6.5 | Agent memory (persistent context) | ✅ `crates/storage/`, `crates/agent-runtime/` |
 | 6.6 | Multi-model routing: task-scoped routes + OpenAI-compatible providers | ✅ `crates/model-gateway/`, `frontend/web/`, `crates/server/` |
-| 6.7 | Python workers (HTTP/queue) | ✅ baseline; ML handlers next | `workers/python/` |
+| 6.7 | Python workers (HTTP/queue) | ✅ reliability + `text.summarize`/`text.chunk` handlers; more ML optional | `workers/python/` |
 | 6.8 | `browser.open`, `browser.extract` | ✅ `crates/tool-runtime/` |
 | 6.9 | Settings: models, permissions, MCP, tools | ✅ `frontend/web/`, `crates/server/` |
 | 6.10 | Тесты: index, MCP, workers | ✅ respective crates / `workers/python/` |
 
 ### Критерий готовности
 
-Агент использует project index для контекста, вызывает MCP-инструменты, работает с несколькими моделями. Python workers принимают структурированные HTTP jobs; следующий шаг — специализированные ML handlers, Rust-owned persistence/retries и production hardening.
+Агент использует project index для контекста, вызывает MCP-инструменты, работает с несколькими моделями. Python workers принимают структурированные HTTP jobs с process/job heartbeat, typed payloads и прикладными хендлерами (`text.summarize`, `text.chunk`); следующий шаг — observability и оркестрация/UI к масштабированию.
 
 ---
 
@@ -218,7 +218,7 @@
 | Приоритет | Улучшение | Что добавить |
 | --- | --- | --- |
 | P2 | Укрепление worker subsystem | Retry/backoff policy, stalled job detection, heartbeat, retention по статусам и typed payload/result schemas |
-| P2 | Специализированные ML handlers | Поверх базовой HTTP queue добавить прикладные обработчики задач, не ломая изоляцию worker execution |
+| P2 | Специализированные ML handlers | ✅ `text.summarize` + `text.chunk` (stdlib); дальнейшие handlers по необходимости |
 
 ### Кандидаты на следующий milestone
 
@@ -226,7 +226,7 @@
 - `6.12` Расширенные checkpoints, approvals recovery и task replay
 - `6.13` Декомпозиция frontend shell (`app.tsx` -> panels/hooks/services)
 - `6.14` GitHub PR workflow: diff, review comments, checks, create PR
-- `6.15` Worker reliability: retries, heartbeat, stalled-job handling
+- `6.15` Worker reliability: retries, heartbeat, stalled-job handling ✅ (process health + per-job heartbeat stall + typed payloads)
 
 ---
 

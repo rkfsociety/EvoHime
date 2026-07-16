@@ -17,7 +17,7 @@ Last updated: 2026-07-16
 | `task-engine` | Active | lifecycle wrappers, dependency batching, checkpoints, cancel/resume/retry foundation |
 | `permissions` | Active | ask/allow/deny policy and one-shot approvals; approval events and resume flow wired |
 | `project-index` | Active | Workspace text search for agent context |
-| Python worker | Active | Bounded HTTP job queue with health, submit/poll lifecycle, and structured task failures |
+| Python worker | Active | Health/stall reliability plus handlers: echo, text.stats, text.keywords, text.summarize, text.chunk |
 
 ## API endpoints
 
@@ -121,4 +121,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: project index, MCP, memory, multi-model routes, browser tools, Python worker integration, background polling, retention, recovery, and bounded retries are in place. Next is adding specialized ML handlers and observability while keeping worker execution isolated.
+**Stage 6 / Milestone 5**: project index, MCP, memory, multi-model routes, browser tools, Python worker integration (reliability + summarize/chunk handlers) are in place. Next is observability and plan-executor / UI scaling work.

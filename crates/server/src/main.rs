@@ -162,12 +162,19 @@ async fn main() -> anyhow::Result<()> {
         session_buses: Arc::new(Mutex::new(HashMap::new())),
         task_cancellations: Arc::new(Mutex::new(HashMap::new())),
         worker: worker::WorkerClient::new(config.worker_url.clone())?,
+        worker_job_stall: config.worker_job_stall,
     });
 
     let retention_state = state.clone();
     let retention_days = config.worker_retention_days;
     tokio::spawn(async move {
         worker_retention_loop(retention_state, retention_days).await;
+    });
+    let health_state = state.clone();
+    let health_interval = config.worker_health_interval;
+    let health_stale = config.worker_health_stale;
+    tokio::spawn(async move {
+        worker_health_loop(health_state, health_interval, health_stale).await;
     });
     recover_worker_jobs(state.clone()).await;
     if let Some(value) = evohime_storage::load_setting(&state.pool, "permissions").await? {
@@ -329,10 +336,8 @@ async fn create_worker_job(
     State(state): State<Arc<AppState>>,
     Json(request): Json<WorkerJobRequest>,
 ) -> Result<(StatusCode, Json<evohime_storage::WorkerJobRow>), ApiError> {
-    if request.task.trim().is_empty() || !request.payload.is_object() {
-        return Err(ApiError::BadRequest(
-            "task must be non-empty and payload must be an object".into(),
-        ));
+    if let Err(error) = worker::validate_task_payload(&request.task, &request.payload) {
+        return Err(ApiError::BadRequest(error));
     }
     let row = evohime_storage::create_worker_job(&state.pool, &request.task, &request.payload)
         .await
@@ -497,6 +502,27 @@ async fn run_worker_job(
                 .map_err(|e| e.to_string())?;
                 return Ok(());
             }
+            if worker_job.status == "running"
+                && worker::heartbeat_is_stale(
+                    worker_job.heartbeat_at.as_deref(),
+                    chrono::Utc::now(),
+                    state.worker_job_stall,
+                )
+            {
+                match retry_worker_job_after_error(
+                    state,
+                    id,
+                    "worker job heartbeat stalled".to_string(),
+                )
+                .await?
+                {
+                    Some(job) => {
+                        worker_job = job;
+                        continue;
+                    }
+                    None => return Ok(()),
+                }
+            }
             tokio::time::sleep(Duration::from_millis(250)).await;
             match state.worker.get(&worker_job.id).await {
                 Ok(job) => worker_job = job,
@@ -513,6 +539,41 @@ async fn run_worker_job(
         {
             Some(job) => worker_job = job,
             None => return Ok(()),
+        }
+    }
+}
+
+async fn worker_health_loop(state: Arc<AppState>, interval: Duration, stale_after: Duration) {
+    let mut ticker = tokio::time::interval(interval);
+    let mut last_started_at: Option<String> = None;
+    let mut last_ok_at = tokio::time::Instant::now();
+    let mut recovery_inflight = false;
+    loop {
+        ticker.tick().await;
+        match state.worker.health().await {
+            Ok(health) => {
+                let restarted = last_started_at
+                    .as_ref()
+                    .is_some_and(|previous| previous != &health.started_at);
+                last_started_at = Some(health.started_at);
+                last_ok_at = tokio::time::Instant::now();
+                recovery_inflight = false;
+                if restarted {
+                    info!("python worker restarted; recovering durable jobs");
+                    recover_worker_jobs(state.clone()).await;
+                }
+            }
+            Err(error) => {
+                warn!(%error, "python worker health check failed");
+                if !recovery_inflight && last_ok_at.elapsed() >= stale_after {
+                    recovery_inflight = true;
+                    warn!(
+                        stale_secs = stale_after.as_secs(),
+                        "python worker unhealthy; recovering durable jobs"
+                    );
+                    recover_worker_jobs(state.clone()).await;
+                }
+            }
         }
     }
 }
