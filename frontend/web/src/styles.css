@@ -133,11 +133,13 @@ input {
 .agentPresenceMover {
   position: absolute;
   left: 0;
-  bottom: 4px;
-  width: 140px;
-  height: 320px;
+  bottom: 0;
+  width: 150px;
+  /* match sprite canvas 280x640 — keep shoes inside the box */
+  height: 343px;
   transform-origin: center bottom;
   will-change: transform;
+  overflow: visible;
 }
 
 .agentPresenceBody {
