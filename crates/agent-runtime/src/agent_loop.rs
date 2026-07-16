@@ -294,7 +294,8 @@ async fn run_agent_loop_inner(
         },
     )?;
 
-    let plan_outputs = execute_plan_steps(&plan, &config, tools, &event_tx).await?;
+    let (plan_outputs, mut mutation_executed) =
+        execute_plan_steps(&plan, &config, tools, &event_tx).await?;
 
     tokio::time::sleep(MODEL_REQUEST_COOLDOWN).await;
 
@@ -366,7 +367,17 @@ async fn run_agent_loop_inner(
     })??;
 
     if let Some(tool_plan) = parse_model_tool_calls(&final_message) {
-        let _ = execute_plan_steps(&tool_plan, &config, tools, &event_tx).await?;
+        let (_, response_mutation_executed) =
+            execute_plan_steps(&tool_plan, &config, tools, &event_tx).await?;
+        mutation_executed |= response_mutation_executed;
+    }
+
+    if requires_mutation(&config.user_message) && !mutation_executed {
+        return Err(AgentError::PlanStepFailed {
+            step_id: "mutation-check".to_string(),
+            tool_name: "agent-runtime".to_string(),
+            message: "задача требовала изменения workspace, но ни одного изменяющего инструмента не выполнено".to_string(),
+        });
     }
 
     if final_message.trim().is_empty() {
@@ -403,13 +414,14 @@ async fn execute_plan_steps(
     config: &AgentConfig,
     tools: &ToolRegistry,
     event_tx: &UnboundedSender<ServerEvent>,
-) -> Result<Vec<String>, AgentError> {
+) -> Result<(Vec<String>, bool), AgentError> {
     let context = ToolContext {
         workspace_root: config.workspace_root.clone(),
         task_id: config.task_id,
     };
     let mut outputs = Vec::new();
     let mut successful_steps = HashMap::new();
+    let mut mutation_executed = false;
     for step in plan {
         let tool_name = match step.tool_name.as_str() {
             "read_file" => "filesystem.read",
@@ -438,6 +450,13 @@ async fn execute_plan_steps(
         let input = match tool_input(tool_name, &step.description, &config.workspace_root) {
             Some(input) => input,
             None => {
+                if is_mutating_tool(tool_name) {
+                    return Err(AgentError::PlanStepFailed {
+                        step_id: step.id.clone(),
+                        tool_name: tool_name.to_string(),
+                        message: "шаг изменения не содержит исполнимых входных данных".to_string(),
+                    });
+                }
                 outputs.push(format!(
                     "{}: шаг пропущен — инструмент не поддержан runtime",
                     step.id
@@ -485,6 +504,7 @@ async fn execute_plan_steps(
                     "{} ({effective_tool_name}):\n{}",
                     step.id, result.output
                 ));
+                mutation_executed |= is_mutating_tool(effective_tool_name);
                 successful_steps.insert(step.id.clone(), true);
             }
             Err(error) => {
@@ -515,7 +535,22 @@ async fn execute_plan_steps(
             }
         }
     }
-    Ok(outputs)
+    Ok((outputs, mutation_executed))
+}
+
+fn requires_mutation(message: &str) -> bool {
+    let message = message.to_lowercase();
+    [
+        "реализ",
+        "исправ",
+        "создай",
+        "добав",
+        "implement",
+        "modify",
+        "write",
+    ]
+    .iter()
+    .any(|marker| message.contains(marker))
 }
 
 fn tool_input(tool_name: &str, description: &str, workspace_root: &Path) -> Option<Value> {
@@ -545,6 +580,18 @@ fn tool_input(tool_name: &str, description: &str, workspace_root: &Path) -> Opti
         "git.pull" | "git.push" => Some(json!({})),
         _ => None,
     }
+}
+
+fn is_mutating_tool(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "filesystem.write"
+            | "filesystem.patch"
+            | "shell.execute"
+            | "git.commit"
+            | "git.pull"
+            | "git.push"
+    )
 }
 
 fn shell_input(description: &str) -> Option<Value> {
@@ -1552,6 +1599,20 @@ mod tests {
     #[test]
     fn keeps_model_requests_apart_for_literouter_rate_limit() {
         assert!(MODEL_REQUEST_COOLDOWN >= Duration::from_secs(5));
+    }
+
+    #[test]
+    fn identifies_mutating_tools() {
+        assert!(is_mutating_tool("filesystem.write"));
+        assert!(is_mutating_tool("shell.execute"));
+        assert!(!is_mutating_tool("filesystem.read"));
+    }
+
+    #[test]
+    fn detects_when_user_requested_a_mutation() {
+        assert!(requires_mutation("Реализуй следующий пункт"));
+        assert!(requires_mutation("Implement the feature"));
+        assert!(!requires_mutation("Прочитай файл и объясни его содержимое"));
     }
 
     #[test]
