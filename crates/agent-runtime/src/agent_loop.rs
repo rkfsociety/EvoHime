@@ -4,7 +4,7 @@ use evohime_project_index::ProjectIndex;
 use evohime_protocol::{PlanStep, ServerEvent};
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use futures_util::StreamExt;
-use serde_json::json;
+use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
@@ -230,6 +230,8 @@ async fn run_agent_loop_inner(
         },
     )?;
 
+    let plan_outputs = execute_plan_steps(&plan, &config, tools, &event_tx).await?;
+
     let mut messages = Vec::with_capacity(history.len() + 4);
     messages.push(ChatMessage {
         role: ChatRole::System,
@@ -255,7 +257,7 @@ async fn run_agent_loop_inner(
             config.user_message,
             format_plan(&plan),
             config.demo_file_path.display(),
-            tool_output
+            format!("{}\n\nPlan tool results:\n{}", tool_output, plan_outputs.join("\n\n"))
         ),
     });
 
@@ -302,7 +304,103 @@ async fn run_agent_loop_inner(
 }
 
 const SYSTEM_PROMPT: &str = "You are EvoHime, a helpful AI coding assistant. Answer concisely using the provided workspace context when relevant.";
-const PLANNING_PROMPT: &str = "You are EvoHime's task planner. Return only JSON: an array of objects with fields id, tool_name, description, and depends_on. Use stable step ids like step-1, step-2, and keep depends_on empty unless a step truly depends on another step. If no tool call is needed, use assistant.reply as the tool_name for the final response step.";
+const PLANNING_PROMPT: &str = "You are EvoHime's task planner. Return only JSON: an array of objects with fields id, tool_name, description, and depends_on. Use only these tool names: filesystem.read, filesystem.list, filesystem.search, git.status, git.diff, assistant.reply. Use stable step ids like step-1, step-2, and keep depends_on empty unless a step truly depends on another step. Put the exact relative file or directory path in backticks in the description. If no tool call is needed, use assistant.reply as the tool_name for the final response step.";
+
+async fn execute_plan_steps(
+    plan: &[PlanStep],
+    config: &AgentConfig,
+    tools: &ToolRegistry,
+    event_tx: &UnboundedSender<ServerEvent>,
+) -> Result<Vec<String>, AgentError> {
+    let context = ToolContext {
+        workspace_root: config.workspace_root.clone(),
+        task_id: config.task_id,
+    };
+    let mut outputs = Vec::new();
+    for step in plan {
+        let tool_name = match step.tool_name.as_str() {
+            "read_file" => "filesystem.read",
+            "list_files" => "filesystem.list",
+            "search" => "filesystem.search",
+            name => name,
+        };
+        if tool_name == "assistant.reply" {
+            continue;
+        }
+        let input = match tool_input(tool_name, &step.description) {
+            Some(input) => input,
+            None => {
+                outputs.push(format!("{}: шаг пропущен — инструмент не поддержан runtime", step.id));
+                continue;
+            }
+        };
+
+        emit(
+            event_tx,
+            ServerEvent::ToolStarted {
+                task_id: config.task_id,
+                tool_name: tool_name.to_string(),
+            },
+        )?;
+        match tools.execute(&context, tool_name, input).await {
+            Ok(result) => {
+                emit(
+                    event_tx,
+                    ServerEvent::ToolOutput {
+                        task_id: config.task_id,
+                        tool_name: tool_name.to_string(),
+                        output: result.output.clone(),
+                    },
+                )?;
+                emit(
+                    event_tx,
+                    ServerEvent::ToolCompleted {
+                        task_id: config.task_id,
+                        tool_name: tool_name.to_string(),
+                        success: true,
+                    },
+                )?;
+                outputs.push(format!("{} ({tool_name}):\n{}", step.id, result.output));
+            }
+            Err(error) => {
+                emit(
+                    event_tx,
+                    ServerEvent::ToolCompleted {
+                        task_id: config.task_id,
+                        tool_name: tool_name.to_string(),
+                        success: false,
+                    },
+                )?;
+                outputs.push(format!("{} ({tool_name}) завершился с ошибкой: {error}", step.id));
+            }
+        }
+    }
+    Ok(outputs)
+}
+
+fn tool_input(tool_name: &str, description: &str) -> Option<Value> {
+    let path = extract_backticked(description).or_else(|| {
+        ["package.json", "README.md", "Cargo.toml", "src/", "lib/", "frontend/web/"]
+            .iter()
+            .find(|candidate| description.contains(**candidate))
+            .map(|candidate| candidate.to_string())
+    });
+    match tool_name {
+        "filesystem.read" => Some(json!({"path": path.unwrap_or_else(|| "docs/sample-context.md".to_string())})),
+        "filesystem.list" => Some(json!({"path": path.unwrap_or_else(|| ".".to_string())})),
+        "filesystem.search" => Some(json!({"query": extract_backticked(description).unwrap_or_else(|| "TODO".to_string()), "limit": 100})),
+        "git.status" => Some(Value::Null),
+        "git.diff" => Some(json!({})),
+        _ => None,
+    }
+}
+
+fn extract_backticked(value: &str) -> Option<String> {
+    let start = value.find('`')? + 1;
+    let end = value[start..].find('`')? + start;
+    let path = value[start..end].trim();
+    (!path.is_empty()).then(|| path.to_string())
+}
 
 #[derive(Debug, serde::Deserialize)]
 struct PlanEnvelope {
