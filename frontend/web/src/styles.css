@@ -1060,6 +1060,8 @@ h1 {
   width: 100%;
   margin: 0 auto;
   padding: 28px clamp(20px, 4vw, 56px);
+  grid-template-columns: minmax(0, min(100%, calc(920px - clamp(40px, 8vw, 112px))));
+  justify-content: center;
   grid-auto-rows: max-content;
 }
 
@@ -1136,7 +1138,7 @@ h1 {
 
 .line,
 .eventItem {
-  width: min(100%, 920px);
+  width: 100%;
   border: 1px solid var(--border-0);
   border-radius: 18px;
   background: var(--surface-3);
@@ -1145,7 +1147,7 @@ h1 {
 
 .line.user {
   width: fit-content;
-  max-width: min(100%, 920px);
+  max-width: 100%;
   justify-self: end;
   margin-left: auto;
   margin-right: 0;
@@ -1310,7 +1312,7 @@ h1 {
 }
 
 .chatTraceSummary {
-  width: min(100%, 920px);
+  width: 100%;
   justify-self: start;
   margin-right: auto;
   border: 1px solid rgba(143, 180, 255, 0.18);
