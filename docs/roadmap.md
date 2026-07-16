@@ -173,14 +173,14 @@
 | 6.4 | MCP server management UI | ✅ `frontend/web/`, `crates/server/` |
 | 6.5 | Agent memory (persistent context) | ✅ `crates/storage/`, `crates/agent-runtime/` |
 | 6.6 | Multi-model routing: task-scoped routes + OpenAI-compatible providers | ✅ `crates/model-gateway/`, `frontend/web/`, `crates/server/` |
-| 6.7 | Python workers (HTTP/queue) | ✅ baseline + deterministic `text.embed`; model-backed handlers next | `workers/python/` |
+| 6.7 | Python workers (HTTP/queue) | ✅ baseline; ML handlers next | `workers/python/` |
 | 6.8 | `browser.open`, `browser.extract` | ✅ `crates/tool-runtime/` |
 | 6.9 | Settings: models, permissions, MCP, tools | ✅ `frontend/web/`, `crates/server/` |
 | 6.10 | Тесты: index, MCP, workers | ✅ respective crates / `workers/python/` |
 
 ### Критерий готовности
 
-Агент использует project index для контекста, вызывает MCP-инструменты, работает с несколькими моделями. Python workers принимают структурированные HTTP jobs и уже имеют детерминированный `text.embed`; следующий шаг — Rust-owned persistence/retries, model-backed handlers и production hardening.
+Агент использует project index для контекста, вызывает MCP-инструменты, работает с несколькими моделями. Python workers принимают структурированные HTTP jobs; следующий шаг — специализированные ML handlers, Rust-owned persistence/retries и production hardening.
 
 ---
 

@@ -3,7 +3,7 @@ import threading
 import unittest
 from http.client import HTTPConnection
 
-from worker import EMBEDDING_DIMENSION, JobService, create_server, health
+from worker import JobService, create_server, health
 
 
 class JobServiceTests(unittest.TestCase):
@@ -30,40 +30,6 @@ class JobServiceTests(unittest.TestCase):
                 threading.Event().wait(0.01)
             self.assertEqual(current.status, "failed")
             self.assertIn("unsupported task", current.error)
-        finally:
-            service.close()
-
-    def test_text_embed_is_deterministic_and_normalized(self):
-        service = JobService()
-        try:
-            job = service.submit("text.embed", {"text": "hello world"})
-            for _ in range(100):
-                if (current := service.get(job.id)).status in {"completed", "failed"}:
-                    break
-                threading.Event().wait(0.01)
-            self.assertEqual(current.status, "completed")
-            self.assertEqual(current.result["dimension"], EMBEDDING_DIMENSION)
-            self.assertAlmostEqual(current.result["norm"], 1.0, places=6)
-
-            repeat = service.submit("text.embed", {"text": "hello world"})
-            for _ in range(100):
-                if (repeat_current := service.get(repeat.id)).status in {"completed", "failed"}:
-                    break
-                threading.Event().wait(0.01)
-            self.assertEqual(repeat_current.result, current.result)
-        finally:
-            service.close()
-
-    def test_text_embed_rejects_empty_input(self):
-        service = JobService()
-        try:
-            job = service.submit("text.embed", {"text": "  "})
-            for _ in range(100):
-                if (current := service.get(job.id)).status == "failed":
-                    break
-                threading.Event().wait(0.01)
-            self.assertEqual(current.status, "failed")
-            self.assertIn("non-empty", current.error)
         finally:
             service.close()
 

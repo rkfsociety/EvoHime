@@ -66,13 +66,13 @@ User message
 - Protocol codegen: JSON Schema → TypeScript
 - Tests: `crates/protocol`, `crates/tool-runtime`
 - Native local stack: PostgreSQL + server + web
-- Stage 6 foundations: project index, MCP management/call, persistent session memory, multi-model routes, browser tools, and a bounded Python worker HTTP/queue with deterministic `text.embed`
+- Stage 6 foundations: project index, MCP management/call, persistent session memory, multi-model routes, browser tools, and a bounded Python worker HTTP/queue baseline
 - CI: Rust format, Clippy, docs, and stable/beta/nightly tests run through GitHub Actions; the workflow installs `ripgrep` for search-tool tests
 
 ### Incomplete or not yet implemented
 
 - General LLM tool-calling orchestration across all registered tools
-- Production model-backed ML handlers for Python workers (the current `text.embed` is deterministic and dependency-free)
+- Production ML handlers for Python workers
 - Rust-owned worker job persistence, retry policy, and deeper observability
 
 ## WebSocket events

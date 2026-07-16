@@ -29,23 +29,28 @@ pub fn parse_plan(raw: &str) -> Vec<PlanStep> {
     while index < source_lines.len() {
         let line = source_lines[index];
         let is_write_step = line.contains("filesystem.write") || line.contains("filesystem.patch");
-        if is_write_step
-            && source_lines
-                .get(index + 1)
-                .is_some_and(|next| next.trim_start().starts_with("```"))
-        {
-            let mut combined = format!("{}\n{}", line, source_lines[index + 1]);
-            index += 2;
-            while index < source_lines.len() {
+        if is_write_step {
+            let mut combined = line.to_string();
+            let mut cursor = index + 1;
+            let mut saw_code_fence = false;
+            while cursor < source_lines.len() {
+                let next = source_lines[cursor];
                 combined.push('\n');
-                combined.push_str(source_lines[index]);
-                let closed = source_lines[index].trim_start().starts_with("```");
-                index += 1;
-                if closed {
+                combined.push_str(next);
+                if next.trim_start().starts_with("```") {
+                    if saw_code_fence {
+                        cursor += 1;
+                        break;
+                    }
+                    saw_code_fence = true;
+                }
+                cursor += 1;
+                if cursor > index + 12 && !saw_code_fence {
                     break;
                 }
             }
             logical_lines.push(combined);
+            index = cursor;
         } else {
             logical_lines.push(line.to_string());
             index += 1;
@@ -719,7 +724,7 @@ fn normalize_plan(mut plan: Vec<PlanStep>) -> Vec<PlanStep> {
 }
 
 fn parse_plan_line(index: usize, line: &str) -> Option<PlanStep> {
-    let mut text = line.trim();
+    let mut text = line.trim().trim_matches('*').trim();
     if text.is_empty() {
         return None;
     }
@@ -790,6 +795,32 @@ fn split_dependencies(text: &str) -> (&str, Vec<String>) {
 }
 
 fn extract_tool_and_description(text: &str, index: usize) -> (String, String) {
+    for tool_name in [
+        "filesystem.read",
+        "filesystem.list",
+        "filesystem.search",
+        "filesystem.write",
+        "filesystem.patch",
+        "git.status",
+        "git.diff",
+        "git.commit",
+        "git.pull",
+        "git.push",
+        "assistant.reply",
+    ] {
+        if let Some(position) = text.find(tool_name) {
+            let prefix = text[..position].trim();
+            if prefix.starts_with("step-") || prefix.starts_with("**step-") {
+                return (
+                    tool_name.to_string(),
+                    text[position + tool_name.len()..]
+                        .trim_start_matches(['*', ':', '-', ' ', '\n'])
+                        .to_string(),
+                );
+            }
+        }
+    }
+
     for separator in ["|", ":", " - ", " => "] {
         if let Some((left, right)) = text.split_once(separator) {
             let left = left.trim();
@@ -979,6 +1010,18 @@ mod tests {
             plan[0].description,
             "Update `docs/test.md`:\n```markdown\nhello\n```"
         );
+    }
+
+    #[test]
+    fn parses_markdown_write_step_with_declared_path() {
+        let plan = parse_plan(
+            "**step-1: filesystem.write**\npath: workers/python/handler.py\n```python\nprint('ok')\n```",
+        );
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].tool_name, "filesystem.write");
+        assert!(plan[0]
+            .description
+            .contains("path: workers/python/handler.py"));
     }
 
     #[tokio::test]

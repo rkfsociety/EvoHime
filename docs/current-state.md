@@ -17,7 +17,7 @@ Last updated: 2026-07-16
 | `task-engine` | Active | lifecycle wrappers, dependency batching, checkpoints, cancel/resume/retry foundation |
 | `permissions` | Active | ask/allow/deny policy and one-shot approvals; approval events and resume flow wired |
 | `project-index` | Active | Workspace text search for agent context |
-| Python worker | Active | Bounded HTTP job queue with health, submit/poll lifecycle, structured failures, and deterministic `text.embed` |
+| Python worker | Active | Bounded HTTP job queue with health, submit/poll lifecycle, and structured task failures |
 
 ## API endpoints
 
@@ -117,4 +117,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: the foundations and first dependency-free ML handler are complete: project text index, MCP management/calls, persistent session memory, task-scoped multi-model routes, browser tools, and the bounded Python worker HTTP/queue with deterministic `text.embed`. Next is moving worker job persistence/retries behind the Rust server and replacing the deterministic handler with a model-backed implementation when a provider is configured.
+**Stage 6 / Milestone 5**: the foundations are complete: project text index, MCP management/calls, persistent session memory, task-scoped multi-model routes, browser tools, and the bounded Python worker HTTP/queue baseline. Next is adding real ML task handlers and moving worker job persistence/retries behind the Rust server while keeping worker execution isolated.

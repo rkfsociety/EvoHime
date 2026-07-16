@@ -288,7 +288,7 @@ Task lifecycle реализован: start/complete/fail/cancel/resume/retry. St
 - MCP-интеграции (`mcp.call`) уже есть на уровне tool-runtime и UI управления серверами
 - Память агента
 - Multi-model routing с task-scoped `model_route` и OpenAI-compatible маршрутами — после LiteRouter
-- HTTP/queue Python worker для изолированных задач; детерминированный `text.embed` уже добавлен как dependency-free ML foundation, model-backed handlers — следующий подэтап
+- HTTP/queue Python worker для изолированных задач; специализированные ML handlers — следующий подэтап
 - Rust server должен владеть persistence/retry policy worker jobs, сохраняя выполнение изолированным в Python worker
 - `browser.open`, `browser.extract`
 - UI управления MCP и инструментами
