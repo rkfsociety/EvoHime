@@ -9,6 +9,13 @@ type WalkMode = "idle" | "walk";
 const BODY_WIDTH = 150;
 const EDGE_PAD = 8;
 const WALK_FRAMES = 26;
+/** Bump when replacing /brand walk sprites so browsers don't keep stale webp. */
+const ASSET_REV = "walk26-ltr-2";
+
+function brandUrl(path: string) {
+  return `${path}?v=${ASSET_REV}`;
+}
+
 
 function randomBetween(min: number, max: number) {
   return min + Math.random() * (max - min);
@@ -48,7 +55,7 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
   useEffect(() => {
     for (let i = 0; i < WALK_FRAMES; i += 1) {
       const img = new Image();
-      img.src = `/brand/agent-walk-${i}.webp`;
+      img.src = brandUrl(`/brand/agent-walk-${i}.webp`);
     }
   }, []);
 
@@ -162,7 +169,10 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
     return () => window.clearInterval(id);
   }, [mode, busy]);
 
-  const src = mode === "walk" ? `/brand/agent-walk-${frame}.webp` : "/brand/agent-presence.webp";
+  const src =
+    mode === "walk"
+      ? brandUrl(`/brand/agent-walk-${frame}.webp`)
+      : brandUrl("/brand/agent-presence.webp");
 
   // Sprites face LEFT. facing: 1 = move right, -1 = move left.
   const scaleX = facing >= 0 ? -1 : 1;
