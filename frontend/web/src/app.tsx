@@ -88,6 +88,15 @@ type ProjectComposerPreference = {
 
 const selectedProjectStorageKey = "evohime.selectedProject";
 const projectComposerPreferencesStorageKey = "evohime.projectComposerPreferences";
+const traceOpenStorageKey = "evohime.traceOpen";
+
+function loadTraceOpen() {
+  try {
+    return localStorage.getItem(traceOpenStorageKey) === "true";
+  } catch {
+    return false;
+  }
+}
 
 function projectPreferenceKey(path: string | null) {
   return path ?? "__no_project__";
@@ -469,7 +478,7 @@ export function App() {
   const [chatActionNotice, setChatActionNotice] = useState<string | null>(null);
   const [composerNotice, setComposerNotice] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<WorkspacePanel>("chat");
-  const [traceOpen, setTraceOpen] = useState(false);
+  const [traceOpen, setTraceOpen] = useState(loadTraceOpen);
   const [selectedProject, setSelectedProject] = useState<ProjectSelection>(loadSelectedProject);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -710,6 +719,10 @@ export function App() {
   useEffect(() => {
     localStorage.setItem(selectedProjectStorageKey, JSON.stringify(selectedProject));
   }, [selectedProject]);
+
+  useEffect(() => {
+    localStorage.setItem(traceOpenStorageKey, String(traceOpen));
+  }, [traceOpen]);
 
   useEffect(() => {
     const closeFloatingMenus = (event: PointerEvent) => {
