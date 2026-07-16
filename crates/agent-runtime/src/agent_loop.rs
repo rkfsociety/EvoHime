@@ -532,13 +532,23 @@ fn tool_input(tool_name: &str, description: &str, workspace_root: &Path) -> Opti
             "path": path?,
             "patch": extract_code_block(description).unwrap_or_default(),
         })),
-        "shell.execute" => serde_json::from_str(description).ok(),
+        "shell.execute" => shell_input(description),
         "git.status" => Some(Value::Null),
         "git.diff" => Some(json!({})),
         "git.commit" => Some(json!({"message": extract_commit_message(description)})),
         "git.pull" | "git.push" => Some(json!({})),
         _ => None,
     }
+}
+
+fn shell_input(description: &str) -> Option<Value> {
+    let mut input = serde_json::from_str::<Value>(description)?;
+    let object = input.as_object_mut()?;
+    if !object.contains_key("program") {
+        let command = object.remove("command")?;
+        object.insert("program".to_string(), command);
+    }
+    Some(input)
 }
 
 fn extract_commit_message(description: &str) -> String {
@@ -1296,6 +1306,18 @@ mod tests {
         assert_eq!(input["program"], "python");
         assert_eq!(input["args"][0], "-c");
         assert_eq!(input["cwd"], "workers/python");
+    }
+
+    #[test]
+    fn normalizes_shell_command_alias_to_program() {
+        let input = tool_input(
+            "shell.execute",
+            r#"{"command":"python","args":["--version"]}"#,
+            Path::new("C:/workspace"),
+        )
+        .expect("shell input");
+        assert_eq!(input["program"], "python");
+        assert_eq!(input["args"][0], "--version");
     }
 
     #[test]
