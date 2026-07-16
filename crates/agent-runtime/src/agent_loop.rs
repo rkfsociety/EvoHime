@@ -622,7 +622,9 @@ fn parse_markup_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {
 }
 
 fn parse_model_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {
-    parse_markup_tool_calls(raw).or_else(|| parse_json_tool_calls(raw))
+    parse_markup_tool_calls(raw)
+        .or_else(|| parse_json_tool_calls(raw))
+        .or_else(|| parse_tagged_tool_calls(raw))
 }
 
 fn parse_json_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {
@@ -685,6 +687,67 @@ fn parse_json_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {
     }
 
     (!steps.is_empty()).then(|| normalize_plan(steps))
+}
+
+fn parse_tagged_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {
+    let mut steps = Vec::new();
+    let mut cursor = 0;
+    const OPEN: &str = "<tool_call>";
+    const CLOSE: &str = "</tool_call>";
+
+    while let Some(relative_start) = raw[cursor..].find(OPEN) {
+        let body_start = cursor + relative_start + OPEN.len();
+        let body_end = raw[body_start..].find(CLOSE)? + body_start;
+        let value = serde_json::from_str::<Value>(raw[body_start..body_end].trim()).ok()?;
+        let object = value.as_object()?;
+        let tool_name = object
+            .get("tool")
+            .and_then(Value::as_str)
+            .or_else(|| object.get("type").and_then(Value::as_str))?;
+        let input = object
+            .get("input")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_else(|| {
+                object
+                    .iter()
+                    .filter(|(key, _)| key.as_str() != "type" && key.as_str() != "tool")
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect()
+            });
+        let description = tool_call_description(tool_name, &input);
+        steps.push(PlanStep {
+            id: format!("step-{}", steps.len() + 1),
+            tool_name: tool_name.to_string(),
+            description,
+            depends_on: Vec::new(),
+        });
+        cursor = body_end + CLOSE.len();
+    }
+
+    (!steps.is_empty()).then(|| normalize_plan(steps))
+}
+
+fn tool_call_description(tool_name: &str, input: &serde_json::Map<String, Value>) -> String {
+    match tool_name {
+        "filesystem.write" => format!(
+            "path: {}\n```\n{}\n```",
+            input.get("path").and_then(Value::as_str).unwrap_or_default(),
+            input
+                .get("content")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+        ),
+        "filesystem.patch" => format!(
+            "path: {}\n```\n{}\n```",
+            input.get("path").and_then(Value::as_str).unwrap_or_default(),
+            input
+                .get("patch")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+        ),
+        _ => serde_json::to_string(input).unwrap_or_default(),
+    }
 }
 
 fn extract_json_blocks(raw: &str) -> Vec<String> {
@@ -1269,6 +1332,19 @@ mod tests {
             .description
             .contains("path: docs/agent-dogfood-check.md"));
         assert!(plan[0].description.contains("agent write verified"));
+    }
+
+    #[test]
+    fn parses_tagged_tool_call_from_model_output() {
+        let plan = parse_plan(
+            r#"<tool_call>
+{"type":"filesystem.write","path":"docs/tagged.md","content":"tagged"}
+</tool_call>"#,
+        );
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].tool_name, "filesystem.write");
+        assert!(plan[0].description.contains("path: docs/tagged.md"));
+        assert!(plan[0].description.contains("tagged"));
     }
 
     #[tokio::test]
