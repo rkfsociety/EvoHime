@@ -64,7 +64,7 @@ pub fn parse_plan(raw: &str) -> Vec<PlanStep> {
         .collect();
 
     if parsed.is_empty() {
-        default_plan()
+        parse_markup_tool_calls(&normalized).unwrap_or_else(default_plan)
     } else {
         normalize_plan(parsed)
     }
@@ -563,6 +563,42 @@ fn extract_declared_path(value: &str) -> Option<String> {
     })
 }
 
+fn parse_markup_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {
+    let mut steps = Vec::new();
+    let mut cursor = 0;
+    while let Some(relative_start) = raw[cursor..].find("<invoke name=\"") {
+        let start = cursor + relative_start + "<invoke name=\"".len();
+        let name_end = raw[start..].find('\"')? + start;
+        let tool_name = &raw[start..name_end];
+        let body_start = raw[name_end..].find('>')? + name_end + 1;
+        let body_end = raw[body_start..].find("</invoke>")? + body_start;
+        let body = &raw[body_start..body_end];
+        let path = markup_parameter(body, "path");
+        let content = markup_parameter(body, "content").or_else(|| markup_parameter(body, "patch"));
+        let description = match (path, content) {
+            (Some(path), Some(content)) => format!("path: {path}\n```\n{content}\n```"),
+            (Some(path), None) => format!("path: {path}"),
+            (None, _) => body.trim().to_string(),
+        };
+        steps.push(PlanStep {
+            id: format!("step-{}", steps.len() + 1),
+            tool_name: tool_name.to_string(),
+            description,
+            depends_on: Vec::new(),
+        });
+        cursor = body_end + "</invoke>".len();
+    }
+    (!steps.is_empty()).then(|| normalize_plan(steps))
+}
+
+fn markup_parameter(body: &str, name: &str) -> Option<String> {
+    let marker = format!("<parameter name=\"{name}\">");
+    let start = body.find(&marker)? + marker.len();
+    let end = body[start..].find("</parameter>")? + start;
+    let value = body[start..end].trim();
+    (!value.is_empty()).then(|| value.to_string())
+}
+
 fn extract_code_block(value: &str) -> Option<String> {
     let start = value.find("```")?;
     let body_start = value[start..].find('\n').map(|offset| start + offset + 1)?;
@@ -1022,6 +1058,17 @@ mod tests {
         assert!(plan[0]
             .description
             .contains("path: workers/python/handler.py"));
+    }
+
+    #[test]
+    fn parses_markup_tool_calls_from_model_output() {
+        let plan = parse_plan(
+            r#"<function_calls><invoke name="filesystem.write"><parameter name="path">workers/python/handler.py</parameter><parameter name="content">print('ok')</parameter></invoke></function_calls>"#,
+        );
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].tool_name, "filesystem.write");
+        assert!(plan[0].description.contains("workers/python/handler.py"));
+        assert!(plan[0].description.contains("print('ok')"));
     }
 
     #[tokio::test]
