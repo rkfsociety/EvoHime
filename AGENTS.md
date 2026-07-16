@@ -120,7 +120,7 @@ Each tool must have: unique name, description, JSON Schema input, required permi
 8. **Error handling** — server must not crash on bad input
 9. **Resource limits** — timeouts on tools
 10. **Security** — sandbox filesystem and shell operations
-11. **Commit after completion** — after finishing any coding task, completed change, or other finished work, make a git commit before handing off.
+11. **Commit continuously** — after finishing any coding task, completed change, or other finished work, make a git commit immediately without waiting to be asked. **Push only on explicit user request** — never push unless the user asks.
 12. **Keep CI current** — when changing Rust workspace members, dependencies, lint rules, or test expectations, update `.github/workflows/rust.yml` in the same change and keep the workflow aligned with the codebase.
 13. **Fix missing tools first** — if a required tool or command is not available in `PATH`, install or configure it before claiming a backend/frontend check passed.
 
