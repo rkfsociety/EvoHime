@@ -454,6 +454,7 @@ export function App() {
   const [input, setInput] = useState("");
   const [lines, setLines] = useState<ChatLine[]>(initialLines);
   const [stream, setStream] = useState("");
+  const [chatActionNotice, setChatActionNotice] = useState<string | null>(null);
   const [composerNotice, setComposerNotice] = useState<string | null>(null);
   const [activePanel, setActivePanel] = useState<WorkspacePanel>("chat");
   const [traceOpen, setTraceOpen] = useState(false);
@@ -1636,6 +1637,42 @@ export function App() {
     if (attachmentInputRef.current) {
       attachmentInputRef.current.value = "";
     }
+  }
+
+  async function copyChat() {
+    const content = [
+      ...lines,
+      ...(stream ? [{ role: "assistant" as const, text: stream }] : []),
+    ]
+      .map((line) => `${translateChatRole(line.role)}:\n${line.text}`)
+      .join("\n\n");
+    try {
+      await navigator.clipboard.writeText(content || "Чат пока пуст.");
+      setChatActionNotice("Чат скопирован");
+    } catch {
+      setChatActionNotice("Не удалось скопировать чат");
+    }
+  }
+
+  function exportTrace() {
+    const entries = lines
+      .filter((line) => line.role === "system" || line.role === "tool")
+      .map((line) => ({ role: line.role, text: line.text }));
+    const payload = {
+      format: "evohime.trace.v1",
+      exported_at: new Date().toISOString(),
+      session_id: session?.session_id ?? null,
+      task_id: activeTaskId,
+      entries,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `evohime-trace-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setChatActionNotice("Трейс экспортирован");
   }
 
   function sendTaskCommand(type: "task.cancel" | "task.resume" | "task.retry", taskId: string) {
@@ -2891,7 +2928,14 @@ export function App() {
           {activePanel !== "pull-requests" && activePanel !== "plugins" && activePanel !== "sites" ? (
             <header>
               <h2>{activePanel === "chat" ? activeChatTitle : currentPanelLabel}</h2>
-              <span>Веб-сокет</span>
+              <div className="panelHeaderActions">
+                {activePanel === "chat" ? (
+                  <button type="button" className="panelHeaderButton" onClick={() => void copyChat()}>
+                    Копировать чат
+                  </button>
+                ) : null}
+                <span>Веб-сокет</span>
+              </div>
             </header>
           ) : null}
           {renderPanelContent()}
@@ -2904,9 +2948,14 @@ export function App() {
                 <strong>Трейс задачи</strong>
                 <span>{activeTaskId ? "Текущая задача" : "События чата"}</span>
               </div>
-              <button type="button" className="traceClose" onClick={() => setTraceOpen(false)} aria-label="Закрыть трейс">
-                ×
-              </button>
+              <div className="traceHeaderActions">
+                <button type="button" className="panelHeaderButton" onClick={exportTrace}>
+                  Экспорт
+                </button>
+                <button type="button" className="traceClose" onClick={() => setTraceOpen(false)} aria-label="Закрыть трейс">
+                  ×
+                </button>
+              </div>
             </header>
             <div className="traceList">
               {lines.filter((line) => line.role === "system" || line.role === "tool").length > 0 ? (
@@ -2922,6 +2971,7 @@ export function App() {
             </div>
           </aside>
         ) : null}
+        {chatActionNotice ? <div className="chatActionNotice" role="status">{chatActionNotice}</div> : null}
 
       </section>
       {settingsOpen ? (

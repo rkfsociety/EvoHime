@@ -928,6 +928,43 @@ h1 {
   font-size: 13px;
 }
 
+.panelHeaderActions,
+.traceHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.panelHeaderButton {
+  padding: 7px 10px;
+  border: 1px solid var(--border-0);
+  border-radius: 9px;
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.panelHeaderButton:hover {
+  border-color: rgba(143, 180, 255, 0.4);
+  color: var(--text-0);
+  background: rgba(91, 134, 255, 0.14);
+}
+
+.chatActionNotice {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 5;
+  padding: 10px 14px;
+  border: 1px solid var(--border-0);
+  border-radius: 10px;
+  color: var(--text-0);
+  background: var(--surface-1);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24);
+  font-size: 12px;
+}
+
 .chatLog,
 .eventList {
   padding: 20px;
