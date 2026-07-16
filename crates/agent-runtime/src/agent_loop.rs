@@ -342,6 +342,18 @@ async fn run_agent_loop_inner(
         )?;
     }
 
+    if let Some(markup_plan) = parse_markup_tool_calls(&final_message) {
+        let contains_mutation = markup_plan.iter().any(|step| {
+            matches!(
+                step.tool_name.as_str(),
+                "filesystem.write" | "filesystem.patch" | "git.commit" | "git.pull" | "git.push"
+            )
+        });
+        if contains_mutation {
+            let _ = execute_plan_steps(&markup_plan, &config, tools, &event_tx).await?;
+        }
+    }
+
     if final_message.trim().is_empty() {
         final_message = "No response from the model.".to_string();
         emit(
