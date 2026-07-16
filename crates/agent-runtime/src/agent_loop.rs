@@ -23,8 +23,37 @@ pub fn parse_plan(raw: &str) -> Vec<PlanStep> {
         return normalize_plan(plan);
     }
 
-    let parsed: Vec<PlanStep> = normalized
-        .lines()
+    let source_lines = normalized.lines().collect::<Vec<_>>();
+    let mut logical_lines = Vec::new();
+    let mut index = 0;
+    while index < source_lines.len() {
+        let line = source_lines[index];
+        let is_write_step = line.contains("filesystem.write") || line.contains("filesystem.patch");
+        if is_write_step
+            && source_lines
+                .get(index + 1)
+                .is_some_and(|next| next.trim_start().starts_with("```"))
+        {
+            let mut combined = format!("{}\n{}", line, source_lines[index + 1]);
+            index += 2;
+            while index < source_lines.len() {
+                combined.push('\n');
+                combined.push_str(source_lines[index]);
+                let closed = source_lines[index].trim_start().starts_with("```");
+                index += 1;
+                if closed {
+                    break;
+                }
+            }
+            logical_lines.push(combined);
+        } else {
+            logical_lines.push(line.to_string());
+            index += 1;
+        }
+    }
+
+    let parsed: Vec<PlanStep> = logical_lines
+        .iter()
         .enumerate()
         .filter_map(|(index, line)| parse_plan_line(index, line))
         .collect();
@@ -749,13 +778,27 @@ fn extract_tool_and_description(text: &str, index: usize) -> (String, String) {
     }
 
     let lower = text.to_lowercase();
-    if lower.starts_with("filesystem.read") {
-        return (
-            "filesystem.read".to_string(),
-            text["filesystem.read".len()..]
-                .trim_start_matches([':', '-', ' '])
-                .to_string(),
-        );
+    for tool_name in [
+        "filesystem.read",
+        "filesystem.list",
+        "filesystem.search",
+        "filesystem.write",
+        "filesystem.patch",
+        "git.status",
+        "git.diff",
+        "git.commit",
+        "git.pull",
+        "git.push",
+        "assistant.reply",
+    ] {
+        if lower.starts_with(tool_name) {
+            return (
+                tool_name.to_string(),
+                text[tool_name.len()..]
+                    .trim_start_matches([':', '-', ' '])
+                    .to_string(),
+            );
+        }
     }
 
     ("assistant.reply".to_string(), text.to_string())
@@ -820,6 +863,16 @@ mod tests {
         .expect("write input");
         assert_eq!(input["path"], "docs/test.md");
         assert_eq!(input["content"], "hello\n");
+    }
+
+    #[test]
+    fn parses_filesystem_write_plan_line() {
+        let plan = parse_plan("filesystem.write: Update `docs/test.md`:\n```markdown\nhello\n```");
+        assert_eq!(plan[0].tool_name, "filesystem.write");
+        assert_eq!(
+            plan[0].description,
+            "Update `docs/test.md`:\n```markdown\nhello\n```"
+        );
     }
 
     #[tokio::test]
