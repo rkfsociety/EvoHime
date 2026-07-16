@@ -46,13 +46,13 @@ enum ApiError {
     Internal(String),
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct ModelSettingsRequest {
     default_route: String,
     routes: Vec<ModelRouteRequest>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct ModelRouteRequest {
     name: String,
     provider: String,
@@ -158,6 +158,24 @@ async fn main() -> anyhow::Result<()> {
         session_buses: Arc::new(Mutex::new(HashMap::new())),
         task_cancellations: Arc::new(Mutex::new(HashMap::new())),
     });
+
+    if let Some(value) = evohime_storage::load_setting(&state.pool, "permissions").await? {
+        if let Some(settings) = value.as_object() {
+            for (name, mode) in settings {
+                if let (Some(permission), Ok(mode)) = (
+                    parse_permission_name(name),
+                    serde_json::from_value::<PermissionMode>(mode.clone()),
+                ) {
+                    state.permissions.set_mode(permission, mode).await;
+                }
+            }
+        }
+    }
+    if let Some(value) = evohime_storage::load_setting(&state.pool, "mcp_servers").await? {
+        if let Ok(servers) = serde_json::from_value::<Vec<McpServerConfig>>(value) {
+            *state.mcp_servers.lock().await = servers;
+        }
+    }
 
     let recovered = evohime_task_engine::recover_after_restart(&state.pool)
         .await
@@ -378,8 +396,7 @@ async fn update_model_config(
     Json(request): Json<ModelSettingsRequest>,
 ) -> Result<Json<evohime_model_gateway::ModelConfigResponse>, ApiError> {
     let current = state.model_config.read().await;
-    let request_value = serde_json::to_value(&request).map_err(|error| ApiError::Internal(error.to_string()))?;
-    let config = build_model_config(request, &current)?;
+    let config = build_model_config(request.clone(), &current)?;
     drop(current);
     let gateway = if config.routes.values().all(ModelRouteConfig::configured) {
         Some(Arc::new(
@@ -389,7 +406,24 @@ async fn update_model_config(
     } else {
         None
     };
-    evohime_storage::save_setting(&state.pool, "model_config", &request_value)
+    let mut persisted_request = request;
+    for route in &mut persisted_request.routes {
+        if route
+            .api_key
+            .as_deref()
+            .map(str::trim)
+            .is_none_or(str::is_empty)
+        {
+            route.api_key = config
+                .routes
+                .get(&route.name)
+                .map(|item| item.literouter.api_key.clone())
+                .filter(|key| !key.trim().is_empty());
+        }
+    }
+    let persisted_value = serde_json::to_value(persisted_request)
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    evohime_storage::save_setting(&state.pool, "model_config", &persisted_value)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
     *state.model_config.write().await = config;
@@ -564,6 +598,10 @@ async fn update_mcp_servers(
         .into_iter()
         .map(validate_mcp_server)
         .collect::<Result<Vec<_>, _>>()?;
+    let value = serde_json::to_value(&servers).map_err(|error| ApiError::Internal(error.to_string()))?;
+    evohime_storage::save_setting(&state.pool, "mcp_servers", &value)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
     *state.mcp_servers.lock().await = servers.clone();
     Ok(Json(servers))
 }
@@ -590,6 +628,10 @@ async fn update_permission(
     )
     .map_err(|e| ApiError::BadRequest(e.to_string()))?;
     state.permissions.set_mode(permission, mode).await;
+    let settings = permission_settings_value(&state).await;
+    evohime_storage::save_setting(&state.pool, "permissions", &settings)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
     Ok(Json(
         json!({"permission": permission_name(permission), "mode": mode}),
     ))
@@ -605,6 +647,38 @@ fn permission_name(permission: Permission) -> &'static str {
         Permission::BrowserAccess => "browser_access",
         Permission::McpCall => "mcp_call",
     }
+}
+
+fn parse_permission_name(name: &str) -> Option<Permission> {
+    match name {
+        "filesystem_read" => Some(Permission::FilesystemRead),
+        "filesystem_write" => Some(Permission::FilesystemWrite),
+        "shell_execute" => Some(Permission::ShellExecute),
+        "git_read" => Some(Permission::GitRead),
+        "git_write" => Some(Permission::GitWrite),
+        "browser_access" => Some(Permission::BrowserAccess),
+        "mcp_call" => Some(Permission::McpCall),
+        _ => None,
+    }
+}
+
+async fn permission_settings_value(state: &AppState) -> Value {
+    let mut settings = serde_json::Map::new();
+    for permission in [
+        Permission::FilesystemRead,
+        Permission::FilesystemWrite,
+        Permission::ShellExecute,
+        Permission::GitRead,
+        Permission::GitWrite,
+        Permission::BrowserAccess,
+        Permission::McpCall,
+    ] {
+        settings.insert(
+            permission_name(permission).to_string(),
+            json!(state.permissions.mode(permission).await),
+        );
+    }
+    Value::Object(settings)
 }
 
 fn duration_to_ms(duration: Duration) -> u64 {
