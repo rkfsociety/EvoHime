@@ -1,3 +1,5 @@
+import { AgentMark } from "../components/AgentMark";
+
 const scheduledRecommendations = [
   {
     icon: "♧",
@@ -31,7 +33,10 @@ export function ScheduledPanel({ onPickPrompt }: ScheduledPanelProps) {
     <div className="scheduledPage">
       <section className="scheduledHero">
         <h2>Запланированные задачи</h2>
-        <p>Попросите EvoHime планировать задачи, ставить напоминания или отслеживать обновления</p>
+        <p className="scheduledHeroBrand">
+          <AgentMark size="sm" />
+          <span>Попросите EvoHime планировать задачи, ставить напоминания или отслеживать обновления</span>
+        </p>
       </section>
       <section className="scheduledRecommendations">
         <h3>Рекомендации</h3>

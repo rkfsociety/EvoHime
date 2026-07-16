@@ -9,6 +9,9 @@ import type {
 import type { ApprovalRequiredEvent } from "./protocol";
 import { TerminalPanel, TerminalEntry } from "./components/TerminalPanel";
 import { ApprovalModal } from "./components/ApprovalModal";
+import { AgentAvatar } from "./components/AgentAvatar";
+import { AgentBrand } from "./components/AgentBrand";
+import { AgentMark } from "./components/AgentMark";
 import { ActionsPanel } from "./panels/ActionsPanel";
 import { EditorPanel } from "./panels/EditorPanel";
 import { FilesPanel } from "./panels/FilesPanel";
@@ -1406,7 +1409,7 @@ export function App() {
                     setProjectSearch("");
                   }}
                 >
-                  <span>⌂</span>
+                  <AgentMark size="sm" />
                   <span><strong>EvoHime</strong><small>Текущий workspace</small></span>
                 </button>
                 {projectFolders.map((folder) => (
@@ -1593,9 +1596,7 @@ export function App() {
   return (
     <main className="shell">
       <header className="topBar">
-        <div className="agentBrand">
-          <h1>EvoHime</h1>
-        </div>
+        <AgentBrand />
         <button
           type="button"
           className={traceOpen ? "traceToggle active" : "traceToggle"}
@@ -1808,7 +1809,7 @@ export function App() {
             <header className="settingsModalHeader">
               <div>
                 <span className="sidebarFooterLabel">Настройки</span>
-                <h2>Параметры EvoHime</h2>
+                <AgentBrand title="Параметры EvoHime" as="h2" markSize="sm" />
               </div>
               <button type="button" className="settingsCloseButton" onClick={() => setSettingsOpen(false)}>
                 Закрыть
