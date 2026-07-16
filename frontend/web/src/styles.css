@@ -194,7 +194,7 @@ h1 {
   border-bottom: 1px solid var(--border-0);
 }
 
-.traceHeader div {
+.traceHeader > div:first-child {
   display: grid;
   gap: 4px;
 }
@@ -206,6 +206,11 @@ h1 {
 }
 
 .traceClose {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
   border: 0;
   color: var(--text-2);
   background: transparent;
