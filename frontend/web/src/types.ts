@@ -123,6 +123,8 @@ export type SaveResponse = {
   change: "created" | "updated";
 };
 
+export type SaveState = "idle" | "saving" | "saved";
+
 export type GitSnapshot = {
   status: string;
   diff: string;

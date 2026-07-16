@@ -14,9 +14,9 @@ export function readFile(path: string) {
   );
 }
 
-export function saveFile(path: string, content: string) {
+export function saveFile(path: string, content: string, sessionId: string) {
   return apiRequest<SaveResponse>(
-    `/api/files/content?path=${encodeURIComponent(path)}`,
+    `/api/files/content?path=${encodeURIComponent(path)}&session_id=${encodeURIComponent(sessionId)}`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -26,13 +26,13 @@ export function saveFile(path: string, content: string) {
   );
 }
 
-export function createFile(path: string, content: string) {
+export function createFile(path: string, content: string, sessionId: string) {
   return apiRequest<SaveResponse>(
-    "/api/files/content",
+    `/api/files/content?path=${encodeURIComponent(path)}&session_id=${encodeURIComponent(sessionId)}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path, content }),
+      body: JSON.stringify({ content }),
     },
     "Не удалось создать файл",
   );

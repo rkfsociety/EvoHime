@@ -121,4 +121,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: foundations through checkpoints are in place; frontend shell split started (`types`/`api`/`lib`/`panels`). Next: finish remaining panels/hooks, observability.
+**Stage 6 / Milestone 5**: foundations through checkpoints are in place; frontend shell split advanced (typed API + most panels). Next: Settings panel/hooks, observability.

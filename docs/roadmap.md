@@ -224,7 +224,7 @@
 
 - `6.11` План-исполнитель с реальным графом шагов и повторным планированием ✅ (batches + bounded replan)
 - `6.12` Расширенные checkpoints, approvals recovery и task replay ✅
-- `6.13` Декомпозиция frontend shell (`app.tsx` -> panels/hooks/services) 🟡 (types/api/lib + first panels)
+- `6.13` Декомпозиция frontend shell (`app.tsx` -> panels/hooks/services) 🟡 (api wired; panels almost done; settings/hook left)
 - `6.14` GitHub PR workflow: diff, review comments, checks, create PR
 - `6.15` Worker reliability: retries, heartbeat, stalled-job handling ✅ (process health + per-job heartbeat stall + typed payloads)
 

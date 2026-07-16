@@ -1,4 +1,3 @@
-import Editor from "@monaco-editor/react";
 import { ChangeEvent, FormEvent, Fragment, UIEvent, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -13,8 +12,14 @@ import type { ApprovalRequiredEvent } from "./protocol";
 import { TerminalPanel, TerminalEntry } from "./components/TerminalPanel";
 import { ApprovalModal } from "./components/ApprovalModal";
 import { ActionsPanel } from "./panels/ActionsPanel";
+import { EditorPanel } from "./panels/EditorPanel";
+import { FilesPanel } from "./panels/FilesPanel";
+import { GitPanel } from "./panels/GitPanel";
 import { PluginsPanel } from "./panels/PluginsPanel";
+import { PullRequestsPanel } from "./panels/PullRequestsPanel";
+import { ScheduledPanel } from "./panels/ScheduledPanel";
 import { SitesPanel } from "./panels/SitesPanel";
+import { TasksPanel } from "./panels/TasksPanel";
 import {
   filesApi,
   gitApi,
@@ -28,9 +33,7 @@ import {
 import {
   chatMatchesProject,
   formatProfileInitials,
-  formatRelativeAge,
   formatSessionPreview,
-  formatSessionTimestamp,
   formatSessionTitle,
   summarizeChatTitle,
   summarizeGitStatus,
@@ -63,11 +66,8 @@ import type {
   ActionView,
   ChatLine,
   ChatSessionSummary,
-  FileContent,
-  FileListing,
   FileNode,
   GitAction,
-  GitSnapshot,
   GithubAuthInfo,
   McpServerConfig,
   ModelConfig,
@@ -78,7 +78,6 @@ import type {
   ProjectSummary,
   PullRequestScope,
   PullRequestSummary,
-  SaveResponse,
   TaskView,
   ToolDefinition,
   WorkspacePanel,
@@ -239,11 +238,7 @@ export function App() {
     });
 
     const loadSessions = async () => {
-      const response = await fetch("/api/sessions");
-      if (!response.ok) {
-        throw new Error("Не удалось загрузить список чатов");
-      }
-      const data = (await response.json()) as ChatSessionSummary[];
+      const data = await sessionsApi.listSessions();
       if (cancelled) {
         return;
       }
@@ -261,11 +256,7 @@ export function App() {
         return;
       }
 
-      const createdResponse = await fetch("/api/sessions", { method: "POST" });
-      if (!createdResponse.ok) {
-        throw new Error("Не удалось создать сессию");
-      }
-      const bootstrap = (await createdResponse.json()) as SessionBootstrap;
+      const bootstrap = await sessionsApi.createSession();
       if (cancelled) {
         return;
       }
@@ -311,8 +302,7 @@ export function App() {
     if (!projectPickerOpen) {
       return;
     }
-    fetch("/api/projects")
-      .then((response) => response.ok ? response.json() as Promise<ProjectSummary[]> : Promise.reject(new Error("Не удалось обновить список проектов")))
+    projectsApi.listProjects()
       .then((data) => setProjects(data))
       .catch(() => undefined);
   }, [projectPickerOpen]);
@@ -346,8 +336,7 @@ export function App() {
       return;
     }
     let cancelled = false;
-    fetch("/api/models/available?route=orchestrator")
-      .then((response) => response.ok ? response.json() as Promise<{ models: string[] }> : Promise.reject(new Error("Не удалось загрузить модели оркестратора")))
+    modelsApi.getAvailableModels("orchestrator")
       .then((data) => {
         if (!cancelled) {
           setOrchestratorModels(data.models);
@@ -361,19 +350,6 @@ export function App() {
     return () => {
       cancelled = true;
     };
-    fetch("/api/projects")
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Не удалось загрузить список проектов");
-        }
-        return response.json();
-      })
-      .then((data: ProjectSummary[]) => {
-        if (!cancelled) {
-          setProjects(data);
-        }
-      })
-      .catch(() => undefined);
   }, [modelDrafts.find((route) => route.name === "orchestrator")?.provider, modelDrafts.find((route) => route.name === "orchestrator")?.base_url, modelDrafts.find((route) => route.name === "orchestrator")?.billing_mode]);
 
   useEffect(() => {
@@ -412,14 +388,7 @@ export function App() {
     let cancelled = false;
     setComposerModelsLoading(true);
     setComposerModelsError(null);
-    fetch(`/api/models/available?route=${encodeURIComponent(selectedModelRoute)}`)
-      .then(async (response) => {
-        if (!response.ok) {
-          const detail = await response.text();
-          throw new Error(detail || "Не удалось получить список моделей");
-        }
-        return response.json() as Promise<{ models: string[] }>;
-      })
+    modelsApi.getAvailableModels(selectedModelRoute)
       .then((data) => {
         if (!cancelled) {
           const models = data.models.length > 0 ? data.models : [route.model];
@@ -451,11 +420,7 @@ export function App() {
       setPullRequestsLoading(true);
       setPullRequestsError(null);
       try {
-        const response = await fetch(`/api/github/pull-requests?scope=${encodeURIComponent(scope)}`);
-        if (!response.ok) {
-          throw new Error("Не удалось загрузить pull request'ы");
-        }
-        const data = (await response.json()) as PullRequestSummary[];
+        const data = await githubApi.listPullRequests(scope);
         if (!cancelled) {
           setPullRequests(data);
         }
@@ -692,12 +657,7 @@ export function App() {
     sessionLoadRef.current = requestId;
     setActiveSessionId(summary.session_id);
 
-    const response = await fetch(`/api/sessions/${summary.session_id}/history`);
-    if (!response.ok) {
-      throw new Error("Не удалось загрузить чат");
-    }
-
-    const history = (await response.json()) as SessionBootstrap["events"];
+    const history = await sessionsApi.getSessionHistory(summary.session_id);
     if (requestId !== sessionLoadRef.current) {
       return;
     }
@@ -706,12 +666,7 @@ export function App() {
   }
 
   async function createNewChat() {
-    const response = await fetch("/api/sessions", { method: "POST" });
-    if (!response.ok) {
-      throw new Error("Не удалось создать новый чат");
-    }
-
-    const bootstrap = (await response.json()) as SessionBootstrap;
+    const bootstrap = await sessionsApi.createSession();
     const createdSummary: ChatSessionSummary = {
       session_id: bootstrap.session_id,
       created_at: bootstrap.created_at,
@@ -732,32 +687,22 @@ export function App() {
     setProjectCreating(true);
     setProjectCreateError(null);
     try {
-      const response = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      if (!response.ok) {
-        const detail = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(detail?.error ?? "Не удалось создать проект");
-      }
-      const project = (await response.json()) as ProjectSummary;
+      const project = await projectsApi.createProject(name);
       setProjects((current) => [...current, project].sort((left, right) => left.name.localeCompare(right.name)));
       setSelectedProject({ label: project.name, path: project.path });
       setNewProjectName("");
       setProjectPickerOpen(false);
     } catch (error) {
       setProjectCreateError(error instanceof Error ? error.message : String(error).replace(/^Error:\s*/, ""));
+    } finally {
+      setProjectCreating(false);
     }
   }
 
   async function archiveChat(summary: ChatSessionSummary) {
     setDeletingSessionId(summary.session_id);
     try {
-      const response = await fetch(`/api/sessions/${summary.session_id}/archive`, { method: "POST" });
-      if (!response.ok) {
-        throw new Error("Не удалось архивировать чат");
-      }
+      await sessionsApi.archiveSession(summary.session_id);
 
       setChatSessions((current) => current.filter((chat) => chat.session_id !== summary.session_id));
       setArchivedChats((current) => [summary, ...current]);
@@ -779,10 +724,7 @@ export function App() {
   async function deleteSession(summary: ChatSessionSummary) {
     setDeletingSessionId(summary.session_id);
     try {
-      const response = await fetch(`/api/sessions/${summary.session_id}`, { method: "DELETE" });
-      if (!response.ok) {
-        throw new Error("Не удалось удалить чат");
-      }
+      await sessionsApi.deleteSession(summary.session_id);
 
       setArchivedChats((current) => current.filter((chat) => chat.session_id !== summary.session_id));
       const remaining = chatSessions.filter((chat) => chat.session_id !== summary.session_id);
@@ -945,13 +887,7 @@ export function App() {
   }
 
   async function refreshDirectory(path: string) {
-    const normalized = normalizePath(path);
-    const query = normalized === "." ? "" : `?path=${encodeURIComponent(normalized)}`;
-    const response = await fetch(`/api/files${query}`);
-    if (!response.ok) {
-      throw new Error("Не удалось загрузить дерево файлов");
-    }
-    const data = (await response.json()) as FileListing;
+    const data = await filesApi.listFiles(normalizePath(path));
     const key = normalizePath(data.path);
     setDirectoryCache((current) => ({
       ...current,
@@ -975,13 +911,7 @@ export function App() {
     setSelectedFileLoading(true);
     setSelectedFileNotice(null);
     try {
-      const response = await fetch(
-        `/api/files/content?path=${encodeURIComponent(normalizePath(path))}`,
-      );
-      if (!response.ok) {
-        throw new Error("Не удалось загрузить содержимое файла");
-      }
-      const data = (await response.json()) as FileContent;
+      const data = await filesApi.readFile(normalizePath(path));
       setSelectedFilePath(data.path);
       setSelectedFileContent(data.content);
       setSelectedFileOriginal(data.content);
@@ -993,18 +923,8 @@ export function App() {
 
   async function refreshGitSnapshot(path?: string | null) {
     const diffPath = normalizePath(path ?? gitDiffPathInput ?? gitDiffPath ?? selectedFilePath ?? undefined);
-    const statusResponse = await fetch("/api/git/status");
-    if (!statusResponse.ok) {
-      throw new Error("Не удалось загрузить статус Гит");
-    }
-    const statusData = (await statusResponse.json()) as GitSnapshot;
-    const diffResponse = await fetch(
-      diffPath === "." ? "/api/git/diff" : `/api/git/diff?path=${encodeURIComponent(diffPath)}`,
-    );
-    if (!diffResponse.ok) {
-      throw new Error("Не удалось загрузить изменения Гит");
-    }
-    const diffData = (await diffResponse.json()) as GitSnapshot;
+    const statusData = await gitApi.getGitStatus();
+    const diffData = await gitApi.getGitDiff(diffPath === "." ? null : diffPath);
     setGitStatus(statusData.status);
     setGitDiff(diffData.diff);
     setGitDiffPath(diffPath === "." ? null : diffPath);
@@ -1012,8 +932,7 @@ export function App() {
   }
 
   async function updatePermission(name: string, mode: PermissionMode) {
-    const response = await fetch(`/api/permissions/${name}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode }) });
-    if (!response.ok) throw new Error("Не удалось обновить разрешение");
+    await permissionsApi.putPermission(name, mode);
     setPermissionSettings((current) => ({ ...current, [name]: { mode } }));
   }
 
@@ -1025,18 +944,7 @@ export function App() {
 
     setPermissionModeSaving(true);
     try {
-      const responses = await Promise.all(
-        names.map((name) =>
-          fetch(`/api/permissions/${name}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ mode }),
-          }),
-        ),
-      );
-      if (responses.some((response) => !response.ok)) {
-        throw new Error("Не удалось применить режим работы");
-      }
+      await Promise.all(names.map((name) => permissionsApi.putPermission(name, mode)));
       setPermissionSettings(Object.fromEntries(names.map((name) => [name, { mode }])));
     } finally {
       setPermissionModeSaving(false);
@@ -1075,16 +983,7 @@ export function App() {
     setModelSaving(true);
     setModelNotice(null);
     try {
-      const response = await fetch("/api/models/config", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ default_route: modelDefaultRoute, routes: modelDrafts }),
-      });
-      if (!response.ok) {
-        const detail = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(detail?.error ?? "Не удалось сохранить настройки модели");
-      }
-      const data = (await response.json()) as ModelConfig;
+      const data = await modelsApi.putModelConfig({ default_route: modelDefaultRoute, routes: modelDrafts });
       skipNextModelAutosaveRef.current = true;
       setModelConfig(data);
       setModelDefaultRoute(data.default_route);
@@ -1103,15 +1002,7 @@ export function App() {
     setMcpServersSaving(true);
     setMcpServersNotice(null);
     try {
-      const response = await fetch("/api/mcp/servers", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(mcpServers),
-      });
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-      const data = (await response.json()) as McpServerConfig[];
+      const data = await mcpApi.putMcpServers(mcpServers);
       setMcpServers(data);
       setMcpServersNotice("MCP-серверы сохранены.");
     } catch (error) {
@@ -1171,24 +1062,8 @@ export function App() {
 
     setSaveState("saving");
     try {
-      const response = await fetch(
-        `/api/files/content?path=${encodeURIComponent(selectedFilePath)}&session_id=${encodeURIComponent(session.session_id)}`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            content: selectedFileContent,
-          }),
-        },
-      );
+      const data = await filesApi.saveFile(selectedFilePath, selectedFileContent, session.session_id);
 
-      if (!response.ok) {
-        throw new Error("Не удалось сохранить файл");
-      }
-
-      const data = (await response.json()) as SaveResponse;
       setSelectedFileOriginal(selectedFileContent);
       setSaveState("saved");
       setSelectedFileNotice(data.change === "created" ? "Новый файл создан в рабочем пространстве." : "Изменения сохранены.");
@@ -1210,17 +1085,7 @@ export function App() {
 
     const path = normalizePath(newFilePath.trim());
     try {
-      const response = await fetch(
-        `/api/files/content?path=${encodeURIComponent(path)}&session_id=${encodeURIComponent(session.session_id)}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: newFileContent }),
-        },
-      );
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
+      await filesApi.createFile(path, newFileContent, session.session_id);
       setNewFilePath("");
       setNewFileContent("");
       await refreshDirectory(parentPath(path));
@@ -1236,23 +1101,15 @@ export function App() {
       return;
     }
 
-      setGitAction(action);
-      setGitActionNotice(null);
-    const payload = action === "commit"
-      ? { message: gitCommitMessage }
-      : { remote: gitRemote || undefined, branch: gitBranch || undefined };
+    setGitAction(action);
+    setGitActionNotice(null);
     try {
-      const response = await fetch(
-        `/api/git/${action}?session_id=${encodeURIComponent(session.session_id)}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-      );
-      if (!response.ok) {
-        const detail = await response.text();
-        throw new Error(detail || `Гит-действие ${action} завершилось с ошибкой`);
+      if (action === "commit") {
+        await gitApi.gitCommit(session.session_id, gitCommitMessage);
+      } else if (action === "pull") {
+        await gitApi.gitPull(session.session_id, gitRemote || undefined, gitBranch || undefined);
+      } else {
+        await gitApi.gitPush(session.session_id, gitRemote || undefined, gitBranch || undefined);
       }
       setGitActionNotice(`Операция Гит «${translateGitAction(action)}» завершена.`);
       if (action === "commit") {
@@ -1693,318 +1550,98 @@ export function App() {
     }
 
     if (activePanel === "files") {
-      const rootEntries = directoryCache["."] ?? [];
       return (
-        <div className="filesPanel">
-          <div className="panelToolbar">
-            <div>
-              <strong>Дерево рабочего пространства</strong>
-              <span>{rootEntries.length} элементов в корне</span>
-            </div>
-            <button type="button" onClick={() => void refreshDirectory(".")}>Обновить дерево</button>
-          </div>
-          <div className="createFileForm">
-            <input
-              value={newFilePath}
-              onChange={(event) => setNewFilePath(event.target.value)}
-              placeholder="путь/до/нового-файла.ts"
-              aria-label="Путь нового файла"
-            />
-            <input
-              value={newFileContent}
-              onChange={(event) => setNewFileContent(event.target.value)}
-              placeholder="Начальное содержимое"
-              aria-label="Содержимое нового файла"
-            />
-            <button type="button" onClick={() => void handleCreateFile()} disabled={!newFilePath.trim()}>
-              Создать файл
-            </button>
-          </div>
-          <div className="fileTree">
-            {renderTree(".")}
-          </div>
-        </div>
+        <FilesPanel
+          rootEntryCount={(directoryCache["."] ?? []).length}
+          newFilePath={newFilePath}
+          newFileContent={newFileContent}
+          onNewFilePathChange={setNewFilePath}
+          onNewFileContentChange={setNewFileContent}
+          onRefreshTree={() => void refreshDirectory(".")}
+          onCreateFile={() => void handleCreateFile()}
+          fileTree={renderTree(".")}
+        />
       );
     }
 
     if (activePanel === "editor") {
       return (
-        <div className="editorPanel">
-          <div className="panelToolbar">
-            <div>
-              <strong>{selectedFilePath ?? "Файл не выбран"}</strong>
-              <span>
-                {selectedFileLoading
-                  ? "Загрузка..."
-                  : saveState === "saving"
-                    ? "Сохранение..."
-                    : saveState === "saved"
-                      ? "Сохранено"
-                      : selectedFilePath && selectedFileContent !== selectedFileOriginal
-                        ? "Есть несохранённые изменения"
-                        : "Готово"}
-              </span>
-            </div>
-            <div className="toolbarActions">
-              <button
-                type="button"
-                onClick={() => void refreshSelectedFile(selectedFilePath ?? ".")}
-                disabled={!selectedFilePath || selectedFileLoading}
-              >
-                Перезагрузить
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleSave()}
-                disabled={!selectedFilePath || selectedFileContent === selectedFileOriginal}
-              >
-                Сохранить
-              </button>
-            </div>
-          </div>
-          {selectedFileNotice ? <div className="editorNotice">{selectedFileNotice}</div> : null}
-          {selectedFilePath ? (
-            <div className="editorMeta">
-              <span>Язык: {selectedFileLanguage}</span>
-              <span>Размер: {formatFileSize(selectedFileContent.length)}</span>
-              <span>{selectedFileContent === selectedFileOriginal ? "Чисто" : "Есть изменения"}</span>
-            </div>
-          ) : null}
-          {selectedFilePath ? (
-            <Editor
-              height="100%"
-              theme="vs-dark"
-              language={selectedFileLanguage}
-              value={selectedFileContent}
-              onChange={(value) => {
-                setSelectedFileContent(value ?? "");
-                setSaveState("idle");
-              }}
-              onMount={(editor, monaco) => {
-                editor.addAction({
-                  id: "evohime-save-file",
-                  label: "Сохранить файл",
-                  keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS],
-                  run: () => saveFileRef.current(),
-                });
-              }}
-              options={{
-                minimap: { enabled: false },
-                fontSize: 14,
-                automaticLayout: true,
-                scrollBeyondLastLine: false,
-                wordWrap: "on",
-              }}
-            />
-          ) : (
-            <div className="placeholderPanel">
-              <h3>Выберите файл</h3>
-              <p>Выбери файл во вкладке «Файлы», чтобы открыть его в редакторе Monaco.</p>
-            </div>
-          )}
-        </div>
+        <EditorPanel
+          selectedFilePath={selectedFilePath}
+          selectedFileContent={selectedFileContent}
+          selectedFileOriginal={selectedFileOriginal}
+          selectedFileLanguage={selectedFileLanguage}
+          selectedFileLoading={selectedFileLoading}
+          selectedFileNotice={selectedFileNotice}
+          saveState={saveState}
+          saveFileRef={saveFileRef}
+          onContentChange={(value) => {
+            setSelectedFileContent(value);
+            setSaveState("idle");
+          }}
+          onReload={() => void refreshSelectedFile(selectedFilePath ?? ".")}
+          onSave={() => void handleSave()}
+        />
       );
     }
 
     if (activePanel === "git") {
       return (
-        <div className="gitPanel">
-          <div className="panelToolbar">
-            <div>
-              <strong>Состояние репозитория</strong>
-              <span>
-                {gitSummary.branch}
-                {gitSummary.changed ? ` • изменено: ${gitSummary.changed}` : " • чисто"}
-              </span>
-            </div>
-            <div className="toolbarActions">
-              <button type="button" onClick={() => void refreshGitSnapshot(gitDiffPathInput || undefined)}>
-                Обновить Гит
-              </button>
-            </div>
-          </div>
-          <div className="gitControls">
-            <label>
-              <span>Путь diff</span>
-              <input
-                value={gitDiffPathInput}
-                onChange={(event) => setGitDiffPathInput(event.target.value)}
-                placeholder="Корень репозитория или путь к файлу"
-              />
-            </label>
-            <div className="gitControlButtons">
-              <button type="button" onClick={() => void refreshGitSnapshot(gitDiffPathInput || undefined)}>
-                Загрузить diff
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const nextPath = selectedFilePath ?? "";
-                  setGitDiffPathInput(nextPath);
-                  void refreshGitSnapshot(nextPath || undefined);
-                }}
-                disabled={!selectedFilePath}
-              >
-                Использовать выбранный файл
-              </button>
-            </div>
-            <label>
-              <span>Сообщение коммита</span>
-              <input
-                value={gitCommitMessage}
-                onChange={(event) => setGitCommitMessage(event.target.value)}
-                placeholder="Опиши изменение"
-              />
-            </label>
-            <div className="gitRemoteFields">
-              <label>
-                <span>Удалённый репозиторий</span>
-                <input value={gitRemote} onChange={(event) => setGitRemote(event.target.value)} />
-              </label>
-              <label>
-                <span>Ветка</span>
-                <input value={gitBranch} onChange={(event) => setGitBranch(event.target.value)} placeholder="Текущая" />
-              </label>
-            </div>
-            <div className="gitControlButtons">
-              <button type="button" onClick={() => void handleGitAction("commit")} disabled={!gitCommitMessage.trim() || Boolean(gitAction)}>
-                {gitAction === "commit" ? "Коммитим..." : "Коммит"}
-              </button>
-              <button type="button" onClick={() => void handleGitAction("pull")} disabled={Boolean(gitAction)}>
-                {gitAction === "pull" ? "Забираем..." : "Забрать"}
-              </button>
-              <button type="button" onClick={() => void handleGitAction("push")} disabled={Boolean(gitAction)}>
-                {gitAction === "push" ? "Отправляем..." : "Отправить"}
-              </button>
-            </div>
-            {gitActionNotice ? <p className="gitActionNotice">{gitActionNotice}</p> : null}
-          </div>
-          <div className="gitSummary">
-            <h3>Статус</h3>
-            <pre>{gitStatus}</pre>
-          </div>
-          <div className="gitSummary">
-            <h3>Изменения{gitDiffPath ? ` · ${gitDiffPath}` : ""}</h3>
-            <pre className="gitDiffViewer">
-              {(gitDiff || "Нет изменений").split("\n").map((line, index) => (
-                <span
-                  className={line.startsWith("+") && !line.startsWith("+++") ? "diffAdded" : line.startsWith("-") && !line.startsWith("---") ? "diffRemoved" : line.startsWith("@@") ? "diffContext" : ""}
-                  key={`${index}-${line}`}
-                >
-                  {line || " "}
-                </span>
-              ))}
-            </pre>
-          </div>
-        </div>
+        <GitPanel
+          branchLabel={gitSummary.branch}
+          changedCount={gitSummary.changed}
+          gitDiffPath={gitDiffPath}
+          gitDiffPathInput={gitDiffPathInput}
+          gitCommitMessage={gitCommitMessage}
+          gitRemote={gitRemote}
+          gitBranch={gitBranch}
+          gitAction={gitAction}
+          gitActionNotice={gitActionNotice}
+          gitStatus={gitStatus}
+          gitDiff={gitDiff}
+          selectedFilePath={selectedFilePath}
+          onDiffPathInputChange={setGitDiffPathInput}
+          onCommitMessageChange={setGitCommitMessage}
+          onRemoteChange={setGitRemote}
+          onBranchChange={setGitBranch}
+          onRefresh={(path) => void refreshGitSnapshot(path)}
+          onUseSelectedFile={() => {
+            const nextPath = selectedFilePath ?? "";
+            setGitDiffPathInput(nextPath);
+            void refreshGitSnapshot(nextPath || undefined);
+          }}
+          onGitAction={(action) => void handleGitAction(action)}
+        />
       );
     }
 
     if (activePanel === "terminal") return <TerminalPanel entries={terminalEntries} />;
 
     if (activePanel === "scheduled") {
-      const scheduledRecommendations = [
-        {
-          icon: "♧",
-          title: "Ежедневная сводка",
-          schedule: "В будние дни в 8:00",
-          description: "Начинайте каждый рабочий день со сводки календаря, непрочитанных писем и приоритетов",
-          prompt: "Каждый будний день в 8:00 присылай мне сводку календаря, непрочитанных писем и приоритетов.",
-        },
-        {
-          icon: "▤",
-          title: "Еженедельный обзор",
-          schedule: "По пятницам в 16:00",
-          description: "Каждую пятницу создавайте краткий отчёт о проделанной работе",
-          prompt: "Каждую пятницу в 16:00 создавай краткий отчёт о проделанной за неделю работе.",
-        },
-        {
-          icon: "⌕",
-          title: "Мониторинг дальнейших действий",
-          schedule: "В будние дни в 9:00",
-          description: "Проверяйте недавнюю активность в электронной почте и календаре и отмечайте всё, что требует вашего внимания",
-          prompt: "Каждый будний день в 9:00 проверяй почту и календарь и отмечай действия, требующие моего внимания.",
-        },
-      ];
-
       return (
-        <div className="scheduledPage">
-          <section className="scheduledHero">
-            <h2>Запланированные задачи</h2>
-            <p>Попросите EvoHime планировать задачи, ставить напоминания или отслеживать обновления</p>
-          </section>
-          <section className="scheduledRecommendations">
-            <h3>Рекомендации</h3>
-            <div className="scheduledRecommendationList">
-              {scheduledRecommendations.map((recommendation) => (
-                <button
-                  type="button"
-                  className="scheduledRecommendation"
-                  key={recommendation.title}
-                  onClick={() => {
-                    setInput(recommendation.prompt);
-                    setActivePanel("chat");
-                  }}
-                >
-                  <span className="scheduledRecommendationIcon" aria-hidden="true">{recommendation.icon}</span>
-                  <span className="scheduledRecommendationBody">
-                    <span className="scheduledRecommendationTitle">
-                      <strong>{recommendation.title}</strong>
-                      <em>{recommendation.schedule}</em>
-                    </span>
-                    <span>{recommendation.description}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
-        </div>
+        <ScheduledPanel
+          onPickPrompt={(prompt) => {
+            setInput(prompt);
+            setActivePanel("chat");
+          }}
+        />
       );
     }
 
     if (activePanel === "tasks") {
       return (
-        <div className="standaloneChatsPanel">
-          <div className="panelToolbar">
-            <div>
-              <strong>Чаты без проектов</strong>
-              <span>Личные задачи и разговоры, не привязанные к проекту</span>
-            </div>
-            <button type="button" onClick={() => setActivePanel("chat")}>Новый чат</button>
-          </div>
-          {chatSessions.length > 0 ? (
-            <div className="standaloneChatList">
-              {chatSessions.map((chat, index) => (
-                <button
-                  key={chat.session_id}
-                  type="button"
-                  className={chat.session_id === activeSessionId ? "standaloneChatItem active" : "standaloneChatItem"}
-                  onClick={() => {
-                    setActivePanel("chat");
-                    void openSession(chat).catch((error) => {
-                      setSocketState("failed");
-                      setLines((current) => [...current, { role: "system", text: String(error) }]);
-                    });
-                  }}
-                >
-                  <span className="standaloneChatIcon">⊕</span>
-                  <span className="standaloneChatDetails">
-                    <strong>{formatSessionTitle(chat, index)}</strong>
-                    <span>{formatSessionPreview(chat)}</span>
-                  </span>
-                  <time dateTime={chat.last_message_at ?? chat.created_at}>
-                    {formatSessionTimestamp(chat.last_message_at ?? chat.created_at)}
-                  </time>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="emptyPanelState">
-              <strong>Пока нет чатов без проекта</strong>
-              <span>Создай новый чат, и он появится здесь.</span>
-            </div>
-          )}
-        </div>
+        <TasksPanel
+          chatSessions={chatSessions}
+          activeSessionId={activeSessionId}
+          onNewChat={() => setActivePanel("chat")}
+          onOpenSession={(chat) => {
+            setActivePanel("chat");
+            void openSession(chat).catch((error) => {
+              setSocketState("failed");
+              setLines((current) => [...current, { role: "system", text: String(error) }]);
+            });
+          }}
+        />
       );
     }
 
@@ -2014,99 +1651,16 @@ export function App() {
 
     if (activePanel === "pull-requests") {
       return (
-        <div className="pullRequestsPage">
-          <section className="pullRequestsHero">
-            <div>
-              <h3>Пул-реквесты</h3>
-              <p>
-                Просматривайте и отслеживайте работу на GitHub от имени {githubAuth?.login ?? "вашего аккаунта"}.
-              </p>
-            </div>
-            <div className="pullRequestsMeta">
-              <strong>{pullRequestsLoading ? "…" : `${visiblePullRequests.length}`}</strong>
-              <span>pull request'ов</span>
-            </div>
-          </section>
-
-          <div className="pullRequestsSearchRow">
-            <label className="pullRequestsSearch">
-              <span>Поиск pull-request'ов</span>
-              <input
-                value={pullRequestSearch}
-                onChange={(event) => setPullRequestSearch(event.target.value)}
-                placeholder="Поиск pull-request'ов"
-              />
-            </label>
-            <button type="button" className="pullRequestsFilterButton" aria-label="Фильтр">
-              ⌕
-            </button>
-          </div>
-
-          <div className="pullRequestsTabs">
-            <button
-              type="button"
-              className={pullRequestScope === "all" ? "pullRequestsTab active" : "pullRequestsTab"}
-              onClick={() => setPullRequestScope("all")}
-            >
-              Все
-            </button>
-            <button
-              type="button"
-              className={pullRequestScope === "review_requested" ? "pullRequestsTab active" : "pullRequestsTab"}
-              onClick={() => setPullRequestScope("review_requested")}
-            >
-              Проверяемые мной
-            </button>
-            <button
-              type="button"
-              className={pullRequestScope === "created" ? "pullRequestsTab active" : "pullRequestsTab"}
-              onClick={() => setPullRequestScope("created")}
-            >
-              Созданные мной
-            </button>
-          </div>
-
-          <div className="pullRequestsBody">
-            {pullRequestsError ? <p className="pullRequestsError">{pullRequestsError}</p> : null}
-            <div className="pullRequestsList">
-              {visiblePullRequests.length === 0 ? (
-                <div className="pullRequestsEmpty">
-                  <strong>Пока нет pull request'ов</strong>
-                  <p>
-                    {pullRequestsLoading
-                      ? "Подтягиваю список из GitHub..."
-                      : "Если в репозитории будут pull request'ы, они появятся здесь."}
-                  </p>
-                </div>
-              ) : (
-                visiblePullRequests.map((pullRequest) => (
-                  <a
-                    key={pullRequest.number}
-                    className="pullRequestItem"
-                    href={pullRequest.url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <div className="pullRequestLine">
-                      <strong>{pullRequest.title}</strong>
-                      <span>{formatRelativeAge(pullRequest.updatedAt)}</span>
-                    </div>
-                    <div className="pullRequestSubline">
-                      <span>
-                        {pullRequest.author?.login ?? "unknown"} / {pullRequest.headRefName}
-                      </span>
-                      <span>{pullRequest.baseRefName}</span>
-                    </div>
-                    <div className="pullRequestFooter">
-                      <span className="pullRequestState">{pullRequest.state}</span>
-                      <span>#{pullRequest.number}</span>
-                    </div>
-                  </a>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
+        <PullRequestsPanel
+          githubLogin={githubAuth?.login ?? null}
+          pullRequestSearch={pullRequestSearch}
+          pullRequestScope={pullRequestScope}
+          pullRequestsLoading={pullRequestsLoading}
+          pullRequestsError={pullRequestsError}
+          visiblePullRequests={visiblePullRequests}
+          onSearchChange={setPullRequestSearch}
+          onScopeChange={setPullRequestScope}
+        />
       );
     }
 

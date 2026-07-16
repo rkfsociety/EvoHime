@@ -12,4 +12,6 @@
 - [x] `types.ts`, `lib/*`, `api/*`
 - [x] Extract first panels (Actions/Plugins/Sites)
 - [x] Wire `app.tsx`; `npm run build`; commit
-- [ ] Remaining panels/hooks (follow-up)
+- [x] Migrate remaining `fetch` → typed API
+- [x] Extract Files/Editor/Git/Tasks/PR/Scheduled panels
+- [ ] Settings panel + optional `useServerEventHandler` hook
