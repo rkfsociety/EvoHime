@@ -383,9 +383,9 @@ function translateChatRole(role: ChatLine["role"]) {
     case "assistant":
       return "Ассистент";
     case "tool":
-      return "Инструмент";
+      return "Действие";
     case "system":
-      return "Система";
+      return "Ход работы";
     case "user":
       return "Пользователь";
   }
@@ -1188,6 +1188,10 @@ export function App() {
         });
         break;
       case "tool.started":
+        setLines((current) => [
+          ...current,
+          { role: "tool", text: `Запускаю инструмент: ${event.tool_name}` },
+        ]);
         break;
       case "tool.output":
         if (event.tool_name === "shell.execute") setTerminalEntries((current) => [...current, { stream: "stdout", text: event.output }]);
@@ -1196,6 +1200,13 @@ export function App() {
         setApproval(event);
         break;
       case "tool.completed":
+        setLines((current) => [
+          ...current,
+          {
+            role: "tool",
+            text: `${event.tool_name}: ${event.success ? "завершён успешно" : "завершён с ошибкой"}`,
+          },
+        ]);
         if (event.tool_name === "shell.execute") {
           setTerminalEntries((current) => [
             ...current,
@@ -2502,7 +2513,7 @@ export function App() {
               </div>
             </div>
           ) : (
-            lines.filter((line) => line.role !== "system").map((line, index) => (
+            lines.map((line, index) => (
               <article className={`line ${line.role}`} key={`${line.role}-${index}`}>
                 <strong>{translateChatRole(line.role)}</strong>
                 <pre>{line.text}</pre>
