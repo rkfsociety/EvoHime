@@ -1265,7 +1265,13 @@ async fn run_task_pipeline(
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let default_route = state.model_config.read().await.default_route.clone();
     let model_route = resolve_model_route(task.model_route.as_deref(), &default_route);
-    let (planning_model_route, planning_model) = {
+    let (planning_model_route, planning_model) = if task
+        .model
+        .as_deref()
+        .is_some_and(|model| !model.trim().is_empty())
+    {
+        (model_route.clone(), task.model.clone())
+    } else {
         let config = state.model_config.read().await;
         let route_name = if config.routes.contains_key("orchestrator") {
             "orchestrator".to_string()
