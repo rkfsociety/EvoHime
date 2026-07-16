@@ -138,9 +138,15 @@ DEMO_FILE_PATH=docs/sample-context.md
 ## Commands
 
 ```bash
-# Native Windows local stack (PowerShell)
-.\scripts\setup-local.ps1 -InstallPostgres -ApplyMigrations
+# Native Windows local stack WITH tray icons (обязательный способ «запустить»)
 .\start-dev.ps1
+
+# One-shot setup only
+.\scripts\setup-local.ps1 -InstallPostgres -ApplyMigrations
+
+# Backend / frontend in isolation (only when debugging a single process)
+.\start-dev.ps1 -Server
+.\start-dev.ps1 -Web
 
 # Backend
 cargo run -p evohime-server
@@ -152,6 +158,8 @@ cd frontend/web && npm install && npm run dev
 # Protocol types
 npm run generate:protocol
 ```
+
+**Запуск приложения:** всегда `.\start-dev.ps1` (трей). Не заменяй его парой `cargo run` + `npm run dev`, когда пользователь просит запустить стек.
 
 ## Roadmap
 

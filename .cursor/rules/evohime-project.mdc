@@ -41,4 +41,8 @@ Stages 1–5 done. Memory `6.16`–`6.19` landed (schema, service, retrieval int
 
 ## Next
 
-`6.19` memory retrieval + budget + untrusted tagging (wire into agent-runtime). Parallel options: task-pipeline observability, integration tests.
+`6.20` memory extract + ask-on-uncertainty. Parallel: observability, integration tests.
+
+## Local run
+
+When the user asks to start the app, run `.\start-dev.ps1` (creates tray icons). Do not substitute bare `cargo run` + `npm run dev` for a full stack start. See `evohime-launcher.mdc`.

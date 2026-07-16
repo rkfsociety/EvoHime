@@ -1,0 +1,33 @@
+---
+description: Локальный запуск только через start-dev.ps1 с иконками в трее
+alwaysApply: true
+---
+
+# Launcher: трей, не голый cargo/npm
+
+Когда нужно **запустить** локальный EvoHime (server + web), используй корневой скрипт:
+
+```powershell
+.\start-dev.ps1
+```
+
+Он поднимает PostgreSQL (через setup), сервер, фронт и **создаёт значки в системном трее** (server/web, рестарт сервера, открытие UI).
+
+## Обязательно
+
+- По просьбе «запусти» / «подними стек» / «start» — запускай **`.\start-dev.ps1` без `-Server`/`-Web`** (полный launcher с треем).
+- Не подменяй это раздельным `cargo run -p evohime-server` + `npm run dev`, если пользователь просит именно запуск приложения.
+- Перед повторным запуском не плоди второй launcher: скрипт сам гасит предыдущий экземпляр.
+
+## Допустимые исключения
+
+- Отладка одного процесса по явной просьбе: `.\start-dev.ps1 -Server` или `.\start-dev.ps1 -Web`
+- Точечные `cargo test` / `cargo check` / `npm run build` — это не «запуск стека»
+
+## Windows / PATH
+
+Если команда `powershell` не в `PATH`, вызывай полный путь:
+
+```powershell
+& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File .\start-dev.ps1
+```
