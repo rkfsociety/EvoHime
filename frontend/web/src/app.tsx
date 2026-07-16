@@ -65,6 +65,7 @@ type ChatSessionSummary = {
   session_id: string;
   created_at: string;
   title?: string | null;
+  workspace_path?: string | null;
   last_message_at: string | null;
   last_message: string | null;
   last_role: string | null;
@@ -1651,6 +1652,9 @@ export function App() {
       workspace_path: selectedProject.path ?? undefined,
     };
 
+    setChatSessions((current) => current.map((chat) => chat.session_id === activeSessionId
+      ? { ...chat, workspace_path: selectedProject.path }
+      : chat));
     socketRef.current.send(JSON.stringify(payload));
     setInput("");
     setAttachments([]);
@@ -2885,9 +2889,9 @@ export function App() {
             <header className="sidebarHeader">
               <strong>Чаты без проекта</strong>
             </header>
-            {chatSessions.length > 0 ? (
+            {chatSessions.filter((chat) => !chat.workspace_path).length > 0 ? (
               <div className="standaloneSidebarChatList">
-                {chatSessions.slice(0, 5).map((chat, index) => (
+                {chatSessions.filter((chat) => !chat.workspace_path).slice(0, 5).map((chat, index) => (
                   <button
                     type="button"
                     key={chat.session_id}

@@ -26,6 +26,7 @@ pub struct SessionSummaryRow {
     pub id: Uuid,
     pub created_at: DateTime<Utc>,
     pub title: Option<String>,
+    pub workspace_path: Option<String>,
     pub last_message_at: Option<DateTime<Utc>>,
     pub last_message: Option<String>,
     pub last_role: Option<String>,
@@ -140,6 +141,7 @@ pub async fn list_sessions(
             s.id,
             s.created_at,
             s.title,
+            s.workspace_path,
             last_message.created_at AS last_message_at,
             last_message.content AS last_message,
             last_message.role AS last_role
@@ -173,6 +175,7 @@ pub async fn list_archived_sessions(
             s.id,
             s.created_at,
             s.title,
+            s.workspace_path,
             last_message.created_at AS last_message_at,
             last_message.content AS last_message,
             last_message.role AS last_role
@@ -278,6 +281,12 @@ pub async fn create_task(
     .bind(workspace_path)
     .fetch_one(pool)
     .await?;
+
+    sqlx::query("UPDATE sessions SET workspace_path = $2 WHERE id = $1 AND workspace_path IS NULL")
+        .bind(session_id)
+        .bind(workspace_path)
+        .execute(pool)
+        .await?;
 
     Ok(row)
 }
