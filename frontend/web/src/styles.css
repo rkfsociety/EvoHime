@@ -70,8 +70,51 @@ input {
 }
 
 .agentBrand {
-  display: grid;
-  gap: 2px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.agentBrand h1,
+.agentBrand h2 {
+  margin: 0;
+  font-size: clamp(1.1rem, 2vw, 1.55rem);
+  line-height: 1;
+  max-width: none;
+}
+
+.agentMark {
+  display: block;
+  flex-shrink: 0;
+  border-radius: 8px;
+}
+
+.agentAvatar {
+  display: block;
+  flex-shrink: 0;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid var(--border-0);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.chatWelcome .agentAvatar {
+  margin: 0 auto 12px;
+}
+
+.projectOption .agentMark,
+.scheduledHero .agentMark {
+  flex-shrink: 0;
+}
+
+.scheduledHeroBrand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settingsModalHeader .agentBrand {
+  gap: 8px;
 }
 
 .eyebrow {
@@ -1178,10 +1221,26 @@ h1 {
 }
 
 .line.assistant {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px 12px;
+  align-items: start;
   justify-self: start;
   margin-left: 0;
   margin-right: auto;
   background: rgba(255, 255, 255, 0.045);
+}
+
+.line.assistant .agentAvatar {
+  grid-row: 1 / span 2;
+}
+
+.line.assistant strong {
+  grid-column: 2;
+}
+
+.line.assistant .markdownBody {
+  grid-column: 2;
 }
 
 .line.tool {
