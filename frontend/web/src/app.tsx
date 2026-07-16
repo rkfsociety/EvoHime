@@ -1332,7 +1332,7 @@ export function App() {
         >
           {lines.every((line) => line.role === "system") && !stream ? (
             <div className="chatWelcome">
-              <span className="chatWelcomeIcon">✦</span>
+              <AgentAvatar size="lg" />
               <p className="eyebrow">Новая задача</p>
               <h3>Что будем делать?</h3>
               <p className="chatWelcomeText">
@@ -1357,6 +1357,7 @@ export function App() {
                   <ChatTraceSummary traceLines={traceLines} active={Boolean(activeTaskId)} userLogin={githubAuth?.login} />
                 ) : null}
                 <article className={`line ${line.role}`}>
+                  {line.role === "assistant" ? <AgentAvatar size="sm" /> : null}
                   <strong>{translateChatRole(line.role, githubAuth?.login)}</strong>
                   {line.role === "assistant" ? <MarkdownMessage text={line.text} /> : <pre>{line.text}</pre>}
                 </article>
@@ -1369,6 +1370,7 @@ export function App() {
           {stream && lastAssistantLineIndex === -1 ? (
             <>
               <article className="line assistant streaming">
+                <AgentAvatar size="sm" />
                 <strong>Ассистент</strong>
                 <MarkdownMessage text={stream} />
               </article>
@@ -1852,7 +1854,7 @@ function ChatTraceSummary({ traceLines, active, userLogin }: { traceLines: ChatL
     <details className="chatTraceSummary" open={active}>
       <summary>
         <span className="chatTraceSummaryTitle">
-          <span className={active ? "thinkingOrb active" : "thinkingOrb"} aria-hidden="true" />
+          {active ? <AgentAvatar size="sm" className="agentAvatarThinking" /> : <span className="thinkingOrb" aria-hidden="true" />}
           {active ? "Модель работает…" : "Ход работы"}
         </span>
         <span className="chatTraceSummaryMeta">{active ? "Выполняю план" : "Завершено"}</span>
