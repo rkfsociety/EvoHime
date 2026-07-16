@@ -5,7 +5,10 @@ use evohime_protocol::{PlanStep, ServerEvent};
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use futures_util::StreamExt;
 use serde_json::{json, Value};
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
@@ -65,6 +68,12 @@ pub enum AgentError {
     Model(#[from] evohime_model_gateway::providers::ProviderError),
     #[error("event channel closed")]
     EventChannel,
+    #[error("plan step {step_id} ({tool_name}) failed: {message}")]
+    PlanStepFailed {
+        step_id: String,
+        tool_name: String,
+        message: String,
+    },
 }
 
 pub async fn run_agent_loop(
@@ -257,7 +266,11 @@ async fn run_agent_loop_inner(
             config.user_message,
             format_plan(&plan),
             config.demo_file_path.display(),
-            format!("{}\n\nPlan tool results:\n{}", tool_output, plan_outputs.join("\n\n"))
+            format!(
+                "{}\n\nPlan tool results:\n{}",
+                tool_output,
+                plan_outputs.join("\n\n")
+            )
         ),
     });
 
@@ -317,6 +330,7 @@ async fn execute_plan_steps(
         task_id: config.task_id,
     };
     let mut outputs = Vec::new();
+    let mut successful_steps = HashMap::new();
     for step in plan {
         let tool_name = match step.tool_name.as_str() {
             "read_file" => "filesystem.read",
@@ -325,12 +339,30 @@ async fn execute_plan_steps(
             name => name,
         };
         if tool_name == "assistant.reply" {
+            successful_steps.insert(step.id.clone(), true);
+            continue;
+        }
+        if step
+            .depends_on
+            .iter()
+            .any(|dependency| !successful_steps.get(dependency).copied().unwrap_or(false))
+        {
+            outputs.push(format!(
+                "{} ({tool_name}) пропущен: не выполнена зависимость {}",
+                step.id,
+                step.depends_on.join(", ")
+            ));
+            successful_steps.insert(step.id.clone(), false);
             continue;
         }
         let input = match tool_input(tool_name, &step.description, &config.workspace_root) {
             Some(input) => input,
             None => {
-                outputs.push(format!("{}: шаг пропущен — инструмент не поддержан runtime", step.id));
+                outputs.push(format!(
+                    "{}: шаг пропущен — инструмент не поддержан runtime",
+                    step.id
+                ));
+                successful_steps.insert(step.id.clone(), false);
                 continue;
             }
         };
@@ -361,6 +393,7 @@ async fn execute_plan_steps(
                     },
                 )?;
                 outputs.push(format!("{} ({tool_name}):\n{}", step.id, result.output));
+                successful_steps.insert(step.id.clone(), true);
             }
             Err(error) => {
                 emit(
@@ -371,7 +404,16 @@ async fn execute_plan_steps(
                         success: false,
                     },
                 )?;
-                outputs.push(format!("{} ({tool_name}) завершился с ошибкой: {error}", step.id));
+                outputs.push(format!(
+                    "{} ({tool_name}) завершился с ошибкой: {error}",
+                    step.id
+                ));
+                successful_steps.insert(step.id.clone(), false);
+                return Err(AgentError::PlanStepFailed {
+                    step_id: step.id.clone(),
+                    tool_name: tool_name.to_string(),
+                    message: error.to_string(),
+                });
             }
         }
     }
@@ -382,15 +424,26 @@ fn tool_input(tool_name: &str, description: &str, workspace_root: &Path) -> Opti
     let path = extract_backticked(description)
         .map(|path| normalize_plan_path(&path, workspace_root))
         .or_else(|| {
-        ["package.json", "README.md", "Cargo.toml", "src/", "lib/", "frontend/web/"]
+            [
+                "package.json",
+                "README.md",
+                "Cargo.toml",
+                "src/",
+                "lib/",
+                "frontend/web/",
+            ]
             .iter()
             .find(|candidate| description.contains(**candidate))
             .map(|candidate| candidate.to_string())
-    });
+        });
     match tool_name {
-        "filesystem.read" => Some(json!({"path": path.unwrap_or_else(|| "docs/sample-context.md".to_string())})),
+        "filesystem.read" => {
+            Some(json!({"path": path.unwrap_or_else(|| "docs/sample-context.md".to_string())}))
+        }
         "filesystem.list" => Some(json!({"path": path.unwrap_or_else(|| ".".to_string())})),
-        "filesystem.search" => Some(json!({"query": extract_backticked(description).unwrap_or_else(|| "TODO".to_string()), "limit": 100})),
+        "filesystem.search" => Some(
+            json!({"query": extract_backticked(description).unwrap_or_else(|| "TODO".to_string()), "limit": 100}),
+        ),
         "git.status" => Some(Value::Null),
         "git.diff" => Some(json!({})),
         "git.commit" => Some(json!({"message": extract_commit_message(description)})),
@@ -403,7 +456,9 @@ fn extract_commit_message(description: &str) -> String {
     for delimiter in ['"', '\''] {
         if let Some(start) = description.find(delimiter) {
             if let Some(end) = description[start + delimiter.len_utf8()..].find(delimiter) {
-                let message = description[start + delimiter.len_utf8()..start + delimiter.len_utf8() + end].trim();
+                let message = description
+                    [start + delimiter.len_utf8()..start + delimiter.len_utf8() + end]
+                    .trim();
                 if !message.is_empty() {
                     return message.to_string();
                 }

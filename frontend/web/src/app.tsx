@@ -1254,7 +1254,7 @@ export function App() {
             const copy = [...items];
             const index = copy.findIndex((line) => line.role === "assistant" && line.taskId === event.task_id);
             if (index !== -1) {
-              copy[index] = { role: "assistant", text: next };
+              copy[index] = { role: "assistant", text: next, taskId: event.task_id };
               return copy;
             }
             copy.push({ role: "assistant", text: next, taskId: event.task_id });
