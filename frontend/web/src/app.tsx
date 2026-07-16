@@ -2929,7 +2929,6 @@ export function App() {
                       }}
                     >
                       <strong>{formatSessionTitle(chat, index)}</strong>
-                      <span>{formatSessionPreview(chat)}</span>
                     </button>
                     <button
                       type="button"
