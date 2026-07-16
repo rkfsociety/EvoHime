@@ -1119,6 +1119,110 @@ h1 {
   color: #f3c969;
 }
 
+.chatTraceSummary {
+  width: min(100%, 760px);
+  justify-self: start;
+  margin-right: auto;
+  border: 1px solid rgba(143, 180, 255, 0.18);
+  border-radius: 18px;
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(91, 134, 255, 0.1), rgba(255, 255, 255, 0.035));
+}
+
+.chatTraceSummary summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 16px;
+  color: var(--text-1);
+  cursor: pointer;
+  list-style: none;
+}
+
+.chatTraceSummary summary::-webkit-details-marker {
+  display: none;
+}
+
+.chatTraceSummary summary::after {
+  content: "⌄";
+  color: var(--text-2);
+  transition: transform 160ms ease;
+}
+
+.chatTraceSummary[open] summary::after {
+  transform: rotate(180deg);
+}
+
+.chatTraceSummaryTitle,
+.chatTraceSummaryMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.chatTraceSummaryTitle {
+  color: var(--text-0);
+  font-weight: 700;
+}
+
+.chatTraceSummaryMeta {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.thinkingOrb {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6d86ad;
+  box-shadow: 0 0 0 5px rgba(109, 134, 173, 0.12);
+}
+
+.thinkingOrb.active {
+  background: var(--accent-1);
+  box-shadow: 0 0 0 5px rgba(62, 215, 178, 0.12);
+  animation: thinkingPulse 1.25s ease-in-out infinite;
+}
+
+.chatTraceSummaryBody {
+  display: grid;
+  gap: 8px;
+  padding: 0 12px 12px;
+  border-top: 1px solid rgba(143, 180, 255, 0.12);
+}
+
+.chatTraceEntry {
+  padding: 9px 10px;
+  border-radius: 11px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.chatTraceEntry strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--accent-2);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chatTraceEntry.tool strong {
+  color: var(--accent-1);
+}
+
+.chatTraceEntry pre {
+  margin: 0;
+  color: var(--text-1);
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+}
+
+@keyframes thinkingPulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
 .composer {
   width: min(100%, 920px);
   margin: 0 auto;

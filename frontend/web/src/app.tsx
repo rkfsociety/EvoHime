@@ -932,6 +932,10 @@ export function App() {
     [projects, projectSearch],
   );
   const hasConversation = lines.some((line) => line.role !== "system" && line.text.trim()) || Boolean(stream.trim());
+  const traceLines = useMemo(
+    () => lines.filter((line) => line.role === "system" || line.role === "tool"),
+    [lines],
+  );
   const selectedFileLanguage = useMemo(
     () => inferMonacoLanguage(selectedFilePath),
     [selectedFilePath],
@@ -2551,13 +2555,32 @@ export function App() {
               </div>
             </div>
           ) : (
-            lines.map((line, index) => (
+            lines.filter((line) => line.role !== "system" && line.role !== "tool").map((line, index) => (
               <article className={`line ${line.role}`} key={`${line.role}-${index}`}>
                 <strong>{translateChatRole(line.role)}</strong>
                 <pre>{line.text}</pre>
               </article>
             ))
           )}
+          {traceLines.length > 0 ? (
+            <details className="chatTraceSummary" open={Boolean(activeTaskId)}>
+              <summary>
+                <span className="chatTraceSummaryTitle">
+                  <span className={activeTaskId ? "thinkingOrb active" : "thinkingOrb"} aria-hidden="true" />
+                  {activeTaskId ? "Модель работает…" : "Ход работы"}
+                </span>
+                <span className="chatTraceSummaryMeta">{activeTaskId ? "Выполняю план" : "Завершено"}</span>
+              </summary>
+              <div className="chatTraceSummaryBody">
+                {traceLines.map((line, index) => (
+                  <article className={`chatTraceEntry ${line.role}`} key={`${line.role}-${index}`}>
+                    <strong>{translateChatRole(line.role)}</strong>
+                    <pre>{line.text}</pre>
+                  </article>
+                ))}
+              </div>
+            </details>
+          ) : null}
           {stream ? (
             <article className="line assistant streaming">
               <strong>Ассистент</strong>
