@@ -6,9 +6,10 @@ type AgentPresenceProps = {
 
 type WalkMode = "idle" | "walk";
 
-const BODY_WIDTH = 150;
+const BODY_WIDTH = 140;
 const EDGE_PAD = 8;
-const WALK_FRAMES = 6;
+/** Step length in px — drives bob phase so gait stays stable without morphing frames */
+const STEP_PX = 28;
 
 function randomBetween(min: number, max: number) {
   return min + Math.random() * (max - min);
@@ -18,9 +19,9 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
   const stageRef = useRef<HTMLElement | null>(null);
   const xRef = useRef(24);
   const [x, setX] = useState(24);
+  const [bob, setBob] = useState(0);
   const [facing, setFacing] = useState<1 | -1>(1);
   const [mode, setMode] = useState<WalkMode>("idle");
-  const [frame, setFrame] = useState(0);
   const targetRef = useRef(24);
   const modeRef = useRef<WalkMode>("idle");
   const busyRef = useRef(busy);
@@ -53,8 +54,8 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
       clearTimer();
       modeRef.current = "idle";
       setMode("idle");
-      setFrame(0);
-      const pause = busyRef.current ? randomBetween(350, 800) : randomBetween(1200, 3600);
+      setBob(0);
+      const pause = busyRef.current ? randomBetween(350, 800) : randomBetween(1400, 3800);
       timerRef.current = window.setTimeout(() => {
         startWalkTo(randomBetween(EDGE_PAD, maxX()));
       }, pause);
@@ -65,19 +66,22 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
     targetRef.current = xRef.current;
 
     const tick = () => {
-      const speed = busyRef.current ? 90 : 52;
+      const speed = busyRef.current ? 88 : 50;
       if (modeRef.current === "walk") {
         const target = targetRef.current;
         const delta = target - xRef.current;
         if (Math.abs(delta) <= 1.2) {
           xRef.current = target;
           setX(xRef.current);
+          setBob(0);
           scheduleIdle();
         } else {
           const step = Math.sign(delta) * Math.min(Math.abs(delta), speed / 60);
           xRef.current += step;
           setFacing(step >= 0 ? 1 : -1);
           setX(xRef.current);
+          // Stable gait bob from distance — same sprite, no frame morph
+          setBob(Math.abs(Math.sin((xRef.current / STEP_PX) * Math.PI)) * (busyRef.current ? 7 : 5));
         }
       }
       rafRef.current = window.requestAnimationFrame(tick);
@@ -113,23 +117,6 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
     setFacing(next >= xRef.current ? 1 : -1);
   }, [busy]);
 
-  useEffect(() => {
-    if (mode !== "walk") {
-      setFrame(0);
-      return;
-    }
-    const ms = busy ? 90 : 120;
-    const id = window.setInterval(() => {
-      setFrame((current) => (current + 1) % WALK_FRAMES);
-    }, ms);
-    return () => window.clearInterval(id);
-  }, [mode, busy]);
-
-  const src =
-    mode === "walk"
-      ? `/brand/agent-walk-${frame}.webp`
-      : "/brand/agent-idle.webp";
-
   return (
     <aside
       ref={stageRef}
@@ -146,14 +133,15 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
       <div
         className="agentPresenceMover"
         style={{
-          transform: `translate3d(${x}px, 0, 0) scaleX(${facing})`,
+          transform: `translate3d(${x}px, ${-bob}px, 0) scaleX(${facing})`,
         }}
       >
         <img
           className="agentPresenceBody"
-          src={src}
+          src="/brand/agent-presence.webp"
           alt=""
           draggable={false}
+          decoding="async"
         />
       </div>
     </aside>

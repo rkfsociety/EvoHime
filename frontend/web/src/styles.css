@@ -133,9 +133,9 @@ input {
 .agentPresenceMover {
   position: absolute;
   left: 0;
-  bottom: 8px;
-  width: 150px;
-  height: min(62%, 520px);
+  bottom: 4px;
+  width: 140px;
+  height: 320px;
   transform-origin: center bottom;
   will-change: transform;
 }
@@ -147,11 +147,10 @@ input {
   object-fit: contain;
   object-position: bottom center;
   filter: drop-shadow(0 14px 22px rgba(3, 8, 22, 0.32));
-  opacity: 0.95;
+  opacity: 0.96;
   user-select: none;
   transform-origin: center bottom;
-  /* avoid flicker when swapping walk frames */
-  image-rendering: auto;
+  pointer-events: none;
 }
 
 .agentPresence.idle .agentPresenceBody {
@@ -162,10 +161,10 @@ input {
   animation: none;
 }
 
-.agentPresence.busy.walking .agentPresenceBody {
+.agentPresence.busy .agentPresenceBody {
   filter:
     drop-shadow(0 14px 22px rgba(3, 8, 22, 0.32))
-    drop-shadow(0 0 16px rgba(62, 215, 178, 0.2));
+    drop-shadow(0 0 16px rgba(62, 215, 178, 0.18));
 }
 
 @keyframes agentPresenceIdle {
@@ -174,7 +173,7 @@ input {
     transform: translateY(0);
   }
   50% {
-    transform: translateY(-6px);
+    transform: translateY(-5px);
   }
 }
 
