@@ -3017,7 +3017,6 @@ export function App() {
                     Копировать чат
                   </button>
                 ) : null}
-                <span>Веб-сокет</span>
               </div>
             </header>
           ) : null}
