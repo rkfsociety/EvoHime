@@ -880,13 +880,14 @@ fn parse_plan_json(raw: &str) -> Option<Vec<PlanStep>> {
     serde_json::from_str::<Vec<PlanStep>>(raw).ok().or_else(|| {
         serde_json::from_str::<PlanEnvelope>(raw)
             .ok()
-            .map(|envelope| {
+            .and_then(|envelope| {
                 let drafts = if !envelope.steps.is_empty() {
                     envelope.steps
                 } else {
                     envelope.plan
                 };
-                drafts
+                (!drafts.is_empty()).then(|| {
+                    drafts
                     .into_iter()
                     .enumerate()
                     .map(|(index, draft)| PlanStep {
@@ -904,6 +905,7 @@ fn parse_plan_json(raw: &str) -> Option<Vec<PlanStep>> {
                             .collect(),
                     })
                     .collect()
+                })
             })
     })
 }
