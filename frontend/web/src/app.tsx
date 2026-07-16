@@ -1753,9 +1753,10 @@ export function App() {
   }
 
   function exportTrace() {
-    const entries = lines
-      .filter((line) => line.role === "system" || line.role === "tool")
-      .map((line) => ({ role: line.role, text: line.text }));
+    const entries = [
+      ...lines,
+      ...(stream ? [{ role: "assistant" as const, text: stream }] : []),
+    ].map((line) => ({ role: line.role, text: line.text }));
     const payload = {
       format: "evohime.trace.v1",
       exported_at: new Date().toISOString(),
