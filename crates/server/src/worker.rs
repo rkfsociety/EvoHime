@@ -24,6 +24,23 @@ pub struct WorkerJob {
     pub error: Option<String>,
 }
 
+pub fn is_terminal_status(status: &str) -> bool {
+    matches!(status, "completed" | "failed")
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::is_terminal_status;
+
+    #[test]
+    fn only_completed_and_failed_are_terminal() {
+        assert!(!is_terminal_status("queued"));
+        assert!(!is_terminal_status("running"));
+        assert!(is_terminal_status("completed"));
+        assert!(is_terminal_status("failed"));
+    }
+}
+
 impl WorkerClient {
     pub fn new(base_url: String) -> Result<Self> {
         Ok(Self {

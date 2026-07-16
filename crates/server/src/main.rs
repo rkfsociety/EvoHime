@@ -164,6 +164,12 @@ async fn main() -> anyhow::Result<()> {
         worker: worker::WorkerClient::new(config.worker_url.clone())?,
     });
 
+    let retention_state = state.clone();
+    let retention_days = config.worker_retention_days;
+    tokio::spawn(async move {
+        worker_retention_loop(retention_state, retention_days).await;
+    });
+
     let recovered = evohime_task_engine::recover_after_restart(&state.pool)
         .await
         .context("recover tasks after restart")?;
@@ -330,7 +336,11 @@ async fn create_worker_job(
     evohime_storage::set_worker_job_submitted(&state.pool, row.id, &worker_job.id, 1)
         .await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
-    let updated = poll_worker_job(&state, row.id, worker_job).await?;
+    spawn_worker_poll(state.clone(), row.id, worker_job);
+    let updated = evohime_storage::load_worker_job(&state.pool, row.id)
+        .await
+        .map_err(|e| ApiError::Internal(e.to_string()))?
+        .ok_or_else(|| ApiError::Internal("worker job disappeared after submit".into()))?;
     Ok((StatusCode::ACCEPTED, Json(updated)))
 }
 
@@ -353,11 +363,20 @@ async fn retry_worker_job(
         .await
         .map_err(|e| ApiError::Internal(e.to_string()))?
         .ok_or_else(|| ApiError::BadRequest("worker job not found".into()))?;
-    let worker_job = state
-        .worker
-        .submit(&row.task, &row.payload_json)
-        .await
-        .map_err(|e| ApiError::Unavailable(e.to_string()))?;
+    let worker_job = match state.worker.submit(&row.task, &row.payload_json).await {
+        Ok(job) => job,
+        Err(error) => {
+            let _ = evohime_storage::complete_worker_job(
+                &state.pool,
+                row.id,
+                "failed",
+                None,
+                Some(&error.to_string()),
+            )
+            .await;
+            return Err(ApiError::Unavailable(error.to_string()));
+        }
+    };
     evohime_storage::set_worker_job_submitted(
         &state.pool,
         row.id,
@@ -366,17 +385,32 @@ async fn retry_worker_job(
     )
     .await
     .map_err(|e| ApiError::Internal(e.to_string()))?;
-    Ok(Json(poll_worker_job(&state, row.id, worker_job).await?))
+    spawn_worker_poll(state.clone(), row.id, worker_job);
+    let updated = evohime_storage::load_worker_job(&state.pool, row.id)
+        .await
+        .map_err(|e| ApiError::Internal(e.to_string()))?
+        .ok_or_else(|| ApiError::Internal("worker job disappeared after retry".into()))?;
+    Ok(Json(updated))
+}
+
+fn spawn_worker_poll(state: Arc<AppState>, id: Uuid, worker_job: worker::WorkerJob) {
+    tokio::spawn(async move {
+        if let Err(error) = poll_worker_job(&state, id, worker_job).await {
+            let _ =
+                evohime_storage::complete_worker_job(&state.pool, id, "failed", None, Some(&error))
+                    .await;
+        }
+    });
 }
 
 async fn poll_worker_job(
     state: &AppState,
     id: Uuid,
     mut worker_job: worker::WorkerJob,
-) -> Result<evohime_storage::WorkerJobRow, ApiError> {
-    for _ in 0..20 {
-        if worker_job.status == "completed" || worker_job.status == "failed" {
-            return evohime_storage::complete_worker_job(
+) -> Result<(), String> {
+    for _ in 0..120 {
+        if worker::is_terminal_status(&worker_job.status) {
+            evohime_storage::complete_worker_job(
                 &state.pool,
                 id,
                 &worker_job.status,
@@ -384,24 +418,30 @@ async fn poll_worker_job(
                 worker_job.error.as_deref(),
             )
             .await
-            .map_err(|e| ApiError::Internal(e.to_string()));
+            .map_err(|e| e.to_string())?;
+            return Ok(());
         }
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        tokio::time::sleep(Duration::from_millis(250)).await;
         worker_job = state
             .worker
             .get(&worker_job.id)
             .await
-            .map_err(|e| ApiError::Unavailable(e.to_string()))?;
+            .map_err(|e| e.to_string())?;
     }
-    evohime_storage::complete_worker_job(
-        &state.pool,
-        id,
-        "failed",
-        None,
-        Some("worker polling timed out"),
-    )
-    .await
-    .map_err(|e| ApiError::Internal(e.to_string()))
+    Err("worker polling timed out".to_string())
+}
+
+async fn worker_retention_loop(state: Arc<AppState>, retention_days: i64) {
+    let mut interval = tokio::time::interval(Duration::from_secs(3600));
+    loop {
+        interval.tick().await;
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days);
+        match evohime_storage::prune_worker_jobs(&state.pool, cutoff).await {
+            Ok(count) if count > 0 => info!(count, retention_days, "pruned old worker jobs"),
+            Ok(_) => {}
+            Err(error) => warn!(%error, "worker job retention cleanup failed"),
+        }
+    }
 }
 
 async fn model_config(

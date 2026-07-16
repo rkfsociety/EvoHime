@@ -143,6 +143,19 @@ pub async fn complete_worker_job(
         .bind(id).bind(status).bind(result_json).bind(error).fetch_one(pool).await?)
 }
 
+pub async fn prune_worker_jobs(
+    pool: &PgPool,
+    older_than: DateTime<Utc>,
+) -> Result<u64, StorageError> {
+    let result = sqlx::query(
+        "DELETE FROM worker_jobs WHERE status IN ('completed', 'failed') AND completed_at IS NOT NULL AND completed_at < $1",
+    )
+    .bind(older_than)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
+}
+
 pub async fn load_setting(pool: &PgPool, key: &str) -> Result<Option<Value>, StorageError> {
     let row = sqlx::query_scalar::<_, Value>("SELECT value_json FROM app_settings WHERE key = $1")
         .bind(key)

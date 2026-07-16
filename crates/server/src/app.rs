@@ -22,6 +22,7 @@ pub struct AppConfig {
     pub model_config: ModelGatewayConfig,
     pub mcp_servers: Vec<McpServerConfig>,
     pub worker_url: String,
+    pub worker_retention_days: i64,
 }
 
 impl AppConfig {
@@ -43,6 +44,11 @@ impl AppConfig {
         };
         let worker_url =
             env::var("PYTHON_WORKER_URL").unwrap_or_else(|_| "http://127.0.0.1:8090".to_string());
+        let worker_retention_days = env::var("WORKER_JOB_RETENTION_DAYS")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .filter(|days: &i64| *days > 0)
+            .unwrap_or(7);
 
         Ok(Self {
             database_url,
@@ -52,6 +58,7 @@ impl AppConfig {
             model_config,
             mcp_servers,
             worker_url,
+            worker_retention_days,
         })
     }
 }
