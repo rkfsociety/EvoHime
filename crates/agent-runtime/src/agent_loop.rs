@@ -1213,7 +1213,103 @@ fn build_workspace_rules(workspace_root: &Path) -> Option<String> {
         }
     }
 
+    if let Some(plugin_context) = load_external_plugin_context(workspace_root) {
+        output.push_str("\n--- external agent plugins ---\n");
+        output.push_str(&plugin_context);
+        if output.chars().count() >= MAX_RULES_CHARS {
+            output = output.chars().take(MAX_RULES_CHARS).collect();
+            output.push_str("\n[workspace rules truncated]");
+        }
+    }
+
     (output.contains("--- ")).then_some(output)
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ExternalPluginManifest {
+    name: String,
+    #[serde(default)]
+    version: String,
+    skills: String,
+}
+
+fn discover_agent_plugins(workspace_root: &Path) -> Vec<(PathBuf, ExternalPluginManifest)> {
+    let root = workspace_root.join(".evohime").join("plugins");
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            if !path.is_dir() {
+                return None;
+            }
+            let manifest_path = path.join(".codex-plugin").join("plugin.json");
+            let manifest = std::fs::read_to_string(manifest_path)
+                .ok()
+                .and_then(|contents| {
+                    serde_json::from_str::<ExternalPluginManifest>(&contents).ok()
+                })?;
+            Some((path, manifest))
+        })
+        .collect()
+}
+
+fn load_external_plugin_context(workspace_root: &Path) -> Option<String> {
+    let mut output = String::new();
+    for (plugin_root, manifest) in discover_agent_plugins(workspace_root) {
+        let skills_root = plugin_root.join(&manifest.skills);
+        if !skills_root.starts_with(&plugin_root) || !skills_root.is_dir() {
+            continue;
+        }
+        output.push_str(&format!(
+            "Plugin `{}` v{} loaded from `{}`.\n",
+            manifest.name,
+            if manifest.version.is_empty() {
+                "unknown"
+            } else {
+                &manifest.version
+            },
+            skills_root
+                .strip_prefix(workspace_root)
+                .unwrap_or(&skills_root)
+                .display()
+        ));
+
+        let mut skills = std::fs::read_dir(&skills_root)
+            .ok()?
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.is_dir() && path.join("SKILL.md").is_file())
+            .collect::<Vec<_>>();
+        skills.sort();
+        for skill in skills {
+            let skill_name = skill
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("unknown");
+            output.push_str(&format!(
+                "- skill `{skill_name}`: read `{}` when applicable.\n",
+                skill
+                    .join("SKILL.md")
+                    .strip_prefix(workspace_root)
+                    .unwrap_or(&skill)
+                    .display()
+            ));
+        }
+
+        for bootstrap in ["using-superpowers", "verification-before-completion"] {
+            let path = skills_root.join(bootstrap).join("SKILL.md");
+            if let Ok(contents) = std::fs::read_to_string(path) {
+                output.push_str(&format!(
+                    "\nBootstrap skill `{bootstrap}`:\n{}\n",
+                    contents.trim()
+                ));
+            }
+        }
+    }
+    (!output.is_empty()).then_some(output)
 }
 
 #[cfg(test)]
@@ -1251,6 +1347,28 @@ mod tests {
         let context = build_workspace_rules(temp.path()).expect("rules context");
         assert!(context.contains("Follow Rust tests."));
         assert!(context.contains("Keep frontend presentation-only."));
+    }
+
+    #[test]
+    fn loads_external_plugin_manifest_and_skill_index() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let plugin = temp.path().join(".evohime/plugins/demo");
+        std::fs::create_dir_all(plugin.join(".codex-plugin")).expect("plugin metadata");
+        std::fs::create_dir_all(plugin.join("skills/bootstrap")).expect("skill dir");
+        std::fs::write(
+            plugin.join(".codex-plugin/plugin.json"),
+            r#"{"name":"demo","version":"1.0.0","skills":"./skills/"}"#,
+        )
+        .expect("manifest");
+        std::fs::write(
+            plugin.join("skills/bootstrap/SKILL.md"),
+            "Use the demo skill.",
+        )
+        .expect("skill");
+
+        let context = build_workspace_rules(temp.path()).expect("plugin context");
+        assert!(context.contains("Plugin `demo` v1.0.0 loaded"));
+        assert!(context.contains("skill `bootstrap`"));
     }
 
     #[test]
