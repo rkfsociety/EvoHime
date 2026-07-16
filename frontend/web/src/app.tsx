@@ -381,16 +381,16 @@ function translateGitAction(action: GitAction) {
   }
 }
 
-function translateChatRole(role: ChatLine["role"]) {
+function translateChatRole(role: ChatLine["role"], userLogin?: string | null) {
   switch (role) {
     case "assistant":
-      return "Ассистент";
+      return "EvoHime";
     case "tool":
       return "Действие";
     case "system":
       return "Ход работы";
     case "user":
-      return "Пользователь";
+      return userLogin?.trim() || "Пользователь";
   }
 }
 
@@ -1668,7 +1668,7 @@ export function App() {
       ...lines,
       ...(stream ? [{ role: "assistant" as const, text: stream }] : []),
     ]
-      .map((line) => `${translateChatRole(line.role)}:\n${line.text}`)
+      .map((line) => `${translateChatRole(line.role, githubAuth?.login)}:\n${line.text}`)
       .join("\n\n");
     try {
       await navigator.clipboard.writeText(content || "Чат пока пуст.");
@@ -2578,22 +2578,22 @@ export function App() {
             visibleChatLines.map((line, index) => (
               <Fragment key={`${line.role}-${index}`}>
                 {index === lastAssistantLineIndex && traceLines.length > 0 && (hasConversation || Boolean(activeTaskId)) ? (
-                  <ChatTraceSummary traceLines={traceLines} active={Boolean(activeTaskId)} />
+                  <ChatTraceSummary traceLines={traceLines} active={Boolean(activeTaskId)} userLogin={githubAuth?.login} />
                 ) : null}
                 <article className={`line ${line.role}`}>
-                  <strong>{translateChatRole(line.role)}</strong>
+                  <strong>{translateChatRole(line.role, githubAuth?.login)}</strong>
                   {line.role === "assistant" ? <MarkdownMessage text={line.text} /> : <pre>{line.text}</pre>}
                 </article>
               </Fragment>
             ))
           )}
           {lastAssistantLineIndex === -1 && traceLines.length > 0 && (hasConversation || Boolean(activeTaskId)) ? (
-            <ChatTraceSummary traceLines={traceLines} active={Boolean(activeTaskId)} />
+            <ChatTraceSummary traceLines={traceLines} active={Boolean(activeTaskId)} userLogin={githubAuth?.login} />
           ) : null}
           {stream && lastAssistantLineIndex === -1 ? (
             <>
               {traceLines.length > 0 && (hasConversation || Boolean(activeTaskId)) ? (
-                <ChatTraceSummary traceLines={traceLines} active={Boolean(activeTaskId)} />
+                <ChatTraceSummary traceLines={traceLines} active={Boolean(activeTaskId)} userLogin={githubAuth?.login} />
               ) : null}
             <article className="line assistant streaming">
               <strong>Ассистент</strong>
@@ -2973,7 +2973,7 @@ export function App() {
               {lines.filter((line) => line.role === "system" || line.role === "tool").length > 0 ? (
                 lines.filter((line) => line.role === "system" || line.role === "tool").map((line, index) => (
                   <article className={`traceItem ${line.role}`} key={`${line.role}-${index}`}>
-                    <strong>{translateChatRole(line.role)}</strong>
+                    <strong>{translateChatRole(line.role, githubAuth?.login)}</strong>
                     <pre>{line.text}</pre>
                   </article>
                 ))
@@ -3049,7 +3049,7 @@ function MarkdownMessage({ text }: { text: string }) {
   );
 }
 
-function ChatTraceSummary({ traceLines, active }: { traceLines: ChatLine[]; active: boolean }) {
+function ChatTraceSummary({ traceLines, active, userLogin }: { traceLines: ChatLine[]; active: boolean; userLogin?: string | null }) {
   return (
     <details className="chatTraceSummary" open={active}>
       <summary>
@@ -3062,7 +3062,7 @@ function ChatTraceSummary({ traceLines, active }: { traceLines: ChatLine[]; acti
       <div className="chatTraceSummaryBody">
         {traceLines.map((line, index) => (
           <article className={`chatTraceEntry ${line.role}`} key={`${line.role}-${index}`}>
-            <strong>{translateChatRole(line.role)}</strong>
+            <strong>{translateChatRole(line.role, userLogin)}</strong>
             <pre>{line.text}</pre>
           </article>
         ))}
