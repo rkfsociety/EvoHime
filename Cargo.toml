@@ -3,6 +3,7 @@ members = [
   "crates/protocol",
   "crates/permissions",
   "crates/storage",
+  "crates/memory",
   "crates/tool-runtime",
   "crates/agent-runtime",
   "crates/task-engine",

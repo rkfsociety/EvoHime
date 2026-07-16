@@ -10,6 +10,7 @@ Last updated: 2026-07-16
 | --- | --- | --- |
 | `server` | Active | HTTP + WebSocket, workspace file, Git, MCP servers, and tool catalog APIs |
 | `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema |
+| `memory` | Active | Redaction, normalize, dedupe, conflict + `admit_memory_item` (6.18) |
 | `storage` | Active | Sessions, tasks, events, **session_messages**, legacy notes, **memory_items** (6.16/6.17), **app_settings** |
 | `tool-runtime` | Active | Registry + sandboxed filesystem, shell, Git, browser, and MCP call tools |
 | `agent-runtime` | Active | `agent_loop.rs` — LLM planning, dependency-batch tool execution, bounded replan, project/memory context |
@@ -122,4 +123,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: memory schema `6.16`/`6.17` landed in storage. Next: `6.18` memory service (redact/dedupe/conflict), or parallel tracks (observability / `6.14` PR workflow).
+**Stage 6 / Milestone 5**: memory schema + service (`6.16`–`6.18`) done. Next: `6.19` retrieval/budget, or parallel UI/PR tracks.

@@ -604,6 +604,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "evohime-memory"
+version = "0.1.0"
+dependencies = [
+ "evohime-storage",
+ "regex",
+ "serde",
+ "sqlx",
+ "thiserror 2.0.18",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "evohime-model-gateway"
 version = "0.1.0"
 dependencies = [

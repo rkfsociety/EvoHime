@@ -188,7 +188,7 @@
 | --- | --- | --- | --- |
 | 6.16 | Memory model: session, workspace, project, global(=user), experience | ✅ | `migrations/0013_memory_items.sql`, `crates/storage/src/memory.rs` |
 | 6.17 | Структурированные memory items: kind, confidence, importance, source, status, supersedes, pinned | ✅ schema | `migrations/0013_memory_items.sql`, `crates/storage/src/memory.rs` |
-| 6.18 | Memory service: нормализация, redaction секретов, дедупликация и разрешение конфликтов | 🟡 Planned | новый `crates/memory/` |
+| 6.18 | Memory service: нормализация, redaction секретов, дедупликация и разрешение конфликтов | ✅ | `crates/memory/` |
 | 6.19 | Memory retrieval: scope filtering, ranking, budget, untrusted tagging + `memory.search` | 🟡 Planned | `crates/memory/`, `crates/agent-runtime/` |
 | 6.20 | Memory extraction + decision gate: auto-promote или ask-on-uncertainty | 🟡 Planned | `crates/agent-runtime/`, `crates/model-gateway/` |
 | 6.21 | Experience memory: success/failure patterns, verification rules и playbooks | 🟡 Planned | `crates/memory/`, `crates/agent-runtime/` |

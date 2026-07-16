@@ -1,0 +1,15 @@
+[package]
+name = "evohime-memory"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+evohime-storage = { path = "../storage" }
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+sqlx = { version = "0.8", features = ["postgres", "runtime-tokio-rustls"] }
+thiserror = "2"
+uuid = { version = "1", features = ["serde", "v4"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
