@@ -8,6 +8,7 @@ type WalkMode = "idle" | "walk";
 
 const BODY_WIDTH = 150;
 const EDGE_PAD = 8;
+const WALK_FRAMES = 6;
 
 function randomBetween(min: number, max: number) {
   return min + Math.random() * (max - min);
@@ -19,6 +20,7 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
   const [x, setX] = useState(24);
   const [facing, setFacing] = useState<1 | -1>(1);
   const [mode, setMode] = useState<WalkMode>("idle");
+  const [frame, setFrame] = useState(0);
   const targetRef = useRef(24);
   const modeRef = useRef<WalkMode>("idle");
   const busyRef = useRef(busy);
@@ -51,6 +53,7 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
       clearTimer();
       modeRef.current = "idle";
       setMode("idle");
+      setFrame(0);
       const pause = busyRef.current ? randomBetween(350, 800) : randomBetween(1200, 3600);
       timerRef.current = window.setTimeout(() => {
         startWalkTo(randomBetween(EDGE_PAD, maxX()));
@@ -110,6 +113,23 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
     setFacing(next >= xRef.current ? 1 : -1);
   }, [busy]);
 
+  useEffect(() => {
+    if (mode !== "walk") {
+      setFrame(0);
+      return;
+    }
+    const ms = busy ? 90 : 120;
+    const id = window.setInterval(() => {
+      setFrame((current) => (current + 1) % WALK_FRAMES);
+    }, ms);
+    return () => window.clearInterval(id);
+  }, [mode, busy]);
+
+  const src =
+    mode === "walk"
+      ? `/brand/agent-walk-${frame}.webp`
+      : "/brand/agent-idle.webp";
+
   return (
     <aside
       ref={stageRef}
@@ -131,7 +151,7 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
       >
         <img
           className="agentPresenceBody"
-          src="/brand/agent-body-720.webp"
+          src={src}
           alt=""
           draggable={false}
         />
