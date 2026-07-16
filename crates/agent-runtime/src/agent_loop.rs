@@ -428,6 +428,7 @@ async fn execute_plan_steps(
             successful_steps.insert(step.id.clone(), false);
             continue;
         }
+        let mut effective_tool_name = tool_name;
         let input = match tool_input(tool_name, &step.description, &config.workspace_root) {
             Some(input) => input,
             None => {
@@ -439,21 +440,30 @@ async fn execute_plan_steps(
                 continue;
             }
         };
+        if tool_name == "filesystem.read"
+            && input
+                .get("path")
+                .and_then(Value::as_str)
+                .map(|path| config.workspace_root.join(path).is_dir())
+                .unwrap_or(false)
+        {
+            effective_tool_name = "filesystem.list";
+        }
 
         emit(
             event_tx,
             ServerEvent::ToolStarted {
                 task_id: config.task_id,
-                tool_name: tool_name.to_string(),
+                tool_name: effective_tool_name.to_string(),
             },
         )?;
-        match tools.execute(&context, tool_name, input).await {
+        match tools.execute(&context, effective_tool_name, input).await {
             Ok(result) => {
                 emit(
                     event_tx,
                     ServerEvent::ToolOutput {
                         task_id: config.task_id,
-                        tool_name: tool_name.to_string(),
+                        tool_name: effective_tool_name.to_string(),
                         output: result.output.clone(),
                     },
                 )?;
@@ -461,11 +471,14 @@ async fn execute_plan_steps(
                     event_tx,
                     ServerEvent::ToolCompleted {
                         task_id: config.task_id,
-                        tool_name: tool_name.to_string(),
+                        tool_name: effective_tool_name.to_string(),
                         success: true,
                     },
                 )?;
-                outputs.push(format!("{} ({tool_name}):\n{}", step.id, result.output));
+                outputs.push(format!(
+                    "{} ({effective_tool_name}):\n{}",
+                    step.id, result.output
+                ));
                 successful_steps.insert(step.id.clone(), true);
             }
             Err(error) => {
@@ -473,18 +486,24 @@ async fn execute_plan_steps(
                     event_tx,
                     ServerEvent::ToolCompleted {
                         task_id: config.task_id,
-                        tool_name: tool_name.to_string(),
+                        tool_name: effective_tool_name.to_string(),
                         success: false,
                     },
                 )?;
                 outputs.push(format!(
-                    "{} ({tool_name}) завершился с ошибкой: {error}",
+                    "{} ({effective_tool_name}) завершился с ошибкой: {error}",
                     step.id
                 ));
                 successful_steps.insert(step.id.clone(), false);
+                if matches!(
+                    effective_tool_name,
+                    "filesystem.read" | "filesystem.list" | "filesystem.search"
+                ) {
+                    continue;
+                }
                 return Err(AgentError::PlanStepFailed {
                     step_id: step.id.clone(),
-                    tool_name: tool_name.to_string(),
+                    tool_name: effective_tool_name.to_string(),
                     message: error.to_string(),
                 });
             }
@@ -732,7 +751,10 @@ fn tool_call_description(tool_name: &str, input: &serde_json::Map<String, Value>
     match tool_name {
         "filesystem.write" => format!(
             "path: {}\n```\n{}\n```",
-            input.get("path").and_then(Value::as_str).unwrap_or_default(),
+            input
+                .get("path")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
             input
                 .get("content")
                 .and_then(Value::as_str)
@@ -740,7 +762,10 @@ fn tool_call_description(tool_name: &str, input: &serde_json::Map<String, Value>
         ),
         "filesystem.patch" => format!(
             "path: {}\n```\n{}\n```",
-            input.get("path").and_then(Value::as_str).unwrap_or_default(),
+            input
+                .get("path")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
             input
                 .get("patch")
                 .and_then(Value::as_str)
