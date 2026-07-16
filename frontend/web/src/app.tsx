@@ -1,5 +1,5 @@
 import Editor from "@monaco-editor/react";
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
@@ -946,6 +946,14 @@ export function App() {
   const traceLines = useMemo(
     () => lines.filter((line) => line.role === "system" || line.role === "tool"),
     [lines],
+  );
+  const visibleChatLines = useMemo(
+    () => lines.filter((line) => line.role !== "system" && line.role !== "tool"),
+    [lines],
+  );
+  const lastAssistantLineIndex = useMemo(
+    () => visibleChatLines.reduce((last, line, index) => line.role === "assistant" ? index : last, -1),
+    [visibleChatLines],
   );
   const selectedFileLanguage = useMemo(
     () => inferMonacoLanguage(selectedFilePath),
@@ -2563,37 +2571,31 @@ export function App() {
               </div>
             </div>
           ) : (
-            lines.filter((line) => line.role !== "system" && line.role !== "tool").map((line, index) => (
-              <article className={`line ${line.role}`} key={`${line.role}-${index}`}>
-                <strong>{translateChatRole(line.role)}</strong>
-                {line.role === "assistant" ? <MarkdownMessage text={line.text} /> : <pre>{line.text}</pre>}
-              </article>
+            visibleChatLines.map((line, index) => (
+              <Fragment key={`${line.role}-${index}`}>
+                {index === lastAssistantLineIndex && traceLines.length > 0 && (hasConversation || Boolean(activeTaskId)) ? (
+                  <ChatTraceSummary traceLines={traceLines} active={Boolean(activeTaskId)} />
+                ) : null}
+                <article className={`line ${line.role}`}>
+                  <strong>{translateChatRole(line.role)}</strong>
+                  {line.role === "assistant" ? <MarkdownMessage text={line.text} /> : <pre>{line.text}</pre>}
+                </article>
+              </Fragment>
             ))
           )}
-          {traceLines.length > 0 && (hasConversation || Boolean(activeTaskId)) ? (
-            <details className="chatTraceSummary" open={Boolean(activeTaskId)}>
-              <summary>
-                <span className="chatTraceSummaryTitle">
-                  <span className={activeTaskId ? "thinkingOrb active" : "thinkingOrb"} aria-hidden="true" />
-                  {activeTaskId ? "Модель работает…" : "Ход работы"}
-                </span>
-                <span className="chatTraceSummaryMeta">{activeTaskId ? "Выполняю план" : "Завершено"}</span>
-              </summary>
-              <div className="chatTraceSummaryBody">
-                {traceLines.map((line, index) => (
-                  <article className={`chatTraceEntry ${line.role}`} key={`${line.role}-${index}`}>
-                    <strong>{translateChatRole(line.role)}</strong>
-                    <pre>{line.text}</pre>
-                  </article>
-                ))}
-              </div>
-            </details>
+          {lastAssistantLineIndex === -1 && traceLines.length > 0 && (hasConversation || Boolean(activeTaskId)) ? (
+            <ChatTraceSummary traceLines={traceLines} active={Boolean(activeTaskId)} />
           ) : null}
-          {stream ? (
+          {stream && lastAssistantLineIndex === -1 ? (
+            <>
+              {traceLines.length > 0 && (hasConversation || Boolean(activeTaskId)) ? (
+                <ChatTraceSummary traceLines={traceLines} active={Boolean(activeTaskId)} />
+              ) : null}
             <article className="line assistant streaming">
               <strong>Ассистент</strong>
               <MarkdownMessage text={stream} />
             </article>
+            </>
           ) : null}
         </div>
         {!hasConversation ? (
@@ -3071,5 +3073,27 @@ function MarkdownMessage({ text }: { text: string }) {
         {text}
       </ReactMarkdown>
     </div>
+  );
+}
+
+function ChatTraceSummary({ traceLines, active }: { traceLines: ChatLine[]; active: boolean }) {
+  return (
+    <details className="chatTraceSummary" open={active}>
+      <summary>
+        <span className="chatTraceSummaryTitle">
+          <span className={active ? "thinkingOrb active" : "thinkingOrb"} aria-hidden="true" />
+          {active ? "Модель работает…" : "Ход работы"}
+        </span>
+        <span className="chatTraceSummaryMeta">{active ? "Выполняю план" : "Завершено"}</span>
+      </summary>
+      <div className="chatTraceSummaryBody">
+        {traceLines.map((line, index) => (
+          <article className={`chatTraceEntry ${line.role}`} key={`${line.role}-${index}`}>
+            <strong>{translateChatRole(line.role)}</strong>
+            <pre>{line.text}</pre>
+          </article>
+        ))}
+      </div>
+    </details>
   );
 }
