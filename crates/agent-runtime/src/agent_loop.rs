@@ -680,44 +680,32 @@ fn parse_json_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {
             let Some(object) = value.as_object() else {
                 continue;
             };
-            if object.get("type").and_then(Value::as_str) != Some("tool.call") {
-                continue;
-            }
-            let Some(tool_name) = object.get("tool").and_then(Value::as_str) else {
+            let Some(type_name) = object.get("type").and_then(Value::as_str) else {
                 continue;
             };
-            let Some(input) = object.get("input").and_then(Value::as_object) else {
+            let (tool_name, input) = if type_name == "tool.call" {
+                let Some(tool_name) = object.get("tool").and_then(Value::as_str) else {
+                    continue;
+                };
+                let Some(input) = object.get("input").and_then(Value::as_object) else {
+                    continue;
+                };
+                (tool_name.to_string(), input.clone())
+            } else if is_supported_tool(type_name) {
+                let input = object
+                    .iter()
+                    .filter(|(key, _)| key.as_str() != "type")
+                    .map(|(key, value)| (key.clone(), value.clone()))
+                    .collect();
+                (type_name.to_string(), input)
+            } else {
                 continue;
             };
 
-            let description = match tool_name {
-                "filesystem.write" => format!(
-                    "path: {}\n```\n{}\n```",
-                    input
-                        .get("path")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default(),
-                    input
-                        .get("content")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                ),
-                "filesystem.patch" => format!(
-                    "path: {}\n```\n{}\n```",
-                    input
-                        .get("path")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default(),
-                    input
-                        .get("patch")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                ),
-                _ => serde_json::to_string(input).unwrap_or_default(),
-            };
+            let description = tool_call_description(&tool_name, &input);
             steps.push(PlanStep {
                 id: format!("step-{}", steps.len() + 1),
-                tool_name: tool_name.to_string(),
+                tool_name,
                 description,
                 depends_on: Vec::new(),
             });
@@ -725,6 +713,23 @@ fn parse_json_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {
     }
 
     (!steps.is_empty()).then(|| normalize_plan(steps))
+}
+
+fn is_supported_tool(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "filesystem.read"
+            | "filesystem.list"
+            | "filesystem.search"
+            | "filesystem.write"
+            | "filesystem.patch"
+            | "shell.execute"
+            | "git.status"
+            | "git.diff"
+            | "git.commit"
+            | "git.pull"
+            | "git.push"
+    )
 }
 
 fn parse_tagged_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {
@@ -1519,6 +1524,18 @@ mod tests {
             .description
             .contains("path: docs/agent-dogfood-check.md"));
         assert!(plan[0].description.contains("agent write verified"));
+    }
+
+    #[test]
+    fn parses_direct_typed_json_tool_call() {
+        let plan = parse_plan(
+            r#"```json
+{"type":"filesystem.write","path":"docs/direct.md","content":"direct"}
+```"#,
+        );
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].tool_name, "filesystem.write");
+        assert!(plan[0].description.contains("docs/direct.md"));
     }
 
     #[test]
