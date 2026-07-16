@@ -201,8 +201,8 @@
 
 | Приоритет | Улучшение | Что добавить |
 | --- | --- | --- |
-| P1 | Декомпозиция `frontend/web/src/app.tsx` | Вынести панели, WebSocket/event orchestration, API-клиент и локальные state-модули в отдельные компоненты и hooks |
-| P1 | Typed API client | Общий слой запросов с типизированными ответами и единообразной обработкой ошибок вместо разрозненных `fetch()` |
+| P1 | Декомпозиция `frontend/web/src/app.tsx` | 🟡 types + typed API client + lib + Actions/Plugins/Sites panels; дальше — остальные панели/hooks |
+| P1 | Typed API client | 🟡 `frontend/web/src/api/*` поверх `apiRequest` |
 | P1 | Более глубокие панели Tasks/Actions | Показывать зависимости шагов, причину паузы, повторные попытки, ожидание approvals и восстановление после restart |
 
 ### P2 — Поиск, разрешения и GitHub workflow
@@ -224,7 +224,7 @@
 
 - `6.11` План-исполнитель с реальным графом шагов и повторным планированием ✅ (batches + bounded replan)
 - `6.12` Расширенные checkpoints, approvals recovery и task replay ✅
-- `6.13` Декомпозиция frontend shell (`app.tsx` -> panels/hooks/services)
+- `6.13` Декомпозиция frontend shell (`app.tsx` -> panels/hooks/services) 🟡 (types/api/lib + first panels)
 - `6.14` GitHub PR workflow: diff, review comments, checks, create PR
 - `6.15` Worker reliability: retries, heartbeat, stalled-job handling ✅ (process health + per-job heartbeat stall + typed payloads)
 

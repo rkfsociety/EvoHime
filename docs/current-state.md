@@ -121,4 +121,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: foundations, worker reliability/ML handlers, plan executor, and extended checkpoints/resume are in place. Next: observability and frontend shell split (`6.13`).
+**Stage 6 / Milestone 5**: foundations through checkpoints are in place; frontend shell split started (`types`/`api`/`lib`/`panels`). Next: finish remaining panels/hooks, observability.

@@ -12,471 +12,80 @@ import type { TaskStatusChangedEvent, TaskStepChangedEvent, ActionLoggedEvent } 
 import type { ApprovalRequiredEvent } from "./protocol";
 import { TerminalPanel, TerminalEntry } from "./components/TerminalPanel";
 import { ApprovalModal } from "./components/ApprovalModal";
-
-type ChatLine = {
-  role: "assistant" | "tool" | "system" | "user";
-  text: string;
-  taskId?: string;
-};
-
-type WorkspacePanel =
-  | "chat"
-  | "files"
-  | "sites"
-  | "editor"
-  | "terminal"
-  | "git"
-  | "plugins"
-  | "pull-requests"
-  | "scheduled"
-  | "tasks"
-  | "actions"
-  | "settings";
-
-type ModelConfig = {
-  provider: string;
-  model: string;
-  base_url: string;
-  configured: boolean;
-  available_models: string[];
-  billing_mode: "free" | "paid";
-  default_route: string;
-  routes: Array<{
-    name: string;
-    provider: string;
-    model: string;
-    base_url: string;
-    configured: boolean;
-    available_models: string[];
-    billing_mode: "free" | "paid";
-  }>;
-};
-
-type ModelRouteDraft = {
-  name: string;
-  provider: string;
-  model: string;
-  base_url: string;
-  api_key: string;
-  billing_mode: "free" | "paid";
-  configured?: boolean;
-};
-
-type ChatSessionSummary = {
-  session_id: string;
-  created_at: string;
-  title?: string | null;
-  workspace_path?: string | null;
-  last_message_at: string | null;
-  last_message: string | null;
-  last_role: string | null;
-};
-
-type ProjectSelection = {
-  label: string;
-  path: string | null;
-};
-
-type ProjectSummary = {
-  name: string;
-  path: string;
-};
-
-type ProjectComposerPreference = {
-  model?: string;
-  workMode?: PermissionMode;
-};
-
-const selectedProjectStorageKey = "evohime.selectedProject";
-const projectComposerPreferencesStorageKey = "evohime.projectComposerPreferences";
-const traceOpenStorageKey = "evohime.traceOpen";
-
-function loadTraceOpen() {
-  try {
-    return localStorage.getItem(traceOpenStorageKey) === "true";
-  } catch {
-    return false;
-  }
-}
-
-function projectPreferenceKey(path: string | null) {
-  return path ?? "__no_project__";
-}
-
-function loadProjectComposerPreference(path: string | null): ProjectComposerPreference {
-  try {
-    const stored = localStorage.getItem(projectComposerPreferencesStorageKey);
-    const preferences = stored ? JSON.parse(stored) as Record<string, ProjectComposerPreference> : {};
-    return preferences[projectPreferenceKey(path)] ?? {};
-  } catch {
-    return {};
-  }
-}
-
-function saveProjectComposerPreference(path: string | null, preference: ProjectComposerPreference) {
-  try {
-    const stored = localStorage.getItem(projectComposerPreferencesStorageKey);
-    const preferences = stored ? JSON.parse(stored) as Record<string, ProjectComposerPreference> : {};
-    preferences[projectPreferenceKey(path)] = preference;
-    localStorage.setItem(projectComposerPreferencesStorageKey, JSON.stringify(preferences));
-  } catch {
-    // Browser storage can be unavailable; the in-memory state still works.
-  }
-}
-
-function loadSelectedProject(): ProjectSelection {
-  try {
-    const stored = localStorage.getItem(selectedProjectStorageKey);
-    if (stored) {
-      const project = JSON.parse(stored) as ProjectSelection;
-      if (typeof project.label === "string" && (typeof project.path === "string" || project.path === null)) {
-        return project;
-      }
-    }
-  } catch {
-    // Ignore malformed browser state and use the current workspace.
-  }
-  return { label: "EvoHime", path: "." };
-}
-
-type GithubAuthInfo = {
-  authenticated: boolean;
-  login: string | null;
-  source: string;
-};
-
-type PullRequestAuthor = {
-  login: string;
-};
-
-type PullRequestSummary = {
-  number: number;
-  title: string;
-  url: string;
-  state: string;
-  author: PullRequestAuthor | null;
-  headRefName: string;
-  baseRefName: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type PullRequestScope = "all" | "created" | "review_requested";
-
-type FileNode = {
-  name: string;
-  path: string;
-  kind: "dir" | "file";
-  size: number;
-  modified_at: string | null;
-};
-
-type FileListing = {
-  path: string;
-  entries: FileNode[];
-};
-
-type FileContent = {
-  path: string;
-  content: string;
-};
-
-type SaveResponse = {
-  path: string;
-  bytes: number;
-  change: "created" | "updated";
-};
-
-type GitSnapshot = {
-  status: string;
-  diff: string;
-};
-
-type GitAction = "commit" | "pull" | "push";
-
-type TaskView = { id: string; message: string; status: string; steps: Record<string, string> };
-type ActionView = { taskId: string; action: string; detail: string; createdAt: string };
-type PermissionMode = "ask" | "allow" | "deny";
-type PermissionSettings = Record<string, { mode: PermissionMode }>;
-type ToolDefinition = {
-  name: string;
-  description: string;
-  permissions: string[];
-  timeout_ms: number;
-};
-type McpServerConfig = {
-  name: string;
-  url: string;
-  enabled: boolean;
-  description?: string | null;
-};
+import { ActionsPanel } from "./panels/ActionsPanel";
+import { PluginsPanel } from "./panels/PluginsPanel";
+import { SitesPanel } from "./panels/SitesPanel";
+import {
+  filesApi,
+  gitApi,
+  githubApi,
+  mcpApi,
+  modelsApi,
+  permissionsApi,
+  projectsApi,
+  sessionsApi,
+} from "./api";
+import {
+  chatMatchesProject,
+  formatProfileInitials,
+  formatRelativeAge,
+  formatSessionPreview,
+  formatSessionTimestamp,
+  formatSessionTitle,
+  summarizeChatTitle,
+  summarizeGitStatus,
+  translateChatRole,
+  translateGitAction,
+  translateModelConfigStatus,
+  translatePermissionMode,
+  translateSaveState,
+  translateSocketState,
+  translateStepStatus,
+  translateTaskStatus,
+} from "./lib/format";
+import {
+  formatFileSize,
+  inferMonacoLanguage,
+  normalizePath,
+  parentPath,
+  sortFileNodes,
+} from "./lib/paths";
+import {
+  loadProjectComposerPreference,
+  loadSelectedProject,
+  loadTraceOpen,
+  projectPreferenceKey,
+  saveProjectComposerPreference,
+  saveSelectedProject,
+  saveTraceOpen,
+} from "./lib/storage";
+import type {
+  ActionView,
+  ChatLine,
+  ChatSessionSummary,
+  FileContent,
+  FileListing,
+  FileNode,
+  GitAction,
+  GitSnapshot,
+  GithubAuthInfo,
+  McpServerConfig,
+  ModelConfig,
+  ModelRouteDraft,
+  PermissionMode,
+  PermissionSettings,
+  ProjectSelection,
+  ProjectSummary,
+  PullRequestScope,
+  PullRequestSummary,
+  SaveResponse,
+  TaskView,
+  ToolDefinition,
+  WorkspacePanel,
+} from "./types";
+import { sidebarQuickLinks, workspacePanels } from "./types";
 
 const initialLines: ChatLine[] = [];
-
-const workspacePanels: Array<{ id: WorkspacePanel; label: string; phase: string }> = [
-  { id: "chat", label: "Чат", phase: "активно" },
-  { id: "files", label: "Файлы", phase: "этап 4" },
-  { id: "sites", label: "Сайты", phase: "этап 6" },
-  { id: "editor", label: "Редактор", phase: "этап 4" },
-  { id: "terminal", label: "Терминал", phase: "этап 3" },
-  { id: "git", label: "Гит", phase: "этап 4" },
-  { id: "plugins", label: "Плагины", phase: "этап 6" },
-  { id: "pull-requests", label: "Пулл-реквесты", phase: "GitHub" },
-  { id: "scheduled", label: "Запланировано", phase: "этап 5" },
-  { id: "tasks", label: "Задачи", phase: "этап 5" },
-  { id: "actions", label: "Действия", phase: "этап 5" },
-  { id: "settings", label: "Настройки", phase: "этап 2" },
-];
-
-const sidebarQuickLinks: Array<{
-  id: "new-task" | "scheduled" | "plugins" | "sites" | "pull-requests" | "chat";
-  label: string;
-  icon: string;
-  panel: WorkspacePanel;
-}> = [
-  { id: "new-task", label: "Новая задача", icon: "✎", panel: "chat" },
-  { id: "scheduled", label: "Запланировано", icon: "◷", panel: "scheduled" },
-  { id: "plugins", label: "Плагины", icon: "◌", panel: "plugins" },
-  { id: "sites", label: "Сайты", icon: "▦", panel: "sites" },
-  { id: "pull-requests", label: "Пулл-реквесты", icon: "⟡", panel: "pull-requests" },
-  { id: "chat", label: "Чат", icon: "⊕", panel: "chat" },
-];
-
-function normalizePath(path?: string) {
-  if (!path || path === ".") {
-    return ".";
-  }
-  return path.replace(/\\/g, "/");
-}
-
-function parentPath(path: string) {
-  const normalized = normalizePath(path);
-  if (normalized === ".") {
-    return ".";
-  }
-  const segments = normalized.split("/").filter(Boolean);
-  segments.pop();
-  return segments.length > 0 ? segments.join("/") : ".";
-}
-
-function inferMonacoLanguage(path: string | null) {
-  if (!path) {
-    return "plaintext";
-  }
-
-  const lower = path.toLowerCase();
-  if (lower.endsWith(".ts") || lower.endsWith(".tsx")) return "typescript";
-  if (lower.endsWith(".js") || lower.endsWith(".jsx") || lower.endsWith(".mjs")) return "javascript";
-  if (lower.endsWith(".json")) return "json";
-  if (lower.endsWith(".md") || lower.endsWith(".markdown")) return "markdown";
-  if (lower.endsWith(".rs")) return "rust";
-  if (lower.endsWith(".toml")) return "toml";
-  if (lower.endsWith(".yml") || lower.endsWith(".yaml")) return "yaml";
-  if (lower.endsWith(".css")) return "css";
-  if (lower.endsWith(".html") || lower.endsWith(".htm")) return "html";
-  if (lower.endsWith(".sh") || lower.endsWith(".bash")) return "shell";
-  if (lower.endsWith(".sql")) return "sql";
-  return "plaintext";
-}
-
-function formatFileSize(bytes: number) {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function sortFileNodes(entries: FileNode[]) {
-  return [...entries].sort((left, right) => {
-    if (left.kind !== right.kind) {
-      return left.kind === "dir" ? -1 : 1;
-    }
-    return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
-  });
-}
-
-function summarizeGitStatus(status: string) {
-  const lines = status.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const branch = lines[0] ?? "Нет статуса";
-  const changed = lines.filter((line) => !line.startsWith("##")).length;
-  return {
-    branch,
-    changed,
-    lines,
-  };
-}
-
-function translateSocketState(state: "idle" | "connecting" | "connected" | "failed") {
-  switch (state) {
-    case "idle":
-      return "Ожидание";
-    case "connecting":
-      return "Подключение";
-    case "connected":
-      return "Подключено";
-    case "failed":
-      return "Ошибка подключения";
-  }
-}
-
-function translateTaskStatus(status: string) {
-  switch (status) {
-    case "running":
-      return "Выполняется";
-    case "cancelling":
-      return "Отмена";
-    case "paused":
-      return "На паузе";
-    case "cancelled":
-      return "Отменена";
-    case "failed":
-      return "Сбой";
-    case "completed":
-      return "Завершена";
-    default:
-      return status;
-  }
-}
-
-function translateStepStatus(status: string) {
-  switch (status) {
-    case "pending":
-      return "Ожидание";
-    case "running":
-      return "Выполняется";
-    case "completed":
-      return "Завершён";
-    case "failed":
-      return "Сбой";
-    case "cancelled":
-      return "Отменён";
-    default:
-      return status;
-  }
-}
-
-function translatePermissionMode(mode: PermissionMode) {
-  switch (mode) {
-    case "ask":
-      return "спрашивать";
-    case "allow":
-      return "разрешать";
-    case "deny":
-      return "запрещать";
-  }
-}
-
-function translateSaveState(state: "idle" | "saving" | "saved") {
-  switch (state) {
-    case "idle":
-      return "Готово";
-    case "saving":
-      return "Сохранение...";
-    case "saved":
-      return "Сохранено";
-  }
-}
-
-function translateGitAction(action: GitAction) {
-  switch (action) {
-    case "commit":
-      return "коммит";
-    case "pull":
-      return "загрузка";
-    case "push":
-      return "отправка";
-  }
-}
-
-function translateChatRole(role: ChatLine["role"], userLogin?: string | null) {
-  switch (role) {
-    case "assistant":
-      return "EvoHime";
-    case "tool":
-      return "Действие";
-    case "system":
-      return "Ход работы";
-    case "user":
-      return userLogin?.trim() || "Пользователь";
-  }
-}
-
-function translateModelConfigStatus(configured: boolean) {
-  return configured ? "настроено" : "не хватает LITEROUTER_API_KEY";
-}
-
-function formatSessionTitle(session: ChatSessionSummary, index: number) {
-  return session.title?.trim() || `Чат ${index + 1}`;
-}
-
-function summarizeChatTitle(message: string) {
-  const normalized = message.split("\n\nВложения:")[0].replace(/\s+/g, " ").trim();
-  const lower = normalized.toLowerCase();
-  if (lower.includes("разберись") && lower.includes("код")) return "Разбор кода проекта";
-  if (lower.includes("запусти") && lower.includes("провер")) return "Проверка проекта";
-  if (lower.includes("исправ") || lower.includes("почини")) return "Исправление проекта";
-  return normalized.length > 56 ? `${normalized.slice(0, 56).trimEnd()}…` : normalized;
-}
-
-function chatMatchesProject(chat: ChatSessionSummary, project: ProjectSelection) {
-  if (!chat.workspace_path || project.path === null) {
-    return false;
-  }
-  const chatPath = normalizePath(chat.workspace_path).toLowerCase();
-  const projectPath = normalizePath(project.path).toLowerCase();
-  if (projectPath !== ".") {
-    return chatPath === projectPath;
-  }
-  return chatPath.endsWith(`/${project.label.toLowerCase()}`);
-}
-
-function formatSessionTimestamp(value: string) {
-  return new Date(value).toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatSessionPreview(session: ChatSessionSummary) {
-  if (session.last_message) {
-    const trimmed = session.last_message.replace(/\s+/g, " ").trim();
-    return trimmed.length > 64 ? `${trimmed.slice(0, 64)}…` : trimmed;
-  }
-  return "Пока без сообщений";
-}
-
-function formatProfileInitials(login: string | null) {
-  if (!login) {
-    return "??";
-  }
-  const compact = login.trim();
-  if (!compact) {
-    return "??";
-  }
-  return compact.slice(0, 2).toUpperCase();
-}
-
-function formatRelativeAge(value: string) {
-  const diffMs = Date.now() - new Date(value).getTime();
-  const diffDays = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
-  if (diffDays > 0) {
-    return `${diffDays}д`;
-  }
-  const diffHours = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
-  if (diffHours > 0) {
-    return `${diffHours}ч`;
-  }
-  const diffMinutes = Math.max(0, Math.floor(diffMs / (1000 * 60)));
-  if (diffMinutes > 0) {
-    return `${diffMinutes}м`;
-  }
-  return "только что";
-}
 
 export function App() {
   const [session, setSession] = useState<SessionBootstrap | null>(null);
@@ -573,11 +182,7 @@ export function App() {
     let cancelled = false;
 
     const loadModelConfig = async () => {
-      const response = await fetch("/api/models/config");
-      if (!response.ok) {
-        throw new Error("Не удалось загрузить конфигурацию модели");
-      }
-      const data = (await response.json()) as ModelConfig;
+      const data = await modelsApi.getModelConfig();
       if (!cancelled) {
         const routes = data.routes.map((route) => ({ ...route, api_key: "", configured: route.configured }));
         if (!routes.some((route) => route.name === "orchestrator")) {
@@ -591,16 +196,10 @@ export function App() {
         setModelDrafts(routes);
       }
     };
-    fetch("/api/permissions").then((response) => response.json()).then((data: PermissionSettings) => setPermissionSettings(data)).catch(() => undefined);
-    fetch("/api/sessions/archived").then((response) => response.json()).then((data: ChatSessionSummary[]) => setArchivedChats(data)).catch(() => undefined);
-    fetch("/api/tools")
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Не удалось загрузить каталог инструментов");
-        }
-        return response.json();
-      })
-      .then((data: ToolDefinition[]) => {
+    permissionsApi.getPermissions().then((data) => setPermissionSettings(data)).catch(() => undefined);
+    sessionsApi.listArchivedSessions().then((data) => setArchivedChats(data)).catch(() => undefined);
+    mcpApi.listTools()
+      .then((data) => {
         if (!cancelled) {
           setToolCatalog(data);
         }
@@ -610,14 +209,8 @@ export function App() {
           setToolCatalogError(String(error));
         }
       });
-    fetch("/api/mcp/servers")
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Не удалось загрузить MCP-серверы");
-        }
-        return response.json();
-      })
-      .then((data: McpServerConfig[]) => {
+    mcpApi.listMcpServers()
+      .then((data) => {
         if (!cancelled) {
           setMcpServers(data);
         }
@@ -627,14 +220,8 @@ export function App() {
           setMcpServersError(String(error));
         }
       });
-    fetch("/api/auth/github")
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Не удалось загрузить GitHub-авторизацию");
-        }
-        return response.json();
-      })
-      .then((data: GithubAuthInfo) => {
+    githubApi.getGithubAuth()
+      .then((data) => {
         if (!cancelled) {
           setGithubAuth(data);
         }
@@ -731,11 +318,11 @@ export function App() {
   }, [projectPickerOpen]);
 
   useEffect(() => {
-    localStorage.setItem(selectedProjectStorageKey, JSON.stringify(selectedProject));
+    saveSelectedProject(selectedProject);
   }, [selectedProject]);
 
   useEffect(() => {
-    localStorage.setItem(traceOpenStorageKey, String(traceOpen));
+    saveTraceOpen(traceOpen);
   }, [traceOpen]);
 
   useEffect(() => {
@@ -2087,92 +1674,22 @@ export function App() {
     );
   }
 
-  function renderPluginsContent() {
-    return (
-      <div className="pluginsPage">
-        <section className="pluginsHero">
-          <div>
-            <h3>Плагины</h3>
-            <p>Каталог плагинов пока не подключён.</p>
-          </div>
-        </section>
-
-        <div className="pluginsBody">
-          <section className="pluginsCatalog pluginsCatalogEmpty">
-            <div className="pluginsSectionHeader">
-              <h4>Каталог</h4>
-            </div>
-            <div className="pluginsInstalledEmpty">
-              <strong>Каталог ещё не настроен</strong>
-              <p>Здесь появятся реальные плагины после подключения источника каталога.</p>
-            </div>
-          </section>
-          <section className="pluginsInstalled">
-            <div className="pluginsSectionHeader">
-              <h4>Установленные</h4>
-            </div>
-            <div className="pluginsInstalledList">
-              <div className="pluginsInstalledEmpty">
-                <strong>Пока нет плагинов</strong>
-                <p>Установленные плагины появятся здесь.</p>
-              </div>
-            </div>
-          </section>
-        </div>
-      </div>
-    );
-  }
-
-  function renderSitesContent() {
-    return (
-      <div className="sitesPage">
-        <section className="sitesHero">
-          <div>
-            <h3>Сайты</h3>
-            <p>Превратите свои идеи в готовые сайты.</p>
-          </div>
-        </section>
-
-        <div className="sitesSearchRow">
-          <label className="sitesSearch">
-            <span className="sitesSearchIcon" aria-hidden="true">
-              ⌕
-            </span>
-            <input
-              value={siteSearch}
-              onChange={(event) => setSiteSearch(event.target.value)}
-              placeholder="Поиск сайтов"
-              aria-label="Поиск сайтов"
-            />
-          </label>
-        </div>
-
-        <div className="sitesBody">
-          <div className="sitesEmptyState">
-            <div className="sitesEmptyIcon" aria-hidden="true">
-              ▢
-            </div>
-            <strong>Сайтов пока нет</strong>
-            <button type="button" className="sitesCreateButton">
-              Создать новый сайт
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   function renderPanelContent() {
     if (activePanel === "settings") {
       return renderSettingsContent();
     }
 
     if (activePanel === "plugins") {
-      return renderPluginsContent();
+      return <PluginsPanel />;
     }
 
     if (activePanel === "sites") {
-      return renderSitesContent();
+      return (
+        <SitesPanel
+          siteSearch={siteSearch}
+          onSiteSearchChange={setSiteSearch}
+        />
+      );
     }
 
     if (activePanel === "files") {
@@ -2492,7 +2009,7 @@ export function App() {
     }
 
     if (activePanel === "actions") {
-      return <div className="actionsPanel">{actions.map((action, index) => <article className="actionItem" key={`${action.taskId}-${index}`}><strong>{action.action}</strong><span>{action.detail}</span><small>{action.createdAt}</small></article>)}</div>;
+      return <ActionsPanel actions={actions} />;
     }
 
     if (activePanel === "pull-requests") {
