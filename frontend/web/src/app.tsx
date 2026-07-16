@@ -16,6 +16,7 @@ import { ApprovalModal } from "./components/ApprovalModal";
 type ChatLine = {
   role: "assistant" | "tool" | "system" | "user";
   text: string;
+  taskId?: string;
 };
 
 type WorkspacePanel =
@@ -565,8 +566,6 @@ export function App() {
   const applyEventRef = useRef<(event: ServerEvent) => void>(() => undefined);
   const saveFileRef = useRef<() => void>(() => undefined);
   const sessionLoadRef = useRef(0);
-  const activeAssistantLineRef = useRef<number | null>(null);
-  const hydratingSessionRef = useRef(false);
   const chatLogRef = useRef<HTMLDivElement | null>(null);
   const chatAutoScrollRef = useRef(true);
 
@@ -1095,15 +1094,9 @@ export function App() {
     setActions([]);
     setApproval(null);
     setTerminalEntries([]);
-    activeAssistantLineRef.current = null;
     chatAutoScrollRef.current = true;
-    hydratingSessionRef.current = true;
-    try {
-      for (const item of history) {
-        applyEventRef.current(item.event);
-      }
-    } finally {
-      hydratingSessionRef.current = false;
+    for (const item of history) {
+      applyEventRef.current(item.event);
     }
   }
 
@@ -1251,8 +1244,7 @@ export function App() {
           return [summary, ...current.filter((chat) => chat.session_id !== event.session_id)];
         });
         setTasks((current) => ({ ...current, [event.task_id]: { id: event.task_id, message: event.user_message, status: "running", steps: {} } }));
-        setLines((current) => [...current, { role: "user", text: event.user_message }]);
-        activeAssistantLineRef.current = null;
+        setLines((current) => [...current, { role: "user", text: event.user_message, taskId: event.task_id }]);
         setStream("");
         break;
       case "agent.message.delta":
@@ -1260,13 +1252,12 @@ export function App() {
           const next = `${current}${event.delta}`;
           setLines((items) => {
             const copy = [...items];
-            const index = activeAssistantLineRef.current;
-            if (index !== null && copy[index]?.role === "assistant") {
+            const index = copy.findIndex((line) => line.role === "assistant" && line.taskId === event.task_id);
+            if (index !== -1) {
               copy[index] = { role: "assistant", text: next };
               return copy;
             }
-            activeAssistantLineRef.current = copy.length;
-            copy.push({ role: "assistant", text: next });
+            copy.push({ role: "assistant", text: next, taskId: event.task_id });
             return copy;
           });
           return next;
@@ -1306,29 +1297,15 @@ export function App() {
         setTasks((current) => current[event.task_id] ? { ...current, [event.task_id]: { ...current[event.task_id], status: "completed" } } : current);
         setLines((current) => {
           const copy = [...current];
-          const index = activeAssistantLineRef.current;
-          const last = copy[copy.length - 1];
-          if (last?.role === "assistant" && last.text === event.final_message) {
+          const index = copy.findIndex((line) => line.role === "assistant" && line.taskId === event.task_id);
+          if (index !== -1) {
+            copy[index] = { role: "assistant", text: event.final_message, taskId: event.task_id };
             return copy;
           }
-          if (index !== null && copy[index]?.role === "assistant") {
-            copy[index] = { role: "assistant", text: event.final_message };
-            return copy;
-          }
-          activeAssistantLineRef.current = copy.length;
-          copy.push({ role: "assistant", text: event.final_message });
+          copy.push({ role: "assistant", text: event.final_message, taskId: event.task_id });
           return copy;
         });
-        activeAssistantLineRef.current = null;
         setStream("");
-        if (!hydratingSessionRef.current && activeSessionId) {
-          const summary = chatSessions.find((chat) => chat.session_id === activeSessionId);
-          if (summary) {
-            void openSession(summary).catch((error) => {
-              setLines((current) => [...current, { role: "system", text: String(error) }]);
-            });
-          }
-        }
         break;
       case "task.failed":
         setTasks((current) => current[event.task_id] ? { ...current, [event.task_id]: { ...current[event.task_id], status: "failed" } } : current);
