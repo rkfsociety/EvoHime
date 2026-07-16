@@ -102,6 +102,162 @@ input {
   margin: 0 auto 12px;
 }
 
+.chatStage {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chatStageMain {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.agentPresence {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px 16px;
+  border-right: 1px solid rgba(143, 180, 255, 0.12);
+  background:
+    radial-gradient(circle at 50% 42%, rgba(62, 215, 178, 0.12), transparent 55%),
+    linear-gradient(180deg, rgba(11, 17, 31, 0.2), rgba(8, 12, 24, 0.55));
+  overflow: hidden;
+}
+
+.agentPresenceGlow {
+  position: absolute;
+  inset: 18% 12% 28%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(91, 134, 255, 0.22), transparent 70%);
+  filter: blur(18px);
+  animation: agentPresenceGlow 4.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.agentPresenceFigure {
+  position: relative;
+  width: min(100%, 220px);
+  aspect-ratio: 1;
+  animation: agentPresenceFloat 5.2s ease-in-out infinite;
+}
+
+.agentPresence.busy .agentPresenceFigure {
+  animation-duration: 2.4s;
+}
+
+.agentPresencePortrait {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 28px;
+  border: 1px solid rgba(143, 180, 255, 0.28);
+  box-shadow: 0 18px 48px rgba(3, 8, 22, 0.45);
+  animation: agentPresenceBreathe 4s ease-in-out infinite;
+}
+
+.agentPresence.busy .agentPresencePortrait {
+  animation-duration: 1.8s;
+}
+
+.agentPresenceAura {
+  position: absolute;
+  inset: -6%;
+  border-radius: 32px;
+  border: 1px solid rgba(62, 215, 178, 0.18);
+  box-shadow: 0 0 0 0 rgba(62, 215, 178, 0.2);
+  pointer-events: none;
+  opacity: 0.55;
+  animation: agentPresenceAura 3.6s ease-out infinite;
+}
+
+.agentPresenceAura.active {
+  border-color: rgba(91, 134, 255, 0.35);
+  animation-duration: 1.6s;
+  opacity: 0.9;
+}
+
+.agentPresenceName {
+  margin: 8px 0 0;
+  color: var(--text-0);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.agentPresenceMood {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@keyframes agentPresenceFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes agentPresenceBreathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.025);
+  }
+}
+
+@keyframes agentPresenceGlow {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes agentPresenceAura {
+  0% {
+    transform: scale(0.96);
+    opacity: 0.7;
+  }
+  70% {
+    transform: scale(1.08);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.08);
+    opacity: 0;
+  }
+}
+
+@media (max-width: 1100px) {
+  .chatStage {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .agentPresence {
+    display: none;
+  }
+}
+
 .projectOption .agentMark,
 .scheduledHero .agentMark {
   flex-shrink: 0;
@@ -2859,6 +3015,7 @@ h1 {
 .pluginsTabs {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .pluginsTab {
@@ -2873,6 +3030,55 @@ h1 {
 .pluginsTab.active {
   background: var(--surface-2);
   color: var(--text-0);
+}
+
+.pluginsGroupedList {
+  display: grid;
+  gap: 22px;
+}
+
+.pluginsGroupSection {
+  display: grid;
+  gap: 12px;
+}
+
+.pluginsGroupHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-0);
+  padding-bottom: 6px;
+}
+
+.pluginsGroupHeader h5 {
+  margin: 0;
+  color: var(--text-0);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.pluginsGroupHeader span {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.pluginMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.pluginCategoryChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface-4);
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.2;
 }
 
 .pluginsFilterButton {
@@ -2980,6 +3186,22 @@ h1 {
   font-weight: 600;
 }
 
+
+.pluginInstalledBadge {
+  align-self: center;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--surface-4);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pluginsInstallError {
+  margin: 8px 0 0;
+  color: #f2a3a3;
+}
 .terminalPanel { flex: 1; min-height: 0; padding: 16px; }
 .approvalBackdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: rgba(0, 0, 0, .62); }
 .approvalModal { width: min(460px, calc(100vw - 32px)); padding: 24px; border: 1px solid rgba(159, 192, 255, .4); border-radius: 18px; background: #0a1021; box-shadow: 0 24px 80px rgba(0,0,0,.5); }

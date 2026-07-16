@@ -12,6 +12,7 @@ import { ApprovalModal } from "./components/ApprovalModal";
 import { AgentAvatar } from "./components/AgentAvatar";
 import { AgentBrand } from "./components/AgentBrand";
 import { AgentMark } from "./components/AgentMark";
+import { AgentPresence } from "./components/AgentPresence";
 import { ActionsPanel } from "./panels/ActionsPanel";
 import { EditorPanel } from "./panels/EditorPanel";
 import { FilesPanel } from "./panels/FilesPanel";
@@ -1324,7 +1325,9 @@ export function App() {
     }
 
     return (
-      <>
+      <div className="chatStage">
+        <AgentPresence busy={Boolean(activeTaskId) || Boolean(stream)} />
+        <div className="chatStageMain">
         <div
           ref={chatLogRef}
           onScroll={handleChatScroll}
@@ -1332,7 +1335,6 @@ export function App() {
         >
           {lines.every((line) => line.role === "system") && !stream ? (
             <div className="chatWelcome">
-              <AgentAvatar size="lg" />
               <p className="eyebrow">Новая задача</p>
               <h3>Что будем делать?</h3>
               <p className="chatWelcomeText">
@@ -1591,7 +1593,8 @@ export function App() {
             ) : null}
           </div>
         </form>
-      </>
+        </div>
+      </div>
     );
   }
 
