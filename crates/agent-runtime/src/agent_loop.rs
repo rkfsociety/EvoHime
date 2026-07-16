@@ -317,7 +317,7 @@ async fn run_agent_loop_inner(
 }
 
 const SYSTEM_PROMPT: &str = "You are EvoHime, a helpful AI coding assistant. Answer concisely using the provided workspace context when relevant.";
-const PLANNING_PROMPT: &str = "You are EvoHime's task planner. Return only JSON: an array of objects with fields id, tool_name, description, and depends_on. Use only these tool names: filesystem.read, filesystem.list, filesystem.search, git.status, git.diff, git.commit, git.pull, git.push, assistant.reply. Use stable step ids like step-1, step-2, and keep depends_on empty unless a step truly depends on another step. Put the exact relative file or directory path in backticks in the description. For git.commit, include the requested commit message in quotes in the description. Use git.pull and git.push only when the user explicitly asks for synchronization. If no tool call is needed, use assistant.reply as the tool_name for the final response step.";
+const PLANNING_PROMPT: &str = "You are EvoHime's task planner. Return only JSON: an array of objects with fields id, tool_name, description, and depends_on. Use only these tool names: filesystem.read, filesystem.list, filesystem.search, filesystem.write, filesystem.patch, git.status, git.diff, git.commit, git.pull, git.push, assistant.reply. Use stable step ids like step-1, step-2, and keep depends_on empty unless a step truly depends on another step. Put the exact relative file or directory path in backticks in the description. For filesystem.write, include the complete new file content in a fenced code block in the description. For filesystem.patch, include the complete patch text in a fenced code block in the description. For git.commit, include the requested commit message in quotes in the description. Use git.pull and git.push only when the user explicitly asks for synchronization. If no tool call is needed, use assistant.reply as the tool_name for the final response step.";
 
 async fn execute_plan_steps(
     plan: &[PlanStep],
@@ -444,6 +444,14 @@ fn tool_input(tool_name: &str, description: &str, workspace_root: &Path) -> Opti
         "filesystem.search" => Some(
             json!({"query": extract_backticked(description).unwrap_or_else(|| "TODO".to_string()), "limit": 100}),
         ),
+        "filesystem.write" => Some(json!({
+            "path": path.unwrap_or_else(|| "README.md".to_string()),
+            "content": extract_code_block(description).unwrap_or_default(),
+        })),
+        "filesystem.patch" => Some(json!({
+            "path": path.unwrap_or_else(|| "README.md".to_string()),
+            "patch": extract_code_block(description).unwrap_or_default(),
+        })),
         "git.status" => Some(Value::Null),
         "git.diff" => Some(json!({})),
         "git.commit" => Some(json!({"message": extract_commit_message(description)})),
@@ -493,6 +501,14 @@ fn extract_backticked(value: &str) -> Option<String> {
     let end = value[start..].find('`')? + start;
     let path = value[start..end].trim();
     (!path.is_empty()).then(|| path.to_string())
+}
+
+fn extract_code_block(value: &str) -> Option<String> {
+    let start = value.find("```")?;
+    let body_start = value[start..].find('\n').map(|offset| start + offset + 1)?;
+    let end = value[body_start..].find("```")? + body_start;
+    let body = &value[body_start..end];
+    (!body.is_empty()).then(|| body.to_string())
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -677,6 +693,8 @@ fn parse_plan_line(index: usize, line: &str) -> Option<PlanStep> {
         "filesystem.read",
         "filesystem.list",
         "filesystem.search",
+        "filesystem.write",
+        "filesystem.patch",
         "git.status",
         "git.diff",
         "git.commit",
@@ -790,6 +808,18 @@ mod tests {
             "Я вижу, что нужно исследовать проект.\n\nДавайте начнём с анализа структуры.",
         );
         assert_eq!(plan, default_plan());
+    }
+
+    #[test]
+    fn builds_filesystem_write_input_from_code_block() {
+        let input = tool_input(
+            "filesystem.write",
+            "Update `docs/test.md` with:\n```markdown\nhello\n```",
+            Path::new("C:/workspace"),
+        )
+        .expect("write input");
+        assert_eq!(input["path"], "docs/test.md");
+        assert_eq!(input["content"], "hello\n");
     }
 
     #[tokio::test]
