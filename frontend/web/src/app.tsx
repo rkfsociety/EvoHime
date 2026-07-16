@@ -420,6 +420,18 @@ function summarizeChatTitle(message: string) {
   return normalized.length > 56 ? `${normalized.slice(0, 56).trimEnd()}…` : normalized;
 }
 
+function chatMatchesProject(chat: ChatSessionSummary, project: ProjectSelection) {
+  if (!chat.workspace_path || project.path === null) {
+    return false;
+  }
+  const chatPath = normalizePath(chat.workspace_path).toLowerCase();
+  const projectPath = normalizePath(project.path).toLowerCase();
+  if (projectPath !== ".") {
+    return chatPath === projectPath;
+  }
+  return chatPath.endsWith(`/${project.label.toLowerCase()}`);
+}
+
 function formatSessionTimestamp(value: string) {
   return new Date(value).toLocaleString("ru-RU", {
     day: "2-digit",
@@ -948,6 +960,14 @@ export function App() {
     [activePanel],
   );
   const activeProjectLabel = selectedProject.label;
+  const projectChatSessions = useMemo(
+    () => chatSessions.filter((chat) => chatMatchesProject(chat, selectedProject)),
+    [chatSessions, selectedProject],
+  );
+  const standaloneChatSessions = useMemo(
+    () => chatSessions.filter((chat) => !chat.workspace_path),
+    [chatSessions],
+  );
   const activeChatTitle = useMemo(
     () => chatSessions.find((chat) => chat.session_id === activeSessionId)?.title?.trim() || "Новый чат",
     [chatSessions, activeSessionId],
@@ -2896,15 +2916,43 @@ export function App() {
               <span className="projectIcon">⌂</span>
               <span className="projectName">{activeProjectLabel}</span>
             </button>
+            {projectChatSessions.length > 0 ? (
+              <div className="projectChatList">
+                {projectChatSessions.map((chat, index) => (
+                  <div className="projectChatRow" key={chat.session_id}>
+                    <button
+                      type="button"
+                      className={chat.session_id === activeSessionId ? "projectChatItem active" : "projectChatItem"}
+                      onClick={() => {
+                        setActivePanel("chat");
+                        void openSession(chat).catch((error) => setLines((current) => [...current, { role: "system", text: String(error) }]));
+                      }}
+                    >
+                      <strong>{formatSessionTitle(chat, index)}</strong>
+                      <span>{formatSessionPreview(chat)}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="chatArchiveButton"
+                      onClick={() => void archiveChat(chat)}
+                      aria-label="Архивировать чат"
+                      title="Архивировать чат"
+                    >
+                      ▱
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </section>
 
           <section className="sidebarSection">
             <header className="sidebarHeader">
               <strong>Чаты без проекта</strong>
             </header>
-            {chatSessions.filter((chat) => !chat.workspace_path).length > 0 ? (
+            {standaloneChatSessions.length > 0 ? (
               <div className="standaloneSidebarChatList">
-                {chatSessions.filter((chat) => !chat.workspace_path).slice(0, 5).map((chat, index) => (
+                {standaloneChatSessions.slice(0, 5).map((chat, index) => (
                   <button
                     type="button"
                     key={chat.session_id}
