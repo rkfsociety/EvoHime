@@ -1136,7 +1136,7 @@ h1 {
 
 .line,
 .eventItem {
-  width: min(100%, 760px);
+  width: min(100%, 920px);
   border: 1px solid var(--border-0);
   border-radius: 18px;
   background: var(--surface-3);
@@ -1308,7 +1308,7 @@ h1 {
 }
 
 .chatTraceSummary {
-  width: min(100%, 760px);
+  width: min(100%, 920px);
   justify-self: start;
   margin-right: auto;
   border: 1px solid rgba(143, 180, 255, 0.18);
