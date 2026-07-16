@@ -2879,37 +2879,6 @@ export function App() {
               <span className="projectIcon">⌂</span>
               <span className="projectName">{activeProjectLabel}</span>
             </button>
-            <div className="projectChatList">
-              {chatSessions.map((chat, index) => (
-                <div
-                  key={chat.session_id}
-                  className="projectChatRow"
-                >
-                  <button
-                    type="button"
-                    className={chat.session_id === activeSessionId ? "projectChatItem active" : "projectChatItem"}
-                    onClick={() => {
-                      void openSession(chat).catch((error) => {
-                        setSocketState("failed");
-                        setLines((current) => [...current, { role: "system", text: String(error) }]);
-                      });
-                    }}
-                  >
-                    <span className="projectChatTitle">{formatSessionTitle(chat, index)}</span>
-                    <span className="projectChatStatus" />
-                  </button>
-                  <button
-                    type="button"
-                    className="chatArchiveButton"
-                    onClick={() => void archiveChat(chat)}
-                    disabled={deletingSessionId === chat.session_id}
-                    aria-label={`Архивировать ${formatSessionTitle(chat, index)}`}
-                  >
-                    ▱
-                  </button>
-                </div>
-              ))}
-            </div>
           </section>
 
           <section className="sidebarSection">
