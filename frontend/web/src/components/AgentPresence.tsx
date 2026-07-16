@@ -10,7 +10,7 @@ const BODY_WIDTH = 150;
 const EDGE_PAD = 8;
 const WALK_FRAMES = 26;
 /** Bump when replacing /brand walk sprites so browsers don't keep stale webp. */
-const ASSET_REV = "walk26-ltr-slow3";
+const ASSET_REV = "walk26-ltr-slow4";
 
 function brandUrl(path: string) {
   return `${path}?v=${ASSET_REV}`;
@@ -108,7 +108,7 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
     targetRef.current = xRef.current;
 
     const tick = () => {
-      const speed = busyRef.current ? 86 : 48;
+      const speed = busyRef.current ? 42 : 28;
       if (modeRef.current === "walk") {
         const target = targetRef.current;
         const delta = target - xRef.current;
@@ -162,7 +162,7 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
       setFrame(0);
       return;
     }
-    const ms = busy ? 110 : 140;
+    const ms = busy ? 160 : 200;
     const id = window.setInterval(() => {
       setFrame((current) => (current + 1) % WALK_FRAMES);
     }, ms);
