@@ -73,7 +73,7 @@ EvoHime Server — Rust
 - `permissions` содержит policy engine и one-shot решения; `approval.required` публикуется сервером, а `approval.granted` / `approval.denied` продолжают paused task;
 - `project-index` уже даёт workspace text search для контекста; `session_memory` уже подмешивается в prompt; Python worker уже имеет bounded HTTP job queue, health endpoint, submit/poll lifecycle и structured failure states.
 
-Следующий сквозной приоритет — этап 6: project index, MCP, memory и worker integrations.
+Следующий сквозной приоритет — production-срез этапа 6: ML handlers в Python worker, Rust-owned persistence/retries для jobs и observability.
 
 ---
 
@@ -117,7 +117,7 @@ task.step.changed
 action.logged
 ```
 
-### События (ожидают сквозной интеграции)
+### События (зарезервированы для будущих расширений)
 
 ```text
 approval.required
@@ -289,6 +289,7 @@ Task lifecycle реализован: start/complete/fail/cancel/resume/retry. St
 - Память агента
 - Multi-model routing с task-scoped `model_route` и OpenAI-compatible маршрутами — после LiteRouter
 - HTTP/queue Python worker для изолированных задач; специализированные ML handlers — следующий подэтап
+- Rust server должен владеть persistence/retry policy worker jobs, сохраняя выполнение изолированным в Python worker
 - `browser.open`, `browser.extract`
 - UI управления MCP и инструментами
 

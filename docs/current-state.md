@@ -1,6 +1,6 @@
 # EvoHime — Current State
 
-Last updated: 2026-07-15
+Last updated: 2026-07-16
 
 ## Stage: 6 in progress
 
@@ -117,4 +117,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: the Python worker HTTP/queue baseline is complete. Next is adding real ML task handlers and moving job persistence/retries behind the Rust server while keeping worker execution isolated.
+**Stage 6 / Milestone 5**: the foundations are complete: project text index, MCP management/calls, persistent session memory, task-scoped multi-model routes, browser tools, and the bounded Python worker HTTP/queue baseline. Next is adding real ML task handlers and moving worker job persistence/retries behind the Rust server while keeping worker execution isolated.

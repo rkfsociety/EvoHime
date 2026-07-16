@@ -1,6 +1,6 @@
 # EvoHime — Дорожная карта
 
-> Обновлено: 2026-07-15
+> Обновлено: 2026-07-16
 
 ## Обзор
 
@@ -16,7 +16,7 @@
 | 3 | Tools + shell | ✅ Готово | Sandbox, filesystem tools, shell, approvals, terminal, permissions |
 | 4 | Editor + Git | ✅ Done | Browser file tree, Monaco editor, Git status/diff/actions, and synchronization events |
 | 5 | Оркестрация | ✅ Complete | Lifecycle, команды, storage и recovery готовы |
-| 6 | Advanced | 🟡 В процессе | Index, MCP, memory, multi-model, workers |
+| 6 | Advanced | 🟡 В процессе | Foundations complete; ML handlers, Rust-owned worker jobs, and production hardening remain |
 
 ---
 
@@ -173,14 +173,14 @@
 | 6.4 | MCP server management UI | ✅ `frontend/web/`, `crates/server/` |
 | 6.5 | Agent memory (persistent context) | ✅ `crates/storage/`, `crates/agent-runtime/` |
 | 6.6 | Multi-model routing: task-scoped routes + OpenAI-compatible providers | ✅ `crates/model-gateway/`, `frontend/web/`, `crates/server/` |
-| 6.7 | Python workers (HTTP/queue) | ✅ `workers/python/` |
+| 6.7 | Python workers (HTTP/queue) | ✅ baseline; ML handlers next | `workers/python/` |
 | 6.8 | `browser.open`, `browser.extract` | ✅ `crates/tool-runtime/` |
 | 6.9 | Settings: models, permissions, MCP, tools | ✅ `frontend/web/`, `crates/server/` |
 | 6.10 | Тесты: index, MCP, workers | ✅ respective crates / `workers/python/` |
 
 ### Критерий готовности
 
-Агент использует project index для контекста, вызывает MCP-инструменты, работает с несколькими моделями. Python workers принимают структурированные HTTP jobs и готовы к подключению специализированных ML handlers.
+Агент использует project index для контекста, вызывает MCP-инструменты, работает с несколькими моделями. Python workers принимают структурированные HTTP jobs; следующий шаг — специализированные ML handlers, Rust-owned persistence/retries и production hardening.
 
 ---
 

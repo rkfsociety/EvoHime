@@ -39,7 +39,7 @@ EvoHime Server (crates/server)
 └── storage/           — PostgreSQL access
 ```
 
-## Current state (Stage 2 complete; stages 3-5 foundations in place)
+## Current state (Stages 1-5 complete; Stage 6 in progress)
 
 Vertical slice works end-to-end:
 
@@ -66,13 +66,14 @@ User message
 - Protocol codegen: JSON Schema → TypeScript
 - Tests: `crates/protocol`, `crates/tool-runtime`
 - Native local stack: PostgreSQL + server + web
+- Stage 6 foundations: project index, MCP management/call, persistent session memory, multi-model routes, browser tools, and a bounded Python worker HTTP/queue baseline
+- CI: Rust format, Clippy, docs, and stable/beta/nightly tests run through GitHub Actions; the workflow installs `ripgrep` for search-tool tests
 
 ### Incomplete or not yet implemented
 
 - General LLM tool-calling orchestration across all registered tools
-- Server emission of `approval.required` and end-to-end approval resume
-- Parallel tool execution and restart recovery for tasks
-- Project index, MCP, additional providers, and Python workers (stage 6)
+- Production ML handlers for Python workers
+- Rust-owned worker job persistence, retry policy, and deeper observability
 
 ## WebSocket events
 
