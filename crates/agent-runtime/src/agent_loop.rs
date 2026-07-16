@@ -304,7 +304,7 @@ async fn run_agent_loop_inner(
 }
 
 const SYSTEM_PROMPT: &str = "You are EvoHime, a helpful AI coding assistant. Answer concisely using the provided workspace context when relevant.";
-const PLANNING_PROMPT: &str = "You are EvoHime's task planner. Return only JSON: an array of objects with fields id, tool_name, description, and depends_on. Use only these tool names: filesystem.read, filesystem.list, filesystem.search, git.status, git.diff, assistant.reply. Use stable step ids like step-1, step-2, and keep depends_on empty unless a step truly depends on another step. Put the exact relative file or directory path in backticks in the description. If no tool call is needed, use assistant.reply as the tool_name for the final response step.";
+const PLANNING_PROMPT: &str = "You are EvoHime's task planner. Return only JSON: an array of objects with fields id, tool_name, description, and depends_on. Use only these tool names: filesystem.read, filesystem.list, filesystem.search, git.status, git.diff, git.commit, git.pull, git.push, assistant.reply. Use stable step ids like step-1, step-2, and keep depends_on empty unless a step truly depends on another step. Put the exact relative file or directory path in backticks in the description. For git.commit, include the requested commit message in quotes in the description. Use git.pull and git.push only when the user explicitly asks for synchronization. If no tool call is needed, use assistant.reply as the tool_name for the final response step.";
 
 async fn execute_plan_steps(
     plan: &[PlanStep],
@@ -393,8 +393,29 @@ fn tool_input(tool_name: &str, description: &str, workspace_root: &Path) -> Opti
         "filesystem.search" => Some(json!({"query": extract_backticked(description).unwrap_or_else(|| "TODO".to_string()), "limit": 100})),
         "git.status" => Some(Value::Null),
         "git.diff" => Some(json!({})),
+        "git.commit" => Some(json!({"message": extract_commit_message(description)})),
+        "git.pull" | "git.push" => Some(json!({})),
         _ => None,
     }
+}
+
+fn extract_commit_message(description: &str) -> String {
+    for delimiter in ['"', '\''] {
+        if let Some(start) = description.find(delimiter) {
+            if let Some(end) = description[start + delimiter.len_utf8()..].find(delimiter) {
+                let message = description[start + delimiter.len_utf8()..start + delimiter.len_utf8() + end].trim();
+                if !message.is_empty() {
+                    return message.to_string();
+                }
+            }
+        }
+    }
+
+    description
+        .split_once(':')
+        .map(|(_, message)| message.trim().trim_matches('`').to_string())
+        .filter(|message| !message.is_empty())
+        .unwrap_or_else(|| "Обновление кода".to_string())
 }
 
 fn normalize_plan_path(path: &str, workspace_root: &Path) -> String {
