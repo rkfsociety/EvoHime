@@ -327,7 +327,7 @@ async fn execute_plan_steps(
         if tool_name == "assistant.reply" {
             continue;
         }
-        let input = match tool_input(tool_name, &step.description) {
+        let input = match tool_input(tool_name, &step.description, &config.workspace_root) {
             Some(input) => input,
             None => {
                 outputs.push(format!("{}: шаг пропущен — инструмент не поддержан runtime", step.id));
@@ -378,8 +378,10 @@ async fn execute_plan_steps(
     Ok(outputs)
 }
 
-fn tool_input(tool_name: &str, description: &str) -> Option<Value> {
-    let path = extract_backticked(description).or_else(|| {
+fn tool_input(tool_name: &str, description: &str, workspace_root: &Path) -> Option<Value> {
+    let path = extract_backticked(description)
+        .map(|path| normalize_plan_path(&path, workspace_root))
+        .or_else(|| {
         ["package.json", "README.md", "Cargo.toml", "src/", "lib/", "frontend/web/"]
             .iter()
             .find(|candidate| description.contains(**candidate))
@@ -393,6 +395,21 @@ fn tool_input(tool_name: &str, description: &str) -> Option<Value> {
         "git.diff" => Some(json!({})),
         _ => None,
     }
+}
+
+fn normalize_plan_path(path: &str, workspace_root: &Path) -> String {
+    let candidate = Path::new(path);
+    if candidate.is_absolute() {
+        if let Ok(relative) = candidate.strip_prefix(workspace_root) {
+            let normalized = relative.to_string_lossy().replace('\\', "/");
+            return if normalized.is_empty() {
+                ".".to_string()
+            } else {
+                normalized
+            };
+        }
+    }
+    path.replace('\\', "/")
 }
 
 fn extract_backticked(value: &str) -> Option<String> {
