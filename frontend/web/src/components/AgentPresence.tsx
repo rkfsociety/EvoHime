@@ -7,21 +7,14 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
     <aside
       className={busy ? "agentPresence busy" : "agentPresence"}
       aria-label="EvoHime"
+      aria-hidden="true"
     >
-      <div className="agentPresenceGlow" aria-hidden="true" />
-      <div className="agentPresenceFigure">
-        <img
-          className="agentPresencePortrait"
-          src="/brand/agent-avatar-256.webp"
-          width={220}
-          height={220}
-          alt="EvoHime"
-          draggable={false}
-        />
-        <span className={busy ? "agentPresenceAura active" : "agentPresenceAura"} aria-hidden="true" />
-      </div>
-      <p className="agentPresenceName">EvoHime</p>
-      <p className="agentPresenceMood">{busy ? "работаю… хмф" : "слушаю"}</p>
+      <img
+        className="agentPresenceBody"
+        src="/brand/agent-body-720.webp"
+        alt=""
+        draggable={false}
+      />
     </aside>
   );
 }
