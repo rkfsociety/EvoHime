@@ -164,6 +164,9 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
 
   const src = mode === "walk" ? `/brand/agent-walk-${frame}.webp` : "/brand/agent-presence.webp";
 
+  // Sprites face LEFT. facing: 1 = move right, -1 = move left.
+  const scaleX = facing >= 0 ? -1 : 1;
+
   return (
     <aside
       ref={stageRef}
@@ -180,7 +183,7 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
       <div
         className="agentPresenceMover"
         style={{
-          transform: `translate3d(${x}px, 0, 0) scaleX(${facing})`,
+          transform: `translate3d(${x}px, 0, 0) scaleX(${scaleX})`,
         }}
       >
         <img
