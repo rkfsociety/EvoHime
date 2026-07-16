@@ -542,7 +542,7 @@ fn tool_input(tool_name: &str, description: &str, workspace_root: &Path) -> Opti
 }
 
 fn shell_input(description: &str) -> Option<Value> {
-    let mut input = serde_json::from_str::<Value>(description)?;
+    let mut input = serde_json::from_str::<Value>(description).ok()?;
     let object = input.as_object_mut()?;
     if !object.contains_key("program") {
         let command = object.remove("command")?;
