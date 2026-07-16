@@ -2953,18 +2953,28 @@ export function App() {
             {standaloneChatSessions.length > 0 ? (
               <div className="standaloneSidebarChatList">
                 {standaloneChatSessions.slice(0, 5).map((chat, index) => (
-                  <button
-                    type="button"
-                    key={chat.session_id}
-                    className={chat.session_id === activeSessionId ? "standaloneSidebarChat active" : "standaloneSidebarChat"}
-                    onClick={() => {
-                      setActivePanel("chat");
-                      void openSession(chat).catch((error) => setLines((current) => [...current, { role: "system", text: String(error) }]));
-                    }}
-                  >
-                    <strong>{formatSessionTitle(chat, index)}</strong>
-                    <span>{formatSessionPreview(chat)}</span>
-                  </button>
+                  <div className="standaloneSidebarChatRow" key={chat.session_id}>
+                    <button
+                      type="button"
+                      className={chat.session_id === activeSessionId ? "standaloneSidebarChat active" : "standaloneSidebarChat"}
+                      onClick={() => {
+                        setActivePanel("chat");
+                        void openSession(chat).catch((error) => setLines((current) => [...current, { role: "system", text: String(error) }]));
+                      }}
+                    >
+                      <strong>{formatSessionTitle(chat, index)}</strong>
+                      <span>{formatSessionPreview(chat)}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="chatArchiveButton"
+                      onClick={() => void archiveChat(chat)}
+                      aria-label="Архивировать чат"
+                      title="Архивировать чат"
+                    >
+                      ▱
+                    </button>
+                  </div>
                 ))}
               </div>
             ) : (

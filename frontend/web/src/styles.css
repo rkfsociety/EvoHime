@@ -299,12 +299,14 @@ h1 {
 
 .quickLinks,
 .projectChatList,
-.projectChatRow {
+.projectChatRow,
+.standaloneSidebarChatList {
   display: grid;
   gap: 4px;
 }
 
-.projectChatRow {
+.projectChatRow,
+.standaloneSidebarChatRow {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
 }
@@ -422,11 +424,6 @@ h1 {
 .taskSummaryCard span {
   color: var(--text-3);
   font-size: 13px;
-}
-
-.standaloneSidebarChatList {
-  display: grid;
-  gap: 4px;
 }
 
 .standaloneSidebarChat {
@@ -573,6 +570,7 @@ h1 {
 }
 
 .projectChatRow:hover .chatArchiveButton,
+.standaloneSidebarChatRow:hover .chatArchiveButton,
 .chatArchiveButton:focus-visible {
   opacity: 1;
 }
