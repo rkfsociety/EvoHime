@@ -23,6 +23,9 @@ pub fn parse_plan(raw: &str) -> Vec<PlanStep> {
     if let Some(plan) = parse_plan_json(&normalized) {
         return normalize_plan(plan);
     }
+    if let Some(tool_calls) = parse_model_tool_calls(&normalized) {
+        return tool_calls;
+    }
 
     let source_lines = normalized.lines().collect::<Vec<_>>();
     let mut logical_lines = Vec::new();
