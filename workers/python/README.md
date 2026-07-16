@@ -25,7 +25,10 @@ python -m unittest discover -s workers/python -p "test_*.py"
 - `POST /v1/jobs` — submit `{ "task": "text.stats", "payload": { "text": "..." } }`.
 - `GET /v1/jobs/{id}` — poll a queued, running, completed, or failed job.
 
-The initial task set contains `echo` and `text.stats`; new handlers can be
+The task set contains `echo`, `text.stats`, and deterministic `text.embed`.
+The embedding handler uses only the Python standard library, returns a
+normalized 64-dimensional vector, and is intended as a reproducible ML
+foundation until a real model backend is configured. New handlers can be
 added behind the same structured job lifecycle without changing the HTTP
 contract. Job state is process-local, so the Rust server remains responsible
 for durable task and checkpoint storage.

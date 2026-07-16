@@ -9,8 +9,10 @@ server, while this service owns execution and status reporting.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
+import math
 import queue
 import threading
 import uuid
@@ -20,8 +22,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 LOGGER = logging.getLogger("evohime.worker")
-SUPPORTED_TASKS = ("echo", "text.stats")
+SUPPORTED_TASKS = ("echo", "text.stats", "text.embed")
 MAX_TEXT_LENGTH = 1_000_000
+EMBEDDING_DIMENSION = 64
 
 
 def health() -> dict[str, str]:
@@ -67,6 +70,29 @@ def run_task(task: str, payload: dict[str, Any]) -> Any:
             "characters": len(text),
             "words": len(text.split()),
             "lines": len(text.splitlines()),
+        }
+
+    if task == "text.embed":
+        text = payload.get("text")
+        if not isinstance(text, str):
+            raise ValueError("text.embed requires a string payload.text")
+        if not text.strip():
+            raise ValueError("text.embed requires non-empty payload.text")
+        if len(text) > MAX_TEXT_LENGTH:
+            raise ValueError(f"payload.text exceeds {MAX_TEXT_LENGTH} characters")
+
+        raw_vector = []
+        encoded = text.encode("utf-8")
+        for index in range(EMBEDDING_DIMENSION):
+            digest = hashlib.sha256(encoded + index.to_bytes(4, "big")).digest()
+            value = int.from_bytes(digest[:8], "big") / 2**64
+            raw_vector.append((value * 2.0) - 1.0)
+        norm = math.sqrt(sum(value * value for value in raw_vector))
+        vector = [value / norm for value in raw_vector]
+        return {
+            "embedding": vector,
+            "dimension": EMBEDDING_DIMENSION,
+            "norm": math.sqrt(sum(value * value for value in vector)),
         }
 
     raise ValueError(f"unsupported task: {task}")

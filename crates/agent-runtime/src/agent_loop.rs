@@ -465,7 +465,8 @@ async fn execute_plan_steps(
 }
 
 fn tool_input(tool_name: &str, description: &str, workspace_root: &Path) -> Option<Value> {
-    let path = extract_backticked(description)
+    let path = extract_declared_path(description)
+        .or_else(|| extract_backticked(description))
         .map(|path| normalize_plan_path(&path, workspace_root))
         .or_else(|| {
             [
@@ -489,11 +490,11 @@ fn tool_input(tool_name: &str, description: &str, workspace_root: &Path) -> Opti
             json!({"query": extract_backticked(description).unwrap_or_else(|| "TODO".to_string()), "limit": 100}),
         ),
         "filesystem.write" => Some(json!({
-            "path": path.unwrap_or_else(|| "README.md".to_string()),
+            "path": path?,
             "content": extract_code_block(description).unwrap_or_default(),
         })),
         "filesystem.patch" => Some(json!({
-            "path": path.unwrap_or_else(|| "README.md".to_string()),
+            "path": path?,
             "patch": extract_code_block(description).unwrap_or_default(),
         })),
         "git.status" => Some(Value::Null),
@@ -545,6 +546,16 @@ fn extract_backticked(value: &str) -> Option<String> {
     let end = value[start..].find('`')? + start;
     let path = value[start..end].trim();
     (!path.is_empty()).then(|| path.to_string())
+}
+
+fn extract_declared_path(value: &str) -> Option<String> {
+    value.lines().find_map(|line| {
+        let trimmed = line.trim();
+        let (_, path) = trimmed
+            .split_once(':')
+            .filter(|(key, path)| matches!(*key, "path" | "file") && !path.trim().is_empty())?;
+        Some(path.trim().trim_matches('`').to_string())
+    })
 }
 
 fn extract_code_block(value: &str) -> Option<String> {
@@ -936,6 +947,28 @@ mod tests {
         .expect("write input");
         assert_eq!(input["path"], "docs/test.md");
         assert_eq!(input["content"], "hello\n");
+    }
+
+    #[test]
+    fn builds_filesystem_write_input_from_declared_path() {
+        let input = tool_input(
+            "filesystem.write",
+            "filesystem.write\npath: workers/python/handler.py\n```python\nprint('ok')\n```",
+            Path::new("C:/workspace"),
+        )
+        .expect("write input");
+        assert_eq!(input["path"], "workers/python/handler.py");
+        assert_eq!(input["content"], "print('ok')\n");
+    }
+
+    #[test]
+    fn refuses_write_without_a_path() {
+        assert!(tool_input(
+            "filesystem.write",
+            "filesystem.write\n```text\ncontent\n```",
+            Path::new("C:/workspace"),
+        )
+        .is_none());
     }
 
     #[test]
