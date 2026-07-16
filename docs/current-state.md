@@ -32,6 +32,9 @@ Stages 1–5 complete. Stage 6 foundations + structured memory service (`6.16`�
 | GET | `/api/permissions` | Permission policy snapshot |
 | PUT | `/api/permissions/:permission` | Update permission mode |
 | GET | `/api/tools` | Tool catalog |
+| GET | `/api/plugins` | Installed plugins under `.evohime/plugins` |
+| GET | `/api/plugins/catalog` | Merged remote OSS marketplaces (obra, Anthropic official, mhattingpete, alirezarezvani, jeremylongshore); override via `EVOHIME_PLUGIN_CATALOG_URL` or `app_settings.plugin_catalog.sources` |
+| POST | `/api/plugins/install` | Install catalog plugin via `git clone` into `.evohime/plugins` |
 | GET/PUT | `/api/mcp/servers` | MCP server list |
 | POST | `/api/sessions` | Create session + bootstrap |
 | GET | `/api/sessions/:id/history` | Event history |
@@ -79,11 +82,11 @@ user.message
 | Tasks | ✅ deep: steps, deps, pause reason, retries, recovery, approvals |
 | Actions | ✅ deep: timeline + retry/approval/recovery metrics |
 | Terminal / Files / Editor / Git | ✅ |
-| Plugins / Sites | ✅ |
+| Plugins / Sites | ✅ Plugins: installed list + remote catalog/install |
 | Pull Requests | ✅ list + detail (diff/comments/checks) + create |
 | Memory | ❌ planned (`6.22`/`6.24`) |
 
-Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEventHandler` (`6.13` ✅).
+Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEventHandler` (`6.13` ✅). Brand: SVG mark + portrait mascot (`AgentBrand` / `AgentMark` / `AgentAvatar`, favicon).
 
 ## Tests
 
