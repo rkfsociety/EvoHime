@@ -28,9 +28,14 @@ pub fn is_terminal_status(status: &str) -> bool {
     matches!(status, "completed" | "failed")
 }
 
+pub fn retry_delay(attempts: i32) -> Duration {
+    let exponent = attempts.clamp(1, 5) as u32;
+    Duration::from_secs((1_u64 << exponent).min(30))
+}
+
 #[cfg(test)]
 mod status_tests {
-    use super::is_terminal_status;
+    use super::{is_terminal_status, retry_delay};
 
     #[test]
     fn only_completed_and_failed_are_terminal() {
@@ -38,6 +43,13 @@ mod status_tests {
         assert!(!is_terminal_status("running"));
         assert!(is_terminal_status("completed"));
         assert!(is_terminal_status("failed"));
+    }
+
+    #[test]
+    fn retry_delay_is_bounded_exponential_backoff() {
+        assert_eq!(retry_delay(1).as_secs(), 2);
+        assert_eq!(retry_delay(2).as_secs(), 4);
+        assert_eq!(retry_delay(8).as_secs(), 30);
     }
 }
 

@@ -169,6 +169,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move {
         worker_retention_loop(retention_state, retention_days).await;
     });
+    recover_worker_jobs(state.clone()).await;
 
     let recovered = evohime_task_engine::recover_after_restart(&state.pool)
         .await
@@ -363,6 +364,11 @@ async fn retry_worker_job(
         .await
         .map_err(|e| ApiError::Internal(e.to_string()))?
         .ok_or_else(|| ApiError::BadRequest("worker job not found".into()))?;
+    if row.attempts >= row.max_attempts {
+        return Err(ApiError::BadRequest(
+            "worker job retry limit has been reached".into(),
+        ));
+    }
     let worker_job = match state.worker.submit(&row.task, &row.payload_json).await {
         Ok(job) => job,
         Err(error) => {
@@ -395,7 +401,7 @@ async fn retry_worker_job(
 
 fn spawn_worker_poll(state: Arc<AppState>, id: Uuid, worker_job: worker::WorkerJob) {
     tokio::spawn(async move {
-        if let Err(error) = poll_worker_job(&state, id, worker_job).await {
+        if let Err(error) = run_worker_job(&state, id, worker_job).await {
             let _ =
                 evohime_storage::complete_worker_job(&state.pool, id, "failed", None, Some(&error))
                     .await;
@@ -403,32 +409,142 @@ fn spawn_worker_poll(state: Arc<AppState>, id: Uuid, worker_job: worker::WorkerJ
     });
 }
 
-async fn poll_worker_job(
+async fn recover_worker_jobs(state: Arc<AppState>) {
+    let jobs = match evohime_storage::list_recoverable_worker_jobs(&state.pool).await {
+        Ok(jobs) => jobs,
+        Err(error) => {
+            warn!(%error, "worker job recovery query failed");
+            return;
+        }
+    };
+    if !jobs.is_empty() {
+        info!(
+            count = jobs.len(),
+            "recovering worker jobs after server restart"
+        );
+    }
+    for job in jobs {
+        if job.attempts >= job.max_attempts {
+            let _ = evohime_storage::complete_worker_job(
+                &state.pool,
+                job.id,
+                "failed",
+                None,
+                Some("worker job exceeded retry limit during recovery"),
+            )
+            .await;
+            continue;
+        }
+        spawn_worker_recovery(state.clone(), job);
+    }
+}
+
+fn spawn_worker_recovery(state: Arc<AppState>, job: evohime_storage::WorkerJobRow) {
+    tokio::spawn(async move {
+        match retry_worker_job_after_error(&state, job.id, "server restart recovery".to_string())
+            .await
+        {
+            Ok(Some(worker_job)) => {
+                if let Err(error) = run_worker_job(&state, job.id, worker_job).await {
+                    let _ = evohime_storage::complete_worker_job(
+                        &state.pool,
+                        job.id,
+                        "failed",
+                        None,
+                        Some(&error),
+                    )
+                    .await;
+                }
+            }
+            Ok(None) | Err(_) => {}
+        }
+    });
+}
+
+async fn run_worker_job(
     state: &AppState,
     id: Uuid,
     mut worker_job: worker::WorkerJob,
 ) -> Result<(), String> {
-    for _ in 0..120 {
-        if worker::is_terminal_status(&worker_job.status) {
-            evohime_storage::complete_worker_job(
-                &state.pool,
-                id,
-                &worker_job.status,
-                worker_job.result.as_ref(),
-                worker_job.error.as_deref(),
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-            return Ok(());
+    loop {
+        for _ in 0..120 {
+            if worker::is_terminal_status(&worker_job.status) {
+                evohime_storage::complete_worker_job(
+                    &state.pool,
+                    id,
+                    &worker_job.status,
+                    worker_job.result.as_ref(),
+                    worker_job.error.as_deref(),
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            match state.worker.get(&worker_job.id).await {
+                Ok(job) => worker_job = job,
+                Err(error) => {
+                    match retry_worker_job_after_error(state, id, error.to_string()).await? {
+                        Some(job) => worker_job = job,
+                        None => return Ok(()),
+                    }
+                }
+            }
         }
-        tokio::time::sleep(Duration::from_millis(250)).await;
-        worker_job = state
-            .worker
-            .get(&worker_job.id)
+        match retry_worker_job_after_error(state, id, "worker polling timed out".to_string())
+            .await?
+        {
+            Some(job) => worker_job = job,
+            None => return Ok(()),
+        }
+    }
+}
+
+async fn retry_worker_job_after_error(
+    state: &AppState,
+    id: Uuid,
+    error: String,
+) -> Result<Option<worker::WorkerJob>, String> {
+    let row = evohime_storage::load_worker_job(&state.pool, id)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "worker job disappeared during retry".to_string())?;
+    if row.attempts >= row.max_attempts {
+        evohime_storage::complete_worker_job(&state.pool, id, "failed", None, Some(&error))
             .await
             .map_err(|e| e.to_string())?;
+        return Ok(None);
     }
-    Err("worker polling timed out".to_string())
+    let mut attempts = row.attempts;
+    loop {
+        tokio::time::sleep(worker::retry_delay(attempts)).await;
+        match state.worker.submit(&row.task, &row.payload_json).await {
+            Ok(worker_job) => {
+                evohime_storage::set_worker_job_submitted(
+                    &state.pool,
+                    id,
+                    &worker_job.id,
+                    attempts + 1,
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+                return Ok(Some(worker_job));
+            }
+            Err(submit_error) if attempts + 1 >= row.max_attempts => {
+                evohime_storage::complete_worker_job(
+                    &state.pool,
+                    id,
+                    "failed",
+                    None,
+                    Some(&submit_error.to_string()),
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+                return Ok(None);
+            }
+            Err(_) => attempts += 1,
+        }
+    }
 }
 
 async fn worker_retention_loop(state: Arc<AppState>, retention_days: i64) {
