@@ -424,6 +424,50 @@ h1 {
   font-size: 13px;
 }
 
+.standaloneSidebarChatList {
+  display: grid;
+  gap: 4px;
+}
+
+.standaloneSidebarChat {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--text-1);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.standaloneSidebarChat:hover,
+.standaloneSidebarChat.active {
+  background: var(--surface-3);
+}
+
+.standaloneSidebarChat.active {
+  box-shadow: inset 2px 0 0 var(--accent-2);
+}
+
+.standaloneSidebarChat strong,
+.standaloneSidebarChat span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.standaloneSidebarChat strong {
+  color: var(--text-0);
+  font-size: 13px;
+}
+
+.standaloneSidebarChat span {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
 .sidebarFooter {
   margin-top: auto;
   flex: 0 0 auto;

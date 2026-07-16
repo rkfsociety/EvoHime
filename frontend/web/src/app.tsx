@@ -952,10 +952,6 @@ export function App() {
     [selectedFilePath],
   );
   const gitSummary = useMemo(() => summarizeGitStatus(gitStatus), [gitStatus]);
-  const pendingTaskCount = useMemo(
-    () => Object.values(tasks).filter((task) => task.status === "running" || task.status === "paused" || task.status === "cancelling").length,
-    [tasks],
-  );
   const activeTaskId = useMemo(
     () => Object.values(tasks).find((task) => task.status === "running" || task.status === "cancelling")?.id ?? null,
     [tasks],
@@ -2916,25 +2912,31 @@ export function App() {
 
           <section className="sidebarSection">
             <header className="sidebarHeader">
-              <strong>Задачи</strong>
+              <strong>Чаты без проекта</strong>
             </header>
-            <button
-              type="button"
-              className="taskSummaryCard"
-              onClick={() => setActivePanel("tasks")}
-            >
-              {pendingTaskCount > 0 ? (
-                <>
-                  <strong>{pendingTaskCount}</strong>
-                  <span>активных задач</span>
-                </>
-              ) : (
-                <>
-                  <strong>Нет задач</strong>
-                  <span>Пока тихо, не нагружайся раньше времени</span>
-                </>
-              )}
-            </button>
+            {chatSessions.length > 0 ? (
+              <div className="standaloneSidebarChatList">
+                {chatSessions.slice(0, 5).map((chat, index) => (
+                  <button
+                    type="button"
+                    key={chat.session_id}
+                    className={chat.session_id === activeSessionId ? "standaloneSidebarChat active" : "standaloneSidebarChat"}
+                    onClick={() => {
+                      setActivePanel("chat");
+                      void openSession(chat).catch((error) => setLines((current) => [...current, { role: "system", text: String(error) }]));
+                    }}
+                  >
+                    <strong>{formatSessionTitle(chat, index)}</strong>
+                    <span>{formatSessionPreview(chat)}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <button type="button" className="taskSummaryCard" onClick={() => void createNewChat()}>
+                <strong>Нет чатов</strong>
+                <span>Создай первый чат без проекта</span>
+              </button>
+            )}
           </section>
 
           <section className="sidebarFooter">
