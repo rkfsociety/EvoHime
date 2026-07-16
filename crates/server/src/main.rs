@@ -1,4 +1,5 @@
 mod app;
+mod worker;
 mod workspace;
 
 use anyhow::Context;
@@ -24,8 +25,8 @@ use evohime_task_engine::{
 };
 use evohime_tool_runtime::ToolError;
 use futures_util::{sink::SinkExt, stream::StreamExt};
-use serde_json::{json, to_value, Value};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, to_value, Value};
 use sqlx::PgPool;
 use std::{collections::HashMap, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::{mpsc, Mutex, RwLock};
@@ -44,6 +45,8 @@ enum ApiError {
     ApprovalRequired { tool: String, approval_id: Uuid },
     #[error("{0}")]
     Internal(String),
+    #[error("service unavailable: {0}")]
+    Unavailable(String),
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -83,6 +86,7 @@ impl IntoResponse for ApiError {
                 format!("approval required for {tool}: {approval_id}"),
             ),
             Self::Internal(message) => (StatusCode::INTERNAL_SERVER_ERROR, message),
+            Self::Unavailable(message) => (StatusCode::SERVICE_UNAVAILABLE, message),
         };
 
         (status, Json(json!({ "error": message }))).into_response()
@@ -157,6 +161,7 @@ async fn main() -> anyhow::Result<()> {
         mcp_servers: Arc::new(Mutex::new(config.mcp_servers.clone())),
         session_buses: Arc::new(Mutex::new(HashMap::new())),
         task_cancellations: Arc::new(Mutex::new(HashMap::new())),
+        worker: worker::WorkerClient::new(config.worker_url.clone())?,
     });
 
     let recovered = evohime_task_engine::recover_after_restart(&state.pool)
@@ -226,7 +231,10 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/health", get(health))
-        .route("/api/models/config", get(model_config).put(update_model_config))
+        .route(
+            "/api/models/config",
+            get(model_config).put(update_model_config),
+        )
         .route("/api/models/available", get(available_models))
         .route("/api/sessions", get(list_sessions).post(create_session))
         .route("/api/sessions/archived", get(list_archived_sessions))
@@ -236,7 +244,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/auth/github", get(github_auth))
         .route("/api/github/pull-requests", get(list_pull_requests))
         .route("/api/files", get(workspace::list_files))
-        .route("/api/projects", get(workspace::list_projects).post(workspace::create_project))
+        .route(
+            "/api/projects",
+            get(workspace::list_projects).post(workspace::create_project),
+        )
         .route(
             "/api/files/content",
             get(workspace::read_file)
@@ -249,6 +260,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/git/pull", post(workspace::git_pull))
         .route("/api/git/push", post(workspace::git_push))
         .route("/api/tasks", get(list_tasks))
+        .route("/api/worker/jobs", post(create_worker_job))
+        .route("/api/worker/jobs/:job_id", get(get_worker_job))
+        .route("/api/worker/jobs/:job_id/retry", post(retry_worker_job))
         .route("/api/permissions", get(list_permissions))
         .route("/api/permissions/:permission", put(update_permission))
         .route("/api/tools", get(list_tools))
@@ -280,6 +294,116 @@ async fn health() -> Json<Value> {
     Json(json!({ "status": "ok" }))
 }
 
+#[derive(Debug, Deserialize)]
+struct WorkerJobRequest {
+    task: String,
+    #[serde(default)]
+    payload: Value,
+}
+
+async fn create_worker_job(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<WorkerJobRequest>,
+) -> Result<(StatusCode, Json<evohime_storage::WorkerJobRow>), ApiError> {
+    if request.task.trim().is_empty() || !request.payload.is_object() {
+        return Err(ApiError::BadRequest(
+            "task must be non-empty and payload must be an object".into(),
+        ));
+    }
+    let row = evohime_storage::create_worker_job(&state.pool, &request.task, &request.payload)
+        .await
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+    let worker_job = match state.worker.submit(&request.task, &request.payload).await {
+        Ok(job) => job,
+        Err(error) => {
+            let _ = evohime_storage::complete_worker_job(
+                &state.pool,
+                row.id,
+                "failed",
+                None,
+                Some(&error.to_string()),
+            )
+            .await;
+            return Err(ApiError::Unavailable(error.to_string()));
+        }
+    };
+    evohime_storage::set_worker_job_submitted(&state.pool, row.id, &worker_job.id, 1)
+        .await
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+    let updated = poll_worker_job(&state, row.id, worker_job).await?;
+    Ok((StatusCode::ACCEPTED, Json(updated)))
+}
+
+async fn get_worker_job(
+    State(state): State<Arc<AppState>>,
+    Path(job_id): Path<Uuid>,
+) -> Result<Json<evohime_storage::WorkerJobRow>, ApiError> {
+    evohime_storage::load_worker_job(&state.pool, job_id)
+        .await
+        .map_err(|e| ApiError::Internal(e.to_string()))?
+        .map(Json)
+        .ok_or_else(|| ApiError::BadRequest("worker job not found".into()))
+}
+
+async fn retry_worker_job(
+    State(state): State<Arc<AppState>>,
+    Path(job_id): Path<Uuid>,
+) -> Result<Json<evohime_storage::WorkerJobRow>, ApiError> {
+    let row = evohime_storage::load_worker_job(&state.pool, job_id)
+        .await
+        .map_err(|e| ApiError::Internal(e.to_string()))?
+        .ok_or_else(|| ApiError::BadRequest("worker job not found".into()))?;
+    let worker_job = state
+        .worker
+        .submit(&row.task, &row.payload_json)
+        .await
+        .map_err(|e| ApiError::Unavailable(e.to_string()))?;
+    evohime_storage::set_worker_job_submitted(
+        &state.pool,
+        row.id,
+        &worker_job.id,
+        row.attempts + 1,
+    )
+    .await
+    .map_err(|e| ApiError::Internal(e.to_string()))?;
+    Ok(Json(poll_worker_job(&state, row.id, worker_job).await?))
+}
+
+async fn poll_worker_job(
+    state: &AppState,
+    id: Uuid,
+    mut worker_job: worker::WorkerJob,
+) -> Result<evohime_storage::WorkerJobRow, ApiError> {
+    for _ in 0..20 {
+        if worker_job.status == "completed" || worker_job.status == "failed" {
+            return evohime_storage::complete_worker_job(
+                &state.pool,
+                id,
+                &worker_job.status,
+                worker_job.result.as_ref(),
+                worker_job.error.as_deref(),
+            )
+            .await
+            .map_err(|e| ApiError::Internal(e.to_string()));
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        worker_job = state
+            .worker
+            .get(&worker_job.id)
+            .await
+            .map_err(|e| ApiError::Unavailable(e.to_string()))?;
+    }
+    evohime_storage::complete_worker_job(
+        &state.pool,
+        id,
+        "failed",
+        None,
+        Some("worker polling timed out"),
+    )
+    .await
+    .map_err(|e| ApiError::Internal(e.to_string()))
+}
+
 async fn model_config(
     State(state): State<Arc<AppState>>,
 ) -> Json<evohime_model_gateway::ModelConfigResponse> {
@@ -301,11 +425,12 @@ async fn available_models(
     let default_route = state.model_config.read().await.default_route.clone();
     let route_name = query.get("route").cloned().unwrap_or(default_route);
     let config = state.model_config.read().await;
-    let effective_route_name = if route_name == "orchestrator" && !config.routes.contains_key(&route_name) {
-        config.default_route.clone()
-    } else {
-        route_name.clone()
-    };
+    let effective_route_name =
+        if route_name == "orchestrator" && !config.routes.contains_key(&route_name) {
+            config.default_route.clone()
+        } else {
+            route_name.clone()
+        };
     let route = config
         .routes
         .get(&effective_route_name)
@@ -323,21 +448,25 @@ async fn available_models(
     } else {
         let client = reqwest::Client::new();
         let response = client
-            .get(format!("{}/models", route.literouter.base_url.trim_end_matches('/')))
+            .get(format!(
+                "{}/models",
+                route.literouter.base_url.trim_end_matches('/')
+            ))
             .bearer_auth(&route.literouter.api_key)
             .send()
             .await
-            .map_err(|error| ApiError::Internal(format!("не удалось получить список моделей: {error}")))?;
+            .map_err(|error| {
+                ApiError::Internal(format!("не удалось получить список моделей: {error}"))
+            })?;
         if !response.status().is_success() {
             return Err(ApiError::BadRequest(format!(
                 "провайдер вернул ошибку списка моделей: {}",
                 response.status()
             )));
         }
-        let payload: OpenAiModelsResponse = response
-            .json()
-            .await
-            .map_err(|error| ApiError::Internal(format!("некорректный ответ списка моделей: {error}")))?;
+        let payload: OpenAiModelsResponse = response.json().await.map_err(|error| {
+            ApiError::Internal(format!("некорректный ответ списка моделей: {error}"))
+        })?;
         let mut models = payload
             .data
             .into_iter()
@@ -378,7 +507,8 @@ async fn update_model_config(
     Json(request): Json<ModelSettingsRequest>,
 ) -> Result<Json<evohime_model_gateway::ModelConfigResponse>, ApiError> {
     let current = state.model_config.read().await;
-    let request_value = serde_json::to_value(&request).map_err(|error| ApiError::Internal(error.to_string()))?;
+    let request_value =
+        serde_json::to_value(&request).map_err(|error| ApiError::Internal(error.to_string()))?;
     let config = build_model_config(request, &current)?;
     drop(current);
     let gateway = if config.routes.values().all(ModelRouteConfig::configured) {
@@ -453,7 +583,8 @@ fn build_model_config(
             let is_free_model = model.ends_with(":free");
             if billing_mode == "free" && !is_free_model {
                 return Err(ApiError::BadRequest(
-                    "В бесплатном режиме LiteRouter доступны только модели с суффиксом :free".to_string(),
+                    "В бесплатном режиме LiteRouter доступны только модели с суффиксом :free"
+                        .to_string(),
                 ));
             }
             if billing_mode == "paid" && is_free_model {
@@ -468,12 +599,12 @@ fn build_model_config(
             .map(|item| item.literouter.api_key.clone())
             .or_else(|| {
                 (name == "orchestrator").then(|| {
-            current
-                .routes
-                .get(&current.default_route)
-                .map(|item| item.literouter.api_key.clone())
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| requested_default_key.clone())
+                    current
+                        .routes
+                        .get(&current.default_route)
+                        .map(|item| item.literouter.api_key.clone())
+                        .filter(|value| !value.trim().is_empty())
+                        .unwrap_or_else(|| requested_default_key.clone())
                 })
             })
             .unwrap_or_default();
@@ -691,7 +822,9 @@ async fn archive_session(
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
     if !archived {
-        return Err(ApiError::BadRequest("Чат не найден или уже архивирован".to_string()));
+        return Err(ApiError::BadRequest(
+            "Чат не найден или уже архивирован".to_string(),
+        ));
     }
     Ok(StatusCode::NO_CONTENT)
 }
@@ -1575,10 +1708,9 @@ fn resolve_workspace_path(
     state: &Arc<AppState>,
     requested_path: Option<String>,
 ) -> Result<PathBuf, ApiError> {
-    let root = state
-        .workspace_root
-        .canonicalize()
-        .map_err(|error| ApiError::Internal(format!("не удалось определить корень workspace: {error}")))?;
+    let root = state.workspace_root.canonicalize().map_err(|error| {
+        ApiError::Internal(format!("не удалось определить корень workspace: {error}"))
+    })?;
     let projects_root = root
         .parent()
         .map(PathBuf::from)
@@ -1603,7 +1735,9 @@ fn resolve_workspace_path(
         ));
     }
     if !resolved.is_dir() {
-        return Err(ApiError::BadRequest("путь проекта должен быть папкой".to_string()));
+        return Err(ApiError::BadRequest(
+            "путь проекта должен быть папкой".to_string(),
+        ));
     }
     Ok(resolved)
 }
@@ -1881,7 +2015,10 @@ mod tests {
         .expect("model config is valid");
 
         assert_eq!(config.routes["default"].literouter.api_key, "lr_test_key");
-        assert_eq!(config.routes["orchestrator"].literouter.api_key, "lr_test_key");
+        assert_eq!(
+            config.routes["orchestrator"].literouter.api_key,
+            "lr_test_key"
+        );
     }
 
     #[test]

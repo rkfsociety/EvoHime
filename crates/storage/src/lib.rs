@@ -84,9 +84,63 @@ pub struct MemoryRow {
     pub created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct WorkerJobRow {
+    pub id: Uuid,
+    pub worker_job_id: Option<String>,
+    pub task: String,
+    pub payload_json: Value,
+    pub status: String,
+    pub attempts: i32,
+    pub result_json: Option<Value>,
+    pub error: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
 pub async fn run_migrations(pool: &PgPool) -> Result<(), StorageError> {
     sqlx::migrate!("../../migrations").run(pool).await?;
     Ok(())
+}
+
+pub async fn create_worker_job(
+    pool: &PgPool,
+    task: &str,
+    payload_json: &Value,
+) -> Result<WorkerJobRow, StorageError> {
+    Ok(sqlx::query_as::<_, WorkerJobRow>("INSERT INTO worker_jobs (task, payload_json) VALUES ($1, $2) RETURNING id, worker_job_id, task, payload_json, status, attempts, result_json, error, created_at, updated_at, completed_at")
+        .bind(task).bind(payload_json).fetch_one(pool).await?)
+}
+
+pub async fn load_worker_job(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<Option<WorkerJobRow>, StorageError> {
+    Ok(sqlx::query_as::<_, WorkerJobRow>("SELECT id, worker_job_id, task, payload_json, status, attempts, result_json, error, created_at, updated_at, completed_at FROM worker_jobs WHERE id = $1")
+        .bind(id).fetch_optional(pool).await?)
+}
+
+pub async fn set_worker_job_submitted(
+    pool: &PgPool,
+    id: Uuid,
+    worker_job_id: &str,
+    attempts: i32,
+) -> Result<(), StorageError> {
+    sqlx::query("UPDATE worker_jobs SET worker_job_id=$2, status='running', attempts=$3, updated_at=now() WHERE id=$1")
+        .bind(id).bind(worker_job_id).bind(attempts).execute(pool).await?;
+    Ok(())
+}
+
+pub async fn complete_worker_job(
+    pool: &PgPool,
+    id: Uuid,
+    status: &str,
+    result_json: Option<&Value>,
+    error: Option<&str>,
+) -> Result<WorkerJobRow, StorageError> {
+    Ok(sqlx::query_as::<_, WorkerJobRow>("UPDATE worker_jobs SET status=$2, result_json=$3, error=$4, updated_at=now(), completed_at=CASE WHEN $2 IN ('completed','failed') THEN now() ELSE completed_at END WHERE id=$1 RETURNING id, worker_job_id, task, payload_json, status, attempts, result_json, error, created_at, updated_at, completed_at")
+        .bind(id).bind(status).bind(result_json).bind(error).fetch_one(pool).await?)
 }
 
 pub async fn load_setting(pool: &PgPool, key: &str) -> Result<Option<Value>, StorageError> {

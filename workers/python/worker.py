@@ -12,15 +12,17 @@ import argparse
 import json
 import logging
 import queue
+import re
 import threading
 import uuid
+from collections import Counter
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 LOGGER = logging.getLogger("evohime.worker")
-SUPPORTED_TASKS = ("echo", "text.stats")
+SUPPORTED_TASKS = ("echo", "text.stats", "text.keywords")
 MAX_TEXT_LENGTH = 1_000_000
 
 
@@ -68,6 +70,21 @@ def run_task(task: str, payload: dict[str, Any]) -> Any:
             "words": len(text.split()),
             "lines": len(text.splitlines()),
         }
+
+    if task == "text.keywords":
+        text = payload.get("text")
+        if not isinstance(text, str):
+            raise ValueError("text.keywords requires a string payload.text")
+        if len(text) > MAX_TEXT_LENGTH:
+            raise ValueError(f"payload.text exceeds {MAX_TEXT_LENGTH} characters")
+        words = re.findall(r"[\w]+", text.casefold(), flags=re.UNICODE)
+        counts = Counter(words)
+        keywords = [
+            {"word": word, "count": count}
+            for word, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+            if len(word) > 2
+        ][:20]
+        return {"keywords": keywords}
 
     raise ValueError(f"unsupported task: {task}")
 

@@ -38,6 +38,9 @@ Last updated: 2026-07-15
 | GET | `/api/git/diff` | Repository diff, optionally scoped to a path |
 | POST | `/api/git/commit`, `/api/git/pull`, `/api/git/push` | Permission-controlled Git mutations |
 | GET | `/api/github/pull-requests` | GitHub pull request dashboard data |
+| POST | `/api/worker/jobs` | Submit a durable job to the isolated Python worker |
+| GET | `/api/worker/jobs/:id` | Read worker job state/result |
+| POST | `/api/worker/jobs/:id/retry` | Re-submit a worker job and increment attempts |
 | WS | `/ws/:session_id` | Real-time streaming events |
 
 Workspace APIs now cover file browsing, reading, saving/creating files, Git status/diff, Git commit/pull/push actions, tool catalog inspection, GitHub auth and pull request views, and MCP server management. File and Git mutations publish synchronization events through the session bus. Permissions are editable through the API, and approval-required tool calls round-trip through the browser.
@@ -69,6 +72,7 @@ user.message
 - `session_messages` — chat history for LLM context
 - `session_memory` — persistent short notes for future agent runs
 - `app_settings` — persisted web-panel configuration, including model routes
+- `worker_jobs` — durable Python worker job state, attempts, results, and errors
 
 ## LLM provider
 
@@ -117,4 +121,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: the Python worker HTTP/queue baseline is complete. Next is adding real ML task handlers and moving job persistence/retries behind the Rust server while keeping worker execution isolated.
+**Stage 6 / Milestone 5**: the first ML-oriented `text.keywords` handler and Rust worker-job bridge are in place. Next is adding specialized ML handlers and background polling/retention policies while keeping worker execution isolated.

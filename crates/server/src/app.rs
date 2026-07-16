@@ -1,3 +1,4 @@
+use crate::worker::WorkerClient;
 use anyhow::Result;
 use evohime_model_gateway::providers::ProviderKind;
 use evohime_model_gateway::{ModelConfigResponse, ModelGateway, ModelGatewayConfig};
@@ -20,6 +21,7 @@ pub struct AppConfig {
     pub workspace_root: PathBuf,
     pub model_config: ModelGatewayConfig,
     pub mcp_servers: Vec<McpServerConfig>,
+    pub worker_url: String,
 }
 
 impl AppConfig {
@@ -39,6 +41,8 @@ impl AppConfig {
             Ok(value) => serde_json::from_str::<Vec<McpServerConfig>>(&value)?,
             Err(_) => Vec::new(),
         };
+        let worker_url =
+            env::var("PYTHON_WORKER_URL").unwrap_or_else(|_| "http://127.0.0.1:8090".to_string());
 
         Ok(Self {
             database_url,
@@ -47,6 +51,7 @@ impl AppConfig {
             workspace_root,
             model_config,
             mcp_servers,
+            worker_url,
         })
     }
 }
@@ -76,6 +81,7 @@ pub struct AppState {
     pub mcp_servers: Arc<Mutex<Vec<McpServerConfig>>>,
     pub session_buses: Arc<Mutex<HashMap<Uuid, broadcast::Sender<ServerEvent>>>>,
     pub task_cancellations: Arc<Mutex<HashMap<Uuid, CancellationToken>>>,
+    pub worker: WorkerClient,
 }
 
 impl AppState {

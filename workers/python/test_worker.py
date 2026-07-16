@@ -33,6 +33,23 @@ class JobServiceTests(unittest.TestCase):
         finally:
             service.close()
 
+    def test_text_keywords_returns_deterministic_frequencies(self):
+        service = JobService()
+        try:
+            job = service.submit("text.keywords", {"text": "Rust rust worker, worker task"})
+            for _ in range(100):
+                if (current := service.get(job.id)).status in {"completed", "failed"}:
+                    break
+                threading.Event().wait(0.01)
+            self.assertEqual(current.status, "completed")
+            self.assertEqual(current.result["keywords"], [
+                {"word": "rust", "count": 2},
+                {"word": "worker", "count": 2},
+                {"word": "task", "count": 1},
+            ])
+        finally:
+            service.close()
+
 
 class HttpWorkerTests(unittest.TestCase):
     def test_health_and_job_lifecycle(self):
