@@ -1144,6 +1144,8 @@ h1 {
 }
 
 .line.user {
+  width: fit-content;
+  max-width: min(100%, 920px);
   justify-self: end;
   margin-left: auto;
   margin-right: 0;
