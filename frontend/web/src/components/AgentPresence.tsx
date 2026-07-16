@@ -10,7 +10,7 @@ const BODY_WIDTH = 150;
 const EDGE_PAD = 8;
 const WALK_FRAMES = 26;
 /** Bump when replacing /brand walk sprites so browsers don't keep stale webp. */
-const ASSET_REV = "walk26-ltr-slow4";
+const ASSET_REV = "walk26-numbered-1";
 
 function brandUrl(path: string) {
   return `${path}?v=${ASSET_REV}`;
@@ -174,8 +174,8 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
       ? brandUrl(`/brand/agent-walk-${frame}.webp`)
       : brandUrl("/brand/agent-presence.webp");
 
-  // Sprites face LEFT. facing: 1 = move right, -1 = move left.
-  const scaleX = facing >= 0 ? -1 : 1;
+  // Sprites face RIGHT. facing: 1 = move right, -1 = move left.
+  const scaleX = facing >= 0 ? 1 : -1;
 
   return (
     <aside
