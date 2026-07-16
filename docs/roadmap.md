@@ -1,6 +1,6 @@
 # EvoHime — Дорожная карта
 
-> Обновлено: 2026-07-15
+> Обновлено: 2026-07-16
 
 ## Обзор
 
@@ -181,6 +181,52 @@
 ### Критерий готовности
 
 Агент использует project index для контекста, вызывает MCP-инструменты, работает с несколькими моделями. Python workers принимают структурированные HTTP jobs и готовы к подключению специализированных ML handlers.
+
+---
+
+## Следующий слой улучшений
+
+После закрытия базового Stage 6 приоритет смещается с "фича есть" на "система масштабируется, восстанавливается и остаётся удобной в сопровождении".
+
+### P1 — Архитектура и оркестрация
+
+| Приоритет | Улучшение | Что добавить |
+| --- | --- | --- |
+| P1 | Реальный executor плана | Исполнение `PlanStep` как графа шагов с повторным планированием, анализом результатов инструментов и явным циклом `plan -> execute -> observe -> replan -> respond` |
+| P1 | Усиленный checkpoint/recovery | Сохранять не только `workspace_context`, но и прогресс по шагам, результаты завершённых tool calls, причину паузы и состояние approval wait |
+| P1 | Наблюдаемость task pipeline | Correlation id для session/task/tool, structured logs по шагам и метрики времени выполнения, retries и approval latency |
+| P1 | Больше интеграционных сценариев | Тесты на `task start -> tool events -> completion`, `approval -> pause -> resume`, retry и recovery после restart |
+
+### P1 — UI и сопровождение фронтенда
+
+| Приоритет | Улучшение | Что добавить |
+| --- | --- | --- |
+| P1 | Декомпозиция `frontend/web/src/app.tsx` | Вынести панели, WebSocket/event orchestration, API-клиент и локальные state-модули в отдельные компоненты и hooks |
+| P1 | Typed API client | Общий слой запросов с типизированными ответами и единообразной обработкой ошибок вместо разрозненных `fetch()` |
+| P1 | Более глубокие панели Tasks/Actions | Показывать зависимости шагов, причину паузы, повторные попытки, ожидание approvals и восстановление после restart |
+
+### P2 — Поиск, разрешения и GitHub workflow
+
+| Приоритет | Улучшение | Что добавить |
+| --- | --- | --- |
+| P2 | Улучшенный project index | Поиск по чанкам, отдельные веса для path/symbol hits, фильтрация шумных и бинарных файлов, подготовка к semantic search |
+| P2 | Более гибкая permission model | Разрешения per-session / per-task / per-path, аудит approvals и временные allow-решения |
+| P2 | Расширение GitHub/PR панели | Diff конкретного PR, comments/reviews, CI checks, создание PR из UI и связь `task -> branch -> PR` |
+
+### P2 — Workers и фоновые процессы
+
+| Приоритет | Улучшение | Что добавить |
+| --- | --- | --- |
+| P2 | Укрепление worker subsystem | Retry/backoff policy, stalled job detection, heartbeat, retention по статусам и typed payload/result schemas |
+| P2 | Специализированные ML handlers | Поверх базовой HTTP queue добавить прикладные обработчики задач, не ломая изоляцию worker execution |
+
+### Кандидаты на следующий milestone
+
+- `6.11` План-исполнитель с реальным графом шагов и повторным планированием
+- `6.12` Расширенные checkpoints, approvals recovery и task replay
+- `6.13` Декомпозиция frontend shell (`app.tsx` -> panels/hooks/services)
+- `6.14` GitHub PR workflow: diff, review comments, checks, create PR
+- `6.15` Worker reliability: retries, heartbeat, stalled-job handling
 
 ---
 

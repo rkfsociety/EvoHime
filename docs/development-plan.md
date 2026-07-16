@@ -61,7 +61,7 @@ EvoHime Server — Rust
 13. Параллельное выполнение независимых инструментов
 14. Восстановление задач после перезапуска сервера
 
-## Фактический статус на 2026-07-15
+## Фактический статус на 2026-07-16
 
 Этапы 1, 2, 3, 4 и 5 завершены. Stage 5 теперь включает планирование шагов, состояние шагов в истории задач, resume/recovery и cooperative cancellation:
 
@@ -73,7 +73,7 @@ EvoHime Server — Rust
 - `permissions` содержит policy engine и one-shot решения; `approval.required` публикуется сервером, а `approval.granted` / `approval.denied` продолжают paused task;
 - `project-index` уже даёт workspace text search для контекста; `session_memory` уже подмешивается в prompt; Python worker уже имеет bounded HTTP job queue, health endpoint, submit/poll lifecycle и structured failure states.
 
-Следующий сквозной приоритет — этап 6: project index, MCP, memory и worker integrations.
+Следующий сквозной приоритет — завершение Stage 6 и переход от "базовые возможности реализованы" к "оркестрация, recovery и UI готовы к масштабированию".
 
 ---
 
@@ -294,6 +294,25 @@ Task lifecycle реализован: start/complete/fail/cancel/resume/retry. St
 
 **Результат:** production-ready агент с расширяемой экосистемой, multi-model support и worker integrations. Маршруты модели выбираются на уровне задачи и могут указывать на отдельные OpenAI-compatible endpoints.
 
+Следующий подэтап Stage 6:
+
+- реальный executor плана: граф шагов, цикл `plan -> execute -> observe -> replan -> respond`, явная обработка результатов инструментов;
+- расширенные checkpoints и recovery: прогресс по шагам, результаты завершённых tool calls, причина паузы и состояние approval wait;
+- декомпозиция `frontend/web/src/app.tsx` на panels/hooks/services и вынесение WebSocket/event orchestration из корневого компонента;
+- typed API client для frontend вместо разрозненных `fetch()` и локальных обработчиков ошибок;
+- усиление `project-index`: chunk-based поиск, отдельные веса для path/symbol hits, фильтрация шумных/бинарных файлов и подготовка к semantic search;
+- более гибкая permission model: per-session / per-task / per-path разрешения, аудит approvals и временные allow-решения;
+- расширение GitHub/PR workflow в UI: diff, review comments, checks и создание PR;
+- укрепление worker subsystem: retry/backoff, heartbeat, stalled-job detection, retention policy и typed payload/result schemas.
+
+Кандидаты на ближайшие deliverables:
+
+- `6.11` Plan executor и повторное планирование;
+- `6.12` Checkpoint/recovery для approvals и replay шагов;
+- `6.13` Frontend shell refactor (`app.tsx` -> panels/hooks/services);
+- `6.14` GitHub PR workflow и CI visibility;
+- `6.15` Worker reliability и специализированные handlers.
+
 ---
 
 ## Требования к качеству
@@ -303,6 +322,7 @@ Task lifecycle реализован: start/complete/fail/cancel/resume/retry. St
 - Модульная архитектура (один concern — один crate)
 - Тесты для ядра и инструментов
 - Структурированные логи (`tracing`)
+- Наблюдаемость: correlation id, метрики задач, approval latency, retries
 - Миграции базы данных
 - Обработка ошибок без падения сервера
 - Ограничения ресурсов и таймауты на инструменты
