@@ -1,5 +1,7 @@
 import Editor from "@monaco-editor/react";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type {
   ClientCommand,
   PlanStep,
@@ -2568,11 +2570,11 @@ export function App() {
             lines.filter((line) => line.role !== "system" && line.role !== "tool").map((line, index) => (
               <article className={`line ${line.role}`} key={`${line.role}-${index}`}>
                 <strong>{translateChatRole(line.role)}</strong>
-                <pre>{line.text}</pre>
+                {line.role === "assistant" ? <MarkdownMessage text={line.text} /> : <pre>{line.text}</pre>}
               </article>
             ))
           )}
-          {traceLines.length > 0 ? (
+          {traceLines.length > 0 && (hasConversation || Boolean(activeTaskId)) ? (
             <details className="chatTraceSummary" open={Boolean(activeTaskId)}>
               <summary>
                 <span className="chatTraceSummaryTitle">
@@ -2594,7 +2596,7 @@ export function App() {
           {stream ? (
             <article className="line assistant streaming">
               <strong>Ассистент</strong>
-              <pre>{stream}</pre>
+              <MarkdownMessage text={stream} />
             </article>
           ) : null}
         </div>
@@ -3045,4 +3047,27 @@ function formatPlan(plan: PlanStep[]) {
       return `- ${step.id}: ${step.tool_name} — ${step.description}${deps}`;
     }),
   ].join("\n");
+}
+
+function MarkdownMessage({ text }: { text: string }) {
+  return (
+    <div className="markdownBody">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+          code: ({ node: _node, className, children, ...props }) => {
+            const inline = !className;
+            return inline ? (
+              <code className="inlineCode" {...props}>{children}</code>
+            ) : (
+              <pre className="codeBlock"><code className={className} {...props}>{children}</code></pre>
+            );
+          },
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
 }

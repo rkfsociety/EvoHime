@@ -1111,6 +1111,105 @@ h1 {
   color: var(--text-0);
 }
 
+.markdownBody {
+  color: var(--text-0);
+  line-height: 1.6;
+}
+
+.markdownBody > :first-child {
+  margin-top: 0;
+}
+
+.markdownBody > :last-child {
+  margin-bottom: 0;
+}
+
+.markdownBody h1,
+.markdownBody h2,
+.markdownBody h3,
+.markdownBody h4 {
+  margin: 1.1em 0 0.45em;
+  line-height: 1.25;
+}
+
+.markdownBody h1 { font-size: 1.45em; }
+.markdownBody h2 { font-size: 1.25em; }
+.markdownBody h3 { font-size: 1.1em; }
+
+.markdownBody p,
+.markdownBody ul,
+.markdownBody ol,
+.markdownBody blockquote {
+  margin: 0.75em 0;
+}
+
+.markdownBody ul,
+.markdownBody ol {
+  padding-left: 1.5em;
+}
+
+.markdownBody li + li {
+  margin-top: 0.25em;
+}
+
+.markdownBody blockquote {
+  padding: 0.2em 1em;
+  border-left: 3px solid var(--accent-2);
+  color: var(--text-1);
+  background: rgba(143, 180, 255, 0.06);
+}
+
+.markdownBody a {
+  color: var(--accent-2);
+}
+
+.markdownBody strong {
+  color: var(--text-0);
+}
+
+.inlineCode {
+  padding: 0.12em 0.35em;
+  border: 1px solid var(--border-0);
+  border-radius: 5px;
+  color: var(--accent-1);
+  background: rgba(0, 0, 0, 0.2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.markdownBody .codeBlock {
+  margin: 0.85em 0;
+  padding: 13px 14px;
+  overflow-x: auto;
+  border: 1px solid rgba(143, 180, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(4, 8, 18, 0.72);
+}
+
+.markdownBody .codeBlock code {
+  color: #dbe7ff;
+  font-size: 12px;
+}
+
+.markdownBody table {
+  width: 100%;
+  margin: 0.9em 0;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+
+.markdownBody th,
+.markdownBody td {
+  padding: 8px 10px;
+  border: 1px solid var(--border-0);
+  text-align: left;
+}
+
+.markdownBody th {
+  color: var(--text-0);
+  background: rgba(143, 180, 255, 0.08);
+}
+
 .line.tool strong {
   color: var(--accent-1);
 }
