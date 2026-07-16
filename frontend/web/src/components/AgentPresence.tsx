@@ -14,9 +14,25 @@ function randomBetween(min: number, max: number) {
   return min + Math.random() * (max - min);
 }
 
+/** Walk lane: chat left → composer left (inside .chatStage). */
+function measureWalkBounds(stage: HTMLElement): { minX: number; maxX: number } {
+  const minX = EDGE_PAD;
+  const stageRect = stage.getBoundingClientRect();
+  const chatStage = stage.closest(".chatStage") ?? stage.parentElement;
+  const composer = chatStage?.querySelector(".composer") as HTMLElement | null;
+  if (!composer) {
+    return { minX, maxX: Math.max(minX, stage.clientWidth * 0.45 - BODY_WIDTH) };
+  }
+  const composerRect = composer.getBoundingClientRect();
+  const composerLeftInStage = composerRect.left - stageRect.left;
+  const maxX = Math.max(minX, composerLeftInStage - BODY_WIDTH - EDGE_PAD);
+  return { minX, maxX };
+}
+
 export function AgentPresence({ busy = false }: AgentPresenceProps) {
   const stageRef = useRef<HTMLElement | null>(null);
   const xRef = useRef(24);
+  const boundsRef = useRef({ minX: EDGE_PAD, maxX: 200 });
   const [x, setX] = useState(24);
   const [facing, setFacing] = useState<1 | -1>(1);
   const [mode, setMode] = useState<WalkMode>("idle");
@@ -30,7 +46,6 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
   busyRef.current = busy;
 
   useEffect(() => {
-    // Preload walk frames so swaps don't flash empty
     for (let i = 0; i < WALK_FRAMES; i += 1) {
       const img = new Image();
       img.src = `/brand/agent-walk-${i}.webp`;
@@ -41,7 +56,14 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
     const stage = stageRef.current;
     if (!stage) return;
 
-    const maxX = () => Math.max(EDGE_PAD, stage.clientWidth - BODY_WIDTH - EDGE_PAD);
+    const refreshBounds = () => {
+      boundsRef.current = measureWalkBounds(stage);
+      const { minX, maxX } = boundsRef.current;
+      const capped = Math.min(Math.max(xRef.current, minX), maxX);
+      xRef.current = capped;
+      setX(capped);
+      targetRef.current = Math.min(Math.max(targetRef.current, minX), maxX);
+    };
 
     const clearTimer = () => {
       if (timerRef.current !== null) {
@@ -51,10 +73,12 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
     };
 
     const startWalkTo = (next: number) => {
-      targetRef.current = next;
+      const { minX, maxX } = boundsRef.current;
+      const clamped = Math.min(Math.max(next, minX), maxX);
+      targetRef.current = clamped;
       modeRef.current = "walk";
       setMode("walk");
-      setFacing(next >= xRef.current ? 1 : -1);
+      setFacing(clamped >= xRef.current ? 1 : -1);
     };
 
     const scheduleIdle = () => {
@@ -64,11 +88,15 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
       setFrame(0);
       const pause = busyRef.current ? randomBetween(400, 900) : randomBetween(1400, 3600);
       timerRef.current = window.setTimeout(() => {
-        startWalkTo(randomBetween(EDGE_PAD, maxX()));
+        refreshBounds();
+        const { minX, maxX } = boundsRef.current;
+        startWalkTo(randomBetween(minX, Math.max(minX, maxX)));
       }, pause);
     };
 
-    xRef.current = Math.min(Math.max(EDGE_PAD, stage.clientWidth * 0.1), maxX());
+    refreshBounds();
+    const { minX, maxX } = boundsRef.current;
+    xRef.current = Math.min(Math.max(minX, (minX + maxX) * 0.25), maxX);
     setX(xRef.current);
     targetRef.current = xRef.current;
 
@@ -94,27 +122,28 @@ export function AgentPresence({ busy = false }: AgentPresenceProps) {
     scheduleIdle();
     rafRef.current = window.requestAnimationFrame(tick);
 
-    const onResize = () => {
-      const capped = Math.min(xRef.current, maxX());
-      xRef.current = capped;
-      setX(capped);
-      targetRef.current = Math.min(targetRef.current, maxX());
-    };
-    const ro = new ResizeObserver(onResize);
+    const chatStage = stage.closest(".chatStage") ?? stage.parentElement;
+    const composer = chatStage?.querySelector(".composer") as HTMLElement | null;
+    const ro = new ResizeObserver(() => refreshBounds());
     ro.observe(stage);
+    if (composer) ro.observe(composer);
+    if (chatStage) ro.observe(chatStage);
+    window.addEventListener("resize", refreshBounds);
 
     return () => {
       clearTimer();
       if (rafRef.current !== null) window.cancelAnimationFrame(rafRef.current);
       ro.disconnect();
+      window.removeEventListener("resize", refreshBounds);
     };
   }, []);
 
   useEffect(() => {
     const stage = stageRef.current;
     if (!busy || !stage) return;
-    const maxX = Math.max(EDGE_PAD, stage.clientWidth - BODY_WIDTH - EDGE_PAD);
-    const next = randomBetween(EDGE_PAD, maxX);
+    boundsRef.current = measureWalkBounds(stage);
+    const { minX, maxX } = boundsRef.current;
+    const next = randomBetween(minX, Math.max(minX, maxX));
     targetRef.current = next;
     modeRef.current = "walk";
     setMode("walk");
