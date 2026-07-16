@@ -2,6 +2,6 @@
 
 Agent orchestration loop.
 
-- `agent_loop.rs` — loads chat history, builds plan steps, invokes tools through `model-gateway`, and streams the LLM response
+- `agent_loop.rs` — loads chat history, builds plan steps, executes tools in dependency batches (parallel within a batch), runs a bounded observe/replan cycle, then streams the final LLM response
 
-The loop now handles the current stage 5 browser flow, including structured plans, approval-aware tool execution, and recovery hooks. Stage 6 now includes project-index retrieval, session memory context, and task-scoped model routes; it will continue with MCP calls, settings, Python workers, and browser automation.
+Stage 6: project-index retrieval, session memory, task-scoped model routes, and plan executor (`plan → execute → observe → replan → respond`, max 3 replan rounds).

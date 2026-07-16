@@ -3,10 +3,11 @@ use evohime_model_gateway::{providers::ChatMessage, providers::ChatRole, ModelGa
 use evohime_project_index::ProjectIndex;
 use evohime_protocol::{PlanStep, ServerEvent};
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
-use futures_util::StreamExt;
+use futures_util::{future::join_all, StreamExt};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -294,8 +295,84 @@ async fn run_agent_loop_inner(
         },
     )?;
 
-    let (plan_outputs, mut mutation_executed) =
-        execute_plan_steps(&plan, &config, tools, &event_tx).await?;
+    let (mut plan_outputs, mut mutation_executed, mut satisfied_steps) =
+        execute_plan_steps(&plan, &HashSet::new(), &config, tools, &event_tx).await?;
+
+    let mut accumulated_plan = plan.clone();
+    if plan_needs_replan_cycle(&plan) {
+        for round in 0..MAX_REPLAN_ROUNDS {
+            tokio::time::sleep(MODEL_REQUEST_COOLDOWN).await;
+            let observe = format_observe_summary(&plan_outputs);
+            let mut replan_messages = Vec::with_capacity(history.len() + 5);
+            replan_messages.push(ChatMessage {
+                role: ChatRole::System,
+                content: REPLAN_PROMPT.to_string(),
+            });
+            if let Some(context) = &rules_context {
+                replan_messages.push(ChatMessage {
+                    role: ChatRole::System,
+                    content: context.clone(),
+                });
+            }
+            replan_messages.extend(history.clone());
+            replan_messages.push(ChatMessage {
+                role: ChatRole::User,
+                content: format!(
+                    "User request:\n{}\n\nCurrent plan:\n{}\n\nTool results so far:\n{}\n\nRound {} of {}.",
+                    config.user_message,
+                    format_plan(&accumulated_plan),
+                    observe,
+                    round + 1,
+                    MAX_REPLAN_ROUNDS
+                ),
+            });
+
+            let raw_replan = collect_stream_text_with_timeout(
+                gateway.stream_chat_for_route_with_model(
+                    &config.planning_model_route,
+                    config.planning_model.as_deref(),
+                    &replan_messages,
+                )?,
+                PLANNING_TIMEOUT,
+                "replan",
+            )
+            .await?;
+
+            match parse_replan_decision(&raw_replan) {
+                ReplanDecision::Done => break,
+                ReplanDecision::Continue(steps) => {
+                    let existing: HashSet<String> =
+                        accumulated_plan.iter().map(|step| step.id.clone()).collect();
+                    let new_steps: Vec<PlanStep> = steps
+                        .into_iter()
+                        .filter(|step| !existing.contains(&step.id))
+                        .collect();
+                    if new_steps.is_empty() {
+                        break;
+                    }
+                    accumulated_plan.extend(new_steps.iter().cloned());
+                    emit(
+                        &event_tx,
+                        ServerEvent::AgentPlanUpdated {
+                            task_id: config.task_id,
+                            plan: accumulated_plan.clone(),
+                        },
+                    )?;
+                    let (outputs, round_mutation, round_satisfied) = execute_plan_steps(
+                        &new_steps,
+                        &satisfied_steps,
+                        &config,
+                        tools,
+                        &event_tx,
+                    )
+                    .await?;
+                    plan_outputs.extend(outputs);
+                    mutation_executed |= round_mutation;
+                    satisfied_steps.extend(round_satisfied);
+                }
+            }
+        }
+    }
 
     tokio::time::sleep(MODEL_REQUEST_COOLDOWN).await;
 
@@ -333,7 +410,7 @@ async fn run_agent_loop_inner(
         content: format!(
             "{}\n\nPlan:\n{}\n\nContext from `{}`:\n```\n{}\n```",
             config.user_message,
-            format_plan(&plan),
+            format_plan(&accumulated_plan),
             config.demo_file_path.display(),
             context
         ),
@@ -367,8 +444,8 @@ async fn run_agent_loop_inner(
     })??;
 
     if let Some(tool_plan) = parse_model_tool_calls(&final_message) {
-        let (_, response_mutation_executed) =
-            execute_plan_steps(&tool_plan, &config, tools, &event_tx).await?;
+        let (_, response_mutation_executed, _) =
+            execute_plan_steps(&tool_plan, &satisfied_steps, &config, tools, &event_tx).await?;
         mutation_executed |= response_mutation_executed;
     }
 
@@ -406,136 +483,321 @@ async fn run_agent_loop_inner(
 const PLANNING_TIMEOUT: Duration = Duration::from_secs(90);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(120);
 const MODEL_REQUEST_COOLDOWN: Duration = Duration::from_secs(6);
+const MAX_REPLAN_ROUNDS: usize = 3;
 const SYSTEM_PROMPT: &str = "You are EvoHime, a helpful AI coding assistant. Follow the workspace rules supplied in the system context, preserve user intent, never claim a change was made unless a tool result confirms it, and answer concisely using the provided workspace context. When an action is required, return an explicit JSON tool.call object with type, tool, and input; do not merely describe the call.";
 const PLANNING_PROMPT: &str = "You are EvoHime's task planner. Return only JSON: an array of objects with fields id, tool_name, description, and depends_on. Use only these tool names: filesystem.read, filesystem.list, filesystem.search, filesystem.write, filesystem.patch, shell.execute, git.status, git.diff, git.commit, git.pull, git.push, assistant.reply. Use stable step ids like step-1, step-2, and keep depends_on empty unless a step truly depends on another step. Put exact relative paths in backticks. For filesystem.write, include complete content in a fenced code block. For filesystem.patch, include complete patch text in a fenced code block. For shell.execute, include a JSON object with program, args, cwd, and timeout_ms in the description. For git.commit, include the requested commit message in quotes. Use git.pull and git.push only when explicitly asked. If no tool call is needed, use assistant.reply.";
+const REPLAN_PROMPT: &str = "You are EvoHime's replanner. Return ONLY JSON. If enough tool results exist to answer the user, return {\"done\":true}. Otherwise return {\"done\":false,\"steps\":[...]} with ONLY new steps still needed (id, tool_name, description, depends_on). Use the same tool names as planning. Do not repeat completed steps. Prefer the fewest new steps.";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ReplanDecision {
+    Done,
+    Continue(Vec<PlanStep>),
+}
+
+#[derive(Debug, Deserialize)]
+struct ReplanResponse {
+    done: bool,
+    #[serde(default)]
+    steps: Vec<PlanStepDraft>,
+}
+
+fn plan_needs_replan_cycle(plan: &[PlanStep]) -> bool {
+    plan.iter()
+        .any(|step| step.tool_name != "assistant.reply" && !step.tool_name.is_empty())
+}
+
+fn format_observe_summary(outputs: &[String]) -> String {
+    if outputs.is_empty() {
+        "(no tool results yet)".to_string()
+    } else {
+        outputs.join("\n\n")
+    }
+}
+
+fn parse_replan_decision(raw: &str) -> ReplanDecision {
+    let normalized = unwrap_code_fence(raw);
+    if normalized.trim().is_empty() {
+        return ReplanDecision::Done;
+    }
+
+    if let Ok(response) = serde_json::from_str::<ReplanResponse>(&normalized) {
+        if response.done {
+            return ReplanDecision::Done;
+        }
+        let steps = normalize_plan(
+            response
+                .steps
+                .into_iter()
+                .enumerate()
+                .map(|(index, draft)| PlanStep {
+                    id: draft
+                        .id
+                        .filter(|value| !value.trim().is_empty())
+                        .unwrap_or_else(|| format!("step-{}", index + 1)),
+                    tool_name: draft
+                        .tool_name
+                        .unwrap_or_else(|| "assistant.reply".to_string()),
+                    description: draft
+                        .description
+                        .unwrap_or_else(|| format!("Execute step-{}", index + 1)),
+                    depends_on: draft
+                        .depends_on
+                        .into_iter()
+                        .filter(|dependency| !dependency.trim().is_empty())
+                        .collect(),
+                })
+                .collect(),
+        );
+        if steps.is_empty() {
+            return ReplanDecision::Done;
+        }
+        return ReplanDecision::Continue(steps);
+    }
+
+    if let Some(plan) = parse_plan_json(&normalized) {
+        let plan = normalize_plan(plan);
+        if plan.is_empty() {
+            ReplanDecision::Done
+        } else {
+            ReplanDecision::Continue(plan)
+        }
+    } else {
+        ReplanDecision::Done
+    }
+}
+
+fn dependency_batches_pending(
+    pending: &[PlanStep],
+    satisfied: &HashSet<String>,
+) -> Result<Vec<Vec<PlanStep>>, AgentError> {
+    let known_ids: HashSet<&str> = pending
+        .iter()
+        .map(|step| step.id.as_str())
+        .chain(satisfied.iter().map(String::as_str))
+        .collect();
+    let mut remaining: Vec<&PlanStep> = pending.iter().collect();
+    let mut completed = satisfied.clone();
+    let mut batches = Vec::new();
+
+    while !remaining.is_empty() {
+        let mut ready = Vec::new();
+        let mut blocked = Vec::new();
+
+        for step in remaining {
+            if let Some(missing) = step
+                .depends_on
+                .iter()
+                .map(String::as_str)
+                .find(|dependency| !known_ids.contains(dependency))
+            {
+                return Err(AgentError::PlanStepFailed {
+                    step_id: step.id.clone(),
+                    tool_name: step.tool_name.clone(),
+                    message: format!("unknown dependency {missing}"),
+                });
+            }
+
+            if step
+                .depends_on
+                .iter()
+                .all(|dependency| completed.contains(dependency))
+            {
+                ready.push((*step).clone());
+            } else {
+                blocked.push(step);
+            }
+        }
+
+        if ready.is_empty() {
+            let cycle_step = blocked
+                .first()
+                .map(|step| step.id.clone())
+                .unwrap_or_else(|| "unknown".to_string());
+            return Err(AgentError::PlanStepFailed {
+                step_id: cycle_step,
+                tool_name: "plan".to_string(),
+                message: "dependency cycle detected".to_string(),
+            });
+        }
+
+        completed.extend(ready.iter().map(|step| step.id.clone()));
+        batches.push(ready);
+        remaining = blocked;
+    }
+
+    Ok(batches)
+}
 
 async fn execute_plan_steps(
     plan: &[PlanStep],
+    prior_satisfied: &HashSet<String>,
     config: &AgentConfig,
     tools: &ToolRegistry,
     event_tx: &UnboundedSender<ServerEvent>,
-) -> Result<(Vec<String>, bool), AgentError> {
+) -> Result<(Vec<String>, bool, HashSet<String>), AgentError> {
+    let batches = dependency_batches_pending(plan, prior_satisfied)?;
+    let mut outputs = Vec::new();
+    let mut successful_steps: HashMap<String, bool> = prior_satisfied
+        .iter()
+        .map(|id| (id.clone(), true))
+        .collect();
+    let mut mutation_executed = false;
+
+    for batch in batches {
+        let step_results = join_all(batch.iter().map(|step| {
+            let step = step.clone();
+            async move { execute_single_plan_step(&step, config, tools, event_tx).await }
+        }))
+        .await;
+
+        for (step, result) in batch.into_iter().zip(step_results) {
+            match result {
+                Ok(StepOutcome::SkippedAssistant) => {
+                    successful_steps.insert(step.id, true);
+                }
+                Ok(StepOutcome::SkippedUnsupported { message }) => {
+                    outputs.push(message);
+                    successful_steps.insert(step.id, false);
+                }
+                Ok(StepOutcome::Completed {
+                    output,
+                    mutation,
+                    success,
+                }) => {
+                    outputs.push(output);
+                    mutation_executed |= mutation;
+                    successful_steps.insert(step.id, success);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+
+    let newly_satisfied = successful_steps
+        .into_iter()
+        .filter_map(|(id, ok)| ok.then_some(id))
+        .collect();
+    Ok((outputs, mutation_executed, newly_satisfied))
+}
+
+enum StepOutcome {
+    SkippedAssistant,
+    SkippedUnsupported { message: String },
+    Completed {
+        output: String,
+        mutation: bool,
+        success: bool,
+    },
+}
+
+async fn execute_single_plan_step(
+    step: &PlanStep,
+    config: &AgentConfig,
+    tools: &ToolRegistry,
+    event_tx: &UnboundedSender<ServerEvent>,
+) -> Result<StepOutcome, AgentError> {
     let context = ToolContext {
         workspace_root: config.workspace_root.clone(),
         task_id: config.task_id,
     };
-    let mut outputs = Vec::new();
-    let mut successful_steps = HashMap::new();
-    let mut mutation_executed = false;
-    for step in plan {
-        let tool_name = match step.tool_name.as_str() {
-            "read_file" => "filesystem.read",
-            "list_files" => "filesystem.list",
-            "search" => "filesystem.search",
-            name => name,
-        };
-        if tool_name == "assistant.reply" {
-            successful_steps.insert(step.id.clone(), true);
-            continue;
-        }
-        if step
-            .depends_on
-            .iter()
-            .any(|dependency| !successful_steps.get(dependency).copied().unwrap_or(false))
-        {
-            outputs.push(format!(
-                "{} ({tool_name}) пропущен: не выполнена зависимость {}",
-                step.id,
-                step.depends_on.join(", ")
-            ));
-            successful_steps.insert(step.id.clone(), false);
-            continue;
-        }
-        let mut effective_tool_name = tool_name;
-        let input = match tool_input(tool_name, &step.description, &config.workspace_root) {
-            Some(input) => input,
-            None => {
-                if is_mutating_tool(tool_name) {
-                    return Err(AgentError::PlanStepFailed {
-                        step_id: step.id.clone(),
-                        tool_name: tool_name.to_string(),
-                        message: "шаг изменения не содержит исполнимых входных данных".to_string(),
-                    });
-                }
-                outputs.push(format!(
-                    "{}: шаг пропущен — инструмент не поддержан runtime",
-                    step.id
-                ));
-                successful_steps.insert(step.id.clone(), false);
-                continue;
-            }
-        };
-        if tool_name == "filesystem.read"
-            && input
-                .get("path")
-                .and_then(Value::as_str)
-                .map(|path| config.workspace_root.join(path).is_dir())
-                .unwrap_or(false)
-        {
-            effective_tool_name = "filesystem.list";
-        }
+    let tool_name = match step.tool_name.as_str() {
+        "read_file" => "filesystem.read",
+        "list_files" => "filesystem.list",
+        "search" => "filesystem.search",
+        name => name,
+    };
+    if tool_name == "assistant.reply" {
+        return Ok(StepOutcome::SkippedAssistant);
+    }
 
-        emit(
-            event_tx,
-            ServerEvent::ToolStarted {
-                task_id: config.task_id,
-                tool_name: effective_tool_name.to_string(),
-            },
-        )?;
-        match tools.execute(&context, effective_tool_name, input).await {
-            Ok(result) => {
-                emit(
-                    event_tx,
-                    ServerEvent::ToolOutput {
-                        task_id: config.task_id,
-                        tool_name: effective_tool_name.to_string(),
-                        output: result.output.clone(),
-                    },
-                )?;
-                emit(
-                    event_tx,
-                    ServerEvent::ToolCompleted {
-                        task_id: config.task_id,
-                        tool_name: effective_tool_name.to_string(),
-                        success: true,
-                    },
-                )?;
-                outputs.push(format!(
-                    "{} ({effective_tool_name}):\n{}",
-                    step.id, result.output
-                ));
-                mutation_executed |= is_mutating_tool(effective_tool_name);
-                successful_steps.insert(step.id.clone(), true);
-            }
-            Err(error) => {
-                emit(
-                    event_tx,
-                    ServerEvent::ToolCompleted {
-                        task_id: config.task_id,
-                        tool_name: effective_tool_name.to_string(),
-                        success: false,
-                    },
-                )?;
-                outputs.push(format!(
-                    "{} ({effective_tool_name}) завершился с ошибкой: {error}",
-                    step.id
-                ));
-                successful_steps.insert(step.id.clone(), false);
-                if matches!(
-                    effective_tool_name,
-                    "filesystem.read" | "filesystem.list" | "filesystem.search"
-                ) {
-                    continue;
-                }
+    // Dependency gating is handled by batching; this path is for legacy sequential safety.
+    let mut effective_tool_name = tool_name;
+    let input = match tool_input(tool_name, &step.description, &config.workspace_root) {
+        Some(input) => input,
+        None => {
+            if is_mutating_tool(tool_name) {
                 return Err(AgentError::PlanStepFailed {
                     step_id: step.id.clone(),
-                    tool_name: effective_tool_name.to_string(),
-                    message: error.to_string(),
+                    tool_name: tool_name.to_string(),
+                    message: "шаг изменения не содержит исполнимых входных данных".to_string(),
                 });
             }
+            return Ok(StepOutcome::SkippedUnsupported {
+                message: format!("{}: шаг пропущен — инструмент не поддержан runtime", step.id),
+            });
+        }
+    };
+    if tool_name == "filesystem.read"
+        && input
+            .get("path")
+            .and_then(Value::as_str)
+            .map(|path| config.workspace_root.join(path).is_dir())
+            .unwrap_or(false)
+    {
+        effective_tool_name = "filesystem.list";
+    }
+
+    emit(
+        event_tx,
+        ServerEvent::ToolStarted {
+            task_id: config.task_id,
+            tool_name: effective_tool_name.to_string(),
+        },
+    )?;
+    match tools.execute(&context, effective_tool_name, input).await {
+        Ok(result) => {
+            emit(
+                event_tx,
+                ServerEvent::ToolOutput {
+                    task_id: config.task_id,
+                    tool_name: effective_tool_name.to_string(),
+                    output: result.output.clone(),
+                },
+            )?;
+            emit(
+                event_tx,
+                ServerEvent::ToolCompleted {
+                    task_id: config.task_id,
+                    tool_name: effective_tool_name.to_string(),
+                    success: true,
+                },
+            )?;
+            Ok(StepOutcome::Completed {
+                output: format!("{} ({effective_tool_name}):\n{}", step.id, result.output),
+                mutation: is_mutating_tool(effective_tool_name),
+                success: true,
+            })
+        }
+        Err(error) => {
+            emit(
+                event_tx,
+                ServerEvent::ToolCompleted {
+                    task_id: config.task_id,
+                    tool_name: effective_tool_name.to_string(),
+                    success: false,
+                },
+            )?;
+            let output = format!(
+                "{} ({effective_tool_name}) завершился с ошибкой: {error}",
+                step.id
+            );
+            if matches!(
+                effective_tool_name,
+                "filesystem.read" | "filesystem.list" | "filesystem.search"
+            ) {
+                return Ok(StepOutcome::Completed {
+                    output,
+                    mutation: false,
+                    success: false,
+                });
+            }
+            Err(AgentError::PlanStepFailed {
+                step_id: step.id.clone(),
+                tool_name: effective_tool_name.to_string(),
+                message: error.to_string(),
+            })
         }
     }
-    Ok((outputs, mutation_executed))
 }
 
 fn requires_mutation(message: &str) -> bool {
@@ -1707,6 +1969,72 @@ mod tests {
         assert!(calls.iter().any(|messages| messages
             .iter()
             .any(|message| message.content.contains("docs/notes.md"))));
+    }
+
+    #[test]
+    fn parses_replan_done_and_continue() {
+        assert_eq!(
+            parse_replan_decision(r#"{"done":true}"#),
+            ReplanDecision::Done
+        );
+        let decision = parse_replan_decision(
+            r#"{"done":false,"steps":[{"id":"step-2","tool_name":"filesystem.read","description":"read `docs/a.md`","depends_on":["step-1"]}]}"#,
+        );
+        match decision {
+            ReplanDecision::Continue(steps) => {
+                assert_eq!(steps.len(), 1);
+                assert_eq!(steps[0].id, "step-2");
+                assert_eq!(steps[0].depends_on, vec!["step-1".to_string()]);
+            }
+            ReplanDecision::Done => panic!("expected continue"),
+        }
+        assert_eq!(
+            parse_replan_decision("not json at all"),
+            ReplanDecision::Done
+        );
+    }
+
+    #[test]
+    fn dependency_batches_run_independent_steps_together() {
+        let plan = vec![
+            PlanStep {
+                id: "a".into(),
+                tool_name: "filesystem.read".into(),
+                description: "read a".into(),
+                depends_on: vec![],
+            },
+            PlanStep {
+                id: "b".into(),
+                tool_name: "filesystem.read".into(),
+                description: "read b".into(),
+                depends_on: vec![],
+            },
+            PlanStep {
+                id: "c".into(),
+                tool_name: "filesystem.write".into(),
+                description: "write c".into(),
+                depends_on: vec!["a".into(), "b".into()],
+            },
+        ];
+        let batches = dependency_batches_pending(&plan, &HashSet::new()).expect("batches");
+        assert_eq!(batches.len(), 2);
+        assert_eq!(batches[0].len(), 2);
+        assert_eq!(batches[1][0].id, "c");
+    }
+
+    #[test]
+    fn dependency_batches_honor_prior_satisfied_steps() {
+        let pending = vec![PlanStep {
+            id: "c".into(),
+            tool_name: "filesystem.write".into(),
+            description: "write c".into(),
+            depends_on: vec!["a".into()],
+        }];
+        let mut satisfied = HashSet::new();
+        satisfied.insert("a".into());
+        let batches = dependency_batches_pending(&pending, &satisfied).expect("batches");
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0][0].id, "c");
     }
 
     #[test]

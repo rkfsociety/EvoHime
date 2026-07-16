@@ -192,7 +192,7 @@
 
 | Приоритет | Улучшение | Что добавить |
 | --- | --- | --- |
-| P1 | Реальный executor плана | Исполнение `PlanStep` как графа шагов с повторным планированием, анализом результатов инструментов и явным циклом `plan -> execute -> observe -> replan -> respond` |
+| P1 | Реальный executor плана | ✅ `plan → execute(batches) → observe → replan → respond` (до 3 replan) |
 | P1 | Усиленный checkpoint/recovery | Сохранять не только `workspace_context`, но и прогресс по шагам, результаты завершённых tool calls, причину паузы и состояние approval wait |
 | P1 | Наблюдаемость task pipeline | Correlation id для session/task/tool, structured logs по шагам и метрики времени выполнения, retries и approval latency |
 | P1 | Больше интеграционных сценариев | Тесты на `task start -> tool events -> completion`, `approval -> pause -> resume`, retry и recovery после restart |
@@ -222,7 +222,7 @@
 
 ### Кандидаты на следующий milestone
 
-- `6.11` План-исполнитель с реальным графом шагов и повторным планированием
+- `6.11` План-исполнитель с реальным графом шагов и повторным планированием ✅ (batches + bounded replan)
 - `6.12` Расширенные checkpoints, approvals recovery и task replay
 - `6.13` Декомпозиция frontend shell (`app.tsx` -> panels/hooks/services)
 - `6.14` GitHub PR workflow: diff, review comments, checks, create PR

@@ -12,7 +12,7 @@ Last updated: 2026-07-16
 | `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema |
 | `storage` | Active | Sessions, tasks, events, **session_messages**, **session_memory**, **app_settings** |
 | `tool-runtime` | Active | Registry + sandboxed filesystem, shell, Git, browser, and MCP call tools |
-| `agent-runtime` | Active | `agent_loop.rs` — LLM + tool planning parser + project/memory context |
+| `agent-runtime` | Active | `agent_loop.rs` — LLM planning, dependency-batch tool execution, bounded replan, project/memory context |
 | `model-gateway` | Active | Route-based gateway, **LiteRouter** + OpenAI-compatible endpoints, and mock provider |
 | `task-engine` | Active | lifecycle wrappers, dependency batching, checkpoints, cancel/resume/retry foundation |
 | `permissions` | Active | ask/allow/deny policy and one-shot approvals; approval events and resume flow wired |
@@ -121,4 +121,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: project index, MCP, memory, multi-model routes, browser tools, Python worker integration (reliability + summarize/chunk handlers) are in place. Next is observability and plan-executor / UI scaling work.
+**Stage 6 / Milestone 5**: foundations plus worker reliability/ML handlers and plan executor (batched steps + bounded replan) are in place. Next: richer checkpoints (`6.12`), observability, and frontend shell split (`6.13`).
