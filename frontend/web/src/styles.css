@@ -1019,9 +1019,45 @@ h1 {
   align-content: start;
 }
 
+.chatLog,
+.eventList,
+.traceList {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(143, 180, 255, 0.55) transparent;
+}
+
+.chatLog::-webkit-scrollbar,
+.eventList::-webkit-scrollbar,
+.traceList::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.chatLog::-webkit-scrollbar-track,
+.eventList::-webkit-scrollbar-track,
+.traceList::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chatLog::-webkit-scrollbar-thumb,
+.eventList::-webkit-scrollbar-thumb,
+.traceList::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(143, 180, 255, 0.42);
+  background-clip: padding-box;
+}
+
+.chatLog::-webkit-scrollbar-thumb:hover,
+.eventList::-webkit-scrollbar-thumb:hover,
+.traceList::-webkit-scrollbar-thumb:hover {
+  background: rgba(143, 180, 255, 0.7);
+  background-clip: padding-box;
+}
+
 .chatLog {
   flex: 1;
-  width: min(100%, 920px);
+  width: 100%;
   margin: 0 auto;
   padding: 28px clamp(20px, 4vw, 56px);
   grid-auto-rows: max-content;
