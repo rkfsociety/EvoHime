@@ -203,6 +203,13 @@ async fn main() -> anyhow::Result<()> {
         for task in recovered {
             let task_id = task.id;
             let session_id = task.session_id;
+            let _ = evohime_storage::merge_checkpoint(
+                &state.pool,
+                task_id,
+                None,
+                &json!({ "pause_reason": "server_restart" }),
+            )
+            .await;
             let _ = resume_task(&state.pool, task_id).await;
             emit_event(
                 &state,
@@ -1461,6 +1468,16 @@ async fn handle_socket(
                                 None => continue,
                             };
                             let _ = resume_task(&state.pool, task_id).await;
+                            let _ = evohime_storage::merge_checkpoint(
+                                &state.pool,
+                                task_id,
+                                None,
+                                &json!({
+                                    "pause_reason": Value::Null,
+                                    "approval_wait": Value::Null,
+                                }),
+                            )
+                            .await;
                             emit_event(
                                 &state,
                                 session_id,
@@ -1722,14 +1739,19 @@ async fn run_task_pipeline(
             .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?
     };
 
-    let resume_context = checkpoint.and_then(|row| {
-        row.state_json
-            .get("workspace_context")
-            .and_then(Value::as_str)
-            .map(|value| AgentResumeContext {
-                workspace_context: Some(value.to_string()),
-            })
-    });
+    let task_steps = if emit_started {
+        Vec::new()
+    } else {
+        evohime_storage::list_task_steps(&state.pool, task.id)
+            .await
+            .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?
+    };
+
+    let resume_context = if emit_started {
+        None
+    } else {
+        Some(build_agent_resume_context(checkpoint.as_ref(), &task_steps))
+    };
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let default_route = state.model_config.read().await.default_route.clone();
@@ -1809,9 +1831,7 @@ async fn run_task_pipeline(
                     prior_messages,
                     memory_notes,
                     event_tx,
-                    AgentResumeContext {
-                        workspace_context: None,
-                    },
+                    AgentResumeContext::default(),
                 )
                 .await
             }
@@ -1847,13 +1867,16 @@ async fn run_task_pipeline(
                         ServerEvent::ToolOutput {
                             tool_name, output, ..
                         } => {
+                            let mut patch = json!({});
                             if tool_name == "filesystem.read" {
-                                let checkpoint_state = json!({"workspace_context": output});
-                                let _ = evohime_storage::upsert_checkpoint(
+                                patch["workspace_context"] = Value::String(output.clone());
+                            }
+                            if !patch.as_object().map(|o| o.is_empty()).unwrap_or(true) {
+                                let _ = evohime_storage::merge_checkpoint(
                                     &state.pool,
                                     task.id,
-                                    1,
-                                    &checkpoint_state,
+                                    Some(1),
+                                    &patch,
                                 )
                                 .await;
                             }
@@ -1928,6 +1951,21 @@ async fn run_task_pipeline(
                 )
                 .await?;
                 let _ = pause_task(&state.pool, task.id).await;
+                let _ = evohime_storage::merge_checkpoint(
+                    &state.pool,
+                    task.id,
+                    None,
+                    &json!({
+                        "pause_reason": "approval_required",
+                        "approval_wait": {
+                            "approval_id": approval_id,
+                            "tool_name": tool,
+                            "permission": permission_name(permission),
+                            "scope": scope,
+                        }
+                    }),
+                )
+                .await;
                 emit_event(
                     state,
                     session_id,
@@ -2110,6 +2148,50 @@ async fn emit_event(
     Ok(())
 }
 
+fn build_agent_resume_context(
+    checkpoint: Option<&evohime_storage::TaskCheckpointRow>,
+    task_steps: &[evohime_storage::TaskStepRow],
+) -> AgentResumeContext {
+    let state = checkpoint.map(|row| &row.state_json);
+    let workspace_context = state
+        .and_then(|value| value.get("workspace_context"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let plan = state
+        .and_then(|value| value.get("plan"))
+        .and_then(|value| serde_json::from_value::<Vec<PlanStep>>(value.clone()).ok());
+    let pause_reason = state
+        .and_then(|value| value.get("pause_reason"))
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let mut completed_step_ids = Vec::new();
+    let mut tool_results = Vec::new();
+    for step in task_steps {
+        let plan_step_id = step
+            .input_json
+            .get("plan_step_id")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        if step.status == "completed" {
+            if let Some(id) = &plan_step_id {
+                completed_step_ids.push(id.clone());
+            }
+        }
+        if let (Some(id), Some(output)) = (plan_step_id, step.output.as_ref()) {
+            if !output.trim().is_empty() {
+                tool_results.push(format!("{id} ({}):\n{output}", step.tool_name));
+            }
+        }
+    }
+    AgentResumeContext {
+        workspace_context,
+        plan,
+        completed_step_ids,
+        tool_results,
+        pause_reason,
+    }
+}
+
 async fn persist_task_plan(
     state: &Arc<AppState>,
     task_id: Uuid,
@@ -2167,12 +2249,16 @@ async fn persist_task_plan(
         Some(workspace_context) => json!({
             "plan": plan,
             "workspace_context": workspace_context,
+            "pause_reason": Value::Null,
+            "approval_wait": Value::Null,
         }),
         None => json!({
             "plan": plan,
+            "pause_reason": Value::Null,
+            "approval_wait": Value::Null,
         }),
     };
-    evohime_storage::upsert_checkpoint(&state.pool, task_id, 0, &checkpoint_state)
+    evohime_storage::merge_checkpoint(&state.pool, task_id, Some(0), &checkpoint_state)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
 
@@ -2321,6 +2407,51 @@ mod tests {
         assert!(
             note.contains("assistant replied: Done. Project index and MCP bridge are in place.")
         );
+    }
+
+    #[test]
+    fn merge_checkpoint_preserves_plan_when_patching_workspace() {
+        let existing = json!({
+            "plan": [{"id":"step-1","tool_name":"assistant.reply","description":"hi","depends_on":[]}],
+            "workspace_context": "old",
+        });
+        let merged = evohime_storage::merge_checkpoint_state(
+            &existing,
+            &json!({ "workspace_context": "new" }),
+        );
+        assert_eq!(merged["workspace_context"], "new");
+        assert!(merged.get("plan").is_some());
+    }
+
+    #[test]
+    fn builds_resume_context_from_checkpoint_and_steps() {
+        let checkpoint = evohime_storage::TaskCheckpointRow {
+            task_id: Uuid::nil(),
+            next_step: 1,
+            state_json: json!({
+                "workspace_context": "ctx",
+                "plan": [{"id":"step-1","tool_name":"filesystem.read","description":"read","depends_on":[]}],
+                "pause_reason": "approval_required",
+            }),
+            updated_at: chrono::Utc::now(),
+        };
+        let steps = vec![evohime_storage::TaskStepRow {
+            id: Uuid::nil(),
+            task_id: Uuid::nil(),
+            step_index: 0,
+            tool_name: "filesystem.read".into(),
+            input_json: json!({"plan_step_id":"step-1"}),
+            depends_on: vec![],
+            status: "completed".into(),
+            output: Some("file body".into()),
+            error: None,
+        }];
+        let resume = build_agent_resume_context(Some(&checkpoint), &steps);
+        assert_eq!(resume.workspace_context.as_deref(), Some("ctx"));
+        assert_eq!(resume.completed_step_ids, vec!["step-1".to_string()]);
+        assert_eq!(resume.pause_reason.as_deref(), Some("approval_required"));
+        assert_eq!(resume.plan.as_ref().map(|p| p.len()), Some(1));
+        assert!(resume.tool_results[0].contains("file body"));
     }
 
     #[test]

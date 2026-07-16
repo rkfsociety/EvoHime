@@ -94,9 +94,13 @@ pub struct AgentRunResult {
     pub final_message: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct AgentResumeContext {
     pub workspace_context: Option<String>,
+    pub plan: Option<Vec<PlanStep>>,
+    pub completed_step_ids: Vec<String>,
+    pub tool_results: Vec<String>,
+    pub pause_reason: Option<String>,
 }
 
 #[derive(Debug, Error)]
@@ -158,7 +162,7 @@ pub async fn run_agent_loop_resumed(
         memory_notes,
         event_tx,
         false,
-        resume.workspace_context,
+        Some(resume),
     )
     .await
 }
@@ -172,7 +176,7 @@ async fn run_agent_loop_inner(
     memory_notes: Vec<String>,
     event_tx: UnboundedSender<ServerEvent>,
     emit_started: bool,
-    workspace_context: Option<String>,
+    resume: Option<AgentResumeContext>,
 ) -> Result<AgentRunResult, AgentError> {
     if emit_started {
         emit(
@@ -186,7 +190,8 @@ async fn run_agent_loop_inner(
         )?;
     }
 
-    let tool_output = match workspace_context {
+    let resume = resume.unwrap_or_default();
+    let tool_output = match resume.workspace_context.clone() {
         Some(output) => output,
         None => {
             if !config.demo_file_path.is_file() {
@@ -275,31 +280,61 @@ async fn run_agent_loop_inner(
         ),
     });
 
-    let raw_plan = collect_stream_text_with_timeout(
-        gateway.stream_chat_for_route_with_model(
-            &config.planning_model_route,
-            config.planning_model.as_deref(),
-            &planning_messages,
-        )?,
-        PLANNING_TIMEOUT,
-        "planning",
-    )
-    .await?;
-    let plan = parse_plan(&raw_plan);
+    let (plan, mut plan_outputs, mut mutation_executed, mut satisfied_steps) =
+        if let Some(existing_plan) = resume.plan.clone() {
+            emit(
+                &event_tx,
+                ServerEvent::AgentPlanUpdated {
+                    task_id: config.task_id,
+                    plan: existing_plan.clone(),
+                },
+            )?;
+            let satisfied: HashSet<String> = resume.completed_step_ids.iter().cloned().collect();
+            let pending: Vec<PlanStep> = existing_plan
+                .iter()
+                .filter(|step| !satisfied.contains(&step.id))
+                .cloned()
+                .collect();
+            let mut outputs = resume.tool_results.clone();
+            let (new_outputs, mutation, newly_satisfied) = if pending.is_empty() {
+                (Vec::new(), false, satisfied.clone())
+            } else {
+                execute_plan_steps(&pending, &satisfied, &config, tools, &event_tx).await?
+            };
+            outputs.extend(new_outputs);
+            (existing_plan, outputs, mutation, newly_satisfied)
+        } else {
+            let raw_plan = collect_stream_text_with_timeout(
+                gateway.stream_chat_for_route_with_model(
+                    &config.planning_model_route,
+                    config.planning_model.as_deref(),
+                    &planning_messages,
+                )?,
+                PLANNING_TIMEOUT,
+                "planning",
+            )
+            .await?;
+            let plan = parse_plan(&raw_plan);
 
-    emit(
-        &event_tx,
-        ServerEvent::AgentPlanUpdated {
-            task_id: config.task_id,
-            plan: plan.clone(),
-        },
-    )?;
+            emit(
+                &event_tx,
+                ServerEvent::AgentPlanUpdated {
+                    task_id: config.task_id,
+                    plan: plan.clone(),
+                },
+            )?;
 
-    let (mut plan_outputs, mut mutation_executed, mut satisfied_steps) =
-        execute_plan_steps(&plan, &HashSet::new(), &config, tools, &event_tx).await?;
+            let (outputs, mutation, satisfied) =
+                execute_plan_steps(&plan, &HashSet::new(), &config, tools, &event_tx).await?;
+            (plan, outputs, mutation, satisfied)
+        };
 
     let mut accumulated_plan = plan.clone();
-    if plan_needs_replan_cycle(&plan) {
+    let resumed_with_plan = resume.plan.is_some();
+    let had_incomplete_steps = plan
+        .iter()
+        .any(|step| !resume.completed_step_ids.iter().any(|id| id == &step.id));
+    if plan_needs_replan_cycle(&plan) && (!resumed_with_plan || had_incomplete_steps) {
         for round in 0..MAX_REPLAN_ROUNDS {
             tokio::time::sleep(MODEL_REQUEST_COOLDOWN).await;
             let observe = format_observe_summary(&plan_outputs);
@@ -2066,6 +2101,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn resume_with_saved_plan_skips_planning_call() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let demo_file = temp.path().join("context.md");
+        std::fs::write(&demo_file, "# Demo\nHello from workspace.").expect("write");
+
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let provider = RecordingProvider::new(vec![vec!["Answer from checkpoint resume".into()]]);
+        let gateway = evohime_model_gateway::ModelGateway::from_provider(std::sync::Arc::new(
+            provider.clone(),
+        ));
+        let tools = evohime_tool_runtime::ToolRegistry::bootstrap();
+
+        let result = run_agent_loop_resumed(
+            AgentConfig {
+                task_id: Uuid::new_v4(),
+                session_id: Uuid::new_v4(),
+                user_message: "Explain the file".to_string(),
+                created_at: chrono::Utc::now(),
+                demo_file_path: demo_file.clone(),
+                workspace_root: temp.path().to_path_buf(),
+                model_route: "default".to_string(),
+                model: None,
+                planning_model_route: "default".to_string(),
+                planning_model: None,
+            },
+            &gateway,
+            &tools,
+            vec![],
+            vec![],
+            tx,
+            AgentResumeContext {
+                workspace_context: Some("cached context".into()),
+                plan: Some(vec![PlanStep {
+                    id: "step-1".into(),
+                    tool_name: "assistant.reply".into(),
+                    description: "Respond".into(),
+                    depends_on: vec![],
+                }]),
+                completed_step_ids: vec!["step-1".into()],
+                tool_results: vec![],
+                pause_reason: Some("approval_required".into()),
+            },
+        )
+        .await
+        .expect("agent completes");
+
+        assert_eq!(result.final_message, "Answer from checkpoint resume");
+        let calls = provider.calls.lock().expect("calls");
+        assert_eq!(calls.len(), 1, "planning should be skipped on resume with plan");
+    }
+
+    #[tokio::test]
     async fn resumed_runs_skip_workspace_read() {
         let temp = tempfile::tempdir().expect("tempdir");
         let demo_file = temp.path().join("context.md");
@@ -2103,6 +2190,7 @@ mod tests {
             tx,
             AgentResumeContext {
                 workspace_context: Some("Recovered workspace context".to_string()),
+                ..AgentResumeContext::default()
             },
         )
         .await

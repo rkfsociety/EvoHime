@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use sqlx::{FromRow, PgPool};
 use thiserror::Error;
 use uuid::Uuid;
@@ -459,6 +459,39 @@ pub async fn upsert_checkpoint(
     sqlx::query("INSERT INTO task_checkpoints(task_id,next_step,state_json) VALUES ($1,$2,$3) ON CONFLICT(task_id) DO UPDATE SET next_step=EXCLUDED.next_step,state_json=EXCLUDED.state_json,updated_at=now()")
         .bind(task_id).bind(next_step).bind(state_json).execute(pool).await?;
     Ok(())
+}
+
+/// Shallow-merge object keys from `patch` into `existing` checkpoint state.
+pub fn merge_checkpoint_state(existing: &Value, patch: &Value) -> Value {
+    let mut merged = match existing.as_object() {
+        Some(object) => object.clone(),
+        None => serde_json::Map::new(),
+    };
+    if let Some(object) = patch.as_object() {
+        for (key, value) in object {
+            merged.insert(key.clone(), value.clone());
+        }
+    }
+    Value::Object(merged)
+}
+
+pub async fn merge_checkpoint(
+    pool: &PgPool,
+    task_id: Uuid,
+    next_step: Option<i32>,
+    patch: &Value,
+) -> Result<Value, StorageError> {
+    let existing = load_checkpoint(pool, task_id).await?;
+    let current_state = existing
+        .as_ref()
+        .map(|row| row.state_json.clone())
+        .unwrap_or_else(|| json!({}));
+    let merged = merge_checkpoint_state(&current_state, patch);
+    let step = next_step
+        .or_else(|| existing.as_ref().map(|row| row.next_step))
+        .unwrap_or(0);
+    upsert_checkpoint(pool, task_id, step, &merged).await?;
+    Ok(merged)
 }
 
 pub async fn create_task_step(

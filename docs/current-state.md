@@ -121,4 +121,4 @@ user.message
 
 ## Next recommended step
 
-**Stage 6 / Milestone 5**: foundations plus worker reliability/ML handlers and plan executor (batched steps + bounded replan) are in place. Next: richer checkpoints (`6.12`), observability, and frontend shell split (`6.13`).
+**Stage 6 / Milestone 5**: foundations, worker reliability/ML handlers, plan executor, and extended checkpoints/resume are in place. Next: observability and frontend shell split (`6.13`).
