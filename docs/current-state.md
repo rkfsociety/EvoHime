@@ -114,6 +114,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.32` ✅; next truncation budget `7.33`
-2. Рекомендуемая следующая волна: tool result truncation (`7.33`), `worker.run` tool (`7.52`)
+1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.33` ✅; next `worker.run` tool `7.52`
+2. Рекомендуемая следующая волна: `worker.run` (`7.52`), planner telemetry (`7.34`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Wave A/B ✅; Wave C: `7.28`–`7.32` ✅; next `7.33`+
-- Wave C next: tool result truncation + summarization budget (`7.33`)…
+- **Stage 7** Hardening + Product — Wave A/B ✅; Wave C: `7.28`–`7.33` ✅; next `7.52` / `7.34`+
+- Wave C next: agent tool `worker.run` (`7.52`)…
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events

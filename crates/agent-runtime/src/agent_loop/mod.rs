@@ -6,9 +6,11 @@ mod context;
 mod execute;
 mod parse;
 mod plan;
+mod tool_budget;
 mod util;
 
 pub use parse::parse_plan;
+pub use tool_budget::{budget_tool_result_list, budget_tool_results, truncate_tool_result, ToolResultBudget};
 
 use chrono::{DateTime, Utc};
 use evohime_model_gateway::{providers::ChatMessage, providers::ChatRole, ModelGateway};
@@ -29,8 +31,8 @@ use context::{build_memory_context, build_workspace_rules, relative_workspace_pa
 use execute::{execute_plan_steps, requires_mutation};
 use parse::{format_plan, parse_model_tool_calls};
 use plan::{
-    collect_plan_steps, format_observe_summary, parse_replan_decision, plan_needs_replan_cycle,
-    planning_prompt_for_tools, ReplanDecision, REPLAN_PROMPT,
+    collect_plan_steps, parse_replan_decision, plan_needs_replan_cycle, planning_prompt_for_tools,
+    ReplanDecision, REPLAN_PROMPT,
 };
 use util::{
     collect_stream_text_with_timeout, emit, MAX_REPLAN_ROUNDS, MODEL_REQUEST_COOLDOWN,
@@ -301,6 +303,7 @@ async fn run_agent_loop_inner(
                 execute_plan_steps(&pending, &satisfied, &config, gateway, tools, &event_tx).await?
             };
             outputs.extend(new_outputs);
+            let outputs = budget_tool_result_list(&outputs, ToolResultBudget::from_env());
             (existing_plan, outputs, mutation, newly_satisfied, false)
         } else {
             let mut plan = match collect_plan_steps(
@@ -333,6 +336,7 @@ async fn run_agent_loop_inner(
             let (outputs, mutation, satisfied) =
                 execute_plan_steps(&plan, &HashSet::new(), &config, gateway, tools, &event_tx)
                     .await?;
+            let outputs = budget_tool_result_list(&outputs, ToolResultBudget::from_env());
             (plan, outputs, mutation, satisfied, truncated)
         };
 
@@ -347,7 +351,14 @@ async fn run_agent_loop_inner(
     {
         for round in 0..MAX_REPLAN_ROUNDS {
             tokio::time::sleep(MODEL_REQUEST_COOLDOWN).await;
-            let observe = format_observe_summary(&plan_outputs);
+            let observe = {
+                let budgeted = budget_tool_results(&plan_outputs, ToolResultBudget::from_env());
+                if budgeted.is_empty() {
+                    "(no tool results yet)".to_string()
+                } else {
+                    budgeted
+                }
+            };
             let mut replan_messages = Vec::with_capacity(history.len() + 5);
             replan_messages.push(ChatMessage {
                 role: ChatRole::System,
@@ -415,6 +426,8 @@ async fn run_agent_loop_inner(
                     )
                     .await?;
                     plan_outputs.extend(outputs);
+                    plan_outputs =
+                        budget_tool_result_list(&plan_outputs, ToolResultBudget::from_env());
                     mutation_executed |= round_mutation;
                     satisfied_steps.extend(round_satisfied);
                 }
@@ -448,10 +461,11 @@ async fn run_agent_loop_inner(
         });
     }
     messages.extend(history);
+    let tool_results_for_prompt =
+        budget_tool_results(&plan_outputs, ToolResultBudget::from_env());
     let context = format!(
         "{}\n\nPlan tool results:\n{}",
-        tool_output,
-        plan_outputs.join("\n\n")
+        tool_output, tool_results_for_prompt
     );
     messages.push(ChatMessage {
         role: ChatRole::User,

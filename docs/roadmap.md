@@ -349,7 +349,7 @@
 | 7.30 | Распилить `server/main.rs` на routers/modules | L | ✅ | `startup`/`routes`/`task/*`/`*_api`/`ws`; main ~64 LOC |
 | 7.31 | Multi-agent / subagent fan-out с бюджетом | L | ✅ | tool `agent.run` + depth/concurrency/step/timeout budgets |
 | 7.32 | Streaming tool progress (partial output events) | M | ✅ | `tool.output.delta` + shell stdout/stderr stream |
-| 7.33 | Tool result truncation + summarization budget | M | ⬜ | длинный shell/git забивает context |
+| 7.33 | Tool result truncation + summarization budget | M | ✅ | `tool_budget.rs`; head/tail + total chars env caps |
 | 7.34 | Planner cost/latency telemetry per step | M | ⬜ | correlation id есть; step cost нет |
 | 7.35 | `assistant.reply` + user-visible plan edits (approve plan) | M | ⬜ | plan сейчас auto-execute |
 | 7.36 | More tools: `filesystem.list` в матрице UI; `http.fetch` с SSRF policy | M | ⬜ | list есть в runtime, UI/docs gaps |
@@ -472,7 +472,7 @@
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
-3. **Wave C (agent quality):** `7.28`–`7.32` ✅ → next `7.33`, `7.52`  
+3. **Wave C (agent quality):** `7.28`–`7.33` ✅ → next `7.52`, `7.34`+  
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  
 5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+

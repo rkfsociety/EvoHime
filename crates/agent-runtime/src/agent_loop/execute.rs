@@ -1,5 +1,6 @@
 //! Plan step execution and tool input construction.
 use super::parse::extract_code_block;
+use super::tool_budget::{truncate_tool_result, ToolResultBudget};
 use super::util::emit;
 use super::{AgentConfig, AgentError};
 use crate::subagent::execute_agent_run;
@@ -250,7 +251,10 @@ pub(crate) async fn execute_single_plan_step(
                 },
             )?;
             Ok(StepOutcome::Completed {
-                output: format!("{} ({effective_tool_name}):\n{}", step.id, result.output),
+                output: truncate_tool_result(
+                    &format!("{} ({effective_tool_name}):\n{}", step.id, result.output),
+                    ToolResultBudget::from_env().per_result_chars,
+                ),
                 mutation: is_mutating_tool(effective_tool_name),
                 success: true,
             })
