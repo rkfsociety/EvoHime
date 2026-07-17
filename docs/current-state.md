@@ -100,6 +100,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. Task-pipeline observability (correlation ids / metrics)
-2. Broader integration tests (approval pause/resume, recovery)
-3. Optional: swap local feature-hash embeddings for a neural encoder (same `embedding_version` bump path)
+1. Broader integration tests (approval pause/resume, recovery)
+2. Optional: swap local feature-hash embeddings for a neural encoder
+3. Optional: OpenTelemetry export on top of current metrics

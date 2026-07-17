@@ -1150,7 +1150,7 @@ mod tests {
 
     #[test]
     fn settings_json_shape_is_sources_array() {
-        let value: Value = serde_json::json!({ "sources": [DEFAULT_CATALOG_URL] });
+        let value: serde_json::Value = serde_json::json!({ "sources": [DEFAULT_CATALOG_URL] });
         let settings: PluginCatalogSettings = serde_json::from_value(value).expect("settings");
         assert_eq!(settings.sources.len(), 1);
         assert_eq!(DEFAULT_CATALOG_SOURCES.len(), 5);

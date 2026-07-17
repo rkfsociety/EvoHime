@@ -1,5 +1,6 @@
 mod app;
 mod memory_api;
+mod observability;
 mod plugins;
 mod worker;
 mod workspace;
@@ -169,6 +170,7 @@ async fn main() -> anyhow::Result<()> {
         worker: worker::WorkerClient::new(config.worker_url.clone())?,
         worker_job_stall: config.worker_job_stall,
         plugin_catalog_cache: plugins::PluginCatalogCache::default(),
+        metrics: Arc::new(observability::PipelineMetrics::new()),
     });
 
     let retention_state = state.clone();
@@ -321,6 +323,7 @@ async fn main() -> anyhow::Result<()> {
                 .patch(memory_api::update_memory)
                 .delete(memory_api::delete_memory),
         )
+        .route("/api/metrics", get(pipeline_metrics))
         .route("/api/plugins", get(plugins::list_plugins))
         .route("/api/plugins/catalog", get(plugins::list_plugin_catalog))
         .route("/api/plugins/install", post(plugins::install_plugin))
@@ -350,6 +353,10 @@ async fn main() -> anyhow::Result<()> {
 
 async fn health() -> Json<Value> {
     Json(json!({ "status": "ok" }))
+}
+
+async fn pipeline_metrics(State(state): State<Arc<AppState>>) -> Json<observability::MetricsSnapshot> {
+    Json(state.metrics.snapshot())
 }
 
 #[derive(Debug, Deserialize)]
@@ -1793,6 +1800,7 @@ async fn handle_socket(
                                 None => continue,
                             };
                             let _ = retry_task(&state.pool, task_id).await;
+                            state.metrics.task_retry(session_id, task_id);
                             emit_event(
                                 &state,
                                 session_id,
@@ -1847,14 +1855,19 @@ async fn handle_socket(
                             });
                         }
                         ClientCommand::ApprovalGranted { approval_id } => {
-                            let granted = true;
-                            let status = state.permissions.resolve(approval_id, granted).await;
                             let task_id = state
                                 .permissions
                                 .approval(approval_id)
                                 .await
                                 .map(|(request, _)| request.task_id)
                                 .unwrap_or(Uuid::nil());
+                            let status = state.permissions.resolve(approval_id, true).await;
+                            state.metrics.approval_resolved(
+                                session_id,
+                                task_id,
+                                approval_id,
+                                true,
+                            );
                             let detail = if status.is_some() {
                                 "Approval granted"
                             } else {
@@ -1874,13 +1887,19 @@ async fn handle_socket(
                             .await?;
                         }
                         ClientCommand::ApprovalDenied { approval_id } => {
-                            let status = state.permissions.resolve(approval_id, false).await;
                             let task_id = state
                                 .permissions
                                 .approval(approval_id)
                                 .await
                                 .map(|(request, _)| request.task_id)
                                 .unwrap_or(Uuid::nil());
+                            let status = state.permissions.resolve(approval_id, false).await;
+                            state.metrics.approval_resolved(
+                                session_id,
+                                task_id,
+                                approval_id,
+                                false,
+                            );
                             let detail = if status.is_some() {
                                 "Approval denied"
                             } else {
@@ -1945,7 +1964,14 @@ async fn run_task_pipeline(
     cancellation: CancellationToken,
     emit_started: bool,
 ) -> Result<(), (Uuid, ApiError)> {
+    if emit_started {
+        state.metrics.task_started(session_id, task.id);
+    } else {
+        state.metrics.task_resumed(session_id, task.id);
+    }
+
     let gateway = state.model_gateway.read().await.clone().ok_or_else(|| {
+        state.metrics.task_finished(session_id, task.id, false);
         (
             task.id,
             ApiError::Internal("LITEROUTER_API_KEY is not configured — set it in .env".to_string()),
@@ -2137,17 +2163,20 @@ async fn run_task_pipeline(
             _ = cancellation.cancelled() => {
                 agent_handle.abort();
                 let _ = finalize_open_task_steps(state, task.id, "cancelled").await;
+                state.metrics.task_finished(session_id, task.id, false);
                 return Err((task.id, ApiError::BadRequest("task cancelled".to_string())));
             }
             event = event_rx.recv() => match event {
                 Some(event) => {
                     match &event {
                         ServerEvent::AgentPlanUpdated { plan, .. } => {
+                            state.metrics.plan_updated(session_id, task.id, plan.len());
                             persist_task_plan(state, task.id, plan)
                                 .await
                                 .map_err(|error| (task.id, error))?;
                         }
                         ServerEvent::ToolStarted { tool_name, .. } => {
+                            state.metrics.tool_started(session_id, task.id, tool_name);
                             let _ = update_task_step_status(
                                 state,
                                 task.id,
@@ -2187,6 +2216,9 @@ async fn run_task_pipeline(
                         ServerEvent::ToolCompleted {
                             tool_name, success, ..
                         } => {
+                            state
+                                .metrics
+                                .tool_completed(session_id, task.id, tool_name, *success);
                             let status = if *success { "completed" } else { "failed" };
                             let _ = update_task_step_status(
                                 state,
@@ -2244,6 +2276,9 @@ async fn run_task_pipeline(
                     },
                 )
                 .await?;
+                state
+                    .metrics
+                    .approval_requested(session_id, task.id, approval_id, &tool);
                 let _ = pause_task(&state.pool, task.id).await;
                 let _ = evohime_storage::merge_checkpoint(
                     &state.pool,
@@ -2291,6 +2326,7 @@ async fn run_task_pipeline(
             }
             Err(error) => {
                 let err_msg = error.to_string();
+                state.metrics.task_finished(session_id, task.id, false);
                 apply_task_memory_feedback(state, session_id, task.id, &used_memory_ids, false).await;
                 persist_structured_memory(
                     state,
@@ -2305,7 +2341,10 @@ async fn run_task_pipeline(
                 return Err((task.id, map_agent_error(error)));
             }
         },
-        Err(error) => return Err((task.id, ApiError::Internal(error.to_string()))),
+        Err(error) => {
+            state.metrics.task_finished(session_id, task.id, false);
+            return Err((task.id, ApiError::Internal(error.to_string())));
+        }
     };
 
     evohime_storage::insert_message(
@@ -2347,6 +2386,8 @@ async fn run_task_pipeline(
     complete_task(&state.pool, task.id)
         .await
         .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
+
+    state.metrics.task_finished(session_id, task.id, true);
 
     Ok(())
 }

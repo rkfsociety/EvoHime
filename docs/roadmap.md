@@ -16,7 +16,7 @@
 | 3 | Tools + shell | ✅ Готово | Sandbox, filesystem tools, shell, approvals, terminal, permissions |
 | 4 | Editor + Git | ✅ Done | Browser file tree, Monaco editor, Git status/diff/actions, and synchronization events |
 | 5 | Оркестрация | ✅ Complete | Lifecycle, команды, storage и recovery готовы |
-| 6 | Advanced | 🟡 В процессе | Memory `6.16`–`6.25` done; next observability / integration tests |
+| 6 | Advanced | 🟡 В процессе | Memory done; pipeline observability ✅; next integration tests |
 
 ---
 
@@ -223,7 +223,7 @@
 
 ### Критерий готовности
 
-Агент использует project index для контекста, вызывает MCP-инструменты, работает с несколькими моделями. Python workers принимают структурированные HTTP jobs с process/job heartbeat, typed payloads и прикладными хендлерами (`text.summarize`, `text.chunk`); следующий шаг — observability и оркестрация/UI к масштабированию.
+Агент использует project index для контекста, вызывает MCP-инструменты, работает с несколькими моделями. Python workers принимают структурированные HTTP jobs с process/job heartbeat, typed payloads и прикладными хендлерами (`text.summarize`, `text.chunk`); observability task pipeline (`GET /api/metrics`) landed — следующий шаг интеграционные тесты и оркестрация/UI к масштабированию.
 
 ---
 
@@ -237,7 +237,7 @@
 | --- | --- | --- |
 | P1 | Реальный executor плана | ✅ `plan → execute(batches) → observe → replan → respond` (до 3 replan) |
 | P1 | Усиленный checkpoint/recovery | ✅ plan + pause_reason + approval_wait; merge; resume skips completed steps |
-| P1 | Наблюдаемость task pipeline | Correlation id для session/task/tool, structured logs по шагам и метрики времени выполнения, retries и approval latency |
+| P1 | Наблюдаемость task pipeline | ✅ correlation id (`task_id`) + structured logs + `GET /api/metrics` |
 | P1 | Больше интеграционных сценариев | Тесты на `task start -> tool events -> completion`, `approval -> pause -> resume`, retry и recovery после restart |
 
 ### P1 — UI и сопровождение фронтенда
@@ -278,7 +278,8 @@
 - `6.22` / `6.24` Memory panel overrides ✅
 - `6.23` feedback loop ✅
 - `6.25` hybrid embeddings ✅
-- **Next:** observability, integration tests; optional neural encoder swap
+- Pipeline observability (`GET /api/metrics`) ✅
+- **Next:** broader integration tests (approval pause/resume, recovery)
 
 ---
 

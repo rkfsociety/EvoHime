@@ -71,7 +71,7 @@ EvoHime Server — Rust
 - `storage` + `/api/memory`: CRUD/override; frontend MemoryPanel + MemoryAskModal;
 - workers: health/stall + `text.summarize` / `text.chunk`.
 
-**Следующий сквозной приоритет:** observability и интеграционные тесты; опционально — neural encoder вместо local feature-hash.
+**Следующий сквозной приоритет:** интеграционные тесты (approval pause/resume, recovery); опционально — neural encoder / OTel.
 
 ---
 

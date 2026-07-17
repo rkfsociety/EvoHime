@@ -23,7 +23,7 @@ React+TS+Vite frontend, Rust/Axum backend, PostgreSQL, WebSocket, native Windows
 
 ## Current stage: 6 (Milestone 5 in progress)
 
-Stages 1–5 done. Memory `6.16`–`6.25` landed (through hybrid embeddings). Next: observability / integration tests.
+Stages 1–5 done. Memory `6.16`–`6.25` + task pipeline observability landed. Next: integration tests.
 
 ## Key paths
 
@@ -41,7 +41,7 @@ Stages 1–5 done. Memory `6.16`–`6.25` landed (through hybrid embeddings). Ne
 
 ## Next
 
-Observability and integration tests. Optional: neural encoder behind `embedding_version`.
+Broader integration tests (approval pause/resume, recovery). Optional: neural encoder / OTel.
 
 ## Local run
 

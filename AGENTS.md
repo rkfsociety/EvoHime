@@ -71,7 +71,7 @@ User message
 
 ### Incomplete / next
 
-- **Observability / integration tests**; optional neural embedding encoder
+- **Broader integration tests** (approval pause/resume, recovery); optional neural encoder / OTel
 - Task-pipeline observability (correlation ids / metrics)
 - Broader integration tests (approval pause/resume, recovery)
 - General LLM tool-calling across all registered tools (orchestration still plan-driven)
@@ -172,7 +172,7 @@ See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](d
 | 3 Tools + shell | ✅ Done |
 | 4 Editor + Git | ✅ Done |
 | 5 Task orchestration | ✅ Done |
-| 6 Advanced | 🟡 In progress — memory `6.16`–`6.25` done; next observability |
+| 6 Advanced | 🟡 In progress — memory + observability done; next integration tests |
 
 Memory design: [docs/superpowers/specs/2026-07-16-agent-memory-design.md](docs/superpowers/specs/2026-07-16-agent-memory-design.md)
 
