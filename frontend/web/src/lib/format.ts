@@ -117,6 +117,35 @@ export function translateChatRole(role: ChatLine["role"], userLogin?: string | n
   }
 }
 
+/** Visible plain text from chat markdown (no fences, emphasis, link markup). */
+export function markdownToPlainText(input: string) {
+  let text = input.replace(/\r\n?/g, "\n");
+
+  text = text.replace(/```[^\n]*\n?([\s\S]*?)```/g, (_match, code: string) => code.replace(/\n$/, ""));
+  text = text.replace(/`([^`]+)`/g, "$1");
+  text = text.replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1");
+  text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+  text = text.replace(/^#{1,6}\s+/gm, "");
+  text = text.replace(/^\s{0,3}>\s?/gm, "");
+  text = text.replace(/^\s*[-*+]\s+/gm, "");
+  text = text.replace(/^\s*\d+\.\s+/gm, "");
+  text = text.replace(/(\*\*|__)(.*?)\1/g, "$2");
+  text = text.replace(/(\*|_)(.*?)\1/g, "$2");
+  text = text.replace(/~~(.*?)~~/g, "$1");
+  text = text.replace(/<\/?[^>]+>/g, "");
+  text = text.replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
+  text = text.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
+
+  return text.trim();
+}
+
+export function chatLinePlainText(role: ChatLine["role"], text: string) {
+  if (role === "assistant") {
+    return markdownToPlainText(text);
+  }
+  return text.trim();
+}
+
 export function translateModelConfigStatus(configured: boolean) {
   return configured ? "настроено" : "не хватает LITEROUTER_API_KEY";
 }

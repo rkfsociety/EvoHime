@@ -39,6 +39,7 @@ import {
 import { websocketUrl } from "./api/client";
 import { reconcileModelForBilling } from "./lib/modelBilling";
 import {
+  chatLinePlainText,
   chatMatchesProject,
   formatProfileInitials,
   formatSessionPreview,
@@ -1456,9 +1457,10 @@ export function App() {
                 {index === lastAssistantLineIndex && traceLines.length > 0 && (hasConversation || Boolean(activeTaskId)) ? (
                   <ChatTraceSummary traceLines={traceLines} active={Boolean(activeTaskId)} userLogin={githubAuth?.login} />
                 ) : null}
-                <article className={`line ${line.role}`}>
+                <article className={`line ${line.role}`} tabIndex={-1}>
                   {line.role === "assistant" ? <AgentAvatar size="sm" /> : null}
                   <strong>{translateChatRole(line.role, githubAuth?.login)}</strong>
+                  <CopyMessageButton text={chatLinePlainText(line.role, line.text)} />
                   {line.role === "assistant" ? <MarkdownMessage text={line.text} /> : <pre>{line.text}</pre>}
                 </article>
               </Fragment>
@@ -1469,9 +1471,10 @@ export function App() {
           ) : null}
           {stream && lastAssistantLineIndex === -1 ? (
             <>
-              <article className="line assistant streaming">
+              <article className="line assistant streaming" tabIndex={-1}>
                 <AgentAvatar size="sm" />
                 <strong>Ассистент</strong>
+                <CopyMessageButton text={chatLinePlainText("assistant", stream)} />
                 <MarkdownMessage text={stream} />
               </article>
             </>
@@ -1968,6 +1971,46 @@ function MarkdownMessage({ text }: { text: string }) {
         {text}
       </ReactMarkdown>
     </div>
+  );
+}
+
+function CopyMessageButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const resetTimerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (resetTimerRef.current !== null) {
+      window.clearTimeout(resetTimerRef.current);
+    }
+  }, []);
+
+  async function copyMessage() {
+    const payload = text.trim();
+    if (!payload) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(payload);
+      setCopied(true);
+      if (resetTimerRef.current !== null) {
+        window.clearTimeout(resetTimerRef.current);
+      }
+      resetTimerRef.current = window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className={`lineCopy${copied ? " isCopied" : ""}`}
+      onClick={() => void copyMessage()}
+      aria-label={copied ? "Скопировано" : "Копировать сообщение"}
+      title={copied ? "Скопировано" : "Копировать"}
+    >
+      {copied ? "✓" : "⧉"}
+    </button>
   );
 }
 

@@ -1364,6 +1364,7 @@ h1 {
 
 .line,
 .eventItem {
+  position: relative;
   min-width: 0;
   width: 100%;
   border: 1px solid var(--border-0);
@@ -1372,12 +1373,62 @@ h1 {
   padding: 14px 16px;
 }
 
+.lineCopy {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: rgba(12, 16, 28, 0.55);
+  color: var(--text-1);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.line:hover .lineCopy,
+.line:focus-within .lineCopy {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.lineCopy:hover,
+.lineCopy:focus-visible {
+  border-color: rgba(143, 180, 255, 0.36);
+  background: rgba(91, 134, 255, 0.18);
+  color: var(--text-0);
+  outline: none;
+}
+
+.lineCopy.isCopied {
+  opacity: 1;
+  pointer-events: auto;
+  color: var(--accent-2);
+}
+
+@media (hover: none) {
+  .lineCopy {
+    opacity: 0.55;
+    pointer-events: auto;
+  }
+}
+
 .line.user {
   width: fit-content;
   max-width: 100%;
   justify-self: end;
   margin-left: auto;
   margin-right: 0;
+  padding-right: 44px;
   border-color: rgba(91, 134, 255, 0.25);
   background: rgba(91, 134, 255, 0.12);
 }
@@ -1390,6 +1441,7 @@ h1 {
   justify-self: start;
   margin-left: 0;
   margin-right: auto;
+  padding-right: 44px;
   background: rgba(255, 255, 255, 0.045);
 }
 
