@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Wave A/B ✅; Wave C: `7.28`–`7.30` ✅; next `7.31`+
-- Wave C next: multi-agent / subagent fan-out (`7.31`)…
+- **Stage 7** Hardening + Product — Wave A/B ✅; Wave C: `7.28`–`7.31` ✅; next `7.32`+
+- Wave C next: streaming tool progress (`7.32`)…
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events

@@ -347,7 +347,7 @@
 | 7.28 | Native provider `tool_calls` (OpenAI-compatible tools array) | L | ✅ | `chat_with_tools` + planning path; text fallback; `EVOHIME_NATIVE_TOOL_CALLS` |
 | 7.29 | Распилить `agent_loop.rs` (plan / execute / context / parse) | L | ✅ | `agent_loop/{mod,parse,plan,execute,context,util}.rs` |
 | 7.30 | Распилить `server/main.rs` на routers/modules | L | ✅ | `startup`/`routes`/`task/*`/`*_api`/`ws`; main ~64 LOC |
-| 7.31 | Multi-agent / subagent fan-out с бюджетом | L | ⬜ | parallel tools есть; нет child agents |
+| 7.31 | Multi-agent / subagent fan-out с бюджетом | L | ✅ | tool `agent.run` + depth/concurrency/step/timeout budgets |
 | 7.32 | Streaming tool progress (partial output events) | M | ⬜ | сейчас только started/output/completed |
 | 7.33 | Tool result truncation + summarization budget | M | ⬜ | длинный shell/git забивает context |
 | 7.34 | Planner cost/latency telemetry per step | M | ⬜ | correlation id есть; step cost нет |
@@ -472,7 +472,7 @@
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
-3. **Wave C (agent quality):** `7.28`–`7.30` ✅ → next `7.31`–`7.33`, `7.52`  
+3. **Wave C (agent quality):** `7.28`–`7.31` ✅ → next `7.32`–`7.33`, `7.52`  
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  
 5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+
@@ -527,6 +527,7 @@
 | `browser.extract` | 6 | M5 | ✅ |
 | `mcp.call` | 6 | M5 | ✅ |
 | `memory.search` | 6 | M5 | ✅ |
+| `agent.run` | 7 | M6 | ✅ Subagent fan-out (`7.31`) |
 
 ---
 

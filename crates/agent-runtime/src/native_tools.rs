@@ -177,6 +177,16 @@ fn tool_spec_for_name(name: &str, description: &str) -> Option<ToolSpec> {
             },
             "required": ["query"]
         }),
+        "agent.run" => json!({
+            "type": "object",
+            "properties": {
+                "prompt": { "type": "string", "description": "Subagent user prompt" },
+                "max_steps": { "type": "integer" },
+                "timeout_ms": { "type": "integer" },
+                "model_route": { "type": "string" }
+            },
+            "required": ["prompt"]
+        }),
         _ => return None,
     };
     Some(ToolSpec::function(name, description, parameters))

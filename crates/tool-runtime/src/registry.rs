@@ -69,6 +69,12 @@ impl ToolRegistry {
     pub fn bootstrap_with_permissions(permissions: PermissionEngine) -> Self {
         let mut registry = Self::with_permissions(permissions);
         registry.register(ToolDefinition {
+            name: tools::agent::NAME,
+            description: tools::agent::DESCRIPTION,
+            permissions: tools::agent::PERMISSIONS,
+            timeout: tools::agent::TIMEOUT,
+        });
+        registry.register(ToolDefinition {
             name: tools::filesystem::NAME,
             description: tools::filesystem::DESCRIPTION,
             permissions: tools::filesystem::PERMISSIONS,
@@ -255,6 +261,7 @@ impl ToolRegistry {
                 tools::git::PUSH_NAME => tools::git::push(ctx, input).await,
                 tools::mcp::NAME => tools::mcp::execute(ctx, input).await,
                 tools::memory::NAME => tools::memory::execute(ctx, input).await,
+                tools::agent::NAME => tools::agent::execute(ctx, input).await,
                 tools::browser::OPEN_NAME => tools::browser::open(ctx, input).await,
                 tools::browser::EXTRACT_NAME => tools::browser::extract(ctx, input).await,
                 _ => Err(ToolError::UnknownTool(name.to_string())),
@@ -329,22 +336,23 @@ mod tests {
     fn bootstrap_registers_filesystem_read() {
         let registry = ToolRegistry::bootstrap();
         let tools = registry.list();
-        assert_eq!(tools.len(), 15);
-        assert_eq!(tools[0].name, "browser.extract");
-        assert_eq!(tools[1].name, "browser.open");
-        assert_eq!(tools[2].name, "filesystem.list");
-        assert_eq!(tools[3].name, "filesystem.patch");
-        assert_eq!(tools[4].name, "filesystem.read");
-        assert_eq!(tools[5].name, "filesystem.search");
-        assert_eq!(tools[6].name, "filesystem.write");
-        assert_eq!(tools[7].name, "git.commit");
-        assert_eq!(tools[8].name, "git.diff");
-        assert_eq!(tools[9].name, "git.pull");
-        assert_eq!(tools[10].name, "git.push");
-        assert_eq!(tools[11].name, "git.status");
-        assert_eq!(tools[12].name, "mcp.call");
-        assert_eq!(tools[13].name, "memory.search");
-        assert_eq!(tools[14].name, "shell.execute");
+        assert_eq!(tools.len(), 16);
+        assert_eq!(tools[0].name, "agent.run");
+        assert_eq!(tools[1].name, "browser.extract");
+        assert_eq!(tools[2].name, "browser.open");
+        assert_eq!(tools[3].name, "filesystem.list");
+        assert_eq!(tools[4].name, "filesystem.patch");
+        assert_eq!(tools[5].name, "filesystem.read");
+        assert_eq!(tools[6].name, "filesystem.search");
+        assert_eq!(tools[7].name, "filesystem.write");
+        assert_eq!(tools[8].name, "git.commit");
+        assert_eq!(tools[9].name, "git.diff");
+        assert_eq!(tools[10].name, "git.pull");
+        assert_eq!(tools[11].name, "git.push");
+        assert_eq!(tools[12].name, "git.status");
+        assert_eq!(tools[13].name, "mcp.call");
+        assert_eq!(tools[14].name, "memory.search");
+        assert_eq!(tools[15].name, "shell.execute");
     }
 
     #[tokio::test]

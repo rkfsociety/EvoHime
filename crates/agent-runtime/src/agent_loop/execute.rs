@@ -2,6 +2,8 @@
 use super::parse::extract_code_block;
 use super::util::emit;
 use super::{AgentConfig, AgentError};
+use crate::subagent::execute_agent_run;
+use evohime_model_gateway::ModelGateway;
 use evohime_protocol::{PlanStep, ServerEvent};
 use evohime_tool_runtime::{ToolContext, ToolError, ToolRegistry};
 use futures_util::future::join_all;
@@ -78,6 +80,7 @@ pub(crate) async fn execute_plan_steps(
     plan: &[PlanStep],
     prior_satisfied: &HashSet<String>,
     config: &AgentConfig,
+    gateway: &ModelGateway,
     tools: &ToolRegistry,
     event_tx: &UnboundedSender<ServerEvent>,
 ) -> Result<(Vec<String>, bool, HashSet<String>), AgentError> {
@@ -92,7 +95,7 @@ pub(crate) async fn execute_plan_steps(
     for batch in batches {
         let step_results = join_all(batch.iter().map(|step| {
             let step = step.clone();
-            async move { execute_single_plan_step(&step, config, tools, event_tx).await }
+            async move { execute_single_plan_step(&step, config, gateway, tools, event_tx).await }
         }))
         .await;
 
@@ -141,6 +144,7 @@ pub(crate) enum StepOutcome {
 pub(crate) async fn execute_single_plan_step(
     step: &PlanStep,
     config: &AgentConfig,
+    gateway: &ModelGateway,
     tools: &ToolRegistry,
     event_tx: &UnboundedSender<ServerEvent>,
 ) -> Result<StepOutcome, AgentError> {
@@ -198,6 +202,8 @@ pub(crate) async fn execute_single_plan_step(
     )?;
     let tool_result = if effective_tool_name == "memory.search" {
         execute_memory_search(config, &input).await
+    } else if effective_tool_name == "agent.run" {
+        execute_agent_run(config, gateway, tools, event_tx, input).await
     } else {
         tools.execute(&context, effective_tool_name, input).await
     };
@@ -315,6 +321,10 @@ pub(crate) fn tool_input(tool_name: &str, description: &str, workspace_root: &Pa
                 .unwrap_or_else(|| description.trim().to_string()),
             "limit": 10,
         })),
+        "agent.run" => Some(json!({
+            "prompt": extract_backticked(description)
+                .unwrap_or_else(|| description.trim().to_string()),
+        })),
         "filesystem.write" => Some(json!({
             "path": path?,
             "content": extract_code_block(description).unwrap_or_default(),
@@ -354,6 +364,7 @@ pub(crate) fn structured_json_input(tool_name: &str, description: &str) -> Optio
         | "browser.extract"
         | "mcp.call"
         | "memory.search"
+        | "agent.run"
         | "git.diff"
         | "git.pull"
         | "git.push"

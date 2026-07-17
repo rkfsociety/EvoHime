@@ -37,6 +37,7 @@ use util::{
     PLANNING_TIMEOUT, RESPONSE_TIMEOUT,
 };
 
+#[derive(Clone)]
 pub struct AgentConfig {
     pub task_id: Uuid,
     pub session_id: Uuid,
@@ -52,11 +53,19 @@ pub struct AgentConfig {
     pub memory_pool: Option<sqlx::PgPool>,
     /// Workspace/project scope key for memory retrieval (same as prompt inject).
     pub workspace_key: String,
+    /// True when this loop was spawned via `agent.run`.
+    pub is_subagent: bool,
+    /// Nesting depth (root = 0).
+    pub subagent_depth: u32,
+    /// Hard cap on plan steps for this loop (subagents).
+    pub subagent_max_steps: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
 pub struct AgentRunResult {
     pub final_message: String,
+    pub steps_run: usize,
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -105,6 +114,25 @@ pub async fn run_agent_loop(
         memory_notes,
         event_tx,
         true,
+        None,
+    )
+    .await
+}
+
+pub async fn run_agent_loop_as_subagent(
+    config: AgentConfig,
+    gateway: &ModelGateway,
+    tools: &ToolRegistry,
+    event_tx: UnboundedSender<ServerEvent>,
+) -> Result<AgentRunResult, AgentError> {
+    run_agent_loop_inner(
+        config,
+        gateway,
+        tools,
+        Vec::new(),
+        Vec::new(),
+        event_tx,
+        false,
         None,
     )
     .await
@@ -250,7 +278,7 @@ async fn run_agent_loop_inner(
         ),
     });
 
-    let (plan, mut plan_outputs, mut mutation_executed, mut satisfied_steps) =
+    let (plan, mut plan_outputs, mut mutation_executed, mut satisfied_steps, truncated) =
         if let Some(existing_plan) = resume.plan.clone() {
             emit(
                 &event_tx,
@@ -269,12 +297,12 @@ async fn run_agent_loop_inner(
             let (new_outputs, mutation, newly_satisfied) = if pending.is_empty() {
                 (Vec::new(), false, satisfied.clone())
             } else {
-                execute_plan_steps(&pending, &satisfied, &config, tools, &event_tx).await?
+                execute_plan_steps(&pending, &satisfied, &config, gateway, tools, &event_tx).await?
             };
             outputs.extend(new_outputs);
-            (existing_plan, outputs, mutation, newly_satisfied)
+            (existing_plan, outputs, mutation, newly_satisfied, false)
         } else {
-            let plan = match collect_plan_steps(
+            let mut plan = match collect_plan_steps(
                 gateway,
                 &config,
                 tools,
@@ -285,6 +313,13 @@ async fn run_agent_loop_inner(
                 Ok(plan) => plan,
                 Err(error) => return Err(error),
             };
+            let mut truncated = false;
+            if let Some(max_steps) = config.subagent_max_steps {
+                if plan.len() > max_steps {
+                    plan.truncate(max_steps);
+                    truncated = true;
+                }
+            }
 
             emit(
                 &event_tx,
@@ -295,8 +330,9 @@ async fn run_agent_loop_inner(
             )?;
 
             let (outputs, mutation, satisfied) =
-                execute_plan_steps(&plan, &HashSet::new(), &config, tools, &event_tx).await?;
-            (plan, outputs, mutation, satisfied)
+                execute_plan_steps(&plan, &HashSet::new(), &config, gateway, tools, &event_tx)
+                    .await?;
+            (plan, outputs, mutation, satisfied, truncated)
         };
 
     let mut accumulated_plan = plan.clone();
@@ -304,7 +340,10 @@ async fn run_agent_loop_inner(
     let had_incomplete_steps = plan
         .iter()
         .any(|step| !resume.completed_step_ids.iter().any(|id| id == &step.id));
-    if plan_needs_replan_cycle(&plan) && (!resumed_with_plan || had_incomplete_steps) {
+    if !config.is_subagent
+        && plan_needs_replan_cycle(&plan)
+        && (!resumed_with_plan || had_incomplete_steps)
+    {
         for round in 0..MAX_REPLAN_ROUNDS {
             tokio::time::sleep(MODEL_REQUEST_COOLDOWN).await;
             let observe = format_observe_summary(&plan_outputs);
@@ -365,9 +404,15 @@ async fn run_agent_loop_inner(
                             plan: accumulated_plan.clone(),
                         },
                     )?;
-                    let (outputs, round_mutation, round_satisfied) =
-                        execute_plan_steps(&new_steps, &satisfied_steps, &config, tools, &event_tx)
-                            .await?;
+                    let (outputs, round_mutation, round_satisfied) = execute_plan_steps(
+                        &new_steps,
+                        &satisfied_steps,
+                        &config,
+                        gateway,
+                        tools,
+                        &event_tx,
+                    )
+                    .await?;
                     plan_outputs.extend(outputs);
                     mutation_executed |= round_mutation;
                     satisfied_steps.extend(round_satisfied);
@@ -446,12 +491,19 @@ async fn run_agent_loop_inner(
     })??;
 
     if let Some(tool_plan) = parse_model_tool_calls(&final_message) {
-        let (_, response_mutation_executed, _) =
-            execute_plan_steps(&tool_plan, &satisfied_steps, &config, tools, &event_tx).await?;
+        let (_, response_mutation_executed, _) = execute_plan_steps(
+            &tool_plan,
+            &satisfied_steps,
+            &config,
+            gateway,
+            tools,
+            &event_tx,
+        )
+        .await?;
         mutation_executed |= response_mutation_executed;
     }
 
-    if requires_mutation(&config.user_message) && !mutation_executed {
+    if !config.is_subagent && requires_mutation(&config.user_message) && !mutation_executed {
         return Err(AgentError::PlanStepFailed {
             step_id: "mutation-check".to_string(),
             tool_name: "agent-runtime".to_string(),
@@ -470,16 +522,23 @@ async fn run_agent_loop_inner(
         )?;
     }
 
-    emit(
-        &event_tx,
-        ServerEvent::TaskCompleted {
-            task_id: config.task_id,
-            final_message: final_message.clone(),
-            completed_at: Utc::now(),
-        },
-    )?;
+    if !config.is_subagent {
+        emit(
+            &event_tx,
+            ServerEvent::TaskCompleted {
+                task_id: config.task_id,
+                final_message: final_message.clone(),
+                completed_at: Utc::now(),
+            },
+        )?;
+    }
 
-    Ok(AgentRunResult { final_message })
+    let steps_run = satisfied_steps.len();
+    Ok(AgentRunResult {
+        final_message,
+        steps_run,
+        truncated,
+    })
 }
 
 
@@ -856,6 +915,9 @@ mod tests {
                 planning_model: None,
                 memory_pool: None,
                 workspace_key: String::new(),
+                is_subagent: false,
+                subagent_depth: 0,
+                subagent_max_steps: None,
             },
             &gateway,
             &tools,
@@ -1001,6 +1063,9 @@ mod tests {
                 planning_model: None,
                 memory_pool: None,
                 workspace_key: String::new(),
+                is_subagent: false,
+                subagent_depth: 0,
+                subagent_max_steps: None,
             },
             &gateway,
             &tools,
@@ -1061,6 +1126,9 @@ mod tests {
                 planning_model: None,
                 memory_pool: None,
                 workspace_key: String::new(),
+                is_subagent: false,
+                subagent_depth: 0,
+                subagent_max_steps: None,
             },
             &gateway,
             &tools,

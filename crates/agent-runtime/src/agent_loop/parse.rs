@@ -78,6 +78,7 @@ pub(crate) const REGISTERED_TOOLS: &[&str] = &[
     "browser.extract",
     "mcp.call",
     "memory.search",
+    "agent.run",
     "assistant.reply",
 ];
 pub(crate) fn parse_markup_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {

@@ -187,6 +187,9 @@ pub(crate) async fn run_task_pipeline(
         planning_model,
         memory_pool: Some(state.pool.clone()),
         workspace_key: workspace_scope.clone(),
+        is_subagent: false,
+        subagent_depth: 0,
+        subagent_max_steps: None,
     };
 
     let tools = state.tools.clone();
