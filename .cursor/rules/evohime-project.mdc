@@ -29,7 +29,7 @@ Stages 1–5 done. Stage 6 advanced slice landed (memory, OTel, embeddings, ML h
 
 ## Key paths
 
-- Agent flow: `crates/agent-runtime/src/agent_loop.rs`
+- Agent flow: `crates/agent-runtime/src/agent_loop/`
 - LLM provider: `crates/model-gateway/src/providers/literouter.rs`
 - Tools: `crates/tool-runtime/`
 - Memory service: `crates/memory/`
