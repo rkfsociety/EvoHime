@@ -123,14 +123,25 @@ function Wait-ForExit([System.Diagnostics.Process]$process, [int]$timeoutMs = 15
 }
 
 function Start-ManagedProcess([string]$switchName) {
+  $powershell = $null
   $powershellCommand = Get-Command powershell.exe -ErrorAction SilentlyContinue
-  if (-not $powershellCommand) {
-    $powershellCommand = Get-Command pwsh.exe -ErrorAction SilentlyContinue
+  if ($powershellCommand) {
+    $powershell = $powershellCommand.Source
+  } else {
+    $pwshCommand = Get-Command pwsh.exe -ErrorAction SilentlyContinue
+    if ($pwshCommand) {
+      $powershell = $pwshCommand.Source
+    }
   }
-  if (-not $powershellCommand) {
+  if (-not $powershell) {
+    $fallback = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    if (Test-Path -LiteralPath $fallback) {
+      $powershell = $fallback
+    }
+  }
+  if (-not $powershell) {
     throw 'Не найден PowerShell для запуска управляемого процесса.'
   }
-  $powershell = $powershellCommand.Source
   $logRoot = Join-Path $root '.launcher-logs'
   if (-not (Test-Path $logRoot)) {
     New-Item -ItemType Directory -Path $logRoot | Out-Null

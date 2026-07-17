@@ -1,4 +1,5 @@
 mod app;
+mod plugins;
 mod worker;
 mod workspace;
 
@@ -41,6 +42,8 @@ use crate::app::{AppConfig, AppState, McpServerConfig};
 enum ApiError {
     #[error("{0}")]
     BadRequest(String),
+    #[error("{0}")]
+    Conflict(String),
     #[error("approval required for {tool}: {approval_id}")]
     ApprovalRequired { tool: String, approval_id: Uuid },
     #[error("{0}")]
@@ -81,6 +84,7 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
             Self::BadRequest(message) => (StatusCode::BAD_REQUEST, message),
+            Self::Conflict(message) => (StatusCode::CONFLICT, message),
             Self::ApprovalRequired { tool, approval_id } => (
                 StatusCode::CONFLICT,
                 format!("approval required for {tool}: {approval_id}"),
@@ -163,6 +167,7 @@ async fn main() -> anyhow::Result<()> {
         task_cancellations: Arc::new(Mutex::new(HashMap::new())),
         worker: worker::WorkerClient::new(config.worker_url.clone())?,
         worker_job_stall: config.worker_job_stall,
+        plugin_catalog_cache: plugins::PluginCatalogCache::default(),
     });
 
     let retention_state = state.clone();
@@ -308,6 +313,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/permissions", get(list_permissions))
         .route("/api/permissions/:permission", put(update_permission))
         .route("/api/tools", get(list_tools))
+        .route("/api/plugins", get(plugins::list_plugins))
+        .route("/api/plugins/catalog", get(plugins::list_plugin_catalog))
+        .route("/api/plugins/install", post(plugins::install_plugin))
         .route(
             "/api/mcp/servers",
             get(list_mcp_servers).put(update_mcp_servers),

@@ -806,6 +806,18 @@ async fn execute_single_plan_step(
             })
         }
         Err(error) => {
+            let output = format!(
+                "{} ({effective_tool_name}) завершился с ошибкой: {error}",
+                step.id
+            );
+            emit(
+                event_tx,
+                ServerEvent::ToolOutput {
+                    task_id: config.task_id,
+                    tool_name: effective_tool_name.to_string(),
+                    output: output.clone(),
+                },
+            )?;
             emit(
                 event_tx,
                 ServerEvent::ToolCompleted {
@@ -814,10 +826,6 @@ async fn execute_single_plan_step(
                     success: false,
                 },
             )?;
-            let output = format!(
-                "{} ({effective_tool_name}) завершился с ошибкой: {error}",
-                step.id
-            );
             if matches!(
                 effective_tool_name,
                 "filesystem.read" | "filesystem.list" | "filesystem.search"
@@ -858,7 +866,14 @@ fn tool_input(tool_name: &str, description: &str, workspace_root: &Path) -> Opti
         .map(|path| normalize_plan_path(&path, workspace_root));
     match tool_name {
         "filesystem.read" => {
-            Some(json!({"path": path.unwrap_or_else(|| "docs/sample-context.md".to_string())}))
+            let resolved = path.unwrap_or_else(|| {
+                if description_implies_workspace_root(description) {
+                    ".".to_string()
+                } else {
+                    "docs/sample-context.md".to_string()
+                }
+            });
+            Some(json!({ "path": resolved }))
         }
         "filesystem.list" => Some(json!({"path": path.unwrap_or_else(|| ".".to_string())})),
         "filesystem.search" => Some(
@@ -944,6 +959,22 @@ fn extract_backticked(value: &str) -> Option<String> {
     let end = value[start..].find('`')? + start;
     let path = value[start..end].trim();
     (!path.is_empty()).then(|| path.to_string())
+}
+
+fn description_implies_workspace_root(description: &str) -> bool {
+    let lower = description.to_lowercase();
+    [
+        "root directory",
+        "workspace root",
+        "workspace context",
+        "project structure",
+        "project root",
+        "корнев",
+        "структур проекта",
+        "структуру проекта",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker))
 }
 
 fn extract_declared_path(value: &str) -> Option<String> {
@@ -1341,8 +1372,8 @@ fn default_plan() -> Vec<PlanStep> {
     vec![
         PlanStep {
             id: "step-1".to_string(),
-            tool_name: "filesystem.read".to_string(),
-            description: "Read workspace context".to_string(),
+            tool_name: "filesystem.list".to_string(),
+            description: "List workspace root `.`".to_string(),
             depends_on: Vec::new(),
         },
         PlanStep {

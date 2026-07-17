@@ -1,3 +1,4 @@
+use crate::plugins::PluginCatalogCache;
 use crate::worker::WorkerClient;
 use anyhow::Result;
 use evohime_model_gateway::providers::ProviderKind;
@@ -108,6 +109,7 @@ pub struct AppState {
     pub task_cancellations: Arc<Mutex<HashMap<Uuid, CancellationToken>>>,
     pub worker: WorkerClient,
     pub worker_job_stall: Duration,
+    pub plugin_catalog_cache: PluginCatalogCache,
 }
 
 impl AppState {
