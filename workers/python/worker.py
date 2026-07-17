@@ -30,6 +30,8 @@ SUPPORTED_TASKS = (
     "text.keywords",
     "text.summarize",
     "text.chunk",
+    "text.similarity",
+    "text.entities",
 )
 MAX_TEXT_LENGTH = 1_000_000
 PROCESS_STARTED_AT = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -91,7 +93,7 @@ def validate_task_payload(task: str, payload: dict[str, Any]) -> None:
     if task == "echo":
         return
 
-    if task in {"text.stats", "text.keywords"}:
+    if task in {"text.stats", "text.keywords", "text.entities"}:
         _require_text(task, payload)
         return
 
@@ -126,7 +128,21 @@ def validate_task_payload(task: str, payload: dict[str, Any]) -> None:
             raise ValueError("payload.overlap must be less than payload.chunk_size")
         return
 
+    if task == "text.similarity":
+        _require_named_text(task, payload, "text_a")
+        _require_named_text(task, payload, "text_b")
+        return
+
     raise ValueError(f"unsupported task: {task}")
+
+
+def _require_named_text(task: str, payload: dict[str, Any], key: str) -> str:
+    text = payload.get(key)
+    if not isinstance(text, str):
+        raise ValueError(f"{task} requires a string payload.{key}")
+    if len(text) > MAX_TEXT_LENGTH:
+        raise ValueError(f"payload.{key} exceeds {MAX_TEXT_LENGTH} characters")
+    return text
 
 
 def _utc_now_iso() -> str:
@@ -185,6 +201,85 @@ def chunk_text(text: str, chunk_size: int, overlap: int) -> dict[str, Any]:
             break
         start += step
     return {"chunks": chunks, "count": len(chunks)}
+
+
+def _token_counts(text: str) -> Counter[str]:
+    words = re.findall(r"[\w]+", text.casefold(), flags=re.UNICODE)
+    return Counter(word for word in words if len(word) > 2)
+
+
+def similarity_text(text_a: str, text_b: str) -> dict[str, Any]:
+    """Bag-of-words cosine similarity (stdlib, no neural model)."""
+
+    left = _token_counts(text_a)
+    right = _token_counts(text_b)
+    if not left or not right:
+        return {
+            "score": 0.0,
+            "shared_tokens": 0,
+            "tokens_a": sum(left.values()),
+            "tokens_b": sum(right.values()),
+        }
+
+    shared = set(left) & set(right)
+    dot = float(sum(left[token] * right[token] for token in shared))
+    left_norm = float(sum(value * value for value in left.values()) ** 0.5)
+    right_norm = float(sum(value * value for value in right.values()) ** 0.5)
+    if left_norm <= 0.0 or right_norm <= 0.0:
+        score = 0.0
+    else:
+        score = max(0.0, min(1.0, dot / (left_norm * right_norm)))
+    return {
+        "score": round(score, 6),
+        "shared_tokens": len(shared),
+        "tokens_a": sum(left.values()),
+        "tokens_b": sum(right.values()),
+    }
+
+
+_URL_RE = re.compile(r"https?://[^\s<>\"']+", flags=re.IGNORECASE)
+_EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", flags=re.IGNORECASE)
+_PATH_RE = re.compile(
+    r"(?:[A-Za-z]:\\|~/|\./|\.\./|/)(?:[^\s<>\"']+)",
+)
+_TICKET_RE = re.compile(r"\b[A-Z][A-Z0-9]+-\d+\b")
+
+
+def extract_entities(text: str) -> dict[str, Any]:
+    """Heuristic entity extraction: urls, emails, paths, ticket ids."""
+
+    urls = _unique_preserve(_URL_RE.findall(text))
+    emails = _unique_preserve(_EMAIL_RE.findall(text))
+    paths = [
+        path
+        for path in _unique_preserve(_PATH_RE.findall(text))
+        if path not in urls and "://" not in path
+    ]
+    tickets = _unique_preserve(_TICKET_RE.findall(text))
+    return {
+        "urls": urls,
+        "emails": emails,
+        "paths": paths,
+        "tickets": tickets,
+        "counts": {
+            "urls": len(urls),
+            "emails": len(emails),
+            "paths": len(paths),
+            "tickets": len(tickets),
+        },
+    }
+
+
+def _unique_preserve(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in values:
+        key = value.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(value)
+    return out
 
 
 @dataclass
@@ -268,6 +363,12 @@ def run_task(task: str, payload: dict[str, Any]) -> Any:
             maximum=None,
         )
         return chunk_text(payload["text"], chunk_size, overlap)
+
+    if task == "text.similarity":
+        return similarity_text(payload["text_a"], payload["text_b"])
+
+    if task == "text.entities":
+        return extract_entities(payload["text"])
 
     raise ValueError(f"unsupported task: {task}")
 

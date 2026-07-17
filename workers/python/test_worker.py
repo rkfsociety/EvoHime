@@ -3,7 +3,15 @@ import threading
 import unittest
 from http.client import HTTPConnection
 
-from worker import JobService, create_server, summarize_text, chunk_text, validate_task_payload
+from worker import (
+    JobService,
+    chunk_text,
+    create_server,
+    extract_entities,
+    similarity_text,
+    summarize_text,
+    validate_task_payload,
+)
 
 
 class JobServiceTests(unittest.TestCase):
@@ -78,6 +86,54 @@ class JobServiceTests(unittest.TestCase):
     def test_summarize_rejects_bad_max_sentences(self):
         with self.assertRaisesRegex(ValueError, "max_sentences"):
             validate_task_payload("text.summarize", {"text": "hi", "max_sentences": 0})
+
+    def test_similarity_scores_related_texts_higher(self):
+        close = similarity_text(
+            "prefer git worktrees for parallel agents",
+            "use worktrees when launching parallel agents",
+        )
+        far = similarity_text(
+            "prefer git worktrees for parallel agents",
+            "postgres connection pool size sixteen",
+        )
+        self.assertGreater(close["score"], far["score"])
+        self.assertGreater(close["shared_tokens"], 0)
+        self.assertEqual(
+            similarity_text("", "anything")["score"],
+            0.0,
+        )
+
+    def test_similarity_rejects_missing_fields(self):
+        with self.assertRaisesRegex(ValueError, "text_a"):
+            validate_task_payload("text.similarity", {"text_b": "only b"})
+
+    def test_entities_extracts_urls_emails_paths_tickets(self):
+        result = extract_entities(
+            "Ping roman@example.com about EVOHIME-42 at https://example.com/docs "
+            "and check ./crates/server/src/main.rs again https://example.com/docs"
+        )
+        self.assertEqual(result["emails"], ["roman@example.com"])
+        self.assertEqual(result["tickets"], ["EVOHIME-42"])
+        self.assertEqual(result["urls"], ["https://example.com/docs"])
+        self.assertTrue(any(path.endswith("main.rs") for path in result["paths"]))
+        self.assertEqual(result["counts"]["urls"], 1)
+
+    def test_entities_job_completes(self):
+        service = JobService()
+        try:
+            job = service.submit(
+                "text.entities",
+                {"text": "see https://evohime.dev and ticket ABC-9"},
+            )
+            for _ in range(100):
+                if (current := service.get(job.id)).status in {"completed", "failed"}:
+                    break
+                threading.Event().wait(0.01)
+            self.assertEqual(current.status, "completed")
+            self.assertEqual(current.result["urls"], ["https://evohime.dev"])
+            self.assertEqual(current.result["tickets"], ["ABC-9"])
+        finally:
+            service.close()
 
     def test_text_summarize_job_completes(self):
         service = JobService()

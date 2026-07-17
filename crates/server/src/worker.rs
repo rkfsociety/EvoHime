@@ -12,6 +12,8 @@ const SUPPORTED_TASKS: &[&str] = &[
     "text.keywords",
     "text.summarize",
     "text.chunk",
+    "text.similarity",
+    "text.entities",
 ];
 const DEFAULT_MAX_SENTENCES: i64 = 3;
 const DEFAULT_CHUNK_SIZE: i64 = 500;
@@ -90,15 +92,18 @@ pub fn validate_task_payload(task: &str, payload: &Value) -> Result<(), String> 
         return Ok(());
     }
 
-    require_text(task, payload)?;
-
     match task {
-        "text.stats" | "text.keywords" => Ok(()),
+        "text.stats" | "text.keywords" | "text.entities" => {
+            require_text(task, payload)?;
+            Ok(())
+        }
         "text.summarize" => {
+            require_text(task, payload)?;
             optional_int(payload, "max_sentences", DEFAULT_MAX_SENTENCES, 1, Some(20))?;
             Ok(())
         }
         "text.chunk" => {
+            require_text(task, payload)?;
             let chunk_size =
                 optional_int(payload, "chunk_size", DEFAULT_CHUNK_SIZE, 64, Some(8000))?;
             let overlap = optional_int(payload, "overlap", DEFAULT_CHUNK_OVERLAP, 0, None)?;
@@ -107,15 +112,26 @@ pub fn validate_task_payload(task: &str, payload: &Value) -> Result<(), String> 
             }
             Ok(())
         }
+        "text.similarity" => {
+            require_named_text(task, payload, "text_a")?;
+            require_named_text(task, payload, "text_b")?;
+            Ok(())
+        }
         _ => Err(format!("unsupported task: {task}")),
     }
 }
 
 fn require_text(task: &str, payload: &Value) -> Result<(), String> {
-    match payload.get("text") {
+    require_named_text(task, payload, "text")
+}
+
+fn require_named_text(task: &str, payload: &Value, key: &str) -> Result<(), String> {
+    match payload.get(key) {
         Some(Value::String(text)) if text.len() <= MAX_TEXT_LENGTH => Ok(()),
-        Some(Value::String(_)) => Err(format!("payload.text exceeds {MAX_TEXT_LENGTH} characters")),
-        _ => Err(format!("{task} requires a string payload.text")),
+        Some(Value::String(_)) => {
+            Err(format!("payload.{key} exceeds {MAX_TEXT_LENGTH} characters"))
+        }
+        _ => Err(format!("{task} requires a string payload.{key}")),
     }
 }
 
@@ -287,6 +303,26 @@ mod status_tests {
             &json!({"text": "hi", "chunk_size": 64, "overlap": 64})
         )
         .is_err());
+    }
+
+    #[test]
+    fn validate_similarity_and_entities_payloads() {
+        assert!(validate_task_payload(
+            "text.similarity",
+            &json!({"text_a": "cats nap", "text_b": "cats sleep"})
+        )
+        .is_ok());
+        assert!(validate_task_payload(
+            "text.similarity",
+            &json!({"text": "only one field"})
+        )
+        .is_err());
+        assert!(validate_task_payload(
+            "text.entities",
+            &json!({"text": "see https://example.com and EVOHIME-42"})
+        )
+        .is_ok());
+        assert!(validate_task_payload("text.entities", &json!({"text": 1})).is_err());
     }
 
     #[test]

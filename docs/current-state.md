@@ -20,7 +20,7 @@ Stages 1–5 complete. Structured memory `6.16`–`6.25`: schema through experie
 | `task-engine` | Active | Lifecycle, dependency batching, checkpoints, cancel/resume/retry |
 | `permissions` | Active | ask/allow/deny + session/path overrides + temp allow + approval audit |
 | `project-index` | Active | Chunk search, path/symbol weights, binary/noise filter (P2) |
-| Python worker | Active | Health/stall reliability; handlers incl. `text.summarize`, `text.chunk` |
+| Python worker | Active | Health/stall reliability; handlers: stats/keywords/summarize/chunk/similarity/entities |
 
 ## API endpoints
 
@@ -105,6 +105,5 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. More specialized ML handlers as needed
-2. Experience/playbooks + Memory UI polish
-3. Deeper worker observability as needed
+1. Experience/playbooks + Memory UI polish
+2. Deeper worker observability as needed

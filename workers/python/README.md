@@ -36,6 +36,8 @@ python -m unittest discover -s workers/python -p "test_*.py"
 | `text.keywords` | `{ text }` | top keyword frequencies |
 | `text.summarize` | `{ text, max_sentences? }` | extractive summary (`1..20` sentences, default 3) |
 | `text.chunk` | `{ text, chunk_size?, overlap? }` | overlapping character chunks |
+| `text.similarity` | `{ text_a, text_b }` | bag-of-words cosine score + token counts |
+| `text.entities` | `{ text }` | urls / emails / paths / ticket ids |
 
 Job state is process-local. The Rust server owns durable `worker_jobs` rows,
 process health watchdog, per-job stall retries, backoff, and retention.

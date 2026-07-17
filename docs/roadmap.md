@@ -16,7 +16,7 @@
 | 3 | Tools + shell | ✅ Готово | Sandbox, filesystem tools, shell, approvals, terminal, permissions |
 | 4 | Editor + Git | ✅ Done | Browser file tree, Monaco editor, Git status/diff/actions, and synchronization events |
 | 5 | Оркестрация | ✅ Complete | Lifecycle, команды, storage и recovery готовы |
-| 6 | Advanced | 🟡 В процессе | Neural embeddings optional ✅; next ML handlers / Memory UI polish |
+| 6 | Advanced | 🟡 В процессе | ML handlers ✅; next Memory UI polish / worker observability |
 
 ---
 
@@ -173,7 +173,7 @@
 | 6.4 | MCP server management UI | ✅ `frontend/web/`, `crates/server/` |
 | 6.5 | Agent memory (persistent context) | ✅ `crates/storage/`, `crates/agent-runtime/` |
 | 6.6 | Multi-model routing: task-scoped routes + OpenAI-compatible providers | ✅ `crates/model-gateway/`, `frontend/web/`, `crates/server/` |
-| 6.7 | Python workers (HTTP/queue) | ✅ reliability + `text.summarize`/`text.chunk` handlers; more ML optional | `workers/python/` |
+| 6.7 | Python workers (HTTP/queue) | ✅ reliability + summarize/chunk/similarity/entities; more optional | `workers/python/` |
 | 6.8 | `browser.open`, `browser.extract` | ✅ `crates/tool-runtime/` |
 | 6.9 | Settings: models, permissions, MCP, tools | ✅ `frontend/web/`, `crates/server/` |
 | 6.10 | Тесты: index, MCP, workers | ✅ respective crates / `workers/python/` |
@@ -262,7 +262,7 @@
 | Приоритет | Улучшение | Что добавить |
 | --- | --- | --- |
 | P2 | Укрепление worker subsystem | ✅ process health + per-job heartbeat stall + typed payloads (`6.15`); further retry/retention optional |
-| P2 | Специализированные ML handlers | ✅ `text.summarize` + `text.chunk` (stdlib); дальнейшие handlers по необходимости |
+| P2 | Специализированные ML handlers | ✅ `text.summarize` / `chunk` / `similarity` / `entities` (+ stats/keywords); further optional |
 
 ### Кандидаты на следующий milestone
 
@@ -285,7 +285,8 @@
 - P2 finer permissions ✅ (session/path overrides, temp allow, audit)
 - Optional OpenTelemetry OTLP export ✅ (`OTEL_EXPORTER_OTLP_ENDPOINT`)
 - Optional remote neural embeddings ✅ (`EVOHIME_EMBEDDING_MODE=remote`)
-- **Next:** more ML handlers; Memory UI / experience polish
+- More ML handlers ✅ (`text.similarity`, `text.entities`)
+- **Next:** Memory UI / experience polish; deeper worker observability
 
 ---
 
