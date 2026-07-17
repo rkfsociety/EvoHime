@@ -2,17 +2,25 @@
 //!
 //! Correlation id for a task equals `task_id` (stable across pause/resume).
 //! Snapshots are exposed via `GET /api/metrics` for local debugging.
+//! When OTLP is enabled, open task/tool/approval spans are exported via tracing.
 
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+use tracing::Span;
 use uuid::Uuid;
 
 /// In-process metrics collector for the task / tool / approval pipeline.
 #[derive(Debug, Default)]
 pub struct PipelineMetrics {
     inner: Mutex<PipelineMetricsInner>,
+}
+
+#[derive(Debug)]
+struct TimedSpan {
+    started: Instant,
+    span: Span,
 }
 
 #[derive(Debug, Default)]
@@ -36,10 +44,10 @@ struct PipelineMetricsInner {
     approval_latency_ms_total: u64,
     approval_latency_samples: u64,
 
-    open_tasks: HashMap<Uuid, Instant>,
+    open_tasks: HashMap<Uuid, TimedSpan>,
     /// FIFO starts per (task_id, tool_name) — parallel same-tool steps.
-    open_tools: HashMap<(Uuid, String), VecDeque<Instant>>,
-    open_approvals: HashMap<Uuid, Instant>,
+    open_tools: HashMap<(Uuid, String), VecDeque<TimedSpan>>,
+    open_approvals: HashMap<Uuid, TimedSpan>,
     /// First plan already seen for this task (next updates count as replans).
     seen_plan: HashMap<Uuid, bool>,
 }
@@ -63,6 +71,8 @@ pub struct MetricsSnapshot {
     pub avg_task_duration_ms: f64,
     pub avg_tool_duration_ms: f64,
     pub avg_approval_latency_ms: f64,
+    /// True when `OTEL_EXPORTER_OTLP_ENDPOINT` is configured and SDK is not disabled.
+    pub otel_export_enabled: bool,
 }
 
 impl PipelineMetrics {
@@ -92,43 +102,94 @@ impl PipelineMetrics {
                 inner.approval_latency_ms_total,
                 inner.approval_latency_samples,
             ),
+            otel_export_enabled: crate::otel::export_enabled(),
         }
     }
 
     pub fn task_started(&self, session_id: Uuid, task_id: Uuid) {
         let mut inner = self.inner.lock().expect("pipeline metrics lock");
         inner.tasks_started += 1;
-        inner.open_tasks.insert(task_id, Instant::now());
-        inner.seen_plan.insert(task_id, false);
-        tracing::info!(
+        let span = tracing::info_span!(
+            "task.pipeline",
+            otel.name = "task.pipeline",
             correlation_id = %task_id,
             session_id = %session_id,
             task_id = %task_id,
-            "task.pipeline.started"
         );
+        let _guard = span.enter();
+        tracing::info!("task.pipeline.started");
+        drop(_guard);
+        inner.open_tasks.insert(
+            task_id,
+            TimedSpan {
+                started: Instant::now(),
+                span,
+            },
+        );
+        inner.seen_plan.insert(task_id, false);
     }
 
     /// Re-attach timing for a resumed/paused task without bumping `tasks_started`.
     pub fn task_resumed(&self, session_id: Uuid, task_id: Uuid) {
         let mut inner = self.inner.lock().expect("pipeline metrics lock");
-        inner.open_tasks.entry(task_id).or_insert_with(Instant::now);
+        if let std::collections::hash_map::Entry::Vacant(entry) = inner.open_tasks.entry(task_id) {
+            let span = tracing::info_span!(
+                "task.pipeline",
+                otel.name = "task.pipeline",
+                correlation_id = %task_id,
+                session_id = %session_id,
+                task_id = %task_id,
+                resumed = true,
+            );
+            let _guard = span.enter();
+            tracing::info!("task.pipeline.resumed");
+            drop(_guard);
+            entry.insert(TimedSpan {
+                started: Instant::now(),
+                span,
+            });
+        } else {
+            tracing::info!(
+                correlation_id = %task_id,
+                session_id = %session_id,
+                task_id = %task_id,
+                "task.pipeline.resumed"
+            );
+        }
         inner.seen_plan.entry(task_id).or_insert(true);
-        tracing::info!(
-            correlation_id = %task_id,
-            session_id = %session_id,
-            task_id = %task_id,
-            "task.pipeline.resumed"
-        );
     }
 
     pub fn task_finished(&self, session_id: Uuid, task_id: Uuid, ok: bool) {
         let mut inner = self.inner.lock().expect("pipeline metrics lock");
-        let elapsed = inner
-            .open_tasks
-            .remove(&task_id)
-            .map(|started| started.elapsed());
+        let timed = inner.open_tasks.remove(&task_id);
+        let elapsed = timed.as_ref().map(|t| t.started.elapsed());
+        if let Some(timed) = timed {
+            timed.span.record("ok", ok);
+            if let Some(elapsed) = elapsed {
+                timed.span.record("duration_ms", duration_ms(elapsed));
+            }
+            let _guard = timed.span.enter();
+            tracing::info!(
+                correlation_id = %task_id,
+                session_id = %session_id,
+                task_id = %task_id,
+                ok,
+                duration_ms = elapsed.map(duration_ms).unwrap_or(0),
+                "task.pipeline.finished"
+            );
+            drop(_guard);
+            drop(timed.span);
+        } else {
+            tracing::info!(
+                correlation_id = %task_id,
+                session_id = %session_id,
+                task_id = %task_id,
+                ok,
+                duration_ms = 0u64,
+                "task.pipeline.finished"
+            );
+        }
         inner.seen_plan.remove(&task_id);
-        // Drop dangling tool timers for this task.
         inner.open_tools.retain(|(tid, _), _| *tid != task_id);
         if ok {
             inner.tasks_completed += 1;
@@ -140,14 +201,6 @@ impl PipelineMetrics {
             inner.task_duration_ms_total = inner.task_duration_ms_total.saturating_add(ms);
             inner.task_duration_samples = inner.task_duration_samples.saturating_add(1);
         }
-        tracing::info!(
-            correlation_id = %task_id,
-            session_id = %session_id,
-            task_id = %task_id,
-            ok,
-            duration_ms = elapsed.map(duration_ms).unwrap_or(0),
-            "task.pipeline.finished"
-        );
     }
 
     pub fn plan_updated(&self, session_id: Uuid, task_id: Uuid, step_count: usize) {
@@ -158,31 +211,61 @@ impl PipelineMetrics {
         } else {
             inner.seen_plan.insert(task_id, true);
         }
-        tracing::info!(
-            correlation_id = %task_id,
-            session_id = %session_id,
-            task_id = %task_id,
-            step_count,
-            replan = first,
-            "task.pipeline.plan_updated"
-        );
+        if let Some(timed) = inner.open_tasks.get(&task_id) {
+            let _guard = timed.span.enter();
+            tracing::info!(
+                correlation_id = %task_id,
+                session_id = %session_id,
+                task_id = %task_id,
+                step_count,
+                replan = first,
+                "task.pipeline.plan_updated"
+            );
+        } else {
+            tracing::info!(
+                correlation_id = %task_id,
+                session_id = %session_id,
+                task_id = %task_id,
+                step_count,
+                replan = first,
+                "task.pipeline.plan_updated"
+            );
+        }
     }
 
     pub fn tool_started(&self, session_id: Uuid, task_id: Uuid, tool_name: &str) {
         let mut inner = self.inner.lock().expect("pipeline metrics lock");
         inner.tools_started += 1;
+        let span = match inner.open_tasks.get(&task_id) {
+            Some(parent) => tracing::info_span!(
+                parent: &parent.span,
+                "task.pipeline.tool",
+                otel.name = "task.pipeline.tool",
+                correlation_id = %task_id,
+                session_id = %session_id,
+                task_id = %task_id,
+                tool_name,
+            ),
+            None => tracing::info_span!(
+                "task.pipeline.tool",
+                otel.name = "task.pipeline.tool",
+                correlation_id = %task_id,
+                session_id = %session_id,
+                task_id = %task_id,
+                tool_name,
+            ),
+        };
+        let _guard = span.enter();
+        tracing::info!("task.pipeline.tool_started");
+        drop(_guard);
         inner
             .open_tools
             .entry((task_id, tool_name.to_string()))
             .or_default()
-            .push_back(Instant::now());
-        tracing::info!(
-            correlation_id = %task_id,
-            session_id = %session_id,
-            task_id = %task_id,
-            tool_name,
-            "task.pipeline.tool_started"
-        );
+            .push_back(TimedSpan {
+                started: Instant::now(),
+                span,
+            });
     }
 
     pub fn tool_completed(
@@ -194,9 +277,9 @@ impl PipelineMetrics {
     ) {
         let mut inner = self.inner.lock().expect("pipeline metrics lock");
         let key = (task_id, tool_name.to_string());
-        let elapsed = {
+        let timed = {
             let queue = inner.open_tools.get_mut(&key);
-            let started = queue.and_then(|q| q.pop_front());
+            let timed = queue.and_then(|q| q.pop_front());
             if inner
                 .open_tools
                 .get(&key)
@@ -205,8 +288,9 @@ impl PipelineMetrics {
             {
                 inner.open_tools.remove(&key);
             }
-            started.map(|started| started.elapsed())
+            timed
         };
+        let elapsed = timed.as_ref().map(|t| t.started.elapsed());
         if success {
             inner.tools_completed += 1;
         } else {
@@ -217,28 +301,69 @@ impl PipelineMetrics {
             inner.tool_duration_ms_total = inner.tool_duration_ms_total.saturating_add(ms);
             inner.tool_duration_samples = inner.tool_duration_samples.saturating_add(1);
         }
-        tracing::info!(
-            correlation_id = %task_id,
-            session_id = %session_id,
-            task_id = %task_id,
-            tool_name,
-            success,
-            duration_ms = elapsed.map(duration_ms).unwrap_or(0),
-            "task.pipeline.tool_completed"
-        );
+        if let Some(timed) = timed {
+            timed.span.record("success", success);
+            if let Some(elapsed) = elapsed {
+                timed.span.record("duration_ms", duration_ms(elapsed));
+            }
+            let _guard = timed.span.enter();
+            tracing::info!(
+                correlation_id = %task_id,
+                session_id = %session_id,
+                task_id = %task_id,
+                tool_name,
+                success,
+                duration_ms = elapsed.map(duration_ms).unwrap_or(0),
+                "task.pipeline.tool_completed"
+            );
+            drop(_guard);
+            drop(timed.span);
+        } else {
+            tracing::info!(
+                correlation_id = %task_id,
+                session_id = %session_id,
+                task_id = %task_id,
+                tool_name,
+                success,
+                duration_ms = 0u64,
+                "task.pipeline.tool_completed"
+            );
+        }
     }
 
     pub fn approval_requested(&self, session_id: Uuid, task_id: Uuid, approval_id: Uuid, tool: &str) {
         let mut inner = self.inner.lock().expect("pipeline metrics lock");
         inner.approvals_requested += 1;
-        inner.open_approvals.insert(approval_id, Instant::now());
-        tracing::info!(
-            correlation_id = %task_id,
-            session_id = %session_id,
-            task_id = %task_id,
-            approval_id = %approval_id,
-            tool_name = tool,
-            "task.pipeline.approval_requested"
+        let span = match inner.open_tasks.get(&task_id) {
+            Some(parent) => tracing::info_span!(
+                parent: &parent.span,
+                "task.pipeline.approval",
+                otel.name = "task.pipeline.approval",
+                correlation_id = %task_id,
+                session_id = %session_id,
+                task_id = %task_id,
+                approval_id = %approval_id,
+                tool_name = tool,
+            ),
+            None => tracing::info_span!(
+                "task.pipeline.approval",
+                otel.name = "task.pipeline.approval",
+                correlation_id = %task_id,
+                session_id = %session_id,
+                task_id = %task_id,
+                approval_id = %approval_id,
+                tool_name = tool,
+            ),
+        };
+        let _guard = span.enter();
+        tracing::info!("task.pipeline.approval_requested");
+        drop(_guard);
+        inner.open_approvals.insert(
+            approval_id,
+            TimedSpan {
+                started: Instant::now(),
+                span,
+            },
         );
     }
 
@@ -250,10 +375,8 @@ impl PipelineMetrics {
         granted: bool,
     ) {
         let mut inner = self.inner.lock().expect("pipeline metrics lock");
-        let elapsed = inner
-            .open_approvals
-            .remove(&approval_id)
-            .map(|started| started.elapsed());
+        let timed = inner.open_approvals.remove(&approval_id);
+        let elapsed = timed.as_ref().map(|t| t.started.elapsed());
         if granted {
             inner.approvals_granted += 1;
         } else {
@@ -264,26 +387,55 @@ impl PipelineMetrics {
             inner.approval_latency_ms_total = inner.approval_latency_ms_total.saturating_add(ms);
             inner.approval_latency_samples = inner.approval_latency_samples.saturating_add(1);
         }
-        tracing::info!(
-            correlation_id = %task_id,
-            session_id = %session_id,
-            task_id = %task_id,
-            approval_id = %approval_id,
-            granted,
-            duration_ms = elapsed.map(duration_ms).unwrap_or(0),
-            "task.pipeline.approval_resolved"
-        );
+        if let Some(timed) = timed {
+            timed.span.record("granted", granted);
+            if let Some(elapsed) = elapsed {
+                timed.span.record("duration_ms", duration_ms(elapsed));
+            }
+            let _guard = timed.span.enter();
+            tracing::info!(
+                correlation_id = %task_id,
+                session_id = %session_id,
+                task_id = %task_id,
+                approval_id = %approval_id,
+                granted,
+                duration_ms = elapsed.map(duration_ms).unwrap_or(0),
+                "task.pipeline.approval_resolved"
+            );
+            drop(_guard);
+            drop(timed.span);
+        } else {
+            tracing::info!(
+                correlation_id = %task_id,
+                session_id = %session_id,
+                task_id = %task_id,
+                approval_id = %approval_id,
+                granted,
+                duration_ms = 0u64,
+                "task.pipeline.approval_resolved"
+            );
+        }
     }
 
     pub fn task_retry(&self, session_id: Uuid, task_id: Uuid) {
         let mut inner = self.inner.lock().expect("pipeline metrics lock");
         inner.task_retries += 1;
-        tracing::info!(
-            correlation_id = %task_id,
-            session_id = %session_id,
-            task_id = %task_id,
-            "task.pipeline.retry"
-        );
+        if let Some(timed) = inner.open_tasks.get(&task_id) {
+            let _guard = timed.span.enter();
+            tracing::info!(
+                correlation_id = %task_id,
+                session_id = %session_id,
+                task_id = %task_id,
+                "task.pipeline.retry"
+            );
+        } else {
+            tracing::info!(
+                correlation_id = %task_id,
+                session_id = %session_id,
+                task_id = %task_id,
+                "task.pipeline.retry"
+            );
+        }
     }
 }
 
@@ -335,6 +487,7 @@ mod tests {
         assert_eq!(snap.task_retries, 1);
         assert_eq!(snap.open_tasks, 0);
         assert_eq!(snap.open_approvals, 0);
+        assert!(!snap.otel_export_enabled);
         assert!(snap.avg_tool_duration_ms >= 1.0);
         assert!(snap.avg_approval_latency_ms >= 1.0);
         assert!(snap.avg_task_duration_ms >= 1.0);

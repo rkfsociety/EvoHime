@@ -1,6 +1,7 @@
 mod app;
 mod memory_api;
 mod observability;
+mod otel;
 mod plugins;
 mod worker;
 mod workspace;
@@ -101,12 +102,7 @@ impl IntoResponse for ApiError {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,evohime_server=info".into()),
-        )
-        .init();
+    let _otel = otel::init_tracing()?;
 
     let config = AppConfig::from_env()?;
     let pool = PgPool::connect(&config.database_url)

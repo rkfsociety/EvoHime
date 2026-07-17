@@ -71,7 +71,7 @@ User message
 
 ### Incomplete / next
 
-- Optional neural embeddings / OpenTelemetry
+- Optional neural embeddings (swap feature-hash encoder)
 - More ML handlers as needed
 - Experience/playbooks, Memory UI polish
 - Deeper worker observability as needed

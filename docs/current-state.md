@@ -10,7 +10,7 @@ Stages 1–5 complete. Structured memory `6.16`–`6.25`: schema through experie
 
 | Crate | Status | Notes |
 | --- | --- | --- |
-| `server` | Active | HTTP + WebSocket, workspace file/Git/MCP/tools, GitHub PR detail/create, worker jobs, memory extract/gate |
+| `server` | Active | HTTP + WebSocket, workspace, GitHub, workers, memory, pipeline metrics + optional OTLP |
 | `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema (incl. `memory.*`) |
 | `memory` | Active | Redact/dedupe/conflict + retrieve + extract/gate + experience + feedback + **hybrid embeddings** (`6.18`–`6.25`) |
 | `storage` | Active | Sessions, tasks, events, messages, legacy notes, **memory_items**, settings, worker jobs |
@@ -53,6 +53,7 @@ Stages 1–5 complete. Structured memory `6.16`–`6.25`: schema through experie
 | POST | `/api/worker/jobs/:id/retry` | Retry job |
 | GET | `/api/memory` | List memory items (filters: scope, status, q) + privacy policy |
 | GET/PATCH/DELETE | `/api/memory/:id` | Get / update (content/status/pin, redacted) / delete |
+| GET | `/api/metrics` | Pipeline metrics snapshot (`otel_export_enabled` when OTLP configured) |
 | WS | `/ws/:session_id` | Real-time events |
 
 ## Agent flow
@@ -104,6 +105,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. Optional neural embeddings / OpenTelemetry
+1. Optional neural embeddings (replace feature-hash encoder)
 2. More specialized ML handlers as needed
 3. Experience/playbooks + Memory UI polish (post-6.20)

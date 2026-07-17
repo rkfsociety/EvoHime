@@ -16,7 +16,7 @@
 | 3 | Tools + shell | ✅ Готово | Sandbox, filesystem tools, shell, approvals, terminal, permissions |
 | 4 | Editor + Git | ✅ Done | Browser file tree, Monaco editor, Git status/diff/actions, and synchronization events |
 | 5 | Оркестрация | ✅ Complete | Lifecycle, команды, storage и recovery готовы |
-| 6 | Advanced | 🟡 В процессе | Permissions P2 ✅; next optional neural/OTel or ML handlers |
+| 6 | Advanced | 🟡 В процессе | OTel OTLP ✅; next optional neural embeddings or ML handlers |
 
 ---
 
@@ -237,7 +237,7 @@
 | --- | --- | --- |
 | P1 | Реальный executor плана | ✅ `plan → execute(batches) → observe → replan → respond` (до 3 replan) |
 | P1 | Усиленный checkpoint/recovery | ✅ plan + pause_reason + approval_wait; merge; resume skips completed steps |
-| P1 | Наблюдаемость task pipeline | ✅ correlation id (`task_id`) + structured logs + `GET /api/metrics` |
+| P1 | Наблюдаемость task pipeline | ✅ correlation id + logs + `GET /api/metrics` + optional OTLP (`OTEL_EXPORTER_OTLP_ENDPOINT`) |
 | P1 | Больше интеграционных сценариев | ✅ `pipeline_integration` + `lifecycle_integration` (approval pause/resume, recovery) |
 
 ### P1 — UI и сопровождение фронтенда
@@ -283,7 +283,8 @@
 - General LLM tool-calling across registered tools ✅ (`browser.*`, `mcp.call` wired; planner catalog)
 - P2 improved project index ✅ (chunks, path/symbol weights, binary filter)
 - P2 finer permissions ✅ (session/path overrides, temp allow, audit)
-- **Next:** optional neural encoder / OTel; more ML handlers
+- Optional OpenTelemetry OTLP export ✅ (`OTEL_EXPORTER_OTLP_ENDPOINT`)
+- **Next:** optional neural encoder; more ML handlers
 
 ---
 
