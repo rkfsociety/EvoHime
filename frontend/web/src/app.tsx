@@ -18,6 +18,7 @@ import { EditorPanel } from "./panels/EditorPanel";
 import { FilesPanel } from "./panels/FilesPanel";
 import { GitPanel } from "./panels/GitPanel";
 import { PluginsPanel } from "./panels/PluginsPanel";
+import { MemoryPanel } from "./panels/MemoryPanel";
 import { PullRequestsPanel } from "./panels/PullRequestsPanel";
 import { ScheduledPanel } from "./panels/ScheduledPanel";
 import { SettingsPanel } from "./panels/SettingsPanel";
@@ -1199,6 +1200,10 @@ export function App() {
       return <PluginsPanel />;
     }
 
+    if (activePanel === "memory") {
+      return <MemoryPanel />;
+    }
+
     if (activePanel === "sites") {
       return (
         <SitesPanel
@@ -1763,7 +1768,7 @@ export function App() {
         </nav>
 
         <div className="panel mainPanel">
-          {activePanel !== "pull-requests" && activePanel !== "plugins" && activePanel !== "sites" ? (
+          {activePanel !== "pull-requests" && activePanel !== "plugins" && activePanel !== "sites" && activePanel !== "memory" ? (
             <header>
               <h2>{activePanel === "chat" ? activeChatTitle : currentPanelLabel}</h2>
               <div className="panelHeaderActions">

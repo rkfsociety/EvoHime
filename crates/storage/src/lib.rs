@@ -8,7 +8,8 @@ use uuid::Uuid;
 pub mod memory;
 
 pub use memory::{
-    import_legacy_memory_notes, insert_memory_item, get_memory_item, list_memory_items,
+    delete_memory_item, get_memory_item, import_legacy_memory_notes, insert_memory_item,
+    list_memory_items, list_memory_items_overview, update_memory_item_fields,
     update_memory_item_status, MemoryItemRow, MemoryKind, MemoryScope, MemoryStatus, NewMemoryItem,
     LOCAL_OPERATOR_SCOPE_KEY,
 };

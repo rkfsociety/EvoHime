@@ -326,6 +326,102 @@ pub async fn update_memory_item_status(
     Ok(row)
 }
 
+/// List memory items across scopes for the Memory panel (6.22 / 6.24).
+pub async fn list_memory_items_overview(
+    pool: &PgPool,
+    scope: Option<MemoryScope>,
+    scope_key: Option<&str>,
+    statuses: &[MemoryStatus],
+    query: Option<&str>,
+    limit: i64,
+) -> Result<Vec<MemoryItemRow>, StorageError> {
+    let status_filters: Vec<&str> = if statuses.is_empty() {
+        vec![
+            MemoryStatus::Candidate.as_str(),
+            MemoryStatus::Active.as_str(),
+            MemoryStatus::Conflict.as_str(),
+            MemoryStatus::Archived.as_str(),
+            MemoryStatus::Rejected.as_str(),
+        ]
+    } else {
+        statuses.iter().map(|s| s.as_str()).collect()
+    };
+    let scope_filter = scope.map(|s| s.as_str());
+    let scope_key_filter = scope_key
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let query_filter = query
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("%{value}%"));
+
+    let rows = sqlx::query_as::<_, MemoryItemRow>(&format!(
+        r#"
+        SELECT {MEMORY_ITEM_COLUMNS}
+        FROM memory_items
+        WHERE ($1::text IS NULL OR scope = $1)
+          AND ($2::text IS NULL OR scope_key = $2)
+          AND status = ANY($3)
+          AND ($4::text IS NULL OR content ILIKE $4)
+        ORDER BY pinned DESC, importance DESC, updated_at DESC
+        LIMIT $5
+        "#
+    ))
+    .bind(scope_filter)
+    .bind(scope_key_filter)
+    .bind(&status_filters)
+    .bind(query_filter)
+    .bind(limit.clamp(1, 500))
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+pub async fn update_memory_item_fields(
+    pool: &PgPool,
+    id: Uuid,
+    content: Option<&str>,
+    status: Option<MemoryStatus>,
+    pinned: Option<bool>,
+) -> Result<Option<MemoryItemRow>, StorageError> {
+    if content.is_none() && status.is_none() && pinned.is_none() {
+        return get_memory_item(pool, id).await;
+    }
+    if let Some(text) = content {
+        if text.trim().is_empty() {
+            return Err(StorageError::InvalidMemory("content must not be empty".into()));
+        }
+    }
+
+    let row = sqlx::query_as::<_, MemoryItemRow>(&format!(
+        r#"
+        UPDATE memory_items
+        SET
+            content = COALESCE($2, content),
+            status = COALESCE($3, status),
+            pinned = COALESCE($4, pinned),
+            updated_at = now()
+        WHERE id = $1
+        RETURNING {MEMORY_ITEM_COLUMNS}
+        "#
+    ))
+    .bind(id)
+    .bind(content.map(str::trim))
+    .bind(status.map(|s| s.as_str()))
+    .bind(pinned)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
+}
+
+pub async fn delete_memory_item(pool: &PgPool, id: Uuid) -> Result<bool, StorageError> {
+    let result = sqlx::query("DELETE FROM memory_items WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected() > 0)
+}
+
 /// Import legacy free-text notes into `memory_items` as candidates.
 /// Idempotent via `source_label` markers `legacy:session_memory:{id}` / `legacy:global_memory:{id}`.
 pub async fn import_legacy_memory_notes(pool: &PgPool) -> Result<u64, StorageError> {
@@ -522,5 +618,53 @@ mod tests {
         .await
         .expect("list");
         assert!(rows.iter().any(|row| row.content == note));
+    }
+
+    #[tokio::test]
+    async fn overview_update_pin_and_delete() {
+        let Some(pool) = connect_pool().await else {
+            eprintln!("skipping memory integration test: database unavailable");
+            return;
+        };
+
+        let scope_key = format!("overview-{}", Uuid::new_v4());
+        let item = NewMemoryItem::candidate_fact(
+            MemoryScope::Workspace,
+            &scope_key,
+            "panel override item",
+        );
+        let inserted = insert_memory_item(&pool, &item).await.expect("insert");
+
+        let listed = list_memory_items_overview(
+            &pool,
+            Some(MemoryScope::Workspace),
+            Some(&scope_key),
+            &[MemoryStatus::Candidate],
+            Some("override"),
+            20,
+        )
+        .await
+        .expect("overview");
+        assert!(listed.iter().any(|row| row.id == inserted.id));
+
+        let updated = update_memory_item_fields(
+            &pool,
+            inserted.id,
+            Some("panel override item edited"),
+            Some(MemoryStatus::Active),
+            Some(true),
+        )
+        .await
+        .expect("update")
+        .expect("row");
+        assert_eq!(updated.content, "panel override item edited");
+        assert_eq!(updated.status, "active");
+        assert!(updated.pinned);
+
+        assert!(delete_memory_item(&pool, inserted.id).await.expect("delete"));
+        assert!(get_memory_item(&pool, inserted.id)
+            .await
+            .expect("get")
+            .is_none());
     }
 }

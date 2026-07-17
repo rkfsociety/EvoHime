@@ -3215,3 +3215,133 @@ h1 {
     grid-template-columns: 1fr;
   }
 }
+
+.memoryPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.memoryPrivacy {
+  border: 1px solid var(--border-1);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.memoryPrivacy strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.memoryPrivacy p {
+  margin: 0;
+  opacity: 0.85;
+  line-height: 1.45;
+}
+
+.memoryTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.memoryTab {
+  border: 1px solid var(--border-1);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.memoryTab.active {
+  border-color: rgba(159, 192, 255, 0.55);
+  background: rgba(159, 192, 255, 0.12);
+}
+
+.memorySearch {
+  width: min(420px, 100%);
+  border: 1px solid var(--border-1);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  padding: 10px 12px;
+}
+
+.memoryList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.memoryItem {
+  border: 1px solid var(--border-1);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.memoryItem[data-pinned="true"] {
+  border-color: rgba(159, 192, 255, 0.45);
+}
+
+.memoryItemHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.memoryItem p {
+  margin: 0 0 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.memoryEdit {
+  width: 100%;
+  margin-bottom: 10px;
+  border: 1px solid var(--border-1);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  padding: 10px;
+  resize: vertical;
+}
+
+.memoryMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  opacity: 0.7;
+  font-size: 0.85rem;
+}
+
+.memoryActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.memoryActions button {
+  border: 1px solid var(--border-1);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.memoryActions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.panelError {
+  color: #f2a3a3;
+}

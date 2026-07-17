@@ -4,7 +4,7 @@ Last updated: 2026-07-17
 
 ## Stage: 6 in progress
 
-Stages 1–5 complete. Structured memory `6.16`–`6.21`: schema, service, retrieval, extract + ask-on-uncertainty, experience/playbooks.
+Stages 1–5 complete. Structured memory `6.16`–`6.22`/`6.24`: schema through experience + Memory panel overrides.
 
 ## Crates
 
@@ -49,6 +49,8 @@ Stages 1–5 complete. Structured memory `6.16`–`6.21`: schema, service, retri
 | POST | `/api/worker/jobs` | Submit worker job |
 | GET | `/api/worker/jobs/:id` | Job state/result |
 | POST | `/api/worker/jobs/:id/retry` | Retry job |
+| GET | `/api/memory` | List memory items (filters: scope, status, q) + privacy policy |
+| GET/PATCH/DELETE | `/api/memory/:id` | Get / update (content/status/pin, redacted) / delete |
 | WS | `/ws/:session_id` | Real-time events |
 
 ## Agent flow
@@ -86,18 +88,18 @@ user.message
 | Terminal / Files / Editor / Git | ✅ |
 | Plugins / Sites | ✅ Plugins: installed list + remote catalog/install |
 | Pull Requests | ✅ list + detail (diff/comments/checks) + create |
-| Memory | ❌ planned (`6.22`/`6.24`); ask modal ✅ (`6.20`) |
+| Memory | ✅ tabs active/candidates/experiences/conflicts/archived + edit/pin/reject/archive/delete (`6.22`/`6.24`) |
 
 Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEventHandler` (`6.13` ✅). Brand: SVG mark + portrait mascot (`AgentBrand` / `AgentMark` / `AgentAvatar`, favicon).
 
 ## Tests
 
 - `crates/memory` — redact/normalize/dedupe/conflict + extract/gate + experience/playbooks + admit integration
-- `crates/storage` — memory_items CRUD + legacy import
+- `crates/storage` — memory_items CRUD + overview/update/delete + legacy import
 - `crates/model-gateway`, `agent-runtime`, `protocol`, `tool-runtime`, `task-engine`, `permissions`, `server`
 
 ## Next recommended step
 
-1. **`6.22` / `6.24`** — Memory panel override UI
-2. Then feedback loop (`6.23`)
+1. **`6.23`** — feedback loop (used/helpful/rejected, confidence decay)
+2. Then embeddings (`6.25`) after lexical quality is proven
 3. Parallel P1: task-pipeline observability; broader integration tests

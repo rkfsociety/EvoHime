@@ -1,4 +1,5 @@
 mod app;
+mod memory_api;
 mod plugins;
 mod worker;
 mod workspace;
@@ -313,6 +314,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/permissions", get(list_permissions))
         .route("/api/permissions/:permission", put(update_permission))
         .route("/api/tools", get(list_tools))
+        .route("/api/memory", get(memory_api::list_memory))
+        .route(
+            "/api/memory/:id",
+            get(memory_api::get_memory)
+                .patch(memory_api::update_memory)
+                .delete(memory_api::delete_memory),
+        )
         .route("/api/plugins", get(plugins::list_plugins))
         .route("/api/plugins/catalog", get(plugins::list_plugin_catalog))
         .route("/api/plugins/install", post(plugins::install_plugin))

@@ -12,6 +12,7 @@ export type WorkspacePanel =
   | "terminal"
   | "git"
   | "plugins"
+  | "memory"
   | "pull-requests"
   | "scheduled"
   | "tasks"
@@ -190,6 +191,7 @@ export const workspacePanels: Array<{ id: WorkspacePanel; label: string; phase: 
   { id: "terminal", label: "Терминал", phase: "этап 3" },
   { id: "git", label: "Гит", phase: "этап 4" },
   { id: "plugins", label: "Плагины", phase: "этап 6" },
+  { id: "memory", label: "Память", phase: "этап 6" },
   { id: "pull-requests", label: "Пулл-реквесты", phase: "GitHub" },
   { id: "scheduled", label: "Запланировано", phase: "этап 5" },
   { id: "tasks", label: "Задачи", phase: "этап 5" },
@@ -198,7 +200,7 @@ export const workspacePanels: Array<{ id: WorkspacePanel; label: string; phase: 
 ];
 
 export const sidebarQuickLinks: Array<{
-  id: "new-task" | "scheduled" | "plugins" | "sites" | "pull-requests" | "chat";
+  id: "new-task" | "scheduled" | "plugins" | "memory" | "sites" | "pull-requests" | "chat";
   label: string;
   icon: string;
   panel: WorkspacePanel;
@@ -206,6 +208,7 @@ export const sidebarQuickLinks: Array<{
   { id: "new-task", label: "Новая задача", icon: "✎", panel: "chat" },
   { id: "scheduled", label: "Запланировано", icon: "◷", panel: "scheduled" },
   { id: "plugins", label: "Плагины", icon: "◌", panel: "plugins" },
+  { id: "memory", label: "Память", icon: "◈", panel: "memory" },
   { id: "sites", label: "Сайты", icon: "▦", panel: "sites" },
   { id: "pull-requests", label: "Пулл-реквесты", icon: "⟡", panel: "pull-requests" },
   { id: "chat", label: "Чат", icon: "⊕", panel: "chat" },
