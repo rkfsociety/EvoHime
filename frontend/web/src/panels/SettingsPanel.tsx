@@ -11,6 +11,7 @@ import type {
   ToolDefinition,
 } from "../types";
 import { formatSessionPreview, formatSessionTitle } from "../lib/format";
+import { reconcileModelForBilling } from "../lib/modelBilling";
 import { LocalAuthSettingsSection } from "./LocalAuthSettingsSection";
 import { MetricsSettingsSection } from "./MetricsSettingsSection";
 import { WorkerSettingsSection } from "./WorkerSettingsSection";
@@ -145,11 +146,23 @@ export function SettingsPanel({
                         <span>Режим LiteRouter</span>
                         <select
                           value={activeModelRoute.billing_mode}
-                          onChange={(event) =>
+                          onChange={(event) => {
+                            const billing_mode = event.target.value as "free" | "paid";
+                            const candidates = [
+                              activeModelRoute.model,
+                              ...(modelConfig?.routes.find((route) => route.name === activeModelRoute.name)
+                                ?.available_models ?? []),
+                              ...(modelConfig?.available_models ?? []),
+                            ];
                             onUpdateModelDraft(activeModelRouteIndex, {
-                              billing_mode: event.target.value as "free" | "paid",
-                            })
-                          }
+                              billing_mode,
+                              model: reconcileModelForBilling(
+                                activeModelRoute.model,
+                                billing_mode,
+                                candidates,
+                              ),
+                            });
+                          }}
                         >
                           <option value="free">Бесплатный — только :free</option>
                           <option value="paid">Платный — без :free</option>

@@ -37,6 +37,7 @@ import {
   sessionsApi,
 } from "./api";
 import { websocketUrl } from "./api/client";
+import { reconcileModelForBilling } from "./lib/modelBilling";
 import {
   chatMatchesProject,
   formatProfileInitials,
@@ -938,7 +939,23 @@ export function App() {
     setModelSaving(true);
     setModelNotice(null);
     try {
-      const data = await modelsApi.putModelConfig({ default_route: modelDefaultRoute, routes: modelDrafts });
+      const routes = modelDrafts.map((route) => {
+        if (route.provider !== "literouter") {
+          return route;
+        }
+        const catalog =
+          modelConfig?.routes.find((item) => item.name === route.name)?.available_models ??
+          modelConfig?.available_models ??
+          [];
+        return {
+          ...route,
+          model: reconcileModelForBilling(route.model, route.billing_mode, [
+            route.model,
+            ...catalog,
+          ]),
+        };
+      });
+      const data = await modelsApi.putModelConfig({ default_route: modelDefaultRoute, routes });
       skipNextModelAutosaveRef.current = true;
       setModelConfig(data);
       setModelDefaultRoute(data.default_route);
