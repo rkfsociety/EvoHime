@@ -6,7 +6,8 @@ mod tools;
 pub use registry::{ToolContext, ToolError, ToolRegistry, ToolResult};
 pub use sandbox::WorkspaceSandbox;
 pub use ssrf::{
-    allow_private_targets, assert_safe_http_url, lock_private_override, PrivateOverrideGuard,
+    allow_private_targets, assert_safe_http_url, effective_host_allowlist, host_allowlist_from_env,
+    lock_host_allowlist, lock_private_override, HostAllowlistGuard, PrivateOverrideGuard,
 };
 pub use tools::browser;
 pub use tools::filesystem;

@@ -109,6 +109,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. **Stage 7** — `7.1`–`7.4` ✅ (auth, CORS, bind localhost, browser SSRF); next MCP SSRF `7.5`
-2. Рекомендуемая следующая волна: MCP SSRF (`7.5`), shell env (`7.6`), worker launcher (`7.15`), LLM retry (`7.16`)
+1. **Stage 7** — `7.1`–`7.5` ✅ (auth, CORS, bind, browser/MCP SSRF); next shell env `7.6`
+2. Рекомендуемая следующая волна: shell env (`7.6`), worker launcher (`7.15`), LLM retry (`7.16`), rate limit (`7.11`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

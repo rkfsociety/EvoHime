@@ -2,9 +2,10 @@
 //!
 //! Blocks loopback, private, link-local, metadata, and non-http(s) schemes.
 //! Escape hatch: `EVOHIME_SSRF_ALLOW_PRIVATE=1` (local power users / tests).
+//! Optional host allowlist via env (e.g. `EVOHIME_MCP_ALLOWED_HOSTS`).
 
 use reqwest::Url;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, ToSocketAddrs};
 
 const BLOCKED_HOSTNAMES: &[&str] = &[
@@ -18,6 +19,9 @@ const BLOCKED_HOSTNAMES: &[&str] = &[
 thread_local! {
     /// Per-thread override for tests (avoids global mutex reentrancy / races).
     static PRIVATE_OVERRIDE: Cell<Option<bool>> = const { Cell::new(None) };
+    /// `None` = read env; `Some(None)` = no allowlist; `Some(Some(hosts))` = forced list.
+    static HOST_ALLOWLIST_OVERRIDE: RefCell<Option<Option<Vec<String>>>> =
+        const { RefCell::new(None) };
 }
 
 /// Restores the previous per-thread private-target override on drop.
@@ -53,6 +57,68 @@ pub fn allow_private_targets() -> bool {
             )
         })
         .unwrap_or(false)
+}
+
+/// Restores the previous per-thread host allowlist override on drop.
+pub struct HostAllowlistGuard {
+    previous: Option<Option<Vec<String>>>,
+}
+
+impl Drop for HostAllowlistGuard {
+    fn drop(&mut self) {
+        HOST_ALLOWLIST_OVERRIDE.with(|cell| {
+            *cell.borrow_mut() = self.previous.take();
+        });
+    }
+}
+
+/// Set host allowlist override for the current thread until the guard is dropped.
+///
+/// Pass `None` to force “no allowlist”; `Some(hosts)` to require those hosts.
+pub fn lock_host_allowlist(hosts: Option<Vec<String>>) -> HostAllowlistGuard {
+    HOST_ALLOWLIST_OVERRIDE.with(|cell| {
+        let previous = cell.borrow().clone();
+        *cell.borrow_mut() = Some(hosts);
+        HostAllowlistGuard { previous }
+    })
+}
+
+/// Parse comma-separated host allowlist from an env var. Empty / unset → `None`.
+pub fn host_allowlist_from_env(var: &str) -> Option<Vec<String>> {
+    let raw = std::env::var(var).ok()?;
+    let hosts = parse_host_allowlist(&raw);
+    if hosts.is_empty() {
+        None
+    } else {
+        Some(hosts)
+    }
+}
+
+pub fn parse_host_allowlist(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(|part| part.trim().trim_end_matches('.').to_ascii_lowercase())
+        .filter(|part| !part.is_empty())
+        .collect()
+}
+
+/// Effective allowlist: thread override, else env var.
+pub fn effective_host_allowlist(env_var: &str) -> Option<Vec<String>> {
+    if let Some(override_value) = HOST_ALLOWLIST_OVERRIDE.with(|cell| cell.borrow().clone()) {
+        return override_value;
+    }
+    host_allowlist_from_env(env_var)
+}
+
+pub fn assert_host_in_allowlist(url: &Url, hosts: &[String]) -> Result<(), String> {
+    let Some(host) = url.host_str() else {
+        return Err("url host is required".into());
+    };
+    let normalized = host.trim_end_matches('.').to_ascii_lowercase();
+    if hosts.iter().any(|allowed| allowed == &normalized) {
+        Ok(())
+    } else {
+        Err(format!("host not in allowlist: {host}"))
+    }
 }
 
 /// Validate scheme/host/IP (and DNS resolution for domain names).
@@ -180,5 +246,23 @@ mod tests {
     fn allow_private_escape_hatch() {
         let _guard = lock_private_override(Some(true));
         assert!(assert_safe_http_url(&Url::parse("http://127.0.0.1:9/").unwrap()).is_ok());
+    }
+
+    #[test]
+    fn host_allowlist_matches_and_rejects() {
+        let _guard = lock_host_allowlist(Some(vec!["mcp.example.com".into()]));
+        let allowed = Url::parse("https://mcp.example.com/rpc").unwrap();
+        let denied = Url::parse("https://evil.example.com/rpc").unwrap();
+        let hosts = effective_host_allowlist("EVOHIME_MCP_ALLOWED_HOSTS").expect("override");
+        assert!(assert_host_in_allowlist(&allowed, &hosts).is_ok());
+        assert!(assert_host_in_allowlist(&denied, &hosts).is_err());
+    }
+
+    #[test]
+    fn parse_host_allowlist_splits_and_normalizes() {
+        assert_eq!(
+            parse_host_allowlist(" MCP.Example.com. , localhost "),
+            vec!["mcp.example.com".to_string(), "localhost".to_string()]
+        );
     }
 }
