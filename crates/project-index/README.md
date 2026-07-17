@@ -1,6 +1,11 @@
 # project-index
 
-Project indexing is part of stage 6 and now provides workspace text search for agent context.
+On-demand workspace text search for agent context (stage 6 / P2).
 
-The crate exposes a lightweight on-demand index over the workspace. It searches text files, skips heavy directories like `target` and `node_modules`, and returns ranked snippets for `agent-runtime`.
+## Features
 
+- Chunk merging of adjacent line hits (stable text for future embeddings)
+- Separate ranking weights: path hits, symbol/definition hits, plain content
+- Skips binary files, noisy extensions (`.png`, `.min.js`, lockfiles, …), and heavy dirs (`target`, `node_modules`, `.git`, …)
+
+`agent-runtime` calls `ProjectIndex::build_context` when building model prompts.
