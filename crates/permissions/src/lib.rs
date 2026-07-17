@@ -9,7 +9,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -128,6 +128,8 @@ pub struct PermissionEngine {
     path_grants: Arc<RwLock<Vec<StoredPathGrant>>>,
     approvals: Arc<RwLock<HashMap<Uuid, ApprovalRecord>>>,
     audit: Arc<RwLock<Vec<ApprovalAuditEntry>>>,
+    /// Optional durable sink (server writes PostgreSQL).
+    audit_tx: Arc<RwLock<Option<mpsc::UnboundedSender<ApprovalAuditEntry>>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -161,7 +163,13 @@ impl PermissionEngine {
             path_grants: Arc::new(RwLock::new(Vec::new())),
             approvals: Arc::new(RwLock::new(HashMap::new())),
             audit: Arc::new(RwLock::new(Vec::new())),
+            audit_tx: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// Attach an unbounded sender used to persist audit entries (Stage 7.23).
+    pub async fn attach_audit_sender(&self, tx: mpsc::UnboundedSender<ApprovalAuditEntry>) {
+        *self.audit_tx.write().await = Some(tx);
     }
 
     pub async fn mode(&self, permission: Permission) -> PermissionMode {
@@ -523,11 +531,16 @@ impl PermissionEngine {
     }
 
     async fn push_audit(&self, entry: ApprovalAuditEntry) {
-        let mut audit = self.audit.write().await;
-        audit.push(entry);
-        if audit.len() > MAX_AUDIT_ENTRIES {
-            let overflow = audit.len() - MAX_AUDIT_ENTRIES;
-            audit.drain(0..overflow);
+        {
+            let mut audit = self.audit.write().await;
+            audit.push(entry.clone());
+            if audit.len() > MAX_AUDIT_ENTRIES {
+                let overflow = audit.len() - MAX_AUDIT_ENTRIES;
+                audit.drain(0..overflow);
+            }
+        }
+        if let Some(tx) = self.audit_tx.read().await.as_ref() {
+            let _ = tx.send(entry);
         }
     }
 }
@@ -725,6 +738,36 @@ mod tests {
             assert!(audit
                 .iter()
                 .any(|entry| entry.decision == ApprovalState::Pending));
+        });
+    }
+
+    #[test]
+    fn audit_sender_receives_pending_and_resolved() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let (tx, mut rx) = mpsc::unbounded_channel();
+            engine.attach_audit_sender(tx).await;
+
+            let request = engine
+                .create_approval(
+                    Uuid::new_v4(),
+                    "shell.execute",
+                    Permission::ShellExecute,
+                    "workspace",
+                )
+                .await;
+            engine
+                .resolve(request.id, false)
+                .await
+                .expect("denied");
+
+            let pending = rx.recv().await.expect("pending audit");
+            assert_eq!(pending.decision, ApprovalState::Pending);
+            assert_eq!(pending.approval_id, request.id);
+
+            let denied = rx.recv().await.expect("denied audit");
+            assert_eq!(denied.decision, ApprovalState::Denied);
+            assert_eq!(denied.approval_id, request.id);
         });
     }
 

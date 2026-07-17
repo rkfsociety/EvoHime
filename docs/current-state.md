@@ -18,7 +18,7 @@ Stages 1–5 complete. Stage 6 structured memory `6.16`–`6.25` and optional po
 | `agent-runtime` | Active | Plan → batches → bounded replan; checkpoints; structured + legacy memory context |
 | `model-gateway` | Active | Route-based gateway, LiteRouter + OpenAI-compatible + mock |
 | `task-engine` | Active | Lifecycle, dependency batching, checkpoints, cancel/resume/retry |
-| `permissions` | Active | ask/allow/deny + session/path overrides + temp allow + approval audit |
+| `permissions` | Active | ask/allow/deny + session/path overrides + temp allow + durable approval audit (PG) |
 | `project-index` | Active | Chunk search, path/symbol weights, binary/noise filter (P2) |
 | Python worker | Active | Health/stall reliability; handlers: stats/keywords/summarize/chunk/similarity/entities/diff |
 
@@ -31,7 +31,7 @@ Stages 1–5 complete. Stage 6 structured memory `6.16`–`6.25` and optional po
 | GET/PUT | `/api/models/config` | Model routes from web panel |
 | GET | `/api/auth/github` | GitHub auth via local `gh` |
 | GET | `/api/permissions` | Permission policy snapshot |
-| GET | `/api/permissions/audit` | Approval audit log |
+| GET | `/api/permissions/audit` | Durable approval audit (PG; `?limit=`) |
 | GET | `/api/permissions/scopes` | Session overrides + path grants |
 | PUT | `/api/permissions/:permission` | Update permission mode |
 | GET | `/api/tools` | Tool catalog |
@@ -109,6 +109,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. **Stage 7** — Wave A ✅; Wave B: `7.17`–`7.22` ✅; next approval audit PG `7.23`
-2. Рекомендуемая следующая волна: durable approval audit (`7.23`), metrics scrape (`7.24`)
+1. **Stage 7** — Wave A ✅; Wave B: `7.17`–`7.23` ✅; next metrics scrape `7.24`
+2. Рекомендуемая следующая волна: metrics scrape (`7.24`), legacy memory (`7.40`–`7.41`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

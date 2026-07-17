@@ -27,7 +27,7 @@ use evohime_agent_runtime::{
 };
 use evohime_model_gateway::providers::{ChatMessage, ChatRole, ProviderKind};
 use evohime_model_gateway::{ModelGateway, ModelRouteConfig};
-use evohime_permissions::{Permission, PermissionMode};
+use evohime_permissions::{ApprovalAuditEntry, Permission, PermissionMode};
 use evohime_protocol::{ClientCommand, HistoryItem, PlanStep, ServerEvent, SessionBootstrap};
 use evohime_task_engine::{
     complete_task, fail_task, pause_task, resume_task, retry_task, start_task,
@@ -169,6 +169,19 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let permissions = evohime_permissions::PermissionEngine::new();
+    let (audit_tx, mut audit_rx) = mpsc::unbounded_channel::<ApprovalAuditEntry>();
+    permissions.attach_audit_sender(audit_tx).await;
+    let audit_pool = pool.clone();
+    tokio::spawn(async move {
+        while let Some(entry) = audit_rx.recv().await {
+            let row = approval_audit_to_row(&entry);
+            if let Err(error) =
+                evohime_storage::insert_permission_audit(&audit_pool, &row).await
+            {
+                warn!(error = %error, approval_id = %entry.approval_id, "failed to persist permission audit");
+            }
+        }
+    });
     let state = Arc::new(AppState {
         pool,
         workspace_root: config.workspace_root.clone(),
@@ -1117,9 +1130,60 @@ async fn list_permissions(State(state): State<Arc<AppState>>) -> Json<Value> {
     Json(Value::Object(result))
 }
 
-async fn list_permission_audit(State(state): State<Arc<AppState>>) -> Json<Value> {
-    let entries = state.permissions.audit_log().await;
-    Json(json!({ "entries": entries }))
+#[derive(Debug, Deserialize)]
+struct PermissionAuditQuery {
+    #[serde(default = "default_permission_audit_limit")]
+    limit: i64,
+}
+
+fn default_permission_audit_limit() -> i64 {
+    200
+}
+
+fn approval_audit_to_row(entry: &ApprovalAuditEntry) -> evohime_storage::NewPermissionAudit {
+    evohime_storage::NewPermissionAudit {
+        approval_id: entry.approval_id,
+        task_id: entry.task_id,
+        session_id: entry.session_id,
+        tool_name: entry.tool_name.clone(),
+        permission: serde_json::to_value(entry.permission)
+            .ok()
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .unwrap_or_else(|| format!("{:?}", entry.permission)),
+        scope: entry.scope.clone(),
+        decision: serde_json::to_value(entry.decision)
+            .ok()
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .unwrap_or_else(|| format!("{:?}", entry.decision).to_ascii_lowercase()),
+        at_ms: entry.at_ms as i64,
+        remembered_path: entry.remembered_path,
+    }
+}
+
+async fn list_permission_audit(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<PermissionAuditQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let rows = evohime_storage::list_permission_audit(&state.pool, query.limit)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let entries: Vec<Value> = rows
+        .into_iter()
+        .map(|row| {
+            json!({
+                "approval_id": row.approval_id,
+                "task_id": row.task_id,
+                "session_id": row.session_id,
+                "tool_name": row.tool_name,
+                "permission": row.permission,
+                "scope": row.scope,
+                "decision": row.decision,
+                "at_ms": row.at_ms,
+                "remembered_path": row.remembered_path,
+            })
+        })
+        .collect();
+    Ok(Json(json!({ "entries": entries })))
 }
 
 async fn list_permission_scopes(State(state): State<Arc<AppState>>) -> Json<Value> {

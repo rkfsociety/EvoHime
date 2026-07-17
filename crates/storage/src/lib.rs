@@ -6,6 +6,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 pub mod memory;
+pub mod permission_audit;
 pub mod pool;
 
 pub use memory::{
@@ -14,6 +15,9 @@ pub use memory::{
     update_memory_item_embedding, update_memory_item_fields,
     update_memory_item_fields_with_embedding, update_memory_item_status, MemoryItemRow, MemoryKind,
     MemoryScope, MemoryStatus, NewMemoryItem, LOCAL_OPERATOR_SCOPE_KEY,
+};
+pub use permission_audit::{
+    insert_permission_audit, list_permission_audit, NewPermissionAudit, PermissionAuditRow,
 };
 pub use pool::{connect_pool, PoolConfig};
 
