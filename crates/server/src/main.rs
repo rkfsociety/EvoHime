@@ -1,5 +1,6 @@
 mod app;
 mod auth;
+mod cors;
 mod memory_api;
 mod observability;
 mod otel;
@@ -38,7 +39,6 @@ use sqlx::PgPool;
 use std::{collections::HashMap, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
-use tower_http::cors::CorsLayer;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
@@ -341,7 +341,7 @@ async fn main() -> anyhow::Result<()> {
             state.clone(),
             auth::require_local_auth,
         ))
-        .layer(CorsLayer::permissive())
+        .layer(cors::cors_layer_from_env())
         .with_state(state.clone());
 
     let addr: SocketAddr = config.bind_addr.parse().context("parse bind address")?;

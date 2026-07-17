@@ -308,7 +308,7 @@
 | # | Задача | Size | Статус | Notes / evidence |
 | --- | --- | --- | --- | --- |
 | 7.1 | Локальный auth на HTTP + WebSocket (token / bind-loopback + optional bearer) | L | ✅ | `EVOHIME_API_TOKEN`, middleware, `/api/auth/status`, UI Settings |
-| 7.2 | Жёсткий CORS allowlist вместо `CorsLayer::permissive()` | S | ⬜ | `crates/server/src/main.rs` |
+| 7.2 | Жёсткий CORS allowlist вместо `CorsLayer::permissive()` | S | ✅ | `EVOHIME_CORS_ORIGINS` / `EVOHIME_CORS_PERMISSIVE`; defaults Vite+local |
 | 7.3 | Default `BIND_ADDR=127.0.0.1` (+ docs / launcher) | S | ⬜ | `start-dev.ps1`, `app.rs` |
 | 7.4 | SSRF guard для `browser.*` (block localhost / private / link-local / metadata) | M | ⬜ | `tool-runtime/.../browser.rs` |
 | 7.5 | SSRF guard для `mcp.call` + optional allowlist hosts | M | ⬜ | `tool-runtime/.../mcp.rs` |
@@ -470,7 +470,7 @@
 
 ### Suggested Stage 7 delivery waves
 
-1. **Wave A (trust):** `7.1` ✅ → next `7.2`–`7.6`, `7.11`, `7.15`, `7.16`  
+1. **Wave A (trust):** `7.1` ✅ `7.2` ✅ → next `7.3`–`7.6`, `7.11`, `7.15`, `7.16`  
 2. **Wave B (survive restarts):** 7.17–7.24, 7.40–7.41  
 3. **Wave C (agent quality):** 7.28–7.33, 7.52  
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  

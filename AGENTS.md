@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — backlog в `docs/roadmap.md` (`7.1` ✅; next `7.2`+)
-- Wave A remaining: CORS, bind localhost, SSRF, shell env scrub, rate limit, worker launcher, LLM retry
+- **Stage 7** Hardening + Product — `7.1` ✅ `7.2` ✅; next `7.3`+
+- Wave A remaining: bind localhost, SSRF, shell env scrub, rate limit, worker launcher, LLM retry
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events
@@ -132,6 +132,9 @@ BIND_ADDR=0.0.0.0:3000
 # Optional local API auth (Stage 7.1). When set, HTTP/WS require Bearer token.
 # When unset, only loopback clients are allowed (non-loopback → 401).
 # EVOHIME_API_TOKEN=dev-local-token
+# Optional: comma-separated CORS origins (default: localhost Vite + :3000)
+# EVOHIME_CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
+# EVOHIME_CORS_PERMISSIVE=1
 WORKSPACE_ROOT=.
 DEMO_FILE_PATH=docs/sample-context.md
 ```
