@@ -137,6 +137,7 @@ async fn run_budgeted_subagent(
         is_subagent: true,
         subagent_depth: child_depth,
         subagent_max_steps: Some(max_steps),
+        telemetry: parent.telemetry.clone(),
     };
 
     let run = tokio::time::timeout(

@@ -5,7 +5,7 @@ pub mod tools;
 
 pub use crate::config::{ModelGatewayConfig, ModelRouteConfig};
 pub use crate::retry::RetryPolicy;
-pub use crate::tools::{ChatResult, FunctionSpec, NativeToolCall, ToolSpec};
+pub use crate::tools::{ChatResult, ChatStreamItem, FunctionSpec, LlmUsage, NativeToolCall, ToolSpec};
 use crate::providers::{
     literouter::LiteRouterProvider, mock::MockProvider, ChatMessage, ModelProvider, ProviderError,
     ProviderKind, TokenStream,
@@ -132,8 +132,25 @@ impl ModelGateway {
         self.default_provider().kind()
     }
 
+    pub fn route_provider_kind(&self, route: &str) -> Result<ProviderKind, ProviderError> {
+        Ok(self.provider_for_route(route)?.kind())
+    }
+
     pub fn model_name(&self) -> &str {
         self.default_provider().model_name()
+    }
+
+    pub fn resolve_model_name(
+        &self,
+        route: &str,
+        model: Option<&str>,
+    ) -> Result<String, ProviderError> {
+        let provider = self.provider_for_route(route)?;
+        Ok(model
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| provider.model_name())
+            .to_string())
     }
 
     pub fn base_url(&self) -> &str {

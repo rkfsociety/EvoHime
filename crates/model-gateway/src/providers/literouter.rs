@@ -5,7 +5,7 @@ use crate::providers::{
 use crate::retry::{
     compute_backoff, is_retryable_status, parse_retry_after_seconds, RetryPolicy,
 };
-use crate::tools::{ChatResult, NativeToolCall, ToolSpec};
+use crate::tools::{ChatResult, ChatStreamItem, LlmUsage, NativeToolCall, ToolSpec};
 use async_stream::stream;
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -74,6 +74,9 @@ impl LiteRouterProvider {
                 })
                 .collect(),
             stream,
+            stream_options: stream.then_some(StreamOptions {
+                include_usage: true,
+            }),
             tools: tools.map(|specs| specs.to_vec()),
             tool_choice: if tools.is_some_and(|specs| !specs.is_empty()) {
                 Some(Value::String("auto".into()))
@@ -224,9 +227,16 @@ struct ChatCompletionRequest {
     messages: Vec<ApiMessage>,
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    stream_options: Option<StreamOptions>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<ToolSpec>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_choice: Option<Value>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct StreamOptions {
+    include_usage: bool,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -237,11 +247,15 @@ struct ApiMessage {
 
 #[derive(Debug, Deserialize)]
 struct StreamChunk {
+    #[serde(default)]
     choices: Vec<StreamChoice>,
+    #[serde(default)]
+    usage: Option<ApiUsage>,
 }
 
 #[derive(Debug, Deserialize)]
 struct StreamChoice {
+    #[serde(default)]
     delta: StreamDelta,
 }
 
@@ -255,6 +269,8 @@ struct StreamDelta {
 struct CompletionResponse {
     #[serde(default)]
     choices: Vec<CompletionChoice>,
+    #[serde(default)]
+    usage: Option<ApiUsage>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -287,8 +303,38 @@ struct ApiFunctionCall {
     arguments: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct ApiUsage {
+    #[serde(default)]
+    prompt_tokens: u32,
+    #[serde(default)]
+    completion_tokens: u32,
+    #[serde(default)]
+    total_tokens: u32,
+}
+
+impl ApiUsage {
+    fn into_llm_usage(self) -> LlmUsage {
+        let mut usage = LlmUsage {
+            prompt_tokens: self.prompt_tokens,
+            completion_tokens: self.completion_tokens,
+            total_tokens: self.total_tokens,
+        };
+        if usage.total_tokens == 0 {
+            usage.total_tokens = usage
+                .prompt_tokens
+                .saturating_add(usage.completion_tokens);
+        }
+        usage
+    }
+}
+
 impl CompletionResponse {
     fn into_chat_result(self) -> ChatResult {
+        let usage = self
+            .usage
+            .map(ApiUsage::into_llm_usage)
+            .filter(|u| !u.is_empty());
         let message = self
             .choices
             .into_iter()
@@ -318,6 +364,7 @@ impl CompletionResponse {
         ChatResult {
             content: message.content.unwrap_or_default(),
             tool_calls,
+            usage,
         }
     }
 }
@@ -330,7 +377,7 @@ fn take_sse_line(buffer: &mut String) -> Option<String> {
     None
 }
 
-fn parse_sse_line(line: &str) -> Option<Result<String, ProviderError>> {
+fn parse_sse_line(line: &str) -> Option<Result<ChatStreamItem, ProviderError>> {
     let line = line.trim();
     if line.is_empty() {
         return None;
@@ -346,6 +393,13 @@ fn parse_sse_line(line: &str) -> Option<Result<String, ProviderError>> {
         Err(error) => return Some(Err(ProviderError::Stream(error.to_string()))),
     };
 
+    if let Some(usage) = chunk.usage {
+        let usage = usage.into_llm_usage();
+        if !usage.is_empty() {
+            return Some(Ok(ChatStreamItem::Usage(usage)));
+        }
+    }
+
     let content = chunk
         .choices
         .first()
@@ -356,7 +410,7 @@ fn parse_sse_line(line: &str) -> Option<Result<String, ProviderError>> {
         return None;
     }
 
-    Some(Ok(content))
+    Some(Ok(ChatStreamItem::Delta(content)))
 }
 
 #[cfg(test)]
@@ -400,7 +454,25 @@ mod tests {
             .expect("parsed")
             .expect("ok");
 
-        assert_eq!(result, "Hi");
+        assert_eq!(result, ChatStreamItem::Delta("Hi".into()));
+    }
+
+    #[test]
+    fn parses_sse_usage_chunk() {
+        let result = parse_sse_line(
+            r#"data: {"choices":[],"usage":{"prompt_tokens":12,"completion_tokens":34,"total_tokens":46}}"#,
+        )
+        .expect("parsed")
+        .expect("ok");
+
+        assert_eq!(
+            result,
+            ChatStreamItem::Usage(LlmUsage {
+                prompt_tokens: 12,
+                completion_tokens: 34,
+                total_tokens: 46,
+            })
+        );
     }
 
     #[test]
@@ -409,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    fn completion_response_extracts_tool_calls() {
+    fn completion_response_extracts_tool_calls_and_usage() {
         let payload = CompletionResponse {
             choices: vec![CompletionChoice {
                 message: CompletionMessage {
@@ -423,12 +495,25 @@ mod tests {
                     }],
                 },
             }],
+            usage: Some(ApiUsage {
+                prompt_tokens: 100,
+                completion_tokens: 20,
+                total_tokens: 120,
+            }),
         };
         let result = payload.into_chat_result();
         assert!(result.content.is_empty());
         assert_eq!(result.tool_calls.len(), 1);
         assert_eq!(result.tool_calls[0].name, "filesystem.read");
         assert!(result.tool_calls[0].arguments.contains("README.md"));
+        assert_eq!(
+            result.usage,
+            Some(LlmUsage {
+                prompt_tokens: 100,
+                completion_tokens: 20,
+                total_tokens: 120,
+            })
+        );
     }
 
     #[test]

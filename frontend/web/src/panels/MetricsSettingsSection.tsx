@@ -108,6 +108,26 @@ export function MetricsSettingsSection() {
           <span>Plan updates</span>
         </article>
         <article>
+          <strong>{pipeline?.llm_calls ?? 0}</strong>
+          <span>LLM calls</span>
+        </article>
+        <article>
+          <strong>{pipeline?.llm_calls_failed ?? 0}</strong>
+          <span>LLM failed</span>
+        </article>
+        <article>
+          <strong>{pipeline?.llm_prompt_tokens ?? 0}</strong>
+          <span>Prompt tokens</span>
+        </article>
+        <article>
+          <strong>{pipeline?.llm_completion_tokens ?? 0}</strong>
+          <span>Completion tokens</span>
+        </article>
+        <article>
+          <strong>{ms(pipeline?.avg_llm_duration_ms)}</strong>
+          <span>Avg LLM</span>
+        </article>
+        <article>
           <strong>{pipeline?.tools_started ?? 0}</strong>
           <span>Tools started</span>
         </article>

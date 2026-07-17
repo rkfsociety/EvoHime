@@ -10,7 +10,7 @@ Stages 1–5 complete. Stage 6 structured memory `6.16`–`6.25` and optional po
 
 | Crate | Status | Notes |
 | --- | --- | --- |
-| `server` | Active | HTTP + WebSocket, workspace, GitHub, workers, memory, pipeline metrics + optional OTLP |
+| `server` | Active | HTTP + WebSocket, workspace, GitHub, workers, memory, pipeline metrics + optional OTLP GenAI LLM spans |
 | `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema (incl. `memory.*`) |
 | `memory` | Active | Redact/dedupe/conflict + retrieve + extract/gate + experience + feedback + hybrid embeddings (hash default, optional remote neural) |
 | `storage` | Active | Sessions, tasks, events, messages, legacy notes, **memory_items**, settings, worker jobs |
@@ -114,6 +114,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.33`, `7.52` ✅; next planner telemetry `7.34`
-2. Рекомендуемая следующая волна: planner step telemetry (`7.34`), plan approve (`7.35`)
+1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.34`, `7.52` ✅; next plan approve `7.35`
+2. Рекомендуемая следующая волна: plan approve (`7.35`), experience playbook auto-suggest (`7.48`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

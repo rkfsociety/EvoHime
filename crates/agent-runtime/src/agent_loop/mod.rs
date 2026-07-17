@@ -35,7 +35,7 @@ use plan::{
     ReplanDecision, REPLAN_PROMPT,
 };
 use util::{
-    collect_stream_text_with_timeout, emit, MAX_REPLAN_ROUNDS, MODEL_REQUEST_COOLDOWN,
+    collect_llm_stream_with_telemetry, emit, MAX_REPLAN_ROUNDS, MODEL_REQUEST_COOLDOWN,
     PLANNING_TIMEOUT, RESPONSE_TIMEOUT,
 };
 
@@ -61,6 +61,8 @@ pub struct AgentConfig {
     pub subagent_depth: u32,
     /// Hard cap on plan steps for this loop (subagents).
     pub subagent_max_steps: Option<usize>,
+    /// Optional LLM usage sink (server metrics / TokenJam counters).
+    pub telemetry: Option<std::sync::Arc<dyn crate::llm_telemetry::LlmTelemetry>>,
 }
 
 #[derive(Debug, Clone)]
@@ -383,18 +385,22 @@ async fn run_agent_loop_inner(
                 ),
             });
 
-            let raw_replan = collect_stream_text_with_timeout(
+            let raw_replan = collect_llm_stream_with_telemetry(
+                &config,
+                gateway,
+                &config.planning_model_route,
+                config.planning_model.as_deref(),
+                "replan",
                 gateway.stream_chat_for_route_with_model(
                     &config.planning_model_route,
                     config.planning_model.as_deref(),
                     &replan_messages,
                 )?,
                 PLANNING_TIMEOUT,
-                "replan",
             )
             .await?;
 
-            match parse_replan_decision(&raw_replan) {
+            match parse_replan_decision(&raw_replan.text) {
                 ReplanDecision::Done => break,
                 ReplanDecision::Continue(steps) => {
                     let existing: HashSet<String> = accumulated_plan
@@ -479,28 +485,62 @@ async fn run_agent_loop_inner(
     });
 
     let mut final_message = String::new();
+    let mut response_usage = None;
+    let provider = gateway
+        .route_provider_kind(&config.model_route)
+        .map(|kind| kind.as_str().to_string())
+        .unwrap_or_else(|_| "unknown".into());
+    let model_name = gateway
+        .resolve_model_name(&config.model_route, config.model.as_deref())
+        .unwrap_or_else(|_| "unknown".into());
+    let llm_meta = crate::llm_telemetry::LlmCallMeta {
+        phase: "respond",
+        provider,
+        model: model_name,
+        session_id: config.session_id,
+        task_id: config.task_id,
+    };
+    let (llm_span, llm_started) = crate::llm_telemetry::start_llm_span(&llm_meta);
     let mut stream = gateway.stream_chat_for_route_with_model(
         &config.model_route,
         config.model.as_deref(),
         &messages,
     )?;
 
-    tokio::time::timeout(RESPONSE_TIMEOUT, async {
-        while let Some(chunk) = stream.next().await {
-            let delta = chunk?;
-            final_message.push_str(&delta);
-            emit(
-                &event_tx,
-                ServerEvent::AgentMessageDelta {
-                    task_id: config.task_id,
-                    delta,
-                },
-            )?;
-        }
-        Ok::<(), AgentError>(())
-    })
-    .await
-    .map_err(|_| AgentError::ModelTimeout {
+    let stream_result = {
+        let _guard = llm_span.enter();
+        tokio::time::timeout(RESPONSE_TIMEOUT, async {
+            while let Some(chunk) = stream.next().await {
+                match chunk? {
+                    evohime_model_gateway::ChatStreamItem::Delta(delta) => {
+                        final_message.push_str(&delta);
+                        emit(
+                            &event_tx,
+                            ServerEvent::AgentMessageDelta {
+                                task_id: config.task_id,
+                                delta,
+                            },
+                        )?;
+                    }
+                    evohime_model_gateway::ChatStreamItem::Usage(usage) => {
+                        response_usage = Some(usage);
+                    }
+                }
+            }
+            Ok::<(), AgentError>(())
+        })
+        .await
+    };
+    let ok = stream_result.is_ok() && stream_result.as_ref().ok().map(|r| r.is_ok()).unwrap_or(false);
+    crate::llm_telemetry::finish_llm_span(
+        &llm_span,
+        llm_started,
+        &llm_meta,
+        response_usage,
+        ok,
+        config.telemetry.as_ref(),
+    );
+    stream_result.map_err(|_| AgentError::ModelTimeout {
         phase: "response",
         timeout_seconds: RESPONSE_TIMEOUT.as_secs(),
     })??;
@@ -933,6 +973,7 @@ mod tests {
                 is_subagent: false,
                 subagent_depth: 0,
                 subagent_max_steps: None,
+                telemetry: None,
             },
             &gateway,
             &tools,
@@ -1081,6 +1122,7 @@ mod tests {
                 is_subagent: false,
                 subagent_depth: 0,
                 subagent_max_steps: None,
+                telemetry: None,
             },
             &gateway,
             &tools,
@@ -1144,6 +1186,7 @@ mod tests {
                 is_subagent: false,
                 subagent_depth: 0,
                 subagent_max_steps: None,
+                telemetry: None,
             },
             &gateway,
             &tools,
@@ -1227,7 +1270,11 @@ impl evohime_model_gateway::providers::ModelProvider for RecordingProvider {
         Box::pin(futures_util::stream::iter(
             response
                 .into_iter()
-                .map(Ok::<_, evohime_model_gateway::providers::ProviderError>),
+                .map(|chunk| {
+                    Ok::<_, evohime_model_gateway::providers::ProviderError>(
+                        evohime_model_gateway::ChatStreamItem::Delta(chunk),
+                    )
+                }),
         ))
     }
 }

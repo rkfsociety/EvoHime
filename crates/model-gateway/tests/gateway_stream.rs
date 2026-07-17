@@ -1,9 +1,14 @@
+use evohime_model_gateway::providers::{ChatMessage, ChatRole};
+use evohime_model_gateway::{mock_gateway, ChatStreamItem, ModelGateway, ModelGatewayConfig, ModelRouteConfig};
+use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use evohime_model_gateway::providers::{ChatMessage, ChatRole};
-use evohime_model_gateway::{mock_gateway, ModelGateway, ModelGatewayConfig, ModelRouteConfig};
-use futures_util::StreamExt;
+fn push_delta(output: &mut String, item: ChatStreamItem) {
+    if let ChatStreamItem::Delta(text) = item {
+        output.push_str(&text);
+    }
+}
 
 #[tokio::test]
 async fn gateway_streams_tokens_from_mock_provider() {
@@ -15,7 +20,7 @@ async fn gateway_streams_tokens_from_mock_provider() {
 
     let mut output = String::new();
     while let Some(chunk) = stream.next().await {
-        output.push_str(&chunk.expect("chunk ok"));
+        push_delta(&mut output, chunk.expect("chunk ok"));
     }
 
     assert_eq!(output, "LiteRouter");
@@ -55,7 +60,7 @@ async fn gateway_streams_tokens_from_named_route() {
 
     let mut output = String::new();
     while let Some(chunk) = stream.next().await {
-        output.push_str(&chunk.expect("chunk ok"));
+        push_delta(&mut output, chunk.expect("chunk ok"));
     }
 
     assert_eq!(output, "planner");

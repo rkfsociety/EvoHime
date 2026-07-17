@@ -34,7 +34,9 @@ impl ModelProvider for TwoPhaseProvider {
         } else {
             vec!["Evo".to_string(), "Hime".to_string()]
         };
-        Box::pin(stream::iter(chunks.into_iter().map(Ok::<_, ProviderError>)))
+        Box::pin(stream::iter(chunks.into_iter().map(|chunk| {
+            Ok::<_, ProviderError>(evohime_model_gateway::ChatStreamItem::Delta(chunk))
+        })))
     }
 }
 
@@ -67,6 +69,7 @@ async fn agent_loop_streams_model_tokens() {
             is_subagent: false,
             subagent_depth: 0,
             subagent_max_steps: None,
+            telemetry: None,
         },
         &gateway,
         &tools,

@@ -5,6 +5,7 @@ mod auth;
 mod cors;
 mod github_api;
 mod health;
+mod llm_telemetry;
 mod memory_api;
 mod metrics_api;
 mod metrics_export;

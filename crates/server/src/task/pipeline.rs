@@ -190,6 +190,9 @@ pub(crate) async fn run_task_pipeline(
         is_subagent: false,
         subagent_depth: 0,
         subagent_max_steps: None,
+        telemetry: Some(crate::llm_telemetry::PipelineLlmTelemetry::new(
+            state.metrics.clone(),
+        )),
     };
 
     let tools = state.tools.clone();

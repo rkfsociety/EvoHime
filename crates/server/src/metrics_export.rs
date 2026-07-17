@@ -164,6 +164,42 @@ pub fn render_prometheus(
         u64::from(pipeline.otel_export_enabled),
     );
 
+    out.push_str("# HELP evohime_pipeline_llm_calls LLM chat completions\n");
+    out.push_str("# TYPE evohime_pipeline_llm_calls counter\n");
+    push_metric(&mut out, "evohime_pipeline_llm_calls", pipeline.llm_calls);
+
+    out.push_str("# HELP evohime_pipeline_llm_calls_failed Failed LLM chat completions\n");
+    out.push_str("# TYPE evohime_pipeline_llm_calls_failed counter\n");
+    push_metric(
+        &mut out,
+        "evohime_pipeline_llm_calls_failed",
+        pipeline.llm_calls_failed,
+    );
+
+    out.push_str("# HELP evohime_pipeline_llm_prompt_tokens Prompt tokens reported by provider\n");
+    out.push_str("# TYPE evohime_pipeline_llm_prompt_tokens counter\n");
+    push_metric(
+        &mut out,
+        "evohime_pipeline_llm_prompt_tokens",
+        pipeline.llm_prompt_tokens,
+    );
+
+    out.push_str("# HELP evohime_pipeline_llm_completion_tokens Completion tokens reported by provider\n");
+    out.push_str("# TYPE evohime_pipeline_llm_completion_tokens counter\n");
+    push_metric(
+        &mut out,
+        "evohime_pipeline_llm_completion_tokens",
+        pipeline.llm_completion_tokens,
+    );
+
+    out.push_str("# HELP evohime_pipeline_avg_llm_duration_ms Average LLM call duration\n");
+    out.push_str("# TYPE evohime_pipeline_avg_llm_duration_ms gauge\n");
+    push_float(
+        &mut out,
+        "evohime_pipeline_avg_llm_duration_ms",
+        pipeline.avg_llm_duration_ms,
+    );
+
     out.push_str("# HELP evohime_worker_jobs_submitted Worker jobs submitted\n");
     out.push_str("# TYPE evohime_worker_jobs_submitted counter\n");
     push_metric(
@@ -285,6 +321,11 @@ mod tests {
             approvals_denied: 0,
             task_retries: 0,
             plan_updates: 1,
+            llm_calls: 2,
+            llm_calls_failed: 0,
+            llm_prompt_tokens: 100,
+            llm_completion_tokens: 40,
+            avg_llm_duration_ms: 8.0,
             open_tasks: 1,
             open_approvals: 0,
             avg_task_duration_ms: 12.5,
@@ -307,6 +348,7 @@ mod tests {
         };
         let text = render_prometheus(&pipeline, &worker);
         assert!(text.contains("evohime_pipeline_tasks_started 3"));
+        assert!(text.contains("evohime_pipeline_llm_prompt_tokens 100"));
         assert!(text.contains("evohime_worker_jobs_submitted 5"));
         assert!(text.contains("# TYPE evohime_pipeline_open_tasks gauge"));
     }

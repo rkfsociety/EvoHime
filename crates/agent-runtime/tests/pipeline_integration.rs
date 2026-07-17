@@ -54,7 +54,9 @@ impl ModelProvider for ScriptedProvider {
             .get(index)
             .cloned()
             .unwrap_or_default();
-        Box::pin(stream::iter(chunks.into_iter().map(Ok::<_, ProviderError>)))
+        Box::pin(stream::iter(chunks.into_iter().map(|chunk| {
+            Ok::<_, ProviderError>(evohime_model_gateway::ChatStreamItem::Delta(chunk))
+        })))
     }
 }
 
@@ -75,6 +77,7 @@ fn agent_config(temp: &std::path::Path, demo_file: &std::path::Path) -> AgentCon
         is_subagent: false,
         subagent_depth: 0,
         subagent_max_steps: None,
+        telemetry: None,
     }
 }
 

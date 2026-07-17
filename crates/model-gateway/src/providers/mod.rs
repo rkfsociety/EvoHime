@@ -1,4 +1,4 @@
-use crate::tools::{ChatResult, ToolSpec};
+use crate::tools::{ChatResult, ChatStreamItem, ToolSpec};
 use futures_util::Stream;
 use std::future::Future;
 use std::pin::Pin;
@@ -6,6 +6,7 @@ use std::pin::Pin;
 pub mod literouter;
 pub mod mock;
 
+pub use crate::tools::LlmUsage;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,7 +61,7 @@ pub struct ChatMessage {
     pub content: String,
 }
 
-pub type TokenStream = Pin<Box<dyn Stream<Item = Result<String, ProviderError>> + Send>>;
+pub type TokenStream = Pin<Box<dyn Stream<Item = Result<ChatStreamItem, ProviderError>> + Send>>;
 pub type ChatFuture = Pin<Box<dyn Future<Output = Result<ChatResult, ProviderError>> + Send>>;
 
 #[derive(Debug, thiserror::Error)]

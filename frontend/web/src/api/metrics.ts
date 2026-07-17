@@ -13,6 +13,11 @@ export type PipelineMetricsSnapshot = {
   approvals_denied: number;
   task_retries: number;
   plan_updates: number;
+  llm_calls: number;
+  llm_calls_failed: number;
+  llm_prompt_tokens: number;
+  llm_completion_tokens: number;
+  avg_llm_duration_ms: number;
   open_tasks: number;
   open_approvals: number;
   avg_task_duration_ms: number;

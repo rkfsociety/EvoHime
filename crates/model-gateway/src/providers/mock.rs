@@ -1,7 +1,7 @@
 use crate::providers::{
     ChatFuture, ChatMessage, ModelProvider, ProviderKind, TokenStream,
 };
-use crate::tools::{ChatResult, NativeToolCall, ToolSpec};
+use crate::tools::{ChatResult, ChatStreamItem, NativeToolCall, ToolSpec};
 use async_stream::stream;
 use std::sync::Arc;
 
@@ -51,7 +51,7 @@ impl ModelProvider for MockProvider {
         let chunks = self.chunks.clone();
         Box::pin(stream! {
             for chunk in chunks.iter() {
-                yield Ok(chunk.clone());
+                yield Ok(ChatStreamItem::Delta(chunk.clone()));
             }
         })
     }
@@ -68,6 +68,7 @@ impl ModelProvider for MockProvider {
             Ok(ChatResult {
                 content,
                 tool_calls,
+                usage: None,
             })
         })
     }
@@ -89,8 +90,8 @@ mod tests {
 
         let first = stream.next().await.unwrap().unwrap();
         let second = stream.next().await.unwrap().unwrap();
-        assert_eq!(first, "Hello");
-        assert_eq!(second, " world");
+        assert_eq!(first, ChatStreamItem::Delta("Hello".into()));
+        assert_eq!(second, ChatStreamItem::Delta(" world".into()));
         assert!(stream.next().await.is_none());
     }
 

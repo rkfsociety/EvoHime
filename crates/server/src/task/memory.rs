@@ -50,13 +50,17 @@ pub(crate) async fn collect_gateway_text(
     messages: &[ChatMessage],
     timeout: std::time::Duration,
 ) -> Option<String> {
+    use evohime_model_gateway::ChatStreamItem;
     use futures_util::StreamExt;
     let stream = gateway.stream_chat(messages);
     let collect = async {
         let mut output = String::new();
         let mut stream = stream;
         while let Some(chunk) = stream.next().await {
-            output.push_str(&chunk.ok()?);
+            match chunk.ok()? {
+                ChatStreamItem::Delta(text) => output.push_str(&text),
+                ChatStreamItem::Usage(_) => {}
+            }
         }
         Some(output)
     };

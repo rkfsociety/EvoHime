@@ -1,6 +1,6 @@
 //! Planning / replan prompts and native/text plan collection.
 use super::parse::{normalize_plan, parse_plan, parse_plan_json, PlanStepDraft, unwrap_code_fence};
-use super::util::{collect_stream_text_with_timeout, PLANNING_TIMEOUT};
+use super::util::{collect_llm_stream_with_telemetry, PLANNING_TIMEOUT};
 use super::{AgentConfig, AgentError};
 use evohime_model_gateway::{providers::ChatMessage, ModelGateway};
 use evohime_protocol::PlanStep;
@@ -46,12 +46,14 @@ pub(crate) async fn collect_plan_steps(
                     tool_calls = result.tool_calls.len(),
                     "planning via native provider tool_calls"
                 );
+                record_chat_result_telemetry(gateway, config, "plan", &result);
                 return Ok(crate::native_tools::plan_from_native_tool_calls(
                     &result.tool_calls,
                 ));
             }
             Ok(result) if !result.content.trim().is_empty() => {
                 tracing::info!("native tools returned content without tool_calls; parsing text plan");
+                record_chat_result_telemetry(gateway, config, "plan", &result);
                 return Ok(parse_plan(&result.content));
             }
             Ok(_) => {
@@ -66,17 +68,56 @@ pub(crate) async fn collect_plan_steps(
         }
     }
 
-    let raw_plan = collect_stream_text_with_timeout(
+    let raw_plan = collect_llm_stream_with_telemetry(
+        config,
+        gateway,
+        &config.planning_model_route,
+        config.planning_model.as_deref(),
+        "plan",
         gateway.stream_chat_for_route_with_model(
             &config.planning_model_route,
             config.planning_model.as_deref(),
             planning_messages,
         )?,
         PLANNING_TIMEOUT,
-        "planning",
     )
     .await?;
-    Ok(parse_plan(&raw_plan))
+    Ok(parse_plan(&raw_plan.text))
+}
+
+fn record_chat_result_telemetry(
+    gateway: &ModelGateway,
+    config: &AgentConfig,
+    phase: &'static str,
+    result: &evohime_model_gateway::ChatResult,
+) {
+    let provider = gateway
+        .route_provider_kind(&config.planning_model_route)
+        .map(|kind| kind.as_str().to_string())
+        .unwrap_or_else(|_| "unknown".into());
+    let model = gateway
+        .resolve_model_name(
+            &config.planning_model_route,
+            config.planning_model.as_deref(),
+        )
+        .unwrap_or_else(|_| "unknown".into());
+    let meta = crate::llm_telemetry::LlmCallMeta {
+        phase,
+        provider,
+        model,
+        session_id: config.session_id,
+        task_id: config.task_id,
+    };
+    let (span, started) = crate::llm_telemetry::start_llm_span(&meta);
+    let _guard = span.enter();
+    crate::llm_telemetry::finish_llm_span(
+        &span,
+        started,
+        &meta,
+        result.usage,
+        true,
+        config.telemetry.as_ref(),
+    );
 }
 
 pub(crate) const REPLAN_PROMPT: &str = "You are EvoHime's replanner. Return ONLY JSON. If enough tool results exist to answer the user, return {\"done\":true}. Otherwise return {\"done\":false,\"steps\":[...]} with ONLY new steps still needed (id, tool_name, description, depends_on). Use the same tool names as planning. Do not repeat completed steps. Prefer the fewest new steps.";

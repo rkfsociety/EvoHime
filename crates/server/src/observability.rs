@@ -39,6 +39,13 @@ struct PipelineMetricsInner {
     task_retries: u64,
     plan_updates: u64,
 
+    llm_calls: u64,
+    llm_calls_failed: u64,
+    llm_prompt_tokens: u64,
+    llm_completion_tokens: u64,
+    llm_duration_ms_total: u64,
+    llm_duration_samples: u64,
+
     task_duration_ms_total: u64,
     task_duration_samples: u64,
     tool_duration_ms_total: u64,
@@ -68,6 +75,11 @@ pub struct MetricsSnapshot {
     pub approvals_denied: u64,
     pub task_retries: u64,
     pub plan_updates: u64,
+    pub llm_calls: u64,
+    pub llm_calls_failed: u64,
+    pub llm_prompt_tokens: u64,
+    pub llm_completion_tokens: u64,
+    pub avg_llm_duration_ms: f64,
     pub open_tasks: u64,
     pub open_approvals: u64,
     pub avg_task_duration_ms: f64,
@@ -96,6 +108,11 @@ impl PipelineMetrics {
             approvals_denied: inner.approvals_denied,
             task_retries: inner.task_retries,
             plan_updates: inner.plan_updates,
+            llm_calls: inner.llm_calls,
+            llm_calls_failed: inner.llm_calls_failed,
+            llm_prompt_tokens: inner.llm_prompt_tokens,
+            llm_completion_tokens: inner.llm_completion_tokens,
+            avg_llm_duration_ms: avg_ms(inner.llm_duration_ms_total, inner.llm_duration_samples),
             open_tasks: inner.open_tasks.len() as u64,
             open_approvals: inner.open_approvals.len() as u64,
             avg_task_duration_ms: avg_ms(inner.task_duration_ms_total, inner.task_duration_samples),
@@ -438,6 +455,37 @@ impl PipelineMetrics {
                 "task.pipeline.retry"
             );
         }
+    }
+
+    /// Record one LLM completion (plan / replan / respond / extract).
+    pub fn llm_call(
+        &self,
+        phase: &str,
+        model: &str,
+        usage: Option<(u32, u32)>,
+        duration_ms: u64,
+        ok: bool,
+    ) {
+        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        inner.llm_calls += 1;
+        if !ok {
+            inner.llm_calls_failed += 1;
+        }
+        if let Some((prompt, completion)) = usage {
+            inner.llm_prompt_tokens += u64::from(prompt);
+            inner.llm_completion_tokens += u64::from(completion);
+        }
+        inner.llm_duration_ms_total += duration_ms;
+        inner.llm_duration_samples += 1;
+        tracing::debug!(
+            phase,
+            model,
+            ok,
+            duration_ms,
+            prompt_tokens = usage.map(|(p, _)| p).unwrap_or(0),
+            completion_tokens = usage.map(|(_, c)| c).unwrap_or(0),
+            "task.pipeline.llm_call"
+        );
     }
 }
 
