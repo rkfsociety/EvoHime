@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Wave A ✅; Wave B: `7.17`–`7.24`, `7.40`–`7.41` ✅; next `7.25`+
-- Wave B done for memory dual-write; next reliability: task FSM (`7.25`)…
+- **Stage 7** Hardening + Product — Wave A ✅; Wave B: `7.17`–`7.25`, `7.40`–`7.41` ✅; next `7.26`+
+- Wave B next: worker lease races (`7.26`)…
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events

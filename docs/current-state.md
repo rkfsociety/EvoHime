@@ -112,6 +112,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. **Stage 7** — Wave A ✅; Wave B: `7.17`–`7.24`, `7.40`–`7.41` ✅; next task FSM `7.25`
-2. Рекомендуемая следующая волна: task-engine FSM (`7.25`), worker lease races (`7.26`)
+1. **Stage 7** — Wave A ✅; Wave B: `7.17`–`7.25`, `7.40`–`7.41` ✅; next worker lease `7.26`
+2. Рекомендуемая следующая волна: worker lease races (`7.26`), structured API errors (`7.27`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

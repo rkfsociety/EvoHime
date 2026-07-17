@@ -9,12 +9,26 @@ use uuid::Uuid;
 pub enum TaskEngineError {
     #[error("storage error: {0}")]
     Storage(#[from] StorageError),
+    #[error("task not found: {0}")]
+    NotFound(Uuid),
     #[error("invalid transition from {from} to {to}")]
     InvalidTransition { from: String, to: String },
     #[error("unknown dependency {dependency} for step {step_id}")]
     UnknownDependency { step_id: String, dependency: String },
     #[error("dependency cycle detected at step {step_id}")]
     DependencyCycle { step_id: String },
+}
+
+pub fn task_status_str(status: TaskStatus) -> &'static str {
+    match status {
+        TaskStatus::Running => "running",
+        TaskStatus::Cancelling => "cancelling",
+        TaskStatus::Cancelled => "cancelled",
+        TaskStatus::Paused => "paused",
+        TaskStatus::Failed => "failed",
+        TaskStatus::Retrying => "retrying",
+        TaskStatus::Completed => "completed",
+    }
 }
 
 pub fn can_transition(from: &str, to: TaskStatus) -> bool {
@@ -55,50 +69,62 @@ pub async fn start_task(
 }
 
 pub async fn complete_task(pool: &PgPool, task_id: Uuid) -> Result<TaskRow, TaskEngineError> {
-    transition(pool, task_id, "completed", TaskStatus::Completed).await
+    transition(pool, task_id, TaskStatus::Completed).await
 }
 
 pub async fn fail_task(pool: &PgPool, task_id: Uuid) -> Result<TaskRow, TaskEngineError> {
-    transition(pool, task_id, "failed", TaskStatus::Failed).await
+    transition(pool, task_id, TaskStatus::Failed).await
 }
 
 pub async fn pause_task(pool: &PgPool, task_id: Uuid) -> Result<TaskRow, TaskEngineError> {
-    transition(pool, task_id, "paused", TaskStatus::Paused).await
+    transition(pool, task_id, TaskStatus::Paused).await
 }
 
+/// Cancel via FSM: `running → cancelling → cancelled`, or `paused|cancelling → cancelled`.
 pub async fn cancel_task(pool: &PgPool, task_id: Uuid) -> Result<TaskRow, TaskEngineError> {
-    let task = evohime_storage::set_task_status(pool, task_id, "cancelling").await?;
-    Ok(evohime_storage::set_task_status(pool, task.id, "cancelled").await?)
+    let current = evohime_storage::load_task(pool, task_id)
+        .await?
+        .ok_or(TaskEngineError::NotFound(task_id))?;
+    match current.status.as_str() {
+        "running" => {
+            transition(pool, task_id, TaskStatus::Cancelling).await?;
+            transition(pool, task_id, TaskStatus::Cancelled).await
+        }
+        "cancelling" | "paused" => transition(pool, task_id, TaskStatus::Cancelled).await,
+        other => Err(TaskEngineError::InvalidTransition {
+            from: other.to_string(),
+            to: task_status_str(TaskStatus::Cancelled).to_string(),
+        }),
+    }
 }
 
 pub async fn resume_task(pool: &PgPool, task_id: Uuid) -> Result<TaskRow, TaskEngineError> {
-    transition(pool, task_id, "running", TaskStatus::Running).await
+    transition(pool, task_id, TaskStatus::Running).await
 }
 
+/// Retry via FSM: `failed → retrying → running`.
 pub async fn retry_task(pool: &PgPool, task_id: Uuid) -> Result<TaskRow, TaskEngineError> {
-    let task = evohime_storage::set_task_status(pool, task_id, "retrying").await?;
-    Ok(evohime_storage::set_task_status(pool, task.id, "running").await?)
+    transition(pool, task_id, TaskStatus::Retrying).await?;
+    transition(pool, task_id, TaskStatus::Running).await
 }
 
-async fn transition(
+/// Load task by id and apply a single validated status change (Stage 7.25).
+pub async fn transition(
     pool: &PgPool,
     task_id: Uuid,
-    status: &str,
     target: TaskStatus,
 ) -> Result<TaskRow, TaskEngineError> {
-    let tasks = evohime_storage::list_tasks(pool, None).await?;
-    let current = tasks
-        .iter()
-        .find(|task| task.id == task_id)
-        .map(|task| task.status.as_str())
-        .unwrap_or("unknown");
-    if current != "unknown" && !can_transition(current, target) {
+    let current = evohime_storage::load_task(pool, task_id)
+        .await?
+        .ok_or(TaskEngineError::NotFound(task_id))?;
+    let from = current.status.as_str();
+    if !can_transition(from, target) {
         return Err(TaskEngineError::InvalidTransition {
-            from: current.to_string(),
-            to: status.to_string(),
+            from: from.to_string(),
+            to: task_status_str(target).to_string(),
         });
     }
-    Ok(evohime_storage::set_task_status(pool, task_id, status).await?)
+    Ok(evohime_storage::set_task_status(pool, task_id, task_status_str(target)).await?)
 }
 
 pub async fn recover_after_restart(pool: &PgPool) -> Result<Vec<TaskRow>, TaskEngineError> {
@@ -356,6 +382,24 @@ mod tests {
     #[test]
     fn pause_transition_is_supported() {
         assert!(can_transition("running", TaskStatus::Paused));
+    }
+
+    #[test]
+    fn cancel_and_retry_transitions_follow_fsm() {
+        assert!(can_transition("running", TaskStatus::Cancelling));
+        assert!(can_transition("cancelling", TaskStatus::Cancelled));
+        assert!(can_transition("paused", TaskStatus::Cancelled));
+        assert!(!can_transition("running", TaskStatus::Cancelled));
+        assert!(!can_transition("completed", TaskStatus::Cancelled));
+        assert!(can_transition("failed", TaskStatus::Retrying));
+        assert!(can_transition("retrying", TaskStatus::Running));
+        assert!(!can_transition("failed", TaskStatus::Running));
+    }
+
+    #[test]
+    fn task_status_str_matches_snake_case() {
+        assert_eq!(task_status_str(TaskStatus::Cancelling), "cancelling");
+        assert_eq!(task_status_str(TaskStatus::Retrying), "retrying");
     }
 
     #[test]

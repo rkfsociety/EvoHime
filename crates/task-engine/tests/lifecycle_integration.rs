@@ -4,8 +4,10 @@
 //! and recover_after_restart. Skips when Postgres is unavailable.
 
 use evohime_task_engine::{
-    complete_task, fail_task, pause_task, recover_after_restart, resume_task, retry_task, start_task,
+    cancel_task, complete_task, fail_task, pause_task, recover_after_restart, resume_task,
+    retry_task, start_task, transition, TaskEngineError,
 };
+use evohime_protocol::TaskStatus;
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -122,4 +124,39 @@ async fn fail_retry_and_recover_running_after_restart() {
     assert_eq!(resumed.status, "running");
     complete_task(&pool, running.id).await.expect("complete");
     complete_task(&pool, failed_task.id).await.expect("complete retried");
+}
+
+#[tokio::test]
+async fn cancel_via_fsm_and_reject_illegal_transition() {
+    let Some(pool) = connect_pool().await else {
+        eprintln!("skipping task-engine integration test: database unavailable");
+        return;
+    };
+
+    let session = evohime_storage::create_session(&pool)
+        .await
+        .expect("session");
+    let running = start_task(&pool, session.id, "integration cancel", None, None, None)
+        .await
+        .expect("start");
+    let cancelled = cancel_task(&pool, running.id).await.expect("cancel");
+    assert_eq!(cancelled.status, "cancelled");
+
+    let err = transition(&pool, running.id, TaskStatus::Completed)
+        .await
+        .expect_err("completed from cancelled must fail");
+    assert!(matches!(err, TaskEngineError::InvalidTransition { .. }));
+
+    let paused = start_task(&pool, session.id, "integration cancel paused", None, None, None)
+        .await
+        .expect("start paused path");
+    pause_task(&pool, paused.id).await.expect("pause");
+    let cancelled_paused = cancel_task(&pool, paused.id).await.expect("cancel paused");
+    assert_eq!(cancelled_paused.status, "cancelled");
+
+    let missing = Uuid::new_v4();
+    let not_found = cancel_task(&pool, missing)
+        .await
+        .expect_err("missing task");
+    assert!(matches!(not_found, TaskEngineError::NotFound(id) if id == missing));
 }
