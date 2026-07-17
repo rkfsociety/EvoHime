@@ -15,6 +15,13 @@ workers/python/
 ## Run
 
 ```powershell
+# Via native launcher (preferred — tray icon + auto-restart)
+.\start-dev.ps1
+
+# Worker only
+.\start-dev.ps1 -Worker
+
+# Manual
 python workers/python/worker.py --host 127.0.0.1 --port 8090
 python -m unittest discover -s workers/python -p "test_*.py"
 ```

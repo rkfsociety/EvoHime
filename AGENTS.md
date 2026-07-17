@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — `7.1`–`7.6`, `7.11` ✅; next `7.15` / `7.16`
-- Wave A remaining: worker launcher, LLM retry
+- **Stage 7** Hardening + Product — `7.1`–`7.6`, `7.11`, `7.15` ✅; next `7.16`
+- Wave A remaining: LLM retry
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events
@@ -152,6 +152,7 @@ DEMO_FILE_PATH=docs/sample-context.md
 # Backend / frontend in isolation (only when debugging a single process)
 .\start-dev.ps1 -Server
 .\start-dev.ps1 -Web
+.\start-dev.ps1 -Worker
 
 # Backend
 cargo run -p evohime-server

@@ -1,6 +1,7 @@
 ﻿param(
   [switch]$Server,
   [switch]$Web,
+  [switch]$Worker,
   [switch]$Setup
 )
 
@@ -88,6 +89,41 @@ function Get-CargoExe {
   throw "cargo not found in PATH and $fallback is missing."
 }
 
+function Get-PythonExe {
+  foreach ($name in @('python', 'python3')) {
+    $command = Get-Command $name -ErrorAction SilentlyContinue
+    if ($command) {
+      return $command.Source
+    }
+  }
+
+  $py = Get-Command py -ErrorAction SilentlyContinue
+  if ($py) {
+    return $py.Source
+  }
+
+  throw 'python not found in PATH (tried python, python3, py).'
+}
+
+function Get-WorkerBaseUrl {
+  if ($env:PYTHON_WORKER_URL -and $env:PYTHON_WORKER_URL.Trim()) {
+    return $env:PYTHON_WORKER_URL.Trim().TrimEnd('/')
+  }
+  return 'http://127.0.0.1:8090'
+}
+
+function Get-WorkerListenEndpoint {
+  $uri = [Uri](Get-WorkerBaseUrl)
+  $hostName = if ([string]::IsNullOrWhiteSpace($uri.Host)) { '127.0.0.1' } else { $uri.Host }
+  $port = if ($uri.IsDefaultPort) { 8090 } else { $uri.Port }
+  if ($port -le 0) { $port = 8090 }
+  return @{
+    Host = $hostName
+    Port = [int]$port
+    HealthUrl = "$(Get-WorkerBaseUrl)/health"
+  }
+}
+
 function Open-Url([string]$url) {
   Start-Process $url | Out-Null
 }
@@ -168,6 +204,16 @@ function Restart-ServerProcess {
   $script:serverWasRunning = $true
 }
 
+function Restart-WorkerProcess {
+  Write-Host '[EvoHime] Restarting Python worker...'
+  $script:workerRestartEnabled = $true
+  $script:workerWasRunning = $false
+  Stop-Tree $script:workerProcess
+  Wait-ForExit $script:workerProcess
+  $script:workerProcess = Start-ManagedProcess '-Worker'
+  $script:workerWasRunning = $true
+}
+
 function Set-NotifyIconState {
   param(
     [System.Windows.Forms.NotifyIcon]$Icon,
@@ -197,6 +243,7 @@ if ($Server) {
   if (-not $env:MODEL_PROVIDER) { $env:MODEL_PROVIDER = 'literouter' }
   if (-not $env:LITEROUTER_BASE_URL) { $env:LITEROUTER_BASE_URL = 'https://api.literouter.com/v1' }
   if (-not $env:LITEROUTER_MODEL) { $env:LITEROUTER_MODEL = 'deepseek:free' }
+  if (-not $env:PYTHON_WORKER_URL) { $env:PYTHON_WORKER_URL = 'http://127.0.0.1:8090' }
   Invoke-LocalSetup
 
   & (Get-CargoExe) run -p evohime-server
@@ -209,16 +256,48 @@ if ($Web) {
   exit $LASTEXITCODE
 }
 
+if ($Worker) {
+  Set-Location $root
+  Import-DotEnv
+  if (-not $env:PYTHON_WORKER_URL) { $env:PYTHON_WORKER_URL = 'http://127.0.0.1:8090' }
+  $endpoint = Get-WorkerListenEndpoint
+  $python = Get-PythonExe
+  $workerScript = Join-Path $root 'workers\python\worker.py'
+  if (-not (Test-Path -LiteralPath $workerScript)) {
+    throw "Не найден Python worker: $workerScript"
+  }
+
+  $pythonArgs = @()
+  if ([System.IO.Path]::GetFileNameWithoutExtension($python) -eq 'py') {
+    $pythonArgs += '-3'
+  }
+  $pythonArgs += @(
+    $workerScript,
+    '--host', $endpoint.Host,
+    '--port', "$($endpoint.Port)"
+  )
+  Write-Host "[EvoHime] Starting Python worker on $($endpoint.Host):$($endpoint.Port)"
+  & $python @pythonArgs
+  exit $LASTEXITCODE
+}
+
 function Get-EvoHimeProcesses {
   $scriptPath = [regex]::Escape($PSCommandPath)
   $launcherCommandPattern = '(?i)(?:^|\s)-File\s+["'']?' + $scriptPath + '(?:["'']?\s|$)'
   $serverPath = [regex]::Escape((Join-Path $root 'target\debug\evohime-server.exe'))
   $webPath = [regex]::Escape((Join-Path $root 'frontend\web'))
+  $workerPath = [regex]::Escape((Join-Path $root 'workers\python\worker.py'))
   Get-CimInstance Win32_Process |
     Where-Object {
       $_.ProcessId -ne $PID -and
       $_.CommandLine -and
-      ($_.Name -eq 'evohime-server.exe' -or $_.CommandLine -match $launcherCommandPattern -or $_.CommandLine -match $serverPath -or $_.CommandLine -match $webPath)
+      (
+        $_.Name -eq 'evohime-server.exe' -or
+        $_.CommandLine -match $launcherCommandPattern -or
+        $_.CommandLine -match $serverPath -or
+        $_.CommandLine -match $webPath -or
+        $_.CommandLine -match $workerPath
+      )
     } |
     ForEach-Object {
       Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue
@@ -273,6 +352,12 @@ Set-Location $root
 
 Import-DotEnv
 
+$workerEndpoint = Get-WorkerListenEndpoint
+$workerUrl = $workerEndpoint.HealthUrl
+if (-not $env:PYTHON_WORKER_URL) {
+  $env:PYTHON_WORKER_URL = Get-WorkerBaseUrl
+}
+
 Acquire-LauncherLock
 Stop-PreviousLaunchers
 
@@ -282,12 +367,18 @@ if (-not (Test-PortAvailable 3000)) {
 if (-not (Test-PortAvailable 5173)) {
   throw 'Порт 5173 уже занят процессом, который не принадлежит launcher EvoHime.'
 }
+if (-not (Test-PortAvailable $workerEndpoint.Port)) {
+  throw "Порт $($workerEndpoint.Port) уже занят процессом, который не принадлежит launcher EvoHime (Python worker)."
+}
 
 Invoke-LocalSetup
 
 if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
   throw 'npm not found in PATH.'
 }
+
+# Fail fast if Python is missing before spawning server/web.
+$null = Get-PythonExe
 
 if (-not (Test-Path (Join-Path $root 'frontend\web\node_modules'))) {
   Write-Host 'Installing frontend dependencies...'
@@ -304,10 +395,13 @@ if (-not (Test-Path (Join-Path $root 'frontend\web\node_modules'))) {
 
 $script:serverProcess = Start-ManagedProcess '-Server'
 $script:webProcess = Start-ManagedProcess '-Web'
+$script:workerProcess = Start-ManagedProcess '-Worker'
 try {
   Wait-ForHttp $serverUrl
   Wait-ForHttp $webUrl
+  Wait-ForHttp $workerUrl
 } catch {
+  Stop-Tree $script:workerProcess
   Stop-Tree $script:webProcess
   Stop-Tree $script:serverProcess
   Stop-LocalDatabase
@@ -325,9 +419,11 @@ $form.Height = 1
 
 $serverIcon = New-Object System.Windows.Forms.NotifyIcon
 $webIcon = New-Object System.Windows.Forms.NotifyIcon
+$workerIcon = New-Object System.Windows.Forms.NotifyIcon
 
 $serverMenu = New-Object System.Windows.Forms.ContextMenuStrip
 $webMenu = New-Object System.Windows.Forms.ContextMenuStrip
+$workerMenu = New-Object System.Windows.Forms.ContextMenuStrip
 
 $serverOpen = $serverMenu.Items.Add('Открыть health')
 $serverRestart = $serverMenu.Items.Add('Перезапустить сервер')
@@ -337,6 +433,11 @@ $serverExit = $serverMenu.Items.Add('Выйти')
 $webOpen = $webMenu.Items.Add('Открыть панель')
 $webStop = $webMenu.Items.Add('Остановить панель')
 $webExit = $webMenu.Items.Add('Выйти')
+
+$workerOpen = $workerMenu.Items.Add('Открыть health')
+$workerRestart = $workerMenu.Items.Add('Перезапустить worker')
+$workerStop = $workerMenu.Items.Add('Остановить worker')
+$workerExit = $workerMenu.Items.Add('Выйти')
 
 $serverOpen.Add_Click({ Open-Url $serverUrl })
 $serverRestart.Add_Click({
@@ -361,14 +462,31 @@ $webExit.Add_Click({
   $form.Close()
 })
 
+$workerOpen.Add_Click({ Open-Url $workerUrl })
+$workerRestart.Add_Click({
+  Restart-WorkerProcess
+})
+$workerStop.Add_Click({
+  $script:workerRestartEnabled = $false
+  Stop-Tree $script:workerProcess
+})
+$workerExit.Add_Click({
+  $script:workerRestartEnabled = $false
+  $form.Close()
+})
+
 $serverIcon.ContextMenuStrip = $serverMenu
 $webIcon.ContextMenuStrip = $webMenu
+$workerIcon.ContextMenuStrip = $workerMenu
 $serverIcon.Visible = $true
 $webIcon.Visible = $true
+$workerIcon.Visible = $true
 $serverIcon.Text = 'Сервер запускается...'
 $webIcon.Text = 'Панель запускается...'
+$workerIcon.Text = 'Worker запускается...'
 $serverIcon.Icon = [System.Drawing.SystemIcons]::Warning
 $webIcon.Icon = [System.Drawing.SystemIcons]::Warning
+$workerIcon.Icon = [System.Drawing.SystemIcons]::Warning
 
 $serverIcon.Add_MouseUp({
   param($sender, $eventArgs)
@@ -384,19 +502,30 @@ $webIcon.Add_MouseUp({
   }
 })
 
+$workerIcon.Add_MouseUp({
+  param($sender, $eventArgs)
+  if ($eventArgs.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
+    Open-Url $workerUrl
+  }
+})
+
 $script:serverWasRunning = $true
 $script:webWasRunning = $true
+$script:workerWasRunning = $true
 $script:serverRestartEnabled = $true
 $script:webRestartEnabled = $true
+$script:workerRestartEnabled = $true
 
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 1000
 $timer.Add_Tick({
   $serverRunning = -not $script:serverProcess.HasExited
   $webRunning = -not $script:webProcess.HasExited
+  $workerRunning = -not $script:workerProcess.HasExited
 
   Set-NotifyIconState -Icon $serverIcon -RunningIcon ([System.Drawing.SystemIcons]::Application) -StoppedIcon ([System.Drawing.SystemIcons]::Error) -Running $serverRunning -RunningText 'Сервер работает' -StoppedText 'Сервер остановлен'
   Set-NotifyIconState -Icon $webIcon -RunningIcon ([System.Drawing.SystemIcons]::Information) -StoppedIcon ([System.Drawing.SystemIcons]::Error) -Running $webRunning -RunningText 'Панель работает' -StoppedText 'Панель остановлена'
+  Set-NotifyIconState -Icon $workerIcon -RunningIcon ([System.Drawing.SystemIcons]::Shield) -StoppedIcon ([System.Drawing.SystemIcons]::Error) -Running $workerRunning -RunningText 'Python worker работает' -StoppedText 'Python worker остановлен'
 
   if ($script:serverWasRunning -and -not $serverRunning) {
     $serverIcon.ShowBalloonTip(3000, 'EvoHime', 'Сервер остановлен', [System.Windows.Forms.ToolTipIcon]::Error)
@@ -414,9 +543,18 @@ $timer.Add_Tick({
       $webRunning = -not $script:webProcess.HasExited
     }
   }
+  if ($script:workerWasRunning -and -not $workerRunning) {
+    $workerIcon.ShowBalloonTip(3000, 'EvoHime', 'Python worker остановлен', [System.Windows.Forms.ToolTipIcon]::Error)
+    if ($script:workerRestartEnabled) {
+      Write-Host '[EvoHime] Python worker завершился неожиданно, перезапускаю...'
+      $script:workerProcess = Start-ManagedProcess '-Worker'
+      $workerRunning = -not $script:workerProcess.HasExited
+    }
+  }
 
   $script:serverWasRunning = $serverRunning
   $script:webWasRunning = $webRunning
+  $script:workerWasRunning = $workerRunning
 })
 
 $form.Add_Shown({
@@ -427,15 +565,20 @@ $form.Add_FormClosing({
   $timer.Stop()
   $script:serverRestartEnabled = $false
   $script:webRestartEnabled = $false
+  $script:workerRestartEnabled = $false
+  Stop-Tree $script:workerProcess
   Stop-Tree $script:webProcess
   Stop-Tree $script:serverProcess
   Stop-LocalDatabase
   $serverIcon.Visible = $false
   $webIcon.Visible = $false
+  $workerIcon.Visible = $false
   $serverIcon.Dispose()
   $webIcon.Dispose()
+  $workerIcon.Dispose()
   $serverMenu.Dispose()
   $webMenu.Dispose()
+  $workerMenu.Dispose()
   $timer.Dispose()
   if ($script:launcherMutex) {
     $script:launcherMutex.ReleaseMutex()
@@ -448,6 +591,7 @@ $timer.Start()
 Write-Host ''
 Write-Host 'Server: http://localhost:3000/health'
 Write-Host 'Web:    http://localhost:5173'
+Write-Host "Worker: $workerUrl"
 Write-Host ''
 Write-Host 'Click the tray icons to open browser tabs. Right-click to stop each process.'
 

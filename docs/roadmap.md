@@ -326,7 +326,7 @@
 
 | # | Задача | Size | Статус | Notes / evidence |
 | --- | --- | --- | --- | --- |
-| 7.15 | Поднять Python worker из `start-dev.ps1` (+ tray icon) | M | ⬜ | server ждёт `:8090`, launcher не стартует worker |
+| 7.15 | Поднять Python worker из `start-dev.ps1` (+ tray icon) | M | ✅ | `-Worker`, tray, health wait `:8090`, auto-restart |
 | 7.16 | LLM provider retry / backoff / retry-after | M | ⬜ | `model-gateway/.../literouter.rs` |
 | 7.17 | WebSocket reconnect + event resume (cursor / last event id) | M | ⬜ | frontend `app.tsx` + server WS |
 | 7.18 | Safe restart policy: не auto-resume mutating tasks без флага | M | ⬜ | `main.rs` recover_after_restart |
@@ -470,7 +470,7 @@
 
 ### Suggested Stage 7 delivery waves
 
-1. **Wave A (trust):** `7.1`–`7.6`, `7.11` ✅ → next `7.15`, `7.16`  
+1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15` ✅ → next `7.16`  
 2. **Wave B (survive restarts):** 7.17–7.24, 7.40–7.41  
 3. **Wave C (agent quality):** 7.28–7.33, 7.52  
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  
