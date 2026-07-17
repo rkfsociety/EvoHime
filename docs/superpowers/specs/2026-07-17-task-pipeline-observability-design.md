@@ -28,8 +28,11 @@ Make session/task/tool/approval flow debuggable locally, and optionally export t
 ## Non-goals
 
 - Persistent metrics storage
-- Frontend metrics dashboard
 - Required external collector for local development
+
+## Follow-ups
+
+- Frontend metrics dashboard ✅ (Settings → Metrics: pipeline + worker snapshot, OTLP flag)
 
 ## Acceptance
 

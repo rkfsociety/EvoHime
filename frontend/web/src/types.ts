@@ -155,7 +155,14 @@ export type SaveResponse = {
 
 export type SaveState = "idle" | "saving" | "saved";
 
-export type SettingsTab = "model" | "permissions" | "mcp" | "tools" | "worker" | "archive";
+export type SettingsTab =
+  | "model"
+  | "permissions"
+  | "mcp"
+  | "tools"
+  | "worker"
+  | "metrics"
+  | "archive";
 
 export type GitSnapshot = {
   status: string;

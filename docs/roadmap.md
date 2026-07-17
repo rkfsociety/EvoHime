@@ -237,7 +237,7 @@
 | --- | --- | --- |
 | P1 | Реальный executor плана | ✅ `plan → execute(batches) → observe → replan → respond` (до 3 replan) |
 | P1 | Усиленный checkpoint/recovery | ✅ plan + pause_reason + approval_wait; merge; resume skips completed steps |
-| P1 | Наблюдаемость task pipeline | ✅ correlation id + logs + `GET /api/metrics` + optional OTLP (`OTEL_EXPORTER_OTLP_ENDPOINT`) |
+| P1 | Наблюдаемость task pipeline | ✅ correlation id + logs + `GET /api/metrics` + optional OTLP + Settings Metrics UI |
 | P1 | Больше интеграционных сценариев | ✅ `pipeline_integration` + `lifecycle_integration` (approval pause/resume, recovery) |
 
 ### P1 — UI и сопровождение фронтенда
@@ -290,6 +290,7 @@
 - Deeper worker observability ✅ (`/api/worker/status`, job list, metrics)
 - On-demand `memory.search` tool ✅ (registry + agent-runtime DB path)
 - Frontend worker dashboard ✅ (Settings → Worker)
+- Frontend pipeline metrics dashboard ✅ (Settings → Metrics)
 - **Next:** optional backlog / reliability polish
 
 ---
