@@ -21,8 +21,8 @@ pub use conflict::{detect_conflict, ConflictHit};
 pub use decision::{decide_gate, GateDecision, GateInput, AUTO_PROMOTE_CONFIDENCE};
 pub use dedupe::{content_fingerprint, detect_duplicate};
 pub use embed::{
-    cosine_similarity, embed_text, embed_text_hash, embedding_version, needs_reembed, semantic_score,
-    EncoderConfig, EncoderMode, EmbeddingResult, EMBEDDING_DIM, EMBEDDING_VERSION,
+    cosine_similarity, embed_text, embed_text_hash, embedding_version, needs_reembed,
+    semantic_score, EmbeddingResult, EncoderConfig, EncoderMode, EMBEDDING_DIM, EMBEDDING_VERSION,
     HASH_EMBEDDING_VERSION, REMOTE_EMBEDDING_BASE_VERSION, SEMANTIC_MIN_COSINE,
     SEMANTIC_SCORE_WEIGHT,
 };
@@ -31,8 +31,7 @@ pub use experience::{
 };
 pub use extract::{
     experience_patterns, extract_candidates, heuristic_extract, is_transient_infra_failure,
-    parse_extraction_json,
-    ExtractedCandidate, MAX_CANDIDATES_PER_TASK,
+    parse_extraction_json, ExtractedCandidate, MAX_CANDIDATES_PER_TASK,
 };
 pub use feedback::{
     apply_feedback_signal, FeedbackAdjustment, FeedbackSignal, ARCHIVE_CONFIDENCE_THRESHOLD,
@@ -59,7 +58,9 @@ pub use service::{
 #[cfg(test)]
 mod tests {
     use super::*;
-    use evohime_storage::{MemoryKind, MemoryScope, MemoryStatus, NewMemoryItem, LOCAL_OPERATOR_SCOPE_KEY};
+    use evohime_storage::{
+        MemoryKind, MemoryScope, MemoryStatus, NewMemoryItem, LOCAL_OPERATOR_SCOPE_KEY,
+    };
 
     #[test]
     fn redacts_common_secrets() {
@@ -185,7 +186,9 @@ mod tests {
             "prefer worktrees for parallel agents",
         );
 
-        let first = admit_memory_item(&pool, item.clone()).await.expect("admit 1");
+        let first = admit_memory_item(&pool, item.clone())
+            .await
+            .expect("admit 1");
         assert!(matches!(first, AdmitOutcome::Inserted(_)));
 
         let second = admit_memory_item(&pool, item).await.expect("admit 2");

@@ -158,7 +158,9 @@ async fn approval_pauses_write_then_resume_completes() {
         .expect_err("write should require approval");
 
     let approval_id = match err {
-        AgentError::Tool(ToolError::NeedsApproval { approval_id, tool, .. }) => {
+        AgentError::Tool(ToolError::NeedsApproval {
+            approval_id, tool, ..
+        }) => {
             assert_eq!(tool, "filesystem.write");
             approval_id
         }
@@ -174,10 +176,7 @@ async fn approval_pauses_write_then_resume_completes() {
         .resolve(approval_id, true)
         .await
         .expect("grant approval");
-    assert_eq!(
-        resolved,
-        evohime_permissions::ApprovalState::Granted
-    );
+    assert_eq!(resolved, evohime_permissions::ApprovalState::Granted);
     permissions
         .set_mode(Permission::FilesystemWrite, PermissionMode::Allow)
         .await;
@@ -229,5 +228,8 @@ async fn approval_pauses_write_then_resume_completes() {
             }
         }
     }
-    assert!(saw_write, "expected filesystem.write completed after resume");
+    assert!(
+        saw_write,
+        "expected filesystem.write completed after resume"
+    );
 }

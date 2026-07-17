@@ -1,5 +1,7 @@
 use evohime_model_gateway::providers::{ChatMessage, ChatRole};
-use evohime_model_gateway::{mock_gateway, ChatStreamItem, ModelGateway, ModelGatewayConfig, ModelRouteConfig};
+use evohime_model_gateway::{
+    mock_gateway, ChatStreamItem, ModelGateway, ModelGatewayConfig, ModelRouteConfig,
+};
 use futures_util::StreamExt;
 use std::collections::HashMap;
 use std::sync::Arc;

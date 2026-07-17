@@ -61,9 +61,10 @@ pub(crate) async fn handle_socket(
     let (mut sender, mut receiver) = socket.split();
 
     // Replay durable events first, then forward live bus items (client dedupes by sequence).
-    let backlog = evohime_storage::list_session_events_after(&state.pool, session_id, after_sequence)
-        .await
-        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let backlog =
+        evohime_storage::list_session_events_after(&state.pool, session_id, after_sequence)
+            .await
+            .map_err(|error| ApiError::Internal(error.to_string()))?;
     for row in backlog {
         let event: ServerEvent = serde_json::from_value(row.event_json)
             .map_err(|error| ApiError::Internal(error.to_string()))?;
@@ -437,4 +438,3 @@ pub(crate) async fn handle_socket(
     forward_handle.abort();
     result
 }
-

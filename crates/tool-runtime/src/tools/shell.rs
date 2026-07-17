@@ -215,6 +215,8 @@ mod tests {
             "expected at least one stdout progress chunk"
         );
         assert!(deltas.iter().any(|p| p.stream == "stdout"));
-        assert!(result.output.contains("git version") || result.structured["stdout"].as_str().is_some());
+        assert!(
+            result.output.contains("git version") || result.structured["stdout"].as_str().is_some()
+        );
     }
 }

@@ -1,8 +1,6 @@
 //! Lexical + semantic hybrid memory retrieval (6.19 / 6.25).
 
-use crate::embed::{
-    embed_text, needs_reembed, semantic_score,
-};
+use crate::embed::{embed_text, needs_reembed, semantic_score};
 use crate::MemoryError;
 use evohime_storage::{
     list_memory_items, update_memory_item_embedding, MemoryItemRow, MemoryKind, MemoryScope,
@@ -122,7 +120,11 @@ fn format_used_ids(ids: &[Uuid]) -> Option<String> {
 }
 
 /// Lexical + semantic search/rank over in-memory rows (also the core of `memory.search`).
-pub async fn search_memory(query: &str, items: &[MemoryItemRow], limit: usize) -> Vec<RankedMemory> {
+pub async fn search_memory(
+    query: &str,
+    items: &[MemoryItemRow],
+    limit: usize,
+) -> Vec<RankedMemory> {
     let query_embedding = embed_text(query).await;
     let mut ranked = Vec::new();
     for item in items.iter().filter(|item| {
@@ -166,7 +168,11 @@ pub async fn search_memory(query: &str, items: &[MemoryItemRow], limit: usize) -
     ranked
 }
 
-pub fn select_within_budget(ranked: &[RankedMemory], max_chars: usize, max_items: usize) -> SelectedMemory {
+pub fn select_within_budget(
+    ranked: &[RankedMemory],
+    max_chars: usize,
+    max_items: usize,
+) -> SelectedMemory {
     let mut entries = Vec::new();
     let mut used_memory_ids = Vec::new();
     let mut chars_used = 0usize;
@@ -177,10 +183,7 @@ pub fn select_within_budget(ranked: &[RankedMemory], max_chars: usize, max_items
         if content.is_empty() {
             continue;
         }
-        let prefix = format!(
-            "[{}/{}] ",
-            ranked_item.item.scope, ranked_item.item.status
-        );
+        let prefix = format!("[{}/{}] ", ranked_item.item.scope, ranked_item.item.status);
         let line_len = prefix.len() + content.len() + 4;
         if !entries.is_empty() && chars_used + line_len > max_chars {
             break;
@@ -238,7 +241,11 @@ fn truncate_chars(input: &str, max_chars: usize) -> String {
     if input.chars().count() <= max_chars {
         return input.to_string();
     }
-    input.chars().take(max_chars.saturating_sub(1)).collect::<String>() + "…"
+    input
+        .chars()
+        .take(max_chars.saturating_sub(1))
+        .collect::<String>()
+        + "…"
 }
 
 fn score_item(
@@ -368,13 +375,9 @@ async fn load_scoped_items(
             if embedding.vector.is_empty() {
                 continue;
             }
-            if let Err(error) = update_memory_item_embedding(
-                pool,
-                item.id,
-                &embedding.vector,
-                embedding.version,
-            )
-            .await
+            if let Err(error) =
+                update_memory_item_embedding(pool, item.id, &embedding.vector, embedding.version)
+                    .await
             {
                 tracing::warn!(%error, memory_id = %item.id, "memory embedding backfill failed");
             }
@@ -399,8 +402,12 @@ pub async fn retrieve_for_prompt(
     request: RetrieveRequest<'_>,
 ) -> Result<SelectedMemory, MemoryError> {
     let items = load_scoped_items(pool, &request).await?;
-    let ranked =
-        search_memory(request.query, &items, request.max_items.saturating_mul(2).max(32)).await;
+    let ranked = search_memory(
+        request.query,
+        &items,
+        request.max_items.saturating_mul(2).max(32),
+    )
+    .await;
     Ok(select_within_budget(
         &ranked,
         request.max_chars.max(256),
@@ -413,7 +420,13 @@ mod tests {
     use super::*;
     use evohime_storage::MemoryKind;
 
-    fn sample_item(id: Uuid, content: &str, status: &str, importance: f64, pinned: bool) -> MemoryItemRow {
+    fn sample_item(
+        id: Uuid,
+        content: &str,
+        status: &str,
+        importance: f64,
+        pinned: bool,
+    ) -> MemoryItemRow {
         MemoryItemRow {
             id,
             scope: "workspace".into(),
@@ -463,8 +476,20 @@ mod tests {
         let pinned_id = Uuid::new_v4();
         let relevant_id = Uuid::new_v4();
         let pinned = sample_item(pinned_id, "always use worktrees", "active", 0.2, true);
-        let relevant = sample_item(relevant_id, "worktrees help parallel agents", "active", 0.9, false);
-        let noise = sample_item(Uuid::new_v4(), "postgres is the database", "candidate", 0.9, false);
+        let relevant = sample_item(
+            relevant_id,
+            "worktrees help parallel agents",
+            "active",
+            0.9,
+            false,
+        );
+        let noise = sample_item(
+            Uuid::new_v4(),
+            "postgres is the database",
+            "candidate",
+            0.9,
+            false,
+        );
         let ranked = search_memory("worktrees parallel", &[noise, relevant, pinned], 10).await;
         assert_eq!(ranked[0].item.id, pinned_id);
         assert!(ranked.iter().any(|item| item.item.id == relevant_id));
@@ -529,15 +554,19 @@ mod tests {
 
     #[tokio::test]
     async fn experience_lines_are_kind_labeled_in_budget_selection() {
-        let mut item = sample_item(Uuid::new_v4(), "When X failed: timeout", "candidate", 0.6, false);
+        let mut item = sample_item(
+            Uuid::new_v4(),
+            "When X failed: timeout",
+            "candidate",
+            0.6,
+            false,
+        );
         item.scope = "experience".into();
         item.kind = MemoryKind::FailurePattern.as_str().into();
         let ranked = search_memory("timeout", &[item], 5).await;
         let selected = select_within_budget(&ranked, 500, 5);
         assert_eq!(selected.entries.len(), 1);
-        assert!(selected.entries[0]
-            .content
-            .starts_with("failure_pattern:"));
+        assert!(selected.entries[0].content.starts_with("failure_pattern:"));
     }
 
     #[tokio::test]

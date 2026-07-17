@@ -199,15 +199,9 @@ pub fn should_auto_resume_after_restart(policy: RestartResumePolicy, mutating: b
     policy.auto_resume_mutating || !mutating
 }
 
-pub async fn task_has_mutating_work(
-    pool: &PgPool,
-    task_id: Uuid,
-) -> Result<bool, TaskEngineError> {
+pub async fn task_has_mutating_work(pool: &PgPool, task_id: Uuid) -> Result<bool, TaskEngineError> {
     let steps = evohime_storage::list_task_steps(pool, task_id).await?;
-    if steps
-        .iter()
-        .any(|step| is_mutating_tool(&step.tool_name))
-    {
+    if steps.iter().any(|step| is_mutating_tool(&step.tool_name)) {
         return Ok(true);
     }
     if let Some(checkpoint) = evohime_storage::load_checkpoint(pool, task_id).await? {

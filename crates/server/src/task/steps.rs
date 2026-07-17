@@ -244,7 +244,6 @@ pub(crate) async fn emit_task_step_changed(
     .map_err(|(_, error)| error)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

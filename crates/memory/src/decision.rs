@@ -81,9 +81,7 @@ pub fn decide_gate(input: &GateInput) -> GateDecision {
         // Experience patterns auto-promote within experience scope; playbooks always ask.
         (
             MemoryScope::Experience,
-            MemoryKind::SuccessPattern
-            | MemoryKind::FailurePattern
-            | MemoryKind::VerificationRule,
+            MemoryKind::SuccessPattern | MemoryKind::FailurePattern | MemoryKind::VerificationRule,
         ) if input.confidence >= AUTO_PROMOTE_CONFIDENCE => GateDecision::AutoPromote,
         (MemoryScope::Experience, MemoryKind::Playbook) => GateDecision::Ask {
             reason: "playbook requires operator confirmation".into(),

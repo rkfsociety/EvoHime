@@ -173,7 +173,11 @@ pub struct NewMemoryItem {
 }
 
 impl NewMemoryItem {
-    pub fn candidate_fact(scope: MemoryScope, scope_key: impl Into<String>, content: impl Into<String>) -> Self {
+    pub fn candidate_fact(
+        scope: MemoryScope,
+        scope_key: impl Into<String>,
+        content: impl Into<String>,
+    ) -> Self {
         Self {
             scope,
             scope_key: scope_key.into(),
@@ -197,16 +201,24 @@ impl NewMemoryItem {
 
     pub fn validate(&self) -> Result<(), StorageError> {
         if self.scope_key.trim().is_empty() {
-            return Err(StorageError::InvalidMemory("scope_key must not be empty".into()));
+            return Err(StorageError::InvalidMemory(
+                "scope_key must not be empty".into(),
+            ));
         }
         if self.content.trim().is_empty() {
-            return Err(StorageError::InvalidMemory("content must not be empty".into()));
+            return Err(StorageError::InvalidMemory(
+                "content must not be empty".into(),
+            ));
         }
         if !(0.0..=1.0).contains(&self.confidence) {
-            return Err(StorageError::InvalidMemory("confidence must be in 0..=1".into()));
+            return Err(StorageError::InvalidMemory(
+                "confidence must be in 0..=1".into(),
+            ));
         }
         if !(0.0..=1.0).contains(&self.importance) {
-            return Err(StorageError::InvalidMemory("importance must be in 0..=1".into()));
+            return Err(StorageError::InvalidMemory(
+                "importance must be in 0..=1".into(),
+            ));
         }
         Ok(())
     }
@@ -270,7 +282,10 @@ pub async fn insert_memory_item(
     Ok(row)
 }
 
-pub async fn get_memory_item(pool: &PgPool, id: Uuid) -> Result<Option<MemoryItemRow>, StorageError> {
+pub async fn get_memory_item(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<Option<MemoryItemRow>, StorageError> {
     let row = sqlx::query_as::<_, MemoryItemRow>(&format!(
         r#"
         SELECT {MEMORY_ITEM_COLUMNS}
@@ -364,9 +379,7 @@ pub async fn list_memory_items_overview(
         statuses.iter().map(|s| s.as_str()).collect()
     };
     let scope_filter = scope.map(|s| s.as_str());
-    let scope_key_filter = scope_key
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
+    let scope_key_filter = scope_key.map(str::trim).filter(|value| !value.is_empty());
     let query_filter = query
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -424,7 +437,9 @@ pub async fn update_memory_item_fields_with_embedding(
     }
     if let Some(text) = content {
         if text.trim().is_empty() {
-            return Err(StorageError::InvalidMemory("content must not be empty".into()));
+            return Err(StorageError::InvalidMemory(
+                "content must not be empty".into(),
+            ));
         }
     }
 
@@ -489,6 +504,7 @@ pub async fn delete_memory_item(pool: &PgPool, id: Uuid) -> Result<bool, Storage
 }
 
 /// Apply a feedback adjustment to one memory item and append an audit event.
+#[allow(clippy::too_many_arguments)]
 pub async fn apply_memory_item_feedback(
     pool: &PgPool,
     id: Uuid,
@@ -655,14 +671,23 @@ mod tests {
     fn parses_scopes_including_user_alias() {
         assert_eq!(MemoryScope::parse("global"), Some(MemoryScope::Global));
         assert_eq!(MemoryScope::parse("user"), Some(MemoryScope::Global));
-        assert_eq!(MemoryScope::parse("workspace"), Some(MemoryScope::Workspace));
+        assert_eq!(
+            MemoryScope::parse("workspace"),
+            Some(MemoryScope::Workspace)
+        );
         assert_eq!(MemoryScope::parse("nope"), None);
     }
 
     #[test]
     fn parses_kinds_and_statuses() {
-        assert_eq!(MemoryKind::parse("failure_pattern"), Some(MemoryKind::FailurePattern));
-        assert_eq!(MemoryStatus::parse("candidate"), Some(MemoryStatus::Candidate));
+        assert_eq!(
+            MemoryKind::parse("failure_pattern"),
+            Some(MemoryKind::FailurePattern)
+        );
+        assert_eq!(
+            MemoryStatus::parse("candidate"),
+            Some(MemoryStatus::Candidate)
+        );
         assert!(MemoryStatus::Candidate.is_retrievable());
         assert!(!MemoryStatus::Conflict.is_retrievable());
         assert!(!MemoryStatus::Rejected.is_retrievable());
@@ -670,7 +695,8 @@ mod tests {
 
     #[test]
     fn rejects_invalid_new_items() {
-        let mut item = NewMemoryItem::candidate_fact(MemoryScope::Global, LOCAL_OPERATOR_SCOPE_KEY, "ok");
+        let mut item =
+            NewMemoryItem::candidate_fact(MemoryScope::Global, LOCAL_OPERATOR_SCOPE_KEY, "ok");
         assert!(item.validate().is_ok());
 
         item.content = "   ".into();
@@ -816,7 +842,9 @@ mod tests {
         assert_eq!(updated.status, "active");
         assert!(updated.pinned);
 
-        assert!(delete_memory_item(&pool, inserted.id).await.expect("delete"));
+        assert!(delete_memory_item(&pool, inserted.id)
+            .await
+            .expect("delete"));
         assert!(get_memory_item(&pool, inserted.id)
             .await
             .expect("get")

@@ -219,7 +219,7 @@ mod tests {
                 task_id: Uuid::nil(),
                 session_id: None,
                 progress_tx: None,
-},
+            },
             "main".to_string(),
         )
     }

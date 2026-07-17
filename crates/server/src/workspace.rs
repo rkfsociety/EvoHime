@@ -356,7 +356,7 @@ async fn execute_git_action(
         task_id: Uuid::nil(),
         session_id: Some(session_id),
         progress_tx: None,
-};
+    };
     let result = state
         .tools
         .execute(&ctx, tool, input)
@@ -413,7 +413,7 @@ async fn git_snapshot_with_path_and_session(
         task_id: Uuid::nil(),
         session_id: None,
         progress_tx: None,
-};
+    };
 
     let status = state
         .tools

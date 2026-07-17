@@ -266,8 +266,7 @@ pub fn needs_reembed(version: i32, embedding: Option<&[f32]>) -> bool {
         return true;
     }
     match embedding {
-        None => true,
-        Some(vector) if vector.is_empty() => true,
+        None | Some([]) => true,
         Some(vector) if active == HASH_EMBEDDING_VERSION && vector.len() != EMBEDDING_DIM => true,
         Some(_) => false,
     }
@@ -326,7 +325,11 @@ mod tests {
         let b = embed_text_hash("Always pin critical constraints");
         assert_eq!(a, b);
         assert_eq!(a.len(), EMBEDDING_DIM);
-        let norm = a.iter().map(|v| f64::from(*v) * f64::from(*v)).sum::<f64>().sqrt();
+        let norm = a
+            .iter()
+            .map(|v| f64::from(*v) * f64::from(*v))
+            .sum::<f64>()
+            .sqrt();
         assert!((norm - 1.0).abs() < 1e-5);
     }
 

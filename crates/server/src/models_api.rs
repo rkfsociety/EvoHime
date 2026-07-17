@@ -280,7 +280,6 @@ pub(crate) fn build_model_config(
     })
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

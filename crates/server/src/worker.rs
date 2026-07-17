@@ -148,9 +148,9 @@ fn require_text(task: &str, payload: &Value) -> Result<(), String> {
 fn require_named_text(task: &str, payload: &Value, key: &str) -> Result<(), String> {
     match payload.get(key) {
         Some(Value::String(text)) if text.len() <= MAX_TEXT_LENGTH => Ok(()),
-        Some(Value::String(_)) => {
-            Err(format!("payload.{key} exceeds {MAX_TEXT_LENGTH} characters"))
-        }
+        Some(Value::String(_)) => Err(format!(
+            "payload.{key} exceeds {MAX_TEXT_LENGTH} characters"
+        )),
         _ => Err(format!("{task} requires a string payload.{key}")),
     }
 }
@@ -332,11 +332,9 @@ mod status_tests {
             &json!({"text_a": "cats nap", "text_b": "cats sleep"})
         )
         .is_ok());
-        assert!(validate_task_payload(
-            "text.similarity",
-            &json!({"text": "only one field"})
-        )
-        .is_err());
+        assert!(
+            validate_task_payload("text.similarity", &json!({"text": "only one field"})).is_err()
+        );
         assert!(validate_task_payload(
             "text.entities",
             &json!({"text": "see https://example.com and EVOHIME-42"})

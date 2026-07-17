@@ -70,7 +70,9 @@ pub(crate) struct ExternalPluginManifest {
     skills: String,
 }
 
-pub(crate) fn discover_agent_plugins(workspace_root: &Path) -> Vec<(PathBuf, ExternalPluginManifest)> {
+pub(crate) fn discover_agent_plugins(
+    workspace_root: &Path,
+) -> Vec<(PathBuf, ExternalPluginManifest)> {
     let root = workspace_root.join(".evohime").join("plugins");
     let Ok(entries) = std::fs::read_dir(root) else {
         return Vec::new();

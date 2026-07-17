@@ -95,7 +95,10 @@ impl PipelineMetrics {
     }
 
     pub fn snapshot(&self) -> MetricsSnapshot {
-        let inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         MetricsSnapshot {
             tasks_started: inner.tasks_started,
             tasks_completed: inner.tasks_completed,
@@ -126,7 +129,10 @@ impl PipelineMetrics {
     }
 
     pub fn task_started(&self, session_id: Uuid, task_id: Uuid) {
-        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.tasks_started += 1;
         let span = tracing::info_span!(
             "task.pipeline",
@@ -150,7 +156,10 @@ impl PipelineMetrics {
 
     /// Re-attach timing for a resumed/paused task without bumping `tasks_started`.
     pub fn task_resumed(&self, session_id: Uuid, task_id: Uuid) {
-        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if let std::collections::hash_map::Entry::Vacant(entry) = inner.open_tasks.entry(task_id) {
             let span = tracing::info_span!(
                 "task.pipeline",
@@ -179,7 +188,10 @@ impl PipelineMetrics {
     }
 
     pub fn task_finished(&self, session_id: Uuid, task_id: Uuid, ok: bool) {
-        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let timed = inner.open_tasks.remove(&task_id);
         let elapsed = timed.as_ref().map(|t| t.started.elapsed());
         if let Some(timed) = timed {
@@ -223,7 +235,10 @@ impl PipelineMetrics {
     }
 
     pub fn plan_updated(&self, session_id: Uuid, task_id: Uuid, step_count: usize) {
-        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let first = inner.seen_plan.get(&task_id).copied().unwrap_or(false);
         if first {
             inner.plan_updates += 1;
@@ -253,7 +268,10 @@ impl PipelineMetrics {
     }
 
     pub fn tool_started(&self, session_id: Uuid, task_id: Uuid, tool_name: &str) {
-        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.tools_started += 1;
         let span = match inner.open_tasks.get(&task_id) {
             Some(parent) => tracing::info_span!(
@@ -287,14 +305,11 @@ impl PipelineMetrics {
             });
     }
 
-    pub fn tool_completed(
-        &self,
-        session_id: Uuid,
-        task_id: Uuid,
-        tool_name: &str,
-        success: bool,
-    ) {
-        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    pub fn tool_completed(&self, session_id: Uuid, task_id: Uuid, tool_name: &str, success: bool) {
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let key = (task_id, tool_name.to_string());
         let timed = {
             let queue = inner.open_tools.get_mut(&key);
@@ -350,8 +365,17 @@ impl PipelineMetrics {
         }
     }
 
-    pub fn approval_requested(&self, session_id: Uuid, task_id: Uuid, approval_id: Uuid, tool: &str) {
-        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    pub fn approval_requested(
+        &self,
+        session_id: Uuid,
+        task_id: Uuid,
+        approval_id: Uuid,
+        tool: &str,
+    ) {
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.approvals_requested += 1;
         let span = match inner.open_tasks.get(&task_id) {
             Some(parent) => tracing::info_span!(
@@ -393,7 +417,10 @@ impl PipelineMetrics {
         approval_id: Uuid,
         granted: bool,
     ) {
-        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let timed = inner.open_approvals.remove(&approval_id);
         let elapsed = timed.as_ref().map(|t| t.started.elapsed());
         if granted {
@@ -437,7 +464,10 @@ impl PipelineMetrics {
     }
 
     pub fn task_retry(&self, session_id: Uuid, task_id: Uuid) {
-        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.task_retries += 1;
         if let Some(timed) = inner.open_tasks.get(&task_id) {
             let _guard = timed.span.enter();
@@ -466,7 +496,10 @@ impl PipelineMetrics {
         duration_ms: u64,
         ok: bool,
     ) {
-        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.llm_calls += 1;
         if !ok {
             inner.llm_calls_failed += 1;

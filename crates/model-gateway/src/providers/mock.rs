@@ -1,6 +1,4 @@
-use crate::providers::{
-    ChatFuture, ChatMessage, ModelProvider, ProviderKind, TokenStream,
-};
+use crate::providers::{ChatFuture, ChatMessage, ModelProvider, ProviderKind, TokenStream};
 use crate::tools::{ChatResult, ChatStreamItem, NativeToolCall, ToolSpec};
 use async_stream::stream;
 use std::sync::Arc;
@@ -106,10 +104,7 @@ mod tests {
                 arguments: r#"{"path":"a.txt"}"#.into(),
             }],
         );
-        let result = provider
-            .chat_with_tools(None, &[], &[])
-            .await
-            .expect("ok");
+        let result = provider.chat_with_tools(None, &[], &[]).await.expect("ok");
         assert_eq!(result.tool_calls.len(), 1);
         assert_eq!(result.tool_calls[0].name, "filesystem.read");
     }

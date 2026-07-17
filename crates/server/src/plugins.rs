@@ -195,9 +195,10 @@ pub async fn list_plugin_catalog(
 ) -> Result<Json<PluginCatalogResponse>, ApiError> {
     let cached = load_catalog(&state).await?;
     let workspace_root = state.workspace_root.clone();
-    let installed = tokio::task::spawn_blocking(move || discover_installed_plugins(&workspace_root))
-        .await
-        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let installed =
+        tokio::task::spawn_blocking(move || discover_installed_plugins(&workspace_root))
+            .await
+            .map_err(|error| ApiError::Internal(error.to_string()))?;
     let mut installed_lookup: HashMap<String, InstalledPlugin> = HashMap::new();
     for plugin in installed {
         installed_lookup.insert(plugin.name.clone(), plugin.clone());
@@ -251,12 +252,9 @@ pub async fn install_plugin(
         .find(|entry| entry.name == name)
         .cloned()
         .ok_or_else(|| ApiError::BadRequest(format!("плагин `{name}` не найден в каталоге")))?;
-    let source_url = entry
-        .source_url
-        .clone()
-        .ok_or_else(|| {
-            ApiError::BadRequest(format!("плагин `{name}` нельзя установить из каталога"))
-        })?;
+    let source_url = entry.source_url.clone().ok_or_else(|| {
+        ApiError::BadRequest(format!("плагин `{name}` нельзя установить из каталога"))
+    })?;
     validate_https_git_url(&source_url)?;
     if let Some(path) = entry.source_path.as_deref() {
         validate_source_subdir(path)?;
@@ -496,9 +494,7 @@ fn resolve_source(
         MarketplaceSource::Path(path) => {
             let relative = normalize_relative_subdir(path);
             match (marketplace_git_url, relative) {
-                (Some(repo), Some(subdir)) => {
-                    (Some(repo.to_string()), Some(subdir), None)
-                }
+                (Some(repo), Some(subdir)) => (Some(repo.to_string()), Some(subdir), None),
                 _ => (None, None, None),
             }
         }
@@ -511,10 +507,7 @@ fn resolve_source(
                     .map(str::trim)
                     .filter(|value| !value.is_empty())
                     .map(str::to_string);
-                let path = object
-                    .path
-                    .as_deref()
-                    .and_then(normalize_relative_subdir);
+                let path = object.path.as_deref().and_then(normalize_relative_subdir);
                 return (url, path, object.git_ref.clone());
             }
             if kind == "github" {
@@ -525,10 +518,7 @@ fn resolve_source(
                     .filter(|value| !value.is_empty())
                 {
                     let url = format!("https://github.com/{repo}.git");
-                    let path = object
-                        .path
-                        .as_deref()
-                        .and_then(normalize_relative_subdir);
+                    let path = object.path.as_deref().and_then(normalize_relative_subdir);
                     return (Some(url), path, object.git_ref.clone());
                 }
             }
@@ -539,10 +529,7 @@ fn resolve_source(
                     .map(str::trim)
                     .filter(|value| !value.is_empty())
                     .map(str::to_string);
-                let path = object
-                    .path
-                    .as_deref()
-                    .and_then(normalize_relative_subdir);
+                let path = object.path.as_deref().and_then(normalize_relative_subdir);
                 return (url, path, object.git_ref.clone());
             }
             (None, None, None)
@@ -660,15 +647,38 @@ fn classify_plugin_group(
         ),
         (
             "security",
-            &["security", "owasp", "auth", "vulnerability", "compliance", "crypto"],
+            &[
+                "security",
+                "owasp",
+                "auth",
+                "vulnerability",
+                "compliance",
+                "crypto",
+            ],
         ),
         (
             "infrastructure",
-            &["devops", "docker", "kubernetes", "ci/cd", "terraform", "mcp", "deploy"],
+            &[
+                "devops",
+                "docker",
+                "kubernetes",
+                "ci/cd",
+                "terraform",
+                "mcp",
+                "deploy",
+            ],
         ),
         (
             "ai",
-            &["llm", "embedding", "model", "agent sdk", "prompt", "rag", "ml "],
+            &[
+                "llm",
+                "embedding",
+                "model",
+                "agent sdk",
+                "prompt",
+                "rag",
+                "ml ",
+            ],
         ),
         (
             "quality",
@@ -676,20 +686,46 @@ fn classify_plugin_group(
         ),
         (
             "business",
-            &["marketing", "seo", "sales", "finance", "crm", "growth", "saas"],
+            &[
+                "marketing",
+                "seo",
+                "sales",
+                "finance",
+                "crm",
+                "growth",
+                "saas",
+            ],
         ),
         (
             "product",
-            &["product", "roadmap", "research", "leadership", "pm ", "project management"],
+            &[
+                "product",
+                "roadmap",
+                "research",
+                "leadership",
+                "pm ",
+                "project management",
+            ],
         ),
-        ("design", &["design", "ui", "ux", "figma", "visual", "creative"]),
+        (
+            "design",
+            &["design", "ui", "ux", "figma", "visual", "creative"],
+        ),
         (
             "productivity",
-            &["productivity", "documentation", "notes", "journal", "writing"],
+            &[
+                "productivity",
+                "documentation",
+                "notes",
+                "journal",
+                "writing",
+            ],
         ),
         (
             "development",
-            &["api", "sdk", "backend", "frontend", "database", "code", "refactor"],
+            &[
+                "api", "sdk", "backend", "frontend", "database", "code", "refactor",
+            ],
         ),
     ];
 
@@ -732,11 +768,7 @@ fn validate_source_subdir(path: &str) -> Result<(), ApiError> {
     for component in candidate.components() {
         match component {
             Component::Normal(_) => {}
-            _ => {
-                return Err(ApiError::BadRequest(
-                    "некорректный subdir плагина".into(),
-                ))
-            }
+            _ => return Err(ApiError::BadRequest("некорректный subdir плагина".into())),
         }
     }
     Ok(())
@@ -1058,7 +1090,10 @@ mod tests {
             Some("https://github.com/obra/example.git")
         );
         assert_eq!(parsed.entries[2].git_ref.as_deref(), Some("dev"));
-        assert_eq!(parsed.entries[3].source_path.as_deref(), Some("plugins/demo"));
+        assert_eq!(
+            parsed.entries[3].source_path.as_deref(),
+            Some("plugins/demo")
+        );
         assert_eq!(parsed.entries[0].group, "workflow");
     }
 
@@ -1133,8 +1168,7 @@ mod tests {
 
     #[test]
     fn strips_windows_verbatim_prefix_for_git() {
-        let verbatim =
-            PathBuf::from(r"\\?\F:\github\EvoHime\.evohime\plugins\superpowers-chrome");
+        let verbatim = PathBuf::from(r"\\?\F:\github\EvoHime\.evohime\plugins\superpowers-chrome");
         assert_eq!(
             path_for_external_cli(&verbatim),
             PathBuf::from(r"F:\github\EvoHime\.evohime\plugins\superpowers-chrome")

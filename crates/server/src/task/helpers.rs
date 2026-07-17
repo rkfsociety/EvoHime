@@ -97,14 +97,16 @@ pub(crate) async fn emit_event(
     Ok(())
 }
 
-pub(crate) async fn find_session_for_task(state: &Arc<AppState>, task_id: Uuid) -> Result<Uuid, ApiError> {
+pub(crate) async fn find_session_for_task(
+    state: &Arc<AppState>,
+    task_id: Uuid,
+) -> Result<Uuid, ApiError> {
     let task = evohime_storage::load_task(&state.pool, task_id)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?
         .ok_or_else(|| ApiError::BadRequest("unknown task".to_string()))?;
     Ok(task.session_id)
 }
-
 
 #[cfg(test)]
 mod tests {

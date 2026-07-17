@@ -41,7 +41,9 @@ pub(crate) fn default_permission_audit_limit() -> i64 {
     200
 }
 
-pub(crate) fn approval_audit_to_row(entry: &ApprovalAuditEntry) -> evohime_storage::NewPermissionAudit {
+pub(crate) fn approval_audit_to_row(
+    entry: &ApprovalAuditEntry,
+) -> evohime_storage::NewPermissionAudit {
     evohime_storage::NewPermissionAudit {
         approval_id: entry.approval_id,
         task_id: entry.task_id,
@@ -123,7 +125,9 @@ pub(crate) async fn list_tools(State(state): State<Arc<AppState>>) -> Json<Vec<T
     Json(tools)
 }
 
-pub(crate) async fn list_mcp_servers(State(state): State<Arc<AppState>>) -> Json<Vec<McpServerConfig>> {
+pub(crate) async fn list_mcp_servers(
+    State(state): State<Arc<AppState>>,
+) -> Json<Vec<McpServerConfig>> {
     Json(state.mcp_servers.lock().await.clone())
 }
 
@@ -221,8 +225,8 @@ pub(crate) async fn permission_settings_value(state: &AppState) -> Value {
 
 pub(crate) async fn persist_permission_scopes(state: &AppState) -> Result<(), ApiError> {
     let snapshot = state.permissions.export_scopes().await;
-    let value = serde_json::to_value(&snapshot)
-        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let value =
+        serde_json::to_value(&snapshot).map_err(|error| ApiError::Internal(error.to_string()))?;
     evohime_storage::save_setting(&state.pool, "permission_scopes", &value)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
@@ -233,7 +237,9 @@ pub(crate) fn duration_to_ms(duration: Duration) -> u64 {
     duration.as_millis().min(u128::from(u64::MAX)) as u64
 }
 
-pub(crate) fn validate_mcp_server(mut server: McpServerConfig) -> Result<McpServerConfig, ApiError> {
+pub(crate) fn validate_mcp_server(
+    mut server: McpServerConfig,
+) -> Result<McpServerConfig, ApiError> {
     server.name = server.name.trim().to_string();
     server.url = server.url.trim().to_string();
     if server.name.is_empty() {
@@ -262,4 +268,3 @@ pub(crate) fn validate_mcp_server(mut server: McpServerConfig) -> Result<McpServ
 
     Ok(server)
 }
-

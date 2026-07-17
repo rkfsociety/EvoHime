@@ -2,13 +2,7 @@ use crate::{ToolContext, ToolError, ToolResult};
 use evohime_permissions::Permission;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::{
-    fs,
-    io::ErrorKind,
-    path::Path,
-    process::Stdio,
-    time::Duration,
-};
+use std::{fs, io::ErrorKind, path::Path, process::Stdio, time::Duration};
 use tokio::process::Command;
 
 pub const NAME: &str = "filesystem.search";
@@ -143,11 +137,7 @@ async fn ripgrep_search(
     for line in String::from_utf8_lossy(&output.stdout).lines() {
         if let Ok(item) = serde_json::from_str::<Value>(line) {
             if item["type"] == "match" {
-                for sub in item["data"]["lines"]["text"]
-                    .as_str()
-                    .unwrap_or("")
-                    .lines()
-                {
+                for sub in item["data"]["lines"]["text"].as_str().unwrap_or("").lines() {
                     matches.push(json!({
                         "path": item["data"]["path"]["text"],
                         "line": item["data"]["line_number"],
@@ -187,7 +177,7 @@ fn fallback_search(
             };
             if file_type.is_dir() {
                 let name = entry.file_name().to_string_lossy().to_string();
-                if SKIP_DIR_NAMES.iter().any(|skip| *skip == name.as_str()) {
+                if SKIP_DIR_NAMES.contains(&name.as_str()) {
                     continue;
                 }
                 stack.push(path);
@@ -201,7 +191,8 @@ fn fallback_search(
                     continue;
                 }
             }
-            if let Some(file_matches) = scan_file(workspace_root, &path, query, limit - matches.len())
+            if let Some(file_matches) =
+                scan_file(workspace_root, &path, query, limit - matches.len())
             {
                 matches.extend(file_matches);
                 if matches.len() >= limit {
@@ -271,11 +262,7 @@ fn path_matches_glob(path: &Path, pattern: &str) -> bool {
     if pattern.contains('*') {
         return wildcard_match(file_name, pattern);
     }
-    file_name == pattern
-        || path
-            .to_string_lossy()
-            .replace('\\', "/")
-            .ends_with(pattern)
+    file_name == pattern || path.to_string_lossy().replace('\\', "/").ends_with(pattern)
 }
 
 fn wildcard_match(text: &str, pattern: &str) -> bool {
@@ -289,9 +276,7 @@ fn wildcard_match(text: &str, pattern: &str) -> bool {
             let rest: String = pattern_chars.collect();
             let remainder: String = text_chars.collect();
             for index in 0..=remainder.len() {
-                if remainder.is_char_boundary(index)
-                    && wildcard_match(&remainder[index..], &rest)
-                {
+                if remainder.is_char_boundary(index) && wildcard_match(&remainder[index..], &rest) {
                     return true;
                 }
             }
@@ -329,7 +314,7 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
-}
+        }
     }
 
     #[tokio::test]
@@ -352,8 +337,7 @@ mod tests {
         assert_eq!(result.structured["count"], 1);
         assert_eq!(result.structured["matches"].as_array().unwrap().len(), 1);
         assert!(
-            result.structured["engine"] == "ripgrep"
-                || result.structured["engine"] == "fallback"
+            result.structured["engine"] == "ripgrep" || result.structured["engine"] == "fallback"
         );
     }
 
@@ -406,13 +390,7 @@ mod tests {
         std::fs::write(dir.path().join("nested").join("b.md"), "needle two").expect("write b");
         std::fs::write(dir.path().join("skip.bin"), b"needle\0binary").expect("binary");
 
-        let matches = fallback_search(
-            dir.path(),
-            dir.path(),
-            "needle",
-            Some("*.md"),
-            10,
-        );
+        let matches = fallback_search(dir.path(), dir.path(), "needle", Some("*.md"), 10);
         assert_eq!(matches.len(), 1);
         assert!(matches[0]["path"].as_str().unwrap().ends_with("b.md"));
         assert_eq!(matches[0]["line"], 1);

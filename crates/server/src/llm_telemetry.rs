@@ -9,22 +9,15 @@ pub struct PipelineLlmTelemetry {
 }
 
 impl PipelineLlmTelemetry {
-    pub fn new(metrics: Arc<PipelineMetrics>) -> Arc<dyn LlmTelemetry> {
+    pub fn shared(metrics: Arc<PipelineMetrics>) -> Arc<dyn LlmTelemetry> {
         Arc::new(Self { metrics })
     }
 }
 
 impl LlmTelemetry for PipelineLlmTelemetry {
     fn record(&self, call: &LlmCallRecord) {
-        let usage = call
-            .usage
-            .map(|u| (u.prompt_tokens, u.completion_tokens));
-        self.metrics.llm_call(
-            call.phase,
-            &call.model,
-            usage,
-            call.duration_ms,
-            call.ok,
-        );
+        let usage = call.usage.map(|u| (u.prompt_tokens, u.completion_tokens));
+        self.metrics
+            .llm_call(call.phase, &call.model, usage, call.duration_ms, call.ok);
     }
 }

@@ -46,10 +46,7 @@ impl RetryPolicy {
 }
 
 pub fn is_retryable_status(status: StatusCode) -> bool {
-    matches!(
-        status.as_u16(),
-        408 | 429 | 500 | 502 | 503 | 504
-    )
+    matches!(status.as_u16(), 408 | 429 | 500 | 502 | 503 | 504)
 }
 
 /// Parse `Retry-After` as delta-seconds. HTTP-date forms are ignored (use backoff).

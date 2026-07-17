@@ -94,11 +94,16 @@ pub(crate) async fn execute_plan_steps(
     let mut mutation_executed = false;
 
     for batch in batches {
-        let step_results = join_all(batch.iter().map(|step| {
-            let step = step.clone();
-            async move { execute_single_plan_step(&step, config, gateway, tools, event_tx).await }
-        }))
-        .await;
+        let step_results =
+            join_all(
+                batch.iter().map(|step| {
+                    let step = step.clone();
+                    async move {
+                        execute_single_plan_step(&step, config, gateway, tools, event_tx).await
+                    }
+                }),
+            )
+            .await;
 
         for (step, result) in batch.into_iter().zip(step_results) {
             match result {
@@ -318,7 +323,11 @@ pub(crate) fn requires_mutation(message: &str) -> bool {
     .any(|marker| message.contains(marker))
 }
 
-pub(crate) fn tool_input(tool_name: &str, description: &str, workspace_root: &Path) -> Option<Value> {
+pub(crate) fn tool_input(
+    tool_name: &str,
+    description: &str,
+    workspace_root: &Path,
+) -> Option<Value> {
     if let Some(mut structured) = structured_json_input(tool_name, description) {
         if tool_name == "shell.execute" {
             normalize_shell_program_alias(&mut structured)?;
@@ -388,21 +397,9 @@ pub(crate) fn structured_json_input(tool_name: &str, description: &str) -> Optio
     }
     let value = serde_json::from_str::<Value>(trimmed).ok()?;
     match tool_name {
-        "shell.execute"
-        | "browser.open"
-        | "browser.extract"
-        | "mcp.call"
-        | "memory.search"
-        | "agent.run"
-        | "worker.run"
-        | "git.diff"
-        | "git.pull"
-        | "git.push"
-        | "git.status"
-        | "git.commit"
-        | "filesystem.read"
-        | "filesystem.list"
-        | "filesystem.search" => {
+        "shell.execute" | "browser.open" | "browser.extract" | "mcp.call" | "memory.search"
+        | "agent.run" | "worker.run" | "git.diff" | "git.pull" | "git.push" | "git.status"
+        | "git.commit" | "filesystem.read" | "filesystem.list" | "filesystem.search" => {
             if value.is_object() {
                 Some(value)
             } else if value.is_null() {
@@ -456,13 +453,15 @@ pub(crate) async fn execute_memory_search(
             )
         })
         .collect();
-    Ok(evohime_tool_runtime::memory::format_results(&query, &entries))
+    Ok(evohime_tool_runtime::memory::format_results(
+        &query, &entries,
+    ))
 }
 
 pub(crate) fn extract_url(description: &str) -> Option<String> {
-    if let Some(url) = extract_backticked(description).filter(|value| {
-        value.starts_with("http://") || value.starts_with("https://")
-    }) {
+    if let Some(url) = extract_backticked(description)
+        .filter(|value| value.starts_with("http://") || value.starts_with("https://"))
+    {
         return Some(url);
     }
     for token in description.split_whitespace() {

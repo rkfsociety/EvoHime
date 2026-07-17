@@ -2,12 +2,11 @@
 use crate::app::AppState;
 use crate::permissions_api::permission_name;
 use crate::sessions_api::summarize_session_title;
-use crate::task::helpers::{
-    emit_event, load_chat_history, map_agent_error, resolve_model_route,
-};
+use crate::task::helpers::{emit_event, load_chat_history, map_agent_error, resolve_model_route};
 use crate::task::memory::{apply_task_memory_feedback, persist_structured_memory};
 use crate::task::steps::{
-    build_agent_resume_context, finalize_open_task_steps, persist_task_plan, update_task_step_status,
+    build_agent_resume_context, finalize_open_task_steps, persist_task_plan,
+    update_task_step_status,
 };
 use crate::ApiError;
 use axum::{extract::State, Json};
@@ -95,11 +94,9 @@ pub(crate) async fn run_task_pipeline(
     let memory_notes = structured
         .entries
         .into_iter()
-        .map(|entry| {
-            match (&entry.scope, &entry.status) {
-                (Some(scope), Some(status)) => format!("[{scope}/{status}] {}", entry.content),
-                _ => entry.content,
-            }
+        .map(|entry| match (&entry.scope, &entry.status) {
+            (Some(scope), Some(status)) => format!("[{scope}/{status}] {}", entry.content),
+            _ => entry.content,
         })
         .collect::<Vec<_>>();
 
@@ -190,7 +187,7 @@ pub(crate) async fn run_task_pipeline(
         is_subagent: false,
         subagent_depth: 0,
         subagent_max_steps: None,
-        telemetry: Some(crate::llm_telemetry::PipelineLlmTelemetry::new(
+        telemetry: Some(crate::llm_telemetry::PipelineLlmTelemetry::shared(
             state.metrics.clone(),
         )),
     };
@@ -406,7 +403,8 @@ pub(crate) async fn run_task_pipeline(
             Err(error) => {
                 let err_msg = error.to_string();
                 state.metrics.task_finished(session_id, task.id, false);
-                apply_task_memory_feedback(state, session_id, task.id, &used_memory_ids, false).await;
+                apply_task_memory_feedback(state, session_id, task.id, &used_memory_ids, false)
+                    .await;
                 persist_structured_memory(
                     state,
                     &gateway,
@@ -466,4 +464,3 @@ pub(crate) async fn list_tasks(
         .map(Json)
         .map_err(|error| ApiError::Internal(error.to_string()))
 }
-

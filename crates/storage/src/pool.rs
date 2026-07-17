@@ -36,7 +36,8 @@ impl Default for PoolConfig {
 impl PoolConfig {
     pub fn from_env() -> Self {
         let defaults = Self::default();
-        let max_connections = env_u32("EVOHIME_PG_MAX_CONNECTIONS", defaults.max_connections).max(1);
+        let max_connections =
+            env_u32("EVOHIME_PG_MAX_CONNECTIONS", defaults.max_connections).max(1);
         let mut min_connections = env_u32("EVOHIME_PG_MIN_CONNECTIONS", defaults.min_connections);
         if min_connections > max_connections {
             min_connections = max_connections;
@@ -140,9 +141,11 @@ mod tests {
 
     #[test]
     fn clamps_min_connections_to_max() {
-        let mut config = PoolConfig::default();
-        config.max_connections = 4;
-        config.min_connections = 8;
+        let mut config = PoolConfig {
+            max_connections: 4,
+            min_connections: 8,
+            ..PoolConfig::default()
+        };
         if config.min_connections > config.max_connections {
             config.min_connections = config.max_connections;
         }

@@ -64,10 +64,7 @@ pub(crate) async fn collect_gateway_text(
         }
         Some(output)
     };
-    tokio::time::timeout(timeout, collect)
-        .await
-        .ok()
-        .flatten()
+    tokio::time::timeout(timeout, collect).await.ok().flatten()
 }
 
 pub(crate) async fn llm_extract_memory_json(
@@ -295,10 +292,7 @@ pub(crate) async fn handle_memory_decision(
                     state,
                     session_id,
                     Some(task_id),
-                    ServerEvent::MemoryAccepted {
-                        memory_id,
-                        task_id,
-                    },
+                    ServerEvent::MemoryAccepted { memory_id, task_id },
                 )
                 .await;
             }
@@ -318,10 +312,7 @@ pub(crate) async fn handle_memory_decision(
                     state,
                     session_id,
                     Some(task_id),
-                    ServerEvent::MemoryRejected {
-                        memory_id,
-                        task_id,
-                    },
+                    ServerEvent::MemoryRejected { memory_id, task_id },
                 )
                 .await;
             }
@@ -330,7 +321,6 @@ pub(crate) async fn handle_memory_decision(
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

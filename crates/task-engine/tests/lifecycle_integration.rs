@@ -3,11 +3,11 @@
 //! Covers: start → pause → resume → complete, fail → retry,
 //! and recover_after_restart. Skips when Postgres is unavailable.
 
+use evohime_protocol::TaskStatus;
 use evohime_task_engine::{
     cancel_task, complete_task, fail_task, pause_task, recover_after_restart, resume_task,
     retry_task, start_task, transition, TaskEngineError,
 };
-use evohime_protocol::TaskStatus;
 use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -97,16 +97,9 @@ async fn fail_retry_and_recover_running_after_restart() {
     let retried = retry_task(&pool, failed_task.id).await.expect("retry");
     assert_eq!(retried.status, "running");
 
-    let running = start_task(
-        &pool,
-        session.id,
-        "integration recovery",
-        None,
-        None,
-        None,
-    )
-    .await
-    .expect("start running");
+    let running = start_task(&pool, session.id, "integration recovery", None, None, None)
+        .await
+        .expect("start running");
     assert_eq!(running.status, "running");
 
     let recovered = recover_after_restart(&pool).await.expect("recover");
@@ -120,10 +113,14 @@ async fn fail_retry_and_recover_running_after_restart() {
         .expect("task");
     assert_eq!(loaded.status, "paused");
 
-    let resumed = resume_task(&pool, running.id).await.expect("resume after recovery");
+    let resumed = resume_task(&pool, running.id)
+        .await
+        .expect("resume after recovery");
     assert_eq!(resumed.status, "running");
     complete_task(&pool, running.id).await.expect("complete");
-    complete_task(&pool, failed_task.id).await.expect("complete retried");
+    complete_task(&pool, failed_task.id)
+        .await
+        .expect("complete retried");
 }
 
 #[tokio::test]
@@ -147,16 +144,21 @@ async fn cancel_via_fsm_and_reject_illegal_transition() {
         .expect_err("completed from cancelled must fail");
     assert!(matches!(err, TaskEngineError::InvalidTransition { .. }));
 
-    let paused = start_task(&pool, session.id, "integration cancel paused", None, None, None)
-        .await
-        .expect("start paused path");
+    let paused = start_task(
+        &pool,
+        session.id,
+        "integration cancel paused",
+        None,
+        None,
+        None,
+    )
+    .await
+    .expect("start paused path");
     pause_task(&pool, paused.id).await.expect("pause");
     let cancelled_paused = cancel_task(&pool, paused.id).await.expect("cancel paused");
     assert_eq!(cancelled_paused.status, "cancelled");
 
     let missing = Uuid::new_v4();
-    let not_found = cancel_task(&pool, missing)
-        .await
-        .expect_err("missing task");
+    let not_found = cancel_task(&pool, missing).await.expect_err("missing task");
     assert!(matches!(not_found, TaskEngineError::NotFound(id) if id == missing));
 }

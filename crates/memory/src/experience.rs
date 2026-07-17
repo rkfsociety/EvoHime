@@ -35,7 +35,12 @@ impl PlaybookPayload {
             .collect::<Vec<_>>()
             .join(" → ");
         let mut text = format!("When {}: {}", self.trigger.trim(), steps);
-        if let Some(verify) = self.verify.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        if let Some(verify) = self
+            .verify
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
             text.push_str(&format!(" | verify: {verify}"));
         }
         if let Some(rollback) = self

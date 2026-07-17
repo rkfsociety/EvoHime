@@ -45,7 +45,10 @@ pub fn format_results(query: &str, entries: &[(String, String, String, f64)]) ->
             }),
         };
     }
-    let mut lines = vec![format!("memory.search ({query}): {} match(es)", entries.len())];
+    let mut lines = vec![format!(
+        "memory.search ({query}): {} match(es)",
+        entries.len()
+    )];
     let matches: Vec<Value> = entries
         .iter()
         .enumerate()

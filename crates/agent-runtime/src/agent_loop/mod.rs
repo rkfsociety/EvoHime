@@ -9,8 +9,7 @@ mod plan;
 mod tool_budget;
 mod util;
 
-pub use parse::parse_plan;
-pub use tool_budget::{budget_tool_result_list, budget_tool_results, truncate_tool_result, ToolResultBudget};
+pub use tool_budget::{budget_tool_result_list, budget_tool_results, ToolResultBudget};
 
 use chrono::{DateTime, Utc};
 use evohime_model_gateway::{providers::ChatMessage, providers::ChatRole, ModelGateway};
@@ -19,10 +18,7 @@ use evohime_protocol::{PlanStep, ServerEvent};
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use futures_util::StreamExt;
 use serde_json::json;
-use std::{
-    collections::HashSet,
-    path::PathBuf,
-};
+use std::{collections::HashSet, path::PathBuf};
 use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
@@ -209,7 +205,7 @@ async fn run_agent_loop_inner(
                     task_id: config.task_id,
                     session_id: Some(config.session_id),
                     progress_tx: None,
-};
+                };
                 let tool_result = tools
                     .execute(
                         &tool_ctx,
@@ -308,17 +304,11 @@ async fn run_agent_loop_inner(
             let outputs = budget_tool_result_list(&outputs, ToolResultBudget::from_env());
             (existing_plan, outputs, mutation, newly_satisfied, false)
         } else {
-            let mut plan = match collect_plan_steps(
-                gateway,
-                &config,
-                tools,
-                &planning_messages,
-            )
-            .await
-            {
-                Ok(plan) => plan,
-                Err(error) => return Err(error),
-            };
+            let mut plan =
+                match collect_plan_steps(gateway, &config, tools, &planning_messages).await {
+                    Ok(plan) => plan,
+                    Err(error) => return Err(error),
+                };
             let mut truncated = false;
             if let Some(max_steps) = config.subagent_max_steps {
                 if plan.len() > max_steps {
@@ -467,8 +457,7 @@ async fn run_agent_loop_inner(
         });
     }
     messages.extend(history);
-    let tool_results_for_prompt =
-        budget_tool_results(&plan_outputs, ToolResultBudget::from_env());
+    let tool_results_for_prompt = budget_tool_results(&plan_outputs, ToolResultBudget::from_env());
     let context = format!(
         "{}\n\nPlan tool results:\n{}",
         tool_output, tool_results_for_prompt
@@ -531,7 +520,12 @@ async fn run_agent_loop_inner(
         })
         .await
     };
-    let ok = stream_result.is_ok() && stream_result.as_ref().ok().map(|r| r.is_ok()).unwrap_or(false);
+    let ok = stream_result.is_ok()
+        && stream_result
+            .as_ref()
+            .ok()
+            .map(|r| r.is_ok())
+            .unwrap_or(false);
     crate::llm_telemetry::finish_llm_span(
         &llm_span,
         llm_started,
@@ -596,16 +590,18 @@ async fn run_agent_loop_inner(
     })
 }
 
-
 const SYSTEM_PROMPT: &str = "You are EvoHime, a helpful AI coding assistant. Follow the workspace rules supplied in the system context, preserve user intent, never claim a change was made unless a tool result confirms it, and answer concisely using the provided workspace context. When an action is required, return an explicit JSON tool.call object with type, tool, and input; do not merely describe the call.";
-
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::execute::{dependency_batches_pending, is_mutating_tool, tool_input};
-    use super::parse::{default_plan, REGISTERED_TOOLS};
-    use std::{collections::HashSet, path::{Path, PathBuf}, time::Duration};
+    use super::parse::{default_plan, parse_plan, REGISTERED_TOOLS};
+    use super::*;
+    use std::{
+        collections::HashSet,
+        path::{Path, PathBuf},
+        time::Duration,
+    };
 
     #[test]
     fn relative_path_from_workspace() {
@@ -840,8 +836,8 @@ mod tests {
         let extract = parse_plan(
             r#"{"type":"tool.call","tool":"browser.extract","input":{"url":"https://example.com","selector":"h1"}}"#,
         );
-        let extract_input =
-            tool_input("browser.extract", &extract[0].description, Path::new(".")).expect("extract");
+        let extract_input = tool_input("browser.extract", &extract[0].description, Path::new("."))
+            .expect("extract");
         assert_eq!(extract_input["selector"], "h1");
 
         let mcp = parse_plan(
@@ -1267,15 +1263,12 @@ impl evohime_model_gateway::providers::ModelProvider for RecordingProvider {
             .expect("responses")
             .pop_front()
             .unwrap_or_default();
-        Box::pin(futures_util::stream::iter(
-            response
-                .into_iter()
-                .map(|chunk| {
-                    Ok::<_, evohime_model_gateway::providers::ProviderError>(
-                        evohime_model_gateway::ChatStreamItem::Delta(chunk),
-                    )
-                }),
-        ))
+        Box::pin(futures_util::stream::iter(response.into_iter().map(
+            |chunk| {
+                Ok::<_, evohime_model_gateway::providers::ProviderError>(
+                    evohime_model_gateway::ChatStreamItem::Delta(chunk),
+                )
+            },
+        )))
     }
 }
-

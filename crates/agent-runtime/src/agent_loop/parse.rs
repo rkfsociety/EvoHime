@@ -236,7 +236,10 @@ pub(crate) fn parse_tagged_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {
     (!steps.is_empty()).then(|| normalize_plan(steps))
 }
 
-pub(crate) fn tool_call_description(tool_name: &str, input: &serde_json::Map<String, Value>) -> String {
+pub(crate) fn tool_call_description(
+    tool_name: &str,
+    input: &serde_json::Map<String, Value>,
+) -> String {
     match tool_name {
         "filesystem.write" => format!(
             "path: {}\n```\n{}\n```",

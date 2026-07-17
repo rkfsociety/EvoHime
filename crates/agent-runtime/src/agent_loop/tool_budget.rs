@@ -138,7 +138,9 @@ mod tests {
         };
         let list = budget_tool_result_list(&outputs, budget);
         assert!(!list.is_empty());
-        assert!(list.last().unwrap().starts_with("new-") || list.iter().any(|s| s.contains("new-")));
+        assert!(
+            list.last().unwrap().starts_with("new-") || list.iter().any(|s| s.contains("new-"))
+        );
         let total: usize = list.iter().map(|s| s.chars().count()).sum();
         assert!(total <= 1_500 + 64);
     }

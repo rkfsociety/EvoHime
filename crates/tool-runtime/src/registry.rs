@@ -391,7 +391,7 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
-};
+        };
         let results = registry
             .execute_parallel(
                 &context,
@@ -429,7 +429,7 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
-};
+        };
         let token = tokio_util::sync::CancellationToken::new();
         token.cancel();
         let result = registry
@@ -461,7 +461,7 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
-};
+        };
         let token = CancellationToken::new();
         let (program, args) = if cfg!(windows) {
             ("ping", vec!["-n", "5", "127.0.0.1"])
@@ -520,7 +520,7 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
-};
+        };
         let result = registry
             .execute(
                 &context,
@@ -575,7 +575,7 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: Some(session_id),
             progress_tx: None,
-};
+        };
         let err = registry
             .execute(
                 &context,

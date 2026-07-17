@@ -42,7 +42,9 @@ pub fn detect_conflict(
             continue;
         }
 
-        if opposing_polarity(&candidate_fp, &existing_fp) && topic_overlap(&candidate_fp, &existing_fp) {
+        if opposing_polarity(&candidate_fp, &existing_fp)
+            && topic_overlap(&candidate_fp, &existing_fp)
+        {
             return Some(ConflictHit {
                 existing_id: item.id,
                 reason: "opposing polarity on overlapping topic".into(),
@@ -82,7 +84,10 @@ fn topic_overlap(a: &str, b: &str) -> bool {
 
     let tokens = |text: &str| -> HashSet<String> {
         text.split_whitespace()
-            .map(|t| t.trim_matches(|c: char| !c.is_ascii_alphanumeric()).to_ascii_lowercase())
+            .map(|t| {
+                t.trim_matches(|c: char| !c.is_ascii_alphanumeric())
+                    .to_ascii_lowercase()
+            })
             .filter(|t| t.len() > 2 && !stop.contains(t.as_str()))
             .collect()
     };

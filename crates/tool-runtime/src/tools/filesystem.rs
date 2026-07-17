@@ -62,7 +62,7 @@ mod tests {
             task_id: uuid::Uuid::nil(),
             session_id: None,
             progress_tx: None,
-};
+        };
         let result = execute(&ctx, json!({ "path": "demo.txt" }))
             .await
             .expect("read succeeds");
@@ -79,7 +79,7 @@ mod tests {
             task_id: uuid::Uuid::nil(),
             session_id: None,
             progress_tx: None,
-};
+        };
 
         let error = execute(&ctx, json!({ "path": ".." }))
             .await

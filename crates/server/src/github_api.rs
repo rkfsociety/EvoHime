@@ -272,7 +272,10 @@ pub(crate) fn load_pull_request_detail(
     })
 }
 
-pub(crate) fn run_gh_command(workspace_root: &std::path::Path, args: &[String]) -> Result<String, String> {
+pub(crate) fn run_gh_command(
+    workspace_root: &std::path::Path,
+    args: &[String],
+) -> Result<String, String> {
     let output = std::process::Command::new("gh")
         .current_dir(workspace_root)
         .args(args)
@@ -344,4 +347,3 @@ pub(crate) fn parse_checks(value: Option<&Value>) -> Vec<GithubCheck> {
         })
         .collect()
 }
-

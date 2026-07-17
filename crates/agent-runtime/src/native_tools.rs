@@ -212,8 +212,12 @@ mod tests {
     fn builds_openai_tools_including_assistant_reply() {
         let tools = ToolRegistry::bootstrap_with_permissions(PermissionEngine::new());
         let specs = openai_tools_for_registry(&tools);
-        assert!(specs.iter().any(|spec| spec.function.name == "filesystem.read"));
-        assert!(specs.iter().any(|spec| spec.function.name == "assistant.reply"));
+        assert!(specs
+            .iter()
+            .any(|spec| spec.function.name == "filesystem.read"));
+        assert!(specs
+            .iter()
+            .any(|spec| spec.function.name == "assistant.reply"));
     }
 
     #[test]

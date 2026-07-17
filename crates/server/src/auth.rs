@@ -76,9 +76,14 @@ pub fn is_loopback_addr(addr: &SocketAddr) -> bool {
 }
 
 pub fn extract_token(headers: &axum::http::HeaderMap, query: Option<&str>) -> Option<String> {
-    if let Some(value) = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()) {
+    if let Some(value) = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+    {
         let value = value.trim();
-        if let Some(token) = value.strip_prefix("Bearer ").or_else(|| value.strip_prefix("bearer "))
+        if let Some(token) = value
+            .strip_prefix("Bearer ")
+            .or_else(|| value.strip_prefix("bearer "))
         {
             let token = token.trim();
             if !token.is_empty() {
@@ -192,11 +197,7 @@ pub async fn require_local_auth(
     let presented = extract_token(request.headers(), query.as_deref());
     match authorize_request(&state.auth, &path, Some(addr), presented.as_deref()) {
         Ok(()) => next.run(request).await,
-        Err(status) => (
-            status,
-            Json(crate::api_error::unauthorized_json()),
-        )
-            .into_response(),
+        Err(status) => (status, Json(crate::api_error::unauthorized_json())).into_response(),
     }
 }
 
@@ -217,7 +218,9 @@ mod tests {
 
     #[test]
     fn public_paths_always_open() {
-        let config = AuthConfig { api_token: Some("secret".into()) };
+        let config = AuthConfig {
+            api_token: Some("secret".into()),
+        };
         let remote = "192.168.1.5:9".parse().unwrap();
         assert!(authorize_request(&config, "/health", Some(remote), None).is_ok());
         assert!(authorize_request(&config, "/api/auth/status", Some(remote), None).is_ok());
@@ -254,8 +257,7 @@ mod tests {
         assert_eq!(extract_token(&headers, None).as_deref(), Some("xyz"));
 
         assert_eq!(
-            extract_token(&axum::http::HeaderMap::new(), Some("access_token=tok%2Ben"))
-                .as_deref(),
+            extract_token(&axum::http::HeaderMap::new(), Some("access_token=tok%2Ben")).as_deref(),
             Some("tok+en")
         );
     }

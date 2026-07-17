@@ -83,7 +83,12 @@ pub async fn list_memory(
     State(state): State<Arc<AppState>>,
     Query(query): Query<ListMemoryQuery>,
 ) -> Result<Json<MemoryListResponse>, ApiError> {
-    let scope = match query.scope.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    let scope = match query
+        .scope
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         Some(raw) => Some(
             MemoryScope::parse(raw)
                 .ok_or_else(|| ApiError::BadRequest(format!("unknown memory scope: {raw}")))?,
@@ -140,7 +145,12 @@ pub async fn update_memory(
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateMemoryRequest>,
 ) -> Result<Json<MemoryItemRow>, ApiError> {
-    let status = match body.status.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+    let status = match body
+        .status
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
         Some(raw) => Some(
             MemoryStatus::parse(raw)
                 .ok_or_else(|| ApiError::BadRequest(format!("unknown memory status: {raw}")))?,

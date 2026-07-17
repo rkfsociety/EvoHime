@@ -93,9 +93,7 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
     tokio::spawn(async move {
         while let Some(entry) = audit_rx.recv().await {
             let row = approval_audit_to_row(&entry);
-            if let Err(error) =
-                evohime_storage::insert_permission_audit(&audit_pool, &row).await
-            {
+            if let Err(error) = evohime_storage::insert_permission_audit(&audit_pool, &row).await {
                 warn!(error = %error, approval_id = %entry.approval_id, "failed to persist permission audit");
             }
         }
@@ -148,7 +146,10 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
     match evohime_storage::import_legacy_memory_notes(&state.pool).await {
         Ok(imported) => {
             if imported > 0 {
-                info!(imported, "imported legacy session/global memory notes into memory_items");
+                info!(
+                    imported,
+                    "imported legacy session/global memory notes into memory_items"
+                );
             } else {
                 info!("legacy memory import: nothing new (already migrated or empty)");
             }
@@ -196,7 +197,10 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
         info!("EVOHIME_AUTO_RESUME_ON_RESTART enabled: mutating tasks may auto-resume");
     }
     if !recovered.is_empty() {
-        info!(count = recovered.len(), "tasks paused after crash (were running/cancelling)");
+        info!(
+            count = recovered.len(),
+            "tasks paused after crash (were running/cancelling)"
+        );
         for task in recovered {
             let task_id = task.id;
             let session_id = task.session_id;
@@ -306,7 +310,6 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
             });
         }
     }
-
 
     Ok(StartupInfo {
         state,

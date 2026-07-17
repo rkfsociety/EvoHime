@@ -20,18 +20,39 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             "/api/models/config",
             get(crate::models_api::model_config).put(crate::models_api::update_model_config),
         )
-        .route("/api/models/available", get(crate::models_api::available_models))
-        .route("/api/sessions", get(crate::sessions_api::list_sessions).post(crate::sessions_api::create_session))
-        .route("/api/sessions/archived", get(crate::sessions_api::list_archived_sessions))
-        .route("/api/sessions/:session_id", delete(crate::sessions_api::delete_session))
-        .route("/api/sessions/:session_id/archive", post(crate::sessions_api::archive_session))
-        .route("/api/sessions/:session_id/history", get(crate::sessions_api::session_history))
+        .route(
+            "/api/models/available",
+            get(crate::models_api::available_models),
+        )
+        .route(
+            "/api/sessions",
+            get(crate::sessions_api::list_sessions).post(crate::sessions_api::create_session),
+        )
+        .route(
+            "/api/sessions/archived",
+            get(crate::sessions_api::list_archived_sessions),
+        )
+        .route(
+            "/api/sessions/:session_id",
+            delete(crate::sessions_api::delete_session),
+        )
+        .route(
+            "/api/sessions/:session_id/archive",
+            post(crate::sessions_api::archive_session),
+        )
+        .route(
+            "/api/sessions/:session_id/history",
+            get(crate::sessions_api::session_history),
+        )
         .route("/api/auth/github", get(crate::github_api::github_auth))
         .route(
             "/api/github/pull-requests",
             get(crate::github_api::list_pull_requests).post(crate::github_api::create_pull_request),
         )
-        .route("/api/github/pull-requests/:number", get(crate::github_api::get_pull_request))
+        .route(
+            "/api/github/pull-requests/:number",
+            get(crate::github_api::get_pull_request),
+        )
         .route("/api/files", get(workspace::list_files))
         .route(
             "/api/projects",
@@ -49,14 +70,35 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/git/pull", post(workspace::git_pull))
         .route("/api/git/push", post(workspace::git_push))
         .route("/api/tasks", get(crate::task::list_tasks))
-        .route("/api/worker/jobs", get(crate::worker_api::list_worker_jobs).post(crate::worker_api::create_worker_job))
-        .route("/api/worker/jobs/:job_id", get(crate::worker_api::get_worker_job))
-        .route("/api/worker/jobs/:job_id/retry", post(crate::worker_api::retry_worker_job))
+        .route(
+            "/api/worker/jobs",
+            get(crate::worker_api::list_worker_jobs).post(crate::worker_api::create_worker_job),
+        )
+        .route(
+            "/api/worker/jobs/:job_id",
+            get(crate::worker_api::get_worker_job),
+        )
+        .route(
+            "/api/worker/jobs/:job_id/retry",
+            post(crate::worker_api::retry_worker_job),
+        )
         .route("/api/worker/status", get(crate::worker_api::worker_status))
-        .route("/api/permissions", get(crate::permissions_api::list_permissions))
-        .route("/api/permissions/audit", get(crate::permissions_api::list_permission_audit))
-        .route("/api/permissions/scopes", get(crate::permissions_api::list_permission_scopes))
-        .route("/api/permissions/:permission", put(crate::permissions_api::update_permission))
+        .route(
+            "/api/permissions",
+            get(crate::permissions_api::list_permissions),
+        )
+        .route(
+            "/api/permissions/audit",
+            get(crate::permissions_api::list_permission_audit),
+        )
+        .route(
+            "/api/permissions/scopes",
+            get(crate::permissions_api::list_permission_scopes),
+        )
+        .route(
+            "/api/permissions/:permission",
+            put(crate::permissions_api::update_permission),
+        )
         .route("/api/tools", get(crate::permissions_api::list_tools))
         .route("/api/memory", get(memory_api::list_memory))
         .route(
@@ -66,14 +108,18 @@ pub fn build_router(state: Arc<AppState>) -> Router {
                 .delete(memory_api::delete_memory),
         )
         .route("/api/metrics", get(crate::metrics_api::pipeline_metrics))
-        .route("/api/metrics/history", get(crate::metrics_api::pipeline_metrics_history))
+        .route(
+            "/api/metrics/history",
+            get(crate::metrics_api::pipeline_metrics_history),
+        )
         .route("/metrics", get(crate::metrics_api::prometheus_metrics))
         .route("/api/plugins", get(plugins::list_plugins))
         .route("/api/plugins/catalog", get(plugins::list_plugin_catalog))
         .route("/api/plugins/install", post(plugins::install_plugin))
         .route(
             "/api/mcp/servers",
-            get(crate::permissions_api::list_mcp_servers).put(crate::permissions_api::update_mcp_servers),
+            get(crate::permissions_api::list_mcp_servers)
+                .put(crate::permissions_api::update_mcp_servers),
         )
         .route("/ws/:session_id", get(crate::ws::ws_handler))
         .layer(middleware::from_fn_with_state(

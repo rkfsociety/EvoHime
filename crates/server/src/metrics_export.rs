@@ -51,14 +51,15 @@ pub struct MetricsPersistStatus {
 }
 
 /// Render OpenMetrics/Prometheus text for pipeline + worker counters.
-pub fn render_prometheus(
-    pipeline: &MetricsSnapshot,
-    worker: &WorkerMetricsSnapshot,
-) -> String {
+pub fn render_prometheus(pipeline: &MetricsSnapshot, worker: &WorkerMetricsSnapshot) -> String {
     let mut out = String::with_capacity(2048);
     out.push_str("# HELP evohime_pipeline_tasks_started Tasks started since process start\n");
     out.push_str("# TYPE evohime_pipeline_tasks_started counter\n");
-    push_metric(&mut out, "evohime_pipeline_tasks_started", pipeline.tasks_started);
+    push_metric(
+        &mut out,
+        "evohime_pipeline_tasks_started",
+        pipeline.tasks_started,
+    );
 
     out.push_str("# HELP evohime_pipeline_tasks_completed Tasks completed\n");
     out.push_str("# TYPE evohime_pipeline_tasks_completed counter\n");
@@ -70,11 +71,19 @@ pub fn render_prometheus(
 
     out.push_str("# HELP evohime_pipeline_tasks_failed Tasks failed\n");
     out.push_str("# TYPE evohime_pipeline_tasks_failed counter\n");
-    push_metric(&mut out, "evohime_pipeline_tasks_failed", pipeline.tasks_failed);
+    push_metric(
+        &mut out,
+        "evohime_pipeline_tasks_failed",
+        pipeline.tasks_failed,
+    );
 
     out.push_str("# HELP evohime_pipeline_tools_started Tool invocations started\n");
     out.push_str("# TYPE evohime_pipeline_tools_started counter\n");
-    push_metric(&mut out, "evohime_pipeline_tools_started", pipeline.tools_started);
+    push_metric(
+        &mut out,
+        "evohime_pipeline_tools_started",
+        pipeline.tools_started,
+    );
 
     out.push_str("# HELP evohime_pipeline_tools_completed Tools completed\n");
     out.push_str("# TYPE evohime_pipeline_tools_completed counter\n");
@@ -86,7 +95,11 @@ pub fn render_prometheus(
 
     out.push_str("# HELP evohime_pipeline_tools_failed Tools failed\n");
     out.push_str("# TYPE evohime_pipeline_tools_failed counter\n");
-    push_metric(&mut out, "evohime_pipeline_tools_failed", pipeline.tools_failed);
+    push_metric(
+        &mut out,
+        "evohime_pipeline_tools_failed",
+        pipeline.tools_failed,
+    );
 
     out.push_str("# HELP evohime_pipeline_approvals_requested Approvals requested\n");
     out.push_str("# TYPE evohime_pipeline_approvals_requested counter\n");
@@ -114,11 +127,19 @@ pub fn render_prometheus(
 
     out.push_str("# HELP evohime_pipeline_task_retries Task retries\n");
     out.push_str("# TYPE evohime_pipeline_task_retries counter\n");
-    push_metric(&mut out, "evohime_pipeline_task_retries", pipeline.task_retries);
+    push_metric(
+        &mut out,
+        "evohime_pipeline_task_retries",
+        pipeline.task_retries,
+    );
 
     out.push_str("# HELP evohime_pipeline_plan_updates Plan updates / replans\n");
     out.push_str("# TYPE evohime_pipeline_plan_updates counter\n");
-    push_metric(&mut out, "evohime_pipeline_plan_updates", pipeline.plan_updates);
+    push_metric(
+        &mut out,
+        "evohime_pipeline_plan_updates",
+        pipeline.plan_updates,
+    );
 
     out.push_str("# HELP evohime_pipeline_open_tasks Currently open tasks\n");
     out.push_str("# TYPE evohime_pipeline_open_tasks gauge\n");
@@ -184,7 +205,9 @@ pub fn render_prometheus(
         pipeline.llm_prompt_tokens,
     );
 
-    out.push_str("# HELP evohime_pipeline_llm_completion_tokens Completion tokens reported by provider\n");
+    out.push_str(
+        "# HELP evohime_pipeline_llm_completion_tokens Completion tokens reported by provider\n",
+    );
     out.push_str("# TYPE evohime_pipeline_llm_completion_tokens counter\n");
     push_metric(
         &mut out,

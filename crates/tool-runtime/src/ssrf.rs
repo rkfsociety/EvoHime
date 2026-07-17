@@ -223,7 +223,9 @@ mod tests {
         assert!(assert_safe_http_url(&Url::parse("http://127.0.0.1/").unwrap()).is_err());
         assert!(assert_safe_http_url(&Url::parse("http://10.0.0.5/x").unwrap()).is_err());
         assert!(assert_safe_http_url(&Url::parse("http://192.168.1.1/").unwrap()).is_err());
-        assert!(assert_safe_http_url(&Url::parse("http://169.254.169.254/latest").unwrap()).is_err());
+        assert!(
+            assert_safe_http_url(&Url::parse("http://169.254.169.254/latest").unwrap()).is_err()
+        );
         assert!(assert_safe_http_url(&Url::parse("http://[::1]/").unwrap()).is_err());
     }
 

@@ -68,7 +68,10 @@ impl WorkerMetrics {
     }
 
     pub fn snapshot(&self) -> WorkerMetricsSnapshot {
-        let inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         WorkerMetricsSnapshot {
             jobs_submitted: inner.jobs_submitted,
             jobs_completed: inner.jobs_completed,
@@ -85,7 +88,10 @@ impl WorkerMetrics {
     }
 
     pub fn job_submitted(&self, job_id: Uuid, task: &str) {
-        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.jobs_submitted += 1;
         inner.open_jobs.insert(job_id, Instant::now());
         tracing::info!(
@@ -96,8 +102,14 @@ impl WorkerMetrics {
     }
 
     pub fn job_finished(&self, job_id: Uuid, task: &str, ok: bool) {
-        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-        let elapsed = inner.open_jobs.remove(&job_id).map(|started| started.elapsed());
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let elapsed = inner
+            .open_jobs
+            .remove(&job_id)
+            .map(|started| started.elapsed());
         if ok {
             inner.jobs_completed += 1;
         } else {
@@ -118,7 +130,10 @@ impl WorkerMetrics {
     }
 
     pub fn job_retried(&self, job_id: Uuid, task: &str, reason: &str) {
-        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.jobs_retried += 1;
         tracing::info!(
             job_id = %job_id,
@@ -129,7 +144,10 @@ impl WorkerMetrics {
     }
 
     pub fn job_stalled(&self, job_id: Uuid, task: &str) {
-        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.jobs_stalled += 1;
         tracing::warn!(
             job_id = %job_id,
@@ -145,7 +163,10 @@ impl WorkerMetrics {
         queue_depth: Option<i64>,
         active_jobs: Option<i64>,
     ) {
-        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.health_checks_ok += 1;
         inner.last_health = Some(WorkerHealthView {
             healthy: true,
@@ -155,16 +176,14 @@ impl WorkerMetrics {
             active_jobs,
             checked_at_ms: now_ms(),
         });
-        tracing::debug!(
-            pid,
-            queue_depth,
-            active_jobs,
-            "worker.pipeline.health_ok"
-        );
+        tracing::debug!(pid, queue_depth, active_jobs, "worker.pipeline.health_ok");
     }
 
     pub fn health_failed(&self, error: &str) {
-        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.health_checks_failed += 1;
         let previous = inner.last_health.clone();
         inner.last_health = Some(WorkerHealthView {
@@ -179,13 +198,12 @@ impl WorkerMetrics {
     }
 
     pub fn recovery(&self, count: usize, reason: &str) {
-        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.recoveries += 1;
-        tracing::info!(
-            count,
-            reason,
-            "worker.pipeline.recovery"
-        );
+        tracing::info!(count, reason, "worker.pipeline.recovery");
     }
 }
 

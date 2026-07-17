@@ -119,15 +119,9 @@ pub enum ServerEvent {
         reason: String,
     },
     #[serde(rename = "memory.accepted")]
-    MemoryAccepted {
-        memory_id: Uuid,
-        task_id: Uuid,
-    },
+    MemoryAccepted { memory_id: Uuid, task_id: Uuid },
     #[serde(rename = "memory.rejected")]
-    MemoryRejected {
-        memory_id: Uuid,
-        task_id: Uuid,
-    },
+    MemoryRejected { memory_id: Uuid, task_id: Uuid },
     #[serde(rename = "memory.used")]
     MemoryUsed {
         memory_id: Uuid,

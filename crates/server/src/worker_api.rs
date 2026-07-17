@@ -28,7 +28,9 @@ pub(crate) struct ListWorkerJobsQuery {
     limit: Option<i64>,
 }
 
-pub(crate) async fn worker_status(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
+pub(crate) async fn worker_status(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Value>, ApiError> {
     let counts = evohime_storage::count_worker_jobs_by_status(&state.pool)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
@@ -88,16 +90,13 @@ pub(crate) async fn create_worker_job(
             return Err(ApiError::Unavailable(error.to_string()));
         }
     };
-    let claim = evohime_storage::claim_worker_job_attempt(
-        &state.pool,
-        row.id,
-        &worker_job.id,
-        1,
-        None,
-    )
-    .await
-    .map_err(|e| ApiError::Internal(e.to_string()))?
-    .ok_or_else(|| ApiError::Conflict("worker job lease was taken by another poller".into()))?;
+    let claim =
+        evohime_storage::claim_worker_job_attempt(&state.pool, row.id, &worker_job.id, 1, None)
+            .await
+            .map_err(|e| ApiError::Internal(e.to_string()))?
+            .ok_or_else(|| {
+                ApiError::Conflict("worker job lease was taken by another poller".into())
+            })?;
     state.worker_metrics.job_submitted(row.id, &request.task);
     spawn_worker_poll(state.clone(), row.id, worker_job, claim);
     let updated = evohime_storage::load_worker_job(&state.pool, row.id)
@@ -157,7 +156,9 @@ pub(crate) async fn retry_worker_job(
     .ok_or_else(|| {
         ApiError::Conflict("worker job could not be reclaimed for retry (limit or race)".into())
     })?;
-    state.worker_metrics.job_retried(row.id, &row.task, "manual retry");
+    state
+        .worker_metrics
+        .job_retried(row.id, &row.task, "manual retry");
     spawn_worker_poll(state.clone(), row.id, worker_job, claim);
     let updated = evohime_storage::load_worker_job(&state.pool, row.id)
         .await
@@ -365,7 +366,11 @@ pub(crate) async fn run_worker_job(
     }
 }
 
-pub(crate) async fn worker_health_loop(state: Arc<AppState>, interval: Duration, stale_after: Duration) {
+pub(crate) async fn worker_health_loop(
+    state: Arc<AppState>,
+    interval: Duration,
+    stale_after: Duration,
+) {
     let mut ticker = tokio::time::interval(interval);
     let mut last_started_at: Option<String> = None;
     let mut last_ok_at = tokio::time::Instant::now();
@@ -500,4 +505,3 @@ pub(crate) async fn worker_retention_loop(state: Arc<AppState>, retention_days: 
         }
     }
 }
-

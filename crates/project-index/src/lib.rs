@@ -573,7 +573,11 @@ mod tests {
         let temp = tempfile::tempdir().expect("tempdir");
         fs::write(temp.path().join("ok.md"), "binary filter context").expect("write");
         fs::write(temp.path().join("noise.png"), [0u8, 1, 2, 3, 255]).expect("png");
-        fs::write(temp.path().join("blob.bin"), b"binary filter context\0hidden").expect("bin");
+        fs::write(
+            temp.path().join("blob.bin"),
+            b"binary filter context\0hidden",
+        )
+        .expect("bin");
         fs::write(temp.path().join("app.min.js"), "binary filter context").expect("minjs");
 
         let index = ProjectIndex::new(temp.path());

@@ -2,9 +2,7 @@ use crate::config::LiteRouterConfig;
 use crate::providers::{
     ChatFuture, ChatMessage, ModelProvider, ProviderError, ProviderKind, TokenStream,
 };
-use crate::retry::{
-    compute_backoff, is_retryable_status, parse_retry_after_seconds, RetryPolicy,
-};
+use crate::retry::{compute_backoff, is_retryable_status, parse_retry_after_seconds, RetryPolicy};
 use crate::tools::{ChatResult, ChatStreamItem, LlmUsage, NativeToolCall, ToolSpec};
 use async_stream::stream;
 use futures_util::StreamExt;
@@ -321,9 +319,7 @@ impl ApiUsage {
             total_tokens: self.total_tokens,
         };
         if usage.total_tokens == 0 {
-            usage.total_tokens = usage
-                .prompt_tokens
-                .saturating_add(usage.completion_tokens);
+            usage.total_tokens = usage.prompt_tokens.saturating_add(usage.completion_tokens);
         }
         usage
     }

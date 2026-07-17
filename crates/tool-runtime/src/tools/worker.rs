@@ -62,10 +62,7 @@ pub fn parse_input(input: &Value) -> Result<WorkerRunInput, ToolError> {
             ),
         });
     }
-    let payload = input
-        .get("payload")
-        .cloned()
-        .unwrap_or_else(|| json!({}));
+    let payload = input.get("payload").cloned().unwrap_or_else(|| json!({}));
     if !payload.is_object() {
         return Err(ToolError::InvalidInput {
             tool: NAME.to_string(),

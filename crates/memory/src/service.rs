@@ -142,7 +142,10 @@ async fn load_existing(
 }
 
 /// Redact → normalize → dedupe/conflict → insert (or skip).
-pub async fn admit_memory_item(pool: &PgPool, item: NewMemoryItem) -> Result<AdmitOutcome, MemoryError> {
+pub async fn admit_memory_item(
+    pool: &PgPool,
+    item: NewMemoryItem,
+) -> Result<AdmitOutcome, MemoryError> {
     let prepared = match MemoryService::prepare(&item).await {
         Ok(prepared) => prepared,
         Err(MemoryError::Rejected { reason }) => return Ok(AdmitOutcome::Rejected { reason }),

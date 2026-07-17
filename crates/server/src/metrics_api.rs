@@ -13,7 +13,9 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use tracing::warn;
 
-pub(crate) async fn pipeline_metrics(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
+pub(crate) async fn pipeline_metrics(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Value>, ApiError> {
     let persist = metrics_export::MetricsPersistConfig::from_env();
     let last = evohime_storage::latest_metrics_snapshot(&state.pool)
         .await
@@ -75,7 +77,10 @@ pub(crate) async fn prometheus_metrics(State(state): State<Arc<AppState>>) -> im
     )
 }
 
-pub(crate) async fn metrics_persist_loop(state: Arc<AppState>, config: metrics_export::MetricsPersistConfig) {
+pub(crate) async fn metrics_persist_loop(
+    state: Arc<AppState>,
+    config: metrics_export::MetricsPersistConfig,
+) {
     let mut ticker = tokio::time::interval(config.interval);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
@@ -115,4 +120,3 @@ pub(crate) async fn metrics_persist_loop(state: Arc<AppState>, config: metrics_e
         }
     }
 }
-

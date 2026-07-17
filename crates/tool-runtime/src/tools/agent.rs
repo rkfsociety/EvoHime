@@ -56,12 +56,7 @@ pub fn parse_input(input: &Value) -> Result<AgentRunInput, ToolError> {
     })
 }
 
-pub fn format_result(
-    summary: &str,
-    steps_run: usize,
-    truncated: bool,
-    depth: u32,
-) -> ToolResult {
+pub fn format_result(summary: &str, steps_run: usize, truncated: bool, depth: u32) -> ToolResult {
     ToolResult {
         output: format!(
             "agent.run (depth={depth}, steps={steps_run}{}):\n{summary}",

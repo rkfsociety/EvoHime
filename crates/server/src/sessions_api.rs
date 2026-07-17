@@ -170,4 +170,3 @@ pub(crate) async fn session_history(
 pub(crate) struct HistoryQuery {
     after: Option<i64>,
 }
-

@@ -358,7 +358,10 @@ pub fn heuristic_extract(
         });
     }
 
-    merge_unique(out, experience_patterns(user_message, final_message, task_ok))
+    merge_unique(
+        out,
+        experience_patterns(user_message, final_message, task_ok),
+    )
 }
 
 /// Prefer parsed LLM candidates; always try to supplement with experience patterns.
@@ -468,7 +471,8 @@ mod tests {
 
     #[test]
     fn extract_candidates_supplements_llm_with_experience() {
-        let raw = r#"[{"scope":"project","kind":"preference","content":"from llm","confidence":0.8}]"#;
+        let raw =
+            r#"[{"scope":"project","kind":"preference","content":"from llm","confidence":0.8}]"#;
         let items = extract_candidates(Some(raw), "add auth", "wired jwt", true);
         assert!(items.iter().any(|c| c.content == "from llm"));
         assert!(items
@@ -497,8 +501,6 @@ mod tests {
     #[test]
     fn real_task_failure_still_yields_failure_pattern() {
         let items = experience_patterns("deploy", "failed: timeout waiting for pod", false);
-        assert!(items
-            .iter()
-            .any(|c| c.kind == MemoryKind::FailurePattern));
+        assert!(items.iter().any(|c| c.kind == MemoryKind::FailurePattern));
     }
 }

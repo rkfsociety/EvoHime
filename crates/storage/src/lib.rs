@@ -232,10 +232,7 @@ pub async fn claim_worker_job_attempt(
 }
 
 /// Steal the lease for crash/restart recovery. Invalidates any in-flight poller.
-pub async fn steal_worker_job_claim(
-    pool: &PgPool,
-    id: Uuid,
-) -> Result<Option<Uuid>, StorageError> {
+pub async fn steal_worker_job_claim(pool: &PgPool, id: Uuid) -> Result<Option<Uuid>, StorageError> {
     let new_claim = Uuid::new_v4();
     Ok(sqlx::query_scalar::<_, Uuid>(
         r#"
@@ -333,9 +330,8 @@ pub async fn list_recent_worker_jobs(
     limit: i64,
 ) -> Result<Vec<WorkerJobRow>, StorageError> {
     let limit = limit.clamp(1, 200);
-    let sql = format!(
-        "SELECT {WORKER_JOB_RETURNING} FROM worker_jobs ORDER BY created_at DESC LIMIT $1"
-    );
+    let sql =
+        format!("SELECT {WORKER_JOB_RETURNING} FROM worker_jobs ORDER BY created_at DESC LIMIT $1");
     Ok(sqlx::query_as::<_, WorkerJobRow>(&sql)
         .bind(limit)
         .fetch_all(pool)

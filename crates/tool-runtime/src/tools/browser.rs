@@ -329,7 +329,7 @@ mod tests {
             task_id: Uuid::nil(),
             session_id: None,
             progress_tx: None,
-};
+        };
         (dir, ctx)
     }
 
@@ -456,13 +456,14 @@ mod tests {
             .enable_all()
             .build()
             .expect("runtime");
-        let error = runtime.block_on(open(
-            &ctx,
-            json!({
-                "url": "http://127.0.0.1:9/"
-            }),
-        ))
-        .expect_err("loopback blocked");
+        let error = runtime
+            .block_on(open(
+                &ctx,
+                json!({
+                    "url": "http://127.0.0.1:9/"
+                }),
+            ))
+            .expect_err("loopback blocked");
         assert!(matches!(error, ToolError::InvalidInput { .. }));
         let message = error.to_string();
         assert!(

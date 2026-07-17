@@ -1,5 +1,5 @@
 //! Planning / replan prompts and native/text plan collection.
-use super::parse::{normalize_plan, parse_plan, parse_plan_json, PlanStepDraft, unwrap_code_fence};
+use super::parse::{normalize_plan, parse_plan, parse_plan_json, unwrap_code_fence, PlanStepDraft};
 use super::util::{collect_llm_stream_with_telemetry, PLANNING_TIMEOUT};
 use super::{AgentConfig, AgentError};
 use evohime_model_gateway::{providers::ChatMessage, ModelGateway};
@@ -52,7 +52,9 @@ pub(crate) async fn collect_plan_steps(
                 ));
             }
             Ok(result) if !result.content.trim().is_empty() => {
-                tracing::info!("native tools returned content without tool_calls; parsing text plan");
+                tracing::info!(
+                    "native tools returned content without tool_calls; parsing text plan"
+                );
                 record_chat_result_telemetry(gateway, config, "plan", &result);
                 return Ok(parse_plan(&result.content));
             }
@@ -138,14 +140,6 @@ pub(crate) struct ReplanResponse {
 pub(crate) fn plan_needs_replan_cycle(plan: &[PlanStep]) -> bool {
     plan.iter()
         .any(|step| step.tool_name != "assistant.reply" && !step.tool_name.is_empty())
-}
-
-pub(crate) fn format_observe_summary(outputs: &[String]) -> String {
-    if outputs.is_empty() {
-        "(no tool results yet)".to_string()
-    } else {
-        outputs.join("\n\n")
-    }
 }
 
 pub(crate) fn parse_replan_decision(raw: &str) -> ReplanDecision {

@@ -207,12 +207,7 @@ fn env_flag_true(name: &str) -> bool {
 pub fn active_worker_job_count(status_counts: &[(String, i64)]) -> usize {
     status_counts
         .iter()
-        .filter(|(status, _)| {
-            matches!(
-                status.as_str(),
-                "queued" | "running" | "retrying"
-            )
-        })
+        .filter(|(status, _)| matches!(status.as_str(), "queued" | "running" | "retrying"))
         .map(|(_, count)| (*count).max(0) as usize)
         .sum()
 }
@@ -272,7 +267,11 @@ mod tests {
         let err = limiter.allow_task_start(2).expect_err("at cap");
         assert!(err.message.contains("concurrent tasks"));
         assert!(limiter.allow_worker_job(0).is_ok());
-        assert!(limiter.allow_worker_job(1).expect_err("job cap").message.contains("worker"));
+        assert!(limiter
+            .allow_worker_job(1)
+            .expect_err("job cap")
+            .message
+            .contains("worker"));
     }
 
     #[test]

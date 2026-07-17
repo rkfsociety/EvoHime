@@ -460,9 +460,7 @@ impl PermissionEngine {
         for grant in snapshot.path_grants {
             let expires_at = match grant.expires_at_ms {
                 Some(ms) if ms <= wall_now => continue,
-                Some(ms) => {
-                    Some(instant_now + Duration::from_millis(ms.saturating_sub(wall_now)))
-                }
+                Some(ms) => Some(instant_now + Duration::from_millis(ms.saturating_sub(wall_now))),
                 None => None,
             };
             grants.push(StoredPathGrant {
@@ -756,10 +754,7 @@ mod tests {
                     "workspace",
                 )
                 .await;
-            engine
-                .resolve(request.id, false)
-                .await
-                .expect("denied");
+            engine.resolve(request.id, false).await.expect("denied");
 
             let pending = rx.recv().await.expect("pending audit");
             assert_eq!(pending.decision, ApprovalState::Pending);

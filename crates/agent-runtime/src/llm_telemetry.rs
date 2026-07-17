@@ -61,10 +61,7 @@ pub fn finish_llm_span(
 ) {
     if let Some(usage) = usage {
         span.record("gen_ai.usage.input_tokens", usage.prompt_tokens as i64);
-        span.record(
-            "gen_ai.usage.output_tokens",
-            usage.completion_tokens as i64,
-        );
+        span.record("gen_ai.usage.output_tokens", usage.completion_tokens as i64);
     }
     let duration_ms = started.elapsed().as_millis() as u64;
     if !ok {

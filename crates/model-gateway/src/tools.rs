@@ -11,7 +11,11 @@ pub struct ToolSpec {
 }
 
 impl ToolSpec {
-    pub fn function(name: impl Into<String>, description: impl Into<String>, parameters: Value) -> Self {
+    pub fn function(
+        name: impl Into<String>,
+        description: impl Into<String>,
+        parameters: Value,
+    ) -> Self {
         Self {
             kind: "function".into(),
             function: FunctionSpec {

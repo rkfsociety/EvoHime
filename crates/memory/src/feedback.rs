@@ -132,7 +132,13 @@ mod tests {
 
     #[test]
     fn helpful_bumps_confidence() {
-        let adj = apply_feedback_signal(0.5, 0.5, false, MemoryStatus::Active, FeedbackSignal::Helpful);
+        let adj = apply_feedback_signal(
+            0.5,
+            0.5,
+            false,
+            MemoryStatus::Active,
+            FeedbackSignal::Helpful,
+        );
         assert!((adj.confidence - 0.53).abs() < 1e-9);
         assert!(adj.delta_confidence > 0.0);
         assert!(adj.next_status.is_none());
@@ -140,27 +146,51 @@ mod tests {
 
     #[test]
     fn harmful_can_archive_low_confidence() {
-        let adj = apply_feedback_signal(0.28, 0.4, false, MemoryStatus::Active, FeedbackSignal::Harmful);
+        let adj = apply_feedback_signal(
+            0.28,
+            0.4,
+            false,
+            MemoryStatus::Active,
+            FeedbackSignal::Harmful,
+        );
         assert!(adj.confidence < ARCHIVE_CONFIDENCE_THRESHOLD);
         assert_eq!(adj.next_status, Some(MemoryStatus::Archived));
     }
 
     #[test]
     fn harmful_does_not_archive_pinned() {
-        let adj = apply_feedback_signal(0.2, 0.4, true, MemoryStatus::Active, FeedbackSignal::Harmful);
+        let adj = apply_feedback_signal(
+            0.2,
+            0.4,
+            true,
+            MemoryStatus::Active,
+            FeedbackSignal::Harmful,
+        );
         assert!(adj.next_status.is_none());
     }
 
     #[test]
     fn rejected_marks_rejected_and_halves_confidence() {
-        let adj = apply_feedback_signal(0.8, 0.5, false, MemoryStatus::Candidate, FeedbackSignal::Rejected);
+        let adj = apply_feedback_signal(
+            0.8,
+            0.5,
+            false,
+            MemoryStatus::Candidate,
+            FeedbackSignal::Rejected,
+        );
         assert!((adj.confidence - 0.4).abs() < 1e-9);
         assert_eq!(adj.next_status, Some(MemoryStatus::Rejected));
     }
 
     #[test]
     fn idle_decay_archives_when_low() {
-        let adj = apply_feedback_signal(0.26, 0.3, false, MemoryStatus::Candidate, FeedbackSignal::IdleDecay);
+        let adj = apply_feedback_signal(
+            0.26,
+            0.3,
+            false,
+            MemoryStatus::Candidate,
+            FeedbackSignal::IdleDecay,
+        );
         assert_eq!(adj.next_status, Some(MemoryStatus::Archived));
     }
 }
