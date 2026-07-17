@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Wave A ✅; Wave B: `7.17`–`7.27`, `7.40`–`7.41` ✅; next Wave C `7.28`+
-- Wave C next: native tool_calls (`7.28`)…
+- **Stage 7** Hardening + Product — Wave A/B ✅; Wave C: `7.28` ✅; next `7.29`+
+- Wave C next: split `agent_loop.rs` (`7.29`)…
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events

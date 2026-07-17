@@ -344,7 +344,7 @@
 
 | # | Задача | Size | Статус | Notes / evidence |
 | --- | --- | --- | --- | --- |
-| 7.28 | Native provider `tool_calls` (OpenAI-compatible tools array) | L | ⬜ | сейчас text/markup parse в `agent_loop` |
+| 7.28 | Native provider `tool_calls` (OpenAI-compatible tools array) | L | ✅ | `chat_with_tools` + planning path; text fallback; `EVOHIME_NATIVE_TOOL_CALLS` |
 | 7.29 | Распилить `agent_loop.rs` (plan / execute / context / parse) | L | ⬜ | ~2500 LOC monolith |
 | 7.30 | Распилить `server/main.rs` на routers/modules | L | ⬜ | ~3300 LOC |
 | 7.31 | Multi-agent / subagent fan-out с бюджетом | L | ⬜ | parallel tools есть; нет child agents |
@@ -472,7 +472,7 @@
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
-3. **Wave C (agent quality):** 7.28–7.33, 7.52  
+3. **Wave C (agent quality):** `7.28` ✅ → next `7.29`–`7.33`, `7.52`  
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  
 5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+

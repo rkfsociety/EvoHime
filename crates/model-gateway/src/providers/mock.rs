@@ -1,4 +1,7 @@
-use crate::providers::{ChatMessage, ModelProvider, ProviderKind, TokenStream};
+use crate::providers::{
+    ChatFuture, ChatMessage, ModelProvider, ProviderKind, TokenStream,
+};
+use crate::tools::{ChatResult, NativeToolCall, ToolSpec};
 use async_stream::stream;
 use std::sync::Arc;
 
@@ -6,6 +9,7 @@ use std::sync::Arc;
 pub struct MockProvider {
     model: String,
     chunks: Arc<Vec<String>>,
+    tool_calls: Arc<Vec<NativeToolCall>>,
 }
 
 impl MockProvider {
@@ -13,6 +17,19 @@ impl MockProvider {
         Self {
             model: model.into(),
             chunks: Arc::new(chunks),
+            tool_calls: Arc::new(Vec::new()),
+        }
+    }
+
+    pub fn with_tool_calls(
+        model: impl Into<String>,
+        chunks: Vec<String>,
+        tool_calls: Vec<NativeToolCall>,
+    ) -> Self {
+        Self {
+            model: model.into(),
+            chunks: Arc::new(chunks),
+            tool_calls: Arc::new(tool_calls),
         }
     }
 }
@@ -38,6 +55,22 @@ impl ModelProvider for MockProvider {
             }
         })
     }
+
+    fn chat_with_tools(
+        &self,
+        _model: Option<&str>,
+        _messages: &[ChatMessage],
+        _tools: &[ToolSpec],
+    ) -> ChatFuture {
+        let content = self.chunks.join("");
+        let tool_calls = (*self.tool_calls).clone();
+        Box::pin(async move {
+            Ok(ChatResult {
+                content,
+                tool_calls,
+            })
+        })
+    }
 }
 
 #[cfg(test)]
@@ -59,5 +92,24 @@ mod tests {
         assert_eq!(first, "Hello");
         assert_eq!(second, " world");
         assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn chat_with_tools_returns_configured_calls() {
+        let provider = MockProvider::with_tool_calls(
+            "mock-model",
+            vec![],
+            vec![NativeToolCall {
+                id: "c1".into(),
+                name: "filesystem.read".into(),
+                arguments: r#"{"path":"a.txt"}"#.into(),
+            }],
+        );
+        let result = provider
+            .chat_with_tools(None, &[], &[])
+            .await
+            .expect("ok");
+        assert_eq!(result.tool_calls.len(), 1);
+        assert_eq!(result.tool_calls[0].name, "filesystem.read");
     }
 }

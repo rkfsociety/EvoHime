@@ -254,7 +254,11 @@ async fn run_agent_loop_inner(
     let mut planning_messages = Vec::with_capacity(history.len() + 4);
     planning_messages.push(ChatMessage {
         role: ChatRole::System,
-        content: planning_prompt_for_tools(tools),
+        content: if crate::native_tools::native_tool_calls_enabled() {
+            crate::native_tools::native_planning_prompt()
+        } else {
+            planning_prompt_for_tools(tools)
+        },
     });
     if let Some(context) = &rules_context {
         planning_messages.push(ChatMessage {
@@ -309,17 +313,17 @@ async fn run_agent_loop_inner(
             outputs.extend(new_outputs);
             (existing_plan, outputs, mutation, newly_satisfied)
         } else {
-            let raw_plan = collect_stream_text_with_timeout(
-                gateway.stream_chat_for_route_with_model(
-                    &config.planning_model_route,
-                    config.planning_model.as_deref(),
-                    &planning_messages,
-                )?,
-                PLANNING_TIMEOUT,
-                "planning",
+            let plan = match collect_plan_steps(
+                gateway,
+                &config,
+                tools,
+                &planning_messages,
             )
-            .await?;
-            let plan = parse_plan(&raw_plan);
+            .await
+            {
+                Ok(plan) => plan,
+                Err(error) => return Err(error),
+            };
 
             emit(
                 &event_tx,
@@ -557,6 +561,62 @@ fn planning_prompt_for_tools(tools: &ToolRegistry) -> String {
         names.join(", ")
     )
 }
+
+async fn collect_plan_steps(
+    gateway: &ModelGateway,
+    config: &AgentConfig,
+    tools: &ToolRegistry,
+    planning_messages: &[ChatMessage],
+) -> Result<Vec<PlanStep>, AgentError> {
+    if crate::native_tools::native_tool_calls_enabled() {
+        let openai_tools = crate::native_tools::openai_tools_for_registry(tools);
+        match gateway
+            .chat_with_tools_for_route(
+                &config.planning_model_route,
+                config.planning_model.as_deref(),
+                planning_messages,
+                &openai_tools,
+            )
+            .await
+        {
+            Ok(result) if result.has_tool_calls() => {
+                tracing::info!(
+                    tool_calls = result.tool_calls.len(),
+                    "planning via native provider tool_calls"
+                );
+                return Ok(crate::native_tools::plan_from_native_tool_calls(
+                    &result.tool_calls,
+                ));
+            }
+            Ok(result) if !result.content.trim().is_empty() => {
+                tracing::info!("native tools returned content without tool_calls; parsing text plan");
+                return Ok(parse_plan(&result.content));
+            }
+            Ok(_) => {
+                tracing::warn!("native tools returned empty result; falling back to text planning");
+            }
+            Err(error) => {
+                tracing::warn!(
+                    error = %error,
+                    "native tool_calls planning failed; falling back to text planning"
+                );
+            }
+        }
+    }
+
+    let raw_plan = collect_stream_text_with_timeout(
+        gateway.stream_chat_for_route_with_model(
+            &config.planning_model_route,
+            config.planning_model.as_deref(),
+            planning_messages,
+        )?,
+        PLANNING_TIMEOUT,
+        "planning",
+    )
+    .await?;
+    Ok(parse_plan(&raw_plan))
+}
+
 const REPLAN_PROMPT: &str = "You are EvoHime's replanner. Return ONLY JSON. If enough tool results exist to answer the user, return {\"done\":true}. Otherwise return {\"done\":false,\"steps\":[...]} with ONLY new steps still needed (id, tool_name, description, depends_on). Use the same tool names as planning. Do not repeat completed steps. Prefer the fewest new steps.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]

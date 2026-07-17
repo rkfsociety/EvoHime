@@ -114,6 +114,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. **Stage 7** — Wave A ✅; Wave B: `7.17`–`7.27`, `7.40`–`7.41` ✅; next Wave C (`7.28`+)
-2. Рекомендуемая следующая волна: native tool_calls (`7.28`), agent_loop split (`7.29`)
+1. **Stage 7** — Wave A/B ✅; Wave C: `7.28` ✅; next agent_loop split `7.29`
+2. Рекомендуемая следующая волна: split `agent_loop` (`7.29`), server routers (`7.30`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

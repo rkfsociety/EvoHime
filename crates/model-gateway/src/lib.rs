@@ -1,9 +1,11 @@
 pub mod config;
 pub mod providers;
 pub mod retry;
+pub mod tools;
 
 pub use crate::config::{ModelGatewayConfig, ModelRouteConfig};
 pub use crate::retry::RetryPolicy;
+pub use crate::tools::{ChatResult, FunctionSpec, NativeToolCall, ToolSpec};
 use crate::providers::{
     literouter::LiteRouterProvider, mock::MockProvider, ChatMessage, ModelProvider, ProviderError,
     ProviderKind, TokenStream,
@@ -168,6 +170,18 @@ impl ModelGateway {
             }
             _ => provider.stream_chat(messages),
         })
+    }
+
+    pub async fn chat_with_tools_for_route(
+        &self,
+        route: &str,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+        tools: &[ToolSpec],
+    ) -> Result<ChatResult, ProviderError> {
+        self.provider_for_route(route)?
+            .chat_with_tools(model, messages, tools)
+            .await
     }
 
     fn provider_for_route(&self, route: &str) -> Result<&Arc<dyn ModelProvider>, ProviderError> {

@@ -1,4 +1,6 @@
+use crate::tools::{ChatResult, ToolSpec};
 use futures_util::Stream;
+use std::future::Future;
 use std::pin::Pin;
 
 pub mod literouter;
@@ -59,6 +61,7 @@ pub struct ChatMessage {
 }
 
 pub type TokenStream = Pin<Box<dyn Stream<Item = Result<String, ProviderError>> + Send>>;
+pub type ChatFuture = Pin<Box<dyn Future<Output = Result<ChatResult, ProviderError>> + Send>>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
@@ -82,5 +85,20 @@ pub trait ModelProvider: Send + Sync {
     fn stream_chat_with_model(&self, model: &str, messages: &[ChatMessage]) -> TokenStream {
         let _ = model;
         self.stream_chat(messages)
+    }
+
+    /// Non-streaming OpenAI-compatible completion with optional `tools` (Stage 7.28).
+    fn chat_with_tools(
+        &self,
+        model: Option<&str>,
+        messages: &[ChatMessage],
+        tools: &[ToolSpec],
+    ) -> ChatFuture {
+        let _ = (model, messages, tools);
+        Box::pin(async {
+            Err(ProviderError::Config(
+                "provider does not support native tool_calls".into(),
+            ))
+        })
     }
 }

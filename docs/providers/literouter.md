@@ -56,8 +56,11 @@ agent-runtime
 - [x] OpenAI-compatible chat completions client
 - [x] Streaming (SSE) → токены
 - [x] Обработка ошибок API
+- [x] Native OpenAI-compatible `tools` / `tool_calls` (non-streaming planning path, Stage 7.28)
 - [x] Retry / backoff / `Retry-After` на старте запроса (до SSE)
 - [x] Тесты с mock HTTP
+
+Toggle: `EVOHIME_NATIVE_TOOL_CALLS` (default on; set `0` to force text-plan fallback).
 
 ### Retry (Stage 7.16)
 
