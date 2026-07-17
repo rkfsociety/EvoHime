@@ -167,7 +167,16 @@ pub async fn update_memory(
         ));
     }
 
-    update_memory_item_fields(
+    // Feedback-aware paths for reject / content correction.
+    if status == Some(MemoryStatus::Rejected) && content.is_none() && body.pinned.is_none() {
+        return evohime_memory::record_memory_rejected(&state.pool, id, None)
+            .await
+            .map_err(|error| ApiError::Internal(error.to_string()))?
+            .map(|result| Json(result.row))
+            .ok_or_else(|| ApiError::BadRequest("memory item not found".into()));
+    }
+
+    let updated = update_memory_item_fields(
         &state.pool,
         id,
         content.as_deref(),
@@ -179,8 +188,19 @@ pub async fn update_memory(
         evohime_storage::StorageError::InvalidMemory(message) => ApiError::BadRequest(message),
         other => ApiError::Internal(other.to_string()),
     })?
-    .map(Json)
-    .ok_or_else(|| ApiError::BadRequest("memory item not found".into()))
+    .ok_or_else(|| ApiError::BadRequest("memory item not found".into()))?;
+
+    if content.is_some() {
+        let _ = evohime_memory::record_memory_corrected(&state.pool, id, None).await;
+        if let Some(row) = get_memory_item(&state.pool, id)
+            .await
+            .map_err(|error| ApiError::Internal(error.to_string()))?
+        {
+            return Ok(Json(row));
+        }
+    }
+
+    Ok(Json(updated))
 }
 
 pub async fn delete_memory(

@@ -120,6 +120,13 @@ pub enum ServerEvent {
         memory_id: Uuid,
         task_id: Uuid,
     },
+    #[serde(rename = "memory.used")]
+    MemoryUsed {
+        memory_id: Uuid,
+        task_id: Uuid,
+        signal: String,
+        confidence: f64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -307,6 +314,16 @@ mod tests {
         let json = serde_json::to_value(&ask).unwrap();
         assert_eq!(json["type"], "memory.ask");
         assert_eq!(json["reason"], "low confidence");
+
+        let used = ServerEvent::MemoryUsed {
+            memory_id: Uuid::nil(),
+            task_id: Uuid::nil(),
+            signal: "helpful".into(),
+            confidence: 0.73,
+        };
+        let used_json = serde_json::to_value(&used).unwrap();
+        assert_eq!(used_json["type"], "memory.used");
+        assert_eq!(used_json["signal"], "helpful");
 
         for command in [
             ClientCommand::MemoryAccept {

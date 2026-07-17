@@ -359,6 +359,10 @@ mod tests {
             supersedes: None,
             valid_until: None,
             validity_hint: None,
+            last_used_at: None,
+            use_count: 0,
+            helpful_count: 0,
+            harmful_count: 0,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }

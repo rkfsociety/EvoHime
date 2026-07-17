@@ -7,6 +7,7 @@ export type {
   MemoryProposedEvent,
   MemoryAcceptedEvent,
   MemoryRejectedEvent,
+  MemoryUsedEvent,
   PlanStep,
   ClientCommand,
   FileChangedEvent,

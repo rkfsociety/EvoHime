@@ -50,6 +50,7 @@
         ,{ "$ref": "#/$defs/MemoryAskEvent" }
         ,{ "$ref": "#/$defs/MemoryAcceptedEvent" }
         ,{ "$ref": "#/$defs/MemoryRejectedEvent" }
+        ,{ "$ref": "#/$defs/MemoryUsedEvent" }
       ]
     },
     "ClientCommand": {
@@ -283,6 +284,18 @@
         "type": { "const": "memory.rejected" },
         "memory_id": { "$ref": "#/$defs/Uuid" },
         "task_id": { "$ref": "#/$defs/Uuid" }
+      },
+      "additionalProperties": false
+    },
+    "MemoryUsedEvent": {
+      "type": "object",
+      "required": ["type", "memory_id", "task_id", "signal", "confidence"],
+      "properties": {
+        "type": { "const": "memory.used" },
+        "memory_id": { "$ref": "#/$defs/Uuid" },
+        "task_id": { "$ref": "#/$defs/Uuid" },
+        "signal": { "type": "string" },
+        "confidence": { "type": "number" }
       },
       "additionalProperties": false
     },

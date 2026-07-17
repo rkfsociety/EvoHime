@@ -1984,11 +1984,12 @@ async fn run_task_pipeline(
     )
     .await
     .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
-    if !structured.used_memory_ids.is_empty() {
+    let used_memory_ids = structured.used_memory_ids.clone();
+    if !used_memory_ids.is_empty() {
         tracing::info!(
             session_id = %session_id,
             task_id = %task.id,
-            used_memory_ids = ?structured.used_memory_ids,
+            used_memory_ids = ?used_memory_ids,
             "retrieved structured memory for prompt"
         );
     }
@@ -2290,6 +2291,7 @@ async fn run_task_pipeline(
             }
             Err(error) => {
                 let err_msg = error.to_string();
+                apply_task_memory_feedback(state, session_id, task.id, &used_memory_ids, false).await;
                 persist_structured_memory(
                     state,
                     &gateway,
@@ -2328,6 +2330,8 @@ async fn run_task_pipeline(
     )
     .await
     .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
+
+    apply_task_memory_feedback(state, session_id, task.id, &used_memory_ids, true).await;
 
     persist_structured_memory(
         state,
@@ -2474,6 +2478,63 @@ async fn llm_extract_memory_json(
     collect_gateway_text(gateway, &messages, std::time::Duration::from_secs(20)).await
 }
 
+async fn apply_task_memory_feedback(
+    state: &Arc<AppState>,
+    session_id: Uuid,
+    task_id: Uuid,
+    used_memory_ids: &[Uuid],
+    task_ok: bool,
+) {
+    if !used_memory_ids.is_empty() {
+        let results = if task_ok {
+            evohime_memory::record_memory_helpful(&state.pool, used_memory_ids, Some(task_id)).await
+        } else {
+            evohime_memory::record_memory_harmful(&state.pool, used_memory_ids, Some(task_id)).await
+        };
+        match results {
+            Ok(applied) => {
+                for item in applied {
+                    let _ = emit_event(
+                        state,
+                        session_id,
+                        Some(task_id),
+                        ServerEvent::MemoryUsed {
+                            memory_id: item.memory_id,
+                            task_id,
+                            signal: item.signal.as_str().to_string(),
+                            confidence: item.row.confidence,
+                        },
+                    )
+                    .await;
+                }
+            }
+            Err(error) => {
+                tracing::warn!(%task_id, %error, "memory feedback apply failed");
+            }
+        }
+    }
+
+    match evohime_memory::decay_unused_memory(
+        &state.pool,
+        evohime_memory::DEFAULT_IDLE_DAYS,
+        evohime_memory::DEFAULT_IDLE_BATCH,
+    )
+    .await
+    {
+        Ok(decayed) if !decayed.is_empty() => {
+            tracing::info!(
+                %task_id,
+                decayed = decayed.len(),
+                "applied idle memory decay"
+            );
+        }
+        Err(error) => {
+            tracing::warn!(%task_id, %error, "idle memory decay failed");
+        }
+        _ => {}
+    }
+}
+
 async fn persist_structured_memory(
     state: &Arc<AppState>,
     gateway: &ModelGateway,
@@ -2609,6 +2670,12 @@ async fn handle_memory_decision(
     if accept {
         match evohime_memory::accept_memory_item(&state.pool, memory_id).await {
             Ok(Some(_)) => {
+                let _ = evohime_memory::record_memory_corrected(
+                    &state.pool,
+                    memory_id,
+                    existing.source_task_id,
+                )
+                .await;
                 let _ = emit_event(
                     state,
                     session_id,
@@ -2624,7 +2691,13 @@ async fn handle_memory_decision(
             Err(error) => tracing::warn!(%memory_id, %error, "memory accept failed"),
         }
     } else {
-        match evohime_memory::reject_memory_item(&state.pool, memory_id).await {
+        match evohime_memory::record_memory_rejected(
+            &state.pool,
+            memory_id,
+            existing.source_task_id,
+        )
+        .await
+        {
             Ok(Some(_)) => {
                 let _ = emit_event(
                     state,

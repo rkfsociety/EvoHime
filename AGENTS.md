@@ -64,14 +64,14 @@ User message
 - Agent loop: plan → dependency batches → bounded replan; checkpoints with pause/resume
 - Frontend shell split (`6.13`): `types` / `api` / `lib` / `hooks` / `panels`
 - Panels: Chat, Settings, Tasks (deep), Actions (deep), Terminal, Files, Editor, Git, Plugins, Pull Requests (detail/diff/checks/create), Sites
-- Structured memory: `memory_items` + `crates/memory` admit + **retrieval into agent prompt** (`6.16`–`6.19`); legacy notes still written/loaded
+- Structured memory: `memory_items` + admit/retrieve/extract/experience + **feedback loop** (`6.16`–`6.24`); legacy notes still written/loaded
 - Workers: health/stall reliability + `text.summarize` / `text.chunk`
 - Native launcher + GitHub auth via local `gh`
 - CI: format, Clippy, docs, tests (ripgrep installed for search tools)
 
 ### Incomplete / next
 
-- **`6.23`+** Feedback loop, embeddings (`6.25`)
+- **`6.25`+** Embeddings; observability; broader integration tests
 - Task-pipeline observability (correlation ids / metrics)
 - Broader integration tests (approval pause/resume, recovery)
 - General LLM tool-calling across all registered tools (orchestration still plan-driven)
@@ -172,7 +172,7 @@ See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](d
 | 3 Tools + shell | ✅ Done |
 | 4 Editor + Git | ✅ Done |
 | 5 Task orchestration | ✅ Done |
-| 6 Advanced | 🟡 In progress — memory `6.16`–`6.22`/`6.24` done; next `6.23` |
+| 6 Advanced | 🟡 In progress — memory `6.16`–`6.24` done; next `6.25` |
 
 Memory design: [docs/superpowers/specs/2026-07-16-agent-memory-design.md](docs/superpowers/specs/2026-07-16-agent-memory-design.md)
 

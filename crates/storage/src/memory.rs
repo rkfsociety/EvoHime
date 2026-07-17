@@ -141,6 +141,10 @@ pub struct MemoryItemRow {
     pub supersedes: Option<Uuid>,
     pub valid_until: Option<DateTime<Utc>>,
     pub validity_hint: Option<String>,
+    pub last_used_at: Option<DateTime<Utc>>,
+    pub use_count: i32,
+    pub helpful_count: i32,
+    pub harmful_count: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -206,7 +210,9 @@ const MEMORY_ITEM_COLUMNS: &str = r#"
     id, scope, scope_key, kind, status, content, content_json,
     confidence, importance, pinned,
     source_session_id, source_task_id, source_label, supersedes,
-    valid_until, validity_hint, created_at, updated_at
+    valid_until, validity_hint,
+    last_used_at, use_count, helpful_count, harmful_count,
+    created_at, updated_at
 "#;
 
 pub async fn insert_memory_item(
@@ -420,6 +426,95 @@ pub async fn delete_memory_item(pool: &PgPool, id: Uuid) -> Result<bool, Storage
         .execute(pool)
         .await?;
     Ok(result.rows_affected() > 0)
+}
+
+/// Apply a feedback adjustment to one memory item and append an audit event.
+pub async fn apply_memory_item_feedback(
+    pool: &PgPool,
+    id: Uuid,
+    signal: &str,
+    confidence: f64,
+    importance: f64,
+    status: Option<MemoryStatus>,
+    task_id: Option<Uuid>,
+    delta_confidence: f64,
+    mark_used: bool,
+    bump_helpful: bool,
+    bump_harmful: bool,
+) -> Result<Option<MemoryItemRow>, StorageError> {
+    let mut tx = pool.begin().await?;
+    let row = sqlx::query_as::<_, MemoryItemRow>(&format!(
+        r#"
+        UPDATE memory_items
+        SET
+            confidence = $2,
+            importance = $3,
+            status = COALESCE($4, status),
+            last_used_at = CASE WHEN $5 THEN now() ELSE last_used_at END,
+            use_count = use_count + CASE WHEN $5 THEN 1 ELSE 0 END,
+            helpful_count = helpful_count + CASE WHEN $6 THEN 1 ELSE 0 END,
+            harmful_count = harmful_count + CASE WHEN $7 THEN 1 ELSE 0 END,
+            updated_at = now()
+        WHERE id = $1
+        RETURNING {MEMORY_ITEM_COLUMNS}
+        "#
+    ))
+    .bind(id)
+    .bind(confidence.clamp(0.0, 1.0))
+    .bind(importance.clamp(0.0, 1.0))
+    .bind(status.map(|s| s.as_str()))
+    .bind(mark_used)
+    .bind(bump_helpful)
+    .bind(bump_harmful)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    if row.is_some() {
+        sqlx::query(
+            r#"
+            INSERT INTO memory_feedback_events (id, memory_id, task_id, signal, delta_confidence)
+            VALUES ($1, $2, $3, $4, $5)
+            "#,
+        )
+        .bind(Uuid::new_v4())
+        .bind(id)
+        .bind(task_id)
+        .bind(signal)
+        .bind(delta_confidence)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(row)
+}
+
+/// Candidates for idle decay: unused (or never used) for at least `idle_days`, not pinned.
+pub async fn list_idle_memory_for_decay(
+    pool: &PgPool,
+    idle_days: i32,
+    limit: i64,
+) -> Result<Vec<MemoryItemRow>, StorageError> {
+    let rows = sqlx::query_as::<_, MemoryItemRow>(&format!(
+        r#"
+        SELECT {MEMORY_ITEM_COLUMNS}
+        FROM memory_items
+        WHERE pinned = false
+          AND status IN ('active', 'candidate')
+          AND confidence < 0.7
+          AND (
+                last_used_at IS NULL
+                OR last_used_at < now() - make_interval(days => $1)
+              )
+        ORDER BY confidence ASC, updated_at ASC
+        LIMIT $2
+        "#
+    ))
+    .bind(idle_days.max(1))
+    .bind(limit.clamp(1, 200))
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
 }
 
 /// Import legacy free-text notes into `memory_items` as candidates.

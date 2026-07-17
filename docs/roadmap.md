@@ -16,7 +16,7 @@
 | 3 | Tools + shell | ✅ Готово | Sandbox, filesystem tools, shell, approvals, terminal, permissions |
 | 4 | Editor + Git | ✅ Done | Browser file tree, Monaco editor, Git status/diff/actions, and synchronization events |
 | 5 | Оркестрация | ✅ Complete | Lifecycle, команды, storage и recovery готовы |
-| 6 | Advanced | 🟡 В процессе | Memory `6.16`–`6.22`/`6.24` done; next feedback `6.23` |
+| 6 | Advanced | 🟡 В процессе | Memory `6.16`–`6.24` done; next embeddings `6.25` |
 
 ---
 
@@ -193,7 +193,7 @@
 | 6.20 | Memory extraction + decision gate: auto-promote или ask-on-uncertainty | ✅ | `crates/memory/` extract+gate, `server`, protocol, MemoryAskModal |
 | 6.21 | Experience memory: success/failure patterns, verification rules и playbooks | ✅ | `crates/memory/` experience+extract, retrieval priority, gate |
 | 6.22 | Override UI: правка, отклонение, архив, удаление, pin (не блокер happy path) | ✅ | `/api/memory`, MemoryPanel |
-| 6.23 | Feedback loop: memory used/helpful/corrected/rejected и confidence decay | 🟡 Planned | `crates/protocol/`, `crates/storage/`, `crates/server/` |
+| 6.23 | Feedback loop: memory used/helpful/corrected/rejected и confidence decay | ✅ | `crates/memory/src/feedback*.rs`, migration `0016` |
 | 6.24 | Панель Memory: active, candidates, experiences, conflicts и privacy | ✅ | `frontend/web/src/panels/MemoryPanel.tsx` |
 | 6.25 | Hybrid semantic retrieval через embeddings после стабилизации lexical retrieval | 🟡 Planned | `crates/project-index/`, `crates/memory/` |
 
@@ -247,7 +247,7 @@
 | P1 | Декомпозиция `frontend/web/src/app.tsx` | ✅ types + api + lib + panels + event hook (`6.13`) |
 | P1 | Typed API client | ✅ `frontend/web/src/api/*` поверх `apiRequest` |
 | P1 | Более глубокие панели Tasks/Actions | ✅ steps/deps/pause/retries/approvals/recovery |
-| P1 | Agent memory 6.16–6.25 | 🟡 `6.16`–`6.22`/`6.24` done; next feedback `6.23` |
+| P1 | Agent memory 6.16–6.25 | 🟡 `6.16`–`6.24` done; next embeddings `6.25` |
 
 ### P2 — Поиск, разрешения и GitHub workflow
 
@@ -276,7 +276,8 @@
 - `6.20` Memory extraction + ask-on-uncertainty ✅
 - `6.21` Experience memory / playbooks ✅
 - `6.22` / `6.24` Memory panel overrides ✅
-- **Next:** feedback loop (`6.23`); embeddings (`6.25`)
+- `6.23` feedback loop ✅
+- **Next:** embeddings (`6.25`)
 
 ---
 

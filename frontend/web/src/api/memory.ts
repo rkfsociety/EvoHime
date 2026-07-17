@@ -17,6 +17,10 @@ export type MemoryItem = {
   supersedes?: string | null;
   valid_until?: string | null;
   validity_hint?: string | null;
+  last_used_at?: string | null;
+  use_count?: number;
+  helpful_count?: number;
+  harmful_count?: number;
   created_at: string;
   updated_at: string;
 };

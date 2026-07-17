@@ -4,7 +4,7 @@ Last updated: 2026-07-17
 
 ## Stage: 6 in progress
 
-Stages 1–5 complete. Structured memory `6.16`–`6.22`/`6.24`: schema through experience + Memory panel overrides.
+Stages 1–5 complete. Structured memory `6.16`–`6.24`: schema through experience, Memory panel, and feedback loop.
 
 ## Crates
 
@@ -88,7 +88,7 @@ user.message
 | Terminal / Files / Editor / Git | ✅ |
 | Plugins / Sites | ✅ Plugins: installed list + remote catalog/install |
 | Pull Requests | ✅ list + detail (diff/comments/checks) + create |
-| Memory | ✅ tabs active/candidates/experiences/conflicts/archived + edit/pin/reject/archive/delete (`6.22`/`6.24`) |
+| Memory | ✅ tabs + edit/pin/reject/archive/delete (`6.22`/`6.24`); feedback helpful/harmful/corrected/rejected + idle decay (`6.23`) |
 
 Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEventHandler` (`6.13` ✅). Brand: SVG mark + portrait mascot (`AgentBrand` / `AgentMark` / `AgentAvatar`, favicon).
 
@@ -100,6 +100,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. **`6.23`** — feedback loop (used/helpful/rejected, confidence decay)
+1. **`6.25`** — embeddings (after lexical retrieval quality)
 2. Then embeddings (`6.25`) after lexical quality is proven
 3. Parallel P1: task-pipeline observability; broader integration tests

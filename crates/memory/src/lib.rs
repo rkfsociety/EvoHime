@@ -1,13 +1,15 @@
-//! Agent memory domain service (roadmap 6.18–6.21).
+//! Agent memory domain service (roadmap 6.18–6.23).
 //!
 //! Redaction, normalization, deduplication, conflict detection, extraction,
-//! ask-on-uncertainty gate, and experience/playbook patterns on `memory_items`.
+//! ask-on-uncertainty gate, experience/playbooks, and feedback/decay on `memory_items`.
 
 mod conflict;
 mod decision;
 mod dedupe;
 mod experience;
 mod extract;
+mod feedback;
+mod feedback_service;
 mod normalize;
 mod redact;
 mod retrieve;
@@ -22,6 +24,15 @@ pub use experience::{
 pub use extract::{
     experience_patterns, extract_candidates, heuristic_extract, parse_extraction_json,
     ExtractedCandidate, MAX_CANDIDATES_PER_TASK,
+};
+pub use feedback::{
+    apply_feedback_signal, FeedbackAdjustment, FeedbackSignal, ARCHIVE_CONFIDENCE_THRESHOLD,
+    HARMFUL_CONFIDENCE_DECAY, HELPFUL_CONFIDENCE_BUMP, IDLE_CONFIDENCE_DECAY,
+};
+pub use feedback_service::{
+    decay_unused_memory, record_memory_corrected, record_memory_harmful, record_memory_helpful,
+    record_memory_rejected, record_memory_used, FeedbackApplyResult, DEFAULT_IDLE_BATCH,
+    DEFAULT_IDLE_DAYS,
 };
 pub use normalize::normalize_content;
 pub use redact::{redact_secrets, RedactionOutcome};

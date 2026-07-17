@@ -144,6 +144,13 @@ export function MemoryPanel() {
                   </strong>
                   <span>
                     {item.status} · conf {item.confidence.toFixed(2)}
+                    {typeof item.use_count === "number" ? ` · used ${item.use_count}` : ""}
+                    {typeof item.helpful_count === "number" && item.helpful_count > 0
+                      ? ` · +${item.helpful_count}`
+                      : ""}
+                    {typeof item.harmful_count === "number" && item.harmful_count > 0
+                      ? ` · -${item.harmful_count}`
+                      : ""}
                   </span>
                 </div>
                 {editing ? (

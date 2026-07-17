@@ -24,7 +24,8 @@ export type ServerEvent =
   | MemoryProposedEvent
   | MemoryAskEvent
   | MemoryAcceptedEvent
-  | MemoryRejectedEvent;
+  | MemoryRejectedEvent
+  | MemoryUsedEvent;
 export type Uuid = string;
 export type DateTime = string;
 export type ClientCommand =
@@ -163,6 +164,13 @@ export interface MemoryRejectedEvent {
   type: "memory.rejected";
   memory_id: Uuid;
   task_id: Uuid;
+}
+export interface MemoryUsedEvent {
+  type: "memory.used";
+  memory_id: Uuid;
+  task_id: Uuid;
+  signal: string;
+  confidence: number;
 }
 export interface UserMessageCommand {
   type: "user.message";

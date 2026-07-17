@@ -63,15 +63,15 @@ EvoHime Server — Rust
 
 ## Фактический статус на 2026-07-17
 
-Этапы 1–5 завершены. Stage 6: foundations + PR workflow + shell split + memory `6.16`–`6.22`/`6.24` (включая Memory panel).
+Этапы 1–5 завершены. Stage 6: foundations + PR workflow + shell split + memory `6.16`–`6.24` (включая Memory panel и feedback loop).
 
 - tools: filesystem / shell / Git / browser / MCP в `tool-runtime`;
 - `agent-runtime`: plan → dependency batches → bounded replan; checkpoints; structured + legacy memory в prompt;
-- `crates/memory`: redact / normalize / dedupe / conflict / retrieve / extract / decision gate / experience playbooks;
+- `crates/memory`: redact / normalize / dedupe / conflict / retrieve / extract / decision gate / experience playbooks / feedback;
 - `storage` + `/api/memory`: CRUD/override; frontend MemoryPanel + MemoryAskModal;
 - workers: health/stall + `text.summarize` / `text.chunk`.
 
-**Следующий сквозной приоритет:** feedback loop (`6.23`); затем embeddings (`6.25`); параллельно — observability и интеграционные тесты.
+**Следующий сквозной приоритет:** embeddings (`6.25`); параллельно — observability и интеграционные тесты.
 
 ---
 
@@ -90,7 +90,7 @@ EvoHime Server — Rust
 | Actions | Журнал действий агента | 5–6, deep UI ✅ |
 | Settings | Модели, разрешения, MCP | 2+ ✅ |
 | Pull Requests | List/detail/create | 6 ✅ (`6.14`) |
-| Memory | Override / candidates | 6, planned (`6.22`/`6.24`) |
+| Memory | Override / candidates / feedback | 6 ✅ (`6.22`–`6.24`) |
 
 ---
 

@@ -190,6 +190,15 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
         { role: "system", text: `Память отклонена: ${event.memory_id}` },
       ]);
       break;
+    case "memory.used":
+      ctx.setLines((current) => [
+        ...current,
+        {
+          role: "system",
+          text: `Память feedback [${event.signal}]: ${event.memory_id} → conf ${event.confidence.toFixed(2)}`,
+        },
+      ]);
+      break;
     case "tool.completed":
       ctx.setLines((current) => [
         ...current,
