@@ -196,12 +196,34 @@ fn extract_json_blocks(raw: &str) -> Vec<String> {
     out
 }
 
+/// Transient provider / infra failures must not become experience memory.
+/// Example: LiteRouter tier cooldown (`403` / rate limit) is noise, not a playbook.
+pub fn is_transient_infra_failure(message: &str) -> bool {
+    let lower = message.to_ascii_lowercase();
+    let rate_limited = lower.contains("rate limit")
+        || lower.contains("ratelimit")
+        || lower.contains("cooldown")
+        || lower.contains("too many requests")
+        || lower.contains("429");
+    let provider_http = (lower.contains("model error") || lower.contains("api error"))
+        && (lower.contains("403")
+            || lower.contains("429")
+            || lower.contains("502")
+            || lower.contains("503")
+            || lower.contains("504")
+            || lower.contains("forbidden"));
+    rate_limited || provider_http
+}
+
 /// Success/failure/verification/playbook drafts for the experience scope.
 pub fn experience_patterns(
     user_message: &str,
     final_message: &str,
     task_ok: bool,
 ) -> Vec<ExtractedCandidate> {
+    if !task_ok && is_transient_infra_failure(final_message) {
+        return Vec::new();
+    }
     let trigger = truncate_chars(user_message, TRIGGER_LIMIT);
     if trigger.is_empty() {
         return Vec::new();
@@ -302,6 +324,11 @@ pub fn heuristic_extract(
     final_message: &str,
     task_ok: bool,
 ) -> Vec<ExtractedCandidate> {
+    // Do not turn provider outages / rate limits into session facts or playbooks.
+    if !task_ok && is_transient_infra_failure(final_message) {
+        return Vec::new();
+    }
+
     let summary = truncate_summary(user_message, final_message);
     if summary.is_empty() {
         return Vec::new();
@@ -344,6 +371,11 @@ pub fn extract_candidates(
     let mut out = Vec::new();
     if let Some(raw) = llm_raw {
         out.extend(parse_extraction_json(raw));
+    }
+    // Drop LLM drafts that just echo provider outages.
+    out.retain(|c| !is_transient_infra_failure(&c.content));
+    if !task_ok && is_transient_infra_failure(final_message) {
+        return out;
     }
     if out.is_empty() {
         return heuristic_extract(user_message, final_message, task_ok);
@@ -450,5 +482,23 @@ mod tests {
         let items = extract_candidates(Some("???"), "hello", "world", true);
         assert!(items.len() >= 2);
         assert!(items.iter().any(|c| c.scope == MemoryScope::Experience));
+    }
+
+    #[test]
+    fn skips_literouter_rate_limit_as_experience() {
+        let msg = r#"model error: api error: 403 Forbidden: {"error":"[LiteRouter] Rate limit exceeded for your tier (5 seconds between messages)."}"#;
+        assert!(is_transient_infra_failure(msg));
+        assert!(experience_patterns("разберись в коде", msg, false).is_empty());
+        assert!(heuristic_extract("разберись в коде", msg, false).is_empty());
+        let items = extract_candidates(None, "разберись в коде", msg, false);
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn real_task_failure_still_yields_failure_pattern() {
+        let items = experience_patterns("deploy", "failed: timeout waiting for pod", false);
+        assert!(items
+            .iter()
+            .any(|c| c.kind == MemoryKind::FailurePattern));
     }
 }
