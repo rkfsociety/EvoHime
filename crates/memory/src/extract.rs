@@ -8,8 +8,6 @@ use uuid::Uuid;
 
 pub const MAX_CANDIDATES_PER_TASK: usize = 5;
 const SUMMARY_LIMIT: usize = 400;
-const TRIGGER_LIMIT: usize = 160;
-const STEP_LIMIT: usize = 200;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtractedCandidate {
@@ -272,54 +270,17 @@ pub fn is_ephemeral_task_dump(content: &str) -> bool {
     false
 }
 
-/// Success/failure/verification/playbook drafts for the experience scope.
+/// Experience drafts for the experience scope.
+///
+/// Failed tasks never auto-extract here: splicing the user prompt + error into a
+/// playbook/`failure_pattern` only produced ask-on-uncertainty noise.
+/// Success playbooks still need structured LLM extract — dumping the reply is noise.
 pub fn experience_patterns(
-    user_message: &str,
-    final_message: &str,
-    task_ok: bool,
+    _user_message: &str,
+    _final_message: &str,
+    _task_ok: bool,
 ) -> Vec<ExtractedCandidate> {
-    // Success playbooks need structured LLM extract — dumping the whole reply is noise.
-    if task_ok {
-        return Vec::new();
-    }
-    if is_transient_infra_failure(final_message) || is_ephemeral_task_dump(final_message) {
-        return Vec::new();
-    }
-    let trigger = truncate_chars(user_message, TRIGGER_LIMIT);
-    if trigger.is_empty() {
-        return Vec::new();
-    }
-    let outcome = truncate_chars(final_message, STEP_LIMIT);
-    if outcome.is_empty() || is_ephemeral_task_dump(&outcome) {
-        return Vec::new();
-    }
-
-    let mut out = Vec::new();
-    out.push(ExtractedCandidate {
-        scope: MemoryScope::Experience,
-        kind: MemoryKind::FailurePattern,
-        content: format!("When '{trigger}' failed: {outcome}"),
-        content_json: None,
-        confidence: 0.68,
-        importance: 0.65,
-        pinned: false,
-    });
-    let playbook = PlaybookPayload {
-        trigger: trigger.clone(),
-        steps: vec![format!("Investigate failure: {outcome}")],
-        verify: Some("Failure no longer reproduces".into()),
-        rollback_hint: Some("Revert partial changes from the failed attempt".into()),
-    };
-    out.push(ExtractedCandidate {
-        scope: MemoryScope::Experience,
-        kind: MemoryKind::Playbook,
-        content: playbook.to_content_text(),
-        content_json: Some(playbook.to_content_json()),
-        confidence: 0.55,
-        importance: 0.6,
-        pinned: false,
-    });
-    out
+    Vec::new()
 }
 
 fn merge_unique(
@@ -349,8 +310,8 @@ pub fn heuristic_extract(
     final_message: &str,
     task_ok: bool,
 ) -> Vec<ExtractedCandidate> {
-    // Do not turn provider outages / rate limits into session facts or playbooks.
-    if !task_ok && is_transient_infra_failure(final_message) {
+    // Failed tasks: no auto session-facts / experience noise (ask-on-uncertainty spam).
+    if !task_ok {
         return Vec::new();
     }
 
@@ -359,56 +320,38 @@ pub fn heuristic_extract(
         || is_ephemeral_task_dump(&summary)
         || is_ephemeral_task_dump(final_message)
     {
-        // Still allow real failure patterns when the failure text is usable.
-        return experience_patterns(user_message, final_message, task_ok);
+        return Vec::new();
     }
-
-    let mut out = Vec::new();
 
     // Session dumps at 0.55 only spam ask-on-uncertainty; keep short workspace facts.
-    if task_ok {
-        out.push(ExtractedCandidate {
-            scope: MemoryScope::Workspace,
-            kind: MemoryKind::Fact,
-            content: summary,
-            content_json: None,
-            confidence: 0.75,
-            importance: 0.5,
-            pinned: false,
-        });
-    } else {
-        out.push(ExtractedCandidate {
-            scope: MemoryScope::Session,
-            kind: MemoryKind::Fact,
-            content: summary,
-            content_json: None,
-            confidence: 0.55,
-            importance: 0.4,
-            pinned: false,
-        });
-    }
-
-    merge_unique(
-        out,
-        experience_patterns(user_message, final_message, task_ok),
-    )
+    vec![ExtractedCandidate {
+        scope: MemoryScope::Workspace,
+        kind: MemoryKind::Fact,
+        content: summary,
+        content_json: None,
+        confidence: 0.75,
+        importance: 0.5,
+        pinned: false,
+    }]
 }
 
-/// Prefer parsed LLM candidates; always try to supplement with experience patterns.
+/// Prefer parsed LLM candidates; supplement with heuristics only on successful tasks.
 pub fn extract_candidates(
     llm_raw: Option<&str>,
     user_message: &str,
     final_message: &str,
     task_ok: bool,
 ) -> Vec<ExtractedCandidate> {
+    // No auto-extract after failures — neither LLM nor heuristics (no memory.ask spam).
+    if !task_ok {
+        return Vec::new();
+    }
+
     let mut out = Vec::new();
     if let Some(raw) = llm_raw {
         out.extend(parse_extraction_json(raw));
     }
     out.retain(|c| !is_transient_infra_failure(&c.content) && !is_ephemeral_task_dump(&c.content));
-    if !task_ok && is_transient_infra_failure(final_message) {
-        return out;
-    }
     if out.is_empty() {
         return heuristic_extract(user_message, final_message, task_ok);
     }
@@ -485,15 +428,17 @@ mod tests {
     }
 
     #[test]
-    fn heuristic_failure_uses_experience_failure_not_global() {
+    fn heuristic_failure_extracts_nothing() {
         let items = heuristic_extract("deploy", "failed: timeout", false);
-        assert!(items
-            .iter()
-            .any(|c| c.kind == MemoryKind::FailurePattern && c.scope == MemoryScope::Experience));
-        assert!(items.iter().all(|c| c.scope != MemoryScope::Global));
-        assert!(!items
-            .iter()
-            .any(|c| c.scope == MemoryScope::Workspace && c.kind == MemoryKind::FailurePattern));
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn extract_candidates_skips_all_on_task_failure() {
+        let llm = r#"[{"scope":"experience","kind":"failure_pattern","content":"from llm","confidence":0.9}]"#;
+        let items = extract_candidates(Some(llm), "deploy", "failed: timeout", false);
+        assert!(items.is_empty());
+        assert!(extract_candidates(None, "deploy", "failed: timeout", false).is_empty());
     }
 
     #[test]
@@ -554,8 +499,8 @@ Then read README."#;
     }
 
     #[test]
-    fn real_task_failure_still_yields_failure_pattern() {
+    fn real_task_failure_yields_no_experience_noise() {
         let items = experience_patterns("deploy", "failed: timeout waiting for pod", false);
-        assert!(items.iter().any(|c| c.kind == MemoryKind::FailurePattern));
+        assert!(items.is_empty());
     }
 }

@@ -156,6 +156,11 @@ pub(crate) async fn persist_structured_memory(
     final_message: &str,
     task_ok: bool,
 ) {
+    // Failed tasks: skip LLM extract entirely (no candidates, no memory.ask).
+    if !task_ok {
+        return;
+    }
+
     let llm_raw =
         llm_extract_memory_json(gateway, &task.user_message, final_message, task_ok).await;
     let candidates = evohime_memory::extract_candidates(

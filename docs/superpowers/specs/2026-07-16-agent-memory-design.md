@@ -67,7 +67,7 @@ Each memory item at minimum:
 ## Automatic lifecycle
 
 ```text
-task completed | task failed | explicit “remember” signal
+task completed | explicit “remember” signal
   → extract (strict JSON schema via model-gateway)
   → redact secrets
   → normalize + dedupe
@@ -77,6 +77,10 @@ task completed | task failed | explicit “remember” signal
        ├ high confidence + safe heuristics → auto-promote → active
        ├ uncertain / conflict / high-impact → ask operator
        └ secret / garbage / failed validation → drop or archive
+
+Failed tasks do **not** auto-extract (no heuristic playbooks / failure_pattern /
+session facts, no LLM extract call) — that path only produced ask-on-uncertainty noise.
+Memory feedback/decay on items already used in the task still runs.
 ```
 
 ### Decision gate (ask-on-uncertainty)

@@ -73,7 +73,7 @@ user.message
   → plan steps → dependency batches → tools
   → bounded replan (≤3) → respond
   → checkpoints / approval pause / resume
-  → extract candidates (LLM JSON + heuristic + experience patterns)
+  → extract candidates on success only (LLM JSON + heuristic; skipped on task.failed)
   → admit → decision gate (auto-promote | memory.ask | drop)
   → legacy notes migrated at startup; structured memory_items only at runtime
   → task.completed | task.failed
