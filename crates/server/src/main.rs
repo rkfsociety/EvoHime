@@ -112,7 +112,16 @@ async fn main() -> anyhow::Result<()> {
     let _otel = otel::init_tracing()?;
 
     let config = AppConfig::from_env()?;
-    let pool = PgPool::connect(&config.database_url)
+    let pool_config = evohime_storage::PoolConfig::from_env();
+    info!(
+        max_connections = pool_config.max_connections,
+        min_connections = pool_config.min_connections,
+        acquire_timeout_secs = pool_config.acquire_timeout.as_secs(),
+        idle_timeout_secs = ?pool_config.idle_timeout.map(|d| d.as_secs()),
+        max_lifetime_secs = ?pool_config.max_lifetime.map(|d| d.as_secs()),
+        "postgres pool configured"
+    );
+    let pool = evohime_storage::connect_pool(&config.database_url, &pool_config)
         .await
         .context("connect to postgres")?;
 

@@ -6,6 +6,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 pub mod memory;
+pub mod pool;
 
 pub use memory::{
     apply_memory_item_feedback, delete_memory_item, get_memory_item, import_legacy_memory_notes,
@@ -14,6 +15,7 @@ pub use memory::{
     update_memory_item_fields_with_embedding, update_memory_item_status, MemoryItemRow, MemoryKind,
     MemoryScope, MemoryStatus, NewMemoryItem, LOCAL_OPERATOR_SCOPE_KEY,
 };
+pub use pool::{connect_pool, PoolConfig};
 
 #[derive(Debug, Error)]
 pub enum StorageError {
