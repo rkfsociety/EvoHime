@@ -460,6 +460,7 @@ mod tests {
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
+        let _ssrf = crate::ssrf::lock_private_override(Some(true));
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/page"))

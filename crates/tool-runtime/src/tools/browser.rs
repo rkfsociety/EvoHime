@@ -1,6 +1,6 @@
-use crate::{ToolContext, ToolError, ToolResult};
+use crate::{ssrf, ToolContext, ToolError, ToolResult};
 use evohime_permissions::Permission;
-use reqwest::{Client, Url};
+use reqwest::{redirect::Policy, Client, Url};
 use scraper::{Html, Selector};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -151,6 +151,13 @@ struct Page {
 async fn fetch_page(url: Url, timeout: Duration) -> Result<Page, ToolError> {
     let client = Client::builder()
         .timeout(timeout)
+        .redirect(Policy::custom(|attempt| {
+            if ssrf::assert_safe_http_url(attempt.url()).is_ok() {
+                attempt.follow()
+            } else {
+                attempt.stop()
+            }
+        }))
         .user_agent("EvoHime/0.1 browser tool")
         .build()
         .map_err(|error| ToolError::Execution(format!("client setup failed: {error}")))?;
@@ -163,6 +170,10 @@ async fn fetch_page(url: Url, timeout: Duration) -> Result<Page, ToolError> {
 
     let status = response.status();
     let final_url = response.url().clone();
+    ssrf::assert_safe_http_url(&final_url).map_err(|message| ToolError::InvalidInput {
+        tool: "browser".to_string(),
+        message: format!("ssrf blocked final url: {message}"),
+    })?;
     let body = response
         .text()
         .await
@@ -188,13 +199,11 @@ fn validate_url(value: &str, tool: &str) -> Result<Url, ToolError> {
         tool: tool.to_string(),
         message: error.to_string(),
     })?;
-    match url.scheme() {
-        "http" | "https" => Ok(url),
-        _ => Err(ToolError::InvalidInput {
-            tool: tool.to_string(),
-            message: "url must use http or https".to_string(),
-        }),
-    }
+    ssrf::assert_safe_http_url(&url).map_err(|message| ToolError::InvalidInput {
+        tool: tool.to_string(),
+        message,
+    })?;
+    Ok(url)
 }
 
 fn timeout_from_input(timeout_ms: Option<u64>, default_timeout: Duration) -> Duration {
@@ -323,13 +332,23 @@ mod tests {
         (dir, ctx)
     }
 
-    #[tokio::test]
-    async fn open_fetches_page_and_summarizes_content() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/page"))
-            .respond_with(ResponseTemplate::new(200).set_body_string(
-                r#"
+    fn allow_private_targets_for_mock_server() -> crate::ssrf::PrivateOverrideGuard {
+        crate::ssrf::lock_private_override(Some(true))
+    }
+
+    #[test]
+    fn open_fetches_page_and_summarizes_content() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        let _guard = allow_private_targets_for_mock_server();
+        runtime.block_on(async {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/page"))
+                .respond_with(ResponseTemplate::new(200).set_body_string(
+                    r#"
                     <html>
                       <head>
                         <title>Demo Page</title>
@@ -344,36 +363,43 @@ mod tests {
                       </body>
                     </html>
                 "#,
-            ))
-            .mount(&server)
-            .await;
+                ))
+                .mount(&server)
+                .await;
 
-        let (_dir, ctx) = ctx();
-        let result = open(
-            &ctx,
-            json!({
-                "url": format!("{}/page", server.uri()),
-                "max_chars": 200
-            }),
-        )
-        .await
-        .expect("open succeeds");
+            let (_dir, ctx) = ctx();
+            let result = open(
+                &ctx,
+                json!({
+                    "url": format!("{}/page", server.uri()),
+                    "max_chars": 200
+                }),
+            )
+            .await
+            .expect("open succeeds");
 
-        assert_eq!(result.structured["title"], "Demo Page");
-        assert!(result.output.contains("Hello browser"));
-        assert_eq!(
-            result.structured["links"][0]["href"],
-            format!("{}/docs", server.uri())
-        );
+            assert_eq!(result.structured["title"], "Demo Page");
+            assert!(result.output.contains("Hello browser"));
+            assert_eq!(
+                result.structured["links"][0]["href"],
+                format!("{}/docs", server.uri())
+            );
+        });
     }
 
-    #[tokio::test]
-    async fn extract_selects_matching_nodes() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/page"))
-            .respond_with(ResponseTemplate::new(200).set_body_string(
-                r#"
+    #[test]
+    fn extract_selects_matching_nodes() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        let _guard = allow_private_targets_for_mock_server();
+        runtime.block_on(async {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/page"))
+                .respond_with(ResponseTemplate::new(200).set_body_string(
+                    r#"
                     <html>
                       <body>
                         <ul>
@@ -383,26 +409,27 @@ mod tests {
                       </body>
                     </html>
                 "#,
-            ))
-            .mount(&server)
-            .await;
+                ))
+                .mount(&server)
+                .await;
 
-        let (_dir, ctx) = ctx();
-        let result = extract(
-            &ctx,
-            json!({
-                "url": format!("{}/page", server.uri()),
-                "selector": "li",
-                "attribute": "data-id",
-                "limit": 1
-            }),
-        )
-        .await
-        .expect("extract succeeds");
+            let (_dir, ctx) = ctx();
+            let result = extract(
+                &ctx,
+                json!({
+                    "url": format!("{}/page", server.uri()),
+                    "selector": "li",
+                    "attribute": "data-id",
+                    "limit": 1
+                }),
+            )
+            .await
+            .expect("extract succeeds");
 
-        assert_eq!(result.structured["count"], 1);
-        assert_eq!(result.structured["items"][0]["text"], "First");
-        assert_eq!(result.structured["items"][0]["attribute"], "alpha");
+            assert_eq!(result.structured["count"], 1);
+            assert_eq!(result.structured["items"][0]["text"], "First");
+            assert_eq!(result.structured["items"][0]["attribute"], "alpha");
+        });
     }
 
     #[tokio::test]
@@ -418,5 +445,28 @@ mod tests {
         .expect_err("url rejected");
 
         assert!(matches!(error, ToolError::InvalidInput { .. }));
+    }
+
+    #[test]
+    fn rejects_loopback_without_escape_hatch() {
+        let _guard = crate::ssrf::lock_private_override(Some(false));
+        let (_dir, ctx) = ctx();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        let error = runtime.block_on(open(
+            &ctx,
+            json!({
+                "url": "http://127.0.0.1:9/"
+            }),
+        ))
+        .expect_err("loopback blocked");
+        assert!(matches!(error, ToolError::InvalidInput { .. }));
+        let message = error.to_string();
+        assert!(
+            message.contains("blocked") || message.contains("127.0.0.1"),
+            "unexpected message: {message}"
+        );
     }
 }
