@@ -23,7 +23,7 @@ React+TS+Vite frontend, Rust/Axum backend, PostgreSQL, WebSocket, native Windows
 
 ## Current stage: 6 (Milestone 5 in progress)
 
-Stages 1–5 done. Memory `6.16`–`6.25`, pipeline observability, and integration tests landed. Next: optional neural/OTel or LLM tool-calling.
+Stages 1–5 done. Memory, observability, integration tests, and full-registry LLM tool-calling landed. Next: P2 index/permissions or optional neural/OTel.
 
 ## Key paths
 
@@ -41,7 +41,7 @@ Stages 1–5 done. Memory `6.16`–`6.25`, pipeline observability, and integrati
 
 ## Next
 
-Optional neural encoder / OTel, or general LLM tool-calling.
+P2 project index / permissions. Optional: neural encoder / OTel.
 
 ## Local run
 

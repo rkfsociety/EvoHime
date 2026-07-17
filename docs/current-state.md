@@ -102,6 +102,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. Optional: swap local feature-hash embeddings for a neural encoder
-2. Optional: OpenTelemetry export on top of current metrics
-3. General LLM tool-calling across registered tools (orchestration still plan-driven)
+1. P2: improved project index (chunks, path/symbol weights, binary filter)
+2. P2: finer permission model (per-session / per-path, approval audit)
+3. Optional: neural embeddings / OpenTelemetry export

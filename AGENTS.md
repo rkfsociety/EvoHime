@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
+- P2 improved project index / finer permissions
 - Optional neural encoder / OpenTelemetry export
-- General LLM tool-calling across all registered tools (orchestration still plan-driven)
 - More ML handlers / deeper worker observability as needed
 
 ## WebSocket events
@@ -170,7 +170,7 @@ See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](d
 | 3 Tools + shell | ✅ Done |
 | 4 Editor + Git | ✅ Done |
 | 5 Task orchestration | ✅ Done |
-| 6 Advanced | 🟡 In progress — memory + observability + integration tests done |
+| 6 Advanced | 🟡 In progress — memory, observability, integration, full registry tool-calling done |
 
 Memory design: [docs/superpowers/specs/2026-07-16-agent-memory-design.md](docs/superpowers/specs/2026-07-16-agent-memory-design.md)
 

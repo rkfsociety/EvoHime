@@ -71,7 +71,7 @@ EvoHime Server — Rust
 - `storage` + `/api/memory`: CRUD/override; frontend MemoryPanel + MemoryAskModal;
 - workers: health/stall + `text.summarize` / `text.chunk`.
 
-**Следующий сквозной приоритет:** optional neural encoder / OTel; general LLM tool-calling.
+**Следующий сквозной приоритет:** P2 project index / permissions; optional neural encoder / OTel.
 
 ---
 

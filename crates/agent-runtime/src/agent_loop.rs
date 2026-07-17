@@ -249,7 +249,7 @@ async fn run_agent_loop_inner(
     let mut planning_messages = Vec::with_capacity(history.len() + 4);
     planning_messages.push(ChatMessage {
         role: ChatRole::System,
-        content: PLANNING_PROMPT.to_string(),
+        content: planning_prompt_for_tools(tools),
     });
     if let Some(context) = &rules_context {
         planning_messages.push(ChatMessage {
@@ -517,7 +517,40 @@ const RESPONSE_TIMEOUT: Duration = Duration::from_secs(120);
 const MODEL_REQUEST_COOLDOWN: Duration = Duration::from_secs(6);
 const MAX_REPLAN_ROUNDS: usize = 3;
 const SYSTEM_PROMPT: &str = "You are EvoHime, a helpful AI coding assistant. Follow the workspace rules supplied in the system context, preserve user intent, never claim a change was made unless a tool result confirms it, and answer concisely using the provided workspace context. When an action is required, return an explicit JSON tool.call object with type, tool, and input; do not merely describe the call.";
-const PLANNING_PROMPT: &str = "You are EvoHime's task planner. Return only JSON: an array of objects with fields id, tool_name, description, and depends_on. Use only these tool names: filesystem.read, filesystem.list, filesystem.search, filesystem.write, filesystem.patch, shell.execute, git.status, git.diff, git.commit, git.pull, git.push, assistant.reply. Use stable step ids like step-1, step-2, and keep depends_on empty unless a step truly depends on another step. Put exact relative paths in backticks. For filesystem.write, include complete content in a fenced code block. For filesystem.patch, include complete patch text in a fenced code block. For shell.execute, include a JSON object with program, args, cwd, and timeout_ms in the description. For git.commit, include the requested commit message in quotes. Use git.pull and git.push only when explicitly asked. If no tool call is needed, use assistant.reply.";
+const PLANNING_PROMPT: &str = "You are EvoHime's task planner. Return only JSON: an array of objects with fields id, tool_name, description, and depends_on. Use only these tool names: filesystem.read, filesystem.list, filesystem.search, filesystem.write, filesystem.patch, shell.execute, git.status, git.diff, git.commit, git.pull, git.push, browser.open, browser.extract, mcp.call, assistant.reply. Use stable step ids like step-1, step-2, and keep depends_on empty unless a step truly depends on another step. Put exact relative paths in backticks. For filesystem.write, include complete content in a fenced code block. For filesystem.patch, include complete patch text in a fenced code block. For shell.execute, include a JSON object with program, args, cwd, and timeout_ms in the description. For browser.open, put a JSON object with url (and optional max_chars) in the description. For browser.extract, put JSON with url, selector, and optional attribute/limit. For mcp.call, put JSON with url, method, and optional params. For git.commit, include the requested commit message in quotes. Use git.pull and git.push only when explicitly asked. If no tool call is needed, use assistant.reply.";
+
+const REGISTERED_TOOLS: &[&str] = &[
+    "filesystem.read",
+    "filesystem.list",
+    "filesystem.search",
+    "filesystem.write",
+    "filesystem.patch",
+    "shell.execute",
+    "git.status",
+    "git.diff",
+    "git.commit",
+    "git.pull",
+    "git.push",
+    "browser.open",
+    "browser.extract",
+    "mcp.call",
+    "assistant.reply",
+];
+
+fn planning_prompt_for_tools(tools: &ToolRegistry) -> String {
+    let mut names = tools
+        .list()
+        .into_iter()
+        .map(|tool| tool.name.to_string())
+        .collect::<Vec<_>>();
+    names.push("assistant.reply".to_string());
+    names.sort();
+    names.dedup();
+    format!(
+        "{PLANNING_PROMPT}\n\nRuntime-registered tools for this session: {}.",
+        names.join(", ")
+    )
+}
 const REPLAN_PROMPT: &str = "You are EvoHime's replanner. Return ONLY JSON. If enough tool results exist to answer the user, return {\"done\":true}. Otherwise return {\"done\":false,\"steps\":[...]} with ONLY new steps still needed (id, tool_name, description, depends_on). Use the same tool names as planning. Do not repeat completed steps. Prefer the fewest new steps.";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -865,6 +898,13 @@ fn requires_mutation(message: &str) -> bool {
 }
 
 fn tool_input(tool_name: &str, description: &str, workspace_root: &Path) -> Option<Value> {
+    if let Some(mut structured) = structured_json_input(tool_name, description) {
+        if tool_name == "shell.execute" {
+            normalize_shell_program_alias(&mut structured)?;
+        }
+        return Some(structured);
+    }
+
     let path = extract_declared_path(description)
         .or_else(|| extract_backticked(description))
         .map(|path| normalize_plan_path(&path, workspace_root));
@@ -892,12 +932,70 @@ fn tool_input(tool_name: &str, description: &str, workspace_root: &Path) -> Opti
             "patch": extract_code_block(description).unwrap_or_default(),
         })),
         "shell.execute" => shell_input(description),
-        "git.status" => Some(Value::Null),
+        "git.status" => Some(json!({})),
         "git.diff" => Some(json!({})),
         "git.commit" => Some(json!({"message": extract_commit_message(description)})),
         "git.pull" | "git.push" => Some(json!({})),
+        "browser.open" => extract_url(description).map(|url| json!({ "url": url })),
+        "browser.extract" => {
+            let url = extract_url(description)?;
+            let selector = extract_backticked(description)
+                .filter(|value| value != &url && !value.starts_with("http"))
+                .unwrap_or_else(|| "body".to_string());
+            Some(json!({ "url": url, "selector": selector }))
+        }
+        "mcp.call" => None, // requires structured JSON (url + method)
         _ => None,
     }
+}
+
+/// Prefer structured JSON descriptions produced by `tool.call` / tagged calls.
+fn structured_json_input(tool_name: &str, description: &str) -> Option<Value> {
+    let trimmed = description.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let value = serde_json::from_str::<Value>(trimmed).ok()?;
+    match tool_name {
+        "shell.execute"
+        | "browser.open"
+        | "browser.extract"
+        | "mcp.call"
+        | "git.diff"
+        | "git.pull"
+        | "git.push"
+        | "git.status"
+        | "git.commit"
+        | "filesystem.read"
+        | "filesystem.list"
+        | "filesystem.search" => {
+            if value.is_object() {
+                Some(value)
+            } else if value.is_null() {
+                Some(json!({}))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn extract_url(description: &str) -> Option<String> {
+    if let Some(url) = extract_backticked(description).filter(|value| {
+        value.starts_with("http://") || value.starts_with("https://")
+    }) {
+        return Some(url);
+    }
+    for token in description.split_whitespace() {
+        let cleaned = token.trim_matches(|c: char| {
+            c == '"' || c == '\'' || c == ',' || c == ')' || c == '(' || c == '<' || c == '>'
+        });
+        if cleaned.starts_with("http://") || cleaned.starts_with("https://") {
+            return Some(cleaned.to_string());
+        }
+    }
+    None
 }
 
 fn is_mutating_tool(tool_name: &str) -> bool {
@@ -914,12 +1012,17 @@ fn is_mutating_tool(tool_name: &str) -> bool {
 
 fn shell_input(description: &str) -> Option<Value> {
     let mut input = serde_json::from_str::<Value>(description).ok()?;
+    normalize_shell_program_alias(&mut input)?;
+    Some(input)
+}
+
+fn normalize_shell_program_alias(input: &mut Value) -> Option<()> {
     let object = input.as_object_mut()?;
     if !object.contains_key("program") {
         let command = object.remove("command")?;
         object.insert("program".to_string(), command);
     }
-    Some(input)
+    Some(())
 }
 
 fn extract_commit_message(description: &str) -> String {
@@ -1106,20 +1209,9 @@ fn parse_json_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {
 }
 
 fn is_supported_tool(tool_name: &str) -> bool {
-    matches!(
-        tool_name,
-        "filesystem.read"
-            | "filesystem.list"
-            | "filesystem.search"
-            | "filesystem.write"
-            | "filesystem.patch"
-            | "shell.execute"
-            | "git.status"
-            | "git.diff"
-            | "git.commit"
-            | "git.pull"
-            | "git.push"
-    )
+    REGISTERED_TOOLS
+        .iter()
+        .any(|name| *name == tool_name && *name != "assistant.reply")
 }
 
 fn parse_tagged_tool_calls(raw: &str) -> Option<Vec<PlanStep>> {
@@ -1437,21 +1529,7 @@ fn parse_plan_line(index: usize, line: &str) -> Option<PlanStep> {
     // Plain prose from a model is not a plan step. The old fallback mapped
     // every unrecognised line to assistant.reply, producing dozens of fake
     // steps when the model ignored the JSON-only planning instruction.
-    let supported = [
-        "filesystem.read",
-        "filesystem.list",
-        "filesystem.search",
-        "filesystem.write",
-        "filesystem.patch",
-        "shell.execute",
-        "git.status",
-        "git.diff",
-        "git.commit",
-        "git.pull",
-        "git.push",
-        "assistant.reply",
-    ];
-    if !supported.contains(&tool_name.as_str()) {
+    if !REGISTERED_TOOLS.contains(&tool_name.as_str()) {
         return None;
     }
     if tool_name == "assistant.reply" && !body.trim_start().starts_with("assistant.reply") {
@@ -1484,25 +1562,12 @@ fn split_dependencies(text: &str) -> (&str, Vec<String>) {
 }
 
 fn extract_tool_and_description(text: &str, index: usize) -> (String, String) {
-    for tool_name in [
-        "filesystem.read",
-        "filesystem.list",
-        "filesystem.search",
-        "filesystem.write",
-        "filesystem.patch",
-        "shell.execute",
-        "git.status",
-        "git.diff",
-        "git.commit",
-        "git.pull",
-        "git.push",
-        "assistant.reply",
-    ] {
+    for tool_name in REGISTERED_TOOLS {
         if let Some(position) = text.find(tool_name) {
             let prefix = text[..position].trim();
             if prefix.starts_with("step-") || prefix.starts_with("**step-") {
                 return (
-                    tool_name.to_string(),
+                    (*tool_name).to_string(),
                     text[position + tool_name.len()..]
                         .trim_start_matches(['*', ':', '-', ' ', '\n'])
                         .to_string(),
@@ -1525,22 +1590,10 @@ fn extract_tool_and_description(text: &str, index: usize) -> (String, String) {
     }
 
     let lower = text.to_lowercase();
-    for tool_name in [
-        "filesystem.read",
-        "filesystem.list",
-        "filesystem.search",
-        "filesystem.write",
-        "filesystem.patch",
-        "git.status",
-        "git.diff",
-        "git.commit",
-        "git.pull",
-        "git.push",
-        "assistant.reply",
-    ] {
+    for tool_name in REGISTERED_TOOLS {
         if lower.starts_with(tool_name) {
             return (
-                tool_name.to_string(),
+                (*tool_name).to_string(),
                 text[tool_name.len()..]
                     .trim_start_matches([':', '-', ' '])
                     .to_string(),
@@ -1913,6 +1966,52 @@ mod tests {
         assert_eq!(plan.len(), 1);
         assert_eq!(plan[0].tool_name, "filesystem.write");
         assert!(plan[0].description.contains("docs/direct.md"));
+    }
+
+    #[test]
+    fn parses_browser_and_mcp_tool_calls_into_executable_input() {
+        let browser = parse_plan(
+            r#"{"type":"tool.call","tool":"browser.open","input":{"url":"https://example.com","max_chars":1000}}"#,
+        );
+        assert_eq!(browser.len(), 1);
+        assert_eq!(browser[0].tool_name, "browser.open");
+        let browser_input =
+            tool_input("browser.open", &browser[0].description, Path::new(".")).expect("browser");
+        assert_eq!(browser_input["url"], "https://example.com");
+        assert_eq!(browser_input["max_chars"], 1000);
+
+        let extract = parse_plan(
+            r#"{"type":"tool.call","tool":"browser.extract","input":{"url":"https://example.com","selector":"h1"}}"#,
+        );
+        let extract_input =
+            tool_input("browser.extract", &extract[0].description, Path::new(".")).expect("extract");
+        assert_eq!(extract_input["selector"], "h1");
+
+        let mcp = parse_plan(
+            r#"{"type":"tool.call","tool":"mcp.call","input":{"url":"https://mcp.example/rpc","method":"tools/list","params":{}}}"#,
+        );
+        let mcp_input = tool_input("mcp.call", &mcp[0].description, Path::new(".")).expect("mcp");
+        assert_eq!(mcp_input["method"], "tools/list");
+    }
+
+    #[test]
+    fn registered_tools_cover_bootstrap_registry() {
+        let registry = ToolRegistry::bootstrap();
+        let names = registry
+            .list()
+            .into_iter()
+            .map(|tool| tool.name)
+            .collect::<std::collections::HashSet<_>>();
+        for tool in REGISTERED_TOOLS {
+            if *tool == "assistant.reply" {
+                continue;
+            }
+            assert!(
+                names.contains(tool),
+                "REGISTERED_TOOLS entry `{tool}` missing from ToolRegistry::bootstrap()"
+            );
+        }
+        assert_eq!(names.len(), REGISTERED_TOOLS.len() - 1);
     }
 
     #[test]

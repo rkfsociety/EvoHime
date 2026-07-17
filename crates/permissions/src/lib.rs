@@ -72,6 +72,8 @@ impl PermissionEngine {
         modes.insert(Permission::ShellExecute, PermissionMode::Ask);
         modes.insert(Permission::GitRead, PermissionMode::Allow);
         modes.insert(Permission::GitWrite, PermissionMode::Ask);
+        modes.insert(Permission::BrowserAccess, PermissionMode::Ask);
+        modes.insert(Permission::McpCall, PermissionMode::Ask);
         Self {
             modes: Arc::new(RwLock::new(modes)),
             approvals: Arc::new(RwLock::new(HashMap::new())),

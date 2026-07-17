@@ -16,7 +16,7 @@
 | 3 | Tools + shell | ✅ Готово | Sandbox, filesystem tools, shell, approvals, terminal, permissions |
 | 4 | Editor + Git | ✅ Done | Browser file tree, Monaco editor, Git status/diff/actions, and synchronization events |
 | 5 | Оркестрация | ✅ Complete | Lifecycle, команды, storage и recovery готовы |
-| 6 | Advanced | 🟡 В процессе | Memory + observability + integration tests ✅; next optional neural/OTel / LLM tool-calling |
+| 6 | Advanced | 🟡 В процессе | Memory/observability/integration ✅; LLM tool-calling across registry ✅; next P2 index/permissions or OTel |
 
 ---
 
@@ -280,7 +280,8 @@
 - `6.25` hybrid embeddings ✅
 - Pipeline observability (`GET /api/metrics`) ✅
 - Integration tests (approval pause/resume, recovery) ✅
-- **Next:** optional neural encoder / OTel; general LLM tool-calling
+- General LLM tool-calling across registered tools ✅ (`browser.*`, `mcp.call` wired; planner catalog)
+- **Next:** P2 project index / permissions; optional neural encoder / OTel
 
 ---
 

@@ -230,6 +230,8 @@ impl ToolRegistry {
                 tools::git::PULL_NAME => tools::git::pull(ctx, input).await,
                 tools::git::PUSH_NAME => tools::git::push(ctx, input).await,
                 tools::mcp::NAME => tools::mcp::execute(ctx, input).await,
+                tools::browser::OPEN_NAME => tools::browser::open(ctx, input).await,
+                tools::browser::EXTRACT_NAME => tools::browser::extract(ctx, input).await,
                 _ => Err(ToolError::UnknownTool(name.to_string())),
             }
         };
@@ -405,5 +407,43 @@ mod tests {
         assert!(
             matches!(result, Err(ToolError::Execution(message)) if message == "tool cancelled")
         );
+    }
+
+    #[tokio::test]
+    async fn registry_dispatches_browser_open_when_allowed() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/page"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                "<html><head><title>Hi</title></head><body><p>hello registry</p></body></html>",
+            ))
+            .mount(&server)
+            .await;
+
+        let permissions = PermissionEngine::new();
+        permissions
+            .set_mode(
+                evohime_permissions::Permission::BrowserAccess,
+                evohime_permissions::PermissionMode::Allow,
+            )
+            .await;
+        let registry = ToolRegistry::bootstrap_with_permissions(permissions);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let context = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+        };
+        let result = registry
+            .execute(
+                &context,
+                "browser.open",
+                serde_json::json!({ "url": format!("{}/page", server.uri()) }),
+            )
+            .await
+            .expect("browser.open should dispatch");
+        assert!(result.output.to_lowercase().contains("hi") || result.output.contains("hello"));
     }
 }
