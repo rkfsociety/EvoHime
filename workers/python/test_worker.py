@@ -7,6 +7,7 @@ from worker import (
     JobService,
     chunk_text,
     create_server,
+    diff_text,
     extract_entities,
     similarity_text,
     summarize_text,
@@ -132,6 +133,48 @@ class JobServiceTests(unittest.TestCase):
             self.assertEqual(current.status, "completed")
             self.assertEqual(current.result["urls"], ["https://evohime.dev"])
             self.assertEqual(current.result["tickets"], ["ABC-9"])
+        finally:
+            service.close()
+
+    def test_diff_reports_line_changes(self):
+        result = diff_text("alpha\nbeta\ngamma\n", "alpha\nbeta2\ngamma\ndelta\n")
+        self.assertEqual(result["lines_a"], 3)
+        self.assertEqual(result["lines_b"], 4)
+        self.assertEqual(result["lines_removed"], 1)
+        self.assertEqual(result["lines_added"], 2)
+        self.assertLess(result["ratio"], 1.0)
+        self.assertTrue(any(line.startswith("-beta") for line in result["unified_diff"]))
+        self.assertTrue(any(line.startswith("+delta") for line in result["unified_diff"]))
+        self.assertFalse(result["diff_truncated"])
+
+    def test_diff_truncates_unified_output(self):
+        left = "\n".join(f"line-{i}" for i in range(40))
+        right = "\n".join(f"line-{i}-x" for i in range(40))
+        result = diff_text(left, right, context=0, max_diff_lines=5)
+        self.assertTrue(result["diff_truncated"])
+        self.assertEqual(len(result["unified_diff"]), 5)
+
+    def test_diff_rejects_bad_context(self):
+        with self.assertRaisesRegex(ValueError, "context"):
+            validate_task_payload(
+                "text.diff",
+                {"text_a": "a", "text_b": "b", "context": 99},
+            )
+
+    def test_diff_job_completes(self):
+        service = JobService()
+        try:
+            job = service.submit(
+                "text.diff",
+                {"text_a": "one\ntwo\n", "text_b": "one\nthree\n"},
+            )
+            for _ in range(100):
+                if (current := service.get(job.id)).status in {"completed", "failed"}:
+                    break
+                threading.Event().wait(0.01)
+            self.assertEqual(current.status, "completed")
+            self.assertEqual(current.result["lines_removed"], 1)
+            self.assertEqual(current.result["lines_added"], 1)
         finally:
             service.close()
 

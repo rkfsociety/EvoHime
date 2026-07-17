@@ -173,7 +173,7 @@
 | 6.4 | MCP server management UI | ✅ `frontend/web/`, `crates/server/` |
 | 6.5 | Agent memory (persistent context) | ✅ `crates/storage/`, `crates/agent-runtime/` |
 | 6.6 | Multi-model routing: task-scoped routes + OpenAI-compatible providers | ✅ `crates/model-gateway/`, `frontend/web/`, `crates/server/` |
-| 6.7 | Python workers (HTTP/queue) | ✅ reliability + summarize/chunk/similarity/entities; more optional | `workers/python/` |
+| 6.7 | Python workers (HTTP/queue) | ✅ reliability + summarize/chunk/similarity/entities/diff; more optional | `workers/python/` |
 | 6.8 | `browser.open`, `browser.extract` | ✅ `crates/tool-runtime/` |
 | 6.9 | Settings: models, permissions, MCP, tools | ✅ `frontend/web/`, `crates/server/` |
 | 6.10 | Тесты: index, MCP, workers | ✅ respective crates / `workers/python/` |
@@ -262,7 +262,7 @@
 | Приоритет | Улучшение | Что добавить |
 | --- | --- | --- |
 | P2 | Укрепление worker subsystem | ✅ health/stall + API + Settings Worker UI (status/jobs/retry) |
-| P2 | Специализированные ML handlers | ✅ `text.summarize` / `chunk` / `similarity` / `entities` (+ stats/keywords); further optional |
+| P2 | Специализированные ML handlers | ✅ `text.summarize` / `chunk` / `similarity` / `entities` / `diff` (+ stats/keywords); further optional |
 
 ### Кандидаты на следующий milestone
 
@@ -291,6 +291,7 @@
 - On-demand `memory.search` tool ✅ (registry + agent-runtime DB path)
 - Frontend worker dashboard ✅ (Settings → Worker)
 - Frontend pipeline metrics dashboard ✅ (Settings → Metrics)
+- Worker `text.diff` handler ✅ (stdlib difflib + Rust validation)
 - **Next:** optional backlog / reliability polish
 
 ---

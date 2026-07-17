@@ -20,7 +20,7 @@ Stages 1–5 complete. Structured memory `6.16`–`6.25`: schema through experie
 | `task-engine` | Active | Lifecycle, dependency batching, checkpoints, cancel/resume/retry |
 | `permissions` | Active | ask/allow/deny + session/path overrides + temp allow + approval audit |
 | `project-index` | Active | Chunk search, path/symbol weights, binary/noise filter (P2) |
-| Python worker | Active | Health/stall reliability; handlers: stats/keywords/summarize/chunk/similarity/entities |
+| Python worker | Active | Health/stall reliability; handlers: stats/keywords/summarize/chunk/similarity/entities/diff |
 
 ## API endpoints
 
@@ -108,5 +108,5 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. Optional follow-ups from roadmap backlog (Worker + Metrics Settings UI landed)
+1. Optional follow-ups from roadmap backlog (`text.diff` landed)
 2. Keep CI / reliability polish as needed

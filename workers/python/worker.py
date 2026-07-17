@@ -9,6 +9,7 @@ server, while this service owns execution and status reporting.
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import logging
 import os
@@ -32,6 +33,7 @@ SUPPORTED_TASKS = (
     "text.chunk",
     "text.similarity",
     "text.entities",
+    "text.diff",
 )
 MAX_TEXT_LENGTH = 1_000_000
 PROCESS_STARTED_AT = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -39,6 +41,8 @@ HEARTBEAT_INTERVAL_SECS = 1.0
 DEFAULT_MAX_SENTENCES = 3
 DEFAULT_CHUNK_SIZE = 500
 DEFAULT_CHUNK_OVERLAP = 50
+DEFAULT_DIFF_CONTEXT = 3
+DEFAULT_MAX_DIFF_LINES = 500
 
 
 def health() -> dict[str, Any]:
@@ -131,6 +135,25 @@ def validate_task_payload(task: str, payload: dict[str, Any]) -> None:
     if task == "text.similarity":
         _require_named_text(task, payload, "text_a")
         _require_named_text(task, payload, "text_b")
+        return
+
+    if task == "text.diff":
+        _require_named_text(task, payload, "text_a")
+        _require_named_text(task, payload, "text_b")
+        _optional_int(
+            payload,
+            "context",
+            default=DEFAULT_DIFF_CONTEXT,
+            minimum=0,
+            maximum=20,
+        )
+        _optional_int(
+            payload,
+            "max_diff_lines",
+            default=DEFAULT_MAX_DIFF_LINES,
+            minimum=1,
+            maximum=2000,
+        )
         return
 
     raise ValueError(f"unsupported task: {task}")
@@ -270,6 +293,60 @@ def extract_entities(text: str) -> dict[str, Any]:
     }
 
 
+def diff_text(
+    text_a: str,
+    text_b: str,
+    *,
+    context: int = DEFAULT_DIFF_CONTEXT,
+    max_diff_lines: int = DEFAULT_MAX_DIFF_LINES,
+) -> dict[str, Any]:
+    """Line-oriented unified diff via stdlib difflib."""
+
+    lines_a = text_a.splitlines()
+    lines_b = text_b.splitlines()
+    matcher = difflib.SequenceMatcher(None, lines_a, lines_b, autojunk=False)
+    ratio = matcher.ratio()
+
+    lines_equal = 0
+    lines_added = 0
+    lines_removed = 0
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            lines_equal += i2 - i1
+        elif tag == "insert":
+            lines_added += j2 - j1
+        elif tag == "delete":
+            lines_removed += i2 - i1
+        elif tag == "replace":
+            lines_removed += i2 - i1
+            lines_added += j2 - j1
+
+    unified = list(
+        difflib.unified_diff(
+            lines_a,
+            lines_b,
+            fromfile="text_a",
+            tofile="text_b",
+            lineterm="",
+            n=context,
+        )
+    )
+    truncated = len(unified) > max_diff_lines
+    if truncated:
+        unified = unified[:max_diff_lines]
+
+    return {
+        "ratio": round(ratio, 6),
+        "lines_a": len(lines_a),
+        "lines_b": len(lines_b),
+        "lines_equal": lines_equal,
+        "lines_added": lines_added,
+        "lines_removed": lines_removed,
+        "unified_diff": unified,
+        "diff_truncated": truncated,
+    }
+
+
 def _unique_preserve(values: list[str]) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
@@ -369,6 +446,28 @@ def run_task(task: str, payload: dict[str, Any]) -> Any:
 
     if task == "text.entities":
         return extract_entities(payload["text"])
+
+    if task == "text.diff":
+        context = _optional_int(
+            payload,
+            "context",
+            default=DEFAULT_DIFF_CONTEXT,
+            minimum=0,
+            maximum=20,
+        )
+        max_diff_lines = _optional_int(
+            payload,
+            "max_diff_lines",
+            default=DEFAULT_MAX_DIFF_LINES,
+            minimum=1,
+            maximum=2000,
+        )
+        return diff_text(
+            payload["text_a"],
+            payload["text_b"],
+            context=context,
+            max_diff_lines=max_diff_lines,
+        )
 
     raise ValueError(f"unsupported task: {task}")
 

@@ -14,10 +14,13 @@ const SUPPORTED_TASKS: &[&str] = &[
     "text.chunk",
     "text.similarity",
     "text.entities",
+    "text.diff",
 ];
 const DEFAULT_MAX_SENTENCES: i64 = 3;
 const DEFAULT_CHUNK_SIZE: i64 = 500;
 const DEFAULT_CHUNK_OVERLAP: i64 = 50;
+const DEFAULT_DIFF_CONTEXT: i64 = 3;
+const DEFAULT_MAX_DIFF_LINES: i64 = 500;
 
 #[derive(Clone)]
 pub struct WorkerClient {
@@ -119,6 +122,19 @@ pub fn validate_task_payload(task: &str, payload: &Value) -> Result<(), String> 
         "text.similarity" => {
             require_named_text(task, payload, "text_a")?;
             require_named_text(task, payload, "text_b")?;
+            Ok(())
+        }
+        "text.diff" => {
+            require_named_text(task, payload, "text_a")?;
+            require_named_text(task, payload, "text_b")?;
+            optional_int(payload, "context", DEFAULT_DIFF_CONTEXT, 0, Some(20))?;
+            optional_int(
+                payload,
+                "max_diff_lines",
+                DEFAULT_MAX_DIFF_LINES,
+                1,
+                Some(2000),
+            )?;
             Ok(())
         }
         _ => Err(format!("unsupported task: {task}")),
@@ -327,6 +343,16 @@ mod status_tests {
         )
         .is_ok());
         assert!(validate_task_payload("text.entities", &json!({"text": 1})).is_err());
+        assert!(validate_task_payload(
+            "text.diff",
+            &json!({"text_a": "a\n", "text_b": "b\n", "context": 2})
+        )
+        .is_ok());
+        assert!(validate_task_payload(
+            "text.diff",
+            &json!({"text_a": "a", "text_b": "b", "max_diff_lines": 0})
+        )
+        .is_err());
     }
 
     #[test]
