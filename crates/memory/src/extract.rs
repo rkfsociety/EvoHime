@@ -215,13 +215,74 @@ pub fn is_transient_infra_failure(message: &str) -> bool {
     rate_limited || provider_http
 }
 
+/// One-shot task dumps (dir listings, step transcripts) are not durable memory.
+pub fn is_ephemeral_task_dump(content: &str) -> bool {
+    let text = content.trim();
+    if text.is_empty() {
+        return false;
+    }
+    let lower = text.to_ascii_lowercase();
+    // Do not match heuristic summaries (`User: … | Assistant: …`) — only step/dir dumps.
+    if lower.contains("step-1") || lower.contains("step‑1") || lower.contains("step 1:") {
+        return true;
+    }
+    let root_markers = [
+        ".git",
+        "cargo.toml",
+        "package.json",
+        "node_modules",
+        "readme.md",
+        "migrations",
+    ];
+    let marker_hits = root_markers
+        .iter()
+        .filter(|marker| lower.contains(*marker))
+        .count();
+    if marker_hits >= 3 {
+        return true;
+    }
+    // Fenced block that looks like a raw directory listing.
+    if let Some(fence) = text.find("```") {
+        let after = &text[fence + 3..];
+        let body = after
+            .strip_prefix('\n')
+            .or_else(|| after.strip_prefix("text\n"))
+            .unwrap_or(after);
+        if let Some(end) = body.find("```") {
+            let listing = &body[..end];
+            let lines = listing
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .collect::<Vec<_>>();
+            if lines.len() >= 8 {
+                let fileish = lines
+                    .iter()
+                    .filter(|line| {
+                        !line.contains(' ')
+                            && (line.contains('.') || line.starts_with('.') || !line.contains('/'))
+                    })
+                    .count();
+                if fileish * 2 >= lines.len() {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 /// Success/failure/verification/playbook drafts for the experience scope.
 pub fn experience_patterns(
     user_message: &str,
     final_message: &str,
     task_ok: bool,
 ) -> Vec<ExtractedCandidate> {
-    if !task_ok && is_transient_infra_failure(final_message) {
+    // Success playbooks need structured LLM extract — dumping the whole reply is noise.
+    if task_ok {
+        return Vec::new();
+    }
+    if is_transient_infra_failure(final_message) || is_ephemeral_task_dump(final_message) {
         return Vec::new();
     }
     let trigger = truncate_chars(user_message, TRIGGER_LIMIT);
@@ -229,71 +290,35 @@ pub fn experience_patterns(
         return Vec::new();
     }
     let outcome = truncate_chars(final_message, STEP_LIMIT);
-    if outcome.is_empty() {
+    if outcome.is_empty() || is_ephemeral_task_dump(&outcome) {
         return Vec::new();
     }
 
     let mut out = Vec::new();
-    if task_ok {
-        let playbook = PlaybookPayload {
-            trigger: trigger.clone(),
-            steps: vec![outcome.clone()],
-            verify: Some("Task completed successfully".into()),
-            rollback_hint: None,
-        };
-        out.push(ExtractedCandidate {
-            scope: MemoryScope::Experience,
-            kind: MemoryKind::SuccessPattern,
-            content: format!("When '{trigger}' succeeded: {outcome}"),
-            content_json: None,
-            confidence: 0.72,
-            importance: 0.55,
-            pinned: false,
-        });
-        out.push(ExtractedCandidate {
-            scope: MemoryScope::Experience,
-            kind: MemoryKind::Playbook,
-            content: playbook.to_content_text(),
-            content_json: Some(playbook.to_content_json()),
-            confidence: 0.6,
-            importance: 0.6,
-            pinned: false,
-        });
-        out.push(ExtractedCandidate {
-            scope: MemoryScope::Experience,
-            kind: MemoryKind::VerificationRule,
-            content: format!("After '{trigger}', confirm: task completed without error"),
-            content_json: None,
-            confidence: 0.65,
-            importance: 0.5,
-            pinned: false,
-        });
-    } else {
-        out.push(ExtractedCandidate {
-            scope: MemoryScope::Experience,
-            kind: MemoryKind::FailurePattern,
-            content: format!("When '{trigger}' failed: {outcome}"),
-            content_json: None,
-            confidence: 0.68,
-            importance: 0.65,
-            pinned: false,
-        });
-        let playbook = PlaybookPayload {
-            trigger: trigger.clone(),
-            steps: vec![format!("Investigate failure: {outcome}")],
-            verify: Some("Failure no longer reproduces".into()),
-            rollback_hint: Some("Revert partial changes from the failed attempt".into()),
-        };
-        out.push(ExtractedCandidate {
-            scope: MemoryScope::Experience,
-            kind: MemoryKind::Playbook,
-            content: playbook.to_content_text(),
-            content_json: Some(playbook.to_content_json()),
-            confidence: 0.55,
-            importance: 0.6,
-            pinned: false,
-        });
-    }
+    out.push(ExtractedCandidate {
+        scope: MemoryScope::Experience,
+        kind: MemoryKind::FailurePattern,
+        content: format!("When '{trigger}' failed: {outcome}"),
+        content_json: None,
+        confidence: 0.68,
+        importance: 0.65,
+        pinned: false,
+    });
+    let playbook = PlaybookPayload {
+        trigger: trigger.clone(),
+        steps: vec![format!("Investigate failure: {outcome}")],
+        verify: Some("Failure no longer reproduces".into()),
+        rollback_hint: Some("Revert partial changes from the failed attempt".into()),
+    };
+    out.push(ExtractedCandidate {
+        scope: MemoryScope::Experience,
+        kind: MemoryKind::Playbook,
+        content: playbook.to_content_text(),
+        content_json: Some(playbook.to_content_json()),
+        confidence: 0.55,
+        importance: 0.6,
+        pinned: false,
+    });
     out
 }
 
@@ -330,22 +355,15 @@ pub fn heuristic_extract(
     }
 
     let summary = truncate_summary(user_message, final_message);
-    if summary.is_empty() {
-        return Vec::new();
+    if summary.is_empty() || is_ephemeral_task_dump(&summary) || is_ephemeral_task_dump(final_message)
+    {
+        // Still allow real failure patterns when the failure text is usable.
+        return experience_patterns(user_message, final_message, task_ok);
     }
 
     let mut out = Vec::new();
 
-    out.push(ExtractedCandidate {
-        scope: MemoryScope::Session,
-        kind: MemoryKind::Fact,
-        content: summary.clone(),
-        content_json: None,
-        confidence: 0.55,
-        importance: 0.4,
-        pinned: false,
-    });
-
+    // Session dumps at 0.55 only spam ask-on-uncertainty; keep short workspace facts.
     if task_ok {
         out.push(ExtractedCandidate {
             scope: MemoryScope::Workspace,
@@ -354,6 +372,16 @@ pub fn heuristic_extract(
             content_json: None,
             confidence: 0.75,
             importance: 0.5,
+            pinned: false,
+        });
+    } else {
+        out.push(ExtractedCandidate {
+            scope: MemoryScope::Session,
+            kind: MemoryKind::Fact,
+            content: summary,
+            content_json: None,
+            confidence: 0.55,
+            importance: 0.4,
             pinned: false,
         });
     }
@@ -375,8 +403,9 @@ pub fn extract_candidates(
     if let Some(raw) = llm_raw {
         out.extend(parse_extraction_json(raw));
     }
-    // Drop LLM drafts that just echo provider outages.
-    out.retain(|c| !is_transient_infra_failure(&c.content));
+    out.retain(|c| {
+        !is_transient_infra_failure(&c.content) && !is_ephemeral_task_dump(&c.content)
+    });
     if !task_ok && is_transient_infra_failure(final_message) {
         return out;
     }
@@ -445,15 +474,13 @@ mod tests {
     }
 
     #[test]
-    fn heuristic_success_includes_workspace_fact_and_experience() {
+    fn heuristic_success_keeps_workspace_fact_without_experience_dump() {
         let items = heuristic_extract("add tests", "done, added tests", true);
-        assert!(items.iter().any(|c| c.scope == MemoryScope::Session));
+        assert!(items.iter().all(|c| c.scope != MemoryScope::Session));
         assert!(items
             .iter()
             .any(|c| c.scope == MemoryScope::Workspace && c.kind == MemoryKind::Fact));
-        assert!(items
-            .iter()
-            .any(|c| c.scope == MemoryScope::Experience && c.kind == MemoryKind::SuccessPattern));
+        assert!(items.iter().all(|c| c.scope != MemoryScope::Experience));
         assert!(items.len() <= MAX_CANDIDATES_PER_TASK);
     }
 
@@ -470,31 +497,59 @@ mod tests {
     }
 
     #[test]
-    fn extract_candidates_supplements_llm_with_experience() {
+    fn extract_candidates_keeps_llm_without_blind_success_experience() {
         let raw =
             r#"[{"scope":"project","kind":"preference","content":"from llm","confidence":0.8}]"#;
         let items = extract_candidates(Some(raw), "add auth", "wired jwt", true);
         assert!(items.iter().any(|c| c.content == "from llm"));
         assert!(items
             .iter()
-            .any(|c| c.kind == MemoryKind::SuccessPattern || c.kind == MemoryKind::Playbook));
+            .all(|c| c.kind != MemoryKind::SuccessPattern && c.kind != MemoryKind::Playbook));
         assert!(items.len() <= MAX_CANDIDATES_PER_TASK);
     }
 
     #[test]
     fn extract_candidates_falls_back_on_bad_llm() {
         let items = extract_candidates(Some("???"), "hello", "world", true);
-        assert!(items.len() >= 2);
-        assert!(items.iter().any(|c| c.scope == MemoryScope::Experience));
+        assert!(!items.is_empty());
+        assert!(items.iter().any(|c| c.scope == MemoryScope::Workspace));
+        assert!(items.iter().all(|c| c.scope != MemoryScope::Experience));
     }
 
     #[test]
     fn skips_literouter_rate_limit_as_experience() {
         let msg = r#"model error: api error: 403 Forbidden: {"error":"[LiteRouter] Rate limit exceeded for your tier (5 seconds between messages)."}"#;
         assert!(is_transient_infra_failure(msg));
-        assert!(experience_patterns("разберись в коде", msg, false).is_empty());
-        assert!(heuristic_extract("разберись в коде", msg, false).is_empty());
-        let items = extract_candidates(None, "разберись в коде", msg, false);
+        assert!(experience_patterns("razberis v kode", msg, false).is_empty());
+        assert!(heuristic_extract("razberis v kode", msg, false).is_empty());
+        let items = extract_candidates(None, "razberis v kode", msg, false);
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn skips_directory_listing_playbook_noise() {
+        let reply = r#"**Step-1: root listing**
+```
+.agents
+.codex
+.cursor
+.git
+.github
+Cargo.toml
+README.md
+crates
+docs
+frontend
+node_modules
+package.json
+migrations
+```
+Then read README."#;
+        assert!(is_ephemeral_task_dump(reply));
+        assert!(experience_patterns("explore codebase", reply, true).is_empty());
+        assert!(heuristic_extract("explore codebase", reply, true).is_empty());
+        let llm = r#"[{"scope":"experience","kind":"playbook","content":"When explore: **Step-1: root** ``` .git Cargo.toml README.md package.json migrations ```","confidence":0.6}]"#;
+        let items = extract_candidates(Some(llm), "explore codebase", reply, true);
         assert!(items.is_empty());
     }
 

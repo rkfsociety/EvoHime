@@ -30,8 +30,8 @@ pub use experience::{
     format_experience_line, is_experience_kind, parse_playbook_payload, PlaybookPayload,
 };
 pub use extract::{
-    experience_patterns, extract_candidates, heuristic_extract, is_transient_infra_failure,
-    parse_extraction_json, ExtractedCandidate, MAX_CANDIDATES_PER_TASK,
+    experience_patterns, extract_candidates, heuristic_extract, is_ephemeral_task_dump,
+    is_transient_infra_failure, parse_extraction_json, ExtractedCandidate, MAX_CANDIDATES_PER_TASK,
 };
 pub use feedback::{
     apply_feedback_signal, FeedbackAdjustment, FeedbackSignal, ARCHIVE_CONFIDENCE_THRESHOLD,
