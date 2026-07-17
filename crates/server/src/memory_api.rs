@@ -6,7 +6,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use evohime_memory::{embed_text, normalize_content, redact_secrets, EMBEDDING_VERSION};
+use evohime_memory::{embed_text, normalize_content, redact_secrets};
 use evohime_storage::{
     delete_memory_item, get_memory_item, list_memory_items_overview,
     update_memory_item_fields_with_embedding, MemoryItemRow, MemoryScope, MemoryStatus,
@@ -177,7 +177,12 @@ pub async fn update_memory(
     }
 
     let (embedding, embedding_version) = if let Some(text) = content.as_deref() {
-        (Some(embed_text(text)), Some(EMBEDDING_VERSION))
+        let result = embed_text(text).await;
+        if result.vector.is_empty() {
+            (None, Some(0))
+        } else {
+            (Some(result.vector), Some(result.version))
+        }
     } else {
         (None, None)
     };

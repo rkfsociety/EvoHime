@@ -54,7 +54,7 @@ pub enum AdmitOutcome {
 pub struct MemoryService;
 
 impl MemoryService {
-    pub fn prepare(item: &NewMemoryItem) -> Result<PreparedMemoryItem, MemoryError> {
+    pub async fn prepare(item: &NewMemoryItem) -> Result<PreparedMemoryItem, MemoryError> {
         let redaction = redact_secrets(&item.content);
         let content = normalize_content(&redaction.text);
         if content.is_empty() || content == "[REDACTED]" {
@@ -65,9 +65,14 @@ impl MemoryService {
 
         let mut prepared = item.clone();
         prepared.content = content.clone();
-        let embedding = crate::embed::embed_text(&content);
-        prepared.embedding = Some(embedding);
-        prepared.embedding_version = crate::embed::EMBEDDING_VERSION;
+        let embedding = crate::embed::embed_text(&content).await;
+        if embedding.vector.is_empty() {
+            prepared.embedding = None;
+            prepared.embedding_version = 0;
+        } else {
+            prepared.embedding = Some(embedding.vector);
+            prepared.embedding_version = embedding.version;
+        }
         prepared.validate().map_err(MemoryError::Storage)?;
         Ok(PreparedMemoryItem {
             item: prepared,
@@ -138,7 +143,7 @@ async fn load_existing(
 
 /// Redact → normalize → dedupe/conflict → insert (or skip).
 pub async fn admit_memory_item(pool: &PgPool, item: NewMemoryItem) -> Result<AdmitOutcome, MemoryError> {
-    let prepared = match MemoryService::prepare(&item) {
+    let prepared = match MemoryService::prepare(&item).await {
         Ok(prepared) => prepared,
         Err(MemoryError::Rejected { reason }) => return Ok(AdmitOutcome::Rejected { reason }),
         Err(other) => return Err(other),

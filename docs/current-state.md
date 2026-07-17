@@ -12,7 +12,7 @@ Stages 1–5 complete. Structured memory `6.16`–`6.25`: schema through experie
 | --- | --- | --- |
 | `server` | Active | HTTP + WebSocket, workspace, GitHub, workers, memory, pipeline metrics + optional OTLP |
 | `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema (incl. `memory.*`) |
-| `memory` | Active | Redact/dedupe/conflict + retrieve + extract/gate + experience + feedback + **hybrid embeddings** (`6.18`–`6.25`) |
+| `memory` | Active | Redact/dedupe/conflict + retrieve + extract/gate + experience + feedback + hybrid embeddings (hash default, optional remote neural) |
 | `storage` | Active | Sessions, tasks, events, messages, legacy notes, **memory_items**, settings, worker jobs |
 | `tool-runtime` | Active | Sandboxed filesystem, shell, Git, browser, MCP call |
 | `agent-runtime` | Active | Plan → batches → bounded replan; checkpoints; structured + legacy memory context |
@@ -105,6 +105,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. Optional neural embeddings (replace feature-hash encoder)
-2. More specialized ML handlers as needed
-3. Experience/playbooks + Memory UI polish (post-6.20)
+1. More specialized ML handlers as needed
+2. Experience/playbooks + Memory UI polish
+3. Deeper worker observability as needed

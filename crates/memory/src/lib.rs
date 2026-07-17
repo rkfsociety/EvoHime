@@ -1,8 +1,8 @@
-//! Agent memory domain service (roadmap 6.18–6.25).
+//! Agent memory domain service (roadmap 6.18–6.25+).
 //!
 //! Redaction, normalization, deduplication, conflict detection, extraction,
 //! ask-on-uncertainty gate, experience/playbooks, feedback/decay, and hybrid
-//! embedding retrieval on `memory_items`.
+//! embedding retrieval on `memory_items` (feature-hash default, optional remote neural).
 
 mod conflict;
 mod decision;
@@ -21,8 +21,10 @@ pub use conflict::{detect_conflict, ConflictHit};
 pub use decision::{decide_gate, GateDecision, GateInput, AUTO_PROMOTE_CONFIDENCE};
 pub use dedupe::{content_fingerprint, detect_duplicate};
 pub use embed::{
-    cosine_similarity, embed_text, needs_reembed, semantic_score, EMBEDDING_DIM, EMBEDDING_VERSION,
-    SEMANTIC_MIN_COSINE, SEMANTIC_SCORE_WEIGHT,
+    cosine_similarity, embed_text, embed_text_hash, embedding_version, needs_reembed, semantic_score,
+    EncoderConfig, EncoderMode, EmbeddingResult, EMBEDDING_DIM, EMBEDDING_VERSION,
+    HASH_EMBEDDING_VERSION, REMOTE_EMBEDDING_BASE_VERSION, SEMANTIC_MIN_COSINE,
+    SEMANTIC_SCORE_WEIGHT,
 };
 pub use experience::{
     format_experience_line, is_experience_kind, parse_playbook_payload, PlaybookPayload,
@@ -51,7 +53,6 @@ pub use service::{
     reject_memory_item, AdmitOutcome, ExistingMemory, MemoryError, MemoryService,
     PreparedMemoryItem,
 };
-
 
 #[cfg(test)]
 mod tests {
@@ -135,25 +136,25 @@ mod tests {
         }
     }
 
-    #[test]
-    fn prepare_rejects_empty_after_redaction() {
+    #[tokio::test]
+    async fn prepare_rejects_empty_after_redaction() {
         let item = NewMemoryItem::candidate_fact(
             MemoryScope::Global,
             LOCAL_OPERATOR_SCOPE_KEY,
             "api_key=lr_supersecretvalue123456",
         );
-        let prepared = MemoryService::prepare(&item);
+        let prepared = MemoryService::prepare(&item).await;
         assert!(matches!(prepared, Err(MemoryError::Rejected { .. })));
     }
 
-    #[test]
-    fn prepare_accepts_clean_fact() {
+    #[tokio::test]
+    async fn prepare_accepts_clean_fact() {
         let item = NewMemoryItem::candidate_fact(
             MemoryScope::Workspace,
             "repo-a",
             "  use  worktrees  for  parallel  agents  ",
         );
-        let prepared = MemoryService::prepare(&item).expect("ok");
+        let prepared = MemoryService::prepare(&item).await.expect("ok");
         assert_eq!(prepared.content, "use worktrees for parallel agents");
         assert!(!prepared.redacted);
     }

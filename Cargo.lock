@@ -622,6 +622,7 @@ dependencies = [
  "chrono",
  "evohime-storage",
  "regex",
+ "reqwest",
  "serde",
  "serde_json",
  "sqlx",
@@ -629,6 +630,7 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+ "wiremock",
 ]
 
 [[package]]

@@ -15,7 +15,7 @@ Default posture: **the agent decides alone**. If confidence is low or impact is 
 ## Non-goals (v1)
 
 - Multi-user ACL, team sharing, org scopes
-- Embedding / semantic retrieval — shipped in `6.25` as local feature-hash hybrid (neural encoder optional later)
+- Embedding / semantic retrieval — `6.25` local feature-hash hybrid; optional remote neural via `EVOHIME_EMBEDDING_MODE=remote` (OpenAI-compatible `/embeddings`)
 - Mandatory human approval for every extracted item
 - Changing LLM weights or training pipelines
 
@@ -105,7 +105,7 @@ Asking must **not** freeze unrelated tool work forever: deferrable promote is al
 
 ## Retrieval
 
-- Lexical / structured retrieval (`6.19`) plus local feature-hash embeddings for hybrid ranking (`6.25`)
+- Lexical / structured retrieval (`6.19`) plus hybrid embeddings (`6.25`): feature-hash by default, optional remote neural encoder
 - Auto-inject top-N into agent context under token budget
 - Optional tool `memory.search` / `memory.recall` for on-demand lookup
 - Attribution: `used_memory_ids` recorded for feedback and debugging

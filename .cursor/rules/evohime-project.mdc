@@ -23,7 +23,7 @@ React+TS+Vite frontend, Rust/Axum backend, PostgreSQL, WebSocket, native Windows
 
 ## Current stage: 6 (Milestone 5 in progress)
 
-Stages 1–5 done. Memory, observability (+ OTLP), integration, registry tool-calling, P2 index/permissions landed. Next: optional neural embeddings or more ML handlers.
+Stages 1–5 done. Memory (incl. optional remote neural embeddings), observability (+ OTLP), integration, registry tool-calling, P2 index/permissions landed. Next: more ML handlers or Memory UI polish.
 
 ## Key paths
 
@@ -41,7 +41,7 @@ Stages 1–5 done. Memory, observability (+ OTLP), integration, registry tool-ca
 
 ## Next
 
-Optional neural embeddings, or more ML handlers.
+More ML handlers, or Memory UI / experience polish.
 
 ## Local run
 

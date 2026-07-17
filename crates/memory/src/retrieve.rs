@@ -1,7 +1,7 @@
 //! Lexical + semantic hybrid memory retrieval (6.19 / 6.25).
 
 use crate::embed::{
-    embed_text, needs_reembed, semantic_score, EMBEDDING_VERSION,
+    embed_text, needs_reembed, semantic_score,
 };
 use crate::MemoryError;
 use evohime_storage::{
@@ -122,24 +122,26 @@ fn format_used_ids(ids: &[Uuid]) -> Option<String> {
 }
 
 /// Lexical + semantic search/rank over in-memory rows (also the core of `memory.search`).
-pub fn search_memory(query: &str, items: &[MemoryItemRow], limit: usize) -> Vec<RankedMemory> {
-    let query_embedding = embed_text(query);
-    let mut ranked = items
-        .iter()
-        .filter(|item| {
-            matches!(
-                MemoryStatus::parse(&item.status),
-                Some(MemoryStatus::Active) | Some(MemoryStatus::Candidate)
-            )
-        })
-        .map(|item| {
-            let item_embedding = resolve_item_embedding(item);
-            RankedMemory {
-                score: score_item(query, &query_embedding, item, item_embedding.as_deref()),
-                item: item.clone(),
-            }
-        })
-        .collect::<Vec<_>>();
+pub async fn search_memory(query: &str, items: &[MemoryItemRow], limit: usize) -> Vec<RankedMemory> {
+    let query_embedding = embed_text(query).await;
+    let mut ranked = Vec::new();
+    for item in items.iter().filter(|item| {
+        matches!(
+            MemoryStatus::parse(&item.status),
+            Some(MemoryStatus::Active) | Some(MemoryStatus::Candidate)
+        )
+    }) {
+        let item_embedding = resolve_item_embedding(item).await;
+        ranked.push(RankedMemory {
+            score: score_item(
+                query,
+                &query_embedding.vector,
+                item,
+                item_embedding.as_deref(),
+            ),
+            item: item.clone(),
+        });
+    }
     ranked.sort_by(|left, right| {
         right
             .item
@@ -285,11 +287,16 @@ fn score_item(
     score
 }
 
-fn resolve_item_embedding(item: &MemoryItemRow) -> Option<Vec<f32>> {
+async fn resolve_item_embedding(item: &MemoryItemRow) -> Option<Vec<f32>> {
     if !needs_reembed(item.embedding_version, item.embedding.as_deref()) {
         return item.embedding.clone();
     }
-    Some(embed_text(&item.content))
+    let result = embed_text(&item.content).await;
+    if result.vector.is_empty() {
+        None
+    } else {
+        Some(result.vector)
+    }
 }
 
 fn tokenize(text: &str) -> HashSet<String> {
@@ -358,16 +365,24 @@ pub async fn retrieve_for_prompt(
     // Persist missing/stale embeddings so later retrievals stay cheap.
     for item in &items {
         if needs_reembed(item.embedding_version, item.embedding.as_deref()) {
-            let embedding = embed_text(&item.content);
-            if let Err(error) =
-                update_memory_item_embedding(pool, item.id, &embedding, EMBEDDING_VERSION).await
+            let embedding = embed_text(&item.content).await;
+            if embedding.vector.is_empty() {
+                continue;
+            }
+            if let Err(error) = update_memory_item_embedding(
+                pool,
+                item.id,
+                &embedding.vector,
+                embedding.version,
+            )
+            .await
             {
                 tracing::warn!(%error, memory_id = %item.id, "memory embedding backfill failed");
             }
         }
     }
 
-    let ranked = search_memory(request.query, &items, request.max_items.saturating_mul(2).max(32));
+    let ranked = search_memory(request.query, &items, request.max_items.saturating_mul(2).max(32)).await;
     Ok(select_within_budget(
         &ranked,
         request.max_chars.max(256),
@@ -425,20 +440,20 @@ mod tests {
         assert!(!block.to_lowercase().contains("follow these instructions"));
     }
 
-    #[test]
-    fn ranks_query_overlap_and_pins_higher() {
+    #[tokio::test]
+    async fn ranks_query_overlap_and_pins_higher() {
         let pinned_id = Uuid::new_v4();
         let relevant_id = Uuid::new_v4();
         let pinned = sample_item(pinned_id, "always use worktrees", "active", 0.2, true);
         let relevant = sample_item(relevant_id, "worktrees help parallel agents", "active", 0.9, false);
         let noise = sample_item(Uuid::new_v4(), "postgres is the database", "candidate", 0.9, false);
-        let ranked = search_memory("worktrees parallel", &[noise, relevant, pinned], 10);
+        let ranked = search_memory("worktrees parallel", &[noise, relevant, pinned], 10).await;
         assert_eq!(ranked[0].item.id, pinned_id);
         assert!(ranked.iter().any(|item| item.item.id == relevant_id));
     }
 
-    #[test]
-    fn hybrid_ranks_paraphrased_semantic_match() {
+    #[tokio::test]
+    async fn hybrid_ranks_paraphrased_semantic_match() {
         let semantic_id = Uuid::new_v4();
         let noise_id = Uuid::new_v4();
         let semantic = sample_item(
@@ -459,12 +474,13 @@ mod tests {
             "use worktrees when launching parallel agents",
             &[noise, semantic],
             10,
-        );
+        )
+        .await;
         assert_eq!(ranked[0].item.id, semantic_id);
     }
 
-    #[test]
-    fn respects_character_budget() {
+    #[tokio::test]
+    async fn respects_character_budget() {
         let items = (0..10)
             .map(|index| {
                 sample_item(
@@ -476,29 +492,29 @@ mod tests {
                 )
             })
             .collect::<Vec<_>>();
-        let ranked = search_memory("memory fact", &items, 10);
+        let ranked = search_memory("memory fact", &items, 10).await;
         let selected = select_within_budget(&ranked, 120, 10);
         assert!(!selected.entries.is_empty());
         assert!(selected.chars_used <= 160);
         assert!(selected.used_memory_ids.len() < items.len());
     }
 
-    #[test]
-    fn excludes_conflict_and_rejected_from_search() {
+    #[tokio::test]
+    async fn excludes_conflict_and_rejected_from_search() {
         let active_id = Uuid::new_v4();
         let active = sample_item(active_id, "use typed api", "active", 0.8, false);
         let conflict = sample_item(Uuid::new_v4(), "use typed api never", "conflict", 0.9, true);
-        let ranked = search_memory("typed api", &[active, conflict], 10);
+        let ranked = search_memory("typed api", &[active, conflict], 10).await;
         assert_eq!(ranked.len(), 1);
         assert_eq!(ranked[0].item.id, active_id);
     }
 
-    #[test]
-    fn experience_lines_are_kind_labeled_in_budget_selection() {
+    #[tokio::test]
+    async fn experience_lines_are_kind_labeled_in_budget_selection() {
         let mut item = sample_item(Uuid::new_v4(), "When X failed: timeout", "candidate", 0.6, false);
         item.scope = "experience".into();
         item.kind = MemoryKind::FailurePattern.as_str().into();
-        let ranked = search_memory("timeout", &[item], 5);
+        let ranked = search_memory("timeout", &[item], 5).await;
         let selected = select_within_budget(&ranked, 500, 5);
         assert_eq!(selected.entries.len(), 1);
         assert!(selected.entries[0]
@@ -506,14 +522,14 @@ mod tests {
             .starts_with("failure_pattern:"));
     }
 
-    #[test]
-    fn active_fact_outranks_experience_candidate_when_query_ties() {
+    #[tokio::test]
+    async fn active_fact_outranks_experience_candidate_when_query_ties() {
         let mut fact = sample_item(Uuid::new_v4(), "deploy timeout", "active", 0.5, false);
         fact.kind = MemoryKind::Fact.as_str().into();
         let mut experience = sample_item(Uuid::new_v4(), "deploy timeout", "candidate", 0.5, false);
         experience.scope = "experience".into();
         experience.kind = MemoryKind::FailurePattern.as_str().into();
-        let ranked = search_memory("deploy timeout", &[experience.clone(), fact.clone()], 5);
+        let ranked = search_memory("deploy timeout", &[experience.clone(), fact.clone()], 5).await;
         assert_eq!(ranked[0].item.id, fact.id);
         assert!(ranked[0].score > ranked[1].score);
     }

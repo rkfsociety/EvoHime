@@ -5,5 +5,5 @@ ALTER TABLE memory_items
     ADD COLUMN IF NOT EXISTS embedding real[],
     ADD COLUMN IF NOT EXISTS embedding_version integer NOT NULL DEFAULT 0;
 
-COMMENT ON COLUMN memory_items.embedding IS 'Unit L2 feature-hash embedding for hybrid retrieval';
-COMMENT ON COLUMN memory_items.embedding_version IS 'Encoder version; 0 means missing/stale';
+COMMENT ON COLUMN memory_items.embedding IS 'Unit L2 embedding for hybrid retrieval (feature-hash or remote neural)';
+COMMENT ON COLUMN memory_items.embedding_version IS 'Encoder version; 0 missing/stale, 1 hash, 2+ remote neural';

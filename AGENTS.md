@@ -64,14 +64,13 @@ User message
 - Agent loop: plan → dependency batches → bounded replan; checkpoints with pause/resume
 - Frontend shell split (`6.13`): `types` / `api` / `lib` / `hooks` / `panels`
 - Panels: Chat, Settings, Tasks (deep), Actions (deep), Terminal, Files, Editor, Git, Plugins, Pull Requests (detail/diff/checks/create), Sites
-- Structured memory: `memory_items` + admit/retrieve/extract/experience/feedback + **hybrid embeddings** (`6.16`–`6.25`); legacy notes still written/loaded
+- Structured memory: `memory_items` + admit/retrieve/extract/experience/feedback + hybrid embeddings (`6.16`–`6.25`, optional remote neural); legacy notes still written/loaded
 - Workers: health/stall reliability + `text.summarize` / `text.chunk`
 - Native launcher + GitHub auth via local `gh`
 - CI: format, Clippy, docs, tests (ripgrep installed for search tools)
 
 ### Incomplete / next
 
-- Optional neural embeddings (swap feature-hash encoder)
 - More ML handlers as needed
 - Experience/playbooks, Memory UI polish
 - Deeper worker observability as needed

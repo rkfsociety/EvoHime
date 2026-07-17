@@ -16,7 +16,7 @@
 | 3 | Tools + shell | ✅ Готово | Sandbox, filesystem tools, shell, approvals, terminal, permissions |
 | 4 | Editor + Git | ✅ Done | Browser file tree, Monaco editor, Git status/diff/actions, and synchronization events |
 | 5 | Оркестрация | ✅ Complete | Lifecycle, команды, storage и recovery готовы |
-| 6 | Advanced | 🟡 В процессе | OTel OTLP ✅; next optional neural embeddings or ML handlers |
+| 6 | Advanced | 🟡 В процессе | Neural embeddings optional ✅; next ML handlers / Memory UI polish |
 
 ---
 
@@ -195,7 +195,7 @@
 | 6.22 | Override UI: правка, отклонение, архив, удаление, pin (не блокер happy path) | ✅ | `/api/memory`, MemoryPanel |
 | 6.23 | Feedback loop: memory used/helpful/corrected/rejected и confidence decay | ✅ | `crates/memory/src/feedback*.rs`, migration `0016` |
 | 6.24 | Панель Memory: active, candidates, experiences, conflicts и privacy | ✅ | `frontend/web/src/panels/MemoryPanel.tsx` |
-| 6.25 | Hybrid semantic retrieval через embeddings после стабилизации lexical retrieval | ✅ | `crates/memory/src/embed.rs`, migration `0017` |
+| 6.25 | Hybrid semantic retrieval через embeddings после стабилизации lexical retrieval | ✅ hash + optional remote neural (`EVOHIME_EMBEDDING_MODE=remote`) | `crates/memory/src/embed.rs`, migration `0017` |
 
 #### Архитектурные правила памяти
 
@@ -284,7 +284,8 @@
 - P2 improved project index ✅ (chunks, path/symbol weights, binary filter)
 - P2 finer permissions ✅ (session/path overrides, temp allow, audit)
 - Optional OpenTelemetry OTLP export ✅ (`OTEL_EXPORTER_OTLP_ENDPOINT`)
-- **Next:** optional neural encoder; more ML handlers
+- Optional remote neural embeddings ✅ (`EVOHIME_EMBEDDING_MODE=remote`)
+- **Next:** more ML handlers; Memory UI / experience polish
 
 ---
 
