@@ -337,10 +337,32 @@ function Acquire-LauncherLock {
   }
 }
 
+function Hide-LauncherConsole {
+  # Tray host only — no console spam, NotifyIcons are the UI.
+  if (-not ('EvoHime.ConsoleWindow' -as [type])) {
+    Add-Type -Namespace EvoHime -Name ConsoleWindow -MemberDefinition @'
+[DllImport("kernel32.dll")]
+public static extern IntPtr GetConsoleWindow();
+[DllImport("user32.dll")]
+public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+'@
+  }
+  $hwnd = [EvoHime.ConsoleWindow]::GetConsoleWindow()
+  if ($hwnd -ne [IntPtr]::Zero) {
+    [void][EvoHime.ConsoleWindow]::ShowWindow($hwnd, 0) # SW_HIDE
+  }
+}
+
 if ($Setup) {
   Set-Location $root
   Invoke-LocalSetup
   exit 0
+}
+
+# Full launcher = tray icons. Hide the console immediately so migrations/setup
+# do not dump a PowerShell window on the desktop.
+if (-not ($Server -or $Web -or $Worker)) {
+  Hide-LauncherConsole
 }
 
 Write-Host '[EvoHime] Native local start'
