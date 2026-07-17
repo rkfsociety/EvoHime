@@ -47,14 +47,13 @@ export function withAuth(init?: RequestInit): RequestInit {
 }
 
 export function websocketUrl(path: string): string {
-  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const url = new URL(path, `${protocol}//${window.location.host}`);
   const token = getApiToken();
-  const base = `${protocol}://${window.location.host}${path}`;
-  if (!token) {
-    return base;
+  if (token) {
+    url.searchParams.set("access_token", token);
   }
-  const join = path.includes("?") ? "&" : "?";
-  return `${base}${join}access_token=${encodeURIComponent(token)}`;
+  return url.toString();
 }
 
 export async function apiRequest<T>(

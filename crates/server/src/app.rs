@@ -4,7 +4,7 @@ use anyhow::Result;
 use evohime_model_gateway::providers::ProviderKind;
 use evohime_model_gateway::{ModelConfigResponse, ModelGateway, ModelGatewayConfig};
 use evohime_permissions::PermissionEngine;
-use evohime_protocol::ServerEvent;
+use evohime_protocol::{HistoryItem, ServerEvent};
 use evohime_tool_runtime::ToolRegistry;
 use serde::{Deserialize, Serialize};
 use serde_json::to_value;
@@ -109,7 +109,7 @@ pub struct AppState {
     pub model_gateway: Arc<RwLock<Option<Arc<ModelGateway>>>>,
     pub model_config: Arc<RwLock<ModelGatewayConfig>>,
     pub mcp_servers: Arc<Mutex<Vec<McpServerConfig>>>,
-    pub session_buses: Arc<Mutex<HashMap<Uuid, broadcast::Sender<ServerEvent>>>>,
+    pub session_buses: Arc<Mutex<HashMap<Uuid, broadcast::Sender<HistoryItem>>>>,
     pub task_cancellations: Arc<Mutex<HashMap<Uuid, CancellationToken>>>,
     pub worker: WorkerClient,
     pub worker_job_stall: Duration,
@@ -159,12 +159,12 @@ impl AppState {
         ModelGateway::config_response_with_models(&config, &available_models)
     }
 
-    pub async fn session_bus(&self, session_id: Uuid) -> broadcast::Sender<ServerEvent> {
+    pub async fn session_bus(&self, session_id: Uuid) -> broadcast::Sender<HistoryItem> {
         let mut buses = self.session_buses.lock().await;
         buses
             .entry(session_id)
             .or_insert_with(|| {
-                let (sender, _receiver) = broadcast::channel(128);
+                let (sender, _receiver) = broadcast::channel(256);
                 sender
             })
             .clone()
@@ -177,10 +177,14 @@ impl AppState {
         event: ServerEvent,
     ) -> Result<i64> {
         let event_json = to_value(&event)?;
-        let sequence =
+        let (sequence, created_at) =
             evohime_storage::insert_event(&self.pool, session_id, &event_json, task_id).await?;
         let sender = self.session_bus(session_id).await;
-        let _ = sender.send(event);
+        let _ = sender.send(HistoryItem {
+            sequence,
+            created_at,
+            event,
+        });
         Ok(sequence)
     }
 }

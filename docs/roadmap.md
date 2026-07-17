@@ -328,7 +328,7 @@
 | --- | --- | --- | --- | --- |
 | 7.15 | Поднять Python worker из `start-dev.ps1` (+ tray icon) | M | ✅ | `-Worker`, tray, health wait `:8090`, auto-restart |
 | 7.16 | LLM provider retry / backoff / retry-after | M | ✅ | `retry.rs` + literouter initial-request retries; `EVOHIME_LLM_*` |
-| 7.17 | WebSocket reconnect + event resume (cursor / last event id) | M | ⬜ | frontend `app.tsx` + server WS |
+| 7.17 | WebSocket reconnect + event resume (cursor / last event id) | M | ✅ | `HistoryItem` WS envelope; `after_sequence` / history `?after=`; frontend auto-reconnect |
 | 7.18 | Safe restart policy: не auto-resume mutating tasks без флага | M | ⬜ | `main.rs` recover_after_restart |
 | 7.19 | PgPool tuning (max_connections, timeouts, idle) | S | ⬜ | `PgPool::connect` defaults |
 | 7.20 | Observability locks без `.expect()` panic | S | ⬜ | `observability.rs`, `worker_observability.rs` |
@@ -471,7 +471,7 @@
 ### Suggested Stage 7 delivery waves
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
-2. **Wave B (survive restarts):** 7.17–7.24, 7.40–7.41  
+2. **Wave B (survive restarts):** `7.17` ✅ → next `7.18`–`7.24`, `7.40`–`7.41`  
 3. **Wave C (agent quality):** 7.28–7.33, 7.52  
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  
 5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  

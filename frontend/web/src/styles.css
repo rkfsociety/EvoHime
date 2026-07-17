@@ -194,7 +194,8 @@ h1 {
   box-shadow: 0 0 0 6px rgba(67, 209, 158, 0.14);
 }
 
-.statusDot[data-state="connecting"] {
+.statusDot[data-state="connecting"],
+.statusDot[data-state="reconnecting"] {
   background: #f3c969;
   box-shadow: 0 0 0 6px rgba(243, 201, 105, 0.14);
 }

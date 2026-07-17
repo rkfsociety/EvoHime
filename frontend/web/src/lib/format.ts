@@ -18,12 +18,16 @@ export function summarizeGitStatus(status: string) {
   };
 }
 
-export function translateSocketState(state: "idle" | "connecting" | "connected" | "failed") {
+export function translateSocketState(
+  state: "idle" | "connecting" | "reconnecting" | "connected" | "failed",
+) {
   switch (state) {
     case "idle":
       return "Ожидание";
     case "connecting":
       return "Подключение";
+    case "reconnecting":
+      return "Переподключение";
     case "connected":
       return "Подключено";
     case "failed":

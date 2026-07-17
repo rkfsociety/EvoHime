@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Wave A ✅ (`7.1`–`7.6`, `7.11`, `7.15`–`7.16`); next Wave B
-- Wave A remaining: —
+- **Stage 7** Hardening + Product — Wave A ✅; Wave B: `7.17` ✅; next `7.18`+
+- Wave B remaining: safe restart, pool tuning, observability, search fallback, permission durability…
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events

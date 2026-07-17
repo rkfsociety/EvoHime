@@ -1236,16 +1236,17 @@ async fn create_session(
         created_at: session.created_at,
     };
     let event_json = to_value(&event).map_err(|error| ApiError::Internal(error.to_string()))?;
-    evohime_storage::insert_event(&state.pool, session.id, &event_json, None)
-        .await
-        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let (sequence, created_at) =
+        evohime_storage::insert_event(&state.pool, session.id, &event_json, None)
+            .await
+            .map_err(|error| ApiError::Internal(error.to_string()))?;
 
     Ok(Json(SessionBootstrap {
         session_id: session.id,
         created_at: session.created_at,
         events: vec![HistoryItem {
-            sequence: 1,
-            created_at: session.created_at,
+            sequence,
+            created_at,
             event,
         }],
     }))
@@ -1688,8 +1689,10 @@ fn parse_checks(value: Option<&Value>) -> Vec<GithubCheck> {
 async fn session_history(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<Uuid>,
+    Query(query): Query<HistoryQuery>,
 ) -> Result<Json<Vec<HistoryItem>>, ApiError> {
-    let rows = evohime_storage::list_session_events(&state.pool, session_id)
+    let after = query.after.unwrap_or(0).max(0);
+    let rows = evohime_storage::list_session_events_after(&state.pool, session_id, after)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
 
@@ -1707,13 +1710,25 @@ async fn session_history(
     Ok(Json(history))
 }
 
+#[derive(Debug, Deserialize)]
+struct HistoryQuery {
+    after: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WsConnectQuery {
+    after_sequence: Option<i64>,
+}
+
 async fn ws_handler(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<Uuid>,
+    Query(query): Query<WsConnectQuery>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
+    let after_sequence = query.after_sequence.unwrap_or(0).max(0);
     ws.on_upgrade(move |socket| async move {
-        if let Err(error) = handle_socket(state, session_id, socket).await {
+        if let Err(error) = handle_socket(state, session_id, after_sequence, socket).await {
             error!("websocket session failed: {error}");
         }
     })
@@ -1722,6 +1737,7 @@ async fn ws_handler(
 async fn handle_socket(
     state: Arc<AppState>,
     session_id: Uuid,
+    after_sequence: i64,
     socket: WebSocket,
 ) -> Result<(), ApiError> {
     if evohime_storage::load_session(&state.pool, session_id)
@@ -1735,9 +1751,32 @@ async fn handle_socket(
     let bus_sender = state.session_bus(session_id).await;
     let mut bus_receiver = bus_sender.subscribe();
     let (mut sender, mut receiver) = socket.split();
+
+    // Replay durable events first, then forward live bus items (client dedupes by sequence).
+    let backlog = evohime_storage::list_session_events_after(&state.pool, session_id, after_sequence)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    for row in backlog {
+        let event: ServerEvent = serde_json::from_value(row.event_json)
+            .map_err(|error| ApiError::Internal(error.to_string()))?;
+        let item = HistoryItem {
+            sequence: row.sequence,
+            created_at: row.created_at,
+            event,
+        };
+        let serialized =
+            serde_json::to_string(&item).map_err(|error| ApiError::Internal(error.to_string()))?;
+        if sender.send(Message::Text(serialized)).await.is_err() {
+            return Ok(());
+        }
+    }
+
     let forward_handle = tokio::spawn(async move {
-        while let Ok(event) = bus_receiver.recv().await {
-            let serialized = match serde_json::to_string(&event) {
+        while let Ok(item) = bus_receiver.recv().await {
+            if item.sequence <= after_sequence {
+                continue;
+            }
+            let serialized = match serde_json::to_string(&item) {
                 Ok(serialized) => serialized,
                 Err(error) => {
                     error!("failed to serialize event: {error}");

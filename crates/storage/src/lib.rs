@@ -355,15 +355,24 @@ pub async fn list_session_events(
     pool: &PgPool,
     session_id: Uuid,
 ) -> Result<Vec<EventRow>, StorageError> {
+    list_session_events_after(pool, session_id, 0).await
+}
+
+pub async fn list_session_events_after(
+    pool: &PgPool,
+    session_id: Uuid,
+    after_sequence: i64,
+) -> Result<Vec<EventRow>, StorageError> {
     let rows = sqlx::query_as::<_, EventRow>(
         r#"
         SELECT sequence, created_at, event_json
         FROM session_events
-        WHERE session_id = $1
+        WHERE session_id = $1 AND sequence > $2
         ORDER BY sequence ASC
         "#,
     )
     .bind(session_id)
+    .bind(after_sequence)
     .fetch_all(pool)
     .await?;
 
@@ -566,23 +575,24 @@ pub async fn insert_event(
     session_id: Uuid,
     event_json: &Value,
     task_id: Option<Uuid>,
-) -> Result<i64, StorageError> {
+) -> Result<(i64, DateTime<Utc>), StorageError> {
     let sequence = next_sequence(pool, session_id).await?;
 
-    sqlx::query(
+    let created_at = sqlx::query_scalar::<_, DateTime<Utc>>(
         r#"
         INSERT INTO session_events (session_id, task_id, sequence, event_json)
         VALUES ($1, $2, $3, $4)
+        RETURNING created_at
         "#,
     )
     .bind(session_id)
     .bind(task_id)
     .bind(sequence)
     .bind(event_json)
-    .execute(pool)
+    .fetch_one(pool)
     .await?;
 
-    Ok(sequence)
+    Ok((sequence, created_at))
 }
 
 pub async fn insert_message(

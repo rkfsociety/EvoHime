@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
   ClientCommand,
+  HistoryItem,
   ServerEvent,
   SessionBootstrap,
 } from "./protocol";
@@ -100,7 +101,7 @@ export function App() {
   const [chatSessions, setChatSessions] = useState<ChatSessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [socketState, setSocketState] = useState<
-    "idle" | "connecting" | "connected" | "failed"
+    "idle" | "connecting" | "reconnecting" | "connected" | "failed"
   >("idle");
   const [input, setInput] = useState("");
   const [lines, setLines] = useState<ChatLine[]>(initialLines);
@@ -182,6 +183,7 @@ export function App() {
   const [mcpServersSaving, setMcpServersSaving] = useState(false);
   const [mcpServersNotice, setMcpServersNotice] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const lastSequenceRef = useRef(0);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const applyEventRef = useRef<(event: ServerEvent) => void>(() => undefined);
   const saveFileRef = useRef<() => void>(() => undefined);
@@ -468,33 +470,80 @@ export function App() {
       return;
     }
 
-    setSocketState("connecting");
-    const socket = new WebSocket(websocketUrl(`/ws/${session.session_id}`));
-    socketRef.current = socket;
+    let cancelled = false;
+    let socket: WebSocket | null = null;
+    let reconnectTimer: number | undefined;
+    let attempt = 0;
 
-    socket.onopen = () => {
-      setSocketState("connected");
+    const connect = () => {
+      if (cancelled) {
+        return;
+      }
+      setSocketState(attempt === 0 ? "connecting" : "reconnecting");
+      const after = lastSequenceRef.current;
+      const path =
+        after > 0
+          ? `/ws/${session.session_id}?after_sequence=${after}`
+          : `/ws/${session.session_id}`;
+      socket = new WebSocket(websocketUrl(path));
+      socketRef.current = socket;
+
+      socket.onopen = () => {
+        if (cancelled) {
+          return;
+        }
+        attempt = 0;
+        setSocketState("connected");
+      };
+
+      socket.onclose = () => {
+        if (cancelled) {
+          return;
+        }
+        setSocketState("reconnecting");
+        const delay = Math.min(10_000, 500 * 2 ** Math.min(attempt, 5));
+        attempt += 1;
+        reconnectTimer = window.setTimeout(connect, delay);
+      };
+
+      socket.onerror = () => {
+        // onclose handles reconnect
+      };
+
+      socket.onmessage = (messageEvent) => {
+        const raw = JSON.parse(messageEvent.data as string) as HistoryItem | ServerEvent;
+        if (
+          raw &&
+          typeof raw === "object" &&
+          "sequence" in raw &&
+          "event" in raw &&
+          typeof (raw as HistoryItem).sequence === "number"
+        ) {
+          const item = raw as HistoryItem;
+          if (item.sequence <= lastSequenceRef.current) {
+            return;
+          }
+          lastSequenceRef.current = item.sequence;
+          applyEventRef.current(item.event);
+          return;
+        }
+        applyEventRef.current(raw as ServerEvent);
+      };
     };
 
-    socket.onclose = () => {
-      setSocketState("idle");
-    };
-
-    socket.onerror = () => {
-      setSocketState("failed");
-    };
-
-    socket.onmessage = (event) => {
-      const parsed = JSON.parse(event.data as string) as ServerEvent;
-      applyEventRef.current(parsed);
-    };
+    connect();
 
     return () => {
-      socket.close();
-      socketRef.current = null;
+      cancelled = true;
+      if (reconnectTimer !== undefined) {
+        window.clearTimeout(reconnectTimer);
+      }
+      socket?.close();
+      if (socketRef.current === socket) {
+        socketRef.current = null;
+      }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session]);
+  }, [session?.session_id]);
 
   useEffect(() => {
     document.body.style.overflow = settingsOpen ? "hidden" : "";
@@ -522,6 +571,9 @@ export function App() {
     }
     if (socketState === "failed") {
       return "Ошибка подключения";
+    }
+    if (socketState === "reconnecting") {
+      return "Переподключение...";
     }
     return "Подключение...";
   }, [session, socketState]);
@@ -672,6 +724,10 @@ export function App() {
 
   function hydrateSession(summary: ChatSessionSummary, history: SessionBootstrap["events"]) {
     setActiveSessionId(summary.session_id);
+    lastSequenceRef.current = history.reduce(
+      (max, item) => Math.max(max, item.sequence),
+      0,
+    );
     setSession({
       session_id: summary.session_id,
       created_at: summary.created_at,

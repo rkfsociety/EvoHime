@@ -22,9 +22,10 @@ export function createSession() {
   );
 }
 
-export function getSessionHistory(sessionId: string) {
+export function getSessionHistory(sessionId: string, afterSequence = 0) {
+  const query = afterSequence > 0 ? `?after=${afterSequence}` : "";
   return apiRequest<HistoryItem[]>(
-    `/api/sessions/${sessionId}/history`,
+    `/api/sessions/${sessionId}/history${query}`,
     undefined,
     "Не удалось загрузить историю",
   );
