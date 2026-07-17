@@ -1472,7 +1472,7 @@ export function App() {
               <strong>{selectedProject.label}</strong>
               <span className="projectContextMeta">Локальный</span>
               <span className="projectContextMeta">main</span>
-              <span className="projectContextChevron">⌄</span>
+              <span className="composerMenuChevron" aria-hidden="true" />
             </button>
             {projectPickerOpen ? (
               <div className="projectPicker" role="menu">
@@ -1591,8 +1591,10 @@ export function App() {
                   aria-label="Режим работы агента"
                   aria-expanded={workModeOpen}
                 >
-                  {workMode === "allow" ? "Полный доступ" : workMode === "deny" ? "Запретить всё" : workMode === "mixed" ? "Смешанный режим" : "Спрашивать всё"}
-                  <span className="composerMenuChevron">⌄</span>
+                  <span className="composerChipLabel">
+                    {workMode === "allow" ? "Полный доступ" : workMode === "deny" ? "Запретить всё" : workMode === "mixed" ? "Смешанный режим" : "Спрашивать всё"}
+                  </span>
+                  <span className="composerMenuChevron" aria-hidden="true" />
                 </button>
                 {workModeOpen ? (
                   <div className="composerMenuPopover workModePopover" role="listbox">
@@ -1638,8 +1640,8 @@ export function App() {
                   aria-expanded={modelPickerOpen}
                   title={composerModelsError ?? "Модель агента"}
                 >
-                  <span>{selectedComposerModel || "Модели недоступны"}</span>
-                  <span className="composerMenuChevron">⌄</span>
+                  <span className="composerChipLabel">{selectedComposerModel || "Модели недоступны"}</span>
+                  <span className="composerMenuChevron" aria-hidden="true" />
                 </button>
                 {modelPickerOpen ? (
                   <div className="composerMenuPopover modelPopover" role="listbox">
@@ -1664,7 +1666,20 @@ export function App() {
                 disabled={socketState !== "connected"}
                 aria-label={activeTaskId ? "Остановить ответ" : "Отправить сообщение"}
               >
-                <span aria-hidden="true">{activeTaskId ? "■" : "↑"}</span>
+                {activeTaskId ? (
+                  <span className="sendButtonStop" aria-hidden="true" />
+                ) : (
+                  <svg className="sendButtonArrow" viewBox="0 0 16 16" aria-hidden="true">
+                    <path
+                      d="M8 12.5V3.5M4.25 7.25 8 3.5l3.75 3.75"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.85"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
               </button>
             </div>
             {attachments.length > 0 ? (
