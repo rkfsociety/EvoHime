@@ -1,4 +1,12 @@
-export { ApiError, apiRequest, apiRequestVoid, jsonBody } from "./client";
+export {
+  ApiError,
+  apiRequest,
+  apiRequestVoid,
+  jsonBody,
+  parseApiErrorBody,
+  type ApiErrorBody,
+  type ApiErrorCode,
+} from "./client";
 export * as sessionsApi from "./sessions";
 export * as filesApi from "./files";
 export * as gitApi from "./git";

@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Wave A ✅; Wave B: `7.17`–`7.26`, `7.40`–`7.41` ✅; next `7.27`+
-- Wave B next: structured API errors (`7.27`)…
+- **Stage 7** Hardening + Product — Wave A ✅; Wave B: `7.17`–`7.27`, `7.40`–`7.41` ✅; next Wave C `7.28`+
+- Wave C next: native tool_calls (`7.28`)…
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events

@@ -1,3 +1,4 @@
+mod api_error;
 mod app;
 mod auth;
 mod cors;
@@ -11,6 +12,8 @@ mod worker;
 mod worker_observability;
 mod workspace;
 
+pub use api_error::ApiError;
+
 use anyhow::Context;
 use axum::{
     extract::{
@@ -19,7 +22,7 @@ use axum::{
     },
     http::{header, StatusCode},
     middleware,
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     routing::{delete, get, post, put},
     Json, Router,
 };
@@ -46,22 +49,6 @@ use uuid::Uuid;
 
 use crate::app::{AppConfig, AppState, McpServerConfig};
 
-#[derive(Debug, thiserror::Error)]
-enum ApiError {
-    #[error("{0}")]
-    BadRequest(String),
-    #[error("{0}")]
-    Conflict(String),
-    #[error("approval required for {tool}: {approval_id}")]
-    ApprovalRequired { tool: String, approval_id: Uuid },
-    #[error("{0}")]
-    TooManyRequests(String),
-    #[error("{0}")]
-    Internal(String),
-    #[error("service unavailable: {0}")]
-    Unavailable(String),
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct ModelSettingsRequest {
     default_route: String,
@@ -82,30 +69,6 @@ struct ModelRouteRequest {
 
 fn default_billing_mode() -> String {
     "free".to_string()
-}
-
-impl From<(Uuid, ApiError)> for ApiError {
-    fn from((_, error): (Uuid, ApiError)) -> Self {
-        error
-    }
-}
-
-impl IntoResponse for ApiError {
-    fn into_response(self) -> Response {
-        let (status, message) = match self {
-            Self::BadRequest(message) => (StatusCode::BAD_REQUEST, message),
-            Self::Conflict(message) => (StatusCode::CONFLICT, message),
-            Self::ApprovalRequired { tool, approval_id } => (
-                StatusCode::CONFLICT,
-                format!("approval required for {tool}: {approval_id}"),
-            ),
-            Self::TooManyRequests(message) => (StatusCode::TOO_MANY_REQUESTS, message),
-            Self::Internal(message) => (StatusCode::INTERNAL_SERVER_ERROR, message),
-            Self::Unavailable(message) => (StatusCode::SERVICE_UNAVAILABLE, message),
-        };
-
-        (status, Json(json!({ "error": message }))).into_response()
-    }
 }
 
 #[tokio::main]

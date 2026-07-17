@@ -112,6 +112,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. **Stage 7** — Wave A ✅; Wave B: `7.17`–`7.26`, `7.40`–`7.41` ✅; next structured errors `7.27`
-2. Рекомендуемая следующая волна: structured API errors (`7.27`), Wave C agent/tools
+1. **Stage 7** — Wave A ✅; Wave B: `7.17`–`7.27`, `7.40`–`7.41` ✅; next Wave C (`7.28`+)
+2. Рекомендуемая следующая волна: native tool_calls (`7.28`), agent_loop split (`7.29`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

@@ -1,12 +1,105 @@
+export type ApiErrorCode =
+  | "bad_request"
+  | "conflict"
+  | "approval_required"
+  | "rate_limited"
+  | "internal"
+  | "unavailable"
+  | "unauthorized"
+  | "not_found"
+  | string;
+
+export type ApiErrorBody = {
+  error: string;
+  code?: ApiErrorCode;
+  retryable?: boolean;
+  message?: string;
+  tool?: string;
+  approval_id?: string;
+};
+
 export class ApiError extends Error {
   readonly status: number;
   readonly body: string;
+  readonly code: ApiErrorCode | null;
+  readonly retryable: boolean;
+  readonly details: ApiErrorBody | null;
 
-  constructor(status: number, body: string, fallback: string) {
-    super(body.trim() || fallback);
+  constructor(
+    status: number,
+    body: string,
+    fallback: string,
+    parsed: ApiErrorBody | null = null,
+  ) {
+    const message =
+      parsed?.message?.trim() ||
+      parsed?.error?.trim() ||
+      body.trim() ||
+      fallback;
+    super(message);
     this.name = "ApiError";
     this.status = status;
     this.body = body;
+    this.details = parsed;
+    this.code = parsed?.code ?? inferCodeFromStatus(status);
+    this.retryable =
+      typeof parsed?.retryable === "boolean"
+        ? parsed.retryable
+        : status === 429 || status === 503 || status >= 500;
+  }
+}
+
+function inferCodeFromStatus(status: number): ApiErrorCode | null {
+  switch (status) {
+    case 400:
+      return "bad_request";
+    case 401:
+      return "unauthorized";
+    case 404:
+      return "not_found";
+    case 409:
+      return "conflict";
+    case 429:
+      return "rate_limited";
+    case 503:
+      return "unavailable";
+    default:
+      return status >= 500 ? "internal" : null;
+  }
+}
+
+export function parseApiErrorBody(text: string): ApiErrorBody | null {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{")) {
+    return null;
+  }
+  try {
+    const value = JSON.parse(trimmed) as unknown;
+    if (!value || typeof value !== "object") {
+      return null;
+    }
+    const record = value as Record<string, unknown>;
+    const error =
+      typeof record.error === "string"
+        ? record.error
+        : typeof record.message === "string"
+          ? record.message
+          : "";
+    if (!error && record.code == null) {
+      return null;
+    }
+    return {
+      error: error || "request failed",
+      code: typeof record.code === "string" ? record.code : undefined,
+      retryable:
+        typeof record.retryable === "boolean" ? record.retryable : undefined,
+      message: typeof record.message === "string" ? record.message : undefined,
+      tool: typeof record.tool === "string" ? record.tool : undefined,
+      approval_id:
+        typeof record.approval_id === "string" ? record.approval_id : undefined,
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -56,6 +149,10 @@ export function websocketUrl(path: string): string {
   return url.toString();
 }
 
+function throwApiError(status: number, text: string, fallbackError: string): never {
+  throw new ApiError(status, text, fallbackError, parseApiErrorBody(text));
+}
+
 export async function apiRequest<T>(
   path: string,
   init?: RequestInit,
@@ -64,7 +161,7 @@ export async function apiRequest<T>(
   const response = await fetch(path, withAuth(init));
   const text = await response.text();
   if (!response.ok) {
-    throw new ApiError(response.status, text, fallbackError);
+    throwApiError(response.status, text, fallbackError);
   }
   if (!text) {
     return undefined as T;
@@ -80,7 +177,7 @@ export async function apiRequestVoid(
   const response = await fetch(path, withAuth(init));
   if (!response.ok) {
     const text = await response.text();
-    throw new ApiError(response.status, text, fallbackError);
+    throwApiError(response.status, text, fallbackError);
   }
 }
 

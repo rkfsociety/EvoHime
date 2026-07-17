@@ -338,7 +338,7 @@
 | 7.24 | Persist / scrape pipeline+worker metrics (or Prometheus scrape) | M | ✅ | PG `metrics_snapshots` + `/metrics` Prometheus; `/api/metrics/history` |
 | 7.25 | Task-engine: `transition` по id, cancel через FSM | S | ✅ | `load_task` + FSM; cancel/retry validated |
 | 7.26 | Worker: уменьшить dual-state races (lease / claim token) | M | ✅ | `claim_token` CAS; steal on recovery; stale complete ignored |
-| 7.27 | Structured error taxonomy в API (`code`, `retryable`) | M | ⬜ | frontend/`api/client.ts` тоже |
+| 7.27 | Structured error taxonomy в API (`code`, `retryable`) | M | ✅ | `api_error.rs`; client parses `code`/`retryable` |
 
 ### 7.C — Agent runtime & tools 2.0
 
@@ -471,7 +471,7 @@
 ### Suggested Stage 7 delivery waves
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
-2. **Wave B (survive restarts):** `7.17`–`7.26`, `7.40`–`7.41` ✅ → next `7.27`+  
+2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
 3. **Wave C (agent quality):** 7.28–7.33, 7.52  
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  
 5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  

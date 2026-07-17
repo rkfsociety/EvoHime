@@ -16,7 +16,6 @@ use axum::{
     Json,
 };
 use serde::Serialize;
-use serde_json::json;
 use std::{
     net::{IpAddr, SocketAddr},
     sync::Arc,
@@ -195,10 +194,7 @@ pub async fn require_local_auth(
         Ok(()) => next.run(request).await,
         Err(status) => (
             status,
-            Json(json!({
-                "error": "unauthorized",
-                "message": "Missing or invalid API token. Use Authorization: Bearer <EVOHIME_API_TOKEN>, or connect from loopback when token is unset.",
-            })),
+            Json(crate::api_error::unauthorized_json()),
         )
             .into_response(),
     }
