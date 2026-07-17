@@ -63,7 +63,7 @@ User message
 - Tools: filesystem, shell, Git, browser, MCP call (sandboxed)
 - Agent loop: plan → dependency batches → bounded replan; checkpoints with pause/resume
 - Frontend shell split (`6.13`): `types` / `api` / `lib` / `hooks` / `panels`
-- Panels: Chat, Settings, Tasks (deep), Actions (deep), Terminal, Files, Editor, Git, Plugins, Pull Requests (detail/diff/checks/create), Sites
+- Panels: Chat, Settings (incl. Worker status/jobs), Tasks (deep), Actions (deep), Terminal, Files, Editor, Git, Plugins, Pull Requests (detail/diff/checks/create), Sites, Memory
 - Structured memory: `memory_items` + admit/retrieve/extract/experience/feedback + hybrid embeddings (`6.16`–`6.25`, optional remote neural); legacy notes still written/loaded
 - Workers: health/stall reliability + `text.summarize` / `text.chunk` / `text.similarity` / `text.entities`
 - Native launcher + GitHub auth via local `gh`

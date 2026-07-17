@@ -15,7 +15,7 @@
 - `GET /api/worker/jobs?limit=` — recent durable jobs (default 50, max 200).
 - `GET /api/metrics` includes nested `worker` alongside `pipeline`.
 
-## Non-goals
+## Follow-ups
 
-- Frontend worker dashboard
-- Push metrics to Prometheus (OTLP traces already optional at process level)
+- Frontend worker dashboard ✅ (Settings → Worker: status, metrics, recent jobs, retry)
+- Push metrics to Prometheus (still optional; OTLP traces already at process level)

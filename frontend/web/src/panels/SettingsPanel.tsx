@@ -11,6 +11,7 @@ import type {
   ToolDefinition,
 } from "../types";
 import { formatSessionPreview, formatSessionTitle } from "../lib/format";
+import { WorkerSettingsSection } from "./WorkerSettingsSection";
 
 type SettingsPanelProps = {
   settingsTab: SettingsTab;
@@ -50,6 +51,7 @@ const SETTINGS_TABS: Array<[SettingsTab, string, string]> = [
   ["permissions", "Разрешения", "Доступ инструментов"],
   ["mcp", "MCP", "Подключённые серверы"],
   ["tools", "Инструменты", "Каталог и таймауты"],
+  ["worker", "Worker", "Статус и jobs"],
   ["archive", "Архив", "Скрытые чаты"],
 ];
 
@@ -364,6 +366,8 @@ export function SettingsPanel({
             </div>
           </section>
         ) : null}
+
+        {settingsTab === "worker" ? <WorkerSettingsSection /> : null}
 
         {settingsTab === "archive" ? (
           <section className="settingsSection">

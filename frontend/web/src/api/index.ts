@@ -9,3 +9,4 @@ export * as githubApi from "./github";
 export * as mcpApi from "./mcp";
 export * as pluginsApi from "./plugins";
 export * as memoryApi from "./memory";
+export * as workerApi from "./worker";

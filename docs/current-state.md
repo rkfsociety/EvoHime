@@ -88,7 +88,7 @@ user.message
 | Panel | Status |
 | --- | --- |
 | Chat | ✅ |
-| Settings | ✅ models, permissions, MCP, tools, archive |
+| Settings | ✅ models, permissions, MCP, tools, worker, archive |
 | Tasks | ✅ deep: steps, deps, pause reason, retries, recovery, approvals |
 | Actions | ✅ deep: timeline + retry/approval/recovery metrics |
 | Terminal / Files / Editor / Git | ✅ |
@@ -108,5 +108,5 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. Optional follow-ups from roadmap backlog (most optional polish items landed; `memory.search` tool registered)
+1. Optional follow-ups from roadmap backlog (worker Settings UI landed)
 2. Keep CI / reliability polish as needed

@@ -261,7 +261,7 @@
 
 | Приоритет | Улучшение | Что добавить |
 | --- | --- | --- |
-| P2 | Укрепление worker subsystem | ✅ health/stall + observability (`/api/worker/status`, metrics, job list) |
+| P2 | Укрепление worker subsystem | ✅ health/stall + API + Settings Worker UI (status/jobs/retry) |
 | P2 | Специализированные ML handlers | ✅ `text.summarize` / `chunk` / `similarity` / `entities` (+ stats/keywords); further optional |
 
 ### Кандидаты на следующий milestone
@@ -289,6 +289,7 @@
 - Memory UI / experience polish ✅ (playbook view, kind filters, export)
 - Deeper worker observability ✅ (`/api/worker/status`, job list, metrics)
 - On-demand `memory.search` tool ✅ (registry + agent-runtime DB path)
+- Frontend worker dashboard ✅ (Settings → Worker)
 - **Next:** optional backlog / reliability polish
 
 ---
@@ -327,6 +328,7 @@
 | `browser.open` | 6 | M5 | ✅ |
 | `browser.extract` | 6 | M5 | ✅ |
 | `mcp.call` | 6 | M5 | ✅ |
+| `memory.search` | 6 | M5 | ✅ |
 
 ---
 
