@@ -191,7 +191,7 @@ if ($Server) {
   Set-Location $root
   Import-DotEnv
   if (-not $env:DATABASE_URL) { $env:DATABASE_URL = 'postgres://evohime:evohime@localhost:5432/evohime' }
-  if (-not $env:BIND_ADDR) { $env:BIND_ADDR = '0.0.0.0:3000' }
+  if (-not $env:BIND_ADDR) { $env:BIND_ADDR = '127.0.0.1:3000' }
   if (-not $env:WORKSPACE_ROOT) { $env:WORKSPACE_ROOT = '.' }
   if (-not $env:DEMO_FILE_PATH) { $env:DEMO_FILE_PATH = 'docs/sample-context.md' }
   if (-not $env:MODEL_PROVIDER) { $env:MODEL_PROVIDER = 'literouter' }

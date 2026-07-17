@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — `7.1` ✅ `7.2` ✅; next `7.3`+
-- Wave A remaining: bind localhost, SSRF, shell env scrub, rate limit, worker launcher, LLM retry
+- **Stage 7** Hardening + Product — `7.1`–`7.3` ✅; next `7.4`+
+- Wave A remaining: SSRF, shell env scrub, rate limit, worker launcher, LLM retry
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events
@@ -128,7 +128,8 @@ Each tool must have: unique name, description, JSON Schema input, required permi
 
 ```env
 DATABASE_URL=postgres://evohime:evohime@localhost:5432/evohime
-BIND_ADDR=0.0.0.0:3000
+BIND_ADDR=127.0.0.1:3000
+# To listen on all interfaces: BIND_ADDR=0.0.0.0:3000 and set EVOHIME_API_TOKEN
 # Optional local API auth (Stage 7.1). When set, HTTP/WS require Bearer token.
 # When unset, only loopback clients are allowed (non-loopback → 401).
 # EVOHIME_API_TOKEN=dev-local-token

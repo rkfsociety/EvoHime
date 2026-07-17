@@ -99,7 +99,8 @@ npm run generate:protocol
 See `.env.example`:
 
 - `DATABASE_URL`
-- `BIND_ADDR`
+- `BIND_ADDR` — default `127.0.0.1:3000` (use `0.0.0.0:3000` + `EVOHIME_API_TOKEN` for LAN)
+- `EVOHIME_API_TOKEN` — optional bearer auth for HTTP/WS
 - `WORKSPACE_ROOT`
 - `DEMO_FILE_PATH`
 - `LITEROUTER_API_KEY` — LiteRouter API key
