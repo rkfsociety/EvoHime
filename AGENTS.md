@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — полный backlog в `docs/roadmap.md` (`7.1`–`7.110`)
-- Первая волна: local auth, CORS, SSRF, Python worker в launcher, LLM retry
+- **Stage 7** Hardening + Product — backlog в `docs/roadmap.md` (`7.1` ✅; next `7.2`+)
+- Wave A remaining: CORS, bind localhost, SSRF, shell env scrub, rate limit, worker launcher, LLM retry
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events
@@ -129,6 +129,9 @@ Each tool must have: unique name, description, JSON Schema input, required permi
 ```env
 DATABASE_URL=postgres://evohime:evohime@localhost:5432/evohime
 BIND_ADDR=0.0.0.0:3000
+# Optional local API auth (Stage 7.1). When set, HTTP/WS require Bearer token.
+# When unset, only loopback clients are allowed (non-loopback → 401).
+# EVOHIME_API_TOKEN=dev-local-token
 WORKSPACE_ROOT=.
 DEMO_FILE_PATH=docs/sample-context.md
 ```

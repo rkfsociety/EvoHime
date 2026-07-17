@@ -35,6 +35,7 @@ import {
   projectsApi,
   sessionsApi,
 } from "./api";
+import { websocketUrl } from "./api/client";
 import {
   chatMatchesProject,
   formatProfileInitials,
@@ -468,10 +469,7 @@ export function App() {
     }
 
     setSocketState("connecting");
-    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const socket = new WebSocket(
-      `${protocol}://${window.location.host}/ws/${session.session_id}`,
-    );
+    const socket = new WebSocket(websocketUrl(`/ws/${session.session_id}`));
     socketRef.current = socket;
 
     socket.onopen = () => {

@@ -26,7 +26,8 @@ Stages 1–5 complete. Stage 6 structured memory `6.16`–`6.25` and optional po
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/health` | Health check |
+| GET | `/health` | Health check (public) |
+| GET | `/api/auth/status` | Local auth mode (`token_configured`, public) |
 | GET/PUT | `/api/models/config` | Model routes from web panel |
 | GET | `/api/auth/github` | GitHub auth via local `gh` |
 | GET | `/api/permissions` | Permission policy snapshot |
@@ -108,6 +109,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. **Stage 7** — см. [roadmap.md](roadmap.md) § «Этап 7» (110 пунктов: security → product → moonshots)
-2. Рекомендуемая первая волна: auth/CORS/SSRF (`7.1`–`7.6`), worker в launcher (`7.15`), LLM retry (`7.16`)
+1. **Stage 7** — см. [roadmap.md](roadmap.md) § «Этап 7» (`7.1` ✅ auth; next `7.2` CORS / `7.3` bind localhost / Wave A)
+2. Рекомендуемая следующая волна: CORS + default bind (`7.2`–`7.3`), SSRF (`7.4`–`7.5`), worker в launcher (`7.15`), LLM retry (`7.16`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

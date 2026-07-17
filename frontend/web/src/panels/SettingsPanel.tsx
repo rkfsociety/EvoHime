@@ -11,6 +11,7 @@ import type {
   ToolDefinition,
 } from "../types";
 import { formatSessionPreview, formatSessionTitle } from "../lib/format";
+import { LocalAuthSettingsSection } from "./LocalAuthSettingsSection";
 import { MetricsSettingsSection } from "./MetricsSettingsSection";
 import { WorkerSettingsSection } from "./WorkerSettingsSection";
 
@@ -174,6 +175,7 @@ export function SettingsPanel({
                 {modelNotice ? (
                   <p className={modelNotice.startsWith("Настройки") ? "settingsHint" : "settingsError"}>{modelNotice}</p>
                 ) : null}
+                <LocalAuthSettingsSection />
                 {orchestratorRoute ? (
                   <section className="orchestratorSettings">
                     <div>

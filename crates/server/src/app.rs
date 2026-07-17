@@ -18,6 +18,7 @@ use uuid::Uuid;
 pub struct AppConfig {
     pub database_url: String,
     pub bind_addr: String,
+    pub auth: crate::auth::AuthConfig,
     pub demo_file_path: PathBuf,
     pub workspace_root: PathBuf,
     pub model_config: ModelGatewayConfig,
@@ -34,6 +35,7 @@ impl AppConfig {
         let database_url = env::var("DATABASE_URL")
             .unwrap_or_else(|_| "postgres://evohime:evohime@localhost:5432/evohime".to_string());
         let bind_addr = env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".to_string());
+        let api_token = crate::auth::AuthConfig::from_env();
         let workspace_root = env::var("WORKSPACE_ROOT")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."));
@@ -60,6 +62,7 @@ impl AppConfig {
         Ok(Self {
             database_url,
             bind_addr,
+            auth: api_token,
             demo_file_path,
             workspace_root,
             model_config,
@@ -100,6 +103,7 @@ fn default_true() -> bool {
 pub struct AppState {
     pub pool: PgPool,
     pub workspace_root: PathBuf,
+    pub auth: crate::auth::AuthConfig,
     pub tools: ToolRegistry,
     pub permissions: PermissionEngine,
     pub model_gateway: Arc<RwLock<Option<Arc<ModelGateway>>>>,

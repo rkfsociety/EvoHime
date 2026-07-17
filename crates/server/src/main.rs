@@ -1,4 +1,5 @@
 mod app;
+mod auth;
 mod memory_api;
 mod observability;
 mod otel;
@@ -14,6 +15,7 @@ use axum::{
         Path, Query, State, WebSocketUpgrade,
     },
     http::StatusCode,
+    middleware,
     response::{IntoResponse, Response},
     routing::{delete, get, post, put},
     Json, Router,
@@ -157,6 +159,7 @@ async fn main() -> anyhow::Result<()> {
     let state = Arc::new(AppState {
         pool,
         workspace_root: config.workspace_root.clone(),
+        auth: config.auth.clone(),
         tools: evohime_tool_runtime::ToolRegistry::bootstrap_with_permissions(permissions.clone()),
         permissions,
         model_gateway: Arc::new(RwLock::new(model_gateway)),
@@ -275,6 +278,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/health", get(health))
+        .route("/api/auth/status", get(auth_status))
         .route(
             "/api/models/config",
             get(model_config).put(update_model_config),
@@ -333,23 +337,43 @@ async fn main() -> anyhow::Result<()> {
             get(list_mcp_servers).put(update_mcp_servers),
         )
         .route("/ws/:session_id", get(ws_handler))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth::require_local_auth,
+        ))
         .layer(CorsLayer::permissive())
         .with_state(state.clone());
 
     let addr: SocketAddr = config.bind_addr.parse().context("parse bind address")?;
+    let auth_info = auth::status_payload(&config.auth);
     info!(
         workspace_root = %config.workspace_root.display(),
         demo_file = %config.demo_file_path.display(),
         model = %default_model_name,
         provider = %default_provider_name,
         llm_configured = %state.model_gateway.read().await.is_some(),
+        auth_mode = auth_info.mode,
+        token_configured = auth_info.token_configured,
         "listening on {}",
         addr
     );
+    if !auth_info.token_configured {
+        warn!(
+            "EVOHIME_API_TOKEN unset: non-loopback clients get 401; set a token before exposing the bind address"
+        );
+    }
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
+}
+
+async fn auth_status(State(state): State<Arc<AppState>>) -> Json<auth::AuthStatus> {
+    Json(auth::status_payload(&state.auth))
 }
 
 async fn health() -> Json<Value> {
