@@ -91,7 +91,7 @@ user.message
 | Terminal / Files / Editor / Git | ✅ |
 | Plugins / Sites | ✅ Plugins: installed list + remote catalog/install |
 | Pull Requests | ✅ list + detail (diff/comments/checks) + create |
-| Memory | ✅ tabs + overrides (`6.22`/`6.24`); feedback (`6.23`); hybrid lexical+embedding retrieve (`6.25`) |
+| Memory | ✅ tabs + playbook view + kind filters + JSON export; feedback; hybrid retrieve |
 
 Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEventHandler` (`6.13` ✅). Brand: SVG mark + portrait mascot (`AgentBrand` / `AgentMark` / `AgentAvatar`, favicon).
 
@@ -105,5 +105,5 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. Experience/playbooks + Memory UI polish
-2. Deeper worker observability as needed
+1. Deeper worker observability as needed
+2. Optional follow-ups from roadmap backlog

@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- Experience/playbooks, Memory UI polish
 - Deeper worker observability as needed
+- Optional backlog items as they appear
 
 ## WebSocket events
 

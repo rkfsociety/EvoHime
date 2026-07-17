@@ -3275,6 +3275,27 @@ h1 {
   padding: 10px 12px;
 }
 
+.memoryKindFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.memoryKindFilter {
+  border: 1px solid var(--border-1);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.memoryKindFilter.active {
+  border-color: rgba(180, 220, 170, 0.55);
+  background: rgba(180, 220, 170, 0.12);
+}
+
 .memoryList {
   display: flex;
   flex-direction: column;
@@ -3292,6 +3313,10 @@ h1 {
   border-color: rgba(159, 192, 255, 0.45);
 }
 
+.memoryItem[data-kind="playbook"] {
+  border-color: rgba(200, 180, 120, 0.35);
+}
+
 .memoryItemHeader {
   display: flex;
   justify-content: space-between;
@@ -3299,10 +3324,58 @@ h1 {
   margin-bottom: 8px;
 }
 
+.memoryItemHeader strong {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.memoryKindBadge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.memoryScopeLabel {
+  opacity: 0.8;
+  font-weight: 500;
+}
+
 .memoryItem p {
   margin: 0 0 10px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.memoryPlaybook {
+  margin-bottom: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.memoryPlaybook ol {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.memoryPlaybook li {
+  margin: 2px 0;
+}
+
+.memoryPlaybookTrigger,
+.memoryPlaybook p {
+  margin: 0;
+}
+
+.memoryPlaybookFallback {
+  opacity: 0.55;
+  font-size: 12px;
 }
 
 .memoryEdit {

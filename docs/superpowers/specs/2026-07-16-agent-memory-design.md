@@ -141,8 +141,9 @@ Panel is **override and observability**, not a queue of mandatory approvals:
 
 - Active / candidates / experiences / conflicts
 - Edit, reject, archive, delete, pin
+- Playbook structured view from `content_json`; experience kind filters; local JSON export
 - Privacy: show redaction policy; no secret storage toggle that weakens redaction
-- Optional local export/backup later (single operator migration)
+- Optional local export/backup later (single operator migration) — basic tab export shipped
 
 ## Migration
 

@@ -16,7 +16,7 @@
 | 3 | Tools + shell | ✅ Готово | Sandbox, filesystem tools, shell, approvals, terminal, permissions |
 | 4 | Editor + Git | ✅ Done | Browser file tree, Monaco editor, Git status/diff/actions, and synchronization events |
 | 5 | Оркестрация | ✅ Complete | Lifecycle, команды, storage и recovery готовы |
-| 6 | Advanced | 🟡 В процессе | ML handlers ✅; next Memory UI polish / worker observability |
+| 6 | Advanced | 🟡 В процессе | Memory UI polish ✅; next worker observability / backlog |
 
 ---
 
@@ -192,7 +192,7 @@
 | 6.19 | Memory retrieval: scope filtering, ranking, budget, untrusted tagging + `memory.search` | ✅ | `crates/memory/src/retrieve.rs`, `agent-runtime`, `server` |
 | 6.20 | Memory extraction + decision gate: auto-promote или ask-on-uncertainty | ✅ | `crates/memory/` extract+gate, `server`, protocol, MemoryAskModal |
 | 6.21 | Experience memory: success/failure patterns, verification rules и playbooks | ✅ | `crates/memory/` experience+extract, retrieval priority, gate |
-| 6.22 | Override UI: правка, отклонение, архив, удаление, pin (не блокер happy path) | ✅ | `/api/memory`, MemoryPanel |
+| 6.22 | Override UI: правка, отклонение, архив, удаление, pin (не блокер happy path) | ✅ | `/api/memory`, MemoryPanel (+ playbook view / export polish) |
 | 6.23 | Feedback loop: memory used/helpful/corrected/rejected и confidence decay | ✅ | `crates/memory/src/feedback*.rs`, migration `0016` |
 | 6.24 | Панель Memory: active, candidates, experiences, conflicts и privacy | ✅ | `frontend/web/src/panels/MemoryPanel.tsx` |
 | 6.25 | Hybrid semantic retrieval через embeddings после стабилизации lexical retrieval | ✅ hash + optional remote neural (`EVOHIME_EMBEDDING_MODE=remote`) | `crates/memory/src/embed.rs`, migration `0017` |
@@ -286,7 +286,8 @@
 - Optional OpenTelemetry OTLP export ✅ (`OTEL_EXPORTER_OTLP_ENDPOINT`)
 - Optional remote neural embeddings ✅ (`EVOHIME_EMBEDDING_MODE=remote`)
 - More ML handlers ✅ (`text.similarity`, `text.entities`)
-- **Next:** Memory UI / experience polish; deeper worker observability
+- Memory UI / experience polish ✅ (playbook view, kind filters, export)
+- **Next:** deeper worker observability; optional backlog
 
 ---
 
