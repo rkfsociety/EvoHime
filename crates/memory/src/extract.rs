@@ -355,7 +355,9 @@ pub fn heuristic_extract(
     }
 
     let summary = truncate_summary(user_message, final_message);
-    if summary.is_empty() || is_ephemeral_task_dump(&summary) || is_ephemeral_task_dump(final_message)
+    if summary.is_empty()
+        || is_ephemeral_task_dump(&summary)
+        || is_ephemeral_task_dump(final_message)
     {
         // Still allow real failure patterns when the failure text is usable.
         return experience_patterns(user_message, final_message, task_ok);
@@ -403,9 +405,7 @@ pub fn extract_candidates(
     if let Some(raw) = llm_raw {
         out.extend(parse_extraction_json(raw));
     }
-    out.retain(|c| {
-        !is_transient_infra_failure(&c.content) && !is_ephemeral_task_dump(&c.content)
-    });
+    out.retain(|c| !is_transient_infra_failure(&c.content) && !is_ephemeral_task_dump(&c.content));
     if !task_ok && is_transient_infra_failure(final_message) {
         return out;
     }
