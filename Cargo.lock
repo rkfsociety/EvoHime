@@ -592,6 +592,7 @@ dependencies = [
  "chrono",
  "evohime-memory",
  "evohime-model-gateway",
+ "evohime-permissions",
  "evohime-project-index",
  "evohime-protocol",
  "evohime-tool-runtime",
@@ -712,8 +713,10 @@ version = "0.1.0"
 dependencies = [
  "evohime-protocol",
  "evohime-storage",
+ "serde_json",
  "sqlx",
  "thiserror 2.0.18",
+ "tokio",
  "uuid",
 ]
 
