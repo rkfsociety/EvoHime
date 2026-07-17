@@ -16,6 +16,7 @@ serde = { version = "1", features = ["derive"] }
 thiserror = "2"
 tokio = { version = "1", features = ["sync"] }
 uuid = { version = "1", features = ["serde", "v4"] }
+sqlx = { version = "0.8", default-features = false, features = ["postgres", "runtime-tokio-rustls"] }
 
 [dev-dependencies]
 evohime-model-gateway = { path = "../model-gateway" }

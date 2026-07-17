@@ -141,6 +141,12 @@ impl ToolRegistry {
             timeout: tools::mcp::TIMEOUT,
         });
         registry.register(ToolDefinition {
+            name: tools::memory::NAME,
+            description: tools::memory::DESCRIPTION,
+            permissions: tools::memory::PERMISSIONS,
+            timeout: tools::memory::TIMEOUT,
+        });
+        registry.register(ToolDefinition {
             name: tools::browser::OPEN_NAME,
             description: tools::browser::OPEN_DESCRIPTION,
             permissions: tools::browser::OPEN_PERMISSIONS,
@@ -248,6 +254,7 @@ impl ToolRegistry {
                 tools::git::PULL_NAME => tools::git::pull(ctx, input).await,
                 tools::git::PUSH_NAME => tools::git::push(ctx, input).await,
                 tools::mcp::NAME => tools::mcp::execute(ctx, input).await,
+                tools::memory::NAME => tools::memory::execute(ctx, input).await,
                 tools::browser::OPEN_NAME => tools::browser::open(ctx, input).await,
                 tools::browser::EXTRACT_NAME => tools::browser::extract(ctx, input).await,
                 _ => Err(ToolError::UnknownTool(name.to_string())),
@@ -322,7 +329,7 @@ mod tests {
     fn bootstrap_registers_filesystem_read() {
         let registry = ToolRegistry::bootstrap();
         let tools = registry.list();
-        assert_eq!(tools.len(), 14);
+        assert_eq!(tools.len(), 15);
         assert_eq!(tools[0].name, "browser.extract");
         assert_eq!(tools[1].name, "browser.open");
         assert_eq!(tools[2].name, "filesystem.list");
@@ -336,7 +343,8 @@ mod tests {
         assert_eq!(tools[10].name, "git.push");
         assert_eq!(tools[11].name, "git.status");
         assert_eq!(tools[12].name, "mcp.call");
-        assert_eq!(tools[13].name, "shell.execute");
+        assert_eq!(tools[13].name, "memory.search");
+        assert_eq!(tools[14].name, "shell.execute");
     }
 
     #[tokio::test]

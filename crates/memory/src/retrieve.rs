@@ -306,11 +306,10 @@ fn tokenize(text: &str) -> HashSet<String> {
         .collect()
 }
 
-/// Load scoped items from storage, rank by query, apply budget.
-pub async fn retrieve_for_prompt(
+async fn load_scoped_items(
     pool: &PgPool,
-    request: RetrieveRequest<'_>,
-) -> Result<SelectedMemory, MemoryError> {
+    request: &RetrieveRequest<'_>,
+) -> Result<Vec<MemoryItemRow>, MemoryError> {
     let mut items = Vec::new();
     let statuses = [MemoryStatus::Active, MemoryStatus::Candidate];
 
@@ -382,7 +381,26 @@ pub async fn retrieve_for_prompt(
         }
     }
 
-    let ranked = search_memory(request.query, &items, request.max_items.saturating_mul(2).max(32)).await;
+    Ok(items)
+}
+
+/// On-demand recall for tool `memory.search` (ranked rows, no prompt budget).
+pub async fn rank_for_query(
+    pool: &PgPool,
+    request: RetrieveRequest<'_>,
+) -> Result<Vec<RankedMemory>, MemoryError> {
+    let items = load_scoped_items(pool, &request).await?;
+    Ok(search_memory(request.query, &items, request.max_items.max(1)).await)
+}
+
+/// Load scoped items from storage, rank by query, apply budget.
+pub async fn retrieve_for_prompt(
+    pool: &PgPool,
+    request: RetrieveRequest<'_>,
+) -> Result<SelectedMemory, MemoryError> {
+    let items = load_scoped_items(pool, &request).await?;
+    let ranked =
+        search_memory(request.query, &items, request.max_items.saturating_mul(2).max(32)).await;
     Ok(select_within_budget(
         &ranked,
         request.max_chars.max(256),

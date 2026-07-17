@@ -8,4 +8,5 @@ pub use tools::browser;
 pub use tools::filesystem;
 pub use tools::git;
 pub use tools::mcp;
+pub use tools::memory;
 pub use tools::{patch, search, shell, write};

@@ -2197,6 +2197,8 @@ async fn run_task_pipeline(
         model: task.model.clone(),
         planning_model_route,
         planning_model,
+        memory_pool: Some(state.pool.clone()),
+        workspace_key: workspace_scope.clone(),
     };
 
     let tools = state.tools.clone();

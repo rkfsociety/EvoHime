@@ -45,8 +45,9 @@ pub use feedback_service::{
 pub use normalize::normalize_content;
 pub use redact::{redact_secrets, RedactionOutcome};
 pub use retrieve::{
-    format_untrusted_memory_block, format_untrusted_memory_notes, retrieve_for_prompt, search_memory,
-    select_within_budget, MemoryPromptEntry, RankedMemory, RetrieveRequest, SelectedMemory,
+    format_untrusted_memory_block, format_untrusted_memory_notes, rank_for_query,
+    retrieve_for_prompt, search_memory, select_within_budget, MemoryPromptEntry, RankedMemory,
+    RetrieveRequest, SelectedMemory,
 };
 pub use service::{
     accept_memory_item, admit_memory_item, gate_after_admit, promote_memory_item,

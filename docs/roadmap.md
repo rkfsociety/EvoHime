@@ -288,6 +288,7 @@
 - More ML handlers ✅ (`text.similarity`, `text.entities`)
 - Memory UI / experience polish ✅ (playbook view, kind filters, export)
 - Deeper worker observability ✅ (`/api/worker/status`, job list, metrics)
+- On-demand `memory.search` tool ✅ (registry + agent-runtime DB path)
 - **Next:** optional backlog / reliability polish
 
 ---

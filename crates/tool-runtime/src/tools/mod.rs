@@ -3,6 +3,7 @@ pub mod filesystem;
 pub mod git;
 pub mod list;
 pub mod mcp;
+pub mod memory;
 pub mod patch;
 pub mod search;
 pub mod shell;

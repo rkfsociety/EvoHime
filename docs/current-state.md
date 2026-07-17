@@ -108,5 +108,5 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. Optional follow-ups from roadmap backlog
+1. Optional follow-ups from roadmap backlog (most optional polish items landed; `memory.search` tool registered)
 2. Keep CI / reliability polish as needed

@@ -70,6 +70,8 @@ fn agent_config(temp: &std::path::Path, demo_file: &std::path::Path) -> AgentCon
         model: None,
         planning_model_route: "default".to_string(),
         planning_model: None,
+        memory_pool: None,
+        workspace_key: String::new(),
     }
 }
 

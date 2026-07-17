@@ -101,7 +101,7 @@ Also: `file.changed`, `git.diff.changed`, task status/step events, action log ev
 
 ## Tools
 
-Implemented: `filesystem.read`, `filesystem.write`, `filesystem.patch`, `filesystem.search`, `shell.execute`, `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push`, `browser.open`, `browser.extract`, `mcp.call`
+Implemented: `filesystem.read`, `filesystem.write`, `filesystem.patch`, `filesystem.search`, `shell.execute`, `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push`, `browser.open`, `browser.extract`, `mcp.call`, `memory.search`
 
 Each tool must have: unique name, description, JSON Schema input, required permissions, timeout, cancellation, structured result, execution log.
 

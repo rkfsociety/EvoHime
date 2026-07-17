@@ -87,6 +87,10 @@ pub struct AgentConfig {
     pub model: Option<String>,
     pub planning_model_route: String,
     pub planning_model: Option<String>,
+    /// When set, enables on-demand `memory.search` against PostgreSQL.
+    pub memory_pool: Option<sqlx::PgPool>,
+    /// Workspace/project scope key for memory retrieval (same as prompt inject).
+    pub workspace_key: String,
 }
 
 #[derive(Debug, Clone)]
@@ -518,7 +522,7 @@ const RESPONSE_TIMEOUT: Duration = Duration::from_secs(120);
 const MODEL_REQUEST_COOLDOWN: Duration = Duration::from_secs(6);
 const MAX_REPLAN_ROUNDS: usize = 3;
 const SYSTEM_PROMPT: &str = "You are EvoHime, a helpful AI coding assistant. Follow the workspace rules supplied in the system context, preserve user intent, never claim a change was made unless a tool result confirms it, and answer concisely using the provided workspace context. When an action is required, return an explicit JSON tool.call object with type, tool, and input; do not merely describe the call.";
-const PLANNING_PROMPT: &str = "You are EvoHime's task planner. Return only JSON: an array of objects with fields id, tool_name, description, and depends_on. Use only these tool names: filesystem.read, filesystem.list, filesystem.search, filesystem.write, filesystem.patch, shell.execute, git.status, git.diff, git.commit, git.pull, git.push, browser.open, browser.extract, mcp.call, assistant.reply. Use stable step ids like step-1, step-2, and keep depends_on empty unless a step truly depends on another step. Put exact relative paths in backticks. For filesystem.write, include complete content in a fenced code block. For filesystem.patch, include complete patch text in a fenced code block. For shell.execute, include a JSON object with program, args, cwd, and timeout_ms in the description. For browser.open, put a JSON object with url (and optional max_chars) in the description. For browser.extract, put JSON with url, selector, and optional attribute/limit. For mcp.call, put JSON with url, method, and optional params. For git.commit, include the requested commit message in quotes. Use git.pull and git.push only when explicitly asked. If no tool call is needed, use assistant.reply.";
+const PLANNING_PROMPT: &str = "You are EvoHime's task planner. Return only JSON: an array of objects with fields id, tool_name, description, and depends_on. Use only these tool names: filesystem.read, filesystem.list, filesystem.search, filesystem.write, filesystem.patch, shell.execute, git.status, git.diff, git.commit, git.pull, git.push, browser.open, browser.extract, mcp.call, memory.search, assistant.reply. Use stable step ids like step-1, step-2, and keep depends_on empty unless a step truly depends on another step. Put exact relative paths in backticks. For filesystem.write, include complete content in a fenced code block. For filesystem.patch, include complete patch text in a fenced code block. For shell.execute, include a JSON object with program, args, cwd, and timeout_ms in the description. For browser.open, put a JSON object with url (and optional max_chars) in the description. For browser.extract, put JSON with url, selector, and optional attribute/limit. For mcp.call, put JSON with url, method, and optional params. For memory.search, put JSON with query and optional limit. For git.commit, include the requested commit message in quotes. Use git.pull and git.push only when explicitly asked. If no tool call is needed, use assistant.reply.";
 
 const REGISTERED_TOOLS: &[&str] = &[
     "filesystem.read",
@@ -535,6 +539,7 @@ const REGISTERED_TOOLS: &[&str] = &[
     "browser.open",
     "browser.extract",
     "mcp.call",
+    "memory.search",
     "assistant.reply",
 ];
 
@@ -816,7 +821,12 @@ async fn execute_single_plan_step(
             tool_name: effective_tool_name.to_string(),
         },
     )?;
-    match tools.execute(&context, effective_tool_name, input).await {
+    let tool_result = if effective_tool_name == "memory.search" {
+        execute_memory_search(config, &input).await
+    } else {
+        tools.execute(&context, effective_tool_name, input).await
+    };
+    match tool_result {
         Ok(result) => {
             emit(
                 event_tx,
@@ -867,7 +877,7 @@ async fn execute_single_plan_step(
             )?;
             if matches!(
                 effective_tool_name,
-                "filesystem.read" | "filesystem.list" | "filesystem.search"
+                "filesystem.read" | "filesystem.list" | "filesystem.search" | "memory.search"
             ) {
                 return Ok(StepOutcome::Completed {
                     output,
@@ -925,6 +935,11 @@ fn tool_input(tool_name: &str, description: &str, workspace_root: &Path) -> Opti
         "filesystem.search" => Some(
             json!({"query": extract_backticked(description).unwrap_or_else(|| "TODO".to_string()), "limit": 100}),
         ),
+        "memory.search" => Some(json!({
+            "query": extract_backticked(description)
+                .unwrap_or_else(|| description.trim().to_string()),
+            "limit": 10,
+        })),
         "filesystem.write" => Some(json!({
             "path": path?,
             "content": extract_code_block(description).unwrap_or_default(),
@@ -963,6 +978,7 @@ fn structured_json_input(tool_name: &str, description: &str) -> Option<Value> {
         | "browser.open"
         | "browser.extract"
         | "mcp.call"
+        | "memory.search"
         | "git.diff"
         | "git.pull"
         | "git.push"
@@ -981,6 +997,50 @@ fn structured_json_input(tool_name: &str, description: &str) -> Option<Value> {
         }
         _ => None,
     }
+}
+
+async fn execute_memory_search(
+    config: &AgentConfig,
+    input: &Value,
+) -> Result<evohime_tool_runtime::ToolResult, ToolError> {
+    let (query, limit) = evohime_tool_runtime::memory::parse_input(input)?;
+    let Some(pool) = &config.memory_pool else {
+        return Ok(evohime_tool_runtime::ToolResult {
+            output: "memory.search: memory backend not configured".into(),
+            structured: json!({
+                "query": query,
+                "count": 0,
+                "matches": [],
+                "error": "not_configured",
+            }),
+        });
+    };
+
+    let ranked = evohime_memory::rank_for_query(
+        pool,
+        evohime_memory::RetrieveRequest {
+            session_id: Some(config.session_id),
+            workspace_key: &config.workspace_key,
+            query: &query,
+            max_chars: 16_000,
+            max_items: limit,
+        },
+    )
+    .await
+    .map_err(|error| ToolError::Execution(error.to_string()))?;
+
+    let entries: Vec<(String, String, String, f64)> = ranked
+        .iter()
+        .map(|ranked| {
+            (
+                ranked.item.scope.clone(),
+                ranked.item.kind.clone(),
+                ranked.item.content.clone(),
+                ranked.score,
+            )
+        })
+        .collect();
+    Ok(evohime_tool_runtime::memory::format_results(&query, &entries))
 }
 
 fn extract_url(description: &str) -> Option<String> {
@@ -1994,6 +2054,14 @@ mod tests {
         );
         let mcp_input = tool_input("mcp.call", &mcp[0].description, Path::new(".")).expect("mcp");
         assert_eq!(mcp_input["method"], "tools/list");
+
+        let memory = parse_plan(
+            r#"[{"id":"m1","tool_name":"memory.search","description":"{\"query\":\"worktrees\",\"limit\":5}","depends_on":[]}]"#,
+        );
+        let memory_input =
+            tool_input("memory.search", &memory[0].description, Path::new(".")).expect("memory");
+        assert_eq!(memory_input["query"], "worktrees");
+        assert_eq!(memory_input["limit"], 5);
     }
 
     #[test]
@@ -2105,6 +2173,8 @@ mod tests {
                 model: None,
                 planning_model_route: "default".to_string(),
                 planning_model: None,
+                memory_pool: None,
+                workspace_key: String::new(),
             },
             &gateway,
             &tools,
@@ -2248,6 +2318,8 @@ mod tests {
                 model: None,
                 planning_model_route: "default".to_string(),
                 planning_model: None,
+                memory_pool: None,
+                workspace_key: String::new(),
             },
             &gateway,
             &tools,
@@ -2306,6 +2378,8 @@ mod tests {
                 model: None,
                 planning_model_route: "default".to_string(),
                 planning_model: None,
+                memory_pool: None,
+                workspace_key: String::new(),
             },
             &gateway,
             &tools,
