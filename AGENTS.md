@@ -67,12 +67,12 @@ User message
 - Structured memory: `memory_items` + admit/retrieve/extract/experience/feedback + hybrid embeddings (`6.16`–`6.25`, optional remote neural); legacy notes still written/loaded
 - Workers: health/stall reliability + `text.summarize` / `text.chunk` / `text.similarity` / `text.entities`
 - Native launcher + GitHub auth via local `gh`
-- CI: format, Clippy, docs, tests (ripgrep installed for search tools)
+- CI: format, Clippy, docs, tests (ripgrep preferred for `filesystem.search`; built-in walk fallback if missing)
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Wave A ✅; Wave B: `7.17`–`7.20` ✅; next `7.21`+
-- Wave B remaining: search fallback, permission durability, metrics persistence…
+- **Stage 7** Hardening + Product — Wave A ✅; Wave B: `7.17`–`7.21` ✅; next `7.22`+
+- Wave B remaining: permission durability, approval audit, metrics persistence…
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events

@@ -7,7 +7,7 @@ Implemented tools:
 - `filesystem.read`
 - `filesystem.write`
 - `filesystem.patch`
-- `filesystem.search`
+- `filesystem.search` — ripgrep when available, recursive walk fallback otherwise (`engine` in structured result)
 - `shell.execute`
 - `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push`
 - `mcp.call`

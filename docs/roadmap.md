@@ -332,7 +332,7 @@
 | 7.18 | Safe restart policy: не auto-resume mutating tasks без флага | M | ✅ | recover RETURNING only; mutating defer; `EVOHIME_AUTO_RESUME_ON_RESTART` |
 | 7.19 | PgPool tuning (max_connections, timeouts, idle) | S | ✅ | `storage/pool.rs`; `EVOHIME_PG_*` env knobs |
 | 7.20 | Observability locks без `.expect()` panic | S | ✅ | `observability` / `worker_observability`: poison → `into_inner` |
-| 7.21 | `filesystem.search` graceful fallback без `rg` | S | ⬜ | tool + docs |
+| 7.21 | `filesystem.search` graceful fallback без `rg` | S | ✅ | ripgrep preferred; walk fallback + `engine` field; `EVOHIME_SEARCH_FORCE_FALLBACK` |
 | 7.22 | Persist permission session/path grants across restart | M | ⬜ | сейчас только global modes |
 | 7.23 | Durable permission approval audit (PG table) | M | ⬜ | in-memory ring 200 |
 | 7.24 | Persist / scrape pipeline+worker metrics (or Prometheus scrape) | M | ⬜ | in-memory only; Prometheus still optional |
@@ -471,7 +471,7 @@
 ### Suggested Stage 7 delivery waves
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
-2. **Wave B (survive restarts):** `7.17`–`7.20` ✅ → next `7.21`–`7.24`, `7.40`–`7.41`  
+2. **Wave B (survive restarts):** `7.17`–`7.21` ✅ → next `7.22`–`7.24`, `7.40`–`7.41`  
 3. **Wave C (agent quality):** 7.28–7.33, 7.52  
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  
 5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  
