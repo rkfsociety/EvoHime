@@ -89,6 +89,37 @@ pub enum ServerEvent {
         scope: String,
         created_at: DateTime<Utc>,
     },
+    #[serde(rename = "memory.proposed")]
+    MemoryProposed {
+        memory_id: Uuid,
+        task_id: Uuid,
+        scope: String,
+        kind: String,
+        content: String,
+        confidence: f64,
+        status: String,
+    },
+    #[serde(rename = "memory.ask")]
+    MemoryAsk {
+        memory_id: Uuid,
+        task_id: Uuid,
+        scope: String,
+        kind: String,
+        content: String,
+        confidence: f64,
+        status: String,
+        reason: String,
+    },
+    #[serde(rename = "memory.accepted")]
+    MemoryAccepted {
+        memory_id: Uuid,
+        task_id: Uuid,
+    },
+    #[serde(rename = "memory.rejected")]
+    MemoryRejected {
+        memory_id: Uuid,
+        task_id: Uuid,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -114,6 +145,10 @@ pub enum ClientCommand {
     ApprovalGranted { approval_id: Uuid },
     #[serde(rename = "approval.denied")]
     ApprovalDenied { approval_id: Uuid },
+    #[serde(rename = "memory.accept")]
+    MemoryAccept { memory_id: Uuid },
+    #[serde(rename = "memory.reject")]
+    MemoryReject { memory_id: Uuid },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -253,6 +288,39 @@ mod tests {
             assert!(matches!(
                 decoded,
                 ClientCommand::ApprovalGranted { .. } | ClientCommand::ApprovalDenied { .. }
+            ));
+        }
+    }
+
+    #[test]
+    fn round_trips_memory_events_and_commands() {
+        let ask = ServerEvent::MemoryAsk {
+            memory_id: Uuid::nil(),
+            task_id: Uuid::nil(),
+            scope: "workspace".into(),
+            kind: "fact".into(),
+            content: "prefer worktrees".into(),
+            confidence: 0.55,
+            status: "candidate".into(),
+            reason: "low confidence".into(),
+        };
+        let json = serde_json::to_value(&ask).unwrap();
+        assert_eq!(json["type"], "memory.ask");
+        assert_eq!(json["reason"], "low confidence");
+
+        for command in [
+            ClientCommand::MemoryAccept {
+                memory_id: Uuid::nil(),
+            },
+            ClientCommand::MemoryReject {
+                memory_id: Uuid::nil(),
+            },
+        ] {
+            let decoded: ClientCommand =
+                serde_json::from_value(serde_json::to_value(command).unwrap()).unwrap();
+            assert!(matches!(
+                decoded,
+                ClientCommand::MemoryAccept { .. } | ClientCommand::MemoryReject { .. }
             ));
         }
     }

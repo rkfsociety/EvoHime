@@ -16,7 +16,7 @@
 | 3 | Tools + shell | ✅ Готово | Sandbox, filesystem tools, shell, approvals, terminal, permissions |
 | 4 | Editor + Git | ✅ Done | Browser file tree, Monaco editor, Git status/diff/actions, and synchronization events |
 | 5 | Оркестрация | ✅ Complete | Lifecycle, команды, storage и recovery готовы |
-| 6 | Advanced | 🟡 В процессе | Foundations + memory `6.16`–`6.18`; next retrieval `6.19` + extract/UI |
+| 6 | Advanced | 🟡 В процессе | Memory `6.16`–`6.20` done; next experience `6.21` + Memory UI |
 
 ---
 
@@ -190,7 +190,7 @@
 | 6.17 | Структурированные memory items: kind, confidence, importance, source, status, supersedes, pinned | ✅ schema | `migrations/0013_memory_items.sql`, `crates/storage/src/memory.rs` |
 | 6.18 | Memory service: нормализация, redaction секретов, дедупликация и разрешение конфликтов | ✅ | `crates/memory/` |
 | 6.19 | Memory retrieval: scope filtering, ranking, budget, untrusted tagging + `memory.search` | ✅ | `crates/memory/src/retrieve.rs`, `agent-runtime`, `server` |
-| 6.20 | Memory extraction + decision gate: auto-promote или ask-on-uncertainty | 🟡 Planned | `crates/agent-runtime/`, `crates/model-gateway/` |
+| 6.20 | Memory extraction + decision gate: auto-promote или ask-on-uncertainty | ✅ | `crates/memory/` extract+gate, `server`, protocol, MemoryAskModal |
 | 6.21 | Experience memory: success/failure patterns, verification rules и playbooks | 🟡 Planned | `crates/memory/`, `crates/agent-runtime/` |
 | 6.22 | Override UI: правка, отклонение, архив, удаление, pin (не блокер happy path) | 🟡 Planned | `crates/server/`, `frontend/web/` |
 | 6.23 | Feedback loop: memory used/helpful/corrected/rejected и confidence decay | 🟡 Planned | `crates/protocol/`, `crates/storage/`, `crates/server/` |
@@ -247,7 +247,7 @@
 | P1 | Декомпозиция `frontend/web/src/app.tsx` | ✅ types + api + lib + panels + event hook (`6.13`) |
 | P1 | Typed API client | ✅ `frontend/web/src/api/*` поверх `apiRequest` |
 | P1 | Более глубокие панели Tasks/Actions | ✅ steps/deps/pause/retries/approvals/recovery |
-| P1 | Agent memory 6.16–6.25 | 🟡 `6.16`–`6.19` done; next `6.20` extract + ask-on-uncertainty |
+| P1 | Agent memory 6.16–6.25 | 🟡 `6.16`–`6.20` done; next `6.21` experience/playbooks |
 
 ### P2 — Поиск, разрешения и GitHub workflow
 
@@ -273,7 +273,8 @@
 - `6.15` Worker reliability: retries, heartbeat, stalled-job handling ✅
 - `6.16`–`6.18` Memory schema + service ✅
 - `6.19` Memory retrieval into agent loop ✅
-- **Next:** `6.20` Memory extraction + ask-on-uncertainty
+- `6.20` Memory extraction + ask-on-uncertainty ✅
+- **Next:** `6.21` Experience memory / playbooks; Memory UI (`6.22`/`6.24`)
 
 ---
 

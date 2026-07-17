@@ -20,7 +20,11 @@ export type ServerEvent =
   | TaskStatusChangedEvent
   | TaskStepChangedEvent
   | ActionLoggedEvent
-  | ApprovalRequiredEvent;
+  | ApprovalRequiredEvent
+  | MemoryProposedEvent
+  | MemoryAskEvent
+  | MemoryAcceptedEvent
+  | MemoryRejectedEvent;
 export type Uuid = string;
 export type DateTime = string;
 export type ClientCommand =
@@ -29,7 +33,9 @@ export type ClientCommand =
   | TaskResumeCommand
   | TaskRetryCommand
   | ApprovalGrantedCommand
-  | ApprovalDeniedCommand;
+  | ApprovalDeniedCommand
+  | MemoryAcceptCommand
+  | MemoryRejectCommand;
 
 export interface SessionCreatedEvent {
   type: "session.created";
@@ -127,6 +133,37 @@ export interface ApprovalRequiredEvent {
   scope: string;
   created_at: DateTime;
 }
+export interface MemoryProposedEvent {
+  type: "memory.proposed";
+  memory_id: Uuid;
+  task_id: Uuid;
+  scope: string;
+  kind: string;
+  content: string;
+  confidence: number;
+  status: string;
+}
+export interface MemoryAskEvent {
+  type: "memory.ask";
+  memory_id: Uuid;
+  task_id: Uuid;
+  scope: string;
+  kind: string;
+  content: string;
+  confidence: number;
+  status: string;
+  reason: string;
+}
+export interface MemoryAcceptedEvent {
+  type: "memory.accepted";
+  memory_id: Uuid;
+  task_id: Uuid;
+}
+export interface MemoryRejectedEvent {
+  type: "memory.rejected";
+  memory_id: Uuid;
+  task_id: Uuid;
+}
 export interface UserMessageCommand {
   type: "user.message";
   content: string;
@@ -153,6 +190,14 @@ export interface ApprovalGrantedCommand {
 export interface ApprovalDeniedCommand {
   type: "approval.denied";
   approval_id: Uuid;
+}
+export interface MemoryAcceptCommand {
+  type: "memory.accept";
+  memory_id: Uuid;
+}
+export interface MemoryRejectCommand {
+  type: "memory.reject";
+  memory_id: Uuid;
 }
 
 

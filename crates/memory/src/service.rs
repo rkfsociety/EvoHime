@@ -1,4 +1,5 @@
 use crate::conflict::{detect_conflict, ConflictHit};
+use crate::decision::{decide_gate, GateDecision, GateInput};
 use crate::dedupe::detect_duplicate;
 use crate::normalize::normalize_content;
 use crate::redact::redact_secrets;
@@ -163,4 +164,99 @@ pub async fn admit_memory_item(pool: &PgPool, item: NewMemoryItem) -> Result<Adm
             Ok(AdmitOutcome::Inserted(inserted))
         }
     }
+}
+
+/// Map an admit outcome into a gate decision (and optional row for promote/ask).
+pub fn gate_after_admit(outcome: &AdmitOutcome) -> (GateDecision, Option<&MemoryItemRow>) {
+    match outcome {
+        AdmitOutcome::Rejected { .. } => (
+            decide_gate(&GateInput {
+                scope: MemoryScope::Session,
+                kind: MemoryKind::Fact,
+                status: MemoryStatus::Rejected,
+                content: String::new(),
+                confidence: 0.0,
+                pinned: false,
+                had_conflict: false,
+                was_duplicate: false,
+                was_rejected: true,
+            }),
+            None,
+        ),
+        AdmitOutcome::Duplicate { .. } => (
+            decide_gate(&GateInput {
+                scope: MemoryScope::Session,
+                kind: MemoryKind::Fact,
+                status: MemoryStatus::Candidate,
+                content: String::new(),
+                confidence: 0.0,
+                pinned: false,
+                had_conflict: false,
+                was_duplicate: true,
+                was_rejected: false,
+            }),
+            None,
+        ),
+        AdmitOutcome::Conflict { item, .. } => {
+            let scope = MemoryScope::parse(&item.scope).unwrap_or(MemoryScope::Workspace);
+            let kind = MemoryKind::parse(&item.kind).unwrap_or(MemoryKind::Fact);
+            (
+                decide_gate(&GateInput {
+                    scope,
+                    kind,
+                    status: MemoryStatus::Conflict,
+                    content: item.content.clone(),
+                    confidence: item.confidence,
+                    pinned: item.pinned,
+                    had_conflict: true,
+                    was_duplicate: false,
+                    was_rejected: false,
+                }),
+                Some(item),
+            )
+        }
+        AdmitOutcome::Inserted(item) => {
+            let scope = MemoryScope::parse(&item.scope).unwrap_or(MemoryScope::Workspace);
+            let kind = MemoryKind::parse(&item.kind).unwrap_or(MemoryKind::Fact);
+            let status = MemoryStatus::parse(&item.status).unwrap_or(MemoryStatus::Candidate);
+            (
+                decide_gate(&GateInput {
+                    scope,
+                    kind,
+                    status,
+                    content: item.content.clone(),
+                    confidence: item.confidence,
+                    pinned: item.pinned,
+                    had_conflict: false,
+                    was_duplicate: false,
+                    was_rejected: false,
+                }),
+                Some(item),
+            )
+        }
+    }
+}
+
+/// Promote a candidate (or conflict awaiting resolution) to `active`.
+pub async fn accept_memory_item(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<Option<MemoryItemRow>, MemoryError> {
+    Ok(update_memory_item_status(pool, id, MemoryStatus::Active).await?)
+}
+
+/// Reject a memory item so it is excluded from retrieval.
+pub async fn reject_memory_item(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<Option<MemoryItemRow>, MemoryError> {
+    Ok(update_memory_item_status(pool, id, MemoryStatus::Rejected).await?)
+}
+
+/// Apply an auto-promote decision: set status to `active`.
+pub async fn promote_memory_item(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<Option<MemoryItemRow>, MemoryError> {
+    accept_memory_item(pool, id).await
 }

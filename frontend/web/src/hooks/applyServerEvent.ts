@@ -2,6 +2,7 @@ import type { Dispatch, SetStateAction } from "react";
 import type {
   ActionLoggedEvent,
   ApprovalRequiredEvent,
+  MemoryAskEvent,
   PlanStep,
   ServerEvent,
   TaskStatusChangedEvent,
@@ -28,6 +29,7 @@ export type ServerEventHandlerContext = {
   setStream: Dispatch<SetStateAction<string>>;
   setTerminalEntries: Dispatch<SetStateAction<TerminalStreamEntry[]>>;
   setApproval: Dispatch<SetStateAction<ApprovalRequiredEvent | null>>;
+  setMemoryAsk: Dispatch<SetStateAction<MemoryAskEvent | null>>;
   setActions: Dispatch<SetStateAction<ActionView[]>>;
   setSelectedFileNotice: Dispatch<SetStateAction<string | null>>;
   setGitStatus: Dispatch<SetStateAction<string>>;
@@ -150,6 +152,43 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
           },
         };
       });
+      break;
+    case "memory.ask":
+      ctx.setMemoryAsk(event);
+      ctx.setLines((current) => [
+        ...current,
+        {
+          role: "system",
+          text: `Память: запомнить «${event.content.slice(0, 120)}${event.content.length > 120 ? "…" : ""}»? (${event.reason})`,
+        },
+      ]);
+      break;
+    case "memory.proposed":
+      ctx.setLines((current) => [
+        ...current,
+        {
+          role: "system",
+          text: `Память предложена [${event.scope}/${event.kind}]: ${event.content.slice(0, 100)}${event.content.length > 100 ? "…" : ""}`,
+        },
+      ]);
+      break;
+    case "memory.accepted":
+      ctx.setMemoryAsk((current) =>
+        current?.memory_id === event.memory_id ? null : current,
+      );
+      ctx.setLines((current) => [
+        ...current,
+        { role: "system", text: `Память сохранена: ${event.memory_id}` },
+      ]);
+      break;
+    case "memory.rejected":
+      ctx.setMemoryAsk((current) =>
+        current?.memory_id === event.memory_id ? null : current,
+      );
+      ctx.setLines((current) => [
+        ...current,
+        { role: "system", text: `Память отклонена: ${event.memory_id}` },
+      ]);
       break;
     case "tool.completed":
       ctx.setLines((current) => [

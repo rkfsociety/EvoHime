@@ -71,7 +71,7 @@ User message
 
 ### Incomplete / next
 
-- **`6.20`+** Extract + ask-on-uncertainty, experience/playbooks, Memory UI, feedback loop
+- **`6.21`+** Experience/playbooks, Memory UI, feedback loop
 - Task-pipeline observability (correlation ids / metrics)
 - Broader integration tests (approval pause/resume, recovery)
 - General LLM tool-calling across all registered tools (orchestration still plan-driven)
@@ -172,7 +172,7 @@ See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](d
 | 3 Tools + shell | ✅ Done |
 | 4 Editor + Git | ✅ Done |
 | 5 Task orchestration | ✅ Done |
-| 6 Advanced | 🟡 In progress — memory `6.16`–`6.19` done; next `6.20` |
+| 6 Advanced | 🟡 In progress — memory `6.16`–`6.20` done; next `6.21` |
 
 Memory design: [docs/superpowers/specs/2026-07-16-agent-memory-design.md](docs/superpowers/specs/2026-07-16-agent-memory-design.md)
 

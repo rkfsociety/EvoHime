@@ -3,6 +3,10 @@ export type {
   AgentPlanUpdatedEvent,
   ActionLoggedEvent,
   ApprovalRequiredEvent,
+  MemoryAskEvent,
+  MemoryProposedEvent,
+  MemoryAcceptedEvent,
+  MemoryRejectedEvent,
   PlanStep,
   ClientCommand,
   FileChangedEvent,
@@ -25,4 +29,6 @@ export type {
   TaskRetryCommand,
   ApprovalGrantedCommand,
   ApprovalDeniedCommand,
+  MemoryAcceptCommand,
+  MemoryRejectCommand,
 } from "./protocol.generated";

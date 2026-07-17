@@ -1,17 +1,24 @@
-//! Agent memory domain service (roadmap 6.18).
+//! Agent memory domain service (roadmap 6.18–6.20).
 //!
-//! Redaction, normalization, deduplication, and conflict detection on top of
-//! `evohime-storage::memory` / `memory_items`. No agent-runtime or UI wiring.
+//! Redaction, normalization, deduplication, conflict detection, extraction,
+//! and ask-on-uncertainty decision gate on top of `memory_items`.
 
 mod conflict;
+mod decision;
 mod dedupe;
+mod extract;
 mod normalize;
 mod redact;
 mod retrieve;
 mod service;
 
 pub use conflict::{detect_conflict, ConflictHit};
+pub use decision::{decide_gate, GateDecision, GateInput, AUTO_PROMOTE_CONFIDENCE};
 pub use dedupe::{content_fingerprint, detect_duplicate};
+pub use extract::{
+    extract_candidates, heuristic_extract, parse_extraction_json, ExtractedCandidate,
+    MAX_CANDIDATES_PER_TASK,
+};
 pub use normalize::normalize_content;
 pub use redact::{redact_secrets, RedactionOutcome};
 pub use retrieve::{
@@ -19,7 +26,9 @@ pub use retrieve::{
     select_within_budget, MemoryPromptEntry, RankedMemory, RetrieveRequest, SelectedMemory,
 };
 pub use service::{
-    admit_memory_item, AdmitOutcome, ExistingMemory, MemoryError, MemoryService, PreparedMemoryItem,
+    accept_memory_item, admit_memory_item, gate_after_admit, promote_memory_item,
+    reject_memory_item, AdmitOutcome, ExistingMemory, MemoryError, MemoryService,
+    PreparedMemoryItem,
 };
 
 

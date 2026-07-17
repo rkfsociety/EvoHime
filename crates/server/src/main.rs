@@ -1883,6 +1883,12 @@ async fn handle_socket(
                             )
                             .await?;
                         }
+                        ClientCommand::MemoryAccept { memory_id } => {
+                            handle_memory_decision(&state, session_id, memory_id, true).await;
+                        }
+                        ClientCommand::MemoryReject { memory_id } => {
+                            handle_memory_decision(&state, session_id, memory_id, false).await;
+                        }
                     }
                 }
                 Message::Close(_) => break,
@@ -2068,12 +2074,13 @@ async fn run_task_pipeline(
     };
 
     let tools = state.tools.clone();
+    let gateway_for_agent = gateway.clone();
     let mut agent_handle = tokio::spawn(async move {
         match resume_context {
             Some(resume) => {
                 run_agent_loop_resumed(
                     agent_config,
-                    &gateway,
+                    &gateway_for_agent,
                     &tools,
                     prior_messages,
                     memory_notes.clone(),
@@ -2085,7 +2092,7 @@ async fn run_task_pipeline(
             None if emit_started => {
                 run_agent_loop(
                     agent_config,
-                    &gateway,
+                    &gateway_for_agent,
                     &tools,
                     prior_messages,
                     memory_notes.clone(),
@@ -2096,7 +2103,7 @@ async fn run_task_pipeline(
             None => {
                 run_agent_loop_resumed(
                     agent_config,
-                    &gateway,
+                    &gateway_for_agent,
                     &tools,
                     prior_messages,
                     memory_notes,
@@ -2265,7 +2272,20 @@ async fn run_task_pipeline(
                 .await?;
                 return Ok(());
             }
-            Err(error) => return Err((task.id, map_agent_error(error))),
+            Err(error) => {
+                let err_msg = error.to_string();
+                persist_structured_memory(
+                    state,
+                    &gateway,
+                    session_id,
+                    &task,
+                    &workspace_scope,
+                    &err_msg,
+                    false,
+                )
+                .await;
+                return Err((task.id, map_agent_error(error)));
+            }
         },
         Err(error) => return Err((task.id, ApiError::Internal(error.to_string()))),
     };
@@ -2293,25 +2313,16 @@ async fn run_task_pipeline(
     .await
     .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
 
-    let mut session_item = evohime_storage::NewMemoryItem::candidate_fact(
-        evohime_storage::MemoryScope::Session,
-        session_id.to_string(),
-        &memory_note,
-    );
-    session_item.source_session_id = Some(session_id);
-    session_item.source_task_id = Some(task.id);
-    session_item.source_label = Some(format!("task-summary:session:{task_id}", task_id = task.id));
-    let _ = evohime_memory::admit_memory_item(&state.pool, session_item).await;
-
-    let mut workspace_item = evohime_storage::NewMemoryItem::candidate_fact(
-        evohime_storage::MemoryScope::Workspace,
+    persist_structured_memory(
+        state,
+        &gateway,
+        session_id,
+        &task,
         &workspace_scope,
-        &memory_note,
-    );
-    workspace_item.source_session_id = Some(session_id);
-    workspace_item.source_task_id = Some(task.id);
-    workspace_item.source_label = Some(format!("task-summary:workspace:{task_id}", task_id = task.id));
-    let _ = evohime_memory::admit_memory_item(&state.pool, workspace_item).await;
+        &agent_result.final_message,
+        true,
+    )
+    .await;
 
     complete_task(&state.pool, task.id)
         .await
@@ -2374,6 +2385,244 @@ fn summarize_task_memory(user_message: &str, final_message: &str) -> String {
         final_message.trim()
     );
     summary.chars().take(LIMIT).collect()
+}
+
+const MEMORY_EXTRACT_PROMPT: &str = r#"Extract durable memory candidates from this completed task.
+Return ONLY a JSON array (no markdown, no prose). Each object:
+{"scope":"session|workspace|project|global|experience","kind":"fact|preference|constraint|failure_pattern|success_pattern|verification_rule|playbook","content":"...","confidence":0.0-1.0,"importance":0.0-1.0,"pinned":false}
+Rules:
+- Prefer workspace/session facts and preferences.
+- Use global/pinned/constraint only when clearly standing operator policy.
+- Never include secrets, tokens, passwords, or private keys.
+- Max 5 items. Empty array [] if nothing worth remembering."#;
+
+fn scope_key_for(
+    scope: evohime_storage::MemoryScope,
+    session_id: Uuid,
+    workspace_scope: &str,
+) -> String {
+    match scope {
+        evohime_storage::MemoryScope::Session => session_id.to_string(),
+        evohime_storage::MemoryScope::Workspace | evohime_storage::MemoryScope::Project => {
+            workspace_scope.to_string()
+        }
+        evohime_storage::MemoryScope::Global | evohime_storage::MemoryScope::Experience => {
+            evohime_storage::LOCAL_OPERATOR_SCOPE_KEY.to_string()
+        }
+    }
+}
+
+async fn collect_gateway_text(
+    gateway: &ModelGateway,
+    messages: &[ChatMessage],
+    timeout: std::time::Duration,
+) -> Option<String> {
+    use futures_util::StreamExt;
+    let stream = gateway.stream_chat(messages);
+    let collect = async {
+        let mut output = String::new();
+        let mut stream = stream;
+        while let Some(chunk) = stream.next().await {
+            output.push_str(&chunk.ok()?);
+        }
+        Some(output)
+    };
+    tokio::time::timeout(timeout, collect)
+        .await
+        .ok()
+        .flatten()
+}
+
+async fn llm_extract_memory_json(
+    gateway: &ModelGateway,
+    user_message: &str,
+    final_message: &str,
+    task_ok: bool,
+) -> Option<String> {
+    let status = if task_ok { "completed" } else { "failed" };
+    let user = format!(
+        "Task status: {status}\nUser message:\n{user_message}\n\nAssistant reply:\n{final_message}"
+    );
+    let messages = [
+        ChatMessage {
+            role: ChatRole::System,
+            content: MEMORY_EXTRACT_PROMPT.to_string(),
+        },
+        ChatMessage {
+            role: ChatRole::User,
+            content: user,
+        },
+    ];
+    collect_gateway_text(gateway, &messages, std::time::Duration::from_secs(20)).await
+}
+
+async fn persist_structured_memory(
+    state: &Arc<AppState>,
+    gateway: &ModelGateway,
+    session_id: Uuid,
+    task: &evohime_storage::TaskRow,
+    workspace_scope: &str,
+    final_message: &str,
+    task_ok: bool,
+) {
+    let llm_raw =
+        llm_extract_memory_json(gateway, &task.user_message, final_message, task_ok).await;
+    let candidates = evohime_memory::extract_candidates(
+        llm_raw.as_deref(),
+        &task.user_message,
+        final_message,
+        task_ok,
+    );
+
+    for (index, candidate) in candidates.into_iter().enumerate() {
+        let scope = candidate.scope;
+        let scope_key = scope_key_for(scope, session_id, workspace_scope);
+        let item = candidate.into_new_item(
+            scope_key,
+            Some(session_id),
+            Some(task.id),
+            format!("extract:{}:{}", task.id, index),
+        );
+
+        let outcome = match evohime_memory::admit_memory_item(&state.pool, item).await {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                tracing::warn!(task_id = %task.id, %error, "memory admit failed");
+                continue;
+            }
+        };
+
+        let (decision, row) = evohime_memory::gate_after_admit(&outcome);
+        let Some(row) = row else {
+            continue;
+        };
+
+        let _ = emit_event(
+            state,
+            session_id,
+            Some(task.id),
+            ServerEvent::MemoryProposed {
+                memory_id: row.id,
+                task_id: task.id,
+                scope: row.scope.clone(),
+                kind: row.kind.clone(),
+                content: row.content.clone(),
+                confidence: row.confidence,
+                status: row.status.clone(),
+            },
+        )
+        .await;
+
+        match decision {
+            evohime_memory::GateDecision::AutoPromote => {
+                match evohime_memory::promote_memory_item(&state.pool, row.id).await {
+                    Ok(Some(_)) => {
+                        let _ = emit_event(
+                            state,
+                            session_id,
+                            Some(task.id),
+                            ServerEvent::MemoryAccepted {
+                                memory_id: row.id,
+                                task_id: task.id,
+                            },
+                        )
+                        .await;
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        tracing::warn!(memory_id = %row.id, %error, "memory promote failed");
+                    }
+                }
+            }
+            evohime_memory::GateDecision::Ask { reason } => {
+                let _ = emit_event(
+                    state,
+                    session_id,
+                    Some(task.id),
+                    ServerEvent::MemoryAsk {
+                        memory_id: row.id,
+                        task_id: task.id,
+                        scope: row.scope.clone(),
+                        kind: row.kind.clone(),
+                        content: row.content.clone(),
+                        confidence: row.confidence,
+                        status: row.status.clone(),
+                        reason,
+                    },
+                )
+                .await;
+            }
+            evohime_memory::GateDecision::Drop { reason } => {
+                tracing::debug!(memory_id = %row.id, %reason, "memory gate drop");
+                let _ = evohime_memory::reject_memory_item(&state.pool, row.id).await;
+                let _ = emit_event(
+                    state,
+                    session_id,
+                    Some(task.id),
+                    ServerEvent::MemoryRejected {
+                        memory_id: row.id,
+                        task_id: task.id,
+                    },
+                )
+                .await;
+            }
+        }
+    }
+}
+
+async fn handle_memory_decision(
+    state: &Arc<AppState>,
+    session_id: Uuid,
+    memory_id: Uuid,
+    accept: bool,
+) {
+    let existing = match evohime_storage::get_memory_item(&state.pool, memory_id).await {
+        Ok(row) => row,
+        Err(error) => {
+            tracing::warn!(%memory_id, %error, "failed to load memory for decision");
+            return;
+        }
+    };
+    let Some(existing) = existing else {
+        return;
+    };
+    let task_id = existing.source_task_id.unwrap_or(Uuid::nil());
+
+    if accept {
+        match evohime_memory::accept_memory_item(&state.pool, memory_id).await {
+            Ok(Some(_)) => {
+                let _ = emit_event(
+                    state,
+                    session_id,
+                    Some(task_id),
+                    ServerEvent::MemoryAccepted {
+                        memory_id,
+                        task_id,
+                    },
+                )
+                .await;
+            }
+            Ok(None) => {}
+            Err(error) => tracing::warn!(%memory_id, %error, "memory accept failed"),
+        }
+    } else {
+        match evohime_memory::reject_memory_item(&state.pool, memory_id).await {
+            Ok(Some(_)) => {
+                let _ = emit_event(
+                    state,
+                    session_id,
+                    Some(task_id),
+                    ServerEvent::MemoryRejected {
+                        memory_id,
+                        task_id,
+                    },
+                )
+                .await;
+            }
+            Ok(None) => {}
+            Err(error) => tracing::warn!(%memory_id, %error, "memory reject failed"),
+        }
+    }
 }
 
 fn resolve_model_route(model_route: Option<&str>, default_route: &str) -> String {

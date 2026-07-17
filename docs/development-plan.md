@@ -61,17 +61,17 @@ EvoHime Server — Rust
 13. Параллельное выполнение независимых инструментов
 14. Восстановление задач после перезапуска сервера
 
-## Фактический статус на 2026-07-16
+## Фактический статус на 2026-07-17
 
-Этапы 1–5 завершены. Stage 6: foundations + PR workflow + shell split + memory schema/service (`6.16`–`6.18`).
+Этапы 1–5 завершены. Stage 6: foundations + PR workflow + shell split + memory `6.16`–`6.20` (schema, service, retrieval, extract + ask-on-uncertainty).
 
 - tools: filesystem / shell / Git / browser / MCP в `tool-runtime`;
-- `agent-runtime`: plan → dependency batches → bounded replan; checkpoints; legacy `session_memory` в prompt;
-- `crates/memory`: redact / normalize / dedupe / conflict / `admit_memory_item` (ещё не подключен к agent loop — это `6.19`);
-- `storage`: `memory_items` + legacy notes; frontend: deep Tasks/Actions, PR detail/create, panels split;
+- `agent-runtime`: plan → dependency batches → bounded replan; checkpoints; structured + legacy memory в prompt;
+- `crates/memory`: redact / normalize / dedupe / conflict / retrieve / extract / decision gate;
+- `storage`: `memory_items` + legacy notes; frontend: deep Tasks/Actions, PR detail/create, panels split, MemoryAskModal;
 - workers: health/stall + `text.summarize` / `text.chunk`.
 
-**Следующий сквозной приоритет:** `6.19` retrieval структурированной памяти в agent-runtime; затем `6.20` extract + ask-on-uncertainty; параллельно — observability и интеграционные тесты.
+**Следующий сквозной приоритет:** `6.21` experience/playbooks; затем Memory UI (`6.22`/`6.24`); параллельно — observability и интеграционные тесты.
 
 ---
 

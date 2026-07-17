@@ -6,9 +6,10 @@ import type {
   ServerEvent,
   SessionBootstrap,
 } from "./protocol";
-import type { ApprovalRequiredEvent } from "./protocol";
+import type { ApprovalRequiredEvent, MemoryAskEvent } from "./protocol";
 import { TerminalPanel, TerminalEntry } from "./components/TerminalPanel";
 import { ApprovalModal } from "./components/ApprovalModal";
+import { MemoryAskModal } from "./components/MemoryAskModal";
 import { AgentAvatar } from "./components/AgentAvatar";
 import { AgentBrand } from "./components/AgentBrand";
 import { AgentMark } from "./components/AgentMark";
@@ -142,6 +143,7 @@ export function App() {
   const [tasks, setTasks] = useState<Record<string, TaskView>>({});
   const [actions, setActions] = useState<ActionView[]>([]);
   const [approval, setApproval] = useState<ApprovalRequiredEvent | null>(null);
+  const [memoryAsk, setMemoryAsk] = useState<MemoryAskEvent | null>(null);
   const [githubAuth, setGithubAuth] = useState<GithubAuthInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("model");
@@ -644,6 +646,7 @@ export function App() {
     setStream,
     setTerminalEntries,
     setApproval,
+    setMemoryAsk,
     setActions,
     setSelectedFileNotice,
     setGitStatus,
@@ -668,6 +671,7 @@ export function App() {
     setTasks({});
     setActions([]);
     setApproval(null);
+    setMemoryAsk(null);
     setTerminalEntries([]);
     chatAutoScrollRef.current = true;
     for (const item of history) {
@@ -1095,6 +1099,13 @@ export function App() {
     if (approval && socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type, approval_id: approval.approval_id }));
       setApproval(null);
+    }
+  }
+
+  function resolveMemoryAsk(type: "memory.accept" | "memory.reject") {
+    if (memoryAsk && socketRef.current?.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type, memory_id: memoryAsk.memory_id }));
+      setMemoryAsk(null);
     }
   }
 
@@ -1821,6 +1832,13 @@ export function App() {
         </div>
       ) : null}
       {approval ? <ApprovalModal request={approval} onGrant={() => resolveApproval("approval.granted")} onDeny={() => resolveApproval("approval.denied")} /> : null}
+      {memoryAsk ? (
+        <MemoryAskModal
+          request={memoryAsk}
+          onAccept={() => resolveMemoryAsk("memory.accept")}
+          onReject={() => resolveMemoryAsk("memory.reject")}
+        />
+      ) : null}
     </main>
   );
 }

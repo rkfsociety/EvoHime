@@ -46,6 +46,10 @@
         ,{ "$ref": "#/$defs/TaskStepChangedEvent" }
         ,{ "$ref": "#/$defs/ActionLoggedEvent" }
         ,{ "$ref": "#/$defs/ApprovalRequiredEvent" }
+        ,{ "$ref": "#/$defs/MemoryProposedEvent" }
+        ,{ "$ref": "#/$defs/MemoryAskEvent" }
+        ,{ "$ref": "#/$defs/MemoryAcceptedEvent" }
+        ,{ "$ref": "#/$defs/MemoryRejectedEvent" }
       ]
     },
     "ClientCommand": {
@@ -56,6 +60,8 @@
         { "$ref": "#/$defs/TaskRetryCommand" }
         ,{ "$ref": "#/$defs/ApprovalGrantedCommand" }
         ,{ "$ref": "#/$defs/ApprovalDeniedCommand" }
+        ,{ "$ref": "#/$defs/MemoryAcceptCommand" }
+        ,{ "$ref": "#/$defs/MemoryRejectCommand" }
       ]
     },
     "SessionCreatedEvent": {
@@ -229,11 +235,80 @@
         "type": { "const": "approval.required" }, "approval_id": { "$ref": "#/$defs/Uuid" }, "task_id": { "$ref": "#/$defs/Uuid" }, "tool_name": { "type": "string" }, "permission": { "type": "string" }, "scope": { "type": "string" }, "created_at": { "$ref": "#/$defs/DateTime" }
       }, "additionalProperties": false
     },
+    "MemoryProposedEvent": {
+      "type": "object",
+      "required": ["type", "memory_id", "task_id", "scope", "kind", "content", "confidence", "status"],
+      "properties": {
+        "type": { "const": "memory.proposed" },
+        "memory_id": { "$ref": "#/$defs/Uuid" },
+        "task_id": { "$ref": "#/$defs/Uuid" },
+        "scope": { "type": "string" },
+        "kind": { "type": "string" },
+        "content": { "type": "string" },
+        "confidence": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "MemoryAskEvent": {
+      "type": "object",
+      "required": ["type", "memory_id", "task_id", "scope", "kind", "content", "confidence", "status", "reason"],
+      "properties": {
+        "type": { "const": "memory.ask" },
+        "memory_id": { "$ref": "#/$defs/Uuid" },
+        "task_id": { "$ref": "#/$defs/Uuid" },
+        "scope": { "type": "string" },
+        "kind": { "type": "string" },
+        "content": { "type": "string" },
+        "confidence": { "type": "number" },
+        "status": { "type": "string" },
+        "reason": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "MemoryAcceptedEvent": {
+      "type": "object",
+      "required": ["type", "memory_id", "task_id"],
+      "properties": {
+        "type": { "const": "memory.accepted" },
+        "memory_id": { "$ref": "#/$defs/Uuid" },
+        "task_id": { "$ref": "#/$defs/Uuid" }
+      },
+      "additionalProperties": false
+    },
+    "MemoryRejectedEvent": {
+      "type": "object",
+      "required": ["type", "memory_id", "task_id"],
+      "properties": {
+        "type": { "const": "memory.rejected" },
+        "memory_id": { "$ref": "#/$defs/Uuid" },
+        "task_id": { "$ref": "#/$defs/Uuid" }
+      },
+      "additionalProperties": false
+    },
     "ApprovalGrantedCommand": {
       "type": "object", "required": ["type", "approval_id"], "properties": { "type": { "const": "approval.granted" }, "approval_id": { "$ref": "#/$defs/Uuid" } }, "additionalProperties": false
     },
     "ApprovalDeniedCommand": {
       "type": "object", "required": ["type", "approval_id"], "properties": { "type": { "const": "approval.denied" }, "approval_id": { "$ref": "#/$defs/Uuid" } }, "additionalProperties": false
+    },
+    "MemoryAcceptCommand": {
+      "type": "object",
+      "required": ["type", "memory_id"],
+      "properties": {
+        "type": { "const": "memory.accept" },
+        "memory_id": { "$ref": "#/$defs/Uuid" }
+      },
+      "additionalProperties": false
+    },
+    "MemoryRejectCommand": {
+      "type": "object",
+      "required": ["type", "memory_id"],
+      "properties": {
+        "type": { "const": "memory.reject" },
+        "memory_id": { "$ref": "#/$defs/Uuid" }
+      },
+      "additionalProperties": false
     }
   }
 }

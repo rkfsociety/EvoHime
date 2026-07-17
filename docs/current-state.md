@@ -1,21 +1,21 @@
 # EvoHime — Current State
 
-Last updated: 2026-07-16
+Last updated: 2026-07-17
 
 ## Stage: 6 in progress
 
-Stages 1–5 complete. Stage 6 foundations + structured memory service (`6.16`–`6.18`) in place. Agent loop still consumes legacy free-text notes; structured retrieval not wired yet.
+Stages 1–5 complete. Structured memory `6.16`–`6.20`: schema, service, retrieval into prompt, extraction + ask-on-uncertainty decision gate.
 
 ## Crates
 
 | Crate | Status | Notes |
 | --- | --- | --- |
-| `server` | Active | HTTP + WebSocket, workspace file/Git/MCP/tools, GitHub PR detail/create, worker jobs |
-| `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema |
-| `memory` | Active | Redact/dedupe/conflict + **retrieval/budget/untrusted tagging** (`6.18`–`6.19`) |
+| `server` | Active | HTTP + WebSocket, workspace file/Git/MCP/tools, GitHub PR detail/create, worker jobs, memory extract/gate |
+| `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema (incl. `memory.*`) |
+| `memory` | Active | Redact/dedupe/conflict + retrieval + **extract/decision gate** (`6.18`–`6.20`) |
 | `storage` | Active | Sessions, tasks, events, messages, legacy notes, **memory_items**, settings, worker jobs |
 | `tool-runtime` | Active | Sandboxed filesystem, shell, Git, browser, MCP call |
-| `agent-runtime` | Active | Plan → batches → bounded replan; checkpoints; legacy memory context |
+| `agent-runtime` | Active | Plan → batches → bounded replan; checkpoints; structured + legacy memory context |
 | `model-gateway` | Active | Route-based gateway, LiteRouter + OpenAI-compatible + mock |
 | `task-engine` | Active | Lifecycle, dependency batching, checkpoints, cancel/resume/retry |
 | `permissions` | Active | ask/allow/deny + one-shot approvals; grant/deny resume wired |
@@ -33,7 +33,7 @@ Stages 1–5 complete. Stage 6 foundations + structured memory service (`6.16`�
 | PUT | `/api/permissions/:permission` | Update permission mode |
 | GET | `/api/tools` | Tool catalog |
 | GET | `/api/plugins` | Installed plugins under `.evohime/plugins` |
-| GET | `/api/plugins/catalog` | Merged remote OSS marketplaces (obra, Anthropic official, mhattingpete, alirezarezvani, jeremylongshore); override via `EVOHIME_PLUGIN_CATALOG_URL` or `app_settings.plugin_catalog.sources` |
+| GET | `/api/plugins/catalog` | Merged remote OSS marketplaces with semantic groups (`groups[]`, `category`/`group` on plugins); override via `EVOHIME_PLUGIN_CATALOG_URL` or `app_settings.plugin_catalog.sources` |
 | POST | `/api/plugins/install` | Install catalog plugin via `git clone` into `.evohime/plugins` |
 | GET/PUT | `/api/mcp/servers` | MCP server list |
 | POST | `/api/sessions` | Create session + bootstrap |
@@ -61,7 +61,9 @@ user.message
   → plan steps → dependency batches → tools
   → bounded replan (≤3) → respond
   → checkpoints / approval pause / resume
-  → admit task summary into memory_items + legacy notes
+  → extract candidates (LLM JSON + heuristic fallback)
+  → admit → decision gate (auto-promote | memory.ask | drop)
+  → legacy notes + structured memory_items
   → task.completed | task.failed
 ```
 
@@ -70,7 +72,7 @@ user.message
 - `sessions`, `tasks`, `task_steps`, `task_checkpoints`
 - `session_events`, `session_messages`
 - `session_memory` / `global_memory` — legacy free-text (still used by agent loop)
-- `memory_items` — structured scopes/items (`6.16`/`6.17`)
+- `memory_items` — structured scopes/items (`6.16`–`6.20`)
 - `app_settings`, `worker_jobs`
 
 ## Frontend panels
@@ -84,18 +86,18 @@ user.message
 | Terminal / Files / Editor / Git | ✅ |
 | Plugins / Sites | ✅ Plugins: installed list + remote catalog/install |
 | Pull Requests | ✅ list + detail (diff/comments/checks) + create |
-| Memory | ❌ planned (`6.22`/`6.24`) |
+| Memory | ❌ planned (`6.22`/`6.24`); ask modal ✅ (`6.20`) |
 
 Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEventHandler` (`6.13` ✅). Brand: SVG mark + portrait mascot (`AgentBrand` / `AgentMark` / `AgentAvatar`, favicon).
 
 ## Tests
 
-- `crates/memory` — redact/normalize/dedupe/conflict + admit integration
+- `crates/memory` — redact/normalize/dedupe/conflict + extract/gate + admit integration
 - `crates/storage` — memory_items CRUD + legacy import
 - `crates/model-gateway`, `agent-runtime`, `protocol`, `tool-runtime`, `task-engine`, `permissions`, `server`
 
 ## Next recommended step
 
-1. **`6.20`** — extraction + ask-on-uncertainty decision gate (auto-promote vs ask)
-2. Then experience/playbooks (`6.21`) and Memory UI (`6.22`/`6.24`)
+1. **`6.21`** — experience memory / playbooks
+2. Then Memory UI override (`6.22`/`6.24`) and feedback loop (`6.23`)
 3. Parallel P1: task-pipeline observability; broader integration tests
