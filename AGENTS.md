@@ -71,8 +71,9 @@ User message
 
 ### Incomplete / next
 
-- Optional backlog items as they appear
-- Keep CI / reliability polish as needed
+- **Stage 7** Hardening + Product — полный backlog в `docs/roadmap.md` (`7.1`–`7.110`)
+- Первая волна: local auth, CORS, SSRF, Python worker в launcher, LLM retry
+- Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events
 
@@ -169,7 +170,7 @@ See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](d
 | 3 Tools + shell | ✅ Done |
 | 4 Editor + Git | ✅ Done |
 | 5 Task orchestration | ✅ Done |
-| 6 Advanced | 🟡 In progress — memory, observability, integration, full registry tool-calling done |
+| 6 Advanced | 🟡 Foundations done; **next Stage 7** hardening/product |
 
 Memory design: [docs/superpowers/specs/2026-07-16-agent-memory-design.md](docs/superpowers/specs/2026-07-16-agent-memory-design.md)
 

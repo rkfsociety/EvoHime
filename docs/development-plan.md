@@ -71,7 +71,7 @@ EvoHime Server — Rust
 - `storage` + `/api/memory`: CRUD/override; frontend MemoryPanel + MemoryAskModal;
 - workers: health/stall + `text.summarize` / `text.chunk`.
 
-**Следующий сквозной приоритет:** optional backlog / reliability polish.
+**Следующий сквозной приоритет:** Stage 7 — Hardening + Product ([roadmap.md](roadmap.md) § Этап 7, пункты `7.1`–`7.110`).
 
 ---
 

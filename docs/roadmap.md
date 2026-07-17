@@ -1,12 +1,12 @@
 # EvoHime — Дорожная карта
 
-> Обновлено: 2026-07-16
+> Обновлено: 2026-07-17
 
 ## Обзор
 
 ```text
-Этап 1 ✅ ──→ Этап 2 ──→ Этап 3 ──→ Этап 4 ──→ Этап 5 ──→ Этап 6
-Фундамент     Модель      Tools       Editor      Tasks       Advanced
+Этап 1 ✅ → 2 ✅ → 3 ✅ → 4 ✅ → 5 ✅ → 6 ✅ → Этап 7 🟡
+Фундамент   Модель   Tools   Editor   Tasks   Advanced   Hardening + Product
 ```
 
 | Этап | Название | Статус | Ключевой результат |
@@ -16,7 +16,8 @@
 | 3 | Tools + shell | ✅ Готово | Sandbox, filesystem tools, shell, approvals, terminal, permissions |
 | 4 | Editor + Git | ✅ Done | Browser file tree, Monaco editor, Git status/diff/actions, and synchronization events |
 | 5 | Оркестрация | ✅ Complete | Lifecycle, команды, storage и recovery готовы |
-| 6 | Advanced | ✅ Foundations done; optional backlog / polish |
+| 6 | Advanced | ✅ Foundations done | Memory, PR, workers, observability, tool catalog |
+| 7 | Hardening + Product | 🟡 Plan | Security, reliability, Sites/Scheduled, agent 2.0, CI, DX |
 
 ---
 
@@ -292,7 +293,199 @@
 - Frontend worker dashboard ✅ (Settings → Worker)
 - Frontend pipeline metrics dashboard ✅ (Settings → Metrics)
 - Worker `text.diff` handler ✅ (stdlib difflib + Rust validation)
-- **Next:** optional backlog / reliability polish
+- **Next:** Stage 7 — Hardening + Product (см. ниже)
+
+---
+
+## Этап 7 — Hardening, Product Surface & Scale
+
+**Цель:** превратить «работает локально у одного оператора» в продукт, который безопасно слушает сеть, переживает рестарты, честно показывает UI и масштабирует агента/память/workers. Пункты собраны по аудиту кода (2026-07-17); размеры: **S** ~1–2 дня, **M** ~3–7 дней, **L** ~1–3 недели.
+
+**Принцип приоритизации:** security → reliability → agent correctness → product stubs → DX/CI → moonshots.
+
+### 7.A — Security & trust boundary
+
+| # | Задача | Size | Статус | Notes / evidence |
+| --- | --- | --- | --- | --- |
+| 7.1 | Локальный auth на HTTP + WebSocket (token / bind-loopback + optional bearer) | L | ⬜ | Сейчас любой клиент в LAN бьёт `/api/*` и `/ws` |
+| 7.2 | Жёсткий CORS allowlist вместо `CorsLayer::permissive()` | S | ⬜ | `crates/server/src/main.rs` |
+| 7.3 | Default `BIND_ADDR=127.0.0.1` (+ docs / launcher) | S | ⬜ | `start-dev.ps1`, `app.rs` |
+| 7.4 | SSRF guard для `browser.*` (block localhost / private / link-local / metadata) | M | ⬜ | `tool-runtime/.../browser.rs` |
+| 7.5 | SSRF guard для `mcp.call` + optional allowlist hosts | M | ⬜ | `tool-runtime/.../mcp.rs` |
+| 7.6 | Shell: scrub / allowlist env (не наследовать API keys) | M | ⬜ | `tool-runtime/.../shell.rs` |
+| 7.7 | Encrypt-at-rest для API keys в `app_settings` (или OS keychain) | M | ⬜ | model config в PG plaintext |
+| 7.8 | Plugin install: pin commit/tag, signature/hash, uninstall/update | L | ⬜ | `server/src/plugins.rs` |
+| 7.9 | Plugin skills quarantine (не все skills → system prompt без opt-in) | L | ⬜ | `agent_loop` workspace rules |
+| 7.10 | Permission для `memory.search` + audit | S | ⬜ | сейчас `PERMISSIONS: &[]` |
+| 7.11 | Rate limiting / concurrency caps на sessions, tasks, worker jobs | M | ⬜ | DoS через mass create |
+| 7.12 | Git push/pull network policy (remote allowlist, deny force) | M | ⬜ | `tools/git.rs` |
+| 7.13 | Content-Security-Policy / secure headers для static web | S | ⬜ | Vite/static serve path |
+| 7.14 | Secrets scan в CI (gitleaks / similar) | S | ⬜ | `.github/workflows` |
+
+### 7.B — Reliability & recovery
+
+| # | Задача | Size | Статус | Notes / evidence |
+| --- | --- | --- | --- | --- |
+| 7.15 | Поднять Python worker из `start-dev.ps1` (+ tray icon) | M | ⬜ | server ждёт `:8090`, launcher не стартует worker |
+| 7.16 | LLM provider retry / backoff / retry-after | M | ⬜ | `model-gateway/.../literouter.rs` |
+| 7.17 | WebSocket reconnect + event resume (cursor / last event id) | M | ⬜ | frontend `app.tsx` + server WS |
+| 7.18 | Safe restart policy: не auto-resume mutating tasks без флага | M | ⬜ | `main.rs` recover_after_restart |
+| 7.19 | PgPool tuning (max_connections, timeouts, idle) | S | ⬜ | `PgPool::connect` defaults |
+| 7.20 | Observability locks без `.expect()` panic | S | ⬜ | `observability.rs`, `worker_observability.rs` |
+| 7.21 | `filesystem.search` graceful fallback без `rg` | S | ⬜ | tool + docs |
+| 7.22 | Persist permission session/path grants across restart | M | ⬜ | сейчас только global modes |
+| 7.23 | Durable permission approval audit (PG table) | M | ⬜ | in-memory ring 200 |
+| 7.24 | Persist / scrape pipeline+worker metrics (or Prometheus scrape) | M | ⬜ | in-memory only; Prometheus still optional |
+| 7.25 | Task-engine: `transition` по id, cancel через FSM | S | ⬜ | `task-engine/src/lib.rs` |
+| 7.26 | Worker: уменьшить dual-state races (lease / claim token) | M | ⬜ | PG row + Python in-memory queue |
+| 7.27 | Structured error taxonomy в API (`code`, `retryable`) | M | ⬜ | frontend/`api/client.ts` тоже |
+
+### 7.C — Agent runtime & tools 2.0
+
+| # | Задача | Size | Статус | Notes / evidence |
+| --- | --- | --- | --- | --- |
+| 7.28 | Native provider `tool_calls` (OpenAI-compatible tools array) | L | ⬜ | сейчас text/markup parse в `agent_loop` |
+| 7.29 | Распилить `agent_loop.rs` (plan / execute / context / parse) | L | ⬜ | ~2500 LOC monolith |
+| 7.30 | Распилить `server/main.rs` на routers/modules | L | ⬜ | ~3300 LOC |
+| 7.31 | Multi-agent / subagent fan-out с бюджетом | L | ⬜ | parallel tools есть; нет child agents |
+| 7.32 | Streaming tool progress (partial output events) | M | ⬜ | сейчас только started/output/completed |
+| 7.33 | Tool result truncation + summarization budget | M | ⬜ | длинный shell/git забивает context |
+| 7.34 | Planner cost/latency telemetry per step | M | ⬜ | correlation id есть; step cost нет |
+| 7.35 | `assistant.reply` + user-visible plan edits (approve plan) | M | ⬜ | plan сейчас auto-execute |
+| 7.36 | More tools: `filesystem.list` в матрице UI; `http.fetch` с SSRF policy | M | ⬜ | list есть в runtime, UI/docs gaps |
+| 7.37 | Cancel mid-tool with cooperative cancellation everywhere | M | ⬜ | shell есть; не все tools |
+| 7.38 | Separate OpenAICompatible provider from LiteRouter alias | S | ⬜ | `model-gateway` |
+| 7.39 | Model route picker в composer (не только Settings) | M | ⬜ | frontend chat |
+
+### 7.D — Memory 2.0
+
+| # | Задача | Size | Статус | Notes / evidence |
+| --- | --- | --- | --- | --- |
+| 7.40 | Выключить dual-write legacy `session_memory`/`global_memory` (migrate-only) | M | ⬜ | `server` post-task still writes both |
+| 7.41 | Startup/one-shot `import_legacy_memory_notes` wired | S | ⬜ | сейчас только tests |
+| 7.42 | Semantic / fuzzy dedupe (не только fingerprint) | M | ⬜ | `memory/dedupe.rs` |
+| 7.43 | Conflict UI: side-by-side resolve / supersede flow | M | ⬜ | MemoryPanel conflicts tab |
+| 7.44 | Manual «добавить память» + templates | M | ⬜ | API list/patch/delete only |
+| 7.45 | Pagination / cursor для `/api/memory` (лимит 150) | M | ⬜ | MemoryPanel |
+| 7.46 | Memory delete confirm + undo window | S | ⬜ | frontend |
+| 7.47 | Local embedding model option (onnx / candle) без remote API | L | ⬜ | hash default + remote only |
+| 7.48 | Experience playbook auto-suggest in planner | M | ⬜ | retrieve есть; planner не специализирован |
+| 7.49 | Memory export/import workspace pack (zip/json) | M | ⬜ | JSON export partial |
+| 7.50 | Multi-device sync (out of earlier memory scope) | L | ⬜ | design out-of-scope follow-up |
+
+### 7.E — Workers & ML
+
+| # | Задача | Size | Статус | Notes / evidence |
+| --- | --- | --- | --- | --- |
+| 7.51 | Ещё handlers: `text.classify`, `text.language`, `text.redact` | M | ⬜ | further optional |
+| 7.52 | Agent tool `worker.run` (submit+await job) | M | ⬜ | API есть, agent tools нет |
+| 7.53 | Worker job UI: submit form + payload editor в Settings | M | ⬜ | сейчас status/list/retry |
+| 7.54 | Horizontal worker scale (N processes / queue backend) | L | ⬜ | single in-proc Python queue |
+| 7.55 | Typed JSON Schema registry для worker tasks (shared) | M | ⬜ | duplicate validate Rust/Python |
+| 7.56 | CI job для `workers/python` unittest | S | ⬜ | не в workflow |
+
+### 7.F — Project index & context
+
+| # | Задача | Size | Статус | Notes / evidence |
+| --- | --- | --- | --- | --- |
+| 7.57 | Persistent on-disk index + incremental invalidate | L | ⬜ | full walk each search |
+| 7.58 | Symbol / AST-aware chunks (tree-sitter optional) | L | ⬜ | path/symbol weights уже есть |
+| 7.59 | Embeddings for project chunks (reuse memory embed pipeline) | L | ⬜ | comment «future encoder» |
+| 7.60 | Sidebar global search (сейчас кнопка без handler) | M | ⬜ | `app.tsx` |
+| 7.61 | `@file` / `@symbol` mentions в composer | M | ⬜ | attachments сейчас имена-only |
+
+### 7.G — Product UI: Sites & Scheduled
+
+| # | Задача | Size | Статус | Notes / evidence |
+| --- | --- | --- | --- | --- |
+| 7.62 | Sites: data model + `/api/sites` CRUD | L | ⬜ | `SitesPanel` stub |
+| 7.63 | Sites: preview / publish / open-in-browser | L | ⬜ | product surface |
+| 7.64 | Sites: search/filter wired to real data | S | ⬜ | `siteSearch` dead |
+| 7.65 | Scheduled: real cron/timer jobs (storage + runner) | L | ⬜ | `ScheduledPanel` templates only |
+| 7.66 | Scheduled: honest copy (убрать fake mail/calendar claims) | S | ⬜ | misleading recommendations |
+| 7.67 | Scheduled: list/pause/delete active schedules | M | ⬜ | после 7.65 |
+| 7.68 | Deep-link / router для панелей (`?panel=`, history) | M | ⬜ | нет router |
+
+### 7.H — Frontend shell, UX, a11y
+
+| # | Задача | Size | Статус | Notes / evidence |
+| --- | --- | --- | --- | --- |
+| 7.69 | Дораспилить `app.tsx` → hooks (`useWebSocket`, `useChat`, `useWorkspace`) | L | ⬜ | ~1800 LOC, ~80 useState |
+| 7.70 | CSS modules / split `styles.css` | L | ⬜ | ~3000+ lines |
+| 7.71 | React Error Boundary per panel | M | ⬜ | `main.tsx` |
+| 7.72 | Орphan panels: Files/Git/Terminal/Tasks/Actions в навигации | M | ⬜ | panels есть, entry points слабые |
+| 7.73 | Реальные file attachments (upload + server store + tool access) | M | ⬜ | сейчас только имена в тексте |
+| 7.74 | Chat: stable message keys, tool lines toggle, a11y labels | S | ⬜ | `app.tsx` |
+| 7.75 | Settings modal: Escape, focus trap, tabpanel pattern | M | ⬜ | Settings + Approval tabs |
+| 7.76 | Chat archive restore / unarchive | M | ⬜ | delete-only archive |
+| 7.77 | Plugins: uninstall, update, skill browser | M | ⬜ | install-only |
+| 7.78 | Approval modal: remember-path / temp-allow controls | M | ⬜ | audit знает `remembered_path` |
+| 7.79 | Silent boot errors → toast / Settings banner | M | ⬜ | `.catch(() => undefined)` |
+| 7.80 | i18n consistency (RU/EN mix в Memory/Actions) | S | ⬜ | MemoryPanel actions |
+| 7.81 | Project chip: real git branch (не hardcoded `main`) | S | ⬜ | `app.tsx` |
+| 7.82 | Dead code cleanup (`addModelRoute` unused, placeholderPanel) | S | ⬜ | frontend |
+| 7.83 | Show all chats (не `slice(0,5)` без «ещё») | S | ⬜ | sidebar |
+
+### 7.I — Protocol, CI, DX
+
+| # | Задача | Size | Статус | Notes / evidence |
+| --- | --- | --- | --- | --- |
+| 7.84 | CI: PostgreSQL service + storage/memory integration tests | L | ⬜ | tests skip без `DATABASE_URL` |
+| 7.85 | CI: frontend `tsc` + build (+ optional playwright smoke) | M | ⬜ | только `rust.yml` |
+| 7.86 | CI: protocol schema ↔ Rust ↔ generated TS drift check | M | ⬜ | manual sync today |
+| 7.87 | CI: Clippy `-D warnings` already; add fmt/docs gates docs for stage 7 | S | ⬜ | keep current |
+| 7.88 | Devcontainer / cross-platform launcher (не только Windows tray) | L | ⬜ | `start-dev.ps1` WinForms |
+| 7.89 | OpenAPI / typed HTTP client gen из server routes | L | ⬜ | сейчас hand-written `api/*` |
+| 7.90 | Feature flags (`EVOHIME_FEATURE_*`) для experimental surfaces | M | ⬜ | Sites/Scheduled/OTLP |
+| 7.91 | Docs sync: `development-plan.md` / `AGENTS.md` / `current-state` под Stage 7 | S | ⬜ | этот PR |
+
+### 7.J — Observability & ops
+
+| # | Задача | Size | Статус | Notes / evidence |
+| --- | --- | --- | --- | --- |
+| 7.92 | Prometheus `/metrics` exposition (или OTEL metrics) | M | ⬜ | traces optional; metrics scrape no |
+| 7.93 | Per-request/request-id on HTTP (не только task correlation) | S | ⬜ | |
+| 7.94 | Task timeline UI: correlation id copy + latency bars | M | ⬜ | Actions/Tasks panels |
+| 7.95 | Log sampling / redaction of secrets in tracing | M | ⬜ | shell/env, model keys |
+| 7.96 | Health endpoint: deep checks (DB, worker, disk) | S | ⬜ | сейчас `{status:ok}` |
+| 7.97 | Backup/export: sessions+memory dump CLI | M | ⬜ | |
+
+### 7.K — Moonshots / Stage 8 candidates
+
+| # | Задача | Size | Статус | Notes / evidence |
+| --- | --- | --- | --- | --- |
+| 7.98 | Team / multi-operator mode (authz scopes) | L | ⬜ | single-tenant today |
+| 7.99 | Cloud sync / remote workspace | L | ⬜ | |
+| 7.100 | Visual browser agent loop (CDP session reuse) | L | ⬜ | browser tools one-shot |
+| 7.101 | Eval harness (golden tasks, regression agents) | L | ⬜ | |
+| 7.102 | Marketplace for playbooks / plugins with trust scores | L | ⬜ | memory design out-of-scope |
+| 7.103 | Online continual learning (still no weight fine-tune; stronger experience) | L | ⬜ | |
+| 7.104 | Mobile-responsive shell (browser-only, no native app) | M | ⬜ | web-first rule |
+| 7.105 | Voice input / TTS optional | M | ⬜ | |
+| 7.106 | Diff review UI for agent patches before apply | L | ⬜ | approvals coarse today |
+| 7.107 | Worktree-aware multi-checkout agent (parallel tasks isolated) | L | ⬜ | |
+| 7.108 | Cost budgets & spend caps per day/model | M | ⬜ | LiteRouter free/paid |
+| 7.109 | Self-update channel for launcher | M | ⬜ | |
+| 7.110 | Formal threat model doc + abuse cases | M | ⬜ | |
+
+### Suggested Stage 7 delivery waves
+
+1. **Wave A (trust):** 7.1–7.6, 7.11, 7.15, 7.16  
+2. **Wave B (survive restarts):** 7.17–7.24, 7.40–7.41  
+3. **Wave C (agent quality):** 7.28–7.33, 7.52  
+4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  
+5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  
+6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+
+
+### Критерий готовности Stage 7 (минимум)
+
+- Локальный сервер по умолчанию не торчит в LAN без auth  
+- SSRF blocked для browser/MCP  
+- Launcher поднимает Python worker  
+- WS reconnect не теряет критичные события  
+- Legacy memory dual-write выключен или явно deprecated  
+- Sites/Scheduled либо реализованы, либо убраны из «как будто работают»  
+- CI гоняет frontend + Postgres integration + Python worker tests  
 
 ---
 
@@ -308,8 +501,11 @@
 | Git | 4 | M3 | ✅ Complete |
 | Tasks | 5 | M4 | ✅ Deep: steps, deps, pause, retries, recovery |
 | Actions | 5 | M4 | ✅ Deep: timeline + orchestration metrics |
-| Settings | 2 | M1 | ✅ Модели + permissions + MCP + tools |
+| Settings | 2 | M1 | ✅ Модели + permissions + MCP + tools + worker + metrics |
 | Pull Requests | 6 | M5 | ✅ List/detail/create (`6.14`) |
+| Memory | 6 | M5 | ✅ Panel + ask modal (`6.22`–`6.24`); Stage 7: resolve/pagination |
+| Sites | 7 | M6 | ⬜ Stub UI — backlog `7.62`–`7.64` |
+| Scheduled | 7 | M6 | ⬜ Templates only — backlog `7.65`–`7.67` |
 
 ---
 

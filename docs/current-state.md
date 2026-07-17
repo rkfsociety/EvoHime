@@ -2,9 +2,9 @@
 
 Last updated: 2026-07-17
 
-## Stage: 6 in progress
+## Stage: 7 planned (Stage 6 foundations done)
 
-Stages 1–5 complete. Structured memory `6.16`–`6.25`: schema through experience, Memory panel, feedback loop, and hybrid embeddings.
+Stages 1–5 complete. Stage 6 structured memory `6.16`–`6.25` and optional polish landed. **Next:** Stage 7 hardening + product surface — see roadmap.
 
 ## Crates
 
@@ -108,5 +108,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. Optional follow-ups from roadmap backlog (`text.diff` landed)
-2. Keep CI / reliability polish as needed
+1. **Stage 7** — см. [roadmap.md](roadmap.md) § «Этап 7» (110 пунктов: security → product → moonshots)
+2. Рекомендуемая первая волна: auth/CORS/SSRF (`7.1`–`7.6`), worker в launcher (`7.15`), LLM retry (`7.16`)
+3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI
