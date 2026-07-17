@@ -19,7 +19,7 @@ Stages 1–5 complete. Structured memory `6.16`–`6.25`: schema through experie
 | `model-gateway` | Active | Route-based gateway, LiteRouter + OpenAI-compatible + mock |
 | `task-engine` | Active | Lifecycle, dependency batching, checkpoints, cancel/resume/retry |
 | `permissions` | Active | ask/allow/deny + one-shot approvals; grant/deny resume wired |
-| `project-index` | Active | Workspace text search for agent context |
+| `project-index` | Active | Chunk search, path/symbol weights, binary/noise filter (P2) |
 | Python worker | Active | Health/stall reliability; handlers incl. `text.summarize`, `text.chunk` |
 
 ## API endpoints
@@ -102,6 +102,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. P2: improved project index (chunks, path/symbol weights, binary filter)
-2. P2: finer permission model (per-session / per-path, approval audit)
-3. Optional: neural embeddings / OpenTelemetry export
+1. P2: finer permission model (per-session / per-path, approval audit)
+2. Optional: neural embeddings / OpenTelemetry export
+3. More ML handlers as needed

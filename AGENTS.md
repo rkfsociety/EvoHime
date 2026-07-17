@@ -71,7 +71,7 @@ User message
 
 ### Incomplete / next
 
-- P2 improved project index / finer permissions
+- P2 finer permissions (per-session / per-path, approval audit)
 - Optional neural encoder / OpenTelemetry export
 - More ML handlers / deeper worker observability as needed
 

@@ -71,7 +71,7 @@ EvoHime Server — Rust
 - `storage` + `/api/memory`: CRUD/override; frontend MemoryPanel + MemoryAskModal;
 - workers: health/stall + `text.summarize` / `text.chunk`.
 
-**Следующий сквозной приоритет:** P2 project index / permissions; optional neural encoder / OTel.
+**Следующий сквозной приоритет:** P2 finer permissions; optional neural encoder / OTel.
 
 ---
 
@@ -301,7 +301,7 @@ Task lifecycle реализован: start/complete/fail/cancel/resume/retry. St
 - расширенные checkpoints и recovery: прогресс по шагам, результаты завершённых tool calls, причина паузы и состояние approval wait;
 - декомпозиция `frontend/web/src/app.tsx` на panels/hooks/services и вынесение WebSocket/event orchestration из корневого компонента;
 - typed API client для frontend вместо разрозненных `fetch()` и локальных обработчиков ошибок;
-- усиление `project-index`: chunk-based поиск, отдельные веса для path/symbol hits, фильтрация шумных/бинарных файлов и подготовка к semantic search;
+- усиление `project-index`: chunk-based поиск, отдельные веса для path/symbol hits, фильтрация шумных/бинарных файлов ✅;
 - более гибкая permission model: per-session / per-task / per-path разрешения, аудит approvals и временные allow-решения;
 - расширение GitHub/PR workflow в UI: diff, review comments, checks и создание PR;
 - укрепление worker subsystem: retry/backoff, heartbeat, stalled-job detection, retention policy и typed payload/result schemas.

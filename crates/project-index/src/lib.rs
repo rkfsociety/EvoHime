@@ -1,3 +1,12 @@
+//! Workspace text search for agent context (roadmap 6.1 / P2).
+//!
+//! Lexical search with:
+//! - chunk merging (adjacent hits)
+//! - separate path / symbol / content weights
+//! - binary + noisy-file filtering
+//!
+//! Chunk text is stable enough to feed a future embedding encoder.
+
 use std::cmp::Reverse;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -5,14 +14,58 @@ use walkdir::WalkDir;
 
 const DEFAULT_MAX_RESULTS: usize = 5;
 const DEFAULT_MAX_FILE_BYTES: u64 = 256 * 1024;
-const IGNORED_DIRS: &[&str] = &[".git", "node_modules", "target", "dist", "build"];
+const CHUNK_GAP_LINES: usize = 2;
+const CHUNK_MAX_LINES: usize = 12;
+const CHUNK_SNIPPET_CHARS: usize = 480;
+
+const WEIGHT_CONTENT: u32 = 10;
+const WEIGHT_PATH: u32 = 25;
+const WEIGHT_SYMBOL: u32 = 40;
+const WEIGHT_SHORT_LINE: u32 = 1;
+
+const IGNORED_DIRS: &[&str] = &[
+    ".git",
+    ".hg",
+    ".svn",
+    ".evohime",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    "out",
+    "coverage",
+    "__pycache__",
+    ".venv",
+    "venv",
+    ".next",
+    ".turbo",
+    ".cache",
+];
+
+const NOISY_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "webp", "ico", "bmp", "svg", "pdf", "zip", "gz", "7z", "rar",
+    "exe", "dll", "so", "dylib", "bin", "o", "a", "lib", "wasm", "map", "min.js", "min.css",
+    "lock", "woff", "woff2", "ttf", "otf", "eot", "mp3", "mp4", "webm", "wav", "class", "jar",
+    "parquet", "sqlite", "db", "pyc", "pyo",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HitKind {
+    Content,
+    Path,
+    Symbol,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectIndexMatch {
     pub path: PathBuf,
+    /// 1-based start line of the chunk.
     pub line: usize,
+    /// 1-based inclusive end line of the chunk.
+    pub end_line: usize,
     pub snippet: String,
     pub score: u32,
+    pub hit_kind: HitKind,
 }
 
 #[derive(Debug, Clone)]
@@ -67,7 +120,7 @@ impl ProjectIndex {
                 continue;
             }
 
-            if should_skip_path(path) {
+            if should_skip_path(path) || is_noisy_file(path) {
                 continue;
             }
 
@@ -79,28 +132,25 @@ impl ProjectIndex {
                 continue;
             }
 
-            let Ok(content) = fs::read_to_string(path) else {
+            let Ok(bytes) = fs::read(path) else {
+                continue;
+            };
+            if is_probably_binary(&bytes) {
+                continue;
+            }
+            let Ok(content) = String::from_utf8(bytes) else {
                 continue;
             };
 
-            for (line_index, line) in content.lines().enumerate() {
-                let score = score_line(&query, line, path);
-                if score == 0 {
-                    continue;
-                }
-
-                matches.push(ProjectIndexMatch {
-                    path: relative_to_root(&self.workspace_root, path),
-                    line: line_index + 1,
-                    snippet: line.trim().to_string(),
-                    score,
-                });
-            }
+            let relative = relative_to_root(&self.workspace_root, path);
+            let line_hits = collect_line_hits(&query, &content, &relative);
+            matches.extend(merge_into_chunks(&relative, &content, line_hits));
         }
 
         matches.sort_by_key(|item| {
             (
                 Reverse(item.score),
+                hit_kind_rank(item.hit_kind),
                 item.path.clone(),
                 item.line,
                 item.snippet.len(),
@@ -118,12 +168,20 @@ impl ProjectIndex {
 
         let mut output = String::from("Relevant project context:\n");
         for item in matches {
+            let location = if item.end_line > item.line {
+                format!("{}:{}-{}", item.path.display(), item.line, item.end_line)
+            } else {
+                format!("{}:{}", item.path.display(), item.line)
+            };
+            let kind = match item.hit_kind {
+                HitKind::Symbol => "symbol",
+                HitKind::Path => "path",
+                HitKind::Content => "content",
+            };
+            let snippet = item.snippet.replace('\n', " / ");
             output.push_str(&format!(
-                "- {}:{} [{}] {}\n",
-                item.path.display(),
-                item.line,
-                item.score,
-                item.snippet
+                "- {location} [{kind}:{score}] {snippet}\n",
+                score = item.score
             ));
         }
 
@@ -131,34 +189,224 @@ impl ProjectIndex {
     }
 }
 
+#[derive(Debug, Clone)]
+struct LineHit {
+    line: usize,
+    score: u32,
+    kind: HitKind,
+}
+
 fn normalize_query(query: &str) -> Vec<String> {
     query
-        .split_whitespace()
-        .map(|token| token.trim_matches(|ch: char| !ch.is_alphanumeric()))
-        .filter(|token| !token.is_empty())
+        .split(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+        .map(|token| token.trim_matches(|ch: char| !ch.is_alphanumeric() && ch != '_'))
+        .filter(|token| token.len() > 1)
         .map(|token| token.to_lowercase())
         .collect()
 }
 
-fn score_line(query: &[String], line: &str, path: &Path) -> u32 {
-    let line_lower = line.to_lowercase();
-    let path_lower = path.to_string_lossy().to_lowercase();
+fn collect_line_hits(query: &[String], content: &str, relative_path: &Path) -> Vec<LineHit> {
+    let path_lower = relative_path.to_string_lossy().to_lowercase();
+    let path_stem = relative_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let path_bonus = path_query_bonus(query, &path_lower, &path_stem);
 
-    let mut score = 0;
+    let mut hits = Vec::new();
+    for (line_index, line) in content.lines().enumerate() {
+        let (score, kind) = score_line_content(query, line);
+        if score == 0 {
+            continue;
+        }
+        hits.push(LineHit {
+            line: line_index + 1,
+            score,
+            kind,
+        });
+    }
+
+    if hits.is_empty() {
+        if path_bonus > 0 {
+            hits.push(LineHit {
+                line: 1,
+                score: path_bonus.saturating_add(WEIGHT_SHORT_LINE),
+                kind: HitKind::Path,
+            });
+        }
+    } else if path_bonus > 0 {
+        if let Some(best) = hits.iter_mut().max_by_key(|hit| hit.score) {
+            best.score = best.score.saturating_add(path_bonus);
+            best.kind = stronger_kind(best.kind, HitKind::Path);
+        }
+    }
+
+    hits
+}
+
+fn path_query_bonus(query: &[String], path_lower: &str, path_stem: &str) -> u32 {
+    let mut bonus = 0u32;
+    for token in query {
+        if path_lower.contains(token) || path_stem == *token {
+            bonus = bonus.saturating_add(WEIGHT_PATH);
+        }
+    }
+    bonus
+}
+
+fn score_line_content(query: &[String], line: &str) -> (u32, HitKind) {
+    let line_lower = line.to_lowercase();
+    let mut content_score = 0u32;
+    let mut symbol_score = 0u32;
+
     for token in query {
         if line_lower.contains(token) {
-            score += 10;
-        }
-        if path_lower.contains(token) {
-            score += 3;
+            content_score = content_score.saturating_add(WEIGHT_CONTENT);
+            if looks_like_symbol_hit(line, token) {
+                symbol_score = symbol_score.saturating_add(WEIGHT_SYMBOL);
+            }
         }
     }
 
+    let mut score = content_score.saturating_add(symbol_score);
     if score > 0 && line.len() < 120 {
-        score += 1;
+        score = score.saturating_add(WEIGHT_SHORT_LINE);
     }
 
-    score
+    let kind = if symbol_score > 0 {
+        HitKind::Symbol
+    } else {
+        HitKind::Content
+    };
+
+    (score, kind)
+}
+
+fn looks_like_symbol_hit(line: &str, token: &str) -> bool {
+    let lower = line.to_lowercase();
+    let patterns = [
+        format!("fn {token}"),
+        format!("fn {token}<"),
+        format!("fn {token}("),
+        format!("struct {token}"),
+        format!("enum {token}"),
+        format!("class {token}"),
+        format!("trait {token}"),
+        format!("interface {token}"),
+        format!("type {token}"),
+        format!("def {token}"),
+        format!("function {token}"),
+        format!("const {token}"),
+        format!("let {token}"),
+        format!("pub fn {token}"),
+        format!("async fn {token}"),
+    ];
+    patterns.iter().any(|pattern| lower.contains(pattern))
+}
+
+fn merge_into_chunks(
+    relative_path: &Path,
+    content: &str,
+    hits: Vec<LineHit>,
+) -> Vec<ProjectIndexMatch> {
+    if hits.is_empty() {
+        return Vec::new();
+    }
+
+    let lines: Vec<&str> = content.lines().collect();
+    let mut chunks = Vec::new();
+    let mut current_start = hits[0].line;
+    let mut current_end = hits[0].line;
+    let mut current_score = hits[0].score;
+    let mut current_kind = hits[0].kind;
+
+    for hit in hits.into_iter().skip(1) {
+        if hit.line <= current_end + CHUNK_GAP_LINES
+            && (current_end - current_start + 1) < CHUNK_MAX_LINES
+        {
+            current_end = hit.line;
+            current_score = current_score.saturating_add(hit.score / 2);
+            current_kind = stronger_kind(current_kind, hit.kind);
+        } else {
+            chunks.push(make_chunk(
+                relative_path,
+                &lines,
+                current_start,
+                current_end,
+                current_score,
+                current_kind,
+            ));
+            current_start = hit.line;
+            current_end = hit.line;
+            current_score = hit.score;
+            current_kind = hit.kind;
+        }
+    }
+    chunks.push(make_chunk(
+        relative_path,
+        &lines,
+        current_start,
+        current_end,
+        current_score,
+        current_kind,
+    ));
+    chunks
+}
+
+fn make_chunk(
+    relative_path: &Path,
+    lines: &[&str],
+    start_line: usize,
+    end_line: usize,
+    score: u32,
+    kind: HitKind,
+) -> ProjectIndexMatch {
+    let start_idx = start_line.saturating_sub(1);
+    let end_idx = end_line.min(lines.len()).saturating_sub(1).max(start_idx);
+    let snippet = lines[start_idx..=end_idx]
+        .iter()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let snippet = truncate_chars(&snippet, CHUNK_SNIPPET_CHARS);
+
+    ProjectIndexMatch {
+        path: relative_path.to_path_buf(),
+        line: start_line,
+        end_line,
+        snippet,
+        score,
+        hit_kind: kind,
+    }
+}
+
+fn stronger_kind(left: HitKind, right: HitKind) -> HitKind {
+    match (left, right) {
+        (HitKind::Symbol, _) | (_, HitKind::Symbol) => HitKind::Symbol,
+        (HitKind::Path, _) | (_, HitKind::Path) => HitKind::Path,
+        _ => HitKind::Content,
+    }
+}
+
+fn hit_kind_rank(kind: HitKind) -> u8 {
+    match kind {
+        HitKind::Symbol => 0,
+        HitKind::Path => 1,
+        HitKind::Content => 2,
+    }
+}
+
+fn truncate_chars(input: &str, max_chars: usize) -> String {
+    if input.chars().count() <= max_chars {
+        return input.to_string();
+    }
+    input
+        .chars()
+        .take(max_chars.saturating_sub(1))
+        .collect::<String>()
+        + "…"
 }
 
 fn should_skip_directory(path: &Path) -> bool {
@@ -174,6 +422,39 @@ fn should_skip_path(path: &Path) -> bool {
             .to_str()
             .is_some_and(|name| IGNORED_DIRS.contains(&name))
     })
+}
+
+fn is_noisy_file(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    if name.ends_with(".min.js") || name.ends_with(".min.css") || name.ends_with(".bundle.js") {
+        return true;
+    }
+    if name == "package-lock.json" || name == "yarn.lock" || name == "pnpm-lock.yaml" {
+        return true;
+    }
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| NOISY_EXTENSIONS.contains(&ext.to_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+fn is_probably_binary(bytes: &[u8]) -> bool {
+    if bytes.is_empty() {
+        return false;
+    }
+    if bytes.contains(&0) {
+        return true;
+    }
+    let sample = &bytes[..bytes.len().min(8_192)];
+    let non_text = sample
+        .iter()
+        .filter(|&&b| b < 0x09 || (b > 0x0d && b < 0x20) || b == 0x7f)
+        .count();
+    (non_text as f64) / (sample.len() as f64) > 0.30
 }
 
 fn relative_to_root(root: &Path, path: &Path) -> PathBuf {
@@ -204,6 +485,7 @@ mod tests {
 
         assert_eq!(matches.len(), 2);
         assert!(matches.iter().all(|item| item.snippet.contains("context")));
+        assert!(matches.iter().all(|item| item.end_line >= item.line));
     }
 
     #[test]
@@ -245,5 +527,75 @@ mod tests {
         assert!(context.contains("Relevant project context:"));
         assert!(context.contains("notes.md:1"));
         assert!(context.contains("project index context"));
+    }
+
+    #[test]
+    fn prefers_symbol_hits_over_plain_content() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            temp.path().join("lib.rs"),
+            "fn retrieve_memory() {\n    // helper\n}\n\nlet x = retrieve_memory_cache;\n",
+        )
+        .expect("write");
+        fs::write(
+            temp.path().join("notes.md"),
+            "please retrieve memory from disk later\n",
+        )
+        .expect("write");
+
+        let index = ProjectIndex::new(temp.path());
+        let matches = index.search("retrieve_memory");
+        assert!(!matches.is_empty());
+        assert_eq!(matches[0].path, PathBuf::from("lib.rs"));
+        assert_eq!(matches[0].hit_kind, HitKind::Symbol);
+    }
+
+    #[test]
+    fn merges_adjacent_hits_into_chunks() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            temp.path().join("chunk.rs"),
+            "line zero\nchunk alpha\nchunk beta\nchunk gamma\nline tail\n",
+        )
+        .expect("write");
+
+        let index = ProjectIndex::new(temp.path());
+        let matches = index.search("chunk");
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].line, 2);
+        assert_eq!(matches[0].end_line, 4);
+        assert!(matches[0].snippet.contains("chunk alpha"));
+        assert!(matches[0].snippet.contains("chunk gamma"));
+    }
+
+    #[test]
+    fn skips_binary_and_noisy_extensions() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::write(temp.path().join("ok.md"), "binary filter context").expect("write");
+        fs::write(temp.path().join("noise.png"), [0u8, 1, 2, 3, 255]).expect("png");
+        fs::write(temp.path().join("blob.bin"), b"binary filter context\0hidden").expect("bin");
+        fs::write(temp.path().join("app.min.js"), "binary filter context").expect("minjs");
+
+        let index = ProjectIndex::new(temp.path());
+        let matches = index.search("binary filter context");
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].path, PathBuf::from("ok.md"));
+    }
+
+    #[test]
+    fn path_token_boosts_filename_matches() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(temp.path().join("memory")).expect("dir");
+        fs::write(temp.path().join("memory/service.rs"), "plain helper text\n").expect("write");
+        fs::write(temp.path().join("other.rs"), "mentions memory once\n").expect("write");
+
+        let index = ProjectIndex::new(temp.path());
+        let matches = index.search("memory");
+        assert!(!matches.is_empty());
+        assert_eq!(matches[0].path, PathBuf::from("memory/service.rs"));
+        assert!(matches!(
+            matches[0].hit_kind,
+            HitKind::Path | HitKind::Content
+        ));
     }
 }

@@ -16,7 +16,7 @@
 | 3 | Tools + shell | ✅ Готово | Sandbox, filesystem tools, shell, approvals, terminal, permissions |
 | 4 | Editor + Git | ✅ Done | Browser file tree, Monaco editor, Git status/diff/actions, and synchronization events |
 | 5 | Оркестрация | ✅ Complete | Lifecycle, команды, storage и recovery готовы |
-| 6 | Advanced | 🟡 В процессе | Memory/observability/integration ✅; LLM tool-calling across registry ✅; next P2 index/permissions or OTel |
+| 6 | Advanced | 🟡 В процессе | Index P2 ✅; next finer permissions or optional neural/OTel |
 
 ---
 
@@ -253,7 +253,7 @@
 
 | Приоритет | Улучшение | Что добавить |
 | --- | --- | --- |
-| P2 | Улучшенный project index | Поиск по чанкам, отдельные веса для path/symbol hits, фильтрация шумных и бинарных файлов, подготовка к semantic search |
+| P2 | Улучшенный project index | ✅ chunks + path/symbol weights + binary/noise filter (`crates/project-index/`) |
 | P2 | Более гибкая permission model | Разрешения per-session / per-task / per-path, аудит approvals и временные allow-решения |
 | P2 | Расширение GitHub/PR панели | ✅ diff/comments/reviews/checks/create PR (`6.14`) |
 
@@ -281,7 +281,8 @@
 - Pipeline observability (`GET /api/metrics`) ✅
 - Integration tests (approval pause/resume, recovery) ✅
 - General LLM tool-calling across registered tools ✅ (`browser.*`, `mcp.call` wired; planner catalog)
-- **Next:** P2 project index / permissions; optional neural encoder / OTel
+- P2 improved project index ✅ (chunks, path/symbol weights, binary filter)
+- **Next:** P2 finer permissions; optional neural encoder / OTel
 
 ---
 
