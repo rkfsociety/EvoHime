@@ -66,7 +66,7 @@ EvoHime Server — Rust
 Этапы 1–5 завершены. Stage 6: foundations + PR workflow + shell split + memory `6.16`–`6.25` (включая Memory panel, feedback loop и hybrid embeddings).
 
 - tools: filesystem / shell / Git / browser / MCP в `tool-runtime`;
-- `agent-runtime`: plan → dependency batches → bounded replan; checkpoints; structured + legacy memory в prompt;
+- `agent-runtime`: plan → dependency batches → bounded replan; checkpoints; structured memory в prompt;
 - `crates/memory`: redact / normalize / dedupe / conflict / retrieve / extract / decision gate / experience playbooks / feedback / hybrid embeddings;
 - `storage` + `/api/memory`: CRUD/override; frontend MemoryPanel + MemoryAskModal;
 - workers: health/stall + `text.summarize` / `text.chunk`.

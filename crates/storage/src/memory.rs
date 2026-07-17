@@ -1,7 +1,7 @@
 //! Structured agent memory items (roadmap 6.16 foundation).
 //!
-//! Legacy `session_memory` / `global_memory` tables remain for compatibility;
-//! new code should use `memory_items` via this module.
+//! Legacy `session_memory` / `global_memory` tables remain for one-shot migration via
+//! [`import_legacy_memory_notes`] (Stage 7.40–7.41). Runtime read/write uses `memory_items`.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

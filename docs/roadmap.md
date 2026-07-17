@@ -361,8 +361,8 @@
 
 | # | Задача | Size | Статус | Notes / evidence |
 | --- | --- | --- | --- | --- |
-| 7.40 | Выключить dual-write legacy `session_memory`/`global_memory` (migrate-only) | M | ⬜ | `server` post-task still writes both |
-| 7.41 | Startup/one-shot `import_legacy_memory_notes` wired | S | ⬜ | сейчас только tests |
+| 7.40 | Выключить dual-write legacy `session_memory`/`global_memory` (migrate-only) | M | ✅ | post-task writes only `memory_items`; prompt via retrieve |
+| 7.41 | Startup/one-shot `import_legacy_memory_notes` wired | S | ✅ | server startup; idempotent `source_label` markers |
 | 7.42 | Semantic / fuzzy dedupe (не только fingerprint) | M | ⬜ | `memory/dedupe.rs` |
 | 7.43 | Conflict UI: side-by-side resolve / supersede flow | M | ⬜ | MemoryPanel conflicts tab |
 | 7.44 | Manual «добавить память» + templates | M | ⬜ | API list/patch/delete only |
@@ -471,7 +471,7 @@
 ### Suggested Stage 7 delivery waves
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
-2. **Wave B (survive restarts):** `7.17`–`7.24` ✅ → next `7.40`–`7.41` (legacy memory) / `7.25`+  
+2. **Wave B (survive restarts):** `7.17`–`7.24`, `7.40`–`7.41` ✅ → next `7.25`+  
 3. **Wave C (agent quality):** 7.28–7.33, 7.52  
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  
 5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  

@@ -660,6 +660,7 @@ pub async fn insert_session_memory(
     source_task_id: Option<Uuid>,
     note: &str,
 ) -> Result<(), StorageError> {
+    // Legacy table: migrate-only / tests. Runtime writes go to `memory_items` (Stage 7.40).
     sqlx::query(
         r#"
         INSERT INTO session_memory (session_id, source_task_id, note)
@@ -679,6 +680,7 @@ pub async fn list_session_memory(
     pool: &PgPool,
     session_id: Uuid,
 ) -> Result<Vec<MemoryRow>, StorageError> {
+    // Legacy read path kept for import tooling / tests (Stage 7.40).
     let rows = sqlx::query_as::<_, MemoryRow>(
         r#"
         SELECT note, created_at
@@ -700,6 +702,7 @@ pub async fn insert_global_memory(
     source_task_id: Option<Uuid>,
     note: &str,
 ) -> Result<(), StorageError> {
+    // Legacy table: migrate-only / tests. Runtime writes go to `memory_items` (Stage 7.40).
     sqlx::query(
         r#"
         INSERT INTO global_memory (scope_key, source_task_id, note)
@@ -721,6 +724,7 @@ pub async fn list_global_memory(
     scope_key: &str,
     limit: i64,
 ) -> Result<Vec<MemoryRow>, StorageError> {
+    // Legacy read path kept for import tooling / tests (Stage 7.40).
     let rows = sqlx::query_as::<_, MemoryRow>(
         r#"
         SELECT note, created_at

@@ -15,7 +15,7 @@ Stages 1–5 complete. Stage 6 structured memory `6.16`–`6.25` and optional po
 | `memory` | Active | Redact/dedupe/conflict + retrieve + extract/gate + experience + feedback + hybrid embeddings (hash default, optional remote neural) |
 | `storage` | Active | Sessions, tasks, events, messages, legacy notes, **memory_items**, settings, worker jobs |
 | `tool-runtime` | Active | Sandboxed filesystem, shell, Git, browser, MCP call |
-| `agent-runtime` | Active | Plan → batches → bounded replan; checkpoints; structured + legacy memory context |
+| `agent-runtime` | Active | Plan → batches → bounded replan; checkpoints; structured memory context |
 | `model-gateway` | Active | Route-based gateway, LiteRouter + OpenAI-compatible + mock |
 | `task-engine` | Active | Lifecycle, dependency batching, checkpoints, cancel/resume/retry |
 | `permissions` | Active | ask/allow/deny + session/path overrides + temp allow + durable approval audit (PG) |
@@ -67,13 +67,13 @@ Stages 1–5 complete. Stage 6 structured memory `6.16`–`6.25` and optional po
 user.message
   → save user message (session_messages)
   → load prior chat history
-  → retrieve structured memory_items (budget + untrusted tag) + legacy notes
+  → retrieve structured memory_items (budget + untrusted tag)
   → plan steps → dependency batches → tools
   → bounded replan (≤3) → respond
   → checkpoints / approval pause / resume
   → extract candidates (LLM JSON + heuristic + experience patterns)
   → admit → decision gate (auto-promote | memory.ask | drop)
-  → legacy notes + structured memory_items (incl. experience/playbooks)
+  → legacy notes migrated at startup; structured memory_items only at runtime
   → task.completed | task.failed
 ```
 
@@ -81,8 +81,8 @@ user.message
 
 - `sessions`, `tasks`, `task_steps`, `task_checkpoints`
 - `session_events`, `session_messages`
-- `session_memory` / `global_memory` — legacy free-text (still used by agent loop)
-- `memory_items` — structured scopes/items (`6.16`–`6.21`)
+- `session_memory` / `global_memory` — legacy free-text (migrate-only; imported at startup into `memory_items`)
+- `memory_items` — structured scopes/items (`6.16`–`6.21`; runtime source of truth)
 - `app_settings`, `worker_jobs`
 - `permission_approval_audit` — durable approval decisions (`7.23`)
 - `metrics_snapshots` — periodic pipeline/worker snapshots (`7.24`)
@@ -112,6 +112,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. **Stage 7** — Wave A ✅; Wave B: `7.17`–`7.24` ✅; next legacy memory `7.40`–`7.41` / `7.25`+
-2. Рекомендуемая следующая волна: legacy memory cleanup (`7.40`–`7.41`), task FSM (`7.25`)
+1. **Stage 7** — Wave A ✅; Wave B: `7.17`–`7.24`, `7.40`–`7.41` ✅; next task FSM `7.25`
+2. Рекомендуемая следующая волна: task-engine FSM (`7.25`), worker lease races (`7.26`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

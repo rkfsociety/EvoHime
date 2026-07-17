@@ -228,6 +228,18 @@ async fn main() -> anyhow::Result<()> {
     } else {
         info!("metrics snapshot persistence disabled (EVOHIME_METRICS_PERSIST_INTERVAL_SECS=0)");
     }
+    match evohime_storage::import_legacy_memory_notes(&state.pool).await {
+        Ok(imported) => {
+            if imported > 0 {
+                info!(imported, "imported legacy session/global memory notes into memory_items");
+            } else {
+                info!("legacy memory import: nothing new (already migrated or empty)");
+            }
+        }
+        Err(error) => {
+            warn!(error = %error, "legacy memory import failed; continuing without it");
+        }
+    }
     if let Some(value) = evohime_storage::load_setting(&state.pool, "permissions").await? {
         if let Some(settings) = value.as_object() {
             for (name, mode) in settings {
@@ -2428,22 +2440,10 @@ async fn run_task_pipeline(
     let prior_messages = load_chat_history(&state.pool, session_id)
         .await
         .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
-    let memory_notes = load_memory_notes(&state.pool, session_id)
-        .await
-        .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
     let workspace_scope = task
         .workspace_path
         .clone()
         .unwrap_or_else(|| state.workspace_root.to_string_lossy().into_owned());
-    let global_memory = evohime_storage::list_global_memory(&state.pool, &workspace_scope, 20)
-        .await
-        .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
-    let mut memory_notes = memory_notes;
-    memory_notes.extend(
-        global_memory
-            .into_iter()
-            .map(|row| format!("[global workspace memory] {}", row.note)),
-    );
 
     let structured = evohime_memory::retrieve_for_prompt(
         &state.pool,
@@ -2466,7 +2466,7 @@ async fn run_task_pipeline(
             "retrieved structured memory for prompt"
         );
     }
-    let mut structured_notes = structured
+    let memory_notes = structured
         .entries
         .into_iter()
         .map(|entry| {
@@ -2476,8 +2476,6 @@ async fn run_task_pipeline(
             }
         })
         .collect::<Vec<_>>();
-    structured_notes.extend(memory_notes);
-    let memory_notes = structured_notes;
 
     if emit_started {
         let title = summarize_session_title(&task.user_message);
@@ -2806,19 +2804,6 @@ async fn run_task_pipeline(
     .await
     .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
 
-    let memory_note = summarize_task_memory(&task.user_message, &agent_result.final_message);
-    evohime_storage::insert_session_memory(&state.pool, session_id, Some(task.id), &memory_note)
-        .await
-        .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
-    evohime_storage::insert_global_memory(
-        &state.pool,
-        &workspace_scope,
-        Some(task.id),
-        &memory_note,
-    )
-    .await
-    .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
-
     apply_task_memory_feedback(state, session_id, task.id, &used_memory_ids, true).await;
 
     persist_structured_memory(
@@ -2876,17 +2861,7 @@ fn map_agent_error(error: AgentError) -> ApiError {
     ApiError::Internal(error.to_string())
 }
 
-async fn load_memory_notes(
-    pool: &PgPool,
-    session_id: Uuid,
-) -> Result<Vec<String>, evohime_storage::StorageError> {
-    Ok(evohime_storage::list_session_memory(pool, session_id)
-        .await?
-        .into_iter()
-        .map(|row| row.note)
-        .collect())
-}
-
+#[cfg(test)]
 fn summarize_task_memory(user_message: &str, final_message: &str) -> String {
     const LIMIT: usize = 400;
     let summary = format!(
