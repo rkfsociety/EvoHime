@@ -109,6 +109,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. **Stage 7** — `7.1`–`7.6` ✅ (auth/CORS/bind/SSRF/shell env); next rate limit `7.11` / worker `7.15` / LLM retry `7.16`
-2. Рекомендуемая следующая волна: rate limit (`7.11`), worker launcher (`7.15`), LLM retry (`7.16`)
+1. **Stage 7** — `7.1`–`7.6`, `7.11` ✅; next worker launcher `7.15` / LLM retry `7.16`
+2. Рекомендуемая следующая волна: worker launcher (`7.15`), LLM retry (`7.16`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

@@ -5,6 +5,7 @@ mod memory_api;
 mod observability;
 mod otel;
 mod plugins;
+mod rate_limit;
 mod worker;
 mod worker_observability;
 mod workspace;
@@ -53,6 +54,8 @@ enum ApiError {
     #[error("approval required for {tool}: {approval_id}")]
     ApprovalRequired { tool: String, approval_id: Uuid },
     #[error("{0}")]
+    TooManyRequests(String),
+    #[error("{0}")]
     Internal(String),
     #[error("service unavailable: {0}")]
     Unavailable(String),
@@ -95,6 +98,7 @@ impl IntoResponse for ApiError {
                 StatusCode::CONFLICT,
                 format!("approval required for {tool}: {approval_id}"),
             ),
+            Self::TooManyRequests(message) => (StatusCode::TOO_MANY_REQUESTS, message),
             Self::Internal(message) => (StatusCode::INTERNAL_SERVER_ERROR, message),
             Self::Unavailable(message) => (StatusCode::SERVICE_UNAVAILABLE, message),
         };
@@ -172,6 +176,7 @@ async fn main() -> anyhow::Result<()> {
         plugin_catalog_cache: plugins::PluginCatalogCache::default(),
         metrics: Arc::new(observability::PipelineMetrics::new()),
         worker_metrics: Arc::new(worker_observability::WorkerMetrics::new()),
+        rate_limiter: Arc::new(rate_limit::RateLimiter::from_env()),
     });
 
     let retention_state = state.clone();
@@ -424,6 +429,17 @@ async fn list_worker_jobs(
     Ok(Json(jobs))
 }
 
+async fn enforce_worker_job_limits(state: &AppState) -> Result<(), ApiError> {
+    let counts = evohime_storage::count_worker_jobs_by_status(&state.pool)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let active = rate_limit::active_worker_job_count(&counts);
+    state
+        .rate_limiter
+        .allow_worker_job(active)
+        .map_err(|error| ApiError::TooManyRequests(error.message))
+}
+
 async fn create_worker_job(
     State(state): State<Arc<AppState>>,
     Json(request): Json<WorkerJobRequest>,
@@ -431,6 +447,7 @@ async fn create_worker_job(
     if let Err(error) = worker::validate_task_payload(&request.task, &request.payload) {
         return Err(ApiError::BadRequest(error));
     }
+    enforce_worker_job_limits(&state).await?;
     let row = evohime_storage::create_worker_job(&state.pool, &request.task, &request.payload)
         .await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
@@ -484,6 +501,7 @@ async fn retry_worker_job(
             "worker job retry limit has been reached".into(),
         ));
     }
+    enforce_worker_job_limits(&state).await?;
     let worker_job = match state.worker.submit(&row.task, &row.payload_json).await {
         Ok(job) => job,
         Err(error) => {
@@ -1204,6 +1222,11 @@ fn validate_mcp_server(mut server: McpServerConfig) -> Result<McpServerConfig, A
 async fn create_session(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<SessionBootstrap>, ApiError> {
+    state
+        .rate_limiter
+        .allow_session_create()
+        .map_err(|error| ApiError::TooManyRequests(error.message))?;
+
     let session = evohime_storage::create_session(&state.pool)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
@@ -1744,6 +1767,23 @@ async fn handle_socket(
                             model,
                             workspace_path,
                         } => {
+                            let concurrent = state.task_cancellations.lock().await.len();
+                            if let Err(error) = state.rate_limiter.allow_task_start(concurrent) {
+                                warn!(error = %error.message, "task start rate limited");
+                                let _ = emit_event(
+                                    &state,
+                                    session_id,
+                                    None,
+                                    ServerEvent::ActionLogged {
+                                        task_id: Uuid::nil(),
+                                        action: "rate.limited".to_string(),
+                                        detail: error.message.clone(),
+                                        created_at: chrono::Utc::now(),
+                                    },
+                                )
+                                .await;
+                                continue;
+                            }
                             let workspace_path = resolve_workspace_path(&state, workspace_path)?;
                             let workspace_path = workspace_path.to_string_lossy().to_string();
                             let task = match start_task(

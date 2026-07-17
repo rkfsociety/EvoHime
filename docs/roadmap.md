@@ -317,7 +317,7 @@
 | 7.8 | Plugin install: pin commit/tag, signature/hash, uninstall/update | L | ⬜ | `server/src/plugins.rs` |
 | 7.9 | Plugin skills quarantine (не все skills → system prompt без opt-in) | L | ⬜ | `agent_loop` workspace rules |
 | 7.10 | Permission для `memory.search` + audit | S | ⬜ | сейчас `PERMISSIONS: &[]` |
-| 7.11 | Rate limiting / concurrency caps на sessions, tasks, worker jobs | M | ⬜ | DoS через mass create |
+| 7.11 | Rate limiting / concurrency caps на sessions, tasks, worker jobs | M | ✅ | `rate_limit.rs`; 429 + WS `rate.limited`; `EVOHIME_RATE_LIMIT_*` |
 | 7.12 | Git push/pull network policy (remote allowlist, deny force) | M | ⬜ | `tools/git.rs` |
 | 7.13 | Content-Security-Policy / secure headers для static web | S | ⬜ | Vite/static serve path |
 | 7.14 | Secrets scan в CI (gitleaks / similar) | S | ⬜ | `.github/workflows` |
@@ -470,7 +470,7 @@
 
 ### Suggested Stage 7 delivery waves
 
-1. **Wave A (trust):** `7.1`–`7.6` ✅ → next `7.11`, `7.15`, `7.16`  
+1. **Wave A (trust):** `7.1`–`7.6`, `7.11` ✅ → next `7.15`, `7.16`  
 2. **Wave B (survive restarts):** 7.17–7.24, 7.40–7.41  
 3. **Wave C (agent quality):** 7.28–7.33, 7.52  
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  

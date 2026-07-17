@@ -116,6 +116,7 @@ pub struct AppState {
     pub plugin_catalog_cache: PluginCatalogCache,
     pub metrics: Arc<crate::observability::PipelineMetrics>,
     pub worker_metrics: Arc<crate::worker_observability::WorkerMetrics>,
+    pub rate_limiter: Arc<crate::rate_limit::RateLimiter>,
 }
 
 impl AppState {
