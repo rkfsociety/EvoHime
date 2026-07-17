@@ -123,7 +123,11 @@ pub struct WorkerJobRow {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
+    /// Lease for the current poller / attempt (Stage 7.26).
+    pub claim_token: Option<Uuid>,
 }
+
+const WORKER_JOB_RETURNING: &str = "id, worker_job_id, task, payload_json, status, attempts, max_attempts, result_json, error, created_at, updated_at, completed_at, claim_token";
 
 pub async fn run_migrations(pool: &PgPool) -> Result<(), StorageError> {
     sqlx::migrate!("../../migrations").run(pool).await?;
@@ -135,29 +139,156 @@ pub async fn create_worker_job(
     task: &str,
     payload_json: &Value,
 ) -> Result<WorkerJobRow, StorageError> {
-    Ok(sqlx::query_as::<_, WorkerJobRow>("INSERT INTO worker_jobs (task, payload_json) VALUES ($1, $2) RETURNING id, worker_job_id, task, payload_json, status, attempts, max_attempts, result_json, error, created_at, updated_at, completed_at")
-        .bind(task).bind(payload_json).fetch_one(pool).await?)
+    let sql = format!(
+        "INSERT INTO worker_jobs (task, payload_json) VALUES ($1, $2) RETURNING {WORKER_JOB_RETURNING}"
+    );
+    Ok(sqlx::query_as::<_, WorkerJobRow>(&sql)
+        .bind(task)
+        .bind(payload_json)
+        .fetch_one(pool)
+        .await?)
 }
 
 pub async fn load_worker_job(
     pool: &PgPool,
     id: Uuid,
 ) -> Result<Option<WorkerJobRow>, StorageError> {
-    Ok(sqlx::query_as::<_, WorkerJobRow>("SELECT id, worker_job_id, task, payload_json, status, attempts, max_attempts, result_json, error, created_at, updated_at, completed_at FROM worker_jobs WHERE id = $1")
-        .bind(id).fetch_optional(pool).await?)
+    let sql = format!("SELECT {WORKER_JOB_RETURNING} FROM worker_jobs WHERE id = $1");
+    Ok(sqlx::query_as::<_, WorkerJobRow>(&sql)
+        .bind(id)
+        .fetch_optional(pool)
+        .await?)
 }
 
-pub async fn set_worker_job_submitted(
+/// Bind a Python job id to a durable row and mint a new claim token.
+///
+/// - `expected_claim = None`: first claim from `queued` with no token.
+/// - `expected_claim = Some(token)`: retry/reclaim only if the caller still holds `token`.
+///
+/// Returns `None` when another poller already owns the lease.
+pub async fn claim_worker_job_attempt(
     pool: &PgPool,
     id: Uuid,
     worker_job_id: &str,
     attempts: i32,
-) -> Result<(), StorageError> {
-    sqlx::query("UPDATE worker_jobs SET worker_job_id=$2, status='running', attempts=$3, updated_at=now() WHERE id=$1")
-        .bind(id).bind(worker_job_id).bind(attempts).execute(pool).await?;
-    Ok(())
+    expected_claim: Option<Uuid>,
+) -> Result<Option<Uuid>, StorageError> {
+    let new_claim = Uuid::new_v4();
+    let claimed = match expected_claim {
+        None => {
+            sqlx::query_scalar::<_, Uuid>(
+                r#"
+                UPDATE worker_jobs
+                SET worker_job_id = $2,
+                    status = 'running',
+                    attempts = $3,
+                    claim_token = $4,
+                    updated_at = now(),
+                    completed_at = NULL,
+                    result_json = NULL,
+                    error = NULL
+                WHERE id = $1
+                  AND status = 'queued'
+                  AND claim_token IS NULL
+                RETURNING claim_token
+                "#,
+            )
+            .bind(id)
+            .bind(worker_job_id)
+            .bind(attempts)
+            .bind(new_claim)
+            .fetch_optional(pool)
+            .await?
+        }
+        Some(expected) => {
+            sqlx::query_scalar::<_, Uuid>(
+                r#"
+                UPDATE worker_jobs
+                SET worker_job_id = $2,
+                    status = 'running',
+                    attempts = $3,
+                    claim_token = $4,
+                    updated_at = now(),
+                    completed_at = NULL,
+                    result_json = NULL,
+                    error = NULL
+                WHERE id = $1
+                  AND claim_token = $5
+                  AND status IN ('queued', 'running', 'retrying')
+                  AND attempts < max_attempts
+                RETURNING claim_token
+                "#,
+            )
+            .bind(id)
+            .bind(worker_job_id)
+            .bind(attempts)
+            .bind(new_claim)
+            .bind(expected)
+            .fetch_optional(pool)
+            .await?
+        }
+    };
+    Ok(claimed)
 }
 
+/// Steal the lease for crash/restart recovery. Invalidates any in-flight poller.
+pub async fn steal_worker_job_claim(
+    pool: &PgPool,
+    id: Uuid,
+) -> Result<Option<Uuid>, StorageError> {
+    let new_claim = Uuid::new_v4();
+    Ok(sqlx::query_scalar::<_, Uuid>(
+        r#"
+        UPDATE worker_jobs
+        SET claim_token = $2,
+            status = 'retrying',
+            updated_at = now()
+        WHERE id = $1
+          AND status IN ('queued', 'running', 'retrying')
+          AND attempts < max_attempts
+        RETURNING claim_token
+        "#,
+    )
+    .bind(id)
+    .bind(new_claim)
+    .fetch_optional(pool)
+    .await?)
+}
+
+/// Complete only if `claim_token` still matches (stale pollers get `None`).
+pub async fn complete_worker_job_claimed(
+    pool: &PgPool,
+    id: Uuid,
+    claim_token: Uuid,
+    status: &str,
+    result_json: Option<&Value>,
+    error: Option<&str>,
+) -> Result<Option<WorkerJobRow>, StorageError> {
+    let sql = format!(
+        r#"
+        UPDATE worker_jobs
+        SET status = $3,
+            result_json = $4,
+            error = $5,
+            updated_at = now(),
+            completed_at = CASE WHEN $3 IN ('completed','failed') THEN now() ELSE completed_at END
+        WHERE id = $1
+          AND claim_token = $2
+          AND status NOT IN ('completed', 'failed')
+        RETURNING {WORKER_JOB_RETURNING}
+        "#
+    );
+    Ok(sqlx::query_as::<_, WorkerJobRow>(&sql)
+        .bind(id)
+        .bind(claim_token)
+        .bind(status)
+        .bind(result_json)
+        .bind(error)
+        .fetch_optional(pool)
+        .await?)
+}
+
+/// Force-complete without claim (exhausted retries during recovery when steal fails elsewhere).
 pub async fn complete_worker_job(
     pool: &PgPool,
     id: Uuid,
@@ -165,15 +296,36 @@ pub async fn complete_worker_job(
     result_json: Option<&Value>,
     error: Option<&str>,
 ) -> Result<WorkerJobRow, StorageError> {
-    Ok(sqlx::query_as::<_, WorkerJobRow>("UPDATE worker_jobs SET status=$2, result_json=$3, error=$4, updated_at=now(), completed_at=CASE WHEN $2 IN ('completed','failed') THEN now() ELSE completed_at END WHERE id=$1 RETURNING id, worker_job_id, task, payload_json, status, attempts, max_attempts, result_json, error, created_at, updated_at, completed_at")
-        .bind(id).bind(status).bind(result_json).bind(error).fetch_one(pool).await?)
+    let sql = format!(
+        r#"
+        UPDATE worker_jobs
+        SET status = $2,
+            result_json = $3,
+            error = $4,
+            updated_at = now(),
+            completed_at = CASE WHEN $2 IN ('completed','failed') THEN now() ELSE completed_at END
+        WHERE id = $1
+        RETURNING {WORKER_JOB_RETURNING}
+        "#
+    );
+    Ok(sqlx::query_as::<_, WorkerJobRow>(&sql)
+        .bind(id)
+        .bind(status)
+        .bind(result_json)
+        .bind(error)
+        .fetch_one(pool)
+        .await?)
 }
 
 pub async fn list_recoverable_worker_jobs(
     pool: &PgPool,
 ) -> Result<Vec<WorkerJobRow>, StorageError> {
-    Ok(sqlx::query_as::<_, WorkerJobRow>("SELECT id, worker_job_id, task, payload_json, status, attempts, max_attempts, result_json, error, created_at, updated_at, completed_at FROM worker_jobs WHERE status IN ('queued', 'running', 'retrying') ORDER BY created_at ASC")
-        .fetch_all(pool).await?)
+    let sql = format!(
+        "SELECT {WORKER_JOB_RETURNING} FROM worker_jobs WHERE status IN ('queued', 'running', 'retrying') ORDER BY created_at ASC"
+    );
+    Ok(sqlx::query_as::<_, WorkerJobRow>(&sql)
+        .fetch_all(pool)
+        .await?)
 }
 
 pub async fn list_recent_worker_jobs(
@@ -181,12 +333,45 @@ pub async fn list_recent_worker_jobs(
     limit: i64,
 ) -> Result<Vec<WorkerJobRow>, StorageError> {
     let limit = limit.clamp(1, 200);
-    Ok(sqlx::query_as::<_, WorkerJobRow>(
-        "SELECT id, worker_job_id, task, payload_json, status, attempts, max_attempts, result_json, error, created_at, updated_at, completed_at \
-         FROM worker_jobs ORDER BY created_at DESC LIMIT $1",
+    let sql = format!(
+        "SELECT {WORKER_JOB_RETURNING} FROM worker_jobs ORDER BY created_at DESC LIMIT $1"
+    );
+    Ok(sqlx::query_as::<_, WorkerJobRow>(&sql)
+        .bind(limit)
+        .fetch_all(pool)
+        .await?)
+}
+
+/// Manual retry / operator reclaim: takes the lease regardless of prior claim.
+pub async fn force_claim_worker_job_attempt(
+    pool: &PgPool,
+    id: Uuid,
+    worker_job_id: &str,
+    attempts: i32,
+) -> Result<Option<Uuid>, StorageError> {
+    let new_claim = Uuid::new_v4();
+    Ok(sqlx::query_scalar::<_, Uuid>(
+        r#"
+        UPDATE worker_jobs
+        SET worker_job_id = $2,
+            status = 'running',
+            attempts = $3,
+            claim_token = $4,
+            updated_at = now(),
+            completed_at = NULL,
+            result_json = NULL,
+            error = NULL
+        WHERE id = $1
+          AND attempts < max_attempts
+          AND status IN ('queued', 'running', 'retrying', 'failed')
+        RETURNING claim_token
+        "#,
     )
-    .bind(limit)
-    .fetch_all(pool)
+    .bind(id)
+    .bind(worker_job_id)
+    .bind(attempts)
+    .bind(new_claim)
+    .fetch_optional(pool)
     .await?)
 }
 
@@ -755,4 +940,96 @@ async fn next_sequence(pool: &PgPool, session_id: Uuid) -> Result<i64, StorageEr
     .await?;
 
     Ok(sequence)
+}
+
+#[cfg(test)]
+mod worker_claim_tests {
+    use super::*;
+    use serde_json::json;
+
+    async fn connect_pool() -> Option<PgPool> {
+        let url = std::env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://evohime:evohime@localhost:5432/evohime".into());
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(2)
+            .connect(&url)
+            .await
+            .ok()?;
+        run_migrations(&pool).await.ok()?;
+        Some(pool)
+    }
+
+    #[tokio::test]
+    async fn claim_token_blocks_stale_complete_and_allows_holder() {
+        let Some(pool) = connect_pool().await else {
+            eprintln!("skipping worker claim test: database unavailable");
+            return;
+        };
+
+        let row = create_worker_job(&pool, "echo", &json!({}))
+            .await
+            .expect("create");
+        let claim = claim_worker_job_attempt(&pool, row.id, "py-1", 1, None)
+            .await
+            .expect("claim")
+            .expect("first claim");
+
+        let stale = complete_worker_job_claimed(
+            &pool,
+            row.id,
+            Uuid::new_v4(),
+            "completed",
+            Some(&json!({"ok": true})),
+            None,
+        )
+        .await
+        .expect("stale complete");
+        assert!(stale.is_none());
+
+        let done = complete_worker_job_claimed(
+            &pool,
+            row.id,
+            claim,
+            "completed",
+            Some(&json!({"ok": true})),
+            None,
+        )
+        .await
+        .expect("holder complete")
+        .expect("row");
+        assert_eq!(done.status, "completed");
+        assert_eq!(done.claim_token, Some(claim));
+    }
+
+    #[tokio::test]
+    async fn steal_invalidates_previous_claim() {
+        let Some(pool) = connect_pool().await else {
+            eprintln!("skipping worker steal test: database unavailable");
+            return;
+        };
+
+        let row = create_worker_job(&pool, "echo", &json!({}))
+            .await
+            .expect("create");
+        let first = claim_worker_job_attempt(&pool, row.id, "py-1", 1, None)
+            .await
+            .expect("claim")
+            .expect("first");
+        let stolen = steal_worker_job_claim(&pool, row.id)
+            .await
+            .expect("steal")
+            .expect("token");
+        assert_ne!(first, stolen);
+
+        let stale = complete_worker_job_claimed(&pool, row.id, first, "failed", None, Some("old"))
+            .await
+            .expect("stale");
+        assert!(stale.is_none());
+
+        let retry = claim_worker_job_attempt(&pool, row.id, "py-2", 2, Some(stolen))
+            .await
+            .expect("reclaim")
+            .expect("new claim");
+        assert_ne!(retry, stolen);
+    }
 }

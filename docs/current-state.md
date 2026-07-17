@@ -83,7 +83,7 @@ user.message
 - `session_events`, `session_messages`
 - `session_memory` / `global_memory` — legacy free-text (migrate-only; imported at startup into `memory_items`)
 - `memory_items` — structured scopes/items (`6.16`–`6.21`; runtime source of truth)
-- `app_settings`, `worker_jobs`
+- `app_settings`, `worker_jobs` (incl. `claim_token` lease, `7.26`)
 - `permission_approval_audit` — durable approval decisions (`7.23`)
 - `metrics_snapshots` — periodic pipeline/worker snapshots (`7.24`)
 
@@ -112,6 +112,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. **Stage 7** — Wave A ✅; Wave B: `7.17`–`7.25`, `7.40`–`7.41` ✅; next worker lease `7.26`
-2. Рекомендуемая следующая волна: worker lease races (`7.26`), structured API errors (`7.27`)
+1. **Stage 7** — Wave A ✅; Wave B: `7.17`–`7.26`, `7.40`–`7.41` ✅; next structured errors `7.27`
+2. Рекомендуемая следующая волна: structured API errors (`7.27`), Wave C agent/tools
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

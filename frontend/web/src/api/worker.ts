@@ -38,6 +38,7 @@ export type WorkerJob = {
   max_attempts: number;
   result_json?: unknown;
   error?: string | null;
+  claim_token?: string | null;
   created_at: string;
   updated_at: string;
   completed_at?: string | null;
