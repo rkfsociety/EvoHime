@@ -94,12 +94,14 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Tests
 
+- `crates/agent-runtime` — pipeline integration: tool events → completion; approval pause → resume
+- `crates/task-engine` — lifecycle integration: pause/resume/complete, fail/retry, recover_after_restart
 - `crates/memory` — redact/normalize/dedupe/conflict + extract/gate + experience/playbooks + admit integration
 - `crates/storage` — memory_items CRUD + overview/update/delete + legacy import
-- `crates/model-gateway`, `agent-runtime`, `protocol`, `tool-runtime`, `task-engine`, `permissions`, `server`
+- `crates/model-gateway`, `protocol`, `tool-runtime`, `permissions`, `server`
 
 ## Next recommended step
 
-1. Broader integration tests (approval pause/resume, recovery)
-2. Optional: swap local feature-hash embeddings for a neural encoder
-3. Optional: OpenTelemetry export on top of current metrics
+1. Optional: swap local feature-hash embeddings for a neural encoder
+2. Optional: OpenTelemetry export on top of current metrics
+3. General LLM tool-calling across registered tools (orchestration still plan-driven)

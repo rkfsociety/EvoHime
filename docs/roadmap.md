@@ -16,7 +16,7 @@
 | 3 | Tools + shell | ✅ Готово | Sandbox, filesystem tools, shell, approvals, terminal, permissions |
 | 4 | Editor + Git | ✅ Done | Browser file tree, Monaco editor, Git status/diff/actions, and synchronization events |
 | 5 | Оркестрация | ✅ Complete | Lifecycle, команды, storage и recovery готовы |
-| 6 | Advanced | 🟡 В процессе | Memory done; pipeline observability ✅; next integration tests |
+| 6 | Advanced | 🟡 В процессе | Memory + observability + integration tests ✅; next optional neural/OTel / LLM tool-calling |
 
 ---
 
@@ -238,7 +238,7 @@
 | P1 | Реальный executor плана | ✅ `plan → execute(batches) → observe → replan → respond` (до 3 replan) |
 | P1 | Усиленный checkpoint/recovery | ✅ plan + pause_reason + approval_wait; merge; resume skips completed steps |
 | P1 | Наблюдаемость task pipeline | ✅ correlation id (`task_id`) + structured logs + `GET /api/metrics` |
-| P1 | Больше интеграционных сценариев | Тесты на `task start -> tool events -> completion`, `approval -> pause -> resume`, retry и recovery после restart |
+| P1 | Больше интеграционных сценариев | ✅ `pipeline_integration` + `lifecycle_integration` (approval pause/resume, recovery) |
 
 ### P1 — UI и сопровождение фронтенда
 
@@ -279,7 +279,8 @@
 - `6.23` feedback loop ✅
 - `6.25` hybrid embeddings ✅
 - Pipeline observability (`GET /api/metrics`) ✅
-- **Next:** broader integration tests (approval pause/resume, recovery)
+- Integration tests (approval pause/resume, recovery) ✅
+- **Next:** optional neural encoder / OTel; general LLM tool-calling
 
 ---
 

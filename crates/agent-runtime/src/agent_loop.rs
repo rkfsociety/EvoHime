@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use evohime_model_gateway::{providers::ChatMessage, providers::ChatRole, ModelGateway};
 use evohime_project_index::ProjectIndex;
 use evohime_protocol::{PlanStep, ServerEvent};
-use evohime_tool_runtime::{ToolContext, ToolRegistry};
+use evohime_tool_runtime::{ToolContext, ToolError, ToolRegistry};
 use futures_util::{future::join_all, StreamExt};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -806,6 +806,10 @@ async fn execute_single_plan_step(
             })
         }
         Err(error) => {
+            if matches!(error, ToolError::NeedsApproval { .. }) {
+                // Pause for operator approval — do not mark the step completed.
+                return Err(AgentError::Tool(error));
+            }
             let output = format!(
                 "{} ({effective_tool_name}) завершился с ошибкой: {error}",
                 step.id
