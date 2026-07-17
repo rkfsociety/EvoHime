@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Wave A/B ✅; Wave C: `7.28`–`7.29` ✅; next `7.30`+
-- Wave C next: split `server/main.rs` (`7.30`)…
+- **Stage 7** Hardening + Product — Wave A/B ✅; Wave C: `7.28`–`7.30` ✅; next `7.31`+
+- Wave C next: multi-agent / subagent fan-out (`7.31`)…
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events
@@ -200,7 +200,9 @@ LITEROUTER_MODEL=deepseek:free
 
 | File | Purpose |
 | --- | --- |
-| `crates/server/src/main.rs` | HTTP + WS handlers |
+| `crates/server/src/main.rs` | Server entrypoint (bootstrap + bind) |
+| `crates/server/src/routes.rs` | HTTP router assembly |
+| `crates/server/src/task/` | Task pipeline / steps / memory |
 | `crates/agent-runtime/src/agent_loop/` | Agent orchestration (plan / execute / context / parse) |
 | `crates/memory/` | Memory admit service (redact/dedupe/conflict) |
 | `crates/storage/src/memory.rs` | `memory_items` CRUD |

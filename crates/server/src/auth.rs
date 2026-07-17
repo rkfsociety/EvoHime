@@ -150,7 +150,7 @@ pub fn authorize_request(
     peer: Option<SocketAddr>,
     presented: Option<&str>,
 ) -> Result<(), StatusCode> {
-    if PUBLIC_PATHS.iter().any(|public| path == *public) {
+    if PUBLIC_PATHS.contains(&path) {
         return Ok(());
     }
 
