@@ -15,13 +15,13 @@ alwaysApply: true
 
 ## Обязательно
 
-- По просьбе «запусти» / «подними стек» / «start» — запускай **`.\start-dev.ps1` без `-Server`/`-Web`** (полный launcher с треем).
+- По просьбе «запусти» / «подними стек» / «start» — запускай **`.\start-dev.ps1` без `-Server`/`-Web`/`-Worker`** (полный launcher с треем: server + web + Python worker).
 - Не подменяй это раздельным `cargo run -p evohime-server` + `npm run dev`, если пользователь просит именно запуск приложения.
 - Перед повторным запуском не плоди второй launcher: скрипт сам гасит предыдущий экземпляр.
 
 ## Допустимые исключения
 
-- Отладка одного процесса по явной просьбе: `.\start-dev.ps1 -Server` или `.\start-dev.ps1 -Web`
+- Отладка одного процесса по явной просьбе: `.\start-dev.ps1 -Server`, `.\start-dev.ps1 -Web` или `.\start-dev.ps1 -Worker`
 - Точечные `cargo test` / `cargo check` / `npm run build` — это не «запуск стека»
 
 ## Windows / PATH
