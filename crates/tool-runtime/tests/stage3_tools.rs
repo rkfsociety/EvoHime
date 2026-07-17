@@ -10,6 +10,7 @@ async fn write_creates_and_updates_nested_file() {
     let ctx = ToolContext {
         workspace_root: dir.path().to_path_buf(),
         task_id: Uuid::nil(),
+        session_id: None,
     };
     let first = write::execute(&ctx, json!({"path":"nested/a.txt","content":"one"}))
         .await
@@ -28,6 +29,7 @@ async fn patch_rejects_context_mismatch_without_mutation() {
     let ctx = ToolContext {
         workspace_root: dir.path().to_path_buf(),
         task_id: Uuid::nil(),
+        session_id: None,
     };
     let result = patch::execute(
         &ctx,
@@ -49,6 +51,7 @@ async fn registry_requires_approval_for_write() {
             &ToolContext {
                 workspace_root: dir.path().to_path_buf(),
                 task_id: Uuid::nil(),
+                session_id: None,
             },
             "filesystem.write",
             json!({"path":"a.txt","content":"x"}),
@@ -65,6 +68,7 @@ async fn shell_runs_direct_executable_and_rejects_wrapper() {
     let ctx = ToolContext {
         workspace_root: dir.path().to_path_buf(),
         task_id: Uuid::nil(),
+        session_id: None,
     };
     let (program, args) = if cfg!(windows) {
         ("rustc", vec!["--version"])
@@ -90,6 +94,7 @@ async fn shell_times_out_and_reports_timeout() {
     let ctx = ToolContext {
         workspace_root: dir.path().to_path_buf(),
         task_id: Uuid::nil(),
+        session_id: None,
     };
     let (program, args) = if cfg!(windows) {
         ("ping", vec!["-n", "5", "127.0.0.1"])

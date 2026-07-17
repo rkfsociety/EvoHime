@@ -77,7 +77,9 @@ import type {
   McpServerConfig,
   ModelConfig,
   ModelRouteDraft,
+  PermissionAuditEntry,
   PermissionMode,
+  PermissionScopes,
   PermissionSettings,
   ProjectSelection,
   ProjectSummary,
@@ -163,6 +165,8 @@ export function App() {
   const [siteSearch, setSiteSearch] = useState("");
   const [terminalEntries, setTerminalEntries] = useState<TerminalEntry[]>([]);
   const [permissionSettings, setPermissionSettings] = useState<PermissionSettings>({});
+  const [permissionAudit, setPermissionAudit] = useState<PermissionAuditEntry[]>([]);
+  const [permissionScopes, setPermissionScopes] = useState<PermissionScopes | null>(null);
   const [permissionModeSaving, setPermissionModeSaving] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [workModeOpen, setWorkModeOpen] = useState(false);
@@ -203,6 +207,14 @@ export function App() {
       }
     };
     permissionsApi.getPermissions().then((data) => setPermissionSettings(data)).catch(() => undefined);
+    permissionsApi
+      .getPermissionAudit()
+      .then((data) => setPermissionAudit(data.entries ?? []))
+      .catch(() => undefined);
+    permissionsApi
+      .getPermissionScopes()
+      .then((data) => setPermissionScopes(data))
+      .catch(() => undefined);
     sessionsApi.listArchivedSessions().then((data) => setArchivedChats(data)).catch(() => undefined);
     mcpApi.listTools()
       .then((data) => {
@@ -1173,6 +1185,8 @@ export function App() {
         onUpdateModelDraft={updateModelDraft}
         onSaveModelConfig={() => void saveModelConfig()}
         permissionSettings={permissionSettings}
+        permissionAudit={permissionAudit}
+        permissionScopes={permissionScopes}
         onUpdatePermission={(name, mode) => void updatePermission(name, mode)}
         mcpServers={mcpServers}
         mcpServersError={mcpServersError}

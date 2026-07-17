@@ -32,6 +32,7 @@ pub enum ToolError {
 pub struct ToolContext {
     pub workspace_root: PathBuf,
     pub task_id: Uuid,
+    pub session_id: Option<Uuid>,
 }
 
 impl ToolContext {
@@ -198,13 +199,30 @@ impl ToolRegistry {
             .ok_or_else(|| ToolError::UnknownTool(name.to_string()))?;
 
         for permission in definition.permissions {
-            match self.permissions.check(*permission).await {
+            let scope = scope_from_input(name, &input);
+            match self
+                .permissions
+                .check_scoped(
+                    *permission,
+                    &evohime_permissions::PermissionCheck {
+                        session_id: ctx.session_id,
+                        path: Some(scope.as_str()),
+                    },
+                )
+                .await
+            {
                 PermissionDecision::Allowed => {}
                 PermissionDecision::Denied => return Err(ToolError::PermissionDenied(*permission)),
                 PermissionDecision::NeedsApproval => {
                     let approval = self
                         .permissions
-                        .create_approval(ctx.task_id, name, *permission, "workspace")
+                        .create_approval_scoped(
+                            ctx.task_id,
+                            ctx.session_id,
+                            name,
+                            *permission,
+                            scope,
+                        )
                         .await;
                     return Err(ToolError::NeedsApproval {
                         tool: name.to_string(),
@@ -279,6 +297,23 @@ impl Default for ToolRegistry {
     }
 }
 
+/// Derive a stable scope key from tool input (path, cwd, url, or `"workspace"`).
+fn scope_from_input(tool_name: &str, input: &Value) -> String {
+    if let Some(path) = input.get("path").and_then(Value::as_str) {
+        return path.replace('\\', "/");
+    }
+    if let Some(cwd) = input.get("cwd").and_then(Value::as_str) {
+        return cwd.replace('\\', "/");
+    }
+    if let Some(url) = input.get("url").and_then(Value::as_str) {
+        return url.to_string();
+    }
+    if tool_name.starts_with("browser.") {
+        return "browser".to_string();
+    }
+    "workspace".to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -313,6 +348,7 @@ mod tests {
         let context = ToolContext {
             workspace_root: dir.path().to_path_buf(),
             task_id: Uuid::nil(),
+            session_id: None,
         };
         let results = registry
             .execute_parallel(
@@ -349,6 +385,7 @@ mod tests {
         let context = ToolContext {
             workspace_root: dir.path().to_path_buf(),
             task_id: Uuid::nil(),
+            session_id: None,
         };
         let token = tokio_util::sync::CancellationToken::new();
         token.cancel();
@@ -379,6 +416,7 @@ mod tests {
         let context = ToolContext {
             workspace_root: dir.path().to_path_buf(),
             task_id: Uuid::nil(),
+            session_id: None,
         };
         let token = CancellationToken::new();
         let (program, args) = if cfg!(windows) {
@@ -435,6 +473,7 @@ mod tests {
         let context = ToolContext {
             workspace_root: dir.path().to_path_buf(),
             task_id: Uuid::nil(),
+            session_id: None,
         };
         let result = registry
             .execute(
@@ -445,5 +484,64 @@ mod tests {
             .await
             .expect("browser.open should dispatch");
         assert!(result.output.to_lowercase().contains("hi") || result.output.contains("hello"));
+    }
+
+    #[test]
+    fn scope_from_input_prefers_path_then_cwd_then_url() {
+        assert_eq!(
+            scope_from_input(
+                "filesystem.write",
+                &serde_json::json!({ "path": "src\\main.rs" })
+            ),
+            "src/main.rs"
+        );
+        assert_eq!(
+            scope_from_input("shell.execute", &serde_json::json!({ "cwd": "scripts" })),
+            "scripts"
+        );
+        assert_eq!(
+            scope_from_input(
+                "browser.open",
+                &serde_json::json!({ "url": "https://example.com" })
+            ),
+            "https://example.com"
+        );
+        assert_eq!(
+            scope_from_input("git.status", &serde_json::json!({})),
+            "workspace"
+        );
+    }
+
+    #[tokio::test]
+    async fn ask_mode_creates_scoped_approval() {
+        let permissions = PermissionEngine::new();
+        permissions
+            .set_mode(
+                evohime_permissions::Permission::FilesystemWrite,
+                evohime_permissions::PermissionMode::Ask,
+            )
+            .await;
+        let registry = ToolRegistry::bootstrap_with_permissions(permissions);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let session_id = Uuid::new_v4();
+        let context = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: Some(session_id),
+        };
+        let err = registry
+            .execute(
+                &context,
+                "filesystem.write",
+                serde_json::json!({ "path": "notes/todo.txt", "content": "x" }),
+            )
+            .await
+            .expect_err("ask mode should require approval");
+        match err {
+            ToolError::NeedsApproval { scope, .. } => {
+                assert_eq!(scope, "notes/todo.txt");
+            }
+            other => panic!("expected NeedsApproval, got {other:?}"),
+        }
     }
 }

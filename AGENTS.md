@@ -33,7 +33,7 @@ EvoHime Server (crates/server)
 ├── task-engine/       — task lifecycle
 ├── model-gateway/     — LiteRouter + mock LLM providers
 ├── tool-runtime/      — tool registry + execution
-├── permissions/       — permission types
+├── permissions/       — scoped permissions + approval audit (P2)
 ├── memory/            — redact / dedupe / conflict / admit (6.18)
 ├── project-index/     — workspace text search
 ├── protocol/          — shared event schema
@@ -71,9 +71,10 @@ User message
 
 ### Incomplete / next
 
-- P2 finer permissions (per-session / per-path, approval audit)
-- Optional neural encoder / OpenTelemetry export
-- More ML handlers / deeper worker observability as needed
+- Optional neural embeddings / OpenTelemetry
+- More ML handlers as needed
+- Experience/playbooks, Memory UI polish
+- Deeper worker observability as needed
 
 ## WebSocket events
 

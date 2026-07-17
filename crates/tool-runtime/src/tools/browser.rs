@@ -318,6 +318,7 @@ mod tests {
         let ctx = ToolContext {
             workspace_root: dir.path().to_path_buf(),
             task_id: Uuid::nil(),
+            session_id: None,
         };
         (dir, ctx)
     }

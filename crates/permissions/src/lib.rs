@@ -1,5 +1,11 @@
+//! Permission checks, scoped overrides, and approval audit (roadmap P2).
+
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -30,16 +36,20 @@ pub enum PermissionDecision {
     Denied,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApprovalRequest {
     pub id: Uuid,
     pub task_id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<Uuid>,
     pub tool_name: String,
     pub permission: Permission,
+    /// Relative path, URL, or `"workspace"`.
     pub scope: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ApprovalState {
     Pending,
     Granted,
@@ -50,12 +60,71 @@ pub enum ApprovalState {
 struct ApprovalRecord {
     request: ApprovalRequest,
     state: ApprovalState,
+    #[allow(dead_code)]
+    created_at: Instant,
 }
+
+/// Context for a scoped permission check.
+#[derive(Debug, Clone, Default)]
+pub struct PermissionCheck<'a> {
+    pub session_id: Option<Uuid>,
+    pub path: Option<&'a str>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PathGrant {
+    pub permission: Permission,
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<Uuid>,
+    pub mode: PermissionMode,
+    /// Unix millis; `None` means until cleared / process restart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionOverride {
+    pub session_id: Uuid,
+    pub permission: Permission,
+    pub mode: PermissionMode,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApprovalAuditEntry {
+    pub approval_id: Uuid,
+    pub task_id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<Uuid>,
+    pub tool_name: String,
+    pub permission: Permission,
+    pub scope: String,
+    pub decision: ApprovalState,
+    pub at_ms: u64,
+    /// True when grant also installed a temporary path allow for the session.
+    #[serde(default)]
+    pub remembered_path: bool,
+}
+
+const DEFAULT_TEMP_GRANT_TTL: Duration = Duration::from_secs(60 * 60);
+const MAX_AUDIT_ENTRIES: usize = 200;
 
 #[derive(Clone)]
 pub struct PermissionEngine {
     modes: Arc<RwLock<HashMap<Permission, PermissionMode>>>,
+    session_modes: Arc<RwLock<HashMap<(Uuid, Permission), PermissionMode>>>,
+    path_grants: Arc<RwLock<Vec<StoredPathGrant>>>,
     approvals: Arc<RwLock<HashMap<Uuid, ApprovalRecord>>>,
+    audit: Arc<RwLock<Vec<ApprovalAuditEntry>>>,
+}
+
+#[derive(Debug, Clone)]
+struct StoredPathGrant {
+    permission: Permission,
+    path: String,
+    session_id: Option<Uuid>,
+    mode: PermissionMode,
+    expires_at: Option<Instant>,
 }
 
 impl Default for PermissionEngine {
@@ -76,7 +145,10 @@ impl PermissionEngine {
         modes.insert(Permission::McpCall, PermissionMode::Ask);
         Self {
             modes: Arc::new(RwLock::new(modes)),
+            session_modes: Arc::new(RwLock::new(HashMap::new())),
+            path_grants: Arc::new(RwLock::new(Vec::new())),
             approvals: Arc::new(RwLock::new(HashMap::new())),
+            audit: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -93,12 +165,105 @@ impl PermissionEngine {
         self.modes.write().await.insert(permission, mode);
     }
 
+    pub async fn set_session_mode(
+        &self,
+        session_id: Uuid,
+        permission: Permission,
+        mode: PermissionMode,
+    ) {
+        self.session_modes
+            .write()
+            .await
+            .insert((session_id, permission), mode);
+    }
+
+    pub async fn clear_session_mode(&self, session_id: Uuid, permission: Permission) {
+        self.session_modes
+            .write()
+            .await
+            .remove(&(session_id, permission));
+    }
+
+    pub async fn set_path_grant(
+        &self,
+        permission: Permission,
+        path: impl Into<String>,
+        mode: PermissionMode,
+        session_id: Option<Uuid>,
+        ttl: Option<Duration>,
+    ) {
+        let path = normalize_scope_path(path.into());
+        let expires_at = ttl.map(|duration| Instant::now() + duration);
+        let mut grants = self.path_grants.write().await;
+        grants.retain(|grant| {
+            !(grant.permission == permission
+                && grant.path == path
+                && grant.session_id == session_id)
+        });
+        grants.push(StoredPathGrant {
+            permission,
+            path,
+            session_id,
+            mode,
+            expires_at,
+        });
+    }
+
+    pub async fn clear_path_grant(
+        &self,
+        permission: Permission,
+        path: &str,
+        session_id: Option<Uuid>,
+    ) {
+        let path = normalize_scope_path(path);
+        self.path_grants.write().await.retain(|grant| {
+            !(grant.permission == permission
+                && grant.path == path
+                && grant.session_id == session_id)
+        });
+    }
+
+    /// Global-only check (settings / legacy callers).
     pub async fn check(&self, permission: Permission) -> PermissionDecision {
-        match self.mode(permission).await {
-            PermissionMode::Allow => PermissionDecision::Allowed,
-            PermissionMode::Ask => PermissionDecision::NeedsApproval,
-            PermissionMode::Deny => PermissionDecision::Denied,
+        self.check_scoped(permission, &PermissionCheck::default())
+            .await
+    }
+
+    /// Resolve decision with path/session overrides.
+    ///
+    /// Priority (most specific first):
+    /// 1. matching path grant (session-scoped preferred over global)
+    /// 2. session permission mode
+    /// 3. global mode
+    pub async fn check_scoped(
+        &self,
+        permission: Permission,
+        check: &PermissionCheck<'_>,
+    ) -> PermissionDecision {
+        self.purge_expired_grants().await;
+
+        if let Some(path) = check.path.map(normalize_scope_path) {
+            if let Some(mode) = self
+                .find_path_mode(permission, &path, check.session_id)
+                .await
+            {
+                return mode_to_decision(mode);
+            }
         }
+
+        if let Some(session_id) = check.session_id {
+            if let Some(mode) = self
+                .session_modes
+                .read()
+                .await
+                .get(&(session_id, permission))
+                .copied()
+            {
+                return mode_to_decision(mode);
+            }
+        }
+
+        mode_to_decision(self.mode(permission).await)
     }
 
     pub async fn create_approval(
@@ -108,35 +273,104 @@ impl PermissionEngine {
         permission: Permission,
         scope: impl Into<String>,
     ) -> ApprovalRequest {
+        self.create_approval_scoped(task_id, None, tool_name, permission, scope)
+            .await
+    }
+
+    pub async fn create_approval_scoped(
+        &self,
+        task_id: Uuid,
+        session_id: Option<Uuid>,
+        tool_name: impl Into<String>,
+        permission: Permission,
+        scope: impl Into<String>,
+    ) -> ApprovalRequest {
         let request = ApprovalRequest {
             id: Uuid::new_v4(),
             task_id,
+            session_id,
             tool_name: tool_name.into(),
             permission,
-            scope: scope.into(),
+            scope: normalize_scope_path(scope.into()),
         };
         self.approvals.write().await.insert(
             request.id,
             ApprovalRecord {
                 request: request.clone(),
                 state: ApprovalState::Pending,
+                created_at: Instant::now(),
             },
         );
+        self.push_audit(ApprovalAuditEntry {
+            approval_id: request.id,
+            task_id: request.task_id,
+            session_id: request.session_id,
+            tool_name: request.tool_name.clone(),
+            permission: request.permission,
+            scope: request.scope.clone(),
+            decision: ApprovalState::Pending,
+            at_ms: now_ms(),
+            remembered_path: false,
+        })
+        .await;
         request
     }
 
     pub async fn resolve(&self, id: Uuid, granted: bool) -> Option<ApprovalState> {
+        self.resolve_with_options(id, granted, true).await
+    }
+
+    /// Resolve an approval. When `remember_path` is true and the grant succeeds,
+    /// installs a session-scoped temporary allow for the approval scope path.
+    pub async fn resolve_with_options(
+        &self,
+        id: Uuid,
+        granted: bool,
+        remember_path: bool,
+    ) -> Option<ApprovalState> {
         let mut approvals = self.approvals.write().await;
         let record = approvals.get_mut(&id)?;
         if record.state != ApprovalState::Pending {
             return None;
         }
+        let request = record.request.clone();
         record.state = if granted {
             ApprovalState::Granted
         } else {
             ApprovalState::Denied
         };
-        Some(record.state)
+        let state = record.state;
+        drop(approvals);
+
+        let mut remembered_path = false;
+        if granted && remember_path && is_rememberable_scope(&request.scope) {
+            if let Some(session_id) = request.session_id {
+                self.set_path_grant(
+                    request.permission,
+                    &request.scope,
+                    PermissionMode::Allow,
+                    Some(session_id),
+                    Some(DEFAULT_TEMP_GRANT_TTL),
+                )
+                .await;
+                remembered_path = true;
+            }
+        }
+
+        self.push_audit(ApprovalAuditEntry {
+            approval_id: request.id,
+            task_id: request.task_id,
+            session_id: request.session_id,
+            tool_name: request.tool_name,
+            permission: request.permission,
+            scope: request.scope,
+            decision: state,
+            at_ms: now_ms(),
+            remembered_path,
+        })
+        .await;
+
+        Some(state)
     }
 
     pub async fn approval(&self, id: Uuid) -> Option<(ApprovalRequest, ApprovalState)> {
@@ -146,6 +380,145 @@ impl PermissionEngine {
             .get(&id)
             .map(|r| (r.request.clone(), r.state))
     }
+
+    pub async fn list_session_overrides(&self) -> Vec<SessionOverride> {
+        self.session_modes
+            .read()
+            .await
+            .iter()
+            .map(|((session_id, permission), mode)| SessionOverride {
+                session_id: *session_id,
+                permission: *permission,
+                mode: *mode,
+            })
+            .collect()
+    }
+
+    pub async fn list_path_grants(&self) -> Vec<PathGrant> {
+        self.purge_expired_grants().await;
+        let now = Instant::now();
+        self.path_grants
+            .read()
+            .await
+            .iter()
+            .map(|grant| PathGrant {
+                permission: grant.permission,
+                path: grant.path.clone(),
+                session_id: grant.session_id,
+                mode: grant.mode,
+                expires_at_ms: grant.expires_at.map(|at| {
+                    let remaining = at.saturating_duration_since(now);
+                    now_ms().saturating_add(remaining.as_millis() as u64)
+                }),
+            })
+            .collect()
+    }
+
+    pub async fn audit_log(&self) -> Vec<ApprovalAuditEntry> {
+        self.audit.read().await.clone()
+    }
+
+    async fn find_path_mode(
+        &self,
+        permission: Permission,
+        path: &str,
+        session_id: Option<Uuid>,
+    ) -> Option<PermissionMode> {
+        let grants = self.path_grants.read().await;
+        let mut best: Option<(usize, PermissionMode)> = None;
+        for grant in grants.iter() {
+            if grant.permission != permission {
+                continue;
+            }
+            if let Some(expires_at) = grant.expires_at {
+                if Instant::now() >= expires_at {
+                    continue;
+                }
+            }
+            if !path_matches(&grant.path, path) {
+                continue;
+            }
+            // Prefer session-scoped grants when session matches; skip foreign session grants.
+            match (grant.session_id, session_id) {
+                (Some(grant_session), Some(session)) if grant_session == session => {
+                    let rank = 1_000 + grant.path.len();
+                    if best.map(|(r, _)| rank > r).unwrap_or(true) {
+                        best = Some((rank, grant.mode));
+                    }
+                }
+                (Some(_), _) => continue,
+                (None, _) => {
+                    let rank = grant.path.len();
+                    if best.map(|(r, _)| rank > r).unwrap_or(true) {
+                        best = Some((rank, grant.mode));
+                    }
+                }
+            }
+        }
+        best.map(|(_, mode)| mode)
+    }
+
+    async fn purge_expired_grants(&self) {
+        let now = Instant::now();
+        self.path_grants.write().await.retain(|grant| {
+            grant
+                .expires_at
+                .map(|expires_at| now < expires_at)
+                .unwrap_or(true)
+        });
+    }
+
+    async fn push_audit(&self, entry: ApprovalAuditEntry) {
+        let mut audit = self.audit.write().await;
+        audit.push(entry);
+        if audit.len() > MAX_AUDIT_ENTRIES {
+            let overflow = audit.len() - MAX_AUDIT_ENTRIES;
+            audit.drain(0..overflow);
+        }
+    }
+}
+
+fn mode_to_decision(mode: PermissionMode) -> PermissionDecision {
+    match mode {
+        PermissionMode::Allow => PermissionDecision::Allowed,
+        PermissionMode::Ask => PermissionDecision::NeedsApproval,
+        PermissionMode::Deny => PermissionDecision::Denied,
+    }
+}
+
+fn normalize_scope_path(path: impl AsRef<str>) -> String {
+    path.as_ref()
+        .trim()
+        .trim_start_matches("./")
+        .replace('\\', "/")
+}
+
+fn is_rememberable_scope(scope: &str) -> bool {
+    let scope = scope.trim();
+    !scope.is_empty()
+        && scope != "workspace"
+        && !scope.starts_with("http://")
+        && !scope.starts_with("https://")
+}
+
+fn path_matches(grant_path: &str, request_path: &str) -> bool {
+    if grant_path == request_path {
+        return true;
+    }
+    // Prefix grant: `src/` covers `src/lib.rs`.
+    let prefix = if grant_path.ends_with('/') {
+        grant_path.to_string()
+    } else {
+        format!("{grant_path}/")
+    };
+    request_path.starts_with(&prefix)
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -187,6 +560,149 @@ mod tests {
                 Some(ApprovalState::Granted)
             );
             assert_eq!(engine.resolve(request.id, false).await, None);
+        });
+    }
+
+    #[test]
+    fn session_override_beats_global_mode() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let session = Uuid::new_v4();
+            engine
+                .set_session_mode(session, Permission::FilesystemWrite, PermissionMode::Allow)
+                .await;
+            assert_eq!(
+                engine
+                    .check_scoped(
+                        Permission::FilesystemWrite,
+                        &PermissionCheck {
+                            session_id: Some(session),
+                            path: None,
+                        },
+                    )
+                    .await,
+                PermissionDecision::Allowed
+            );
+            assert_eq!(
+                engine.check(Permission::FilesystemWrite).await,
+                PermissionDecision::NeedsApproval
+            );
+        });
+    }
+
+    #[test]
+    fn path_grant_allows_matching_prefix() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let session = Uuid::new_v4();
+            engine
+                .set_path_grant(
+                    Permission::FilesystemWrite,
+                    "docs",
+                    PermissionMode::Allow,
+                    Some(session),
+                    None,
+                )
+                .await;
+            assert_eq!(
+                engine
+                    .check_scoped(
+                        Permission::FilesystemWrite,
+                        &PermissionCheck {
+                            session_id: Some(session),
+                            path: Some("docs/readme.md"),
+                        },
+                    )
+                    .await,
+                PermissionDecision::Allowed
+            );
+            assert_eq!(
+                engine
+                    .check_scoped(
+                        Permission::FilesystemWrite,
+                        &PermissionCheck {
+                            session_id: Some(session),
+                            path: Some("src/main.rs"),
+                        },
+                    )
+                    .await,
+                PermissionDecision::NeedsApproval
+            );
+        });
+    }
+
+    #[test]
+    fn grant_remembers_path_for_session() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let session = Uuid::new_v4();
+            let task = Uuid::new_v4();
+            let request = engine
+                .create_approval_scoped(
+                    task,
+                    Some(session),
+                    "filesystem.write",
+                    Permission::FilesystemWrite,
+                    "tmp/note.txt",
+                )
+                .await;
+            engine
+                .resolve_with_options(request.id, true, true)
+                .await
+                .expect("granted");
+
+            assert_eq!(
+                engine
+                    .check_scoped(
+                        Permission::FilesystemWrite,
+                        &PermissionCheck {
+                            session_id: Some(session),
+                            path: Some("tmp/note.txt"),
+                        },
+                    )
+                    .await,
+                PermissionDecision::Allowed
+            );
+
+            let audit = engine.audit_log().await;
+            assert!(audit.iter().any(|entry| {
+                entry.decision == ApprovalState::Granted && entry.remembered_path
+            }));
+            assert!(audit
+                .iter()
+                .any(|entry| entry.decision == ApprovalState::Pending));
+        });
+    }
+
+    #[test]
+    fn path_deny_overrides_session_allow() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let session = Uuid::new_v4();
+            engine
+                .set_session_mode(session, Permission::ShellExecute, PermissionMode::Allow)
+                .await;
+            engine
+                .set_path_grant(
+                    Permission::ShellExecute,
+                    "secrets",
+                    PermissionMode::Deny,
+                    Some(session),
+                    None,
+                )
+                .await;
+            assert_eq!(
+                engine
+                    .check_scoped(
+                        Permission::ShellExecute,
+                        &PermissionCheck {
+                            session_id: Some(session),
+                            path: Some("secrets/key.env"),
+                        },
+                    )
+                    .await,
+                PermissionDecision::Denied
+            );
         });
     }
 }

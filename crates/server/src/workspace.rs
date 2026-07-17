@@ -354,6 +354,7 @@ async fn execute_git_action(
     let ctx = evohime_tool_runtime::ToolContext {
         workspace_root: state.workspace_root.clone(),
         task_id: Uuid::nil(),
+        session_id: Some(session_id),
     };
     let result = state
         .tools
@@ -409,6 +410,7 @@ async fn git_snapshot_with_path_and_session(
     let ctx = evohime_tool_runtime::ToolContext {
         workspace_root: state.workspace_root.clone(),
         task_id: Uuid::nil(),
+        session_id: None,
     };
 
     let status = state

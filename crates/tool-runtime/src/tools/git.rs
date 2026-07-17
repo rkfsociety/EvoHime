@@ -217,6 +217,7 @@ mod tests {
             ToolContext {
                 workspace_root,
                 task_id: Uuid::nil(),
+                session_id: None,
             },
             "main".to_string(),
         )

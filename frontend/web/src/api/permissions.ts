@@ -1,4 +1,9 @@
-import type { PermissionMode, PermissionSettings } from "../types";
+import type {
+  PermissionAuditEntry,
+  PermissionMode,
+  PermissionScopes,
+  PermissionSettings,
+} from "../types";
 import { apiRequest, apiRequestVoid } from "./client";
 
 export function getPermissions() {
@@ -6,6 +11,22 @@ export function getPermissions() {
     "/api/permissions",
     undefined,
     "Не удалось загрузить разрешения",
+  );
+}
+
+export function getPermissionAudit() {
+  return apiRequest<{ entries: PermissionAuditEntry[] }>(
+    "/api/permissions/audit",
+    undefined,
+    "Не удалось загрузить аудит approvals",
+  );
+}
+
+export function getPermissionScopes() {
+  return apiRequest<PermissionScopes>(
+    "/api/permissions/scopes",
+    undefined,
+    "Не удалось загрузить scoped permissions",
   );
 }
 

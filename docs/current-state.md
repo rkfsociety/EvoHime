@@ -18,7 +18,7 @@ Stages 1–5 complete. Structured memory `6.16`–`6.25`: schema through experie
 | `agent-runtime` | Active | Plan → batches → bounded replan; checkpoints; structured + legacy memory context |
 | `model-gateway` | Active | Route-based gateway, LiteRouter + OpenAI-compatible + mock |
 | `task-engine` | Active | Lifecycle, dependency batching, checkpoints, cancel/resume/retry |
-| `permissions` | Active | ask/allow/deny + one-shot approvals; grant/deny resume wired |
+| `permissions` | Active | ask/allow/deny + session/path overrides + temp allow + approval audit |
 | `project-index` | Active | Chunk search, path/symbol weights, binary/noise filter (P2) |
 | Python worker | Active | Health/stall reliability; handlers incl. `text.summarize`, `text.chunk` |
 
@@ -30,6 +30,8 @@ Stages 1–5 complete. Structured memory `6.16`–`6.25`: schema through experie
 | GET/PUT | `/api/models/config` | Model routes from web panel |
 | GET | `/api/auth/github` | GitHub auth via local `gh` |
 | GET | `/api/permissions` | Permission policy snapshot |
+| GET | `/api/permissions/audit` | Approval audit log |
+| GET | `/api/permissions/scopes` | Session overrides + path grants |
 | PUT | `/api/permissions/:permission` | Update permission mode |
 | GET | `/api/tools` | Tool catalog |
 | GET | `/api/plugins` | Installed plugins under `.evohime/plugins` |
@@ -102,6 +104,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. P2: finer permission model (per-session / per-path, approval audit)
-2. Optional: neural embeddings / OpenTelemetry export
-3. More ML handlers as needed
+1. Optional neural embeddings / OpenTelemetry
+2. More specialized ML handlers as needed
+3. Experience/playbooks + Memory UI polish (post-6.20)

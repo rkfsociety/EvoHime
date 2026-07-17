@@ -22,6 +22,35 @@ export type WorkspacePanel =
 export type PermissionMode = "ask" | "allow" | "deny";
 export type PermissionSettings = Record<string, { mode: PermissionMode }>;
 
+export type PermissionAuditEntry = {
+  approval_id: string;
+  task_id: string;
+  session_id?: string | null;
+  tool_name: string;
+  permission: string;
+  scope: string;
+  decision: "pending" | "granted" | "denied";
+  at_ms: number;
+  remembered_path?: boolean;
+};
+
+export type PermissionPathGrant = {
+  permission: string;
+  path: string;
+  session_id?: string | null;
+  mode: PermissionMode;
+  expires_at_ms?: number | null;
+};
+
+export type PermissionScopes = {
+  session_overrides: Array<{
+    session_id: string;
+    permission: string;
+    mode: PermissionMode;
+  }>;
+  path_grants: PermissionPathGrant[];
+};
+
 export type ModelConfig = {
   provider: string;
   model: string;

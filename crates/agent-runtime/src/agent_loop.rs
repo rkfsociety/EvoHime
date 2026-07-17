@@ -210,6 +210,7 @@ async fn run_agent_loop_inner(
                 let tool_ctx = ToolContext {
                     workspace_root: config.workspace_root.clone(),
                     task_id: config.task_id,
+                    session_id: Some(config.session_id),
                 };
                 let tool_result = tools
                     .execute(
@@ -766,6 +767,7 @@ async fn execute_single_plan_step(
     let context = ToolContext {
         workspace_root: config.workspace_root.clone(),
         task_id: config.task_id,
+        session_id: Some(config.session_id),
     };
     let tool_name = match step.tool_name.as_str() {
         "read_file" => "filesystem.read",

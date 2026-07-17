@@ -3,7 +3,9 @@ import type {
   McpServerConfig,
   ModelConfig,
   ModelRouteDraft,
+  PermissionAuditEntry,
   PermissionMode,
+  PermissionScopes,
   PermissionSettings,
   SettingsTab,
   ToolDefinition,
@@ -25,6 +27,8 @@ type SettingsPanelProps = {
   onUpdateModelDraft: (index: number, patch: Partial<ModelRouteDraft>) => void;
   onSaveModelConfig: () => void;
   permissionSettings: PermissionSettings;
+  permissionAudit: PermissionAuditEntry[];
+  permissionScopes: PermissionScopes | null;
   onUpdatePermission: (name: string, mode: PermissionMode) => void;
   mcpServers: McpServerConfig[];
   mcpServersError: string | null;
@@ -64,6 +68,8 @@ export function SettingsPanel({
   onUpdateModelDraft,
   onSaveModelConfig,
   permissionSettings,
+  permissionAudit,
+  permissionScopes,
   onUpdatePermission,
   mcpServers,
   mcpServersError,
@@ -232,6 +238,39 @@ export function SettingsPanel({
                 </label>
               ))}
             </div>
+
+            <h3>Временные path grants</h3>
+            {permissionScopes?.path_grants?.length ? (
+              <ul className="permissionAuditList">
+                {permissionScopes.path_grants.map((grant) => (
+                  <li key={`${grant.permission}-${grant.path}-${grant.session_id ?? "global"}`}>
+                    <strong>{grant.permission}</strong> · {grant.mode} · <code>{grant.path}</code>
+                    {grant.session_id ? ` · session ${grant.session_id.slice(0, 8)}` : " · global"}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="settingsHint">Пока нет активных path grants.</p>
+            )}
+
+            <h3>Аудит approvals</h3>
+            {permissionAudit.length ? (
+              <ul className="permissionAuditList">
+                {permissionAudit
+                  .slice()
+                  .reverse()
+                  .slice(0, 20)
+                  .map((entry) => (
+                    <li key={`${entry.approval_id}-${entry.decision}-${entry.at_ms}`}>
+                      <strong>{entry.decision}</strong> · {entry.tool_name} ·{" "}
+                      <code>{entry.scope}</code>
+                      {entry.remembered_path ? " · remembered" : ""}
+                    </li>
+                  ))}
+              </ul>
+            ) : (
+              <p className="settingsHint">Пока нет записей аудита.</p>
+            )}
           </section>
         ) : null}
 

@@ -919,6 +919,9 @@ h1 {
 .permissionList { display: grid; gap: 8px; margin-top: 12px; }
 .permissionList label { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid rgba(255,255,255,.07); border-radius: 10px; }
 .permissionList select { background: #111a31; color: #edf4ff; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 6px 8px; }
+.permissionAuditList { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 6px; }
+.permissionAuditList li { padding: 8px 10px; border: 1px solid rgba(255,255,255,.06); border-radius: 8px; font-size: 13px; color: #c7d4ea; }
+.permissionAuditList code { color: #9ec5ff; }
 
 .mcpServerList,
 .toolCatalog {

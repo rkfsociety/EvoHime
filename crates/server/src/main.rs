@@ -314,6 +314,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/worker/jobs/:job_id", get(get_worker_job))
         .route("/api/worker/jobs/:job_id/retry", post(retry_worker_job))
         .route("/api/permissions", get(list_permissions))
+        .route("/api/permissions/audit", get(list_permission_audit))
+        .route("/api/permissions/scopes", get(list_permission_scopes))
         .route("/api/permissions/:permission", put(update_permission))
         .route("/api/tools", get(list_tools))
         .route("/api/memory", get(memory_api::list_memory))
@@ -935,6 +937,20 @@ async fn list_permissions(State(state): State<Arc<AppState>>) -> Json<Value> {
         );
     }
     Json(Value::Object(result))
+}
+
+async fn list_permission_audit(State(state): State<Arc<AppState>>) -> Json<Value> {
+    let entries = state.permissions.audit_log().await;
+    Json(json!({ "entries": entries }))
+}
+
+async fn list_permission_scopes(State(state): State<Arc<AppState>>) -> Json<Value> {
+    let session_overrides = state.permissions.list_session_overrides().await;
+    let path_grants = state.permissions.list_path_grants().await;
+    Json(json!({
+        "session_overrides": session_overrides,
+        "path_grants": path_grants,
+    }))
 }
 
 #[derive(serde::Serialize)]
