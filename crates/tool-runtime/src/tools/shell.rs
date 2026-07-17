@@ -62,6 +62,7 @@ pub async fn execute(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    crate::shell_env::apply_scrubbed_env(&mut command);
     let child = command
         .spawn()
         .map_err(|e| ToolError::Execution(format!("spawn failed: {e}")))?;

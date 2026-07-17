@@ -312,7 +312,7 @@
 | 7.3 | Default `BIND_ADDR=127.0.0.1` (+ docs / launcher) | S | ✅ | `app.rs`, `start-dev.ps1`, `.env.example`, AGENTS |
 | 7.4 | SSRF guard для `browser.*` (block localhost / private / link-local / metadata) | M | ✅ | `ssrf.rs` + browser validate/redirect/final; `EVOHIME_SSRF_ALLOW_PRIVATE` |
 | 7.5 | SSRF guard для `mcp.call` + optional allowlist hosts | M | ✅ | `ssrf` + redirect/final; `EVOHIME_MCP_ALLOWED_HOSTS` |
-| 7.6 | Shell: scrub / allowlist env (не наследовать API keys) | M | ⬜ | `tool-runtime/.../shell.rs` |
+| 7.6 | Shell: scrub / allowlist env (не наследовать API keys) | M | ✅ | `shell_env.rs`; allowlist + secret scrub; `EVOHIME_SHELL_*` |
 | 7.7 | Encrypt-at-rest для API keys в `app_settings` (или OS keychain) | M | ⬜ | model config в PG plaintext |
 | 7.8 | Plugin install: pin commit/tag, signature/hash, uninstall/update | L | ⬜ | `server/src/plugins.rs` |
 | 7.9 | Plugin skills quarantine (не все skills → system prompt без opt-in) | L | ⬜ | `agent_loop` workspace rules |
@@ -470,7 +470,7 @@
 
 ### Suggested Stage 7 delivery waves
 
-1. **Wave A (trust):** `7.1`–`7.5` ✅ → next `7.6`, `7.11`, `7.15`, `7.16`  
+1. **Wave A (trust):** `7.1`–`7.6` ✅ → next `7.11`, `7.15`, `7.16`  
 2. **Wave B (survive restarts):** 7.17–7.24, 7.40–7.41  
 3. **Wave C (agent quality):** 7.28–7.33, 7.52  
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  

@@ -1,5 +1,6 @@
 mod registry;
 mod sandbox;
+mod shell_env;
 mod ssrf;
 mod tools;
 

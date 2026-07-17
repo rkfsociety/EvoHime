@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — `7.1`–`7.5` ✅; next `7.6`+
-- Wave A remaining: shell env scrub, rate limit, worker launcher, LLM retry
+- **Stage 7** Hardening + Product — `7.1`–`7.6` ✅; next `7.11` / `7.15` / `7.16`
+- Wave A remaining: rate limit, worker launcher, LLM retry
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events
