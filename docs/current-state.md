@@ -24,6 +24,8 @@ Stages 1–5 complete. Stage 6 structured memory `6.16`–`6.25` and optional po
 
 ## API endpoints
 
+Errors return `{ "error", "code", "retryable" }` (plus `tool` / `approval_id` for approvals).
+
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/health` | Health check (public) |
