@@ -1,11 +1,13 @@
-//! Agent memory domain service (roadmap 6.18–6.23).
+//! Agent memory domain service (roadmap 6.18–6.25).
 //!
 //! Redaction, normalization, deduplication, conflict detection, extraction,
-//! ask-on-uncertainty gate, experience/playbooks, and feedback/decay on `memory_items`.
+//! ask-on-uncertainty gate, experience/playbooks, feedback/decay, and hybrid
+//! embedding retrieval on `memory_items`.
 
 mod conflict;
 mod decision;
 mod dedupe;
+mod embed;
 mod experience;
 mod extract;
 mod feedback;
@@ -18,6 +20,10 @@ mod service;
 pub use conflict::{detect_conflict, ConflictHit};
 pub use decision::{decide_gate, GateDecision, GateInput, AUTO_PROMOTE_CONFIDENCE};
 pub use dedupe::{content_fingerprint, detect_duplicate};
+pub use embed::{
+    cosine_similarity, embed_text, needs_reembed, semantic_score, EMBEDDING_DIM, EMBEDDING_VERSION,
+    SEMANTIC_MIN_COSINE, SEMANTIC_SCORE_WEIGHT,
+};
 pub use experience::{
     format_experience_line, is_experience_kind, parse_playbook_payload, PlaybookPayload,
 };

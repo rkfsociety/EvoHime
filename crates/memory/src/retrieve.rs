@@ -1,8 +1,12 @@
-//! Lexical memory retrieval with ranking, budget, and untrusted prompt tagging (6.19).
+//! Lexical + semantic hybrid memory retrieval (6.19 / 6.25).
 
+use crate::embed::{
+    embed_text, needs_reembed, semantic_score, EMBEDDING_VERSION,
+};
 use crate::MemoryError;
 use evohime_storage::{
-    list_memory_items, MemoryItemRow, MemoryKind, MemoryScope, MemoryStatus, LOCAL_OPERATOR_SCOPE_KEY,
+    list_memory_items, update_memory_item_embedding, MemoryItemRow, MemoryKind, MemoryScope,
+    MemoryStatus, LOCAL_OPERATOR_SCOPE_KEY,
 };
 use sqlx::PgPool;
 use std::collections::HashSet;
@@ -117,8 +121,9 @@ fn format_used_ids(ids: &[Uuid]) -> Option<String> {
     Some(format!("used_memory_ids: {joined}"))
 }
 
-/// Lexical search/rank over in-memory rows (also the core of `memory.search`).
+/// Lexical + semantic search/rank over in-memory rows (also the core of `memory.search`).
 pub fn search_memory(query: &str, items: &[MemoryItemRow], limit: usize) -> Vec<RankedMemory> {
+    let query_embedding = embed_text(query);
     let mut ranked = items
         .iter()
         .filter(|item| {
@@ -127,17 +132,25 @@ pub fn search_memory(query: &str, items: &[MemoryItemRow], limit: usize) -> Vec<
                 Some(MemoryStatus::Active) | Some(MemoryStatus::Candidate)
             )
         })
-        .map(|item| RankedMemory {
-            score: score_item(query, item),
-            item: item.clone(),
+        .map(|item| {
+            let item_embedding = resolve_item_embedding(item);
+            RankedMemory {
+                score: score_item(query, &query_embedding, item, item_embedding.as_deref()),
+                item: item.clone(),
+            }
         })
         .collect::<Vec<_>>();
     ranked.sort_by(|left, right| {
         right
-            .score
-            .partial_cmp(&left.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| right.item.pinned.cmp(&left.item.pinned))
+            .item
+            .pinned
+            .cmp(&left.item.pinned)
+            .then_with(|| {
+                right
+                    .score
+                    .partial_cmp(&left.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .then_with(|| {
                 right
                     .item
@@ -226,7 +239,12 @@ fn truncate_chars(input: &str, max_chars: usize) -> String {
     input.chars().take(max_chars.saturating_sub(1)).collect::<String>() + "…"
 }
 
-fn score_item(query: &str, item: &MemoryItemRow) -> f64 {
+fn score_item(
+    query: &str,
+    query_embedding: &[f32],
+    item: &MemoryItemRow,
+    item_embedding: Option<&[f32]>,
+) -> f64 {
     // Prompt budget priority: pinned → active → experience → weak candidate.
     let mut score = item.importance;
     if item.pinned {
@@ -262,7 +280,16 @@ fn score_item(query: &str, item: &MemoryItemRow) -> f64 {
         let union = query_tokens.union(&content_tokens).count().max(1) as f64;
         score += (overlap / union) * 3.0;
     }
+
+    score += semantic_score(query_embedding, item_embedding);
     score
+}
+
+fn resolve_item_embedding(item: &MemoryItemRow) -> Option<Vec<f32>> {
+    if !needs_reembed(item.embedding_version, item.embedding.as_deref()) {
+        return item.embedding.clone();
+    }
+    Some(embed_text(&item.content))
 }
 
 fn tokenize(text: &str) -> HashSet<String> {
@@ -328,6 +355,18 @@ pub async fn retrieve_for_prompt(
     let mut seen = HashSet::new();
     items.retain(|item| seen.insert(item.id));
 
+    // Persist missing/stale embeddings so later retrievals stay cheap.
+    for item in &items {
+        if needs_reembed(item.embedding_version, item.embedding.as_deref()) {
+            let embedding = embed_text(&item.content);
+            if let Err(error) =
+                update_memory_item_embedding(pool, item.id, &embedding, EMBEDDING_VERSION).await
+            {
+                tracing::warn!(%error, memory_id = %item.id, "memory embedding backfill failed");
+            }
+        }
+    }
+
     let ranked = search_memory(request.query, &items, request.max_items.saturating_mul(2).max(32));
     Ok(select_within_budget(
         &ranked,
@@ -363,6 +402,8 @@ mod tests {
             use_count: 0,
             helpful_count: 0,
             harmful_count: 0,
+            embedding: None,
+            embedding_version: 0,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
         }
@@ -394,6 +435,32 @@ mod tests {
         let ranked = search_memory("worktrees parallel", &[noise, relevant, pinned], 10);
         assert_eq!(ranked[0].item.id, pinned_id);
         assert!(ranked.iter().any(|item| item.item.id == relevant_id));
+    }
+
+    #[test]
+    fn hybrid_ranks_paraphrased_semantic_match() {
+        let semantic_id = Uuid::new_v4();
+        let noise_id = Uuid::new_v4();
+        let semantic = sample_item(
+            semantic_id,
+            "prefer git worktrees for parallel agent runs",
+            "active",
+            0.4,
+            false,
+        );
+        let noise = sample_item(
+            noise_id,
+            "database pool max connections sixteen",
+            "active",
+            0.95,
+            false,
+        );
+        let ranked = search_memory(
+            "use worktrees when launching parallel agents",
+            &[noise, semantic],
+            10,
+        );
+        assert_eq!(ranked[0].item.id, semantic_id);
     }
 
     #[test]

@@ -4,7 +4,7 @@ Last updated: 2026-07-17
 
 ## Stage: 6 in progress
 
-Stages 1–5 complete. Structured memory `6.16`–`6.24`: schema through experience, Memory panel, and feedback loop.
+Stages 1–5 complete. Structured memory `6.16`–`6.25`: schema through experience, Memory panel, feedback loop, and hybrid embeddings.
 
 ## Crates
 
@@ -12,7 +12,7 @@ Stages 1–5 complete. Structured memory `6.16`–`6.24`: schema through experie
 | --- | --- | --- |
 | `server` | Active | HTTP + WebSocket, workspace file/Git/MCP/tools, GitHub PR detail/create, worker jobs, memory extract/gate |
 | `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema (incl. `memory.*`) |
-| `memory` | Active | Redact/dedupe/conflict + retrieval + extract/gate + **experience/playbooks** (`6.18`–`6.21`) |
+| `memory` | Active | Redact/dedupe/conflict + retrieve + extract/gate + experience + feedback + **hybrid embeddings** (`6.18`–`6.25`) |
 | `storage` | Active | Sessions, tasks, events, messages, legacy notes, **memory_items**, settings, worker jobs |
 | `tool-runtime` | Active | Sandboxed filesystem, shell, Git, browser, MCP call |
 | `agent-runtime` | Active | Plan → batches → bounded replan; checkpoints; structured + legacy memory context |
@@ -88,7 +88,7 @@ user.message
 | Terminal / Files / Editor / Git | ✅ |
 | Plugins / Sites | ✅ Plugins: installed list + remote catalog/install |
 | Pull Requests | ✅ list + detail (diff/comments/checks) + create |
-| Memory | ✅ tabs + edit/pin/reject/archive/delete (`6.22`/`6.24`); feedback helpful/harmful/corrected/rejected + idle decay (`6.23`) |
+| Memory | ✅ tabs + overrides (`6.22`/`6.24`); feedback (`6.23`); hybrid lexical+embedding retrieve (`6.25`) |
 
 Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEventHandler` (`6.13` ✅). Brand: SVG mark + portrait mascot (`AgentBrand` / `AgentMark` / `AgentAvatar`, favicon).
 
@@ -100,6 +100,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. **`6.25`** — embeddings (after lexical retrieval quality)
-2. Then embeddings (`6.25`) after lexical quality is proven
-3. Parallel P1: task-pipeline observability; broader integration tests
+1. Task-pipeline observability (correlation ids / metrics)
+2. Broader integration tests (approval pause/resume, recovery)
+3. Optional: swap local feature-hash embeddings for a neural encoder (same `embedding_version` bump path)

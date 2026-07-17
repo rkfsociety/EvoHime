@@ -65,6 +65,9 @@ impl MemoryService {
 
         let mut prepared = item.clone();
         prepared.content = content.clone();
+        let embedding = crate::embed::embed_text(&content);
+        prepared.embedding = Some(embedding);
+        prepared.embedding_version = crate::embed::EMBEDDING_VERSION;
         prepared.validate().map_err(MemoryError::Storage)?;
         Ok(PreparedMemoryItem {
             item: prepared,

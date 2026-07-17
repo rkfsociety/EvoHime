@@ -6,10 +6,10 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use evohime_memory::{normalize_content, redact_secrets};
+use evohime_memory::{embed_text, normalize_content, redact_secrets, EMBEDDING_VERSION};
 use evohime_storage::{
-    delete_memory_item, get_memory_item, list_memory_items_overview, update_memory_item_fields,
-    MemoryItemRow, MemoryScope, MemoryStatus,
+    delete_memory_item, get_memory_item, list_memory_items_overview,
+    update_memory_item_fields_with_embedding, MemoryItemRow, MemoryScope, MemoryStatus,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -176,12 +176,20 @@ pub async fn update_memory(
             .ok_or_else(|| ApiError::BadRequest("memory item not found".into()));
     }
 
-    let updated = update_memory_item_fields(
+    let (embedding, embedding_version) = if let Some(text) = content.as_deref() {
+        (Some(embed_text(text)), Some(EMBEDDING_VERSION))
+    } else {
+        (None, None)
+    };
+
+    let updated = update_memory_item_fields_with_embedding(
         &state.pool,
         id,
         content.as_deref(),
         status,
         body.pinned,
+        embedding.as_deref(),
+        embedding_version,
     )
     .await
     .map_err(|error| match error {

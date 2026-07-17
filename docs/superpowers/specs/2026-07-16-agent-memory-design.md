@@ -15,7 +15,7 @@ Default posture: **the agent decides alone**. If confidence is low or impact is 
 ## Non-goals (v1)
 
 - Multi-user ACL, team sharing, org scopes
-- Embedding / semantic retrieval (deferred to `6.25`)
+- Embedding / semantic retrieval — shipped in `6.25` as local feature-hash hybrid (neural encoder optional later)
 - Mandatory human approval for every extracted item
 - Changing LLM weights or training pipelines
 
@@ -105,11 +105,12 @@ Asking must **not** freeze unrelated tool work forever: deferrable promote is al
 
 ## Retrieval
 
-- Lexical / structured retrieval first (`6.19`)
+- Lexical / structured retrieval (`6.19`) plus local feature-hash embeddings for hybrid ranking (`6.25`)
 - Auto-inject top-N into agent context under token budget
 - Optional tool `memory.search` / `memory.recall` for on-demand lookup
 - Attribution: `used_memory_ids` recorded for feedback and debugging
 - System instructions and the live user message always outrank memory
+- Pins sort above score so sticky operator rules stay in prompt first
 
 ## Feedback loop
 

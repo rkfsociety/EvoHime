@@ -46,6 +46,8 @@ impl ExtractedCandidate {
             supersedes: None,
             valid_until: None,
             validity_hint: None,
+            embedding: None,
+            embedding_version: 0,
         }
     }
 }

@@ -145,6 +145,8 @@ pub struct MemoryItemRow {
     pub use_count: i32,
     pub helpful_count: i32,
     pub harmful_count: i32,
+    pub embedding: Option<Vec<f32>>,
+    pub embedding_version: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -166,6 +168,8 @@ pub struct NewMemoryItem {
     pub supersedes: Option<Uuid>,
     pub valid_until: Option<DateTime<Utc>>,
     pub validity_hint: Option<String>,
+    pub embedding: Option<Vec<f32>>,
+    pub embedding_version: i32,
 }
 
 impl NewMemoryItem {
@@ -186,6 +190,8 @@ impl NewMemoryItem {
             supersedes: None,
             valid_until: None,
             validity_hint: None,
+            embedding: None,
+            embedding_version: 0,
         }
     }
 
@@ -212,6 +218,7 @@ const MEMORY_ITEM_COLUMNS: &str = r#"
     source_session_id, source_task_id, source_label, supersedes,
     valid_until, validity_hint,
     last_used_at, use_count, helpful_count, harmful_count,
+    embedding, embedding_version,
     created_at, updated_at
 "#;
 
@@ -227,13 +234,15 @@ pub async fn insert_memory_item(
             id, scope, scope_key, kind, status, content, content_json,
             confidence, importance, pinned,
             source_session_id, source_task_id, source_label, supersedes,
-            valid_until, validity_hint
+            valid_until, validity_hint,
+            embedding, embedding_version
         )
         VALUES (
             $1, $2, $3, $4, $5, $6, $7,
             $8, $9, $10,
             $11, $12, $13, $14,
-            $15, $16
+            $15, $16,
+            $17, $18
         )
         RETURNING {MEMORY_ITEM_COLUMNS}
         "#
@@ -254,6 +263,8 @@ pub async fn insert_memory_item(
     .bind(item.supersedes)
     .bind(item.valid_until)
     .bind(&item.validity_hint)
+    .bind(&item.embedding)
+    .bind(item.embedding_version)
     .fetch_one(pool)
     .await?;
     Ok(row)
@@ -390,7 +401,25 @@ pub async fn update_memory_item_fields(
     status: Option<MemoryStatus>,
     pinned: Option<bool>,
 ) -> Result<Option<MemoryItemRow>, StorageError> {
-    if content.is_none() && status.is_none() && pinned.is_none() {
+    update_memory_item_fields_with_embedding(pool, id, content, status, pinned, None, None).await
+}
+
+/// Update fields and optionally replace the stored embedding (when content changes).
+pub async fn update_memory_item_fields_with_embedding(
+    pool: &PgPool,
+    id: Uuid,
+    content: Option<&str>,
+    status: Option<MemoryStatus>,
+    pinned: Option<bool>,
+    embedding: Option<&[f32]>,
+    embedding_version: Option<i32>,
+) -> Result<Option<MemoryItemRow>, StorageError> {
+    if content.is_none()
+        && status.is_none()
+        && pinned.is_none()
+        && embedding.is_none()
+        && embedding_version.is_none()
+    {
         return get_memory_item(pool, id).await;
     }
     if let Some(text) = content {
@@ -399,6 +428,7 @@ pub async fn update_memory_item_fields(
         }
     }
 
+    let embedding_owned = embedding.map(|v| v.to_vec());
     let row = sqlx::query_as::<_, MemoryItemRow>(&format!(
         r#"
         UPDATE memory_items
@@ -406,6 +436,8 @@ pub async fn update_memory_item_fields(
             content = COALESCE($2, content),
             status = COALESCE($3, status),
             pinned = COALESCE($4, pinned),
+            embedding = COALESCE($5, embedding),
+            embedding_version = COALESCE($6, embedding_version),
             updated_at = now()
         WHERE id = $1
         RETURNING {MEMORY_ITEM_COLUMNS}
@@ -415,6 +447,34 @@ pub async fn update_memory_item_fields(
     .bind(content.map(str::trim))
     .bind(status.map(|s| s.as_str()))
     .bind(pinned)
+    .bind(&embedding_owned)
+    .bind(embedding_version)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
+}
+
+pub async fn update_memory_item_embedding(
+    pool: &PgPool,
+    id: Uuid,
+    embedding: &[f32],
+    embedding_version: i32,
+) -> Result<Option<MemoryItemRow>, StorageError> {
+    let embedding = embedding.to_vec();
+    let row = sqlx::query_as::<_, MemoryItemRow>(&format!(
+        r#"
+        UPDATE memory_items
+        SET
+            embedding = $2,
+            embedding_version = $3,
+            updated_at = now()
+        WHERE id = $1
+        RETURNING {MEMORY_ITEM_COLUMNS}
+        "#
+    ))
+    .bind(id)
+    .bind(&embedding)
+    .bind(embedding_version)
     .fetch_optional(pool)
     .await?;
     Ok(row)
