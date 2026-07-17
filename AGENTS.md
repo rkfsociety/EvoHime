@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Wave A ✅; Wave B: `7.17`–`7.19` ✅; next `7.20`+
-- Wave B remaining: observability locks, search fallback, permission durability…
+- **Stage 7** Hardening + Product — Wave A ✅; Wave B: `7.17`–`7.20` ✅; next `7.21`+
+- Wave B remaining: search fallback, permission durability, metrics persistence…
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events

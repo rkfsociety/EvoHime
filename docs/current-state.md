@@ -109,6 +109,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. **Stage 7** — Wave A ✅; Wave B: `7.17`–`7.19` ✅; next observability locks `7.20`
-2. Рекомендуемая следующая волна: observability locks (`7.20`), search fallback (`7.21`)
+1. **Stage 7** — Wave A ✅; Wave B: `7.17`–`7.20` ✅; next search fallback `7.21`
+2. Рекомендуемая следующая волна: `filesystem.search` без `rg` (`7.21`), permission durability (`7.22`–`7.23`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

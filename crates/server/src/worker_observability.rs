@@ -1,4 +1,6 @@
 //! Worker-subsystem observability: counters, last health snapshot, structured logs.
+//!
+//! Mutex poison is recovered via `into_inner` (Stage 7.20) so metrics never panic the server.
 
 use serde::Serialize;
 use std::collections::HashMap;
@@ -66,7 +68,7 @@ impl WorkerMetrics {
     }
 
     pub fn snapshot(&self) -> WorkerMetricsSnapshot {
-        let inner = self.inner.lock().expect("worker metrics lock");
+        let inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         WorkerMetricsSnapshot {
             jobs_submitted: inner.jobs_submitted,
             jobs_completed: inner.jobs_completed,
@@ -83,7 +85,7 @@ impl WorkerMetrics {
     }
 
     pub fn job_submitted(&self, job_id: Uuid, task: &str) {
-        let mut inner = self.inner.lock().expect("worker metrics lock");
+        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.jobs_submitted += 1;
         inner.open_jobs.insert(job_id, Instant::now());
         tracing::info!(
@@ -94,7 +96,7 @@ impl WorkerMetrics {
     }
 
     pub fn job_finished(&self, job_id: Uuid, task: &str, ok: bool) {
-        let mut inner = self.inner.lock().expect("worker metrics lock");
+        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let elapsed = inner.open_jobs.remove(&job_id).map(|started| started.elapsed());
         if ok {
             inner.jobs_completed += 1;
@@ -116,7 +118,7 @@ impl WorkerMetrics {
     }
 
     pub fn job_retried(&self, job_id: Uuid, task: &str, reason: &str) {
-        let mut inner = self.inner.lock().expect("worker metrics lock");
+        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.jobs_retried += 1;
         tracing::info!(
             job_id = %job_id,
@@ -127,7 +129,7 @@ impl WorkerMetrics {
     }
 
     pub fn job_stalled(&self, job_id: Uuid, task: &str) {
-        let mut inner = self.inner.lock().expect("worker metrics lock");
+        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.jobs_stalled += 1;
         tracing::warn!(
             job_id = %job_id,
@@ -143,7 +145,7 @@ impl WorkerMetrics {
         queue_depth: Option<i64>,
         active_jobs: Option<i64>,
     ) {
-        let mut inner = self.inner.lock().expect("worker metrics lock");
+        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.health_checks_ok += 1;
         inner.last_health = Some(WorkerHealthView {
             healthy: true,
@@ -162,7 +164,7 @@ impl WorkerMetrics {
     }
 
     pub fn health_failed(&self, error: &str) {
-        let mut inner = self.inner.lock().expect("worker metrics lock");
+        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.health_checks_failed += 1;
         let previous = inner.last_health.clone();
         inner.last_health = Some(WorkerHealthView {
@@ -177,7 +179,7 @@ impl WorkerMetrics {
     }
 
     pub fn recovery(&self, count: usize, reason: &str) {
-        let mut inner = self.inner.lock().expect("worker metrics lock");
+        let mut inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.recoveries += 1;
         tracing::info!(
             count,
