@@ -21,11 +21,32 @@ export type PipelineMetricsSnapshot = {
   otel_export_enabled: boolean;
 };
 
+export type MetricsPersistStatus = {
+  enabled: boolean;
+  interval_secs: number;
+  history_limit: number;
+  last_persisted_at?: string | null;
+};
+
 export type MetricsResponse = {
+  pipeline: PipelineMetricsSnapshot;
+  worker: WorkerMetricsSnapshot;
+  persist?: MetricsPersistStatus;
+};
+
+export type MetricsHistoryEntry = {
+  id: number;
+  captured_at: string;
   pipeline: PipelineMetricsSnapshot;
   worker: WorkerMetricsSnapshot;
 };
 
 export function fetchMetrics() {
   return apiRequest<MetricsResponse>("/api/metrics");
+}
+
+export function fetchMetricsHistory(limit = 60) {
+  return apiRequest<{ entries: MetricsHistoryEntry[] }>(
+    `/api/metrics/history?limit=${limit}`,
+  );
 }

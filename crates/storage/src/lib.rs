@@ -6,6 +6,7 @@ use thiserror::Error;
 use uuid::Uuid;
 
 pub mod memory;
+pub mod metrics_snapshots;
 pub mod permission_audit;
 pub mod pool;
 
@@ -15,6 +16,10 @@ pub use memory::{
     update_memory_item_embedding, update_memory_item_fields,
     update_memory_item_fields_with_embedding, update_memory_item_status, MemoryItemRow, MemoryKind,
     MemoryScope, MemoryStatus, NewMemoryItem, LOCAL_OPERATOR_SCOPE_KEY,
+};
+pub use metrics_snapshots::{
+    insert_metrics_snapshot, latest_metrics_snapshot, list_metrics_snapshots,
+    prune_metrics_snapshots, MetricsSnapshotRow,
 };
 pub use permission_audit::{
     insert_permission_audit, list_permission_audit, NewPermissionAudit, PermissionAuditRow,

@@ -35,7 +35,8 @@ export function MetricsSettingsSection() {
         <div>
           <h3>Pipeline metrics</h3>
           <p className="settingsHint">
-            In-process snapshot из `/api/metrics` (correlation id = task_id)
+            Live snapshot `/api/metrics`, history `/api/metrics/history`, Prometheus
+            `/metrics`
           </p>
         </div>
         <button type="button" onClick={() => void refresh()} disabled={loading}>
@@ -57,6 +58,26 @@ export function MetricsSettingsSection() {
         </span>
         <span className="settingsHint">
           Включается через `OTEL_EXPORTER_OTLP_ENDPOINT`
+        </span>
+      </div>
+
+      <div className="workerHealthRow">
+        <span
+          className={
+            metrics?.persist?.enabled
+              ? "workerHealthBadge ok"
+              : "workerHealthBadge"
+          }
+        >
+          Persist {metrics?.persist?.enabled ? "on" : "off"}
+        </span>
+        <span className="settingsHint">
+          {metrics?.persist?.enabled
+            ? `каждые ${metrics.persist.interval_secs}s → PG; scrape: /metrics`
+            : "EVOHIME_METRICS_PERSIST_INTERVAL_SECS=0; scrape всё равно на /metrics"}
+          {metrics?.persist?.last_persisted_at
+            ? ` · last ${metrics.persist.last_persisted_at}`
+            : ""}
         </span>
       </div>
 

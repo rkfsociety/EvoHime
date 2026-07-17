@@ -54,10 +54,11 @@ Stages 1–5 complete. Stage 6 structured memory `6.16`–`6.25` and optional po
 | POST | `/api/worker/jobs` | Submit worker job |
 | GET | `/api/worker/jobs/:id` | Job state/result |
 | POST | `/api/worker/jobs/:id/retry` | Retry job |
-| GET | `/api/metrics` | Pipeline + worker metrics snapshot |
+| GET | `/api/metrics` | Pipeline+worker snapshot + persist status |
+| GET | `/api/metrics/history` | Persisted metrics snapshots from PG |
+| GET | `/metrics` | Prometheus text exposition |
 | GET | `/api/memory` | List memory items (filters: scope, status, q) + privacy policy |
 | GET/PATCH/DELETE | `/api/memory/:id` | Get / update (content/status/pin, redacted) / delete |
-| GET | `/api/metrics` | Pipeline metrics snapshot (`otel_export_enabled` when OTLP configured) |
 | WS | `/ws/:session_id` | Real-time events |
 
 ## Agent flow
@@ -83,6 +84,8 @@ user.message
 - `session_memory` / `global_memory` — legacy free-text (still used by agent loop)
 - `memory_items` — structured scopes/items (`6.16`–`6.21`)
 - `app_settings`, `worker_jobs`
+- `permission_approval_audit` — durable approval decisions (`7.23`)
+- `metrics_snapshots` — periodic pipeline/worker snapshots (`7.24`)
 
 ## Frontend panels
 
@@ -109,6 +112,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. **Stage 7** — Wave A ✅; Wave B: `7.17`–`7.23` ✅; next metrics scrape `7.24`
-2. Рекомендуемая следующая волна: metrics scrape (`7.24`), legacy memory (`7.40`–`7.41`)
+1. **Stage 7** — Wave A ✅; Wave B: `7.17`–`7.24` ✅; next legacy memory `7.40`–`7.41` / `7.25`+
+2. Рекомендуемая следующая волна: legacy memory cleanup (`7.40`–`7.41`), task FSM (`7.25`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

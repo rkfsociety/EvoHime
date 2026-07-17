@@ -2,6 +2,7 @@ mod app;
 mod auth;
 mod cors;
 mod memory_api;
+mod metrics_export;
 mod observability;
 mod otel;
 mod plugins;
@@ -16,7 +17,7 @@ use axum::{
         ws::{Message, WebSocket},
         Path, Query, State, WebSocketUpgrade,
     },
-    http::StatusCode,
+    http::{header, StatusCode},
     middleware,
     response::{IntoResponse, Response},
     routing::{delete, get, post, put},
@@ -213,6 +214,20 @@ async fn main() -> anyhow::Result<()> {
         worker_health_loop(health_state, health_interval, health_stale).await;
     });
     recover_worker_jobs(state.clone()).await;
+    let metrics_persist = metrics_export::MetricsPersistConfig::from_env();
+    if metrics_persist.enabled() {
+        info!(
+            interval_secs = metrics_persist.interval.as_secs(),
+            history_limit = metrics_persist.history_limit,
+            "metrics snapshot persistence enabled"
+        );
+        let persist_state = state.clone();
+        tokio::spawn(async move {
+            metrics_persist_loop(persist_state, metrics_persist).await;
+        });
+    } else {
+        info!("metrics snapshot persistence disabled (EVOHIME_METRICS_PERSIST_INTERVAL_SECS=0)");
+    }
     if let Some(value) = evohime_storage::load_setting(&state.pool, "permissions").await? {
         if let Some(settings) = value.as_object() {
             for (name, mode) in settings {
@@ -416,6 +431,8 @@ async fn main() -> anyhow::Result<()> {
                 .delete(memory_api::delete_memory),
         )
         .route("/api/metrics", get(pipeline_metrics))
+        .route("/api/metrics/history", get(pipeline_metrics_history))
+        .route("/metrics", get(prometheus_metrics))
         .route("/api/plugins", get(plugins::list_plugins))
         .route("/api/plugins/catalog", get(plugins::list_plugin_catalog))
         .route("/api/plugins/install", post(plugins::install_plugin))
@@ -467,11 +484,107 @@ async fn health() -> Json<Value> {
     Json(json!({ "status": "ok" }))
 }
 
-async fn pipeline_metrics(State(state): State<Arc<AppState>>) -> Json<Value> {
-    Json(json!({
+async fn pipeline_metrics(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
+    let persist = metrics_export::MetricsPersistConfig::from_env();
+    let last = evohime_storage::latest_metrics_snapshot(&state.pool)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    Ok(Json(json!({
         "pipeline": state.metrics.snapshot(),
         "worker": state.worker_metrics.snapshot(),
-    }))
+        "persist": metrics_export::MetricsPersistStatus {
+            enabled: persist.enabled(),
+            interval_secs: persist.interval.as_secs(),
+            history_limit: persist.history_limit,
+            last_persisted_at: last.map(|row| row.captured_at.to_rfc3339()),
+        },
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+struct MetricsHistoryQuery {
+    #[serde(default = "default_metrics_history_limit")]
+    limit: i64,
+}
+
+fn default_metrics_history_limit() -> i64 {
+    60
+}
+
+async fn pipeline_metrics_history(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<MetricsHistoryQuery>,
+) -> Result<Json<Value>, ApiError> {
+    let rows = evohime_storage::list_metrics_snapshots(&state.pool, query.limit)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let entries: Vec<Value> = rows
+        .into_iter()
+        .map(|row| {
+            json!({
+                "id": row.id,
+                "captured_at": row.captured_at,
+                "pipeline": row.pipeline,
+                "worker": row.worker,
+            })
+        })
+        .collect();
+    Ok(Json(json!({ "entries": entries })))
+}
+
+async fn prometheus_metrics(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let body = metrics_export::render_prometheus(
+        &state.metrics.snapshot(),
+        &state.worker_metrics.snapshot(),
+    );
+    (
+        [(
+            header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
+        body,
+    )
+}
+
+async fn metrics_persist_loop(state: Arc<AppState>, config: metrics_export::MetricsPersistConfig) {
+    let mut ticker = tokio::time::interval(config.interval);
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        ticker.tick().await;
+        let pipeline = match serde_json::to_value(state.metrics.snapshot()) {
+            Ok(value) => value,
+            Err(error) => {
+                warn!(error = %error, "failed to serialize pipeline metrics for persist");
+                continue;
+            }
+        };
+        let worker = match serde_json::to_value(state.worker_metrics.snapshot()) {
+            Ok(value) => value,
+            Err(error) => {
+                warn!(error = %error, "failed to serialize worker metrics for persist");
+                continue;
+            }
+        };
+        match evohime_storage::insert_metrics_snapshot(&state.pool, &pipeline, &worker).await {
+            Ok(row) => {
+                if let Err(error) =
+                    evohime_storage::prune_metrics_snapshots(&state.pool, config.history_limit)
+                        .await
+                {
+                    warn!(error = %error, "failed to prune metrics snapshots");
+                } else {
+                    tracing::debug!(
+                        snapshot_id = row.id,
+                        captured_at = %row.captured_at,
+                        "persisted metrics snapshot"
+                    );
+                }
+            }
+            Err(error) => {
+                warn!(error = %error, "failed to persist metrics snapshot");
+            }
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

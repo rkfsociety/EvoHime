@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Wave A ✅; Wave B: `7.17`–`7.23` ✅; next `7.24`+
-- Wave B remaining: metrics persistence…
+- **Stage 7** Hardening + Product — Wave A ✅; Wave B: `7.17`–`7.24` ✅; next `7.40` / `7.25`+
+- Wave B remaining: legacy memory (`7.40`–`7.41`)…
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events
