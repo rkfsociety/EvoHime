@@ -1,7 +1,9 @@
 pub mod config;
 pub mod providers;
+pub mod retry;
 
 pub use crate::config::{ModelGatewayConfig, ModelRouteConfig};
+pub use crate::retry::RetryPolicy;
 use crate::providers::{
     literouter::LiteRouterProvider, mock::MockProvider, ChatMessage, ModelProvider, ProviderError,
     ProviderKind, TokenStream,

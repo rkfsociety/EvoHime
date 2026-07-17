@@ -1,5 +1,8 @@
 use crate::config::LiteRouterConfig;
 use crate::providers::{ChatMessage, ModelProvider, ProviderError, ProviderKind, TokenStream};
+use crate::retry::{
+    compute_backoff, is_retryable_status, parse_retry_after_seconds, RetryPolicy,
+};
 use async_stream::stream;
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -12,10 +15,15 @@ use serde::Deserialize;
 pub struct LiteRouterProvider {
     config: LiteRouterConfig,
     client: Client,
+    retry: RetryPolicy,
 }
 
 impl LiteRouterProvider {
     pub fn new(config: LiteRouterConfig) -> Result<Self, ProviderError> {
+        Self::with_retry(config, RetryPolicy::from_env())
+    }
+
+    pub fn with_retry(config: LiteRouterConfig, retry: RetryPolicy) -> Result<Self, ProviderError> {
         if config.api_key.is_empty() {
             return Err(ProviderError::Config(
                 "LiteRouter API key must not be empty".to_string(),
@@ -26,11 +34,19 @@ impl LiteRouterProvider {
             .build()
             .map_err(|error| ProviderError::Http(error.to_string()))?;
 
-        Ok(Self { config, client })
+        Ok(Self {
+            config,
+            client,
+            retry,
+        })
     }
 
     pub fn config(&self) -> &LiteRouterConfig {
         &self.config
+    }
+
+    pub fn retry_policy(&self) -> &RetryPolicy {
+        &self.retry
     }
 
     pub fn chat_completions_url(&self) -> String {
@@ -58,6 +74,7 @@ impl ModelProvider for LiteRouterProvider {
     fn stream_chat_with_model(&self, model: &str, messages: &[ChatMessage]) -> TokenStream {
         let config = self.config.clone();
         let client = self.client.clone();
+        let retry = self.retry.clone();
         let request_messages = messages.to_vec();
         let model = model.to_string();
 
@@ -74,26 +91,42 @@ impl ModelProvider for LiteRouterProvider {
                 stream: true,
             };
 
-            let response = match client
-                .post(config.chat_completions_url())
-                .bearer_auth(&config.api_key)
-                .json(&body)
-                .send()
-                .await
-            {
-                Ok(response) => response,
-                Err(error) => {
-                    yield Err(ProviderError::Http(error.to_string()));
-                    return;
+            let mut attempt: u32 = 0;
+            let response = loop {
+                let send_result = client
+                    .post(config.chat_completions_url())
+                    .bearer_auth(&config.api_key)
+                    .json(&body)
+                    .send()
+                    .await;
+
+                match send_result {
+                    Ok(response) if response.status().is_success() => break response,
+                    Ok(response) => {
+                        let status = response.status();
+                        let retry_after = parse_retry_after_seconds(response.headers());
+                        let text = response.text().await.unwrap_or_default();
+                        if is_retryable_status(status) && attempt < retry.max_retries {
+                            let delay = compute_backoff(attempt, &retry, retry_after);
+                            tokio::time::sleep(delay).await;
+                            attempt = attempt.saturating_add(1);
+                            continue;
+                        }
+                        yield Err(ProviderError::Api(format!("{status}: {text}")));
+                        return;
+                    }
+                    Err(error) => {
+                        if attempt < retry.max_retries {
+                            let delay = compute_backoff(attempt, &retry, None);
+                            tokio::time::sleep(delay).await;
+                            attempt = attempt.saturating_add(1);
+                            continue;
+                        }
+                        yield Err(ProviderError::Http(error.to_string()));
+                        return;
+                    }
                 }
             };
-
-            if !response.status().is_success() {
-                let status = response.status();
-                let text = response.text().await.unwrap_or_default();
-                yield Err(ProviderError::Api(format!("{status}: {text}")));
-                return;
-            }
 
             let mut buffer = String::new();
             let mut byte_stream = response.bytes_stream();

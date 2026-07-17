@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — `7.1`–`7.6`, `7.11`, `7.15` ✅; next `7.16`
-- Wave A remaining: LLM retry
+- **Stage 7** Hardening + Product — Wave A ✅ (`7.1`–`7.6`, `7.11`, `7.15`–`7.16`); next Wave B
+- Wave A remaining: —
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events

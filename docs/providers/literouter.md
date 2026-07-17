@@ -56,7 +56,18 @@ agent-runtime
 - [x] OpenAI-compatible chat completions client
 - [x] Streaming (SSE) → токены
 - [x] Обработка ошибок API
+- [x] Retry / backoff / `Retry-After` на старте запроса (до SSE)
 - [x] Тесты с mock HTTP
+
+### Retry (Stage 7.16)
+
+| Env | Default | Meaning |
+| --- | --- | --- |
+| `EVOHIME_LLM_MAX_RETRIES` | `3` | retries after the first attempt |
+| `EVOHIME_LLM_RETRY_BASE_MS` | `250` | exponential backoff base |
+| `EVOHIME_LLM_RETRY_MAX_MS` | `5000` | backoff cap |
+
+Retries on transport errors and HTTP `408/429/500/502/503/504`. Honors `Retry-After` delta-seconds. Does not retry mid-stream after tokens already started.
 
 ---
 

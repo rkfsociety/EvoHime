@@ -109,6 +109,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. **Stage 7** — `7.1`–`7.6`, `7.11`, `7.15` ✅; next LLM retry `7.16`
-2. Рекомендуемая следующая волна: LLM retry (`7.16`), затем Wave B recovery
+1. **Stage 7** — Wave A ✅ (`7.1`–`7.6`, `7.11`, `7.15`–`7.16`); next Wave B recovery
+2. Рекомендуемая следующая волна: WS reconnect / task recovery (`7.17`–`7.24`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI
