@@ -105,6 +105,93 @@ pub async fn recover_after_restart(pool: &PgPool) -> Result<Vec<TaskRow>, TaskEn
     Ok(evohime_storage::recover_running_tasks(pool).await?)
 }
 
+/// Tools that mutate the workspace / remote systems — unsafe to auto-resume after crash.
+pub const MUTATING_TOOLS: &[&str] = &[
+    "filesystem.write",
+    "filesystem.patch",
+    "shell.execute",
+    "git.commit",
+    "git.pull",
+    "git.push",
+    "mcp.call",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RestartResumePolicy {
+    /// When true (`EVOHIME_AUTO_RESUME_ON_RESTART=1`), resume even mutating tasks.
+    pub auto_resume_mutating: bool,
+}
+
+impl RestartResumePolicy {
+    pub fn from_env() -> Self {
+        Self {
+            auto_resume_mutating: env_flag_true("EVOHIME_AUTO_RESUME_ON_RESTART"),
+        }
+    }
+}
+
+fn env_flag_true(name: &str) -> bool {
+    std::env::var(name)
+        .ok()
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
+}
+
+pub fn is_mutating_tool(tool_name: &str) -> bool {
+    MUTATING_TOOLS
+        .iter()
+        .any(|name| name.eq_ignore_ascii_case(tool_name.trim()))
+}
+
+pub fn checkpoint_has_mutating_work(state: &serde_json::Value) -> bool {
+    if let Some(tool) = state
+        .pointer("/approval_wait/tool_name")
+        .and_then(|value| value.as_str())
+    {
+        if is_mutating_tool(tool) {
+            return true;
+        }
+    }
+    if let Some(plan) = state.get("plan").and_then(|value| value.as_array()) {
+        for step in plan {
+            if let Some(tool) = step.get("tool_name").and_then(|value| value.as_str()) {
+                if is_mutating_tool(tool) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+pub fn should_auto_resume_after_restart(policy: RestartResumePolicy, mutating: bool) -> bool {
+    policy.auto_resume_mutating || !mutating
+}
+
+pub async fn task_has_mutating_work(
+    pool: &PgPool,
+    task_id: Uuid,
+) -> Result<bool, TaskEngineError> {
+    let steps = evohime_storage::list_task_steps(pool, task_id).await?;
+    if steps
+        .iter()
+        .any(|step| is_mutating_tool(&step.tool_name))
+    {
+        return Ok(true);
+    }
+    if let Some(checkpoint) = evohime_storage::load_checkpoint(pool, task_id).await? {
+        if checkpoint_has_mutating_work(&checkpoint.state_json) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 pub fn dependency_batches(plan: &[PlanStep]) -> Result<Vec<Vec<PlanStep>>, TaskEngineError> {
     let known_ids: HashSet<&str> = plan.iter().map(|step| step.id.as_str()).collect();
     let mut remaining: Vec<&PlanStep> = plan.iter().collect();
@@ -205,6 +292,45 @@ impl Default for InMemoryTask {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mutating_tool_detection() {
+        assert!(is_mutating_tool("filesystem.write"));
+        assert!(is_mutating_tool("Shell.Execute"));
+        assert!(is_mutating_tool("git.push"));
+        assert!(!is_mutating_tool("filesystem.read"));
+        assert!(!is_mutating_tool("browser.open"));
+        assert!(!is_mutating_tool("git.status"));
+    }
+
+    #[test]
+    fn checkpoint_mutating_from_plan_and_approval() {
+        let plan = serde_json::json!({
+            "plan": [{ "id": "1", "tool_name": "filesystem.write" }]
+        });
+        assert!(checkpoint_has_mutating_work(&plan));
+        let approval = serde_json::json!({
+            "approval_wait": { "tool_name": "shell.execute" }
+        });
+        assert!(checkpoint_has_mutating_work(&approval));
+        let safe = serde_json::json!({
+            "plan": [{ "id": "1", "tool_name": "filesystem.read" }]
+        });
+        assert!(!checkpoint_has_mutating_work(&safe));
+    }
+
+    #[test]
+    fn auto_resume_policy_blocks_mutating_by_default() {
+        let deny = RestartResumePolicy {
+            auto_resume_mutating: false,
+        };
+        assert!(!should_auto_resume_after_restart(deny, true));
+        assert!(should_auto_resume_after_restart(deny, false));
+        let allow = RestartResumePolicy {
+            auto_resume_mutating: true,
+        };
+        assert!(should_auto_resume_after_restart(allow, true));
+    }
 
     #[test]
     fn cancel_resume_and_retry_are_recoverable() {

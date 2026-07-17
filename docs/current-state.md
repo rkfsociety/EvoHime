@@ -109,6 +109,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. **Stage 7** — Wave A ✅; Wave B started (`7.17` WS resume); next safe restart `7.18`
-2. Рекомендуемая следующая волна: safe restart policy (`7.18`), pool tuning (`7.19`), observability locks (`7.20`)
+1. **Stage 7** — Wave A ✅; Wave B: `7.17`–`7.18` ✅; next pool tuning `7.19`
+2. Рекомендуемая следующая волна: PgPool tuning (`7.19`), observability locks (`7.20`), search fallback (`7.21`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

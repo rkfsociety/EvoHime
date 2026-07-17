@@ -212,18 +212,61 @@ async fn main() -> anyhow::Result<()> {
     let recovered = evohime_task_engine::recover_after_restart(&state.pool)
         .await
         .context("recover tasks after restart")?;
+    let resume_policy = evohime_task_engine::RestartResumePolicy::from_env();
+    if resume_policy.auto_resume_mutating {
+        info!("EVOHIME_AUTO_RESUME_ON_RESTART enabled: mutating tasks may auto-resume");
+    }
     if !recovered.is_empty() {
-        info!(count = recovered.len(), "tasks marked paused for recovery");
+        info!(count = recovered.len(), "tasks paused after crash (were running/cancelling)");
         for task in recovered {
             let task_id = task.id;
             let session_id = task.session_id;
+            let mutating = evohime_task_engine::task_has_mutating_work(&state.pool, task_id)
+                .await
+                .unwrap_or(true);
             let _ = evohime_storage::merge_checkpoint(
                 &state.pool,
                 task_id,
                 None,
-                &json!({ "pause_reason": "server_restart" }),
+                &json!({
+                    "pause_reason": "server_restart",
+                    "mutating": mutating,
+                }),
             )
             .await;
+
+            if !evohime_task_engine::should_auto_resume_after_restart(resume_policy, mutating) {
+                warn!(
+                    %task_id,
+                    "deferring auto-resume for mutating task; set EVOHIME_AUTO_RESUME_ON_RESTART=1 to override"
+                );
+                emit_event(
+                    &state,
+                    session_id,
+                    Some(task_id),
+                    ServerEvent::TaskStatusChanged {
+                        task_id,
+                        status: "paused".to_string(),
+                    },
+                )
+                .await
+                .map_err(|(_, error)| error)?;
+                emit_event(
+                    &state,
+                    session_id,
+                    Some(task_id),
+                    ServerEvent::ActionLogged {
+                        task_id,
+                        action: "task.recovery_deferred".to_string(),
+                        detail: "Mutating task left paused after server restart; resume manually or set EVOHIME_AUTO_RESUME_ON_RESTART=1".to_string(),
+                        created_at: chrono::Utc::now(),
+                    },
+                )
+                .await
+                .map_err(|(_, error)| error)?;
+                continue;
+            }
+
             let _ = resume_task(&state.pool, task_id).await;
             emit_event(
                 &state,
@@ -243,7 +286,11 @@ async fn main() -> anyhow::Result<()> {
                 ServerEvent::ActionLogged {
                     task_id,
                     action: "task.recovered".to_string(),
-                    detail: "Task restored after server restart".to_string(),
+                    detail: if mutating {
+                        "Mutating task auto-resumed after server restart (EVOHIME_AUTO_RESUME_ON_RESTART)".to_string()
+                    } else {
+                        "Task restored after server restart".to_string()
+                    },
                     created_at: chrono::Utc::now(),
                 },
             )

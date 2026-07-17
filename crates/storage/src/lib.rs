@@ -477,10 +477,16 @@ pub async fn load_task(pool: &PgPool, task_id: Uuid) -> Result<Option<TaskRow>, 
 }
 
 pub async fn recover_running_tasks(pool: &PgPool) -> Result<Vec<TaskRow>, StorageError> {
-    sqlx::query("UPDATE tasks SET status = 'paused' WHERE status IN ('running','cancelling')")
-        .execute(pool)
-        .await?;
-    Ok(sqlx::query_as::<_, TaskRow>("SELECT id, session_id, user_message, model_route, model, workspace_path, status, created_at, completed_at FROM tasks WHERE status = 'paused' ORDER BY created_at ASC").fetch_all(pool).await?)
+    Ok(sqlx::query_as::<_, TaskRow>(
+        r#"
+        UPDATE tasks
+        SET status = 'paused'
+        WHERE status IN ('running', 'cancelling')
+        RETURNING id, session_id, user_message, model_route, model, workspace_path, status, created_at, completed_at
+        "#,
+    )
+    .fetch_all(pool)
+    .await?)
 }
 
 pub async fn load_checkpoint(
