@@ -310,6 +310,10 @@ pub(crate) async fn execute_single_plan_step(
 
 pub(crate) fn requires_mutation(message: &str) -> bool {
     let message = message.to_lowercase();
+    // Advisory / exploratory questions ("что можно добавить?") must not force writes.
+    if looks_like_advisory_question(&message) {
+        return false;
+    }
     [
         "реализ",
         "исправ",
@@ -318,6 +322,31 @@ pub(crate) fn requires_mutation(message: &str) -> bool {
         "implement",
         "modify",
         "write",
+    ]
+    .iter()
+    .any(|marker| message.contains(marker))
+}
+
+pub(crate) fn looks_like_advisory_question(message: &str) -> bool {
+    [
+        "что можно",
+        "что стоит",
+        "можно ли",
+        "стоит ли",
+        "какие улучш",
+        "какие измен",
+        "что улучшить",
+        "предложи",
+        "посоветуй",
+        "рекоменд",
+        "what can",
+        "what should",
+        "what could",
+        "any suggestions",
+        "suggest ",
+        "recommend",
+        "ideas to improve",
+        "ideas for",
     ]
     .iter()
     .any(|marker| message.contains(marker))
@@ -337,6 +366,7 @@ pub(crate) fn tool_input(
 
     let path = extract_declared_path(description)
         .or_else(|| extract_backticked(description))
+        .or_else(|| extract_pathlike_token(description))
         .map(|path| normalize_plan_path(&path, workspace_root));
     match tool_name {
         "filesystem.read" => {
@@ -350,9 +380,12 @@ pub(crate) fn tool_input(
             Some(json!({ "path": resolved }))
         }
         "filesystem.list" => Some(json!({"path": path.unwrap_or_else(|| ".".to_string())})),
-        "filesystem.search" => Some(
-            json!({"query": extract_backticked(description).unwrap_or_else(|| "TODO".to_string()), "limit": 100}),
-        ),
+        "filesystem.search" => {
+            let query = extract_backticked(description)
+                .or_else(|| extract_search_query_token(description))
+                .unwrap_or_else(|| "TODO".to_string());
+            Some(json!({"query": query, "limit": 100}))
+        }
         "memory.search" => Some(json!({
             "query": extract_backticked(description)
                 .unwrap_or_else(|| description.trim().to_string()),
@@ -543,6 +576,86 @@ pub(crate) fn extract_backticked(value: &str) -> Option<String> {
     let end = value[start..].find('`')? + start;
     let path = value[start..end].trim();
     (!path.is_empty()).then(|| path.to_string())
+}
+
+/// Pull a bare workspace path from free-text plan descriptions
+/// (e.g. "Inspect crates/server/src/main.rs" or "Прочитать Cargo.toml, …").
+pub(crate) fn extract_pathlike_token(description: &str) -> Option<String> {
+    description
+        .split(|c: char| c.is_whitespace() || matches!(c, ',' | ';' | '|'))
+        .find_map(|token| {
+            let candidate = clean_path_token(token);
+            looks_like_workspace_path(candidate).then(|| candidate.to_string())
+        })
+}
+
+fn clean_path_token(token: &str) -> &str {
+    let trimmed = token.trim_matches(|c: char| {
+        matches!(
+            c,
+            '"' | '\'' | '`' | '(' | ')' | '[' | ']' | '{' | '}' | ':' | '«' | '»'
+        )
+    });
+    if trimmed.ends_with('.') {
+        let without_dot = &trimmed[..trimmed.len() - '.'.len_utf8()];
+        if looks_like_workspace_path(without_dot) {
+            return without_dot;
+        }
+    }
+    trimmed
+}
+
+fn looks_like_workspace_path(value: &str) -> bool {
+    if value.is_empty()
+        || value.starts_with("http://")
+        || value.starts_with("https://")
+        || value.contains(' ')
+    {
+        return false;
+    }
+    if value.contains('/') || value.contains('\\') {
+        return value.chars().any(|c| c.is_ascii_alphanumeric());
+    }
+    matches!(
+        Path::new(value).extension().and_then(|ext| ext.to_str()),
+        Some(
+            "md" | "rs"
+                | "toml"
+                | "json"
+                | "tsx"
+                | "ts"
+                | "jsx"
+                | "js"
+                | "py"
+                | "css"
+                | "sql"
+                | "yml"
+                | "yaml"
+                | "ps1"
+                | "sh"
+                | "txt"
+        )
+    )
+}
+
+/// Prefer an explicit debt marker from search plan text when backticks are absent.
+fn extract_search_query_token(description: &str) -> Option<String> {
+    let lower = description.to_lowercase();
+    for marker in [
+        "todo",
+        "fixme",
+        "unimplemented",
+        "stub",
+        "fake",
+        "placeholder",
+        "panic!",
+        "todo!",
+    ] {
+        if lower.contains(marker) {
+            return Some(marker.to_string());
+        }
+    }
+    None
 }
 
 pub(crate) fn description_implies_workspace_root(description: &str) -> bool {

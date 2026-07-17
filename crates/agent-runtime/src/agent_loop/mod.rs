@@ -744,9 +744,25 @@ mod tests {
         .expect("directory input");
         assert_eq!(directory["path"], "workers/python");
 
-        let fallback = tool_input(
+        let from_prose = tool_input(
             "filesystem.read",
             "Inspect crates/server/src/main.rs",
+            Path::new("C:/workspace"),
+        )
+        .expect("read from prose path");
+        assert_eq!(from_prose["path"], "crates/server/src/main.rs");
+
+        let bare_file = tool_input(
+            "filesystem.read",
+            "Прочитать Cargo.toml, frontend/web/package.json и ключевые документы",
+            Path::new("C:/workspace"),
+        )
+        .expect("read bare filename");
+        assert_eq!(bare_file["path"], "Cargo.toml");
+
+        let fallback = tool_input(
+            "filesystem.read",
+            "Summarize architecture overview without naming a file",
             Path::new("C:/workspace"),
         )
         .expect("read fallback");
@@ -891,7 +907,13 @@ mod tests {
     fn detects_when_user_requested_a_mutation() {
         assert!(requires_mutation("Реализуй следующий пункт"));
         assert!(requires_mutation("Implement the feature"));
+        assert!(requires_mutation("Добавь логирование в server"));
         assert!(!requires_mutation("Прочитай файл и объясни его содержимое"));
+        // Trace regression: advisory "добавить?" must not trip mutation-check.
+        assert!(!requires_mutation(
+            "изучи дорожную карту и код, что можно улучшить или добавить?"
+        ));
+        assert!(!requires_mutation("What can we improve or add next?"));
     }
 
     #[test]
