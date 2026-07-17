@@ -353,6 +353,7 @@ pub(crate) fn tool_input(tool_name: &str, description: &str, workspace_root: &Pa
             "prompt": extract_backticked(description)
                 .unwrap_or_else(|| description.trim().to_string()),
         })),
+        "worker.run" => None, // requires structured JSON { task, payload }
         "filesystem.write" => Some(json!({
             "path": path?,
             "content": extract_code_block(description).unwrap_or_default(),
@@ -393,6 +394,7 @@ pub(crate) fn structured_json_input(tool_name: &str, description: &str) -> Optio
         | "mcp.call"
         | "memory.search"
         | "agent.run"
+        | "worker.run"
         | "git.diff"
         | "git.pull"
         | "git.push"

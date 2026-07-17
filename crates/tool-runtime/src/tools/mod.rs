@@ -8,4 +8,5 @@ pub mod memory;
 pub mod patch;
 pub mod search;
 pub mod shell;
+pub mod worker;
 pub mod write;

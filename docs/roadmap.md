@@ -378,7 +378,7 @@
 | # | Задача | Size | Статус | Notes / evidence |
 | --- | --- | --- | --- | --- |
 | 7.51 | Ещё handlers: `text.classify`, `text.language`, `text.redact` | M | ⬜ | further optional |
-| 7.52 | Agent tool `worker.run` (submit+await job) | M | ⬜ | API есть, agent tools нет |
+| 7.52 | Agent tool `worker.run` (submit+await job) | M | ✅ | tool-runtime HTTP submit+poll; wiremock test |
 | 7.53 | Worker job UI: submit form + payload editor в Settings | M | ⬜ | сейчас status/list/retry |
 | 7.54 | Horizontal worker scale (N processes / queue backend) | L | ⬜ | single in-proc Python queue |
 | 7.55 | Typed JSON Schema registry для worker tasks (shared) | M | ⬜ | duplicate validate Rust/Python |
@@ -472,7 +472,7 @@
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
-3. **Wave C (agent quality):** `7.28`–`7.33` ✅ → next `7.52`, `7.34`+  
+3. **Wave C (agent quality):** `7.28`–`7.33`, `7.52` ✅ → next `7.34`+  
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  
 5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+
@@ -528,6 +528,7 @@
 | `mcp.call` | 6 | M5 | ✅ |
 | `memory.search` | 6 | M5 | ✅ |
 | `agent.run` | 7 | M6 | ✅ Subagent fan-out (`7.31`) |
+| `worker.run` | 7 | M6 | ✅ Submit+await Python worker (`7.52`) |
 
 ---
 

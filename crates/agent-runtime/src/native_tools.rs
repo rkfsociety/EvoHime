@@ -187,6 +187,16 @@ fn tool_spec_for_name(name: &str, description: &str) -> Option<ToolSpec> {
             },
             "required": ["prompt"]
         }),
+        "worker.run" => json!({
+            "type": "object",
+            "properties": {
+                "task": { "type": "string", "description": "Worker task name, e.g. text.summarize" },
+                "payload": { "type": "object" },
+                "timeout_ms": { "type": "integer" },
+                "poll_ms": { "type": "integer" }
+            },
+            "required": ["task", "payload"]
+        }),
         _ => return None,
     };
     Some(ToolSpec::function(name, description, parameters))

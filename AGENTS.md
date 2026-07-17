@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Wave A/B ✅; Wave C: `7.28`–`7.33` ✅; next `7.52` / `7.34`+
-- Wave C next: agent tool `worker.run` (`7.52`)…
+- **Stage 7** Hardening + Product — Wave A/B ✅; Wave C: `7.28`–`7.33`, `7.52` ✅; next `7.34`+
+- Wave C next: planner cost/latency telemetry (`7.34`)…
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events
