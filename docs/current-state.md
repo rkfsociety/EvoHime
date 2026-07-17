@@ -109,6 +109,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. **Stage 7** — Wave A ✅; Wave B: `7.17`–`7.21` ✅; next permission durability `7.22`
-2. Рекомендуемая следующая волна: permission grants (`7.22`), approval audit (`7.23`)
+1. **Stage 7** — Wave A ✅; Wave B: `7.17`–`7.22` ✅; next approval audit PG `7.23`
+2. Рекомендуемая следующая волна: durable approval audit (`7.23`), metrics scrape (`7.24`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

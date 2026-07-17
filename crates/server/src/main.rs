@@ -212,6 +212,19 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     }
+    if let Some(value) = evohime_storage::load_setting(&state.pool, "permission_scopes").await? {
+        match serde_json::from_value::<evohime_permissions::PermissionScopesSnapshot>(value) {
+            Ok(snapshot) => {
+                let sessions = snapshot.session_overrides.len();
+                let grants = snapshot.path_grants.len();
+                state.permissions.import_scopes(snapshot).await;
+                info!(sessions, grants, "restored permission session/path scopes");
+            }
+            Err(error) => {
+                warn!(error = %error, "stored permission_scopes could not be read; ignoring");
+            }
+        }
+    }
     if let Some(value) = evohime_storage::load_setting(&state.pool, "mcp_servers").await? {
         if let Ok(servers) = serde_json::from_value::<Vec<McpServerConfig>>(value) {
             *state.mcp_servers.lock().await = servers;
@@ -1241,6 +1254,16 @@ async fn permission_settings_value(state: &AppState) -> Value {
     Value::Object(settings)
 }
 
+async fn persist_permission_scopes(state: &AppState) -> Result<(), ApiError> {
+    let snapshot = state.permissions.export_scopes().await;
+    let value = serde_json::to_value(&snapshot)
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    evohime_storage::save_setting(&state.pool, "permission_scopes", &value)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    Ok(())
+}
+
 fn duration_to_ms(duration: Duration) -> u64 {
     duration.as_millis().min(u128::from(u64::MAX)) as u64
 }
@@ -2104,6 +2127,11 @@ async fn handle_socket(
                                 .map(|(request, _)| request.task_id)
                                 .unwrap_or(Uuid::nil());
                             let status = state.permissions.resolve(approval_id, true).await;
+                            if status.is_some() {
+                                if let Err(error) = persist_permission_scopes(&state).await {
+                                    warn!(error = %error, "failed to persist permission scopes after grant");
+                                }
+                            }
                             state.metrics.approval_resolved(
                                 session_id,
                                 task_id,

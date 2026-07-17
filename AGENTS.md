@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Wave A ✅; Wave B: `7.17`–`7.21` ✅; next `7.22`+
-- Wave B remaining: permission durability, approval audit, metrics persistence…
+- **Stage 7** Hardening + Product — Wave A ✅; Wave B: `7.17`–`7.22` ✅; next `7.23`+
+- Wave B remaining: approval audit PG, metrics persistence…
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events

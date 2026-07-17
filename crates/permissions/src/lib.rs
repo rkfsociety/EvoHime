@@ -1,4 +1,7 @@
 //! Permission checks, scoped overrides, and approval audit (roadmap P2).
+//!
+//! Global modes persist via `app_settings.permissions`.
+//! Session overrides + path grants persist via `app_settings.permission_scopes` (Stage 7.22).
 
 use serde::{Deserialize, Serialize};
 use std::{
@@ -104,6 +107,15 @@ pub struct ApprovalAuditEntry {
     /// True when grant also installed a temporary path allow for the session.
     #[serde(default)]
     pub remembered_path: bool,
+}
+
+/// Durable snapshot of session overrides + path grants (Stage 7.22).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PermissionScopesSnapshot {
+    #[serde(default)]
+    pub session_overrides: Vec<SessionOverride>,
+    #[serde(default)]
+    pub path_grants: Vec<PathGrant>,
 }
 
 const DEFAULT_TEMP_GRANT_TTL: Duration = Duration::from_secs(60 * 60);
@@ -414,6 +426,48 @@ impl PermissionEngine {
             .collect()
     }
 
+    /// Export session overrides + path grants for durable storage.
+    pub async fn export_scopes(&self) -> PermissionScopesSnapshot {
+        PermissionScopesSnapshot {
+            session_overrides: self.list_session_overrides().await,
+            path_grants: self.list_path_grants().await,
+        }
+    }
+
+    /// Replace in-memory session overrides + path grants from a durable snapshot.
+    /// Expired path grants are skipped.
+    pub async fn import_scopes(&self, snapshot: PermissionScopesSnapshot) {
+        let mut session_modes = HashMap::new();
+        for override_item in snapshot.session_overrides {
+            session_modes.insert(
+                (override_item.session_id, override_item.permission),
+                override_item.mode,
+            );
+        }
+        *self.session_modes.write().await = session_modes;
+
+        let wall_now = now_ms();
+        let instant_now = Instant::now();
+        let mut grants = Vec::with_capacity(snapshot.path_grants.len());
+        for grant in snapshot.path_grants {
+            let expires_at = match grant.expires_at_ms {
+                Some(ms) if ms <= wall_now => continue,
+                Some(ms) => {
+                    Some(instant_now + Duration::from_millis(ms.saturating_sub(wall_now)))
+                }
+                None => None,
+            };
+            grants.push(StoredPathGrant {
+                permission: grant.permission,
+                path: normalize_scope_path(grant.path),
+                session_id: grant.session_id,
+                mode: grant.mode,
+                expires_at,
+            });
+        }
+        *self.path_grants.write().await = grants;
+    }
+
     pub async fn audit_log(&self) -> Vec<ApprovalAuditEntry> {
         self.audit.read().await.clone()
     }
@@ -702,6 +756,98 @@ mod tests {
                     )
                     .await,
                 PermissionDecision::Denied
+            );
+        });
+    }
+
+    #[test]
+    fn scopes_snapshot_roundtrip_preserves_grants() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let session = Uuid::new_v4();
+            engine
+                .set_session_mode(session, Permission::FilesystemWrite, PermissionMode::Allow)
+                .await;
+            engine
+                .set_path_grant(
+                    Permission::FilesystemWrite,
+                    "src",
+                    PermissionMode::Allow,
+                    Some(session),
+                    Some(Duration::from_secs(3_600)),
+                )
+                .await;
+            engine
+                .set_path_grant(
+                    Permission::ShellExecute,
+                    "scripts",
+                    PermissionMode::Deny,
+                    None,
+                    None,
+                )
+                .await;
+
+            let snapshot = engine.export_scopes().await;
+            let restored = PermissionEngine::new();
+            restored.import_scopes(snapshot).await;
+
+            assert_eq!(
+                restored
+                    .check_scoped(
+                        Permission::FilesystemWrite,
+                        &PermissionCheck {
+                            session_id: Some(session),
+                            path: Some("src/main.rs"),
+                        },
+                    )
+                    .await,
+                PermissionDecision::Allowed
+            );
+            assert_eq!(
+                restored
+                    .check_scoped(
+                        Permission::ShellExecute,
+                        &PermissionCheck {
+                            session_id: None,
+                            path: Some("scripts/run.sh"),
+                        },
+                    )
+                    .await,
+                PermissionDecision::Denied
+            );
+            assert_eq!(restored.list_session_overrides().await.len(), 1);
+            assert_eq!(restored.list_path_grants().await.len(), 2);
+        });
+    }
+
+    #[test]
+    fn import_scopes_skips_expired_path_grants() {
+        block_on(async {
+            let session = Uuid::new_v4();
+            let snapshot = PermissionScopesSnapshot {
+                session_overrides: vec![],
+                path_grants: vec![PathGrant {
+                    permission: Permission::FilesystemWrite,
+                    path: "tmp".into(),
+                    session_id: Some(session),
+                    mode: PermissionMode::Allow,
+                    expires_at_ms: Some(1), // far in the past
+                }],
+            };
+            let engine = PermissionEngine::new();
+            engine.import_scopes(snapshot).await;
+            assert!(engine.list_path_grants().await.is_empty());
+            assert_eq!(
+                engine
+                    .check_scoped(
+                        Permission::FilesystemWrite,
+                        &PermissionCheck {
+                            session_id: Some(session),
+                            path: Some("tmp/a.txt"),
+                        },
+                    )
+                    .await,
+                PermissionDecision::NeedsApproval
             );
         });
     }
