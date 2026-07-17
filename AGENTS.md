@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- Deeper worker observability as needed
 - Optional backlog items as they appear
+- Keep CI / reliability polish as needed
 
 ## WebSocket events
 

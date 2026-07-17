@@ -48,6 +48,10 @@ pub struct WorkerHealth {
     pub pid: i64,
     #[serde(default)]
     pub supported_tasks: Vec<String>,
+    #[serde(default)]
+    pub queue_depth: Option<i64>,
+    #[serde(default)]
+    pub active_jobs: Option<i64>,
 }
 
 pub fn is_terminal_status(status: &str) -> bool {

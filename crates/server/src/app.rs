@@ -111,6 +111,7 @@ pub struct AppState {
     pub worker_job_stall: Duration,
     pub plugin_catalog_cache: PluginCatalogCache,
     pub metrics: Arc<crate::observability::PipelineMetrics>,
+    pub worker_metrics: Arc<crate::worker_observability::WorkerMetrics>,
 }
 
 impl AppState {

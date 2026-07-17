@@ -71,7 +71,7 @@ EvoHime Server — Rust
 - `storage` + `/api/memory`: CRUD/override; frontend MemoryPanel + MemoryAskModal;
 - workers: health/stall + `text.summarize` / `text.chunk`.
 
-**Следующий сквозной приоритет:** deeper worker observability; optional backlog.
+**Следующий сквозной приоритет:** optional backlog / reliability polish.
 
 ---
 

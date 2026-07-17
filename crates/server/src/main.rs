@@ -4,6 +4,7 @@ mod observability;
 mod otel;
 mod plugins;
 mod worker;
+mod worker_observability;
 mod workspace;
 
 use anyhow::Context;
@@ -167,6 +168,7 @@ async fn main() -> anyhow::Result<()> {
         worker_job_stall: config.worker_job_stall,
         plugin_catalog_cache: plugins::PluginCatalogCache::default(),
         metrics: Arc::new(observability::PipelineMetrics::new()),
+        worker_metrics: Arc::new(worker_observability::WorkerMetrics::new()),
     });
 
     let retention_state = state.clone();
@@ -306,9 +308,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/git/pull", post(workspace::git_pull))
         .route("/api/git/push", post(workspace::git_push))
         .route("/api/tasks", get(list_tasks))
-        .route("/api/worker/jobs", post(create_worker_job))
+        .route("/api/worker/jobs", get(list_worker_jobs).post(create_worker_job))
         .route("/api/worker/jobs/:job_id", get(get_worker_job))
         .route("/api/worker/jobs/:job_id/retry", post(retry_worker_job))
+        .route("/api/worker/status", get(worker_status))
         .route("/api/permissions", get(list_permissions))
         .route("/api/permissions/audit", get(list_permission_audit))
         .route("/api/permissions/scopes", get(list_permission_scopes))
@@ -353,8 +356,11 @@ async fn health() -> Json<Value> {
     Json(json!({ "status": "ok" }))
 }
 
-async fn pipeline_metrics(State(state): State<Arc<AppState>>) -> Json<observability::MetricsSnapshot> {
-    Json(state.metrics.snapshot())
+async fn pipeline_metrics(State(state): State<Arc<AppState>>) -> Json<Value> {
+    Json(json!({
+        "pipeline": state.metrics.snapshot(),
+        "worker": state.worker_metrics.snapshot(),
+    }))
 }
 
 #[derive(Debug, Deserialize)]
@@ -362,6 +368,36 @@ struct WorkerJobRequest {
     task: String,
     #[serde(default)]
     payload: Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct ListWorkerJobsQuery {
+    #[serde(default)]
+    limit: Option<i64>,
+}
+
+async fn worker_status(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
+    let counts = evohime_storage::count_worker_jobs_by_status(&state.pool)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let mut by_status = serde_json::Map::new();
+    for (status, count) in counts {
+        by_status.insert(status, json!(count));
+    }
+    Ok(Json(json!({
+        "metrics": state.worker_metrics.snapshot(),
+        "db_status_counts": by_status,
+    })))
+}
+
+async fn list_worker_jobs(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<ListWorkerJobsQuery>,
+) -> Result<Json<Vec<evohime_storage::WorkerJobRow>>, ApiError> {
+    let jobs = evohime_storage::list_recent_worker_jobs(&state.pool, query.limit.unwrap_or(50))
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    Ok(Json(jobs))
 }
 
 async fn create_worker_job(
@@ -391,6 +427,7 @@ async fn create_worker_job(
     evohime_storage::set_worker_job_submitted(&state.pool, row.id, &worker_job.id, 1)
         .await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
+    state.worker_metrics.job_submitted(row.id, &request.task);
     spawn_worker_poll(state.clone(), row.id, worker_job);
     let updated = evohime_storage::load_worker_job(&state.pool, row.id)
         .await
@@ -445,6 +482,7 @@ async fn retry_worker_job(
     )
     .await
     .map_err(|e| ApiError::Internal(e.to_string()))?;
+    state.worker_metrics.job_retried(row.id, &row.task, "manual retry");
     spawn_worker_poll(state.clone(), row.id, worker_job);
     let updated = evohime_storage::load_worker_job(&state.pool, row.id)
         .await
@@ -459,6 +497,8 @@ fn spawn_worker_poll(state: Arc<AppState>, id: Uuid, worker_job: worker::WorkerJ
             let _ =
                 evohime_storage::complete_worker_job(&state.pool, id, "failed", None, Some(&error))
                     .await;
+            // Best-effort task name for metrics when poll fails hard.
+            state.worker_metrics.job_finished(id, "unknown", false);
         }
     });
 }
@@ -476,6 +516,9 @@ async fn recover_worker_jobs(state: Arc<AppState>) {
             count = jobs.len(),
             "recovering worker jobs after server restart"
         );
+        state
+            .worker_metrics
+            .recovery(jobs.len(), "recoverable jobs");
     }
     for job in jobs {
         if job.attempts >= job.max_attempts {
@@ -518,9 +561,16 @@ async fn run_worker_job(
     id: Uuid,
     mut worker_job: worker::WorkerJob,
 ) -> Result<(), String> {
+    let task_name = evohime_storage::load_worker_job(&state.pool, id)
+        .await
+        .ok()
+        .flatten()
+        .map(|row| row.task)
+        .unwrap_or_else(|| "unknown".into());
     loop {
         for _ in 0..120 {
             if worker::is_terminal_status(&worker_job.status) {
+                let ok = worker_job.status == "completed";
                 evohime_storage::complete_worker_job(
                     &state.pool,
                     id,
@@ -530,6 +580,7 @@ async fn run_worker_job(
                 )
                 .await
                 .map_err(|e| e.to_string())?;
+                state.worker_metrics.job_finished(id, &task_name, ok);
                 return Ok(());
             }
             if worker_job.status == "running"
@@ -539,6 +590,7 @@ async fn run_worker_job(
                     state.worker_job_stall,
                 )
             {
+                state.worker_metrics.job_stalled(id, &task_name);
                 match retry_worker_job_after_error(
                     state,
                     id,
@@ -550,7 +602,10 @@ async fn run_worker_job(
                         worker_job = job;
                         continue;
                     }
-                    None => return Ok(()),
+                    None => {
+                        state.worker_metrics.job_finished(id, &task_name, false);
+                        return Ok(());
+                    }
                 }
             }
             tokio::time::sleep(Duration::from_millis(250)).await;
@@ -559,7 +614,10 @@ async fn run_worker_job(
                 Err(error) => {
                     match retry_worker_job_after_error(state, id, error.to_string()).await? {
                         Some(job) => worker_job = job,
-                        None => return Ok(()),
+                        None => {
+                            state.worker_metrics.job_finished(id, &task_name, false);
+                            return Ok(());
+                        }
                     }
                 }
             }
@@ -568,7 +626,10 @@ async fn run_worker_job(
             .await?
         {
             Some(job) => worker_job = job,
-            None => return Ok(()),
+            None => {
+                state.worker_metrics.job_finished(id, &task_name, false);
+                return Ok(());
+            }
         }
     }
 }
@@ -585,6 +646,12 @@ async fn worker_health_loop(state: Arc<AppState>, interval: Duration, stale_afte
                 let restarted = last_started_at
                     .as_ref()
                     .is_some_and(|previous| previous != &health.started_at);
+                state.worker_metrics.health_ok(
+                    health.started_at.clone(),
+                    health.pid,
+                    health.queue_depth,
+                    health.active_jobs,
+                );
                 last_started_at = Some(health.started_at);
                 last_ok_at = tokio::time::Instant::now();
                 recovery_inflight = false;
@@ -595,6 +662,7 @@ async fn worker_health_loop(state: Arc<AppState>, interval: Duration, stale_afte
             }
             Err(error) => {
                 warn!(%error, "python worker health check failed");
+                state.worker_metrics.health_failed(&error.to_string());
                 if !recovery_inflight && last_ok_at.elapsed() >= stale_after {
                     recovery_inflight = true;
                     warn!(
@@ -636,6 +704,9 @@ async fn retry_worker_job_after_error(
                 )
                 .await
                 .map_err(|e| e.to_string())?;
+                state
+                    .worker_metrics
+                    .job_retried(id, &row.task, &error);
                 return Ok(Some(worker_job));
             }
             Err(submit_error) if attempts + 1 >= row.max_attempts => {

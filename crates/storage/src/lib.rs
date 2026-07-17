@@ -165,6 +165,30 @@ pub async fn list_recoverable_worker_jobs(
         .fetch_all(pool).await?)
 }
 
+pub async fn list_recent_worker_jobs(
+    pool: &PgPool,
+    limit: i64,
+) -> Result<Vec<WorkerJobRow>, StorageError> {
+    let limit = limit.clamp(1, 200);
+    Ok(sqlx::query_as::<_, WorkerJobRow>(
+        "SELECT id, worker_job_id, task, payload_json, status, attempts, max_attempts, result_json, error, created_at, updated_at, completed_at \
+         FROM worker_jobs ORDER BY created_at DESC LIMIT $1",
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn count_worker_jobs_by_status(
+    pool: &PgPool,
+) -> Result<Vec<(String, i64)>, StorageError> {
+    Ok(sqlx::query_as::<_, (String, i64)>(
+        "SELECT status, COUNT(*)::bigint FROM worker_jobs GROUP BY status ORDER BY status",
+    )
+    .fetch_all(pool)
+    .await?)
+}
+
 pub async fn prune_worker_jobs(
     pool: &PgPool,
     older_than: DateTime<Utc>,

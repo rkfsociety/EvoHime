@@ -40,7 +40,9 @@ python -m unittest discover -s workers/python -p "test_*.py"
 | `text.entities` | `{ text }` | urls / emails / paths / ticket ids |
 
 Job state is process-local. The Rust server owns durable `worker_jobs` rows,
-process health watchdog, per-job stall retries, backoff, and retention.
+process health watchdog, per-job stall retries, backoff, retention, and
+observability (`GET /api/worker/status`, `GET /api/worker/jobs`, nested
+`worker` block in `GET /api/metrics`).
 
 ## Server env knobs
 

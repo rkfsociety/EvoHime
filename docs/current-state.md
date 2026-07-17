@@ -48,9 +48,12 @@ Stages 1–5 complete. Structured memory `6.16`–`6.25`: schema through experie
 | GET | `/api/github/pull-requests` | PR list |
 | GET | `/api/github/pull-requests/:number` | PR detail (diff, comments, reviews, checks) |
 | POST | `/api/github/pull-requests` | Create PR via `gh` |
+| GET | `/api/worker/status` | Worker metrics + DB status counts |
+| GET | `/api/worker/jobs` | Recent durable worker jobs (`limit`, default 50) |
 | POST | `/api/worker/jobs` | Submit worker job |
 | GET | `/api/worker/jobs/:id` | Job state/result |
 | POST | `/api/worker/jobs/:id/retry` | Retry job |
+| GET | `/api/metrics` | Pipeline + worker metrics snapshot |
 | GET | `/api/memory` | List memory items (filters: scope, status, q) + privacy policy |
 | GET/PATCH/DELETE | `/api/memory/:id` | Get / update (content/status/pin, redacted) / delete |
 | GET | `/api/metrics` | Pipeline metrics snapshot (`otel_export_enabled` when OTLP configured) |
@@ -105,5 +108,5 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-1. Deeper worker observability as needed
-2. Optional follow-ups from roadmap backlog
+1. Optional follow-ups from roadmap backlog
+2. Keep CI / reliability polish as needed

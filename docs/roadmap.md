@@ -16,7 +16,7 @@
 | 3 | Tools + shell | ✅ Готово | Sandbox, filesystem tools, shell, approvals, terminal, permissions |
 | 4 | Editor + Git | ✅ Done | Browser file tree, Monaco editor, Git status/diff/actions, and synchronization events |
 | 5 | Оркестрация | ✅ Complete | Lifecycle, команды, storage и recovery готовы |
-| 6 | Advanced | 🟡 В процессе | Memory UI polish ✅; next worker observability / backlog |
+| 6 | Advanced | ✅ Foundations done; optional backlog / polish |
 
 ---
 
@@ -261,7 +261,7 @@
 
 | Приоритет | Улучшение | Что добавить |
 | --- | --- | --- |
-| P2 | Укрепление worker subsystem | ✅ process health + per-job heartbeat stall + typed payloads (`6.15`); further retry/retention optional |
+| P2 | Укрепление worker subsystem | ✅ health/stall + observability (`/api/worker/status`, metrics, job list) |
 | P2 | Специализированные ML handlers | ✅ `text.summarize` / `chunk` / `similarity` / `entities` (+ stats/keywords); further optional |
 
 ### Кандидаты на следующий milestone
@@ -287,7 +287,8 @@
 - Optional remote neural embeddings ✅ (`EVOHIME_EMBEDDING_MODE=remote`)
 - More ML handlers ✅ (`text.similarity`, `text.entities`)
 - Memory UI / experience polish ✅ (playbook view, kind filters, export)
-- **Next:** deeper worker observability; optional backlog
+- Deeper worker observability ✅ (`/api/worker/status`, job list, metrics)
+- **Next:** optional backlog / reliability polish
 
 ---
 
