@@ -1606,9 +1606,49 @@ h1 {
   font-weight: 700;
 }
 
+.chatTraceSummaryTitle.isThinking .thinkingLabel {
+  display: inline-flex;
+  align-items: baseline;
+  letter-spacing: 0.01em;
+}
+
+.thinkingDots {
+  display: inline-flex;
+  width: 1.1em;
+  margin-left: 1px;
+  overflow: hidden;
+}
+
+.thinkingDots span {
+  display: inline-block;
+  opacity: 0.25;
+  animation: thinkingDot 1.2s ease-in-out infinite;
+}
+
+.thinkingDots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.thinkingDots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+.agentAvatar.agentAvatarThinking {
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 0 rgba(62, 215, 178, 0.35),
+    0 0 0 2px rgba(143, 180, 255, 0.28);
+  animation: thinkingAvatarPulse 1.6s ease-in-out infinite;
+}
+
 .chatTraceSummaryMeta {
   color: var(--text-2);
   font-size: 12px;
+}
+
+.chatTraceSummaryTitle.isThinking + .chatTraceSummaryMeta {
+  color: var(--accent-1);
+  animation: thinkingMetaFade 1.6s ease-in-out infinite;
 }
 
 .thinkingOrb {
@@ -1661,6 +1701,32 @@ h1 {
 @keyframes thinkingPulse {
   0%, 100% { opacity: 0.55; transform: scale(0.85); }
   50% { opacity: 1; transform: scale(1.15); }
+}
+
+@keyframes thinkingDot {
+  0%, 20% { opacity: 0.2; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-1px); }
+  100% { opacity: 0.2; transform: translateY(0); }
+}
+
+@keyframes thinkingAvatarPulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 0 rgba(62, 215, 178, 0.08),
+      0 0 0 2px rgba(143, 180, 255, 0.22);
+  }
+  50% {
+    transform: scale(1.06);
+    box-shadow:
+      0 0 0 6px rgba(62, 215, 178, 0.12),
+      0 0 0 2px rgba(143, 180, 255, 0.45);
+  }
+}
+
+@keyframes thinkingMetaFade {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
 }
 
 .composer {

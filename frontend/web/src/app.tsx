@@ -1975,9 +1975,24 @@ function ChatTraceSummary({ traceLines, active, userLogin }: { traceLines: ChatL
   return (
     <details className="chatTraceSummary" open={active}>
       <summary>
-        <span className="chatTraceSummaryTitle">
-          {active ? <AgentAvatar size="sm" className="agentAvatarThinking" /> : <span className="thinkingOrb" aria-hidden="true" />}
-          {active ? "Модель работает…" : "Ход работы"}
+        <span className={`chatTraceSummaryTitle${active ? " isThinking" : ""}`}>
+          {active ? (
+            <AgentAvatar size="sm" className="agentAvatarThinking" />
+          ) : (
+            <span className="thinkingOrb" aria-hidden="true" />
+          )}
+          {active ? (
+            <span className="thinkingLabel">
+              Модель думает
+              <span className="thinkingDots" aria-hidden="true">
+                <span>.</span>
+                <span>.</span>
+                <span>.</span>
+              </span>
+            </span>
+          ) : (
+            "Ход работы"
+          )}
         </span>
         <span className="chatTraceSummaryMeta">{active ? "Выполняю план" : "Завершено"}</span>
       </summary>
