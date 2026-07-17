@@ -78,6 +78,16 @@ pub fn decide_gate(input: &GateInput) -> GateDecision {
             MemoryScope::Session | MemoryScope::Workspace | MemoryScope::Project,
             MemoryKind::Fact | MemoryKind::Preference,
         ) if input.confidence >= AUTO_PROMOTE_CONFIDENCE => GateDecision::AutoPromote,
+        // Experience patterns auto-promote within experience scope; playbooks always ask.
+        (
+            MemoryScope::Experience,
+            MemoryKind::SuccessPattern
+            | MemoryKind::FailurePattern
+            | MemoryKind::VerificationRule,
+        ) if input.confidence >= AUTO_PROMOTE_CONFIDENCE => GateDecision::AutoPromote,
+        (MemoryScope::Experience, MemoryKind::Playbook) => GateDecision::Ask {
+            reason: "playbook requires operator confirmation".into(),
+        },
         _ => GateDecision::Ask {
             reason: "scope/kind not eligible for auto-promote".into(),
         },
@@ -178,11 +188,29 @@ mod tests {
     }
 
     #[test]
-    fn asks_on_experience_even_with_high_confidence() {
+    fn asks_on_experience_playbook_even_with_high_confidence() {
+        let mut input = base();
+        input.scope = MemoryScope::Experience;
+        input.kind = MemoryKind::Playbook;
+        input.confidence = 0.95;
+        assert!(matches!(decide_gate(&input), GateDecision::Ask { .. }));
+    }
+
+    #[test]
+    fn auto_promotes_experience_success_pattern() {
+        let mut input = base();
+        input.scope = MemoryScope::Experience;
+        input.kind = MemoryKind::SuccessPattern;
+        input.confidence = 0.8;
+        assert_eq!(decide_gate(&input), GateDecision::AutoPromote);
+    }
+
+    #[test]
+    fn asks_on_low_confidence_experience_failure() {
         let mut input = base();
         input.scope = MemoryScope::Experience;
         input.kind = MemoryKind::FailurePattern;
-        input.confidence = 0.9;
+        input.confidence = 0.5;
         assert!(matches!(decide_gate(&input), GateDecision::Ask { .. }));
     }
 }

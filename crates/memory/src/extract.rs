@@ -1,17 +1,22 @@
-//! Memory extraction: JSON parse + heuristic fallback (roadmap 6.20).
+//! Memory extraction: JSON parse + heuristic + experience patterns (6.20–6.21).
 
+use crate::experience::{parse_playbook_payload, PlaybookPayload};
 use evohime_storage::{MemoryKind, MemoryScope, NewMemoryItem};
 use serde::Deserialize;
+use serde_json::Value;
 use uuid::Uuid;
 
 pub const MAX_CANDIDATES_PER_TASK: usize = 5;
 const SUMMARY_LIMIT: usize = 400;
+const TRIGGER_LIMIT: usize = 160;
+const STEP_LIMIT: usize = 200;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtractedCandidate {
     pub scope: MemoryScope,
     pub kind: MemoryKind,
     pub content: String,
+    pub content_json: Option<Value>,
     pub confidence: f64,
     pub importance: f64,
     pub pinned: bool,
@@ -31,7 +36,7 @@ impl ExtractedCandidate {
             kind: self.kind,
             status: evohime_storage::MemoryStatus::Candidate,
             content: self.content,
-            content_json: None,
+            content_json: self.content_json,
             confidence: self.confidence,
             importance: self.importance,
             pinned: self.pinned,
@@ -49,7 +54,12 @@ impl ExtractedCandidate {
 struct RawCandidate {
     scope: String,
     kind: String,
+    #[serde(default)]
     content: String,
+    #[serde(default)]
+    content_json: Option<Value>,
+    #[serde(default)]
+    playbook: Option<PlaybookPayload>,
     #[serde(default = "default_confidence")]
     confidence: f64,
     #[serde(default = "default_importance")]
@@ -70,17 +80,25 @@ fn clamp01(value: f64) -> f64 {
     value.clamp(0.0, 1.0)
 }
 
+fn truncate_chars(input: &str, max_chars: usize) -> String {
+    let trimmed = input.trim();
+    if trimmed.chars().count() <= max_chars {
+        return trimmed.to_string();
+    }
+    trimmed
+        .chars()
+        .take(max_chars.saturating_sub(1))
+        .collect::<String>()
+        + "…"
+}
+
 fn truncate_summary(user_message: &str, final_message: &str) -> String {
     let summary = format!(
         "User: {} | Assistant: {}",
         user_message.trim(),
         final_message.trim()
     );
-    let trimmed = summary.trim();
-    if trimmed.chars().count() <= SUMMARY_LIMIT {
-        return trimmed.to_string();
-    }
-    trimmed.chars().take(SUMMARY_LIMIT).collect::<String>() + "…"
+    truncate_chars(&summary, SUMMARY_LIMIT)
 }
 
 /// Parse model output as a JSON array of memory candidates.
@@ -108,7 +126,6 @@ pub fn parse_extraction_json(raw: &str) -> Vec<ExtractedCandidate> {
 
 fn try_parse_array(raw: &str) -> Vec<ExtractedCandidate> {
     let Ok(items) = serde_json::from_str::<Vec<RawCandidate>>(raw) else {
-        // Single object fallback
         if let Ok(one) = serde_json::from_str::<RawCandidate>(raw) {
             return normalize_raw(one).into_iter().collect();
         }
@@ -120,14 +137,32 @@ fn try_parse_array(raw: &str) -> Vec<ExtractedCandidate> {
 fn normalize_raw(raw: RawCandidate) -> Option<ExtractedCandidate> {
     let scope = MemoryScope::parse(&raw.scope)?;
     let kind = MemoryKind::parse(&raw.kind)?;
-    let content = raw.content.trim().to_string();
-    if content.is_empty() {
-        return None;
-    }
+
+    let (content, content_json) = if kind == MemoryKind::Playbook {
+        if let Some(playbook) = raw.playbook.filter(|p| p.validate()) {
+            (playbook.to_content_text(), Some(playbook.to_content_json()))
+        } else if let Some(json) = raw.content_json.as_ref().and_then(parse_playbook_payload) {
+            (json.to_content_text(), Some(json.to_content_json()))
+        } else {
+            let content = raw.content.trim().to_string();
+            if content.is_empty() {
+                return None;
+            }
+            (content, raw.content_json)
+        }
+    } else {
+        let content = raw.content.trim().to_string();
+        if content.is_empty() {
+            return None;
+        }
+        (content, raw.content_json)
+    };
+
     Some(ExtractedCandidate {
         scope,
         kind,
         content,
+        content_json,
         confidence: clamp01(raw.confidence),
         importance: clamp01(raw.importance),
         pinned: raw.pinned,
@@ -151,13 +186,112 @@ fn extract_json_blocks(raw: &str) -> Vec<String> {
             break;
         }
     }
-    // Also try first [...] slice
     if let (Some(open), Some(close)) = (raw.find('['), raw.rfind(']')) {
         if open < close {
             out.push(raw[open..=close].to_string());
         }
     }
     out
+}
+
+/// Success/failure/verification/playbook drafts for the experience scope.
+pub fn experience_patterns(
+    user_message: &str,
+    final_message: &str,
+    task_ok: bool,
+) -> Vec<ExtractedCandidate> {
+    let trigger = truncate_chars(user_message, TRIGGER_LIMIT);
+    if trigger.is_empty() {
+        return Vec::new();
+    }
+    let outcome = truncate_chars(final_message, STEP_LIMIT);
+    if outcome.is_empty() {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    if task_ok {
+        let playbook = PlaybookPayload {
+            trigger: trigger.clone(),
+            steps: vec![outcome.clone()],
+            verify: Some("Task completed successfully".into()),
+            rollback_hint: None,
+        };
+        out.push(ExtractedCandidate {
+            scope: MemoryScope::Experience,
+            kind: MemoryKind::SuccessPattern,
+            content: format!("When '{trigger}' succeeded: {outcome}"),
+            content_json: None,
+            confidence: 0.72,
+            importance: 0.55,
+            pinned: false,
+        });
+        out.push(ExtractedCandidate {
+            scope: MemoryScope::Experience,
+            kind: MemoryKind::Playbook,
+            content: playbook.to_content_text(),
+            content_json: Some(playbook.to_content_json()),
+            confidence: 0.6,
+            importance: 0.6,
+            pinned: false,
+        });
+        out.push(ExtractedCandidate {
+            scope: MemoryScope::Experience,
+            kind: MemoryKind::VerificationRule,
+            content: format!("After '{trigger}', confirm: task completed without error"),
+            content_json: None,
+            confidence: 0.65,
+            importance: 0.5,
+            pinned: false,
+        });
+    } else {
+        out.push(ExtractedCandidate {
+            scope: MemoryScope::Experience,
+            kind: MemoryKind::FailurePattern,
+            content: format!("When '{trigger}' failed: {outcome}"),
+            content_json: None,
+            confidence: 0.68,
+            importance: 0.65,
+            pinned: false,
+        });
+        let playbook = PlaybookPayload {
+            trigger: trigger.clone(),
+            steps: vec![format!("Investigate failure: {outcome}")],
+            verify: Some("Failure no longer reproduces".into()),
+            rollback_hint: Some("Revert partial changes from the failed attempt".into()),
+        };
+        out.push(ExtractedCandidate {
+            scope: MemoryScope::Experience,
+            kind: MemoryKind::Playbook,
+            content: playbook.to_content_text(),
+            content_json: Some(playbook.to_content_json()),
+            confidence: 0.55,
+            importance: 0.6,
+            pinned: false,
+        });
+    }
+    out
+}
+
+fn merge_unique(
+    mut base: Vec<ExtractedCandidate>,
+    extra: Vec<ExtractedCandidate>,
+) -> Vec<ExtractedCandidate> {
+    for candidate in extra {
+        if base.len() >= MAX_CANDIDATES_PER_TASK {
+            break;
+        }
+        let duplicate = base.iter().any(|existing| {
+            existing.kind == candidate.kind
+                && existing.scope == candidate.scope
+                && existing.content.eq_ignore_ascii_case(&candidate.content)
+        });
+        if !duplicate {
+            base.push(candidate);
+        }
+    }
+    base.truncate(MAX_CANDIDATES_PER_TASK);
+    base
 }
 
 /// Deterministic fallback when LLM extract fails or returns nothing.
@@ -173,11 +307,11 @@ pub fn heuristic_extract(
 
     let mut out = Vec::new();
 
-    // Session note — low confidence → usually Ask
     out.push(ExtractedCandidate {
         scope: MemoryScope::Session,
         kind: MemoryKind::Fact,
         content: summary.clone(),
+        content_json: None,
         confidence: 0.55,
         importance: 0.4,
         pinned: false,
@@ -188,39 +322,34 @@ pub fn heuristic_extract(
             scope: MemoryScope::Workspace,
             kind: MemoryKind::Fact,
             content: summary,
+            content_json: None,
             confidence: 0.75,
             importance: 0.5,
             pinned: false,
         });
-    } else {
-        out.push(ExtractedCandidate {
-            scope: MemoryScope::Workspace,
-            kind: MemoryKind::FailurePattern,
-            content: format!("Task failed context: {summary}"),
-            confidence: 0.45,
-            importance: 0.6,
-            pinned: false,
-        });
     }
 
-    out.truncate(MAX_CANDIDATES_PER_TASK);
-    out
+    merge_unique(out, experience_patterns(user_message, final_message, task_ok))
 }
 
-/// Prefer parsed LLM candidates; fall back to heuristic when empty.
+/// Prefer parsed LLM candidates; always try to supplement with experience patterns.
 pub fn extract_candidates(
     llm_raw: Option<&str>,
     user_message: &str,
     final_message: &str,
     task_ok: bool,
 ) -> Vec<ExtractedCandidate> {
+    let mut out = Vec::new();
     if let Some(raw) = llm_raw {
-        let parsed = parse_extraction_json(raw);
-        if !parsed.is_empty() {
-            return parsed;
-        }
+        out.extend(parse_extraction_json(raw));
     }
-    heuristic_extract(user_message, final_message, task_ok)
+    if out.is_empty() {
+        return heuristic_extract(user_message, final_message, task_ok);
+    }
+    merge_unique(
+        out,
+        experience_patterns(user_message, final_message, task_ok),
+    )
 }
 
 #[cfg(test)]
@@ -237,8 +366,27 @@ mod tests {
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].scope, MemoryScope::Workspace);
         assert_eq!(items[0].confidence, 0.9);
-        assert_eq!(items[1].confidence, 1.0); // clamped
-        assert_eq!(items[1].importance, 0.0); // clamped
+        assert_eq!(items[1].confidence, 1.0);
+        assert_eq!(items[1].importance, 0.0);
+    }
+
+    #[test]
+    fn parses_playbook_object() {
+        let raw = r#"[{
+          "scope":"experience",
+          "kind":"playbook",
+          "confidence":0.8,
+          "playbook":{
+            "trigger":"flake tests",
+            "steps":["re-run once","check timing"],
+            "verify":"suite green"
+          }
+        }]"#;
+        let items = parse_extraction_json(raw);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].kind, MemoryKind::Playbook);
+        assert!(items[0].content.contains("When flake tests"));
+        assert!(items[0].content_json.is_some());
     }
 
     #[test]
@@ -260,36 +408,45 @@ mod tests {
     }
 
     #[test]
-    fn heuristic_success_has_session_and_workspace_fact() {
+    fn heuristic_success_includes_workspace_fact_and_experience() {
         let items = heuristic_extract("add tests", "done, added tests", true);
-        assert_eq!(items.len(), 2);
-        assert_eq!(items[0].scope, MemoryScope::Session);
-        assert!((items[0].confidence - 0.55).abs() < f64::EPSILON);
-        assert_eq!(items[1].scope, MemoryScope::Workspace);
-        assert_eq!(items[1].kind, MemoryKind::Fact);
-        assert!((items[1].confidence - 0.75).abs() < f64::EPSILON);
+        assert!(items.iter().any(|c| c.scope == MemoryScope::Session));
+        assert!(items
+            .iter()
+            .any(|c| c.scope == MemoryScope::Workspace && c.kind == MemoryKind::Fact));
+        assert!(items
+            .iter()
+            .any(|c| c.scope == MemoryScope::Experience && c.kind == MemoryKind::SuccessPattern));
+        assert!(items.len() <= MAX_CANDIDATES_PER_TASK);
     }
 
     #[test]
-    fn heuristic_failure_uses_failure_pattern_not_global() {
+    fn heuristic_failure_uses_experience_failure_not_global() {
         let items = heuristic_extract("deploy", "failed: timeout", false);
-        assert_eq!(items.len(), 2);
-        assert_eq!(items[1].kind, MemoryKind::FailurePattern);
+        assert!(items
+            .iter()
+            .any(|c| c.kind == MemoryKind::FailurePattern && c.scope == MemoryScope::Experience));
         assert!(items.iter().all(|c| c.scope != MemoryScope::Global));
-        assert!(items[1].confidence < 0.7);
+        assert!(!items
+            .iter()
+            .any(|c| c.scope == MemoryScope::Workspace && c.kind == MemoryKind::FailurePattern));
     }
 
     #[test]
-    fn extract_candidates_prefers_llm_over_heuristic() {
+    fn extract_candidates_supplements_llm_with_experience() {
         let raw = r#"[{"scope":"project","kind":"preference","content":"from llm","confidence":0.8}]"#;
-        let items = extract_candidates(Some(raw), "u", "a", true);
-        assert_eq!(items.len(), 1);
-        assert_eq!(items[0].content, "from llm");
+        let items = extract_candidates(Some(raw), "add auth", "wired jwt", true);
+        assert!(items.iter().any(|c| c.content == "from llm"));
+        assert!(items
+            .iter()
+            .any(|c| c.kind == MemoryKind::SuccessPattern || c.kind == MemoryKind::Playbook));
+        assert!(items.len() <= MAX_CANDIDATES_PER_TASK);
     }
 
     #[test]
     fn extract_candidates_falls_back_on_bad_llm() {
         let items = extract_candidates(Some("???"), "hello", "world", true);
-        assert_eq!(items.len(), 2);
+        assert!(items.len() >= 2);
+        assert!(items.iter().any(|c| c.scope == MemoryScope::Experience));
     }
 }

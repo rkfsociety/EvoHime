@@ -4,7 +4,7 @@ Last updated: 2026-07-17
 
 ## Stage: 6 in progress
 
-Stages 1–5 complete. Structured memory `6.16`–`6.20`: schema, service, retrieval into prompt, extraction + ask-on-uncertainty decision gate.
+Stages 1–5 complete. Structured memory `6.16`–`6.21`: schema, service, retrieval, extract + ask-on-uncertainty, experience/playbooks.
 
 ## Crates
 
@@ -12,7 +12,7 @@ Stages 1–5 complete. Structured memory `6.16`–`6.20`: schema, service, retri
 | --- | --- | --- |
 | `server` | Active | HTTP + WebSocket, workspace file/Git/MCP/tools, GitHub PR detail/create, worker jobs, memory extract/gate |
 | `protocol` | Active | ServerEvent, ClientCommand enums + JSON Schema (incl. `memory.*`) |
-| `memory` | Active | Redact/dedupe/conflict + retrieval + **extract/decision gate** (`6.18`–`6.20`) |
+| `memory` | Active | Redact/dedupe/conflict + retrieval + extract/gate + **experience/playbooks** (`6.18`–`6.21`) |
 | `storage` | Active | Sessions, tasks, events, messages, legacy notes, **memory_items**, settings, worker jobs |
 | `tool-runtime` | Active | Sandboxed filesystem, shell, Git, browser, MCP call |
 | `agent-runtime` | Active | Plan → batches → bounded replan; checkpoints; structured + legacy memory context |
@@ -61,9 +61,9 @@ user.message
   → plan steps → dependency batches → tools
   → bounded replan (≤3) → respond
   → checkpoints / approval pause / resume
-  → extract candidates (LLM JSON + heuristic fallback)
+  → extract candidates (LLM JSON + heuristic + experience patterns)
   → admit → decision gate (auto-promote | memory.ask | drop)
-  → legacy notes + structured memory_items
+  → legacy notes + structured memory_items (incl. experience/playbooks)
   → task.completed | task.failed
 ```
 
@@ -72,7 +72,7 @@ user.message
 - `sessions`, `tasks`, `task_steps`, `task_checkpoints`
 - `session_events`, `session_messages`
 - `session_memory` / `global_memory` — legacy free-text (still used by agent loop)
-- `memory_items` — structured scopes/items (`6.16`–`6.20`)
+- `memory_items` — structured scopes/items (`6.16`–`6.21`)
 - `app_settings`, `worker_jobs`
 
 ## Frontend panels
@@ -92,12 +92,12 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Tests
 
-- `crates/memory` — redact/normalize/dedupe/conflict + extract/gate + admit integration
+- `crates/memory` — redact/normalize/dedupe/conflict + extract/gate + experience/playbooks + admit integration
 - `crates/storage` — memory_items CRUD + legacy import
 - `crates/model-gateway`, `agent-runtime`, `protocol`, `tool-runtime`, `task-engine`, `permissions`, `server`
 
 ## Next recommended step
 
-1. **`6.21`** — experience memory / playbooks
-2. Then Memory UI override (`6.22`/`6.24`) and feedback loop (`6.23`)
+1. **`6.22` / `6.24`** — Memory panel override UI
+2. Then feedback loop (`6.23`)
 3. Parallel P1: task-pipeline observability; broader integration tests

@@ -1,11 +1,12 @@
-//! Agent memory domain service (roadmap 6.18–6.20).
+//! Agent memory domain service (roadmap 6.18–6.21).
 //!
 //! Redaction, normalization, deduplication, conflict detection, extraction,
-//! and ask-on-uncertainty decision gate on top of `memory_items`.
+//! ask-on-uncertainty gate, and experience/playbook patterns on `memory_items`.
 
 mod conflict;
 mod decision;
 mod dedupe;
+mod experience;
 mod extract;
 mod normalize;
 mod redact;
@@ -15,9 +16,12 @@ mod service;
 pub use conflict::{detect_conflict, ConflictHit};
 pub use decision::{decide_gate, GateDecision, GateInput, AUTO_PROMOTE_CONFIDENCE};
 pub use dedupe::{content_fingerprint, detect_duplicate};
+pub use experience::{
+    format_experience_line, is_experience_kind, parse_playbook_payload, PlaybookPayload,
+};
 pub use extract::{
-    extract_candidates, heuristic_extract, parse_extraction_json, ExtractedCandidate,
-    MAX_CANDIDATES_PER_TASK,
+    experience_patterns, extract_candidates, heuristic_extract, parse_extraction_json,
+    ExtractedCandidate, MAX_CANDIDATES_PER_TASK,
 };
 pub use normalize::normalize_content;
 pub use redact::{redact_secrets, RedactionOutcome};

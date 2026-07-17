@@ -2,7 +2,7 @@
 
 use crate::MemoryError;
 use evohime_storage::{
-    list_memory_items, MemoryItemRow, MemoryScope, MemoryStatus, LOCAL_OPERATOR_SCOPE_KEY,
+    list_memory_items, MemoryItemRow, MemoryKind, MemoryScope, MemoryStatus, LOCAL_OPERATOR_SCOPE_KEY,
 };
 use sqlx::PgPool;
 use std::collections::HashSet;
@@ -157,7 +157,8 @@ pub fn select_within_budget(ranked: &[RankedMemory], max_chars: usize, max_items
     let mut chars_used = 0usize;
 
     for ranked_item in ranked.iter().take(max_items) {
-        let content = ranked_item.item.content.trim();
+        let display = display_content(&ranked_item.item);
+        let content = display.trim();
         if content.is_empty() {
             continue;
         }
@@ -198,6 +199,26 @@ pub fn select_within_budget(ranked: &[RankedMemory], max_chars: usize, max_items
     }
 }
 
+fn display_content(item: &MemoryItemRow) -> String {
+    let kind = MemoryKind::parse(&item.kind);
+    if item.scope == MemoryScope::Experience.as_str()
+        || matches!(
+            kind,
+            Some(
+                MemoryKind::SuccessPattern
+                    | MemoryKind::FailurePattern
+                    | MemoryKind::VerificationRule
+                    | MemoryKind::Playbook
+            )
+        )
+    {
+        if let Some(kind) = kind {
+            return crate::experience::format_experience_line(kind, &item.content);
+        }
+    }
+    item.content.clone()
+}
+
 fn truncate_chars(input: &str, max_chars: usize) -> String {
     if input.chars().count() <= max_chars {
         return input.to_string();
@@ -206,6 +227,7 @@ fn truncate_chars(input: &str, max_chars: usize) -> String {
 }
 
 fn score_item(query: &str, item: &MemoryItemRow) -> f64 {
+    // Prompt budget priority: pinned → active → experience → weak candidate.
     let mut score = item.importance;
     if item.pinned {
         score += 2.0;
@@ -214,6 +236,23 @@ fn score_item(query: &str, item: &MemoryItemRow) -> f64 {
         score += 0.5;
     } else if item.status == MemoryStatus::Candidate.as_str() {
         score += 0.1;
+    }
+
+    let kind = MemoryKind::parse(&item.kind);
+    let scope = MemoryScope::parse(&item.scope);
+    if scope == Some(MemoryScope::Experience)
+        || matches!(
+            kind,
+            Some(
+                MemoryKind::SuccessPattern
+                    | MemoryKind::FailurePattern
+                    | MemoryKind::VerificationRule
+                    | MemoryKind::Playbook
+            )
+        )
+    {
+        // Between active facts and weak candidates.
+        score += 0.3;
     }
 
     let query_tokens = tokenize(query);
@@ -381,5 +420,30 @@ mod tests {
         let ranked = search_memory("typed api", &[active, conflict], 10);
         assert_eq!(ranked.len(), 1);
         assert_eq!(ranked[0].item.id, active_id);
+    }
+
+    #[test]
+    fn experience_lines_are_kind_labeled_in_budget_selection() {
+        let mut item = sample_item(Uuid::new_v4(), "When X failed: timeout", "candidate", 0.6, false);
+        item.scope = "experience".into();
+        item.kind = MemoryKind::FailurePattern.as_str().into();
+        let ranked = search_memory("timeout", &[item], 5);
+        let selected = select_within_budget(&ranked, 500, 5);
+        assert_eq!(selected.entries.len(), 1);
+        assert!(selected.entries[0]
+            .content
+            .starts_with("failure_pattern:"));
+    }
+
+    #[test]
+    fn active_fact_outranks_experience_candidate_when_query_ties() {
+        let mut fact = sample_item(Uuid::new_v4(), "deploy timeout", "active", 0.5, false);
+        fact.kind = MemoryKind::Fact.as_str().into();
+        let mut experience = sample_item(Uuid::new_v4(), "deploy timeout", "candidate", 0.5, false);
+        experience.scope = "experience".into();
+        experience.kind = MemoryKind::FailurePattern.as_str().into();
+        let ranked = search_memory("deploy timeout", &[experience.clone(), fact.clone()], 5);
+        assert_eq!(ranked[0].item.id, fact.id);
+        assert!(ranked[0].score > ranked[1].score);
     }
 }

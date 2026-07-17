@@ -23,7 +23,7 @@ React+TS+Vite frontend, Rust/Axum backend, PostgreSQL, WebSocket, native Windows
 
 ## Current stage: 6 (Milestone 5 in progress)
 
-Stages 1–5 done. Memory `6.16`–`6.20` landed (schema, service, retrieval, extract + ask-on-uncertainty). Next: `6.21` experience/playbooks.
+Stages 1–5 done. Memory `6.16`–`6.21` landed (schema, service, retrieval, extract + ask-on-uncertainty, experience/playbooks). Next: Memory UI (`6.22`/`6.24`).
 
 ## Key paths
 
@@ -41,7 +41,7 @@ Stages 1–5 done. Memory `6.16`–`6.20` landed (schema, service, retrieval, ex
 
 ## Next
 
-`6.21` experience/playbooks. Parallel: Memory UI (`6.22`/`6.24`), observability, integration tests.
+Memory UI (`6.22`/`6.24`). Parallel: feedback (`6.23`), observability, integration tests.
 
 ## Local run
 

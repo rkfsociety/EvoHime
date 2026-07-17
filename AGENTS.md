@@ -71,7 +71,7 @@ User message
 
 ### Incomplete / next
 
-- **`6.21`+** Experience/playbooks, Memory UI, feedback loop
+- **`6.22`+** Memory UI, feedback loop (`6.23`), embeddings (`6.25`)
 - Task-pipeline observability (correlation ids / metrics)
 - Broader integration tests (approval pause/resume, recovery)
 - General LLM tool-calling across all registered tools (orchestration still plan-driven)
@@ -172,7 +172,7 @@ See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](d
 | 3 Tools + shell | ✅ Done |
 | 4 Editor + Git | ✅ Done |
 | 5 Task orchestration | ✅ Done |
-| 6 Advanced | 🟡 In progress — memory `6.16`–`6.20` done; next `6.21` |
+| 6 Advanced | 🟡 In progress — memory `6.16`–`6.21` done; next Memory UI |
 
 Memory design: [docs/superpowers/specs/2026-07-16-agent-memory-design.md](docs/superpowers/specs/2026-07-16-agent-memory-design.md)
 
