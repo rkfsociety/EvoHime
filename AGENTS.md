@@ -71,9 +71,8 @@ User message
 
 ### Incomplete / next
 
-- **Broader integration tests** (approval pause/resume, recovery); optional neural encoder / OTel
-- Task-pipeline observability (correlation ids / metrics)
 - Broader integration tests (approval pause/resume, recovery)
+- Optional neural encoder / OpenTelemetry export
 - General LLM tool-calling across all registered tools (orchestration still plan-driven)
 - More ML handlers / deeper worker observability as needed
 
