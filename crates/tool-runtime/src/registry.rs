@@ -29,15 +29,32 @@ pub enum ToolError {
 }
 
 #[derive(Debug, Clone)]
+pub struct ToolProgress {
+    pub stream: &'static str,
+    pub delta: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct ToolContext {
     pub workspace_root: PathBuf,
     pub task_id: Uuid,
     pub session_id: Option<Uuid>,
+    /// Optional live progress channel (e.g. shell stdout/stderr chunks).
+    pub progress_tx: Option<tokio::sync::mpsc::UnboundedSender<ToolProgress>>,
 }
 
 impl ToolContext {
     pub fn sandbox(&self) -> Result<crate::WorkspaceSandbox, ToolError> {
         crate::WorkspaceSandbox::new(&self.workspace_root)
+    }
+
+    pub fn emit_progress(&self, stream: &'static str, delta: impl Into<String>) {
+        if let Some(tx) = &self.progress_tx {
+            let _ = tx.send(ToolProgress {
+                stream,
+                delta: delta.into(),
+            });
+        }
     }
 }
 
@@ -365,7 +382,8 @@ mod tests {
             workspace_root: dir.path().to_path_buf(),
             task_id: Uuid::nil(),
             session_id: None,
-        };
+            progress_tx: None,
+};
         let results = registry
             .execute_parallel(
                 &context,
@@ -402,7 +420,8 @@ mod tests {
             workspace_root: dir.path().to_path_buf(),
             task_id: Uuid::nil(),
             session_id: None,
-        };
+            progress_tx: None,
+};
         let token = tokio_util::sync::CancellationToken::new();
         token.cancel();
         let result = registry
@@ -433,7 +452,8 @@ mod tests {
             workspace_root: dir.path().to_path_buf(),
             task_id: Uuid::nil(),
             session_id: None,
-        };
+            progress_tx: None,
+};
         let token = CancellationToken::new();
         let (program, args) = if cfg!(windows) {
             ("ping", vec!["-n", "5", "127.0.0.1"])
@@ -491,7 +511,8 @@ mod tests {
             workspace_root: dir.path().to_path_buf(),
             task_id: Uuid::nil(),
             session_id: None,
-        };
+            progress_tx: None,
+};
         let result = registry
             .execute(
                 &context,
@@ -545,7 +566,8 @@ mod tests {
             workspace_root: dir.path().to_path_buf(),
             task_id: Uuid::nil(),
             session_id: Some(session_id),
-        };
+            progress_tx: None,
+};
         let err = registry
             .execute(
                 &context,

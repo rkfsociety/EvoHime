@@ -12,6 +12,7 @@ export type ServerEvent =
   | AgentPlanUpdatedEvent
   | ToolStartedEvent
   | ToolOutputEvent
+  | ToolOutputDeltaEvent
   | ToolCompletedEvent
   | TaskCompletedEvent
   | TaskFailedEvent
@@ -76,6 +77,13 @@ export interface ToolOutputEvent {
   task_id: Uuid;
   tool_name: string;
   output: string;
+}
+export interface ToolOutputDeltaEvent {
+  type: "tool.output.delta";
+  task_id: Uuid;
+  tool_name: string;
+  stream: "stdout" | "stderr" | "log";
+  delta: string;
 }
 export interface ToolCompletedEvent {
   type: "tool.completed";

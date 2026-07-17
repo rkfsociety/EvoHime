@@ -37,6 +37,7 @@
         { "$ref": "#/$defs/AgentPlanUpdatedEvent" },
         { "$ref": "#/$defs/ToolStartedEvent" },
         { "$ref": "#/$defs/ToolOutputEvent" },
+        { "$ref": "#/$defs/ToolOutputDeltaEvent" },
         { "$ref": "#/$defs/ToolCompletedEvent" },
         { "$ref": "#/$defs/TaskCompletedEvent" },
         { "$ref": "#/$defs/TaskFailedEvent" },
@@ -128,6 +129,18 @@
         "task_id": { "$ref": "#/$defs/Uuid" },
         "tool_name": { "type": "string" },
         "output": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "ToolOutputDeltaEvent": {
+      "type": "object",
+      "required": ["type", "task_id", "tool_name", "stream", "delta"],
+      "properties": {
+        "type": { "const": "tool.output.delta" },
+        "task_id": { "$ref": "#/$defs/Uuid" },
+        "tool_name": { "type": "string" },
+        "stream": { "type": "string", "enum": ["stdout", "stderr", "log"] },
+        "delta": { "type": "string" }
       },
       "additionalProperties": false
     },

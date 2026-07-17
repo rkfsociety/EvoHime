@@ -148,11 +148,6 @@ pub(crate) async fn execute_single_plan_step(
     tools: &ToolRegistry,
     event_tx: &UnboundedSender<ServerEvent>,
 ) -> Result<StepOutcome, AgentError> {
-    let context = ToolContext {
-        workspace_root: config.workspace_root.clone(),
-        task_id: config.task_id,
-        session_id: Some(config.session_id),
-    };
     let tool_name = match step.tool_name.as_str() {
         "read_file" => "filesystem.read",
         "list_files" => "filesystem.list",
@@ -200,6 +195,32 @@ pub(crate) async fn execute_single_plan_step(
             tool_name: effective_tool_name.to_string(),
         },
     )?;
+
+    let (progress_tx, mut progress_rx) =
+        tokio::sync::mpsc::unbounded_channel::<evohime_tool_runtime::ToolProgress>();
+    let forward_tx = event_tx.clone();
+    let forward_task_id = config.task_id;
+    let forward_tool = effective_tool_name.to_string();
+    let forward = tokio::spawn(async move {
+        while let Some(progress) = progress_rx.recv().await {
+            let _ = emit(
+                &forward_tx,
+                ServerEvent::ToolOutputDelta {
+                    task_id: forward_task_id,
+                    tool_name: forward_tool.clone(),
+                    stream: progress.stream.to_string(),
+                    delta: progress.delta,
+                },
+            );
+        }
+    });
+
+    let context = ToolContext {
+        workspace_root: config.workspace_root.clone(),
+        task_id: config.task_id,
+        session_id: Some(config.session_id),
+        progress_tx: Some(progress_tx),
+    };
     let tool_result = if effective_tool_name == "memory.search" {
         execute_memory_search(config, &input).await
     } else if effective_tool_name == "agent.run" {
@@ -207,6 +228,9 @@ pub(crate) async fn execute_single_plan_step(
     } else {
         tools.execute(&context, effective_tool_name, input).await
     };
+    drop(context);
+    let _ = forward.await;
+
     match tool_result {
         Ok(result) => {
             emit(

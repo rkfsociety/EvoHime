@@ -126,10 +126,14 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
       ]);
       break;
     case "tool.output":
-      if (event.tool_name === "shell.execute") {
-        ctx.setTerminalEntries((current) => [...current, { stream: "stdout", text: event.output }]);
-      }
+      // Live chunks arrive via tool.output.delta; keep final shell blob out of the terminal
+      // to avoid duplicating streamed stdout/stderr.
       break;
+    case "tool.output.delta": {
+      const stream = event.stream === "stderr" ? "stderr" : "stdout";
+      ctx.setTerminalEntries((current) => [...current, { stream, text: event.delta }]);
+      break;
+    }
     case "approval.required":
       ctx.setApproval(event);
       ctx.setTasks((current) => {

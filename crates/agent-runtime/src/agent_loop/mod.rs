@@ -204,7 +204,8 @@ async fn run_agent_loop_inner(
                     workspace_root: config.workspace_root.clone(),
                     task_id: config.task_id,
                     session_id: Some(config.session_id),
-                };
+                    progress_tx: None,
+};
                 let tool_result = tools
                     .execute(
                         &tool_ctx,

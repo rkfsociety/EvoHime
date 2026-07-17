@@ -38,6 +38,14 @@ pub enum ServerEvent {
         tool_name: String,
         output: String,
     },
+    #[serde(rename = "tool.output.delta")]
+    ToolOutputDelta {
+        task_id: Uuid,
+        tool_name: String,
+        /// `stdout` | `stderr` | `log`
+        stream: String,
+        delta: String,
+    },
     #[serde(rename = "tool.completed")]
     ToolCompleted {
         task_id: Uuid,

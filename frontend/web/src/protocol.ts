@@ -22,6 +22,7 @@ export type {
   TaskStepChangedEvent,
   TaskStartedEvent,
   ToolCompletedEvent,
+  ToolOutputDeltaEvent,
   ToolOutputEvent,
   ToolStartedEvent,
   UserMessageCommand,

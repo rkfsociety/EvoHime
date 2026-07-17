@@ -71,8 +71,8 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Wave A/B ✅; Wave C: `7.28`–`7.31` ✅; next `7.32`+
-- Wave C next: streaming tool progress (`7.32`)…
+- **Stage 7** Hardening + Product — Wave A/B ✅; Wave C: `7.28`–`7.32` ✅; next `7.33`+
+- Wave C next: tool result truncation + summarization budget (`7.33`)…
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 
 ## WebSocket events
@@ -84,6 +84,7 @@ agent.message.delta
 agent.plan.updated
 tool.started
 tool.output
+tool.output.delta
 tool.completed
 task.completed
 task.failed
