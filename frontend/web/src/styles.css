@@ -3579,6 +3579,12 @@ h1 {
   background: rgba(159, 192, 255, 0.06);
 }
 
+.memoryLoadMore {
+  display: flex;
+  justify-content: center;
+  padding: 14px 0 4px;
+}
+
 .memoryAddHeader {
   display: flex;
   justify-content: space-between;

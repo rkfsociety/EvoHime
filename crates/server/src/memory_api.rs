@@ -6,11 +6,12 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use chrono::{DateTime, Utc};
 use evohime_memory::{
     admit_memory_item, embed_text, normalize_content, redact_secrets, AdmitOutcome,
 };
 use evohime_storage::{
-    delete_memory_item, get_memory_item, list_memory_items_overview,
+    delete_memory_item, get_memory_item, list_memory_items_overview_page,
     resolve_memory_conflict as resolve_storage_conflict, update_memory_item_fields_with_embedding,
     MemoryItemRow, MemoryKind, MemoryScope, MemoryStatus, NewMemoryItem,
 };
@@ -30,6 +31,8 @@ pub struct ListMemoryQuery {
     pub q: Option<String>,
     #[serde(default)]
     pub limit: Option<i64>,
+    #[serde(default)]
+    pub cursor: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -88,6 +91,83 @@ pub struct MemoryPrivacyInfo {
 pub struct MemoryListResponse {
     pub items: Vec<MemoryItemRow>,
     pub privacy: MemoryPrivacyInfo,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct MemoryCursor {
+    pinned: bool,
+    importance: f64,
+    updated_at: DateTime<Utc>,
+    id: Uuid,
+}
+
+fn encode_memory_cursor(cursor: &MemoryCursor) -> String {
+    format!(
+        "{}|{}|{}|{}",
+        if cursor.pinned { 1 } else { 0 },
+        cursor.importance,
+        cursor.updated_at.to_rfc3339(),
+        cursor.id
+    )
+}
+
+fn decode_memory_cursor(raw: &str) -> Result<MemoryCursor, ApiError> {
+    let mut parts = raw.split('|');
+    let pinned = match parts.next() {
+        Some("0") => false,
+        Some("1") => true,
+        _ => return Err(ApiError::BadRequest("invalid memory cursor".into())),
+    };
+    let importance = parts
+        .next()
+        .and_then(|value| value.parse::<f64>().ok())
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| ApiError::BadRequest("invalid memory cursor".into()))?;
+    let updated_at = parts
+        .next()
+        .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+        .map(|value| value.with_timezone(&Utc))
+        .ok_or_else(|| ApiError::BadRequest("invalid memory cursor".into()))?;
+    let id = parts
+        .next()
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .ok_or_else(|| ApiError::BadRequest("invalid memory cursor".into()))?;
+    if parts.next().is_some() {
+        return Err(ApiError::BadRequest("invalid memory cursor".into()));
+    }
+    Ok(MemoryCursor {
+        pinned,
+        importance,
+        updated_at,
+        id,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{decode_memory_cursor, encode_memory_cursor, MemoryCursor};
+    use chrono::{TimeZone, Utc};
+    use uuid::Uuid;
+
+    #[test]
+    fn memory_cursor_round_trips_sort_key() {
+        let cursor = MemoryCursor {
+            pinned: true,
+            importance: 0.75,
+            updated_at: Utc.with_ymd_and_hms(2026, 7, 18, 12, 30, 0).unwrap(),
+            id: Uuid::nil(),
+        };
+
+        let encoded = encode_memory_cursor(&cursor);
+
+        assert_eq!(decode_memory_cursor(&encoded).unwrap(), cursor);
+    }
+
+    #[test]
+    fn memory_cursor_rejects_malformed_value() {
+        assert!(decode_memory_cursor("not-a-memory-cursor").is_err());
+    }
 }
 
 fn privacy_info() -> MemoryPrivacyInfo {
@@ -151,20 +231,45 @@ pub async fn list_memory(
         scope
     };
 
-    let items = list_memory_items_overview(
+    let cursor = query
+        .cursor
+        .as_deref()
+        .map(decode_memory_cursor)
+        .transpose()?;
+    let limit = query.limit.unwrap_or(50).clamp(1, 150);
+    let mut items = list_memory_items_overview_page(
         &state.pool,
         scope,
         query.scope_key.as_deref(),
         &statuses,
         query.q.as_deref(),
-        query.limit.unwrap_or(100),
+        cursor.as_ref().map(|value| value.pinned),
+        cursor.as_ref().map(|value| value.importance),
+        cursor.as_ref().map(|value| value.updated_at),
+        cursor.as_ref().map(|value| value.id),
+        limit + 1,
     )
     .await
     .map_err(|error| ApiError::Internal(error.to_string()))?;
 
+    let next_cursor = if items.len() > limit as usize {
+        items.truncate(limit as usize);
+        items.last().map(|item| {
+            encode_memory_cursor(&MemoryCursor {
+                pinned: item.pinned,
+                importance: item.importance,
+                updated_at: item.updated_at,
+                id: item.id,
+            })
+        })
+    } else {
+        None
+    };
+
     Ok(Json(MemoryListResponse {
         items,
         privacy: privacy_info(),
+        next_cursor,
     }))
 }
 

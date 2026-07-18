@@ -425,6 +425,24 @@ pub async fn list_memory_items_overview(
     query: Option<&str>,
     limit: i64,
 ) -> Result<Vec<MemoryItemRow>, StorageError> {
+    list_memory_items_overview_page(
+        pool, scope, scope_key, statuses, query, None, None, None, None, limit,
+    )
+    .await
+}
+
+pub async fn list_memory_items_overview_page(
+    pool: &PgPool,
+    scope: Option<MemoryScope>,
+    scope_key: Option<&str>,
+    statuses: &[MemoryStatus],
+    query: Option<&str>,
+    after_pinned: Option<bool>,
+    after_importance: Option<f64>,
+    after_updated_at: Option<DateTime<Utc>>,
+    after_id: Option<Uuid>,
+    limit: i64,
+) -> Result<Vec<MemoryItemRow>, StorageError> {
     let status_filters: Vec<&str> = if statuses.is_empty() {
         vec![
             MemoryStatus::Candidate.as_str(),
@@ -451,7 +469,11 @@ pub async fn list_memory_items_overview(
           AND ($2::text IS NULL OR scope_key = $2)
           AND status = ANY($3)
           AND ($4::text IS NULL OR content ILIKE $4)
-        ORDER BY pinned DESC, importance DESC, updated_at DESC
+          AND ($6::boolean IS NULL OR pinned < $6
+            OR (pinned = $6 AND (importance < $7
+              OR (importance = $7 AND (updated_at < $8
+                OR (updated_at = $8 AND id < $9))))))
+        ORDER BY pinned DESC, importance DESC, updated_at DESC, id DESC
         LIMIT $5
         "#
     ))
@@ -460,6 +482,10 @@ pub async fn list_memory_items_overview(
     .bind(&status_filters)
     .bind(query_filter)
     .bind(limit.clamp(1, 500))
+    .bind(after_pinned)
+    .bind(after_importance)
+    .bind(after_updated_at)
+    .bind(after_id)
     .fetch_all(pool)
     .await?;
     Ok(rows)

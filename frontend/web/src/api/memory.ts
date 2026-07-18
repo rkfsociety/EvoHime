@@ -33,6 +33,7 @@ export type MemoryPrivacyInfo = {
 export type MemoryListResponse = {
   items: MemoryItem[];
   privacy: MemoryPrivacyInfo;
+  next_cursor?: string | null;
 };
 
 export type MemoryListParams = {
@@ -41,6 +42,7 @@ export type MemoryListParams = {
   status?: string;
   q?: string;
   limit?: number;
+  cursor?: string;
 };
 
 export type MemoryUpdatePayload = {
@@ -73,6 +75,7 @@ function toQuery(params: MemoryListParams) {
   if (params.status) query.set("status", params.status);
   if (params.q) query.set("q", params.q);
   if (params.limit != null) query.set("limit", String(params.limit));
+  if (params.cursor) query.set("cursor", params.cursor);
   const text = query.toString();
   return text ? `?${text}` : "";
 }

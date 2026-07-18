@@ -113,6 +113,8 @@ export function MemoryPanel() {
   const [queryDraft, setQueryDraft] = useState("");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -139,9 +141,10 @@ export function MemoryPanel() {
     setError(null);
     try {
       const status = TABS.find((item) => item.id === tab)?.status ?? "active";
-      const response = await listMemory({ status, q: query || undefined, limit: 150 });
+      const response = await listMemory({ status, q: query || undefined, limit: 50 });
       setItems(response.items);
       setPrivacy(response.privacy);
+      setNextCursor(response.next_cursor ?? null);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Не удалось загрузить память");
       setItems([]);
@@ -149,6 +152,33 @@ export function MemoryPanel() {
       setLoading(false);
     }
   }, [query, tab]);
+
+  async function loadMore() {
+    if (!nextCursor || loadingMore) {
+      return;
+    }
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const status = TABS.find((item) => item.id === tab)?.status ?? "active";
+      const response = await listMemory({
+        status,
+        q: query || undefined,
+        limit: 50,
+        cursor: nextCursor,
+      });
+      setItems((current) => {
+        const existing = new Set(current.map((item) => item.id));
+        return [...current, ...response.items.filter((item) => !existing.has(item.id))];
+      });
+      setPrivacy(response.privacy);
+      setNextCursor(response.next_cursor ?? null);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РґРѕРіСЂСѓР·РёС‚СЊ РїР°РјСЏС‚СЊ");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     void refresh();
@@ -548,6 +578,14 @@ export function MemoryPanel() {
           })}
         </div>
       )}
+
+      {nextCursor && !loading ? (
+        <div className="memoryLoadMore">
+          <button type="button" onClick={() => void loadMore()} disabled={loadingMore}>
+            {loadingMore ? "Р—Р°РіСЂСѓР·РєР°..." : "Р—Р°РіСЂСѓР·РёС‚СЊ РµС‰С‘"}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

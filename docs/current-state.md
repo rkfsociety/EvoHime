@@ -1,6 +1,6 @@
 # EvoHime — Current State
 
-Last updated: 2026-07-17
+Last updated: 2026-07-18
 
 ## Stage: 7 planned (Stage 6 foundations done)
 
@@ -59,7 +59,7 @@ Errors return `{ "error", "code", "retryable" }` (plus `tool` / `approval_id` fo
 | GET | `/api/metrics` | Pipeline+worker snapshot + persist status |
 | GET | `/api/metrics/history` | Persisted metrics snapshots from PG |
 | GET | `/metrics` | Prometheus text exposition |
-| GET | `/api/memory` | List memory items (filters: scope, status, q) + privacy policy |
+| GET | `/api/memory` | List memory items (filters: scope, status, q, limit, cursor; keyset pagination) + privacy policy |
 | GET/PATCH/DELETE | `/api/memory/:id` | Get / update (content/status/pin, redacted) / delete |
 | WS | `/ws/:session_id` | Real-time events |
 
@@ -128,8 +128,10 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.44` реализован: MemoryPanel получил ручное добавление memory item и шаблоны; backend прогоняет запись через redaction, normalization, embedding, dedupe и conflict flow.
 
-**Актуализация 2026-07-18:** `7.44` выполнен: MemoryPanel поддерживает ручное добавление памяти с шаблонами и общим admission flow. Следующий пункт — `7.45`.
+`7.45` реализован: `/api/memory` поддерживает стабильный keyset cursor по sort key, а MemoryPanel дозагружает следующие страницы по 50 записей.
 
-1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.44`, `7.52` ✅; следующий пункт — `7.45`
-2. Рекомендуемая следующая волна: pagination/cursor для memory API (`7.45`), затем delete confirm + undo (`7.46`)
+**Актуализация 2026-07-18:** `7.45` выполнен: MemoryPanel поддерживает cursor pagination и дозагрузку страниц. Следующий пункт — `7.46`.
+
+1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.45`, `7.52` ✅; следующий пункт — `7.46`
+2. Рекомендуемая следующая волна: delete confirm + undo (`7.46`), затем local embedding option (`7.47`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

@@ -13,9 +13,9 @@ pub mod pool;
 pub use memory::{
     apply_memory_item_feedback, delete_memory_item, get_memory_item, import_legacy_memory_notes,
     insert_memory_item, list_idle_memory_for_decay, list_memory_items, list_memory_items_overview,
-    resolve_memory_conflict, update_memory_item_embedding, update_memory_item_fields,
-    update_memory_item_fields_with_embedding, update_memory_item_status, MemoryItemRow, MemoryKind,
-    MemoryScope, MemoryStatus, NewMemoryItem, LOCAL_OPERATOR_SCOPE_KEY,
+    list_memory_items_overview_page, resolve_memory_conflict, update_memory_item_embedding,
+    update_memory_item_fields, update_memory_item_fields_with_embedding, update_memory_item_status,
+    MemoryItemRow, MemoryKind, MemoryScope, MemoryStatus, NewMemoryItem, LOCAL_OPERATOR_SCOPE_KEY,
 };
 pub use metrics_snapshots::{
     insert_metrics_snapshot, latest_metrics_snapshot, list_metrics_snapshots,
