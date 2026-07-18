@@ -213,15 +213,37 @@ pub fn is_transient_infra_failure(message: &str) -> bool {
     rate_limited || provider_http
 }
 
-/// One-shot task dumps (dir listings, step transcripts) are not durable memory.
+/// One-shot task dumps (dir listings, step transcripts, smoke prompts) are not durable memory.
 pub fn is_ephemeral_task_dump(content: &str) -> bool {
     let text = content.trim();
     if text.is_empty() {
         return false;
     }
-    let lower = text.to_ascii_lowercase();
-    // Do not match heuristic summaries (`User: … | Assistant: …`) — only step/dir dumps.
-    if lower.contains("step-1") || lower.contains("step‑1") || lower.contains("step 1:") {
+    let ascii = text.to_ascii_lowercase();
+    let lower = text.to_lowercase();
+    // Heuristic / legacy transcript dumps are not facts.
+    if ascii.starts_with("user asked:")
+        || (ascii.starts_with("user:") && ascii.contains("| assistant:"))
+    {
+        return true;
+    }
+    // Smoke / one-shot verification prompts.
+    if ascii.contains("smoke test")
+        || ascii.contains("hello-smoke")
+        || (ascii.contains("filesystem.write") && lower.contains("ровно"))
+        || (ascii.contains("filesystem.write") && ascii.contains("exactly"))
+    {
+        return true;
+    }
+    // Exploratory “look around the repo” sessions — not durable preference/facts.
+    if lower.contains("разберись")
+        || lower.contains("дорожную карту")
+        || lower.contains("с чего начать")
+        || lower.contains("что можно улучшить")
+    {
+        return true;
+    }
+    if ascii.contains("step-1") || ascii.contains("step‑1") || ascii.contains("step 1:") {
         return true;
     }
     let root_markers = [
@@ -234,7 +256,7 @@ pub fn is_ephemeral_task_dump(content: &str) -> bool {
     ];
     let marker_hits = root_markers
         .iter()
-        .filter(|marker| lower.contains(*marker))
+        .filter(|marker| ascii.contains(*marker))
         .count();
     if marker_hits >= 3 {
         return true;
@@ -305,6 +327,7 @@ fn merge_unique(
 }
 
 /// Deterministic fallback when LLM extract fails or returns nothing.
+/// Transcript dumps are not durable — only structured LLM candidates become memory.
 pub fn heuristic_extract(
     user_message: &str,
     final_message: &str,
@@ -318,21 +341,14 @@ pub fn heuristic_extract(
     let summary = truncate_summary(user_message, final_message);
     if summary.is_empty()
         || is_ephemeral_task_dump(&summary)
+        || is_ephemeral_task_dump(user_message)
         || is_ephemeral_task_dump(final_message)
     {
         return Vec::new();
     }
 
-    // Session dumps at 0.55 only spam ask-on-uncertainty; keep short workspace facts.
-    vec![ExtractedCandidate {
-        scope: MemoryScope::Workspace,
-        kind: MemoryKind::Fact,
-        content: summary,
-        content_json: None,
-        confidence: 0.75,
-        importance: 0.5,
-        pinned: false,
-    }]
+    // Prefer structured LLM extract; blind User|Assistant dumps are ephemeral.
+    Vec::new()
 }
 
 /// Prefer parsed LLM candidates; supplement with heuristics only on successful tasks.
@@ -417,14 +433,9 @@ mod tests {
     }
 
     #[test]
-    fn heuristic_success_keeps_workspace_fact_without_experience_dump() {
+    fn heuristic_success_does_not_dump_transcripts() {
         let items = heuristic_extract("add tests", "done, added tests", true);
-        assert!(items.iter().all(|c| c.scope != MemoryScope::Session));
-        assert!(items
-            .iter()
-            .any(|c| c.scope == MemoryScope::Workspace && c.kind == MemoryKind::Fact));
-        assert!(items.iter().all(|c| c.scope != MemoryScope::Experience));
-        assert!(items.len() <= MAX_CANDIDATES_PER_TASK);
+        assert!(items.is_empty());
     }
 
     #[test]
@@ -455,10 +466,37 @@ mod tests {
 
     #[test]
     fn extract_candidates_falls_back_on_bad_llm() {
+        // Transcript dumps are not durable memory — empty LLM → no heuristic junk.
         let items = extract_candidates(Some("???"), "hello", "world", true);
-        assert!(!items.is_empty());
-        assert!(items.iter().any(|c| c.scope == MemoryScope::Workspace));
-        assert!(items.iter().all(|c| c.scope != MemoryScope::Experience));
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn skips_transcript_and_smoke_dumps() {
+        let transcript = "User: Создай файл hello-smoke.txt | Assistant: Файл создан";
+        let asked = "User asked: Разберись в коде проекта; assistant replied: Step-1 done";
+        let smoke = "EvoHime smoke test 2026-07-19 via filesystem.write";
+        let explore = "When Разберись в коде проекта и объясни, с чего начать.: Окей, смотрю корень";
+        assert!(is_ephemeral_task_dump(transcript));
+        assert!(is_ephemeral_task_dump(asked));
+        assert!(is_ephemeral_task_dump(smoke));
+        assert!(is_ephemeral_task_dump(explore));
+        assert!(heuristic_extract(
+            "Создай файл hello-smoke.txt через filesystem.write",
+            "Файл создан с содержимым: EvoHime smoke test 2026-07-19.",
+            true
+        )
+        .is_empty());
+        let llm = r#"[{"scope":"workspace","kind":"fact","content":"User asked: Разберись в коде; assistant replied: ok","confidence":0.9}]"#;
+        assert!(extract_candidates(Some(llm), "разберись", "ok", true).is_empty());
+    }
+
+    #[test]
+    fn keeps_durable_preference_facts() {
+        let llm = r#"[{"scope":"workspace","kind":"preference","content":"prefer typed API over raw fetch","confidence":0.85}]"#;
+        let items = extract_candidates(Some(llm), "refactor client", "switched to typed api", true);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].content, "prefer typed API over raw fetch");
     }
 
     #[test]

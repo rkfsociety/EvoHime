@@ -79,6 +79,18 @@ pub(crate) fn resolve_workspace_path(
     Ok(resolved)
 }
 
+/// Stable path for DB / UI matching. Strips Windows `\\?\` / `//?/` prefixes.
+pub(crate) fn public_fs_path(path: &std::path::Path) -> String {
+    public_fs_path_str(&path.to_string_lossy())
+}
+
+pub(crate) fn public_fs_path_str(path: &str) -> String {
+    path.replace('\\', "/")
+        .trim_start_matches("//?/")
+        .trim_start_matches("//./")
+        .to_string()
+}
+
 pub(crate) async fn emit_event(
     state: &Arc<AppState>,
     session_id: Uuid,
@@ -116,5 +128,21 @@ mod tests {
     fn resolves_model_route_with_default_fallback() {
         assert_eq!(resolve_model_route(Some("planner"), "default"), "planner");
         assert_eq!(resolve_model_route(None, "default"), "default");
+    }
+
+    #[test]
+    fn public_fs_path_strips_windows_extended_prefix() {
+        assert_eq!(
+            public_fs_path_str(r"\\?\F:\github\EvoHimeSmoke-20260719"),
+            "F:/github/EvoHimeSmoke-20260719"
+        );
+        assert_eq!(
+            public_fs_path_str("//?/F:/github/EvoHimeSmoke-20260719"),
+            "F:/github/EvoHimeSmoke-20260719"
+        );
+        assert_eq!(
+            public_fs_path_str("F:/github/EvoHimeSmoke-20260719"),
+            "F:/github/EvoHimeSmoke-20260719"
+        );
     }
 }

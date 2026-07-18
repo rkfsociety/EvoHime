@@ -175,6 +175,41 @@ export function chatMatchesProject(chat: ChatSessionSummary, project: ProjectSel
   return chatPath.endsWith(`/${project.label.toLowerCase()}`);
 }
 
+/** Split sessions so foreign-workspace chats stay visible (and deletable) in the sidebar. */
+export function partitionSessionsForSidebar(
+  chats: ChatSessionSummary[],
+  project: ProjectSelection,
+): { projectChats: ChatSessionSummary[]; otherChats: ChatSessionSummary[] } {
+  if (project.path === null) {
+    return { projectChats: [], otherChats: chats };
+  }
+  const projectChats: ChatSessionSummary[] = [];
+  const otherChats: ChatSessionSummary[] = [];
+  for (const chat of chats) {
+    if (chatMatchesProject(chat, project)) {
+      projectChats.push(chat);
+    } else {
+      otherChats.push(chat);
+    }
+  }
+  return { projectChats, otherChats };
+}
+
+/**
+ * Session to open on boot / project switch.
+ * Never auto-open a chat bound to another workspace — that created invisible "ghost" chats.
+ */
+export function pickBootstrapSession(
+  chats: ChatSessionSummary[],
+  project: ProjectSelection,
+): ChatSessionSummary | null {
+  const { projectChats, otherChats } = partitionSessionsForSidebar(chats, project);
+  if (project.path === null) {
+    return otherChats[0] ?? null;
+  }
+  return projectChats[0] ?? otherChats.find((chat) => !chat.workspace_path) ?? null;
+}
+
 export function formatSessionTimestamp(value: string) {
   return new Date(value).toLocaleString("ru-RU", {
     day: "2-digit",

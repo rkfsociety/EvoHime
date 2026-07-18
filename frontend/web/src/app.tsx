@@ -40,7 +40,8 @@ import { websocketUrl } from "./api/client";
 import { reconcileModelForBilling } from "./lib/modelBilling";
 import {
   chatLinePlainText,
-  chatMatchesProject,
+  partitionSessionsForSidebar,
+  pickBootstrapSession,
   formatProfileInitials,
   formatSessionPreview,
   formatSessionTitle,
@@ -268,8 +269,9 @@ export function App() {
         return;
       }
       setChatSessions(data);
-      if (data.length > 0) {
-        void openSession(data[0]).catch((error) => {
+      const preferred = pickBootstrapSession(data, loadSelectedProject());
+      if (preferred) {
+        void openSession(preferred).catch((error) => {
           if (!cancelled) {
             setSocketState("failed");
             setLines((current) => [
@@ -292,7 +294,7 @@ export function App() {
         last_message: null,
         last_role: null,
       };
-      setChatSessions([createdSummary]);
+      setChatSessions([createdSummary, ...data]);
       setActiveSessionId(createdSummary.session_id);
       hydrateSession(createdSummary, bootstrap.events);
     };
@@ -587,13 +589,9 @@ export function App() {
     [activePanel],
   );
   const activeProjectLabel = selectedProject.label;
-  const projectChatSessions = useMemo(
-    () => chatSessions.filter((chat) => chatMatchesProject(chat, selectedProject)),
+  const { projectChats: projectChatSessions, otherChats: standaloneChatSessions } = useMemo(
+    () => partitionSessionsForSidebar(chatSessions, selectedProject),
     [chatSessions, selectedProject],
-  );
-  const standaloneChatSessions = useMemo(
-    () => chatSessions.filter((chat) => !chat.workspace_path),
-    [chatSessions],
   );
   const activeChatTitle = useMemo(
     () => chatSessions.find((chat) => chat.session_id === activeSessionId)?.title?.trim() || "Новый чат",
@@ -791,6 +789,30 @@ export function App() {
     hydrateSession(createdSummary, bootstrap.events);
   }
 
+  async function openPreferredSession(chats: ChatSessionSummary[], project: ProjectSelection) {
+    const preferred = pickBootstrapSession(chats, project);
+    if (preferred) {
+      await openSession(preferred);
+      return;
+    }
+    await createNewChat();
+  }
+
+  function selectProject(project: ProjectSelection) {
+    setSelectedProject(project);
+    setProjectPickerOpen(false);
+    setProjectSearch("");
+    const visible = partitionSessionsForSidebar(chatSessions, project);
+    const stillVisible =
+      visible.projectChats.some((chat) => chat.session_id === activeSessionId) ||
+      visible.otherChats.some((chat) => chat.session_id === activeSessionId);
+    if (!stillVisible) {
+      void openPreferredSession(chatSessions, project).catch((error) => {
+        setLines((current) => [...current, { role: "system", text: String(error) }]);
+      });
+    }
+  }
+
   async function createProject() {
     const name = newProjectName.trim();
     if (!name) {
@@ -801,9 +823,13 @@ export function App() {
     try {
       const project = await projectsApi.createProject(name);
       setProjects((current) => [...current, project].sort((left, right) => left.name.localeCompare(right.name)));
-      setSelectedProject({ label: project.name, path: project.path });
+      const nextProject = { label: project.name, path: project.path };
+      setSelectedProject(nextProject);
       setNewProjectName("");
       setProjectPickerOpen(false);
+      void openPreferredSession(chatSessions, nextProject).catch((error) => {
+        setLines((current) => [...current, { role: "system", text: String(error) }]);
+      });
     } catch (error) {
       setProjectCreateError(error instanceof Error ? error.message : String(error).replace(/^Error:\s*/, ""));
     } finally {
@@ -816,15 +842,11 @@ export function App() {
     try {
       await sessionsApi.archiveSession(summary.session_id);
 
-      setChatSessions((current) => current.filter((chat) => chat.session_id !== summary.session_id));
-      setArchivedChats((current) => [summary, ...current]);
+      const remaining = chatSessions.filter((chat) => chat.session_id !== summary.session_id);
+      setChatSessions(remaining);
+      setArchivedChats((current) => [summary, ...current.filter((chat) => chat.session_id !== summary.session_id)]);
       if (summary.session_id === activeSessionId) {
-        const next = chatSessions.find((chat) => chat.session_id !== summary.session_id);
-        if (next) {
-          await openSession(next);
-        } else {
-          await createNewChat();
-        }
+        await openPreferredSession(remaining, selectedProject);
       }
     } catch (error) {
       setLines((current) => [...current, { role: "system", text: String(error) }]);
@@ -845,13 +867,7 @@ export function App() {
         return;
       }
 
-      const next = remaining[0];
-      if (next) {
-        await openSession(next);
-        return;
-      }
-
-      await createNewChat();
+      await openPreferredSession(remaining, selectedProject);
     } catch (error) {
       setLines((current) => [...current, { role: "system", text: String(error) }]);
     } finally {
@@ -1536,11 +1552,7 @@ export function App() {
                 <button
                   type="button"
                   className={selectedProject.path === "." ? "projectOption active" : "projectOption"}
-                  onClick={() => {
-                    setSelectedProject({ label: "EvoHime", path: "." });
-                    setProjectPickerOpen(false);
-                    setProjectSearch("");
-                  }}
+                  onClick={() => selectProject({ label: "EvoHime", path: "." })}
                 >
                   <AgentMark size="sm" />
                   <span><strong>EvoHime</strong><small>Текущий workspace</small></span>
@@ -1550,11 +1562,7 @@ export function App() {
                     key={folder.path}
                     type="button"
                     className={selectedProject.path === folder.path ? "projectOption active" : "projectOption"}
-                    onClick={() => {
-                      setSelectedProject({ label: folder.name, path: folder.path });
-                      setProjectPickerOpen(false);
-                      setProjectSearch("");
-                    }}
+                    onClick={() => selectProject({ label: folder.name, path: folder.path })}
                   >
                     <span>▱</span>
                     <span><strong>{folder.name}</strong><small>Проект</small></span>
@@ -1597,11 +1605,7 @@ export function App() {
                 <button
                   type="button"
                   className={selectedProject.path === null ? "projectOption active" : "projectOption"}
-                  onClick={() => {
-                    setSelectedProject({ label: "Без проекта", path: null });
-                    setProjectPickerOpen(false);
-                    setProjectSearch("");
-                  }}
+                  onClick={() => selectProject({ label: "Без проекта", path: null })}
                 >
                   <span>×</span>
                   <span><strong>Работать без проекта</strong><small>Без выбранной папки</small></span>
@@ -1881,7 +1885,11 @@ export function App() {
 
           <section className="sidebarSection">
             <header className="sidebarHeader">
-              <strong>Чаты без проекта</strong>
+              <strong>
+                {standaloneChatSessions.some((chat) => chat.workspace_path)
+                  ? "Другие чаты"
+                  : "Чаты без проекта"}
+              </strong>
             </header>
             {standaloneChatSessions.length > 0 ? (
               <div className="standaloneSidebarChatList">

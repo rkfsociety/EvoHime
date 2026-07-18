@@ -12,10 +12,11 @@ pub mod pool;
 pub mod sites;
 
 pub use memory::{
-    apply_memory_item_feedback, delete_memory_item, get_memory_item, import_legacy_memory_notes,
-    insert_memory_item, list_all_memory_items, list_idle_memory_for_decay, list_memory_items,
-    list_memory_items_overview, list_memory_items_overview_page, resolve_memory_conflict,
-    update_memory_item_embedding, update_memory_item_fields,
+    apply_memory_item_feedback, delete_memory_item, delete_memory_items_by_scope_key,
+    get_memory_item, import_legacy_memory_notes, insert_memory_item, is_synthetic_test_scope_key,
+    list_all_memory_items, list_idle_memory_for_decay, list_memory_items,
+    list_memory_items_overview, list_memory_items_overview_page, purge_memory_junk,
+    resolve_memory_conflict, update_memory_item_embedding, update_memory_item_fields,
     update_memory_item_fields_with_embedding, update_memory_item_status, MemoryItemRow, MemoryKind,
     MemoryOverviewCursor, MemoryScope, MemoryStatus, NewMemoryItem, LOCAL_OPERATOR_SCOPE_KEY,
 };

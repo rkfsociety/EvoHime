@@ -699,6 +699,18 @@ mod tests {
     }
 
     #[test]
+    fn builds_filesystem_write_input_from_structured_json() {
+        let input = tool_input(
+            "filesystem.write",
+            r#"{"path":"hello-smoke.txt","content":"EvoHime smoke test 2026-07-19"}"#,
+            Path::new("C:/workspace"),
+        )
+        .expect("write input");
+        assert_eq!(input["path"], "hello-smoke.txt");
+        assert_eq!(input["content"], "EvoHime smoke test 2026-07-19");
+    }
+
+    #[test]
     fn builds_filesystem_write_input_from_declared_path() {
         let input = tool_input(
             "filesystem.write",

@@ -633,7 +633,7 @@ h1 {
   color: var(--text-3);
   font-size: 18px;
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.55;
 }
 
 .projectChatRow:hover .chatArchiveButton,

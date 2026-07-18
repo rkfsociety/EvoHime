@@ -434,7 +434,7 @@ pub(crate) fn structured_json_input(tool_name: &str, description: &str) -> Optio
         "shell.execute" | "browser.open" | "browser.extract" | "http.fetch" | "mcp.call"
         | "memory.search" | "agent.run" | "worker.run" | "git.diff" | "git.pull" | "git.push"
         | "git.status" | "git.commit" | "filesystem.read" | "filesystem.list"
-        | "filesystem.search" => {
+        | "filesystem.search" | "filesystem.write" | "filesystem.patch" => {
             if value.is_object() {
                 Some(value)
             } else if value.is_null() {

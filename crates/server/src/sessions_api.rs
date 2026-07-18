@@ -91,7 +91,9 @@ pub(crate) fn session_summary(row: evohime_storage::SessionSummaryRow) -> Sessio
         session_id: row.id,
         created_at: row.created_at,
         title: row.title,
-        workspace_path: row.workspace_path,
+        workspace_path: row
+            .workspace_path
+            .map(|path| crate::task::helpers::public_fs_path_str(&path)),
         last_message_at: row.last_message_at,
         last_message: row.last_message,
         last_role: row.last_role,

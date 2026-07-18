@@ -134,7 +134,10 @@ pub(crate) async fn handle_socket(
                                 continue;
                             }
                             let workspace_path = resolve_workspace_path(&state, workspace_path)?;
-                            let workspace_path = workspace_path.to_string_lossy().to_string();
+                            // Persist a stable public path so UI project matching works on Windows
+                            // (canonicalize() otherwise yields `\\?\F:\...`).
+                            let workspace_path =
+                                crate::task::helpers::public_fs_path(&workspace_path);
                             let task = match start_task(
                                 &state.pool,
                                 session_id,

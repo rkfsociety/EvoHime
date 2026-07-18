@@ -247,5 +247,9 @@ mod tests {
 
         let second = admit_memory_item(&pool, item).await.expect("admit 2");
         assert!(matches!(second, AdmitOutcome::Duplicate { .. }));
+
+        let _ = evohime_storage::delete_memory_items_by_scope_key(&pool, &scope_key)
+            .await
+            .expect("cleanup");
     }
 }

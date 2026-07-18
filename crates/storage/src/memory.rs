@@ -123,6 +123,14 @@ impl MemoryStatus {
 /// Default scope_key for single-tenant global / experience memory.
 pub const LOCAL_OPERATOR_SCOPE_KEY: &str = "local";
 
+/// Scope keys created by integration tests — must not leak into the Memory UI.
+pub fn is_synthetic_test_scope_key(scope_key: &str) -> bool {
+    let key = scope_key.trim();
+    key.starts_with("test-ws-")
+        || key.starts_with("overview-")
+        || key.starts_with("mem-svc-")
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct MemoryItemRow {
     pub id: Uuid,
@@ -489,6 +497,7 @@ pub async fn list_memory_items_overview_page(
           AND ($2::text IS NULL OR scope_key = $2)
           AND status = ANY($3)
           AND ($4::text IS NULL OR content ILIKE $4)
+          AND ($2::text IS NOT NULL OR scope_key !~ '^(test-ws-|overview-|mem-svc-)')
           AND ($6::boolean IS NULL OR pinned < $6
             OR (pinned = $6 AND (importance < $7
               OR (importance = $7 AND (updated_at < $8
@@ -607,6 +616,48 @@ pub async fn delete_memory_item(pool: &PgPool, id: Uuid) -> Result<bool, Storage
     Ok(result.rows_affected() > 0)
 }
 
+pub async fn delete_memory_items_by_scope_key(
+    pool: &PgPool,
+    scope_key: &str,
+) -> Result<u64, StorageError> {
+    let result = sqlx::query("DELETE FROM memory_items WHERE scope_key = $1")
+        .bind(scope_key.trim())
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected())
+}
+
+/// Remove integration-test leftovers and ephemeral transcript dumps from the live DB.
+pub async fn purge_memory_junk(pool: &PgPool) -> Result<u64, StorageError> {
+    let items_junk = junk_note_sql("content");
+    let items = sqlx::query(&format!(
+        r#"
+        DELETE FROM memory_items
+        WHERE scope_key ~ '^(test-ws-|overview-|mem-svc-)'
+           OR {items_junk}
+        "#
+    ))
+    .execute(pool)
+    .await?
+    .rows_affected();
+
+    let session_junk = junk_note_sql("note");
+    let sessions = sqlx::query(&format!(
+        "DELETE FROM session_memory WHERE {session_junk}"
+    ))
+    .execute(pool)
+    .await?
+    .rows_affected();
+
+    let global_junk = junk_note_sql("note");
+    let globals = sqlx::query(&format!("DELETE FROM global_memory WHERE {global_junk}"))
+        .execute(pool)
+        .await?
+        .rows_affected();
+
+    Ok(items + sessions + globals)
+}
+
 /// Apply a feedback adjustment to one memory item and append an audit event.
 #[allow(clippy::too_many_arguments)]
 pub async fn apply_memory_item_feedback(
@@ -697,10 +748,34 @@ pub async fn list_idle_memory_for_decay(
     Ok(rows)
 }
 
+/// SQL predicate: legacy/transcript/smoke dumps that must not become `memory_items`.
+const MEMORY_JUNK_CONTENT_SQL: &str = r#"
+(
+     content ~* '^(user asked:|user: .*\| assistant:)'
+  OR content ILIKE '%smoke test%'
+  OR content ILIKE '%hello-smoke%'
+  OR content ILIKE 'legacy-note-%'
+  OR content ILIKE '%step-1%'
+  OR content ILIKE '%step‑1%'
+  OR content ILIKE '%model error%'
+  OR content ILIKE '%разберись%'
+  OR content ILIKE '%дорожную карту%'
+  OR content = 'prefer typed API over raw fetch'
+  OR content = 'prefer worktrees for parallel agents'
+  OR content = 'use worktrees for parallel agents'
+)
+"#;
+
+fn junk_note_sql(column: &str) -> String {
+    MEMORY_JUNK_CONTENT_SQL.replace("content", column)
+}
+
 /// Import legacy free-text notes into `memory_items` as candidates.
 /// Idempotent via `source_label` markers `legacy:session_memory:{id}` / `legacy:global_memory:{id}`.
+/// Skips ephemeral transcript / test dumps so startup re-import cannot revive junk.
 pub async fn import_legacy_memory_notes(pool: &PgPool) -> Result<u64, StorageError> {
-    let session_inserted = sqlx::query(
+    let session_junk = junk_note_sql("sm.note");
+    let session_inserted = sqlx::query(&format!(
         r#"
         INSERT INTO memory_items (
             id, scope, scope_key, kind, status, content,
@@ -725,13 +800,15 @@ pub async fn import_legacy_memory_notes(pool: &PgPool) -> Result<u64, StorageErr
             SELECT 1 FROM memory_items mi
             WHERE mi.source_label = 'legacy:session_memory:' || sm.id::text
         )
-        "#,
-    )
+          AND NOT {session_junk}
+        "#
+    ))
     .execute(pool)
     .await?
     .rows_affected();
 
-    let global_inserted = sqlx::query(
+    let global_junk = junk_note_sql("gm.note");
+    let global_inserted = sqlx::query(&format!(
         r#"
         INSERT INTO memory_items (
             id, scope, scope_key, kind, status, content,
@@ -758,8 +835,9 @@ pub async fn import_legacy_memory_notes(pool: &PgPool) -> Result<u64, StorageErr
             SELECT 1 FROM memory_items mi
             WHERE mi.source_label = 'legacy:global_memory:' || gm.id::text
         )
-        "#,
-    )
+          AND NOT {global_junk}
+        "#
+    ))
     .execute(pool)
     .await?
     .rows_affected();
@@ -873,6 +951,10 @@ mod tests {
             .expect("get")
             .expect("exists");
         assert_eq!(loaded.status, "active");
+
+        let _ = delete_memory_items_by_scope_key(&pool, &scope_key)
+            .await
+            .expect("cleanup");
     }
 
     #[tokio::test]
@@ -883,7 +965,7 @@ mod tests {
         };
 
         let session = crate::create_session(&pool).await.expect("session");
-        let note = format!("legacy-note-{}", Uuid::new_v4());
+        let note = format!("durable-pref-{}", Uuid::new_v4());
         crate::insert_session_memory(&pool, session.id, None, &note)
             .await
             .expect("legacy insert");
@@ -903,6 +985,93 @@ mod tests {
         .await
         .expect("list");
         assert!(rows.iter().any(|row| row.content == note));
+
+        let _ = delete_memory_items_by_scope_key(&pool, &session.id.to_string())
+            .await
+            .expect("cleanup");
+        let _ = sqlx::query("DELETE FROM session_memory WHERE session_id = $1")
+            .bind(session.id)
+            .execute(&pool)
+            .await
+            .expect("session_memory cleanup");
+    }
+
+    #[tokio::test]
+    async fn import_skips_ephemeral_legacy_notes() {
+        let Some(pool) = connect_pool().await else {
+            eprintln!("skipping memory integration test: database unavailable");
+            return;
+        };
+
+        let session = crate::create_session(&pool).await.expect("session");
+        let junk = format!(
+            "User asked: Разберись в коде; assistant replied: ok ({})",
+            Uuid::new_v4()
+        );
+        crate::insert_session_memory(&pool, session.id, None, &junk)
+            .await
+            .expect("junk insert");
+
+        let imported = import_legacy_memory_notes(&pool).await.expect("import");
+        let rows = list_memory_items(
+            &pool,
+            MemoryScope::Session,
+            &session.id.to_string(),
+            &[MemoryStatus::Candidate],
+            50,
+        )
+        .await
+        .expect("list");
+        assert!(
+            !rows.iter().any(|row| row.content == junk),
+            "ephemeral legacy note must not import; imported_count={imported}"
+        );
+
+        let _ = sqlx::query("DELETE FROM session_memory WHERE session_id = $1")
+            .bind(session.id)
+            .execute(&pool)
+            .await
+            .expect("cleanup");
+    }
+
+    #[tokio::test]
+    async fn purge_memory_junk_clears_items_and_legacy() {
+        let Some(pool) = connect_pool().await else {
+            eprintln!("skipping memory integration test: database unavailable");
+            return;
+        };
+
+        let scope_key = format!("test-ws-{}", Uuid::new_v4());
+        let item = NewMemoryItem::candidate_fact(
+            MemoryScope::Workspace,
+            &scope_key,
+            "prefer typed API over raw fetch",
+        );
+        let _ = insert_memory_item(&pool, &item).await.expect("insert");
+        let session = crate::create_session(&pool).await.expect("session");
+        crate::insert_session_memory(
+            &pool,
+            session.id,
+            None,
+            "User asked: Разберись; assistant replied: nope",
+        )
+        .await
+        .expect("legacy");
+
+        let removed = purge_memory_junk(&pool).await.expect("purge");
+        assert!(removed >= 2);
+
+        let listed = list_memory_items_overview(
+            &pool,
+            Some(MemoryScope::Workspace),
+            Some(&scope_key),
+            &[MemoryStatus::Candidate, MemoryStatus::Active],
+            None,
+            10,
+        )
+        .await
+        .expect("list");
+        assert!(listed.is_empty());
     }
 
     #[tokio::test]
@@ -912,7 +1081,7 @@ mod tests {
             return;
         };
 
-        let scope_key = format!("overview-{}", Uuid::new_v4());
+        let scope_key = format!("panel-{}", Uuid::new_v4());
         let item = NewMemoryItem::candidate_fact(
             MemoryScope::Workspace,
             &scope_key,
@@ -953,5 +1122,58 @@ mod tests {
             .await
             .expect("get")
             .is_none());
+    }
+
+    #[test]
+    fn detects_synthetic_test_scope_keys() {
+        assert!(is_synthetic_test_scope_key("test-ws-abc"));
+        assert!(is_synthetic_test_scope_key("overview-1"));
+        assert!(is_synthetic_test_scope_key("mem-svc-xyz"));
+        assert!(!is_synthetic_test_scope_key("F:/github/EvoHime"));
+        assert!(!is_synthetic_test_scope_key("local"));
+    }
+
+    #[tokio::test]
+    async fn overview_hides_synthetic_test_scopes_by_default() {
+        let Some(pool) = connect_pool().await else {
+            eprintln!("skipping memory integration test: database unavailable");
+            return;
+        };
+
+        let scope_key = format!("test-ws-{}", Uuid::new_v4());
+        let item = NewMemoryItem::candidate_fact(
+            MemoryScope::Workspace,
+            &scope_key,
+            "prefer typed API over raw fetch",
+        );
+        let inserted = insert_memory_item(&pool, &item).await.expect("insert");
+
+        let hidden = list_memory_items_overview(
+            &pool,
+            Some(MemoryScope::Workspace),
+            None,
+            &[MemoryStatus::Candidate],
+            Some("prefer typed API"),
+            50,
+        )
+        .await
+        .expect("overview");
+        assert!(!hidden.iter().any(|row| row.id == inserted.id));
+
+        let explicit = list_memory_items_overview(
+            &pool,
+            Some(MemoryScope::Workspace),
+            Some(&scope_key),
+            &[MemoryStatus::Candidate],
+            None,
+            50,
+        )
+        .await
+        .expect("explicit");
+        assert!(explicit.iter().any(|row| row.id == inserted.id));
+
+        let _ = delete_memory_items_by_scope_key(&pool, &scope_key)
+            .await
+            .expect("cleanup");
     }
 }

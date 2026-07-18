@@ -4,7 +4,11 @@ export function normalizePath(path?: string) {
   if (!path || path === ".") {
     return ".";
   }
-  return path.replace(/\\/g, "/");
+  // Strip Windows extended-length / device prefixes from canonicalize().
+  return path
+    .replace(/\\/g, "/")
+    .replace(/^\/\/\?\//, "")
+    .replace(/^\/\/\.\//, "");
 }
 
 export function parentPath(path: string) {
