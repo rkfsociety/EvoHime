@@ -30,7 +30,11 @@ pub(crate) async fn collect_plan_steps(
     tools: &ToolRegistry,
     planning_messages: &[ChatMessage],
 ) -> Result<Vec<PlanStep>, AgentError> {
-    if crate::native_tools::native_tool_calls_enabled() {
+    if crate::native_tools::native_tool_calls_enabled()
+        && crate::native_tools::native_tool_calls_supported_for_model(
+            config.planning_model.as_deref(),
+        )
+    {
         let openai_tools = crate::native_tools::openai_tools_for_registry(tools);
         match gateway
             .chat_with_tools_for_route(

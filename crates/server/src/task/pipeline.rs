@@ -30,21 +30,6 @@ fn should_pause_for_plan_approval(_is_initial_plan: bool) -> bool {
     false
 }
 
-#[cfg(test)]
-mod tests {
-    use super::should_pause_for_plan_approval;
-
-    #[test]
-    fn initial_plan_does_not_pause_normal_task_execution() {
-        assert!(!should_pause_for_plan_approval(true));
-    }
-
-    #[test]
-    fn non_initial_plan_does_not_pause_normal_task_execution() {
-        assert!(!should_pause_for_plan_approval(false));
-    }
-}
-
 pub(crate) async fn process_user_message(
     state: &Arc<AppState>,
     session_id: Uuid,
@@ -535,4 +520,19 @@ pub(crate) async fn list_tasks(
         .await
         .map(Json)
         .map_err(|error| ApiError::Internal(error.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_pause_for_plan_approval;
+
+    #[test]
+    fn initial_plan_does_not_pause_normal_task_execution() {
+        assert!(!should_pause_for_plan_approval(true));
+    }
+
+    #[test]
+    fn non_initial_plan_does_not_pause_normal_task_execution() {
+        assert!(!should_pause_for_plan_approval(false));
+    }
 }

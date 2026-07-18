@@ -21,6 +21,14 @@ pub fn native_tool_calls_enabled() -> bool {
     }
 }
 
+pub fn native_tool_calls_supported_for_model(model: Option<&str>) -> bool {
+    !model
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .starts_with("gpt-5")
+}
+
 pub fn native_planning_prompt() -> String {
     NATIVE_PLANNING_PROMPT.to_string()
 }
@@ -32,7 +40,7 @@ pub fn openai_tools_for_registry(tools: &ToolRegistry) -> Vec<ToolSpec> {
         .filter_map(|tool| tool_spec_for_name(tool.name, tool.description))
         .collect();
     specs.push(ToolSpec::function(
-        "assistant.reply",
+        provider_tool_name("assistant.reply"),
         "Respond to the user without further tools",
         json!({
             "type": "object",
@@ -52,10 +60,11 @@ pub fn plan_from_native_tool_calls(calls: &[NativeToolCall]) -> Vec<PlanStep> {
         .iter()
         .enumerate()
         .map(|(index, call)| {
-            let description = normalize_arguments_description(&call.name, &call.arguments);
+            let tool_name = canonical_tool_name(&call.name);
+            let description = normalize_arguments_description(&tool_name, &call.arguments);
             PlanStep {
                 id: format!("step-{}", index + 1),
-                tool_name: call.name.clone(),
+                tool_name,
                 description,
                 depends_on: Vec::new(),
             }
@@ -77,6 +86,36 @@ fn normalize_arguments_description(tool_name: &str, arguments: &str) -> String {
         }
     }
     trimmed.to_string()
+}
+
+fn provider_tool_name(name: &str) -> String {
+    name.replace('.', "_")
+}
+
+fn canonical_tool_name(name: &str) -> String {
+    match name {
+        "agent_run" => "agent.run",
+        "filesystem_read" => "filesystem.read",
+        "filesystem_write" => "filesystem.write",
+        "filesystem_patch" => "filesystem.patch",
+        "filesystem_search" => "filesystem.search",
+        "filesystem_list" => "filesystem.list",
+        "shell_execute" => "shell.execute",
+        "git_status" => "git.status",
+        "git_diff" => "git.diff",
+        "git_commit" => "git.commit",
+        "git_pull" => "git.pull",
+        "git_push" => "git.push",
+        "browser_open" => "browser.open",
+        "browser_extract" => "browser.extract",
+        "http_fetch" => "http.fetch",
+        "mcp_call" => "mcp.call",
+        "memory_search" => "memory.search",
+        "worker_run" => "worker.run",
+        "assistant_reply" => "assistant.reply",
+        other => other,
+    }
+    .to_string()
 }
 
 fn tool_spec_for_name(name: &str, description: &str) -> Option<ToolSpec> {
@@ -208,7 +247,11 @@ fn tool_spec_for_name(name: &str, description: &str) -> Option<ToolSpec> {
         }),
         _ => return None,
     };
-    Some(ToolSpec::function(name, description, parameters))
+    Some(ToolSpec::function(
+        provider_tool_name(name),
+        description,
+        parameters,
+    ))
 }
 
 #[cfg(test)]
@@ -223,10 +266,10 @@ mod tests {
         let specs = openai_tools_for_registry(&tools);
         assert!(specs
             .iter()
-            .any(|spec| spec.function.name == "filesystem.read"));
+            .any(|spec| spec.function.name == "filesystem_read"));
         assert!(specs
             .iter()
-            .any(|spec| spec.function.name == "assistant.reply"));
+            .any(|spec| spec.function.name == "assistant_reply"));
     }
 
     #[test]
@@ -249,5 +292,35 @@ mod tests {
             arguments: r#"{"message":"hello"}"#.into(),
         }]);
         assert_eq!(plan[0].description, "hello");
+    }
+
+    #[test]
+    fn native_tool_names_are_provider_safe_and_round_trip() {
+        let tools = ToolRegistry::bootstrap_with_permissions(PermissionEngine::new());
+        let specs = openai_tools_for_registry(&tools);
+
+        assert!(specs.iter().all(|spec| {
+            spec.function
+                .name
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || character == '_')
+        }));
+        assert!(specs
+            .iter()
+            .any(|spec| spec.function.name == "filesystem_read"));
+
+        let plan = plan_from_native_tool_calls(&[NativeToolCall {
+            id: "1".into(),
+            name: "filesystem_read".into(),
+            arguments: r#"{"path":"docs/a.md"}"#.into(),
+        }]);
+        assert_eq!(plan[0].tool_name, "filesystem.read");
+    }
+
+    #[test]
+    fn disables_chat_tools_for_reasoning_models() {
+        assert!(!native_tool_calls_supported_for_model(Some("gpt-5.6-luna")));
+        assert!(native_tool_calls_supported_for_model(Some("deepseek:free")));
+        assert!(native_tool_calls_supported_for_model(None));
     }
 }

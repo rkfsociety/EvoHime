@@ -10,7 +10,10 @@ use evohime_task_engine::{
 };
 use serde_json::json;
 use sqlx::PgPool;
+use tokio::sync::Mutex;
 use uuid::Uuid;
+
+static TEST_MUTEX: std::sync::LazyLock<Mutex<()>> = std::sync::LazyLock::new(|| Mutex::new(()));
 
 async fn connect_pool() -> Option<PgPool> {
     let url = std::env::var("DATABASE_URL")
@@ -26,6 +29,7 @@ async fn connect_pool() -> Option<PgPool> {
 
 #[tokio::test]
 async fn start_pause_resume_complete_flow() {
+    let _guard = TEST_MUTEX.lock().await;
     let Some(pool) = connect_pool().await else {
         eprintln!("skipping task-engine integration test: database unavailable");
         return;
@@ -82,6 +86,7 @@ async fn start_pause_resume_complete_flow() {
 
 #[tokio::test]
 async fn fail_retry_and_recover_running_after_restart() {
+    let _guard = TEST_MUTEX.lock().await;
     let Some(pool) = connect_pool().await else {
         eprintln!("skipping task-engine integration test: database unavailable");
         return;
@@ -118,6 +123,11 @@ async fn fail_retry_and_recover_running_after_restart() {
         .expect("resume after recovery");
     assert_eq!(resumed.status, "running");
     complete_task(&pool, running.id).await.expect("complete");
+
+    let retried_after_recovery = resume_task(&pool, failed_task.id)
+        .await
+        .expect("resume retried task after recovery");
+    assert_eq!(retried_after_recovery.status, "running");
     complete_task(&pool, failed_task.id)
         .await
         .expect("complete retried");
@@ -125,6 +135,7 @@ async fn fail_retry_and_recover_running_after_restart() {
 
 #[tokio::test]
 async fn cancel_via_fsm_and_reject_illegal_transition() {
+    let _guard = TEST_MUTEX.lock().await;
     let Some(pool) = connect_pool().await else {
         eprintln!("skipping task-engine integration test: database unavailable");
         return;
