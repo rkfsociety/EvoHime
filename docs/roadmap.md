@@ -355,7 +355,7 @@
 | 7.36 | More tools: `filesystem.list` в матрице UI; `http.fetch` с SSRF policy | M | ✅ | list surfaced in tool catalog/matrix; fetch registered with redirect and final-url SSRF checks |
 | 7.37 | Cancel mid-tool with cooperative cancellation everywhere | M | ✅ | registry dispatcher cancels every tool future; shell receives token for child-process termination |
 | 7.38 | Separate OpenAICompatible provider from LiteRouter alias | S | ✅ | standalone provider type/factory branch; `OPENAI_*` env configuration; LiteRouter routes remain backward-compatible |
-| 7.39 | Model route picker в composer (не только Settings) | M | ⬜ | frontend chat |
+| 7.39 | Model route picker в composer (не только Settings) | M | ✅ | route picker рядом с model picker; `model_route` отправляется из composer и сохраняется per-project |
 
 ### 7.D — Memory 2.0
 
@@ -470,11 +470,11 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-18:** `7.38` ✅ — OpenAI-compatible вынесен в отдельный provider type/factory branch с собственными `OPENAI_*` env defaults; следующий пункт Wave C — `7.39`.
+**Актуальный статус 2026-07-18:** `7.39` ✅ — composer позволяет выбрать model route и сохраняет выбор per-project; следующий пункт Wave C — `7.42`.
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
-3. **Wave C (agent quality):** `7.28`–`7.38`, `7.52` ✅ → next `7.39`+
+3. **Wave C (agent quality):** `7.28`–`7.39`, `7.52` ✅ → next `7.42`+
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  
 5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+

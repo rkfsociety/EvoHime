@@ -101,6 +101,7 @@ export type ProjectSummary = {
 };
 
 export type ProjectComposerPreference = {
+  modelRoute?: string;
   model?: string;
   workMode?: PermissionMode;
 };

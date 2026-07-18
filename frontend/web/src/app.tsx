@@ -121,7 +121,7 @@ export function App() {
   const [projectCreateError, setProjectCreateError] = useState<string | null>(null);
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
   const [modelConfigError, setModelConfigError] = useState<string | null>(null);
-  const [selectedModelRoute, setSelectedModelRoute] = useState("");
+  const [selectedModelRoute, setSelectedModelRoute] = useState(() => loadProjectComposerPreference(loadSelectedProject().path).modelRoute ?? "");
   const [composerModels, setComposerModels] = useState<string[]>([]);
   const [selectedComposerModel, setSelectedComposerModel] = useState(() => loadProjectComposerPreference(loadSelectedProject().path).model ?? "");
   const [composerModelsLoading, setComposerModelsLoading] = useState(false);
@@ -174,6 +174,7 @@ export function App() {
   const [permissionModeSaving, setPermissionModeSaving] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [workModeOpen, setWorkModeOpen] = useState(false);
+  const [composerRoutePickerOpen, setComposerRoutePickerOpen] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const restoredProjectPreferenceRef = useRef<string | null>(null);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
@@ -344,6 +345,7 @@ export function App() {
       const target = event.target as HTMLElement | null;
       if (!target?.closest(".composerMenu")) {
         setWorkModeOpen(false);
+        setComposerRoutePickerOpen(false);
         setModelPickerOpen(false);
       }
       if (!target?.closest(".projectContext")) {
@@ -659,6 +661,9 @@ export function App() {
     if (preference.model) {
       setSelectedComposerModel(preference.model);
     }
+    if (preference.modelRoute) {
+      setSelectedModelRoute(preference.modelRoute);
+    }
     if (preference.workMode && preference.workMode !== workMode) {
       void updateWorkMode(preference.workMode);
     }
@@ -669,10 +674,11 @@ export function App() {
       return;
     }
     saveProjectComposerPreference(selectedProject.path, {
+      modelRoute: selectedModelRoute || undefined,
       model: selectedComposerModel || undefined,
       workMode: workMode === "mixed" ? undefined : workMode,
     });
-  }, [selectedProject.path, selectedComposerModel, workMode]);
+  }, [selectedProject.path, selectedModelRoute, selectedComposerModel, workMode]);
   const activeModelRouteIndex = Math.max(
     0,
     modelDrafts.findIndex((route) => route.name === modelDefaultRoute),
@@ -1660,11 +1666,53 @@ export function App() {
               placeholder="Введите сообщение..."
             />
             <div className="composerControls">
+              <div className="composerMenu composerRouteMenu">
+                <button
+                  type="button"
+                  className="composerModelSelect composerRouteSelect"
+                  onClick={() => {
+                    setWorkModeOpen(false);
+                    setModelPickerOpen(false);
+                    setComposerRoutePickerOpen((open) => !open);
+                  }}
+                  disabled={!modelConfig || modelConfig.routes.length === 0}
+                  aria-label="Маршрут модели"
+                  aria-expanded={composerRoutePickerOpen}
+                  title="Маршрут модели"
+                >
+                  <span className="composerChipLabel">{selectedModelRoute || "Маршрут"}</span>
+                  <span className="composerMenuChevron" aria-hidden="true" />
+                </button>
+                {composerRoutePickerOpen ? (
+                  <div className="composerMenuPopover routePopover" role="listbox">
+                    {(modelConfig?.routes ?? []).map((route) => (
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={selectedModelRoute === route.name}
+                        key={route.name}
+                        onClick={() => {
+                          setSelectedModelRoute(route.name);
+                          setSelectedComposerModel("");
+                          setComposerRoutePickerOpen(false);
+                        }}
+                      >
+                        <span>{route.name}</span>
+                        <small>{route.provider}{route.configured ? "" : " · не настроен"}</small>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
               <div className="composerMenu composerModelMenu">
                 <button
                   type="button"
                   className="composerModelSelect"
-                  onClick={() => { setWorkModeOpen(false); setModelPickerOpen((open) => !open); }}
+                  onClick={() => {
+                    setWorkModeOpen(false);
+                    setComposerRoutePickerOpen(false);
+                    setModelPickerOpen((open) => !open);
+                  }}
                   disabled={composerModelsLoading || composerModels.length === 0}
                   aria-label="Модель агента"
                   aria-expanded={modelPickerOpen}

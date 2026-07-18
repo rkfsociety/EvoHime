@@ -120,7 +120,9 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.38` реализован: `OpenAICompatibleProvider` отделён от LiteRouter в factory, а env-конфигурация использует `OPENAI_API_KEY`, `OPENAI_BASE_URL` и `OPENAI_MODEL`; существующие `LITEROUTER_*` и сохранённые routes не меняются.
 
-**Актуализация 2026-07-18:** `7.38` выполнен: OpenAI-compatible provider имеет отдельную identity/factory ветку и собственные env defaults. Следующий пункт — `7.39`.
+`7.39` реализован: composer получил route picker рядом с выбором модели, отправляет выбранный `model_route` и сохраняет route per-project в localStorage.
+
+**Актуализация 2026-07-18:** `7.39` выполнен: route picker доступен прямо в composer, выбор маршрута переживает переключение проектов. Следующий пункт — `7.42`.
 
 1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.34`, `7.52` ✅; next plan approve `7.35`
 2. Рекомендуемая следующая волна: plan approve (`7.35`), experience playbook auto-suggest (`7.48`)
