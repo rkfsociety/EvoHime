@@ -2,6 +2,7 @@ pub mod agent;
 pub mod browser;
 pub mod filesystem;
 pub mod git;
+pub mod http;
 pub mod list;
 pub mod mcp;
 pub mod memory;

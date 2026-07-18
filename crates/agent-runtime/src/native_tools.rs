@@ -160,6 +160,15 @@ fn tool_spec_for_name(name: &str, description: &str) -> Option<ToolSpec> {
             },
             "required": ["url", "selector"]
         }),
+        "http.fetch" => json!({
+            "type": "object",
+            "properties": {
+                "url": { "type": "string" },
+                "max_chars": { "type": "integer" },
+                "timeout_ms": { "type": "integer" }
+            },
+            "required": ["url"]
+        }),
         "mcp.call" => json!({
             "type": "object",
             "properties": {

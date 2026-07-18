@@ -76,6 +76,7 @@ pub(crate) const REGISTERED_TOOLS: &[&str] = &[
     "git.push",
     "browser.open",
     "browser.extract",
+    "http.fetch",
     "mcp.call",
     "memory.search",
     "agent.run",

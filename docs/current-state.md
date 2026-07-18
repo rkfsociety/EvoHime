@@ -114,6 +114,8 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
+`7.36` реализован: `http.fetch` зарегистрирован с SSRF-защитой редиректов и лимитом текста; `filesystem.list` отражён в каталоге инструментов и матрице UI.
+
 **Актуализация 2026-07-18:** `7.35` выполнен: план сохраняется в PostgreSQL checkpoint, задача ждёт подтверждения, UI позволяет редактировать шаги и зависимости, approve/reject переживают переподключение и рестарт. Следующий пункт — `7.36`.
 
 1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.34`, `7.52` ✅; next plan approve `7.35`

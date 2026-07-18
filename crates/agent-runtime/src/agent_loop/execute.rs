@@ -410,6 +410,7 @@ pub(crate) fn tool_input(
         "git.commit" => Some(json!({"message": extract_commit_message(description)})),
         "git.pull" | "git.push" => Some(json!({})),
         "browser.open" => extract_url(description).map(|url| json!({ "url": url })),
+        "http.fetch" => extract_url(description).map(|url| json!({ "url": url })),
         "browser.extract" => {
             let url = extract_url(description)?;
             let selector = extract_backticked(description)
@@ -430,9 +431,10 @@ pub(crate) fn structured_json_input(tool_name: &str, description: &str) -> Optio
     }
     let value = serde_json::from_str::<Value>(trimmed).ok()?;
     match tool_name {
-        "shell.execute" | "browser.open" | "browser.extract" | "mcp.call" | "memory.search"
-        | "agent.run" | "worker.run" | "git.diff" | "git.pull" | "git.push" | "git.status"
-        | "git.commit" | "filesystem.read" | "filesystem.list" | "filesystem.search" => {
+        "shell.execute" | "browser.open" | "browser.extract" | "http.fetch" | "mcp.call"
+        | "memory.search" | "agent.run" | "worker.run" | "git.diff" | "git.pull" | "git.push"
+        | "git.status" | "git.commit" | "filesystem.read" | "filesystem.list"
+        | "filesystem.search" => {
             if value.is_object() {
                 Some(value)
             } else if value.is_null() {

@@ -352,7 +352,7 @@
 | 7.33 | Tool result truncation + summarization budget | M | ✅ | `tool_budget.rs`; head/tail + total chars env caps |
 | 7.34 | Planner cost/latency telemetry per step | M | ✅ | GenAI OTLP spans + usage tokens + `/api/metrics` llm_* |
 | 7.35 | `assistant.reply` + user-visible plan edits (approve plan) | M | ✅ | PostgreSQL checkpoint, edited dependencies, WebSocket approve/reject, durable paused state |
-| 7.36 | More tools: `filesystem.list` в матрице UI; `http.fetch` с SSRF policy | M | ⬜ | list есть в runtime, UI/docs gaps |
+| 7.36 | More tools: `filesystem.list` в матрице UI; `http.fetch` с SSRF policy | M | ✅ | list surfaced in tool catalog/matrix; fetch registered with redirect and final-url SSRF checks |
 | 7.37 | Cancel mid-tool with cooperative cancellation everywhere | M | ⬜ | shell есть; не все tools |
 | 7.38 | Separate OpenAICompatible provider from LiteRouter alias | S | ⬜ | `model-gateway` |
 | 7.39 | Model route picker в composer (не только Settings) | M | ⬜ | frontend chat |
@@ -512,6 +512,8 @@
 ---
 
 ## Матрица: инструменты × этапы
+
+В матрице UI и каталоге инструментов доступны `filesystem.list` (этап 3) и `http.fetch` (этап 7, SSRF-safe redirects и ограниченный текстовый результат).
 
 | Tool | Этап | Milestone | Статус |
 | --- | --- | --- | --- |
