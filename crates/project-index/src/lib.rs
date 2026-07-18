@@ -364,12 +364,16 @@ fn make_chunk(
 ) -> ProjectIndexMatch {
     let start_idx = start_line.saturating_sub(1);
     let end_idx = end_line.min(lines.len()).saturating_sub(1).max(start_idx);
-    let snippet = lines[start_idx..=end_idx]
-        .iter()
-        .map(|line| line.trim())
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n");
+    let snippet = if lines.is_empty() {
+        String::new()
+    } else {
+        lines[start_idx..=end_idx]
+            .iter()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
     let snippet = truncate_chars(&snippet, CHUNK_SNIPPET_CHARS);
 
     ProjectIndexMatch {
@@ -601,5 +605,18 @@ mod tests {
             matches[0].hit_kind,
             HitKind::Path | HitKind::Content
         ));
+    }
+
+    #[test]
+    fn path_match_in_empty_file_does_not_panic() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::write(temp.path().join("smoke-final.txt"), "").expect("write");
+
+        let index = ProjectIndex::new(temp.path());
+        let matches = index.search("smoke-final");
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].path, PathBuf::from("smoke-final.txt"));
+        assert!(matches[0].snippet.is_empty());
     }
 }
