@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createMemory,
   deleteMemory,
+  exportMemoryPack,
+  importMemoryPack,
   listMemory,
   resolveMemoryConflict,
   updateMemory,
@@ -93,14 +95,11 @@ function formatUpdatedAt(value: string) {
   });
 }
 
-function downloadMemoryExport(items: MemoryItem[], tab: MemoryTab) {
-  const blob = new Blob([JSON.stringify({ tab, exported_at: new Date().toISOString(), items }, null, 2)], {
-    type: "application/json",
-  });
+function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `evohime-memory-${tab}.json`;
+  anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
 }
@@ -116,6 +115,7 @@ export function MemoryPanel() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -129,6 +129,7 @@ export function MemoryPanel() {
   const [undoItem, setUndoItem] = useState<MemoryItem | null>(null);
   const [undoBusy, setUndoBusy] = useState(false);
   const undoTimer = useRef<number | null>(null);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     return () => {
@@ -201,6 +202,32 @@ export function MemoryPanel() {
     }
     return items.filter((item) => item.kind === kindFilter);
   }, [items, kindFilter, tab]);
+
+  async function exportMemoryPackFile(format: "json" | "zip") {
+    setError(null);
+    setNotice(null);
+    try {
+      const blob = await exportMemoryPack(format);
+      downloadBlob(blob, `evohime-memory-pack.${format}`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Не удалось экспортировать memory pack");
+    }
+  }
+
+  async function importMemoryPackFile(file: File) {
+    setError(null);
+    setNotice(null);
+    try {
+      const body = await file.arrayBuffer();
+      const contentType = file.type || (file.name.toLowerCase().endsWith(".zip") ? "application/zip" : "application/json");
+      const response = await importMemoryPack(body, contentType);
+      await refresh();
+      const details = response.errors.length > 0 ? ` Ошибок: ${response.errors.length}.` : "";
+      setNotice(`Импорт завершён: добавлено ${response.inserted}, дублей ${response.duplicates}, конфликтов ${response.conflicts}, отклонено ${response.rejected}.${details}`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Не удалось импортировать memory pack");
+    }
+  }
 
   async function runAction(id: string, action: () => Promise<unknown>) {
     setBusyId(id);
@@ -347,11 +374,28 @@ export function MemoryPanel() {
           </span>
           <button
             type="button"
-            onClick={() => downloadMemoryExport(visibleItems, tab)}
-            disabled={loading || visibleItems.length === 0}
+            onClick={() => void exportMemoryPackFile("json")}
+            disabled={loading}
           >
             Экспорт JSON
           </button>
+          <button type="button" onClick={() => void exportMemoryPackFile("zip")} disabled={loading}>
+            Экспорт pack ZIP
+          </button>
+          <button type="button" onClick={() => importInputRef.current?.click()} disabled={loading}>
+            Импорт pack
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".json,.zip,application/json,application/zip"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) void importMemoryPackFile(file);
+            }}
+          />
           <button type="button" onClick={() => void refresh()} disabled={loading}>
             Обновить
           </button>
@@ -463,6 +507,7 @@ export function MemoryPanel() {
       </div>
 
       {error ? <div className="panelError">{error}</div> : null}
+      {notice ? <div className="panelNotice">{notice}</div> : null}
 
       {loading ? (
         <div className="emptyPanelState">

@@ -2,8 +2,10 @@
 
 use crate::{app::AppState, ApiError};
 use axum::{
+    body::{Body, Bytes},
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{header, HeaderMap, StatusCode},
+    response::Response,
     Json,
 };
 use chrono::{DateTime, Utc};
@@ -11,12 +13,15 @@ use evohime_memory::{
     admit_memory_item, embed_text, normalize_content, redact_secrets, AdmitOutcome,
 };
 use evohime_storage::{
-    delete_memory_item, get_memory_item, list_memory_items_overview_page,
+    delete_memory_item, get_memory_item, list_all_memory_items, list_memory_items_overview_page,
     resolve_memory_conflict as resolve_storage_conflict, update_memory_item_fields_with_embedding,
     MemoryItemRow, MemoryKind, MemoryOverviewCursor, MemoryScope, MemoryStatus, NewMemoryItem,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{
+    io::{Cursor, Read, Write},
+    sync::Arc,
+};
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
@@ -79,6 +84,42 @@ pub struct CreateMemoryResponse {
     pub item: Option<MemoryItemRow>,
     pub existing_id: Option<Uuid>,
     pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryPackItem {
+    pub scope: String,
+    pub scope_key: String,
+    pub kind: String,
+    pub content: String,
+    #[serde(default)]
+    pub content_json: Option<serde_json::Value>,
+    pub confidence: f64,
+    pub importance: f64,
+    pub pinned: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryPack {
+    pub format: String,
+    pub version: u32,
+    pub exported_at: String,
+    pub items: Vec<MemoryPackItem>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MemoryImportResponse {
+    pub inserted: usize,
+    pub duplicates: usize,
+    pub conflicts: usize,
+    pub rejected: usize,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MemoryExportQuery {
+    #[serde(default)]
+    pub format: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -149,6 +190,174 @@ fn privacy_info() -> MemoryPrivacyInfo {
         redaction_enabled: true,
         policy: "Secrets, tokens, passwords, cookies and private keys are redacted and never stored. Retrieved memory is untrusted data, not system instructions.".into(),
     }
+}
+
+fn memory_pack_from_rows(rows: Vec<MemoryItemRow>) -> MemoryPack {
+    MemoryPack {
+        format: "evohime-memory-pack".into(),
+        version: 1,
+        exported_at: Utc::now().to_rfc3339(),
+        items: rows
+            .into_iter()
+            .map(|item| MemoryPackItem {
+                scope: item.scope,
+                scope_key: item.scope_key,
+                kind: item.kind,
+                content: item.content,
+                content_json: item.content_json,
+                confidence: item.confidence,
+                importance: item.importance,
+                pinned: item.pinned,
+            })
+            .collect(),
+    }
+}
+
+fn parse_memory_pack(bytes: &[u8], is_zip: bool) -> Result<MemoryPack, ApiError> {
+    let json = if is_zip {
+        let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
+            .map_err(|error| ApiError::BadRequest(format!("invalid memory ZIP: {error}")))?;
+        let mut file = archive.by_name("memory.json").map_err(|error| {
+            ApiError::BadRequest(format!("memory.json missing from ZIP: {error}"))
+        })?;
+        let mut json = String::new();
+        file.read_to_string(&mut json)
+            .map_err(|error| ApiError::BadRequest(format!("cannot read memory.json: {error}")))?;
+        json
+    } else {
+        String::from_utf8(bytes.to_vec())
+            .map_err(|error| ApiError::BadRequest(format!("memory JSON is not UTF-8: {error}")))?
+    };
+    let pack: MemoryPack = serde_json::from_str(&json)
+        .map_err(|error| ApiError::BadRequest(format!("invalid memory pack JSON: {error}")))?;
+    if pack.format != "evohime-memory-pack" || pack.version != 1 {
+        return Err(ApiError::BadRequest(
+            "unsupported memory pack format or version".into(),
+        ));
+    }
+    Ok(pack)
+}
+
+pub async fn export_memory(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<MemoryExportQuery>,
+) -> Result<Response, ApiError> {
+    let rows = list_all_memory_items(&state.pool, 50_000)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let pack = memory_pack_from_rows(rows);
+    let format = query.format.as_deref().unwrap_or("json");
+    let json =
+        serde_json::to_vec_pretty(&pack).map_err(|error| ApiError::Internal(error.to_string()))?;
+    if format.eq_ignore_ascii_case("zip") {
+        let mut bytes = Cursor::new(Vec::new());
+        {
+            let mut archive = zip::ZipWriter::new(&mut bytes);
+            archive
+                .start_file("memory.json", zip::write::SimpleFileOptions::default())
+                .map_err(|error| ApiError::Internal(error.to_string()))?;
+            archive
+                .write_all(&json)
+                .map_err(|error| ApiError::Internal(error.to_string()))?;
+            archive
+                .finish()
+                .map_err(|error| ApiError::Internal(error.to_string()))?;
+        }
+        return Response::builder()
+            .header(header::CONTENT_TYPE, "application/zip")
+            .header(
+                header::CONTENT_DISPOSITION,
+                "attachment; filename=evohime-memory-pack.zip",
+            )
+            .body(Body::from(bytes.into_inner()))
+            .map_err(|error| ApiError::Internal(error.to_string()));
+    }
+    if !format.eq_ignore_ascii_case("json") {
+        return Err(ApiError::BadRequest("format must be json or zip".into()));
+    }
+    Response::builder()
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(
+            header::CONTENT_DISPOSITION,
+            "attachment; filename=evohime-memory-pack.json",
+        )
+        .body(Body::from(json))
+        .map_err(|error| ApiError::Internal(error.to_string()))
+}
+
+pub async fn import_memory(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<MemoryImportResponse>, ApiError> {
+    if body.len() > 10 * 1024 * 1024 {
+        return Err(ApiError::BadRequest("memory pack exceeds 10 MiB".into()));
+    }
+    let content_type_is_zip = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.to_ascii_lowercase().contains("application/zip"));
+    let is_zip = content_type_is_zip || body.as_ref().starts_with(b"PK\x03\x04");
+    let pack = parse_memory_pack(&body, is_zip)?;
+    let mut response = MemoryImportResponse {
+        inserted: 0,
+        duplicates: 0,
+        conflicts: 0,
+        rejected: 0,
+        errors: Vec::new(),
+    };
+    for (index, item) in pack.items.into_iter().enumerate() {
+        let scope = match MemoryScope::parse(&item.scope) {
+            Some(scope) => scope,
+            None => {
+                response.errors.push(format!("item {index}: unknown scope"));
+                continue;
+            }
+        };
+        let kind = match MemoryKind::parse(&item.kind) {
+            Some(kind) => kind,
+            None => {
+                response.errors.push(format!("item {index}: unknown kind"));
+                continue;
+            }
+        };
+        let outcome = admit_memory_item(
+            &state.pool,
+            NewMemoryItem {
+                scope,
+                scope_key: item.scope_key.trim().to_string(),
+                kind,
+                status: MemoryStatus::Candidate,
+                content: item.content,
+                content_json: item.content_json,
+                confidence: item.confidence.clamp(0.0, 1.0),
+                importance: item.importance.clamp(0.0, 1.0),
+                pinned: item.pinned,
+                source_session_id: None,
+                source_task_id: None,
+                source_label: Some("import".into()),
+                supersedes: None,
+                valid_until: None,
+                validity_hint: None,
+                embedding: None,
+                embedding_version: 0,
+            },
+        )
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+        match outcome {
+            AdmitOutcome::Inserted(_) => response.inserted += 1,
+            AdmitOutcome::Duplicate { .. } => response.duplicates += 1,
+            AdmitOutcome::Conflict { .. } => response.conflicts += 1,
+            AdmitOutcome::Rejected { reason } => {
+                response.rejected += 1;
+                if response.errors.len() < 20 {
+                    response.errors.push(format!("item {index}: {reason}"));
+                }
+            }
+        }
+    }
+    Ok(Json(response))
 }
 
 fn parse_statuses(raw: Option<&str>) -> Result<Vec<MemoryStatus>, ApiError> {
@@ -467,7 +676,10 @@ pub async fn delete_memory(
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_memory_cursor, encode_memory_cursor, MemoryCursor};
+    use super::{
+        decode_memory_cursor, encode_memory_cursor, parse_memory_pack, MemoryCursor, MemoryPack,
+        MemoryPackItem,
+    };
     use chrono::{TimeZone, Utc};
     use uuid::Uuid;
 
@@ -488,5 +700,35 @@ mod tests {
     #[test]
     fn memory_cursor_rejects_malformed_value() {
         assert!(decode_memory_cursor("not-a-memory-cursor").is_err());
+    }
+
+    #[test]
+    fn memory_pack_round_trips_portable_items() {
+        let pack = MemoryPack {
+            format: "evohime-memory-pack".into(),
+            version: 1,
+            exported_at: "2026-07-18T12:00:00Z".into(),
+            items: vec![MemoryPackItem {
+                scope: "workspace".into(),
+                scope_key: "demo".into(),
+                kind: "fact".into(),
+                content: "native PostgreSQL".into(),
+                content_json: None,
+                confidence: 0.9,
+                importance: 0.8,
+                pinned: true,
+            }],
+        };
+        let json = serde_json::to_vec(&pack).unwrap();
+        let parsed = parse_memory_pack(&json, false).unwrap();
+        assert_eq!(parsed.items[0].content, "native PostgreSQL");
+        assert!(parsed.items[0].pinned);
+    }
+
+    #[test]
+    fn memory_pack_rejects_unsupported_version() {
+        let json =
+            br#"{"format":"evohime-memory-pack","version":2,"exported_at":"now","items":[]}"#;
+        assert!(parse_memory_pack(json, false).is_err());
     }
 }

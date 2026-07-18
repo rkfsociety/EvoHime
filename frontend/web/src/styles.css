@@ -3864,6 +3864,14 @@ h1 {
   color: #f2a3a3;
 }
 
+.panelNotice {
+  color: #8ee0ad;
+  background: rgba(47, 126, 78, 0.18);
+  border: 1px solid rgba(105, 210, 139, 0.38);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
 @media (max-width: 900px) {
   .memoryAddFields {
     grid-template-columns: repeat(2, minmax(0, 1fr));

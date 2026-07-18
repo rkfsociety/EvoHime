@@ -181,6 +181,19 @@ export async function apiRequestVoid(
   }
 }
 
+export async function apiRequestBlob(
+  path: string,
+  init?: RequestInit,
+  fallbackError = "Не удалось получить файл из API",
+): Promise<Blob> {
+  const response = await fetch(path, withAuth(init));
+  if (!response.ok) {
+    const text = await response.text();
+    throwApiError(response.status, text, fallbackError);
+  }
+  return response.blob();
+}
+
 export function jsonBody(payload: unknown): RequestInit {
   return {
     headers: { "Content-Type": "application/json" },

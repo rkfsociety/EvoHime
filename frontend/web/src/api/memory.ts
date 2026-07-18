@@ -1,4 +1,4 @@
-import { apiRequest, apiRequestVoid } from "./client";
+import { apiRequest, apiRequestBlob, apiRequestVoid } from "./client";
 
 export type MemoryItem = {
   id: string;
@@ -67,6 +67,28 @@ export type MemoryCreateResponse = {
   existing_id?: string | null;
   reason?: string | null;
 };
+
+export type MemoryPackFormat = "json" | "zip";
+
+export type MemoryImportResponse = {
+  inserted: number;
+  duplicates: number;
+  conflicts: number;
+  rejected: number;
+  errors: string[];
+};
+
+export function exportMemoryPack(format: MemoryPackFormat) {
+  return apiRequestBlob(`/api/memory/export?format=${format}`, undefined, "Не удалось экспортировать memory pack");
+}
+
+export function importMemoryPack(body: BodyInit, contentType: string) {
+  return apiRequest<MemoryImportResponse>(
+    "/api/memory/import",
+    { method: "POST", headers: { "Content-Type": contentType }, body },
+    "Не удалось импортировать memory pack",
+  );
+}
 
 function toQuery(params: MemoryListParams) {
   const query = new URLSearchParams();

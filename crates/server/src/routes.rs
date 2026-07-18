@@ -104,6 +104,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             "/api/memory",
             get(memory_api::list_memory).post(memory_api::create_memory),
         )
+        .route("/api/memory/export", get(memory_api::export_memory))
+        .route("/api/memory/import", post(memory_api::import_memory))
         .route(
             "/api/memory/:id",
             get(memory_api::get_memory)

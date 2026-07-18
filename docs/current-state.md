@@ -60,6 +60,8 @@ Errors return `{ "error", "code", "retryable" }` (plus `tool` / `approval_id` fo
 | GET | `/api/metrics/history` | Persisted metrics snapshots from PG |
 | GET | `/metrics` | Prometheus text exposition |
 | GET | `/api/memory` | List memory items (filters: scope, status, q, limit, cursor; keyset pagination) + privacy policy |
+| GET | `/api/memory/export` | Export all portable memory items as JSON or ZIP (`format=json|zip`) |
+| POST | `/api/memory/import` | Import JSON/ZIP memory pack through redaction, dedupe, conflict, and candidate admission |
 | GET/PATCH/DELETE | `/api/memory/:id` | Get / update (content/status/pin, redacted) / delete |
 | WS | `/ws/:session_id` | Real-time events |
 
@@ -136,8 +138,10 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.48` реализован: retrieval выделяет до трёх релевантных структурированных playbook suggestions, а planner/replan получают их отдельным untrusted optional context без автоматического исполнения шагов.
 
-**Актуализация 2026-07-18:** `7.48` выполнен: planner и bounded replan используют специализированные playbook hints. Следующий пункт — `7.49`.
+`7.49` реализован: backend экспортирует переносимые memory items в JSON или ZIP с `memory.json`, а импорт прогоняет записи через redaction, normalization, embedding, dedupe и conflict admission как кандидатов.
 
-1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.48`, `7.52` ✅; следующий пункт — `7.49`
-2. Рекомендуемая следующая волна: memory export/import pack (`7.49`), затем multi-device sync design (`7.50`)
+**Актуализация 2026-07-18:** `7.49` выполнен: MemoryPanel поддерживает JSON/ZIP pack export и импорт файла с итоговой статистикой admission. Следующий пункт — `7.50`.
+
+1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.49`, `7.52` ✅; следующий пункт — `7.50`
+2. Рекомендуемая следующая волна: multi-device sync design (`7.50`), затем product honesty для Sites/Scheduled
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

@@ -338,6 +338,24 @@ pub async fn list_memory_items(
     Ok(rows)
 }
 
+pub async fn list_all_memory_items(
+    pool: &PgPool,
+    limit: i64,
+) -> Result<Vec<MemoryItemRow>, StorageError> {
+    let rows = sqlx::query_as::<_, MemoryItemRow>(&format!(
+        r#"
+        SELECT {MEMORY_ITEM_COLUMNS}
+        FROM memory_items
+        ORDER BY updated_at DESC, id DESC
+        LIMIT $1
+        "#
+    ))
+    .bind(limit.clamp(1, 50_000))
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
 pub async fn update_memory_item_status(
     pool: &PgPool,
     id: Uuid,
