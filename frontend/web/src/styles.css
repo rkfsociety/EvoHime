@@ -3585,6 +3585,18 @@ h1 {
   padding: 14px 0 4px;
 }
 
+.memoryUndo {
+  align-items: center;
+  background: rgba(255, 204, 128, 0.12);
+  border: 1px solid rgba(255, 204, 128, 0.38);
+  border-radius: 10px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding: 10px 12px;
+}
+
 .memoryAddHeader {
   display: flex;
   justify-content: space-between;

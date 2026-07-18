@@ -130,8 +130,10 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.45` реализован: `/api/memory` поддерживает стабильный keyset cursor по sort key, а MemoryPanel дозагружает следующие страницы по 50 записей.
 
-**Актуализация 2026-07-18:** `7.45` выполнен: MemoryPanel поддерживает cursor pagination и дозагрузку страниц. Следующий пункт — `7.46`.
+`7.46` реализован: удаление памяти требует подтверждения, а MemoryPanel показывает 8-секундное Undo с восстановлением через общий admission flow.
 
-1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.45`, `7.52` ✅; следующий пункт — `7.46`
-2. Рекомендуемая следующая волна: delete confirm + undo (`7.46`), затем local embedding option (`7.47`)
+**Актуализация 2026-07-18:** `7.46` выполнен: MemoryPanel поддерживает подтверждение удаления и окно Undo. Следующий пункт — `7.47`.
+
+1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.46`, `7.52` ✅; следующий пункт — `7.47`
+2. Рекомендуемая следующая волна: local embedding option (`7.47`), затем experience playbook auto-suggest (`7.48`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

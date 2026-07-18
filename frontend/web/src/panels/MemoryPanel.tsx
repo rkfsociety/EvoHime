@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createMemory,
   deleteMemory,
@@ -126,6 +126,17 @@ export function MemoryPanel() {
   const [addScopeKey, setAddScopeKey] = useState("local");
   const [addContent, setAddContent] = useState("");
   const [addBusy, setAddBusy] = useState(false);
+  const [undoItem, setUndoItem] = useState<MemoryItem | null>(null);
+  const [undoBusy, setUndoBusy] = useState(false);
+  const undoTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (undoTimer.current !== null) {
+        window.clearTimeout(undoTimer.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const handle = window.setTimeout(() => setQuery(queryDraft.trim()), 300);
@@ -216,6 +227,69 @@ export function MemoryPanel() {
 
   async function resolveConflict(conflictId: string, winnerId: string) {
     await runAction(conflictId, () => resolveMemoryConflict(conflictId, winnerId));
+  }
+
+  async function deleteItem(item: MemoryItem) {
+    if (!window.confirm("Удалить эту запись памяти? Её можно будет восстановить в течение 8 секунд.")) {
+      return;
+    }
+    setBusyId(item.id);
+    setError(null);
+    try {
+      await deleteMemory(item.id);
+      setUndoItem(item);
+      if (undoTimer.current !== null) {
+        window.clearTimeout(undoTimer.current);
+      }
+      undoTimer.current = window.setTimeout(() => {
+        setUndoItem(null);
+        undoTimer.current = null;
+      }, 8000);
+      await refresh();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Не удалось удалить запись памяти");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function restoreDeletedItem() {
+    if (!undoItem || undoBusy) {
+      return;
+    }
+    const item = undoItem;
+    setUndoBusy(true);
+    setError(null);
+    try {
+      const response = await createMemory({
+        content: item.content,
+        scope: item.scope,
+        scope_key: item.scope_key,
+        kind: item.kind,
+        confidence: item.confidence,
+        importance: item.importance,
+        pinned: item.pinned,
+      });
+      if (response.outcome === "duplicate") {
+        setError("Запись уже существует, восстановление не потребовалось.");
+      } else if (response.outcome === "rejected" || response.outcome === "conflict" || !response.item) {
+        setError(response.reason ?? "Не удалось восстановить запись памяти");
+      } else {
+        if (item.status !== "candidate" || item.pinned !== response.item.pinned) {
+          await updateMemory(response.item.id, { status: item.status, pinned: item.pinned });
+        }
+        setUndoItem(null);
+        if (undoTimer.current !== null) {
+          window.clearTimeout(undoTimer.current);
+          undoTimer.current = null;
+        }
+        await refresh();
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Не удалось восстановить запись памяти");
+    } finally {
+      setUndoBusy(false);
+    }
   }
 
   function applyTemplate(templateId: string) {
@@ -568,7 +642,7 @@ export function MemoryPanel() {
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => void runAction(item.id, () => deleteMemory(item.id))}
+                    onClick={() => void deleteItem(item)}
                   >
                     Delete
                   </button>
@@ -583,6 +657,15 @@ export function MemoryPanel() {
         <div className="memoryLoadMore">
           <button type="button" onClick={() => void loadMore()} disabled={loadingMore}>
             {loadingMore ? "Р—Р°РіСЂСѓР·РєР°..." : "Р—Р°РіСЂСѓР·РёС‚СЊ РµС‰С‘"}
+          </button>
+        </div>
+      ) : null}
+
+      {undoItem ? (
+        <div className="memoryUndo" role="status">
+          <span>Запись удалена. Восстановить?</span>
+          <button type="button" onClick={() => void restoreDeletedItem()} disabled={undoBusy}>
+            {undoBusy ? "Восстановление..." : "Undo"}
           </button>
         </div>
       ) : null}
