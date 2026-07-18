@@ -9,7 +9,8 @@ use axum::{
 use evohime_memory::{embed_text, normalize_content, redact_secrets};
 use evohime_storage::{
     delete_memory_item, get_memory_item, list_memory_items_overview,
-    update_memory_item_fields_with_embedding, MemoryItemRow, MemoryScope, MemoryStatus,
+    resolve_memory_conflict as resolve_storage_conflict, update_memory_item_fields_with_embedding,
+    MemoryItemRow, MemoryScope, MemoryStatus,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -37,6 +38,17 @@ pub struct UpdateMemoryRequest {
     pub status: Option<String>,
     #[serde(default)]
     pub pinned: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResolveMemoryConflictRequest {
+    pub winner_id: Uuid,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ResolveMemoryConflictResponse {
+    pub winner: MemoryItemRow,
+    pub loser: MemoryItemRow,
 }
 
 #[derive(Debug, Serialize)]
@@ -224,6 +236,34 @@ pub async fn update_memory(
     }
 
     Ok(Json(updated))
+}
+
+pub async fn resolve_memory_conflict(
+    State(state): State<Arc<AppState>>,
+    Path(conflict_id): Path<Uuid>,
+    Json(body): Json<ResolveMemoryConflictRequest>,
+) -> Result<Json<ResolveMemoryConflictResponse>, ApiError> {
+    let conflict = get_memory_item(&state.pool, conflict_id)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?
+        .ok_or_else(|| ApiError::BadRequest("memory conflict not found".into()))?;
+    if conflict.status != MemoryStatus::Conflict.as_str() {
+        return Err(ApiError::BadRequest("memory item is not a conflict".into()));
+    }
+    let related_id = conflict
+        .supersedes
+        .ok_or_else(|| ApiError::BadRequest("conflict has no related memory item".into()))?;
+    let (winner, loser) =
+        resolve_storage_conflict(&state.pool, conflict_id, related_id, body.winner_id)
+            .await
+            .map_err(|error| match error {
+                evohime_storage::StorageError::InvalidMemory(message) => {
+                    ApiError::BadRequest(message)
+                }
+                other => ApiError::Internal(other.to_string()),
+            })?
+            .ok_or_else(|| ApiError::BadRequest("conflict pair is stale or incompatible".into()))?;
+    Ok(Json(ResolveMemoryConflictResponse { winner, loser }))
 }
 
 pub async fn delete_memory(

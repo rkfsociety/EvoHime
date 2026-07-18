@@ -3637,6 +3637,52 @@ h1 {
   gap: 10px;
 }
 
+.memoryConflictPair {
+  border: 1px solid rgba(240, 190, 120, 0.38);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(240, 190, 120, 0.05);
+}
+
+.memoryConflictHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.memoryConflictHeader span {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.memoryConflictColumns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.memoryConflictCard {
+  border: 1px solid var(--border-1);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.memoryConflictCard > button {
+  border: 1px solid rgba(159, 192, 255, 0.42);
+  border-radius: 9px;
+  background: rgba(159, 192, 255, 0.1);
+  color: inherit;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.memoryConflictCard > button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .memoryItem {
   border: 1px solid var(--border-1);
   border-radius: 14px;
@@ -3755,4 +3801,15 @@ h1 {
 
 .panelError {
   color: #f2a3a3;
+}
+
+@media (max-width: 720px) {
+  .memoryConflictColumns {
+    grid-template-columns: 1fr;
+  }
+
+  .memoryConflictHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }

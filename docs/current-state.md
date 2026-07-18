@@ -124,7 +124,9 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.42` реализован: admission memory использует kind-aware semantic dedupe по сохранённым embeddings после точного fingerprint; парафразы объединяются при cosine `>= 0.58`, unrelated и разные kinds не смешиваются.
 
-**Актуализация 2026-07-18:** `7.42` выполнен: fuzzy/semantic dedupe встроен в admission flow и защищён тестами. Следующий пункт — `7.43`.
+`7.43` реализован: конфликтные записи показываются в MemoryPanel side-by-side, а выбор winner/loser проходит атомарно через `POST /api/memory/:id`.
+
+**Актуализация 2026-07-18:** `7.43` выполнен: MemoryPanel поддерживает side-by-side conflict resolution с supersede-связью. Следующий пункт — `7.44`.
 
 1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.34`, `7.52` ✅; next plan approve `7.35`
 2. Рекомендуемая следующая волна: plan approve (`7.35`), experience playbook auto-suggest (`7.48`)

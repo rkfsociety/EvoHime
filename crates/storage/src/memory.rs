@@ -358,6 +358,64 @@ pub async fn update_memory_item_status(
     Ok(row)
 }
 
+/// Resolve two linked conflict records atomically.
+pub async fn resolve_memory_conflict(
+    pool: &PgPool,
+    conflict_id: Uuid,
+    related_id: Uuid,
+    winner_id: Uuid,
+) -> Result<Option<(MemoryItemRow, MemoryItemRow)>, StorageError> {
+    if winner_id != conflict_id && winner_id != related_id {
+        return Err(StorageError::InvalidMemory(
+            "winner must be one of the conflict records".into(),
+        ));
+    }
+
+    let mut transaction = pool.begin().await?;
+    let ids = vec![conflict_id, related_id];
+    let rows = sqlx::query_as::<_, MemoryItemRow>(&format!(
+        "SELECT {MEMORY_ITEM_COLUMNS} FROM memory_items WHERE id = ANY($1) FOR UPDATE"
+    ))
+    .bind(&ids)
+    .fetch_all(&mut *transaction)
+    .await?;
+    if rows.len() != 2
+        || rows
+            .iter()
+            .any(|row| row.status != MemoryStatus::Conflict.as_str())
+        || rows
+            .iter()
+            .map(|row| (&row.scope, &row.scope_key, &row.kind))
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+            != 1
+    {
+        return Ok(None);
+    }
+
+    let winner = sqlx::query_as::<_, MemoryItemRow>(&format!(
+        "UPDATE memory_items SET status = $2, updated_at = now() WHERE id = $1 RETURNING {MEMORY_ITEM_COLUMNS}"
+    ))
+    .bind(winner_id)
+    .bind(MemoryStatus::Active.as_str())
+    .fetch_one(&mut *transaction)
+    .await?;
+    let loser_id = if winner_id == conflict_id {
+        related_id
+    } else {
+        conflict_id
+    };
+    let loser = sqlx::query_as::<_, MemoryItemRow>(&format!(
+        "UPDATE memory_items SET status = $2, updated_at = now() WHERE id = $1 RETURNING {MEMORY_ITEM_COLUMNS}"
+    ))
+    .bind(loser_id)
+    .bind(MemoryStatus::Rejected.as_str())
+    .fetch_one(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
+    Ok(Some((winner, loser)))
+}
+
 /// List memory items across scopes for the Memory panel (6.22 / 6.24).
 pub async fn list_memory_items_overview(
     pool: &PgPool,

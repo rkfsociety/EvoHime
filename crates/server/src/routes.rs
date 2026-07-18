@@ -105,6 +105,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             "/api/memory/:id",
             get(memory_api::get_memory)
                 .patch(memory_api::update_memory)
+                .post(memory_api::resolve_memory_conflict)
                 .delete(memory_api::delete_memory),
         )
         .route("/api/metrics", get(crate::metrics_api::pipeline_metrics))

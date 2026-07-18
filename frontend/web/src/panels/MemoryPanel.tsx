@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   deleteMemory,
   listMemory,
+  resolveMemoryConflict,
   updateMemory,
   type MemoryItem,
   type MemoryPrivacyInfo,
@@ -168,6 +169,10 @@ export function MemoryPanel() {
     setEditingId(null);
   }
 
+  async function resolveConflict(conflictId: string, winnerId: string) {
+    await runAction(conflictId, () => resolveMemoryConflict(conflictId, winnerId));
+  }
+
   return (
     <div className="actionsPanel memoryPanel">
       <div className="panelToolbar">
@@ -257,9 +262,50 @@ export function MemoryPanel() {
       ) : (
         <div className="memoryList">
           {visibleItems.map((item) => {
+            const relatedConflict = tab === "conflicts" && item.supersedes
+              ? visibleItems.find((candidate) => candidate.id === item.supersedes)
+              : undefined;
+            if (tab === "conflicts" && !item.supersedes && visibleItems.some((candidate) => candidate.supersedes === item.id)) {
+              return null;
+            }
             const busy = busyId === item.id;
             const editing = editingId === item.id;
             const playbook = item.kind === "playbook" ? parsePlaybook(item.content_json) : null;
+            if (tab === "conflicts" && item.supersedes && relatedConflict) {
+              return (
+                <article className="memoryConflictPair" key={item.id}>
+                  <div className="memoryConflictHeader">
+                    <strong>Конфликт памяти</strong>
+                    <span>{kindLabel(item.kind)} · выберите актуальную запись</span>
+                  </div>
+                  <div className="memoryConflictColumns">
+                    {[item, relatedConflict].map((candidate) => (
+                      <div className="memoryConflictCard" key={candidate.id}>
+                        <div className="memoryItemHeader">
+                          <strong>
+                            <span className="memoryKindBadge">{candidate.id === item.id ? "Новая" : "Текущая"}</span>
+                            <span className="memoryScopeLabel">{candidate.scope}</span>
+                          </strong>
+                          <span>conf {candidate.confidence.toFixed(2)}</span>
+                        </div>
+                        <p>{candidate.content}</p>
+                        <div className="memoryMeta">
+                          <code>{candidate.scope_key}</code>
+                          <time dateTime={candidate.updated_at}>{formatUpdatedAt(candidate.updated_at)}</time>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void resolveConflict(item.id, candidate.id)}
+                        >
+                          Оставить эту запись
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              );
+            }
             return (
               <article
                 className="memoryItem"

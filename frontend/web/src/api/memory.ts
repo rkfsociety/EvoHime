@@ -80,6 +80,18 @@ export function updateMemory(id: string, payload: MemoryUpdatePayload) {
   );
 }
 
+export function resolveMemoryConflict(id: string, winnerId: string) {
+  return apiRequest<{ winner: MemoryItem; loser: MemoryItem }>(
+    `/api/memory/${id}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ winner_id: winnerId }),
+    },
+    "Не удалось разрешить конфликт памяти",
+  );
+}
+
 export function deleteMemory(id: string) {
   return apiRequestVoid(`/api/memory/${id}`, { method: "DELETE" }, "Не удалось удалить запись памяти");
 }
