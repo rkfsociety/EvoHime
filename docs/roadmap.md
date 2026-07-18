@@ -353,7 +353,7 @@
 | 7.34 | Planner cost/latency telemetry per step | M | ✅ | GenAI OTLP spans + usage tokens + `/api/metrics` llm_* |
 | 7.35 | `assistant.reply` + user-visible plan edits (approve plan) | M | ✅ | PostgreSQL checkpoint, edited dependencies, WebSocket approve/reject, durable paused state |
 | 7.36 | More tools: `filesystem.list` в матрице UI; `http.fetch` с SSRF policy | M | ✅ | list surfaced in tool catalog/matrix; fetch registered with redirect and final-url SSRF checks |
-| 7.37 | Cancel mid-tool with cooperative cancellation everywhere | M | ⬜ | shell есть; не все tools |
+| 7.37 | Cancel mid-tool with cooperative cancellation everywhere | M | ✅ | registry dispatcher cancels every tool future; shell receives token for child-process termination |
 | 7.38 | Separate OpenAICompatible provider from LiteRouter alias | S | ⬜ | `model-gateway` |
 | 7.39 | Model route picker в composer (не только Settings) | M | ⬜ | frontend chat |
 
@@ -470,11 +470,11 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-18:** `7.35` ✅ — подтверждение и редактирование плана перед выполнением реализованы; следующий пункт Wave C — `7.36`.
+**Актуальный статус 2026-07-18:** `7.37` ✅ — отмена распространяется на обычный и параллельный запуск всех tools; следующий пункт Wave C — `7.38`.
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
-3. **Wave C (agent quality):** `7.28`–`7.35`, `7.52` ✅ → next `7.36`+
+3. **Wave C (agent quality):** `7.28`–`7.37`, `7.52` ✅ → next `7.38`+
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  
 5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+

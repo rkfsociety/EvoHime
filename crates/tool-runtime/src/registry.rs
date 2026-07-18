@@ -282,7 +282,7 @@ impl ToolRegistry {
                 tools::patch::NAME => tools::patch::execute(ctx, input).await,
                 tools::search::NAME => tools::search::execute(ctx, input).await,
                 tools::list::NAME => tools::list::execute(ctx, input).await,
-                tools::shell::NAME => tools::shell::execute(ctx, input, cancellation).await,
+                tools::shell::NAME => tools::shell::execute(ctx, input, cancellation.clone()).await,
                 tools::git::STATUS_NAME => tools::git::status(ctx, input).await,
                 tools::git::DIFF_NAME => tools::git::diff(ctx, input).await,
                 tools::git::COMMIT_NAME => tools::git::commit(ctx, input).await,
@@ -299,9 +299,12 @@ impl ToolRegistry {
             }
         };
 
-        match tokio::time::timeout(definition.timeout, execution).await {
-            Ok(result) => result,
-            Err(_) => Err(ToolError::TimedOut(definition.timeout)),
+        tokio::select! {
+            _ = cancellation.cancelled() => Err(ToolError::Execution("tool cancelled".to_string())),
+            result = tokio::time::timeout(definition.timeout, execution) => match result {
+                Ok(result) => result,
+                Err(_) => Err(ToolError::TimedOut(definition.timeout)),
+            },
         }
     }
 
@@ -497,6 +500,62 @@ mod tests {
         assert!(
             matches!(result, Err(ToolError::Execution(message)) if message == "tool cancelled")
         );
+    }
+
+    #[tokio::test]
+    async fn cancellation_stops_non_shell_tool_in_parallel_execution() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let _ssrf = crate::ssrf::lock_private_override(Some(true));
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/slow"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string("late")
+                    .set_delay(std::time::Duration::from_secs(2)),
+            )
+            .mount(&server)
+            .await;
+
+        let permissions = PermissionEngine::new();
+        permissions
+            .set_mode(
+                evohime_permissions::Permission::BrowserAccess,
+                evohime_permissions::PermissionMode::Allow,
+            )
+            .await;
+        let registry = ToolRegistry::bootstrap_with_permissions(permissions);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let context = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+        };
+        let token = CancellationToken::new();
+        let cancel = token.clone();
+        let handle = tokio::spawn(async move {
+            registry
+                .execute_parallel(
+                    &context,
+                    vec![(
+                        "browser.open".into(),
+                        serde_json::json!({ "url": format!("{}/slow", server.uri()) }),
+                    )],
+                    token,
+                )
+                .await
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        cancel.cancel();
+        let results = handle.await.expect("parallel task");
+        assert!(matches!(
+            results.as_slice(),
+            [Err(ToolError::Execution(message))] if message == "tool cancelled"
+        ));
     }
 
     #[tokio::test]
