@@ -155,6 +155,17 @@ pub(crate) async fn persist_task_plan(
     Ok(())
 }
 
+pub(crate) async fn replace_task_plan(
+    state: &Arc<AppState>,
+    task_id: Uuid,
+    plan: &[PlanStep],
+) -> Result<(), ApiError> {
+    evohime_storage::delete_task_steps(&state.pool, task_id)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    persist_task_plan(state, task_id, plan).await
+}
+
 pub(crate) async fn update_task_step_status(
     state: &Arc<AppState>,
     task_id: Uuid,

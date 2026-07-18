@@ -171,6 +171,8 @@ export type GitSnapshot = {
 
 export type GitAction = "commit" | "pull" | "push";
 
+import type { PlanStep } from "./protocol";
+
 export type TaskStepView = {
   id: string;
   runtimeId?: string;
@@ -196,6 +198,8 @@ export type TaskView = {
   pauseReason: string | null;
   approvalWait: TaskApprovalWait | null;
   recovery: string | null;
+  plan: PlanStep[];
+  pendingPlan: PlanStep[] | null;
 };
 
 export type ActionView = {

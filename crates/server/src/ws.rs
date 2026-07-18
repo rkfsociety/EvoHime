@@ -3,7 +3,7 @@ use crate::app::AppState;
 use crate::permissions_api::persist_permission_scopes;
 use crate::task::{
     emit_event, finalize_open_task_steps, handle_memory_decision, process_user_message,
-    resolve_workspace_path, resume_task_run,
+    replace_task_plan, resolve_workspace_path, resume_task_run,
 };
 use crate::ApiError;
 use axum::{
@@ -14,6 +14,7 @@ use axum::{
     response::IntoResponse,
 };
 use evohime_protocol::{ClientCommand, HistoryItem, ServerEvent};
+use evohime_task_engine::validate_plan;
 use evohime_task_engine::{fail_task, resume_task, retry_task, start_task};
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde::Deserialize;
@@ -209,6 +210,181 @@ pub(crate) async fn handle_socket(
                                     task_id,
                                     action: "task.cancel".to_string(),
                                     detail: "Task cancellation requested".to_string(),
+                                    created_at: chrono::Utc::now(),
+                                },
+                            )
+                            .await?;
+                        }
+                        ClientCommand::TaskPlanApprove { task_id, plan } => {
+                            let task = match evohime_storage::load_task(&state.pool, task_id)
+                                .await
+                                .map_err(|error| ApiError::Internal(error.to_string()))?
+                            {
+                                Some(task) if task.session_id == session_id => task,
+                                _ => continue,
+                            };
+                            let checkpoint = evohime_storage::load_checkpoint(&state.pool, task_id)
+                                .await
+                                .map_err(|error| ApiError::Internal(error.to_string()))?;
+                            let pending = task.status == "paused"
+                                && checkpoint.as_ref().and_then(|row| {
+                                    row.state_json.get("pause_reason").and_then(Value::as_str)
+                                }) == Some("plan_approval_required");
+                            if !pending {
+                                emit_event(
+                                    &state,
+                                    session_id,
+                                    Some(task_id),
+                                    ServerEvent::ActionLogged {
+                                        task_id,
+                                        action: "plan.approval.invalid".to_string(),
+                                        detail: "Plan approval ignored because the task is not awaiting approval".to_string(),
+                                        created_at: chrono::Utc::now(),
+                                    },
+                                )
+                                .await?;
+                                continue;
+                            }
+                            if let Err(error) = validate_plan(&plan) {
+                                emit_event(
+                                    &state,
+                                    session_id,
+                                    Some(task_id),
+                                    ServerEvent::ActionLogged {
+                                        task_id,
+                                        action: "plan.approval.invalid".to_string(),
+                                        detail: format!("Invalid plan: {error}"),
+                                        created_at: chrono::Utc::now(),
+                                    },
+                                )
+                                .await?;
+                                continue;
+                            }
+                            replace_task_plan(&state, task_id, &plan).await?;
+                            resume_task(&state.pool, task_id)
+                                .await
+                                .map_err(|error| ApiError::Internal(error.to_string()))?;
+                            evohime_storage::merge_checkpoint(
+                                &state.pool,
+                                task_id,
+                                None,
+                                &json!({
+                                    "pause_reason": Value::Null,
+                                    "approval_wait": Value::Null,
+                                }),
+                            )
+                            .await
+                            .map_err(|error| ApiError::Internal(error.to_string()))?;
+                            emit_event(
+                                &state,
+                                session_id,
+                                Some(task_id),
+                                ServerEvent::AgentPlanUpdated { task_id, plan },
+                            )
+                            .await?;
+                            emit_event(
+                                &state,
+                                session_id,
+                                Some(task_id),
+                                ServerEvent::TaskStatusChanged {
+                                    task_id,
+                                    status: "running".to_string(),
+                                },
+                            )
+                            .await?;
+                            emit_event(
+                                &state,
+                                session_id,
+                                Some(task_id),
+                                ServerEvent::ActionLogged {
+                                    task_id,
+                                    action: "plan.approval.granted".to_string(),
+                                    detail: "Approved plan scheduled for execution".to_string(),
+                                    created_at: chrono::Utc::now(),
+                                },
+                            )
+                            .await?;
+                            let token = CancellationToken::new();
+                            state
+                                .task_cancellations
+                                .lock()
+                                .await
+                                .insert(task_id, token.clone());
+                            let state_for_task = state.clone();
+                            tokio::spawn(async move {
+                                if let Err((task_id, error)) =
+                                    resume_task_run(&state_for_task, task, token, false).await
+                                {
+                                    let _ = emit_event(
+                                        &state_for_task,
+                                        session_id,
+                                        Some(task_id),
+                                        ServerEvent::TaskFailed {
+                                            task_id,
+                                            error: error.to_string(),
+                                        },
+                                    )
+                                    .await;
+                                    let _ = fail_task(&state_for_task.pool, task_id).await;
+                                }
+                                state_for_task
+                                    .task_cancellations
+                                    .lock()
+                                    .await
+                                    .remove(&task_id);
+                            });
+                        }
+                        ClientCommand::TaskPlanReject { task_id } => {
+                            let task = match evohime_storage::load_task(&state.pool, task_id)
+                                .await
+                                .map_err(|error| ApiError::Internal(error.to_string()))?
+                            {
+                                Some(task) if task.session_id == session_id => task,
+                                _ => continue,
+                            };
+                            let checkpoint = evohime_storage::load_checkpoint(&state.pool, task_id)
+                                .await
+                                .map_err(|error| ApiError::Internal(error.to_string()))?;
+                            let pending = task.status == "paused"
+                                && checkpoint.as_ref().and_then(|row| {
+                                    row.state_json.get("pause_reason").and_then(Value::as_str)
+                                }) == Some("plan_approval_required");
+                            if !pending {
+                                continue;
+                            }
+                            evohime_task_engine::cancel_task(&state.pool, task_id)
+                                .await
+                                .map_err(|error| ApiError::Internal(error.to_string()))?;
+                            finalize_open_task_steps(&state, task_id, "cancelled").await?;
+                            evohime_storage::merge_checkpoint(
+                                &state.pool,
+                                task_id,
+                                None,
+                                &json!({
+                                    "pause_reason": "plan_rejected",
+                                    "approval_wait": Value::Null,
+                                }),
+                            )
+                            .await
+                            .map_err(|error| ApiError::Internal(error.to_string()))?;
+                            emit_event(
+                                &state,
+                                session_id,
+                                Some(task_id),
+                                ServerEvent::TaskStatusChanged {
+                                    task_id,
+                                    status: "cancelled".to_string(),
+                                },
+                            )
+                            .await?;
+                            emit_event(
+                                &state,
+                                session_id,
+                                Some(task_id),
+                                ServerEvent::ActionLogged {
+                                    task_id,
+                                    action: "plan.approval.rejected".to_string(),
+                                    detail: "Plan rejected by user; task cancelled".to_string(),
                                     created_at: chrono::Utc::now(),
                                 },
                             )

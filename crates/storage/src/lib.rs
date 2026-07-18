@@ -756,6 +756,14 @@ pub async fn list_task_steps(
     Ok(sqlx::query_as::<_, TaskStepRow>("SELECT id,task_id,step_index,tool_name,input_json,depends_on,status,output,error FROM task_steps WHERE task_id=$1 ORDER BY step_index").bind(task_id).fetch_all(pool).await?)
 }
 
+pub async fn delete_task_steps(pool: &PgPool, task_id: Uuid) -> Result<(), StorageError> {
+    sqlx::query("DELETE FROM task_steps WHERE task_id = $1")
+        .bind(task_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 pub async fn set_step_status(
     pool: &PgPool,
     step_id: Uuid,

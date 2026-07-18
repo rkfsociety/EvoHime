@@ -1392,6 +1392,16 @@ export function App() {
               setLines((current) => [...current, { role: "system", text: String(error) }]);
             });
           }}
+          onApprovePlan={(taskId, plan) => {
+            if (socketRef.current?.readyState === WebSocket.OPEN) {
+              socketRef.current.send(JSON.stringify({ type: "task.plan.approve", task_id: taskId, plan }));
+            }
+          }}
+          onRejectPlan={(taskId) => {
+            if (socketRef.current?.readyState === WebSocket.OPEN) {
+              socketRef.current.send(JSON.stringify({ type: "task.plan.reject", task_id: taskId }));
+            }
+          }}
         />
       );
     }

@@ -17,6 +17,12 @@ pub enum TaskEngineError {
     UnknownDependency { step_id: String, dependency: String },
     #[error("dependency cycle detected at step {step_id}")]
     DependencyCycle { step_id: String },
+    #[error("plan must contain at least one step")]
+    EmptyPlan,
+    #[error("duplicate plan step id: {0}")]
+    DuplicateStepId(String),
+    #[error("plan step {step_id} has an empty tool name")]
+    EmptyToolName { step_id: String },
 }
 
 pub fn task_status_str(status: TaskStatus) -> &'static str {
@@ -264,6 +270,24 @@ pub fn dependency_batches(plan: &[PlanStep]) -> Result<Vec<Vec<PlanStep>>, TaskE
     Ok(batches)
 }
 
+pub fn validate_plan(plan: &[PlanStep]) -> Result<(), TaskEngineError> {
+    if plan.is_empty() {
+        return Err(TaskEngineError::EmptyPlan);
+    }
+    let mut ids = HashSet::new();
+    for step in plan {
+        if step.tool_name.trim().is_empty() {
+            return Err(TaskEngineError::EmptyToolName {
+                step_id: step.id.clone(),
+            });
+        }
+        if !ids.insert(step.id.as_str()) {
+            return Err(TaskEngineError::DuplicateStepId(step.id.clone()));
+        }
+    }
+    dependency_batches(plan).map(|_| ())
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InMemoryTask {
     pub status: TaskStatus,
@@ -437,5 +461,50 @@ mod tests {
 
         let error = dependency_batches(&plan).expect_err("missing dependency should fail");
         assert!(matches!(error, TaskEngineError::UnknownDependency { .. }));
+    }
+
+    #[test]
+    fn validate_plan_rejects_empty_or_duplicate_steps() {
+        assert!(matches!(
+            validate_plan(&[]),
+            Err(TaskEngineError::EmptyPlan)
+        ));
+        let duplicate = vec![
+            PlanStep {
+                id: "same".into(),
+                tool_name: "filesystem.read".into(),
+                description: "one".into(),
+                depends_on: vec![],
+            },
+            PlanStep {
+                id: "same".into(),
+                tool_name: "filesystem.read".into(),
+                description: "two".into(),
+                depends_on: vec![],
+            },
+        ];
+        assert!(matches!(
+            validate_plan(&duplicate),
+            Err(TaskEngineError::DuplicateStepId(_))
+        ));
+    }
+
+    #[test]
+    fn validate_plan_accepts_edited_dependencies() {
+        let plan = vec![
+            PlanStep {
+                id: "read".into(),
+                tool_name: "filesystem.read".into(),
+                description: "Read context".into(),
+                depends_on: vec![],
+            },
+            PlanStep {
+                id: "answer".into(),
+                tool_name: "assistant.reply".into(),
+                description: "Answer user".into(),
+                depends_on: vec!["read".into()],
+            },
+        ];
+        assert!(validate_plan(&plan).is_ok());
     }
 }

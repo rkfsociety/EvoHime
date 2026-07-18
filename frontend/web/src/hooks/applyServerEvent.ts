@@ -98,6 +98,8 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
           pauseReason: null,
           approvalWait: null,
           recovery: null,
+          plan: [],
+          pendingPlan: null,
         },
       }));
       ctx.setLines((current) => [...current, { role: "user", text: event.user_message, taskId: event.task_id }]);
@@ -267,6 +269,7 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
                       ? null
                       : current[statusEvent.task_id].pauseReason,
                 approvalWait: statusEvent.status === "running" ? null : current[statusEvent.task_id].approvalWait,
+                pendingPlan: statusEvent.status === "running" ? null : current[statusEvent.task_id].pendingPlan,
               },
             }
           : current,
@@ -306,12 +309,17 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
         }
         const isRetry = actionEvent.action === "task.retry";
         const isRecovery = /recover|restart/i.test(`${actionEvent.action} ${actionEvent.detail}`);
+        const isPlanApprovalRequired = actionEvent.action === "plan.approval.required";
+        const isPlanApprovalResolved = actionEvent.action === "plan.approval.granted"
+          || actionEvent.action === "plan.approval.rejected";
         return {
           ...current,
           [actionEvent.task_id]: {
             ...task,
             retryCount: task.retryCount + (isRetry ? 1 : 0),
             recovery: isRecovery ? actionEvent.detail : task.recovery,
+            pauseReason: isPlanApprovalRequired ? "plan_approval_required" : task.pauseReason,
+            pendingPlan: isPlanApprovalRequired ? task.plan : isPlanApprovalResolved ? null : task.pendingPlan,
           },
         };
       });
@@ -335,7 +343,10 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
             status: previous?.status ?? "pending",
           };
         }
-        return { ...current, [event.task_id]: { ...task, steps } };
+        return {
+          ...current,
+          [event.task_id]: { ...task, steps, plan: event.plan as PlanStep[] },
+        };
       });
       ctx.setLines((current) => [
         ...current,

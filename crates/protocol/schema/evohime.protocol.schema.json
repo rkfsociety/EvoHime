@@ -60,6 +60,8 @@
         { "$ref": "#/$defs/TaskCancelCommand" },
         { "$ref": "#/$defs/TaskResumeCommand" },
         { "$ref": "#/$defs/TaskRetryCommand" }
+        ,{ "$ref": "#/$defs/TaskPlanApproveCommand" }
+        ,{ "$ref": "#/$defs/TaskPlanRejectCommand" }
         ,{ "$ref": "#/$defs/ApprovalGrantedCommand" }
         ,{ "$ref": "#/$defs/ApprovalDeniedCommand" }
         ,{ "$ref": "#/$defs/MemoryAcceptCommand" }
@@ -226,6 +228,20 @@
     "TaskRetryCommand": {
       "type": "object", "required": ["type", "task_id"],
       "properties": { "type": { "const": "task.retry" }, "task_id": { "$ref": "#/$defs/Uuid" } },
+      "additionalProperties": false
+    },
+    "TaskPlanApproveCommand": {
+      "type": "object", "required": ["type", "task_id", "plan"],
+      "properties": {
+        "type": { "const": "task.plan.approve" },
+        "task_id": { "$ref": "#/$defs/Uuid" },
+        "plan": { "type": "array", "items": { "$ref": "#/$defs/PlanStep" } }
+      },
+      "additionalProperties": false
+    },
+    "TaskPlanRejectCommand": {
+      "type": "object", "required": ["type", "task_id"],
+      "properties": { "type": { "const": "task.plan.reject" }, "task_id": { "$ref": "#/$defs/Uuid" } },
       "additionalProperties": false
     },
     "TaskStatusChangedEvent": {

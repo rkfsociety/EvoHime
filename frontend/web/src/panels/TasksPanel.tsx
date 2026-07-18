@@ -1,4 +1,6 @@
 import type { ChatSessionSummary, TaskView } from "../types";
+import type { PlanStep } from "../protocol";
+import { useEffect, useState } from "react";
 import {
   formatSessionPreview,
   formatSessionTimestamp,
@@ -11,7 +13,61 @@ type TasksPanelProps = {
   activeSessionId: string | null;
   onNewChat: () => void;
   onOpenSession: (chat: ChatSessionSummary) => void;
+  onApprovePlan: (taskId: string, plan: PlanStep[]) => void;
+  onRejectPlan: (taskId: string) => void;
 };
+
+function PlanApprovalEditor({
+  task,
+  onApprove,
+  onReject,
+}: {
+  task: TaskView;
+  onApprove: (plan: PlanStep[]) => void;
+  onReject: () => void;
+}) {
+  const [draft, setDraft] = useState<PlanStep[]>(task.pendingPlan ?? task.plan);
+
+  useEffect(() => {
+    setDraft(task.pendingPlan ?? task.plan);
+  }, [task.pendingPlan, task.plan]);
+
+  function updateStep(index: number, patch: Partial<PlanStep>) {
+    setDraft((current) => current.map((step, stepIndex) => stepIndex === index ? { ...step, ...patch } : step));
+  }
+
+  return (
+    <div className="taskPlanApproval">
+      <strong>План ждёт подтверждения</strong>
+      <span>Проверь шаги до запуска инструментов.</span>
+      {draft.map((step, index) => (
+        <div className="taskPlanEditRow" key={step.id}>
+          <label>
+            <span>{step.id} · инструмент</span>
+            <input value={step.tool_name} onChange={(event) => updateStep(index, { tool_name: event.target.value })} />
+          </label>
+          <label>
+            <span>Описание</span>
+            <input value={step.description} onChange={(event) => updateStep(index, { description: event.target.value })} />
+          </label>
+          <label>
+            <span>Зависимости через запятую</span>
+            <input
+              value={(step.depends_on ?? []).join(", ")}
+              onChange={(event) => updateStep(index, {
+                depends_on: event.target.value.split(",").map((value) => value.trim()).filter(Boolean),
+              })}
+            />
+          </label>
+        </div>
+      ))}
+      <div className="taskPlanApprovalActions">
+        <button type="button" onClick={() => onApprove(draft)}>Запустить план</button>
+        <button type="button" onClick={onReject}>Отклонить</button>
+      </div>
+    </div>
+  );
+}
 
 function statusLabel(status: string) {
   const labels: Record<string, string> = {
@@ -32,6 +88,8 @@ export function TasksPanel({
   activeSessionId,
   onNewChat,
   onOpenSession,
+  onApprovePlan,
+  onRejectPlan,
 }: TasksPanelProps) {
   const taskList = Object.values(tasks).reverse();
 
@@ -80,6 +138,14 @@ export function TasksPanel({
                   <div className="taskNotice">
                     <strong>Recovery:</strong> {task.recovery}
                   </div>
+                ) : null}
+
+                {task.pendingPlan && task.pauseReason === "plan_approval_required" ? (
+                  <PlanApprovalEditor
+                    task={task}
+                    onApprove={(plan) => onApprovePlan(task.id, plan)}
+                    onReject={() => onRejectPlan(task.id)}
+                  />
                 ) : null}
 
                 <div className="taskStepList">

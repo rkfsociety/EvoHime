@@ -150,6 +150,10 @@ pub enum ClientCommand {
     TaskResume { task_id: Uuid },
     #[serde(rename = "task.retry")]
     TaskRetry { task_id: Uuid },
+    #[serde(rename = "task.plan.approve")]
+    TaskPlanApprove { task_id: Uuid, plan: Vec<PlanStep> },
+    #[serde(rename = "task.plan.reject")]
+    TaskPlanReject { task_id: Uuid },
     #[serde(rename = "approval.granted")]
     ApprovalGranted { approval_id: Uuid },
     #[serde(rename = "approval.denied")]
@@ -342,5 +346,28 @@ mod tests {
                 ClientCommand::MemoryAccept { .. } | ClientCommand::MemoryReject { .. }
             ));
         }
+    }
+
+    #[test]
+    fn serializes_plan_approval_command() {
+        let command = ClientCommand::TaskPlanApprove {
+            task_id: Uuid::nil(),
+            plan: vec![PlanStep {
+                id: "step-1".to_string(),
+                tool_name: "filesystem.read".to_string(),
+                description: "Read context".to_string(),
+                depends_on: vec![],
+            }],
+        };
+
+        let json = serde_json::to_value(&command).expect("command serializes");
+        assert_eq!(json["type"], "task.plan.approve");
+        assert_eq!(json["plan"][0]["id"], "step-1");
+        let decoded: ClientCommand = serde_json::from_value(json).expect("command deserializes");
+        assert!(matches!(
+            decoded,
+            ClientCommand::TaskPlanApprove { task_id, plan }
+                if task_id == Uuid::nil() && plan[0].id == "step-1"
+        ));
     }
 }

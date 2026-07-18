@@ -34,6 +34,8 @@ export type ClientCommand =
   | TaskCancelCommand
   | TaskResumeCommand
   | TaskRetryCommand
+  | TaskPlanApproveCommand
+  | TaskPlanRejectCommand
   | ApprovalGrantedCommand
   | ApprovalDeniedCommand
   | MemoryAcceptCommand
@@ -197,6 +199,15 @@ export interface TaskResumeCommand {
 }
 export interface TaskRetryCommand {
   type: "task.retry";
+  task_id: Uuid;
+}
+export interface TaskPlanApproveCommand {
+  type: "task.plan.approve";
+  task_id: Uuid;
+  plan: PlanStep[];
+}
+export interface TaskPlanRejectCommand {
+  type: "task.plan.reject";
   task_id: Uuid;
 }
 export interface ApprovalGrantedCommand {
