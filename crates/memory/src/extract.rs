@@ -476,7 +476,8 @@ mod tests {
         let transcript = "User: Создай файл hello-smoke.txt | Assistant: Файл создан";
         let asked = "User asked: Разберись в коде проекта; assistant replied: Step-1 done";
         let smoke = "EvoHime smoke test 2026-07-19 via filesystem.write";
-        let explore = "When Разберись в коде проекта и объясни, с чего начать.: Окей, смотрю корень";
+        let explore =
+            "When Разберись в коде проекта и объясни, с чего начать.: Окей, смотрю корень";
         assert!(is_ephemeral_task_dump(transcript));
         assert!(is_ephemeral_task_dump(asked));
         assert!(is_ephemeral_task_dump(smoke));

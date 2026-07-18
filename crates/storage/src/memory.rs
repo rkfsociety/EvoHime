@@ -126,9 +126,7 @@ pub const LOCAL_OPERATOR_SCOPE_KEY: &str = "local";
 /// Scope keys created by integration tests — must not leak into the Memory UI.
 pub fn is_synthetic_test_scope_key(scope_key: &str) -> bool {
     let key = scope_key.trim();
-    key.starts_with("test-ws-")
-        || key.starts_with("overview-")
-        || key.starts_with("mem-svc-")
+    key.starts_with("test-ws-") || key.starts_with("overview-") || key.starts_with("mem-svc-")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -642,12 +640,10 @@ pub async fn purge_memory_junk(pool: &PgPool) -> Result<u64, StorageError> {
     .rows_affected();
 
     let session_junk = junk_note_sql("note");
-    let sessions = sqlx::query(&format!(
-        "DELETE FROM session_memory WHERE {session_junk}"
-    ))
-    .execute(pool)
-    .await?
-    .rows_affected();
+    let sessions = sqlx::query(&format!("DELETE FROM session_memory WHERE {session_junk}"))
+        .execute(pool)
+        .await?
+        .rows_affected();
 
     let global_junk = junk_note_sql("note");
     let globals = sqlx::query(&format!("DELETE FROM global_memory WHERE {global_junk}"))
