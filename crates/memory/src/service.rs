@@ -1,6 +1,6 @@
 use crate::conflict::{detect_conflict, ConflictHit};
 use crate::decision::{decide_gate, GateDecision, GateInput};
-use crate::dedupe::detect_duplicate;
+use crate::dedupe::detect_duplicate_with_embedding;
 use crate::normalize::normalize_content;
 use crate::redact::redact_secrets;
 use evohime_storage::{
@@ -18,6 +18,8 @@ pub struct ExistingMemory {
     pub status: MemoryStatus,
     pub content: String,
     pub pinned: bool,
+    pub embedding: Option<Vec<f32>>,
+    pub embedding_version: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -85,7 +87,12 @@ impl MemoryService {
         prepared: &PreparedMemoryItem,
         existing: &[ExistingMemory],
     ) -> Result<Evaluation, MemoryError> {
-        if let Some(dup) = detect_duplicate(&prepared.content, existing) {
+        if let Some(dup) = detect_duplicate_with_embedding(
+            &prepared.content,
+            Some(prepared.item.kind),
+            prepared.item.embedding.as_deref(),
+            existing,
+        ) {
             return Ok(Evaluation::Duplicate {
                 existing_id: dup.existing_id,
             });
@@ -118,6 +125,8 @@ fn row_to_existing(row: &MemoryItemRow) -> Option<ExistingMemory> {
         status: MemoryStatus::parse(&row.status)?,
         content: row.content.clone(),
         pinned: row.pinned,
+        embedding: row.embedding.clone(),
+        embedding_version: row.embedding_version,
     })
 }
 

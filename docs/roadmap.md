@@ -363,7 +363,7 @@
 | --- | --- | --- | --- | --- |
 | 7.40 | Выключить dual-write legacy `session_memory`/`global_memory` (migrate-only) | M | ✅ | post-task writes only `memory_items`; prompt via retrieve |
 | 7.41 | Startup/one-shot `import_legacy_memory_notes` wired | S | ✅ | server startup; idempotent `source_label` markers |
-| 7.42 | Semantic / fuzzy dedupe (не только fingerprint) | M | ⬜ | `memory/dedupe.rs` |
+| 7.42 | Semantic / fuzzy dedupe (не только fingerprint) | M | ✅ | kind-aware cosine dedupe over stored embeddings; conservative `0.58` threshold; exact fingerprint remains first |
 | 7.43 | Conflict UI: side-by-side resolve / supersede flow | M | ⬜ | MemoryPanel conflicts tab |
 | 7.44 | Manual «добавить память» + templates | M | ⬜ | API list/patch/delete only |
 | 7.45 | Pagination / cursor для `/api/memory` (лимит 150) | M | ⬜ | MemoryPanel |
@@ -470,11 +470,11 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-18:** `7.39` ✅ — composer позволяет выбрать model route и сохраняет выбор per-project; следующий пункт Wave C — `7.42`.
+**Актуальный статус 2026-07-18:** `7.42` ✅ — admission использует kind-aware semantic dedupe поверх fingerprint, с тестами парафраза и unrelated-контента; следующий пункт — `7.43`.
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
-3. **Wave C (agent quality):** `7.28`–`7.39`, `7.52` ✅ → next `7.42`+
+3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`, `7.52` ✅ → next `7.43`+
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  
 5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+

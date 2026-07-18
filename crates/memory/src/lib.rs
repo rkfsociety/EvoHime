@@ -19,7 +19,10 @@ mod service;
 
 pub use conflict::{detect_conflict, ConflictHit};
 pub use decision::{decide_gate, GateDecision, GateInput, AUTO_PROMOTE_CONFIDENCE};
-pub use dedupe::{content_fingerprint, detect_duplicate};
+pub use dedupe::{
+    content_fingerprint, detect_duplicate, detect_duplicate_with_embedding,
+    SEMANTIC_DEDUPE_MIN_COSINE,
+};
 pub use embed::{
     cosine_similarity, embed_text, embed_text_hash, embedding_version, needs_reembed,
     semantic_score, EmbeddingResult, EncoderConfig, EncoderMode, EMBEDDING_DIM, EMBEDDING_VERSION,
@@ -105,6 +108,47 @@ mod tests {
     }
 
     #[test]
+    fn detects_semantic_duplicate_for_paraphrased_memory() {
+        let existing_content = "prefer git worktrees for parallel agents";
+        let existing_embedding = embed_text_hash(existing_content);
+        let existing = [existing_with_embedding(
+            existing_content,
+            existing_embedding,
+        )];
+        let candidate = "use worktrees when running parallel agents";
+        let candidate_embedding = embed_text_hash(candidate);
+        let hit = detect_duplicate_with_embedding(
+            candidate,
+            Some(MemoryKind::Fact),
+            Some(&candidate_embedding),
+            &existing,
+        );
+
+        assert_eq!(hit.map(|h| h.existing_id), Some(existing[0].id));
+    }
+
+    #[test]
+    fn keeps_unrelated_memory_when_embedding_is_not_similar() {
+        let existing_content = "postgres connection pool size is 16";
+        let existing_embedding = embed_text_hash(existing_content);
+        let existing = [existing_with_embedding(
+            existing_content,
+            existing_embedding,
+        )];
+        let candidate = "use worktrees when running parallel agents";
+        let candidate_embedding = embed_text_hash(candidate);
+
+        let hit = detect_duplicate_with_embedding(
+            candidate,
+            Some(MemoryKind::Fact),
+            Some(&candidate_embedding),
+            &existing,
+        );
+
+        assert!(hit.is_none());
+    }
+
+    #[test]
     fn detects_opposing_constraint_conflict() {
         let existing = [existing_kind(
             MemoryKind::Constraint,
@@ -136,6 +180,16 @@ mod tests {
             status: MemoryStatus::Active,
             content: content.to_string(),
             pinned: false,
+            embedding: None,
+            embedding_version: 0,
+        }
+    }
+
+    fn existing_with_embedding(content: &str, embedding: Vec<f32>) -> ExistingMemory {
+        ExistingMemory {
+            embedding: Some(embedding),
+            embedding_version: HASH_EMBEDDING_VERSION,
+            ..existing(content)
         }
     }
 
