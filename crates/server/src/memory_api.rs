@@ -13,7 +13,7 @@ use evohime_memory::{
 use evohime_storage::{
     delete_memory_item, get_memory_item, list_memory_items_overview_page,
     resolve_memory_conflict as resolve_storage_conflict, update_memory_item_fields_with_embedding,
-    MemoryItemRow, MemoryKind, MemoryScope, MemoryStatus, NewMemoryItem,
+    MemoryItemRow, MemoryKind, MemoryOverviewCursor, MemoryScope, MemoryStatus, NewMemoryItem,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -144,32 +144,6 @@ fn decode_memory_cursor(raw: &str) -> Result<MemoryCursor, ApiError> {
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{decode_memory_cursor, encode_memory_cursor, MemoryCursor};
-    use chrono::{TimeZone, Utc};
-    use uuid::Uuid;
-
-    #[test]
-    fn memory_cursor_round_trips_sort_key() {
-        let cursor = MemoryCursor {
-            pinned: true,
-            importance: 0.75,
-            updated_at: Utc.with_ymd_and_hms(2026, 7, 18, 12, 30, 0).unwrap(),
-            id: Uuid::nil(),
-        };
-
-        let encoded = encode_memory_cursor(&cursor);
-
-        assert_eq!(decode_memory_cursor(&encoded).unwrap(), cursor);
-    }
-
-    #[test]
-    fn memory_cursor_rejects_malformed_value() {
-        assert!(decode_memory_cursor("not-a-memory-cursor").is_err());
-    }
-}
-
 fn privacy_info() -> MemoryPrivacyInfo {
     MemoryPrivacyInfo {
         redaction_enabled: true,
@@ -243,10 +217,12 @@ pub async fn list_memory(
         query.scope_key.as_deref(),
         &statuses,
         query.q.as_deref(),
-        cursor.as_ref().map(|value| value.pinned),
-        cursor.as_ref().map(|value| value.importance),
-        cursor.as_ref().map(|value| value.updated_at),
-        cursor.as_ref().map(|value| value.id),
+        cursor.as_ref().map(|value| MemoryOverviewCursor {
+            pinned: value.pinned,
+            importance: value.importance,
+            updated_at: value.updated_at,
+            id: value.id,
+        }),
         limit + 1,
     )
     .await
@@ -486,5 +462,31 @@ pub async fn delete_memory(
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(ApiError::BadRequest("memory item not found".into()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{decode_memory_cursor, encode_memory_cursor, MemoryCursor};
+    use chrono::{TimeZone, Utc};
+    use uuid::Uuid;
+
+    #[test]
+    fn memory_cursor_round_trips_sort_key() {
+        let cursor = MemoryCursor {
+            pinned: true,
+            importance: 0.75,
+            updated_at: Utc.with_ymd_and_hms(2026, 7, 18, 12, 30, 0).unwrap(),
+            id: Uuid::nil(),
+        };
+
+        let encoded = encode_memory_cursor(&cursor);
+
+        assert_eq!(decode_memory_cursor(&encoded).unwrap(), cursor);
+    }
+
+    #[test]
+    fn memory_cursor_rejects_malformed_value() {
+        assert!(decode_memory_cursor("not-a-memory-cursor").is_err());
     }
 }

@@ -132,8 +132,10 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.46` реализован: удаление памяти требует подтверждения, а MemoryPanel показывает 8-секундное Undo с восстановлением через общий admission flow.
 
-**Актуализация 2026-07-18:** `7.46` выполнен: MemoryPanel поддерживает подтверждение удаления и окно Undo. Следующий пункт — `7.47`.
+`7.47` реализован: `evohime-memory` поддерживает локальный ONNX provider через fastembed без API-ключа; модель кэшируется локально, а hash и remote режимы сохранены.
 
-1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.46`, `7.52` ✅; следующий пункт — `7.47`
-2. Рекомендуемая следующая волна: local embedding option (`7.47`), затем experience playbook auto-suggest (`7.48`)
+**Актуализация 2026-07-18:** `7.47` выполнен: memory embeddings поддерживают локальный ONNX режим и конфигурируемый cache directory. Следующий пункт — `7.48`.
+
+1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.47`, `7.52` ✅; следующий пункт — `7.48`
+2. Рекомендуемая следующая волна: experience playbook auto-suggest (`7.48`), затем memory export/import pack (`7.49`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

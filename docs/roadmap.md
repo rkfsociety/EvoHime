@@ -368,7 +368,7 @@
 | 7.44 | Manual «добавить память» + templates | M | ✅ | POST /api/memory uses redaction/embedding/dedupe/conflict flow; MemoryPanel form with fact/preference/constraint/verification templates |
 | 7.45 | Pagination / cursor для `/api/memory` (лимит 150) | M | ✅ | Stable keyset cursor по pinned/importance/updated_at/id; MemoryPanel дозагружает страницы по 50 |
 | 7.46 | Memory delete confirm + undo window | S | ✅ | MemoryPanel confirmation plus 8-second Undo; restore reuses POST /api/memory admission flow |
-| 7.47 | Local embedding model option (onnx / candle) без remote API | L | ⬜ | hash default + remote only |
+| 7.47 | Local embedding model option (onnx / candle) без remote API | L | ✅ | `EVOHIME_EMBEDDING_MODE=local`; fastembed/ONNX BGE-small, MiniLM-L6 или multilingual E5; hash default + remote remain available |
 | 7.48 | Experience playbook auto-suggest in planner | M | ⬜ | retrieve есть; planner не специализирован |
 | 7.49 | Memory export/import workspace pack (zip/json) | M | ⬜ | JSON export partial |
 | 7.50 | Multi-device sync (out of earlier memory scope) | L | ⬜ | design out-of-scope follow-up |
@@ -470,11 +470,11 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-18:** `7.46` ✅ — удаление памяти требует подтверждения и даёт 8-секундное Undo через повторный admission; следующий пункт — `7.47`.
+**Актуальный статус 2026-07-18:** `7.47` ✅ — добавлен локальный ONNX embedding provider без API-ключа, с кэшем модели и сохранением hash/remote режимов; следующий пункт — `7.48`.
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
-3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.46`, `7.52` ✅ → next `7.47`+
+3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.47`, `7.52` ✅ → next `7.48`+
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  
 5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+

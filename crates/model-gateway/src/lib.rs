@@ -225,6 +225,21 @@ pub fn mock_gateway(chunks: Vec<String>) -> ModelGateway {
     ModelGateway::from_provider(Arc::new(MockProvider::new("mock-model", chunks)))
 }
 
+fn build_provider(route: &ModelRouteConfig) -> Result<Arc<dyn ModelProvider>, ProviderError> {
+    match route.provider {
+        ProviderKind::LiteRouter => {
+            Ok(Arc::new(LiteRouterProvider::new(route.literouter.clone())?))
+        }
+        ProviderKind::OpenAICompatible => Ok(Arc::new(OpenAICompatibleProvider::new(
+            route.literouter.clone(),
+        )?)),
+        ProviderKind::Mock => Ok(Arc::new(MockProvider::new(
+            route.literouter.model.clone(),
+            vec![],
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -248,20 +263,5 @@ mod tests {
             gateway.route_provider_kind("openai").expect("route"),
             ProviderKind::OpenAICompatible
         );
-    }
-}
-
-fn build_provider(route: &ModelRouteConfig) -> Result<Arc<dyn ModelProvider>, ProviderError> {
-    match route.provider {
-        ProviderKind::LiteRouter => {
-            Ok(Arc::new(LiteRouterProvider::new(route.literouter.clone())?))
-        }
-        ProviderKind::OpenAICompatible => Ok(Arc::new(OpenAICompatibleProvider::new(
-            route.literouter.clone(),
-        )?)),
-        ProviderKind::Mock => Ok(Arc::new(MockProvider::new(
-            route.literouter.model.clone(),
-            vec![],
-        ))),
     }
 }

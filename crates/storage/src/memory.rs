@@ -417,6 +417,14 @@ pub async fn resolve_memory_conflict(
 }
 
 /// List memory items across scopes for the Memory panel (6.22 / 6.24).
+#[derive(Debug, Clone, Copy)]
+pub struct MemoryOverviewCursor {
+    pub pinned: bool,
+    pub importance: f64,
+    pub updated_at: DateTime<Utc>,
+    pub id: Uuid,
+}
+
 pub async fn list_memory_items_overview(
     pool: &PgPool,
     scope: Option<MemoryScope>,
@@ -425,10 +433,7 @@ pub async fn list_memory_items_overview(
     query: Option<&str>,
     limit: i64,
 ) -> Result<Vec<MemoryItemRow>, StorageError> {
-    list_memory_items_overview_page(
-        pool, scope, scope_key, statuses, query, None, None, None, None, limit,
-    )
-    .await
+    list_memory_items_overview_page(pool, scope, scope_key, statuses, query, None, limit).await
 }
 
 pub async fn list_memory_items_overview_page(
@@ -437,10 +442,7 @@ pub async fn list_memory_items_overview_page(
     scope_key: Option<&str>,
     statuses: &[MemoryStatus],
     query: Option<&str>,
-    after_pinned: Option<bool>,
-    after_importance: Option<f64>,
-    after_updated_at: Option<DateTime<Utc>>,
-    after_id: Option<Uuid>,
+    cursor: Option<MemoryOverviewCursor>,
     limit: i64,
 ) -> Result<Vec<MemoryItemRow>, StorageError> {
     let status_filters: Vec<&str> = if statuses.is_empty() {
@@ -482,10 +484,10 @@ pub async fn list_memory_items_overview_page(
     .bind(&status_filters)
     .bind(query_filter)
     .bind(limit.clamp(1, 500))
-    .bind(after_pinned)
-    .bind(after_importance)
-    .bind(after_updated_at)
-    .bind(after_id)
+    .bind(cursor.as_ref().map(|value| value.pinned))
+    .bind(cursor.as_ref().map(|value| value.importance))
+    .bind(cursor.as_ref().map(|value| value.updated_at))
+    .bind(cursor.as_ref().map(|value| value.id))
     .fetch_all(pool)
     .await?;
     Ok(rows)

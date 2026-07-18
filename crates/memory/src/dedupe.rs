@@ -49,9 +49,7 @@ pub fn detect_duplicate_with_embedding(
         return Some(hit);
     }
 
-    let Some(candidate_embedding) = candidate_embedding else {
-        return None;
-    };
+    let candidate_embedding = candidate_embedding?;
     let active_version = embedding_version();
     existing.iter().find_map(|item| {
         if candidate_kind.is_some_and(|kind| item.kind != kind) {

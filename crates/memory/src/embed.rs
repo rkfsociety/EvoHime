@@ -1,4 +1,4 @@
-//! Hybrid memory embeddings: local feature-hash (default) + optional remote neural encoder.
+//! Hybrid memory embeddings: local feature-hash (default), local ONNX model, and remote neural encoder.
 //!
 //! Remote mode uses an OpenAI-compatible `POST {base}/embeddings` endpoint
 //! (`EVOHIME_EMBEDDING_MODE=remote`). Bump [`embedding_version`] / revision when the
@@ -19,6 +19,9 @@ pub const HASH_EMBEDDING_VERSION: i32 = 1;
 /// Base version for remote neural embeddings (`+ EVOHIME_EMBEDDING_REVISION`).
 pub const REMOTE_EMBEDDING_BASE_VERSION: i32 = 2;
 
+/// Base version for local ONNX embeddings (`+ EVOHIME_EMBEDDING_REVISION`).
+pub const LOCAL_EMBEDDING_BASE_VERSION: i32 = 100;
+
 /// Weight of cosine similarity added on top of lexical score.
 pub const SEMANTIC_SCORE_WEIGHT: f64 = 2.5;
 
@@ -29,6 +32,7 @@ pub const SEMANTIC_MIN_COSINE: f64 = 0.08;
 ///
 /// - `1` — local feature-hash
 /// - `2 + revision` — remote neural (`EVOHIME_EMBEDDING_REVISION`, default 0)
+/// - `100 + revision` — local ONNX (`EVOHIME_EMBEDDING_REVISION`, default 0)
 pub fn embedding_version() -> i32 {
     match EncoderConfig::from_env().mode {
         EncoderMode::Hash => HASH_EMBEDDING_VERSION,
@@ -40,6 +44,14 @@ pub fn embedding_version() -> i32 {
                 .max(0);
             REMOTE_EMBEDDING_BASE_VERSION.saturating_add(revision)
         }
+        EncoderMode::Local => {
+            let revision = std::env::var("EVOHIME_EMBEDDING_REVISION")
+                .ok()
+                .and_then(|value| value.parse::<i32>().ok())
+                .unwrap_or(0)
+                .max(0);
+            LOCAL_EMBEDDING_BASE_VERSION.saturating_add(revision)
+        }
     }
 }
 
@@ -50,6 +62,7 @@ pub const EMBEDDING_VERSION: i32 = HASH_EMBEDDING_VERSION;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EncoderMode {
     Hash,
+    Local,
     Remote,
 }
 
@@ -68,6 +81,7 @@ impl EncoderConfig {
             .to_ascii_lowercase()
             .as_str()
         {
+            "local" | "onnx" => EncoderMode::Local,
             "remote" | "neural" | "api" => EncoderMode::Remote,
             _ => EncoderMode::Hash,
         };
@@ -78,8 +92,13 @@ impl EncoderConfig {
         let api_key = std::env::var("EVOHIME_EMBEDDING_API_KEY")
             .or_else(|_| std::env::var("LITEROUTER_API_KEY"))
             .unwrap_or_default();
-        let model = std::env::var("EVOHIME_EMBEDDING_MODEL")
-            .unwrap_or_else(|_| "text-embedding-3-small".into());
+        let model = std::env::var("EVOHIME_EMBEDDING_MODEL").unwrap_or_else(|_| {
+            if mode == EncoderMode::Local {
+                "bge-small-en-v1.5".into()
+            } else {
+                "text-embedding-3-small".into()
+            }
+        });
 
         Self {
             mode,
@@ -104,6 +123,10 @@ impl EncoderConfig {
             && !self.base_url.trim().is_empty()
             && !self.model.trim().is_empty()
     }
+
+    pub fn local_ready(&self) -> bool {
+        self.mode == EncoderMode::Local && !self.model.trim().is_empty()
+    }
 }
 
 /// Result of an embedding call (vector + version to persist).
@@ -119,6 +142,22 @@ pub struct EmbeddingResult {
 /// retry later without mixing hash and neural spaces in the same index.
 pub async fn embed_text(text: &str) -> EmbeddingResult {
     let config = EncoderConfig::from_env();
+    if config.local_ready() {
+        match embed_text_local(text, &config).await {
+            Ok(vector) if !vector.is_empty() => {
+                return EmbeddingResult {
+                    vector,
+                    version: embedding_version(),
+                };
+            }
+            Ok(_) => tracing::warn!("local embedding returned empty vector; deferring"),
+            Err(error) => tracing::warn!(%error, "local embedding failed; deferring"),
+        }
+        return EmbeddingResult {
+            vector: Vec::new(),
+            version: 0,
+        };
+    }
     if config.remote_ready() {
         match embed_text_remote(text, &config).await {
             Ok(vector) if !vector.is_empty() => {
@@ -142,6 +181,49 @@ pub async fn embed_text(text: &str) -> EmbeddingResult {
     EmbeddingResult {
         vector: embed_text_hash(text),
         version: HASH_EMBEDDING_VERSION,
+    }
+}
+
+#[cfg(feature = "local-onnx")]
+async fn embed_text_local(text: &str, config: &EncoderConfig) -> Result<Vec<f32>, String> {
+    let text = text.to_owned();
+    let model = config.model.clone();
+    let cache_dir = std::env::var("EVOHIME_EMBEDDING_CACHE_DIR").ok();
+    tokio::task::spawn_blocking(move || {
+        let model = local_model_from_name(&model)?;
+        let mut options = fastembed::TextInitOptions::new(model).with_show_download_progress(false);
+        if let Some(cache_dir) = cache_dir {
+            options = options.with_cache_dir(cache_dir.into());
+        }
+        let mut embedder = fastembed::TextEmbedding::try_new(options)
+            .map_err(|error| format!("local ONNX model initialization failed: {error}"))?;
+        embedder
+            .embed(vec![text], Some(1))
+            .map_err(|error| format!("local ONNX inference failed: {error}"))?
+            .into_iter()
+            .next()
+            .ok_or_else(|| "local ONNX model returned no embedding".into())
+    })
+    .await
+    .map_err(|error| format!("local embedding worker failed: {error}"))?
+}
+
+#[cfg(not(feature = "local-onnx"))]
+async fn embed_text_local(_text: &str, _config: &EncoderConfig) -> Result<Vec<f32>, String> {
+    Err("local ONNX embeddings are not enabled in this build".into())
+}
+
+#[cfg(feature = "local-onnx")]
+fn local_model_from_name(name: &str) -> Result<fastembed::EmbeddingModel, String> {
+    match name.trim().to_ascii_lowercase().as_str() {
+        "bge-small-en-v1.5" | "bge-small" => Ok(fastembed::EmbeddingModel::BGESmallENV15),
+        "all-minilm-l6-v2" | "minilm-l6" => Ok(fastembed::EmbeddingModel::AllMiniLML6V2),
+        "multilingual-e5-small" | "e5-small" => {
+            Ok(fastembed::EmbeddingModel::MultilingualE5Small)
+        }
+        other => Err(format!(
+            "unsupported local embedding model '{other}'; use bge-small-en-v1.5, all-minilm-l6-v2 or multilingual-e5-small"
+        )),
     }
 }
 
@@ -354,6 +436,32 @@ mod tests {
             config.embeddings_url(),
             "https://api.example.com/v1/embeddings"
         );
+    }
+
+    #[test]
+    fn local_mode_has_an_offline_model_default() {
+        let config = EncoderConfig {
+            mode: EncoderMode::Local,
+            base_url: String::new(),
+            api_key: String::new(),
+            model: "bge-small-en-v1.5".into(),
+        };
+        assert!(config.local_ready());
+        assert!(!config.remote_ready());
+    }
+
+    #[cfg(feature = "local-onnx")]
+    #[test]
+    fn local_model_aliases_resolve_to_supported_onnx_models() {
+        assert_eq!(
+            local_model_from_name("bge-small").unwrap(),
+            fastembed::EmbeddingModel::BGESmallENV15
+        );
+        assert_eq!(
+            local_model_from_name("minilm-l6").unwrap(),
+            fastembed::EmbeddingModel::AllMiniLML6V2
+        );
+        assert!(local_model_from_name("missing-model").is_err());
     }
 
     #[tokio::test]
