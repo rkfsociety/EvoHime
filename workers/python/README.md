@@ -46,6 +46,9 @@ python -m unittest discover -s workers/python -p "test_*.py"
 | `text.similarity` | `{ text_a, text_b }` | bag-of-words cosine score + token counts |
 | `text.entities` | `{ text }` | urls / emails / paths / ticket ids |
 | `text.diff` | `{ text_a, text_b, context?, max_diff_lines? }` | line diff ratio + unified_diff (stdlib `difflib`) |
+| `text.classify` | `{ text }` | deterministic intent category + confidence |
+| `text.language` | `{ text }` | Russian/English/mixed/unknown language heuristic |
+| `text.redact` | `{ text }` | secret redaction using the memory safety patterns |
 
 Job state is process-local. The Rust server owns durable `worker_jobs` rows,
 process health watchdog, per-job stall retries, backoff, retention, and

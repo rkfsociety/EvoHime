@@ -5,10 +5,13 @@ from http.client import HTTPConnection
 
 from worker import (
     JobService,
+    classify_text,
     chunk_text,
     create_server,
+    detect_language,
     diff_text,
     extract_entities,
+    redact_text,
     similarity_text,
     summarize_text,
     validate_task_payload,
@@ -135,6 +138,24 @@ class JobServiceTests(unittest.TestCase):
             self.assertEqual(current.result["tickets"], ["ABC-9"])
         finally:
             service.close()
+
+    def test_classify_detects_instruction_and_bug(self):
+        self.assertEqual(classify_text("Please fix this bug")["category"], "bug_report")
+        self.assertEqual(classify_text("Implement the worker task")["category"], "instruction")
+        self.assertEqual(classify_text("Как это запустить?")["category"], "question")
+
+    def test_language_detects_russian_english_and_mixed(self):
+        self.assertEqual(detect_language("Привет мир")["language"], "ru")
+        self.assertEqual(detect_language("Hello world")["language"], "en")
+        self.assertEqual(detect_language("Hello мир")["language"], "mixed")
+        self.assertEqual(detect_language("123 !!!")["language"], "unknown")
+
+    def test_redact_removes_secret_patterns(self):
+        result = redact_text("token: secret123 and Bearer abc.def")
+        self.assertTrue(result["redacted"])
+        self.assertEqual(result["matches"], 2)
+        self.assertNotIn("secret123", result["text"])
+        self.assertNotIn("abc.def", result["text"])
 
     def test_diff_reports_line_changes(self):
         result = diff_text("alpha\nbeta\ngamma\n", "alpha\nbeta2\ngamma\ndelta\n")

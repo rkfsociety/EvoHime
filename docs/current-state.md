@@ -20,7 +20,7 @@ Stages 1–5 complete. Stage 6 structured memory `6.16`–`6.25` and optional po
 | `task-engine` | Active | Lifecycle, dependency batching, checkpoints, cancel/resume/retry |
 | `permissions` | Active | ask/allow/deny + session/path overrides + temp allow + durable approval audit (PG) |
 | `project-index` | Active | Chunk search, path/symbol weights, binary/noise filter (P2) |
-| Python worker | Active | Health/stall reliability; handlers: stats/keywords/summarize/chunk/similarity/entities/diff |
+| Python worker | Active | Health/stall reliability; handlers: stats/keywords/summarize/chunk/similarity/entities/diff/classify/language/redact |
 
 ## API endpoints
 
@@ -142,8 +142,10 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.50` реализован как design milestone: спецификация multi-device sync определяет replica identity, append-only change log, cursor pull/push, snapshot recovery, offline outbox, tombstones и запрет тихого last-write-wins для конфликтов. Реализация разбита на `7.50a`–`7.50e`.
 
-**Актуализация 2026-07-18:** `7.50` выполнен как утверждённый дизайн: multi-device sync остаётся отключённым по умолчанию и не меняет local-only путь до отдельной реализации. Следующий пункт — `7.51`.
+`7.51` реализован: Python worker и зеркальная Rust-валидация получили `text.classify`, `text.language` и `text.redact`; все три handler доступны также через `worker.run`.
 
-1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.50`, `7.52` ✅; следующий пункт — `7.51`
-2. Рекомендуемая следующая волна: worker ML handlers (`7.51`), затем product honesty для Sites/Scheduled
+**Актуализация 2026-07-18:** `7.51` выполнен: worker ML handlers расширены deterministic classify/language/redact задачами с контрактными тестами. Следующий пункт — product honesty для Sites/Scheduled.
+
+1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.51`, `7.52` ✅; следующий пункт — product honesty для Sites/Scheduled
+2. Рекомендуемая следующая волна: product honesty для Sites/Scheduled (`7.62`+)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

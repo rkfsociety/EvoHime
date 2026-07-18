@@ -34,6 +34,9 @@ SUPPORTED_TASKS = (
     "text.similarity",
     "text.entities",
     "text.diff",
+    "text.classify",
+    "text.language",
+    "text.redact",
 )
 MAX_TEXT_LENGTH = 1_000_000
 PROCESS_STARTED_AT = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -43,6 +46,7 @@ DEFAULT_CHUNK_SIZE = 500
 DEFAULT_CHUNK_OVERLAP = 50
 DEFAULT_DIFF_CONTEXT = 3
 DEFAULT_MAX_DIFF_LINES = 500
+REDACTION_REPLACEMENT = "[REDACTED]"
 
 
 def health() -> dict[str, Any]:
@@ -97,7 +101,7 @@ def validate_task_payload(task: str, payload: dict[str, Any]) -> None:
     if task == "echo":
         return
 
-    if task in {"text.stats", "text.keywords", "text.entities"}:
+    if task in {"text.stats", "text.keywords", "text.entities", "text.classify", "text.language", "text.redact"}:
         _require_text(task, payload)
         return
 
@@ -347,6 +351,68 @@ def diff_text(
     }
 
 
+def classify_text(text: str) -> dict[str, Any]:
+    """Classify common agent text intents with deterministic lexical rules."""
+
+    normalized = text.strip().casefold()
+    if not normalized:
+        category = "empty"
+    elif re.search(r"\b(error|exception|traceback|bug|fail(?:ed|ure)?)\b|ошибк|падени|сломал", normalized):
+        category = "bug_report"
+    elif normalized.endswith(("?", "？")) or re.search(r"\b(how|what|why|как|что|почему|где)\b", normalized):
+        category = "question"
+    elif re.search(r"\b(fix|implement|add|remove|change|run|сделай|добавь|исправь|запусти)\b", normalized):
+        category = "instruction"
+    elif re.search(r"\b(done|completed|status|готово|заверш|статус)\b", normalized):
+        category = "status_update"
+    else:
+        category = "general"
+    return {"category": category, "confidence": 0.85 if category != "general" else 0.55}
+
+
+def detect_language(text: str) -> dict[str, Any]:
+    """Detect Russian/English/mixed text from Cyrillic and Latin letter counts."""
+
+    cyrillic = len(re.findall(r"[А-Яа-яЁё]", text))
+    latin = len(re.findall(r"[A-Za-z]", text))
+    total = cyrillic + latin
+    if total == 0:
+        language = "unknown"
+        confidence = 0.0
+    elif cyrillic and latin and min(cyrillic, latin) / total >= 0.2:
+        language = "mixed"
+        confidence = round(min(cyrillic, latin) / total, 6)
+    elif cyrillic:
+        language = "ru"
+        confidence = round(cyrillic / total, 6)
+    else:
+        language = "en"
+        confidence = round(latin / total, 6)
+    return {"language": language, "confidence": confidence, "characters": {"cyrillic": cyrillic, "latin": latin}}
+
+
+_REDACTION_PATTERNS = (
+    re.compile(r"(?i)-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----"),
+    re.compile(r"(?i)\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{20,}\b"),
+    re.compile(r"(?i)\b(?:sk|lr)[-_][A-Za-z0-9_-]{16,}\b"),
+    re.compile(r"(?i)\b(?:xox[baprs]-)[A-Za-z0-9-]{10,}\b"),
+    re.compile(r"(?i)\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"(?i)\bBearer\s+[A-Za-z0-9\-._~+/]+=*\b"),
+    re.compile(r"(?i)\b(?:api[_-]?key|token|secret|password|passwd|cookie)\s*[:=]\s*\S{6,}"),
+)
+
+
+def redact_text(text: str) -> dict[str, Any]:
+    """Apply the same secret-oriented redaction policy as structured memory."""
+
+    redacted = text
+    matches = 0
+    for pattern in _REDACTION_PATTERNS:
+        redacted, count = pattern.subn(REDACTION_REPLACEMENT, redacted)
+        matches += count
+    return {"text": redacted, "redacted": matches > 0, "matches": matches}
+
+
 def _unique_preserve(values: list[str]) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
@@ -468,6 +534,15 @@ def run_task(task: str, payload: dict[str, Any]) -> Any:
             context=context,
             max_diff_lines=max_diff_lines,
         )
+
+    if task == "text.classify":
+        return classify_text(payload["text"])
+
+    if task == "text.language":
+        return detect_language(payload["text"])
+
+    if task == "text.redact":
+        return redact_text(payload["text"])
 
     raise ValueError(f"unsupported task: {task}")
 

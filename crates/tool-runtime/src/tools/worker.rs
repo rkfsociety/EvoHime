@@ -8,7 +8,7 @@ use std::{env, time::Duration};
 use tokio::time::{sleep, Instant};
 
 pub const NAME: &str = "worker.run";
-pub const DESCRIPTION: &str = "Submit a Python worker job and wait for the result. Input: { task, payload, timeout_ms?, poll_ms? }. Tasks: echo, text.stats, text.keywords, text.summarize, text.chunk, text.similarity, text.entities, text.diff.";
+pub const DESCRIPTION: &str = "Submit a Python worker job and wait for the result. Input: { task, payload, timeout_ms?, poll_ms? }. Tasks: echo, text.stats, text.keywords, text.summarize, text.chunk, text.similarity, text.entities, text.diff, text.classify, text.language, text.redact.";
 pub const PERMISSIONS: &[Permission] = &[];
 pub const TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -21,6 +21,9 @@ const SUPPORTED_TASKS: &[&str] = &[
     "text.similarity",
     "text.entities",
     "text.diff",
+    "text.classify",
+    "text.language",
+    "text.redact",
 ];
 
 #[derive(Debug, Clone)]

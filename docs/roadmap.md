@@ -377,7 +377,7 @@
 
 | # | Задача | Size | Статус | Notes / evidence |
 | --- | --- | --- | --- | --- |
-| 7.51 | Ещё handlers: `text.classify`, `text.language`, `text.redact` | M | ⬜ | further optional |
+| 7.51 | Ещё handlers: `text.classify`, `text.language`, `text.redact` | M | ✅ | Python worker + mirrored Rust validation; deterministic intent/language heuristics and memory-aligned secret redaction; exposed through `worker.run` |
 | 7.52 | Agent tool `worker.run` (submit+await job) | M | ✅ | tool-runtime HTTP submit+poll; wiremock test |
 | 7.53 | Worker job UI: submit form + payload editor в Settings | M | ⬜ | сейчас status/list/retry |
 | 7.54 | Horizontal worker scale (N processes / queue backend) | L | ⬜ | single in-proc Python queue |
@@ -470,11 +470,11 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-18:** `7.50` ✅ — утверждён дизайн multi-device memory sync с replica identity, append-only change log, cursor pull/push, snapshot recovery, offline outbox и явным conflict flow; следующий пункт — `7.51`.
+**Актуальный статус 2026-07-18:** `7.51` ✅ — worker получил `text.classify`, `text.language` и `text.redact` с зеркальной Rust-валидацией и контрактными тестами; следующий пункт — product honesty для Sites/Scheduled.
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
-3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.50`, `7.52` ✅ → next `7.51`+
+3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.51`, `7.52` ✅ → next product honesty `7.62`+
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  
 5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+

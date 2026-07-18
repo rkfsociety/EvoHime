@@ -15,6 +15,9 @@ const SUPPORTED_TASKS: &[&str] = &[
     "text.similarity",
     "text.entities",
     "text.diff",
+    "text.classify",
+    "text.language",
+    "text.redact",
 ];
 const DEFAULT_MAX_SENTENCES: i64 = 3;
 const DEFAULT_CHUNK_SIZE: i64 = 500;
@@ -100,7 +103,8 @@ pub fn validate_task_payload(task: &str, payload: &Value) -> Result<(), String> 
     }
 
     match task {
-        "text.stats" | "text.keywords" | "text.entities" => {
+        "text.stats" | "text.keywords" | "text.entities" | "text.classify" | "text.language"
+        | "text.redact" => {
             require_text(task, payload)?;
             Ok(())
         }
@@ -351,6 +355,9 @@ mod status_tests {
             &json!({"text_a": "a", "text_b": "b", "max_diff_lines": 0})
         )
         .is_err());
+        assert!(validate_task_payload("text.classify", &json!({"text": "fix this bug"})).is_ok());
+        assert!(validate_task_payload("text.language", &json!({"text": "Привет"})).is_ok());
+        assert!(validate_task_payload("text.redact", &json!({"text": "token: secret123"})).is_ok());
     }
 
     #[test]
