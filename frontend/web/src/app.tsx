@@ -1487,9 +1487,9 @@ export function App() {
                   <CopyMessageButton text={chatLinePlainText(line.role, line.text)} />
                   {line.role === "assistant" ? <MarkdownMessage text={line.text} /> : <pre>{line.text}</pre>}
                 </article>
-                {line.role === "user" && line.taskId && traceLinesByTask[line.taskId]?.length ? (
+                {line.role === "user" && line.taskId ? (
                   <ChatTraceSummary
-                    traceLines={traceLinesByTask[line.taskId]}
+                    traceLines={traceLinesByTask[line.taskId] ?? []}
                     active={activeTaskId === line.taskId}
                     userLogin={githubAuth?.login}
                   />
