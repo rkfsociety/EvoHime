@@ -23,6 +23,7 @@ LITEROUTER_MODEL=deepseek:free
 
 - [x] Provider trait + `TokenStream`
 - [x] LiteRouter HTTP client + SSE parsing
+- [x] Separate OpenAI-compatible provider identity and `OPENAI_*` environment configuration
 - [x] `MockProvider` for tests
 - [x] Route-based gateway and task-scoped model selection
 - [x] Integration with `agent-runtime`

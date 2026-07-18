@@ -5,6 +5,7 @@ use std::pin::Pin;
 
 pub mod literouter;
 pub mod mock;
+pub mod openai_compatible;
 
 pub use crate::tools::LlmUsage;
 use serde::{Deserialize, Serialize};

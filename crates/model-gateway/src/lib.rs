@@ -5,7 +5,8 @@ pub mod tools;
 
 pub use crate::config::{ModelGatewayConfig, ModelRouteConfig};
 use crate::providers::{
-    literouter::LiteRouterProvider, mock::MockProvider, ChatMessage, ModelProvider, ProviderError,
+    literouter::LiteRouterProvider, mock::MockProvider,
+    openai_compatible::OpenAICompatibleProvider, ChatMessage, ModelProvider, ProviderError,
     ProviderKind, TokenStream,
 };
 pub use crate::retry::RetryPolicy;
@@ -224,11 +225,40 @@ pub fn mock_gateway(chunks: Vec<String>) -> ModelGateway {
     ModelGateway::from_provider(Arc::new(MockProvider::new("mock-model", chunks)))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builds_openai_compatible_route_as_distinct_provider() {
+        let config = ModelGatewayConfig {
+            default_route: "openai".to_string(),
+            routes: HashMap::from([(
+                "openai".to_string(),
+                ModelRouteConfig::openai_compatible(
+                    "sk-test",
+                    "https://api.openai.com/v1",
+                    "gpt-4o-mini",
+                ),
+            )]),
+        };
+
+        let gateway = ModelGateway::from_config(&config).expect("gateway");
+        assert_eq!(
+            gateway.route_provider_kind("openai").expect("route"),
+            ProviderKind::OpenAICompatible
+        );
+    }
+}
+
 fn build_provider(route: &ModelRouteConfig) -> Result<Arc<dyn ModelProvider>, ProviderError> {
     match route.provider {
-        ProviderKind::LiteRouter | ProviderKind::OpenAICompatible => {
+        ProviderKind::LiteRouter => {
             Ok(Arc::new(LiteRouterProvider::new(route.literouter.clone())?))
         }
+        ProviderKind::OpenAICompatible => Ok(Arc::new(OpenAICompatibleProvider::new(
+            route.literouter.clone(),
+        )?)),
         ProviderKind::Mock => Ok(Arc::new(MockProvider::new(
             route.literouter.model.clone(),
             vec![],

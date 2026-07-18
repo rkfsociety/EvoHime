@@ -9,6 +9,12 @@ pub const LITEROUTER_DEFAULT_BASE_URL: &str = "https://api.literouter.com/v1";
 /// Default free-tier model.
 pub const LITEROUTER_DEFAULT_MODEL: &str = "deepseek:free";
 
+/// Default OpenAI-compatible base URL.
+pub const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
+
+/// Default OpenAI-compatible model.
+pub const OPENAI_DEFAULT_MODEL: &str = "gpt-4o-mini";
+
 /// Known LiteRouter free models (non-exhaustive).
 pub const LITEROUTER_FREE_MODELS: &[&str] = &["deepseek:free", "mistral:free", "llama:free"];
 
@@ -36,6 +42,19 @@ impl LiteRouterConfig {
 
     pub fn chat_completions_url(&self) -> String {
         format!("{}/chat/completions", self.base_url.trim_end_matches('/'))
+    }
+
+    pub fn openai_compatible_from_env() -> Self {
+        let api_key = env::var("OPENAI_API_KEY").unwrap_or_default();
+        let base_url =
+            env::var("OPENAI_BASE_URL").unwrap_or_else(|_| OPENAI_DEFAULT_BASE_URL.to_string());
+        let model = env::var("OPENAI_MODEL").unwrap_or_else(|_| OPENAI_DEFAULT_MODEL.to_string());
+
+        Self {
+            api_key,
+            base_url: normalize_base_url(&base_url),
+            model,
+        }
     }
 }
 
@@ -100,10 +119,11 @@ impl ModelRouteConfig {
 
     pub fn available_models(&self) -> Vec<String> {
         match self.provider {
-            ProviderKind::LiteRouter | ProviderKind::OpenAICompatible => LITEROUTER_FREE_MODELS
+            ProviderKind::LiteRouter => LITEROUTER_FREE_MODELS
                 .iter()
                 .map(|model| (*model).to_string())
                 .collect(),
+            ProviderKind::OpenAICompatible => Vec::new(),
             ProviderKind::Mock => Vec::new(),
         }
     }
@@ -133,11 +153,10 @@ impl ModelGatewayConfig {
                 provider,
                 literouter,
             },
-            ProviderKind::OpenAICompatible => ModelRouteConfig::openai_compatible(
-                literouter.api_key,
-                literouter.base_url,
-                literouter.model,
-            ),
+            ProviderKind::OpenAICompatible => {
+                let openai = LiteRouterConfig::openai_compatible_from_env();
+                ModelRouteConfig::openai_compatible(openai.api_key, openai.base_url, openai.model)
+            }
             ProviderKind::Mock => ModelRouteConfig::mock(literouter.model),
         };
 
@@ -176,22 +195,27 @@ fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, Provid
             .as_deref()
             .and_then(ProviderKind::parse)
             .unwrap_or(ProviderKind::LiteRouter);
-        let model = route
-            .model
-            .unwrap_or_else(|| LITEROUTER_DEFAULT_MODEL.to_string());
+        let model = route.model.unwrap_or_else(|| match provider {
+            ProviderKind::OpenAICompatible => OPENAI_DEFAULT_MODEL.to_string(),
+            _ => LITEROUTER_DEFAULT_MODEL.to_string(),
+        });
+        let default_base_url = match provider {
+            ProviderKind::OpenAICompatible => OPENAI_DEFAULT_BASE_URL,
+            _ => LITEROUTER_DEFAULT_BASE_URL,
+        };
         let route_config = match provider {
             ProviderKind::LiteRouter => ModelRouteConfig::literouter(
                 route.api_key.unwrap_or_default(),
                 route
                     .base_url
-                    .unwrap_or_else(|| LITEROUTER_DEFAULT_BASE_URL.to_string()),
+                    .unwrap_or_else(|| default_base_url.to_string()),
                 model,
             ),
             ProviderKind::OpenAICompatible => ModelRouteConfig::openai_compatible(
                 route.api_key.unwrap_or_default(),
                 route
                     .base_url
-                    .unwrap_or_else(|| LITEROUTER_DEFAULT_BASE_URL.to_string()),
+                    .unwrap_or_else(|| default_base_url.to_string()),
                 model,
             ),
             ProviderKind::Mock => ModelRouteConfig::mock(model),
