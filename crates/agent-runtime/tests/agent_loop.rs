@@ -64,6 +64,7 @@ async fn agent_loop_streams_model_tokens() {
             model: None,
             planning_model_route: "default".to_string(),
             planning_model: None,
+            planning_memory_context: None,
             memory_pool: None,
             workspace_key: String::new(),
             is_subagent: false,

@@ -134,8 +134,10 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.47` реализован: `evohime-memory` поддерживает локальный ONNX provider через fastembed без API-ключа; модель кэшируется локально, а hash и remote режимы сохранены.
 
-**Актуализация 2026-07-18:** `7.47` выполнен: memory embeddings поддерживают локальный ONNX режим и конфигурируемый cache directory. Следующий пункт — `7.48`.
+`7.48` реализован: retrieval выделяет до трёх релевантных структурированных playbook suggestions, а planner/replan получают их отдельным untrusted optional context без автоматического исполнения шагов.
 
-1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.47`, `7.52` ✅; следующий пункт — `7.48`
-2. Рекомендуемая следующая волна: experience playbook auto-suggest (`7.48`), затем memory export/import pack (`7.49`)
+**Актуализация 2026-07-18:** `7.48` выполнен: planner и bounded replan используют специализированные playbook hints. Следующий пункт — `7.49`.
+
+1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.48`, `7.52` ✅; следующий пункт — `7.49`
+2. Рекомендуемая следующая волна: memory export/import pack (`7.49`), затем multi-device sync design (`7.50`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

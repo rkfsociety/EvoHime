@@ -99,6 +99,8 @@ pub(crate) async fn run_task_pipeline(
             _ => entry.content,
         })
         .collect::<Vec<_>>();
+    let planning_memory_context =
+        evohime_memory::format_planner_suggestions(&structured.planner_suggestions);
 
     if emit_started {
         let title = summarize_session_title(&task.user_message);
@@ -182,6 +184,7 @@ pub(crate) async fn run_task_pipeline(
         model: task.model.clone(),
         planning_model_route,
         planning_model,
+        planning_memory_context,
         memory_pool: Some(state.pool.clone()),
         workspace_key: workspace_scope.clone(),
         is_subagent: false,

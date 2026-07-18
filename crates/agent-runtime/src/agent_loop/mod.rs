@@ -47,6 +47,8 @@ pub struct AgentConfig {
     pub model: Option<String>,
     pub planning_model_route: String,
     pub planning_model: Option<String>,
+    /// Optional, untrusted playbook hints for the planning phase.
+    pub planning_memory_context: Option<String>,
     /// When set, enables on-demand `memory.search` against PostgreSQL.
     pub memory_pool: Option<sqlx::PgPool>,
     /// Workspace/project scope key for memory retrieval (same as prompt inject).
@@ -268,6 +270,12 @@ async fn run_agent_loop_inner(
             content: context.clone(),
         });
     }
+    if let Some(context) = &config.planning_memory_context {
+        planning_messages.push(ChatMessage {
+            role: ChatRole::System,
+            content: context.clone(),
+        });
+    }
     planning_messages.extend(history.clone());
     planning_messages.push(ChatMessage {
         role: ChatRole::User,
@@ -357,6 +365,12 @@ async fn run_agent_loop_inner(
                 content: REPLAN_PROMPT.to_string(),
             });
             if let Some(context) = &rules_context {
+                replan_messages.push(ChatMessage {
+                    role: ChatRole::System,
+                    content: context.clone(),
+                });
+            }
+            if let Some(context) = &config.planning_memory_context {
                 replan_messages.push(ChatMessage {
                     role: ChatRole::System,
                     content: context.clone(),
@@ -986,6 +1000,7 @@ mod tests {
                 model: None,
                 planning_model_route: "default".to_string(),
                 planning_model: None,
+                planning_memory_context: None,
                 memory_pool: None,
                 workspace_key: String::new(),
                 is_subagent: false,
@@ -1135,6 +1150,7 @@ mod tests {
                 model: None,
                 planning_model_route: "default".to_string(),
                 planning_model: None,
+                planning_memory_context: None,
                 memory_pool: None,
                 workspace_key: String::new(),
                 is_subagent: false,
@@ -1199,6 +1215,7 @@ mod tests {
                 model: None,
                 planning_model_route: "default".to_string(),
                 planning_model: None,
+                planning_memory_context: None,
                 memory_pool: None,
                 workspace_key: String::new(),
                 is_subagent: false,

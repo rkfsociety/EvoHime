@@ -369,7 +369,7 @@
 | 7.45 | Pagination / cursor для `/api/memory` (лимит 150) | M | ✅ | Stable keyset cursor по pinned/importance/updated_at/id; MemoryPanel дозагружает страницы по 50 |
 | 7.46 | Memory delete confirm + undo window | S | ✅ | MemoryPanel confirmation plus 8-second Undo; restore reuses POST /api/memory admission flow |
 | 7.47 | Local embedding model option (onnx / candle) без remote API | L | ✅ | `EVOHIME_EMBEDDING_MODE=local`; fastembed/ONNX BGE-small, MiniLM-L6 или multilingual E5; hash default + remote remain available |
-| 7.48 | Experience playbook auto-suggest in planner | M | ⬜ | retrieve есть; planner не специализирован |
+| 7.48 | Experience playbook auto-suggest in planner | M | ✅ | Up to 3 relevant structured playbooks exposed as untrusted optional hints to plan/replan; no automatic execution |
 | 7.49 | Memory export/import workspace pack (zip/json) | M | ⬜ | JSON export partial |
 | 7.50 | Multi-device sync (out of earlier memory scope) | L | ⬜ | design out-of-scope follow-up |
 
@@ -470,11 +470,11 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-18:** `7.47` ✅ — добавлен локальный ONNX embedding provider без API-ключа, с кэшем модели и сохранением hash/remote режимов; следующий пункт — `7.48`.
+**Актуальный статус 2026-07-18:** `7.48` ✅ — planner и bounded replan получают до трёх релевантных playbook suggestions как untrusted optional hints без автоматического исполнения; следующий пункт — `7.49`.
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
-3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.47`, `7.52` ✅ → next `7.48`+
+3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.48`, `7.52` ✅ → next `7.49`+
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  
 5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+

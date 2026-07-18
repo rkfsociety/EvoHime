@@ -132,6 +132,7 @@ async fn run_budgeted_subagent(
         model: parent.model.clone(),
         planning_model_route: model_route,
         planning_model: parent.planning_model.clone(),
+        planning_memory_context: parent.planning_memory_context.clone(),
         memory_pool: parent.memory_pool.clone(),
         workspace_key: parent.workspace_key.clone(),
         is_subagent: true,

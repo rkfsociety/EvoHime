@@ -72,6 +72,7 @@ fn agent_config(temp: &std::path::Path, demo_file: &std::path::Path) -> AgentCon
         model: None,
         planning_model_route: "default".to_string(),
         planning_model: None,
+        planning_memory_context: None,
         memory_pool: None,
         workspace_key: String::new(),
         is_subagent: false,
