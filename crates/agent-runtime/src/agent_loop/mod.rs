@@ -479,7 +479,7 @@ async fn run_agent_loop_inner(
     messages.push(ChatMessage {
         role: ChatRole::User,
         content: format!(
-            "{}\n\nPlan:\n{}\n\nContext from `{}`:\n```\n{}\n```",
+            "{}\n\nPlan:\n{}\n\nContext from `{}`:\n```\n{}\n```\n\nFinal answer rules: all requested tools have already been executed. Reply only with ordinary human-readable text. Never return JSON, tool.call, XML, or any internal protocol.",
             config.user_message,
             format_plan(&accumulated_plan),
             config.demo_file_path.display(),
@@ -554,7 +554,7 @@ async fn run_agent_loop_inner(
     })??;
 
     if let Some(tool_plan) = parse_model_tool_calls(&final_message) {
-        let (_, response_mutation_executed, _) = execute_plan_steps(
+        let (response_outputs, response_mutation_executed, _) = execute_plan_steps(
             &tool_plan,
             &satisfied_steps,
             &config,
@@ -564,6 +564,11 @@ async fn run_agent_loop_inner(
         )
         .await?;
         mutation_executed |= response_mutation_executed;
+        final_message = if response_outputs.is_empty() {
+            "Инструмент выполнен, но не вернул текстовый результат.".to_string()
+        } else {
+            response_outputs.join("\n\n")
+        };
     }
 
     if !config.is_subagent && requires_mutation(&config.user_message) && !mutation_executed {
@@ -1029,6 +1034,60 @@ mod tests {
         assert!(calls.iter().any(|messages| messages
             .iter()
             .any(|message| message.content.contains("docs/notes.md"))));
+    }
+
+    #[tokio::test]
+    async fn does_not_expose_response_tool_call_as_final_message() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let demo_file = temp.path().join("context.md");
+        std::fs::write(&demo_file, "# Demo").expect("write demo");
+        std::fs::write(temp.path().join("answer.txt"), "answer from file").expect("write answer");
+
+        let provider = RecordingProvider::new(vec![
+            vec![
+                r#"[{"id":"step-1","tool_name":"assistant.reply","description":"Respond","depends_on":[]}]"#
+                    .to_string(),
+            ],
+            vec![
+                r#"{"type":"tool.call","tool":"filesystem.read","input":{"path":"answer.txt"}}"#.to_string(),
+            ],
+        ]);
+        let gateway =
+            evohime_model_gateway::ModelGateway::from_provider(std::sync::Arc::new(provider));
+        let tools = evohime_tool_runtime::ToolRegistry::bootstrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let result = run_agent_loop(
+            AgentConfig {
+                task_id: Uuid::new_v4(),
+                session_id: Uuid::new_v4(),
+                user_message: "read answer.txt".to_string(),
+                created_at: chrono::Utc::now(),
+                demo_file_path: demo_file,
+                workspace_root: temp.path().to_path_buf(),
+                model_route: "default".to_string(),
+                model: None,
+                planning_model_route: "default".to_string(),
+                planning_model: None,
+                planning_memory_context: None,
+                memory_pool: None,
+                workspace_key: String::new(),
+                is_subagent: false,
+                subagent_depth: 0,
+                subagent_max_steps: None,
+                telemetry: None,
+            },
+            &gateway,
+            &tools,
+            vec![],
+            vec![],
+            tx,
+        )
+        .await
+        .expect("agent completes");
+
+        assert!(!result.final_message.contains("tool.call"));
+        assert!(result.final_message.contains("answer from file"));
     }
 
     #[test]
