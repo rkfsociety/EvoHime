@@ -72,6 +72,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/git/push", post(workspace::git_push))
         .route("/api/tasks", get(crate::task::list_tasks))
         .route("/api/sites", get(sites_api::list).post(sites_api::create))
+        .route("/api/sites/:id/preview", get(sites_api::preview))
+        .route("/api/sites/:id/publish", post(sites_api::publish))
         .route(
             "/api/sites/:id",
             put(sites_api::update).delete(sites_api::delete),

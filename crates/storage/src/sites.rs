@@ -65,6 +65,20 @@ pub async fn update_site(
     .await?)
 }
 
+pub async fn publish_site(
+    pool: &PgPool,
+    id: Uuid,
+    workspace_path: &str,
+) -> Result<Option<SiteRow>, StorageError> {
+    Ok(sqlx::query_as::<_, SiteRow>(
+        "UPDATE sites SET status = 'published', updated_at = now() WHERE id = $1 AND workspace_path = $2 RETURNING id, workspace_path, name, slug, description, status, created_at, updated_at",
+    )
+    .bind(id)
+    .bind(workspace_path)
+    .fetch_optional(pool)
+    .await?)
+}
+
 pub async fn delete_site(
     pool: &PgPool,
     id: Uuid,

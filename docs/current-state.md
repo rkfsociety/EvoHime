@@ -58,6 +58,8 @@ Errors return `{ "error", "code", "retryable" }` (plus `tool` / `approval_id` fo
 | POST | `/api/worker/jobs/:id/retry` | Retry job |
 | GET | `/api/metrics` | Pipeline+worker snapshot + persist status |
 | GET | `/api/metrics/history` | Persisted metrics snapshots from PG |
+| GET | `/api/sites/:id/preview` | Workspace-scoped HTML site preview |
+| POST | `/api/sites/:id/publish` | Workspace-scoped site publish |
 | GET | `/metrics` | Prometheus text exposition |
 | GET | `/api/memory` | List memory items (filters: scope, status, q, limit, cursor; keyset pagination) + privacy policy |
 | GET | `/api/memory/export` | Export all portable memory items as JSON or ZIP (`format=json|zip`) |
@@ -116,7 +118,7 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-`7.62` выполнен: Sites хранятся в PostgreSQL, API CRUD изолирован по выбранному workspace, а SitesPanel загружает и изменяет реальные данные backend. Следующий пункт — `7.63` preview/publish/open-in-browser.
+`7.63` выполнен: Sites имеют workspace-scoped HTML preview, publish-операцию и открытие предпросмотра в браузере через реальный SitesPanel. Следующий пункт — `7.64`.
 
 `7.36` реализован: `http.fetch` зарегистрирован с SSRF-защитой редиректов и лимитом текста; `filesystem.list` отражён в каталоге инструментов и матрице UI.
 

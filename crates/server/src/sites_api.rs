@@ -2,9 +2,12 @@ use crate::{app::AppState, ApiError};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
+    response::Html,
     Json,
 };
-use evohime_storage::sites::{create_site, delete_site, list_sites, update_site, SiteRow};
+use evohime_storage::sites::{
+    create_site, delete_site, list_sites, publish_site, update_site, SiteRow,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -161,6 +164,49 @@ pub async fn delete(
     }
     Ok(StatusCode::NO_CONTENT)
 }
+
+pub async fn publish(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<SiteQuery>,
+) -> Result<Json<SiteResponse>, ApiError> {
+    let workspace = scope(&state, query.workspace_path.as_deref())?;
+    let row = publish_site(&state.pool, id, &workspace)
+        .await
+        .map_err(|e| ApiError::Internal(e.to_string()))?
+        .ok_or_else(|| ApiError::NotFound("site не найден".into()))?;
+    Ok(Json(response(row)))
+}
+
+pub async fn preview(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<SiteQuery>,
+) -> Result<Html<String>, ApiError> {
+    let workspace = scope(&state, query.workspace_path.as_deref())?;
+    let row = list_sites(&state.pool, &workspace)
+        .await
+        .map_err(|e| ApiError::Internal(e.to_string()))?
+        .into_iter()
+        .find(|site| site.id == id)
+        .ok_or_else(|| ApiError::NotFound("site не найден".into()))?;
+    let title = escape_html(&row.name);
+    let description = escape_html(&row.description);
+    let slug = escape_html(&row.slug);
+    Ok(Html(format!(
+        "<!doctype html><html lang=\"ru\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{title}</title><style>body{{font-family:system-ui,sans-serif;max-width:760px;margin:4rem auto;padding:0 1.5rem;color:#20222a}}.badge{{color:#6750a4}}</style></head><body><p class=\"badge\">EvoHime Sites · {slug}</p><h1>{title}</h1><p>{description}</p></body></html>"
+    )))
+}
+
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
 fn map_db(error: evohime_storage::StorageError) -> ApiError {
     if let evohime_storage::StorageError::Database(sqlx::Error::Database(db)) = &error {
         if db.constraint().is_some() {
@@ -168,4 +214,17 @@ fn map_db(error: evohime_storage::StorageError) -> ApiError {
         }
     }
     ApiError::Internal(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::escape_html;
+
+    #[test]
+    fn preview_escapes_user_content() {
+        assert_eq!(
+            escape_html("<script>alert(\"x\")</script>"),
+            "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;"
+        );
+    }
 }
