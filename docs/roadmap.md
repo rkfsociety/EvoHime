@@ -398,7 +398,7 @@
 
 | # | Задача | Size | Статус | Notes / evidence |
 | --- | --- | --- | --- | --- |
-| 7.62 | Sites: data model + `/api/sites` CRUD | L | ⬜ | `SitesPanel` stub |
+| 7.62 | Sites: data model + `/api/sites` CRUD | L | ✅ | PostgreSQL + workspace-scoped API + real panel |
 | 7.63 | Sites: preview / publish / open-in-browser | L | ⬜ | product surface |
 | 7.64 | Sites: search/filter wired to real data | S | ⬜ | `siteSearch` dead |
 | 7.65 | Scheduled: real cron/timer jobs (storage + runner) | L | ⬜ | `ScheduledPanel` templates only |

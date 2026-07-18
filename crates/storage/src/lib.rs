@@ -9,6 +9,7 @@ pub mod memory;
 pub mod metrics_snapshots;
 pub mod permission_audit;
 pub mod pool;
+pub mod sites;
 
 pub use memory::{
     apply_memory_item_feedback, delete_memory_item, get_memory_item, import_legacy_memory_notes,

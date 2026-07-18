@@ -19,3 +19,5 @@ export * as pluginsApi from "./plugins";
 export * as memoryApi from "./memory";
 export * as workerApi from "./worker";
 export * as metricsApi from "./metrics";
+export * as sitesApi from "./sites";
+export type { Site } from "./sites";

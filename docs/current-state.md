@@ -116,6 +116,8 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
+`7.62` выполнен: Sites хранятся в PostgreSQL, API CRUD изолирован по выбранному workspace, а SitesPanel загружает и изменяет реальные данные backend. Следующий пункт — `7.63` preview/publish/open-in-browser.
+
 `7.36` реализован: `http.fetch` зарегистрирован с SSRF-защитой редиректов и лимитом текста; `filesystem.list` отражён в каталоге инструментов и матрице UI.
 
 `7.37` реализован: registry теперь отменяет futures всех tools и параллельных вызовов, а shell дополнительно завершает дочерний процесс через `CancellationToken`.

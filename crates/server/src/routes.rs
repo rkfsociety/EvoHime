@@ -4,6 +4,7 @@ use crate::auth;
 use crate::cors;
 use crate::memory_api;
 use crate::plugins;
+use crate::sites_api;
 use crate::workspace;
 use axum::{
     middleware,
@@ -70,6 +71,11 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/git/pull", post(workspace::git_pull))
         .route("/api/git/push", post(workspace::git_push))
         .route("/api/tasks", get(crate::task::list_tasks))
+        .route("/api/sites", get(sites_api::list).post(sites_api::create))
+        .route(
+            "/api/sites/:id",
+            put(sites_api::update).delete(sites_api::delete),
+        )
         .route(
             "/api/worker/jobs",
             get(crate::worker_api::list_worker_jobs).post(crate::worker_api::create_worker_job),

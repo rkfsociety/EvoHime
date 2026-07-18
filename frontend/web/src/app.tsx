@@ -1301,6 +1301,7 @@ export function App() {
         <SitesPanel
           siteSearch={siteSearch}
           onSiteSearchChange={setSiteSearch}
+          workspacePath={selectedProject.path ?? ""}
         />
       );
     }
