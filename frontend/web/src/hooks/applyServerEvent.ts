@@ -124,7 +124,7 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
     case "tool.started":
       ctx.setLines((current) => [
         ...current,
-        { role: "tool", text: `Запускаю инструмент: ${event.tool_name}` },
+        { role: "tool", text: `Запускаю инструмент: ${event.tool_name}`, taskId: event.task_id },
       ]);
       break;
     case "tool.output":
@@ -166,6 +166,7 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
         {
           role: "system",
           text: `Память: запомнить «${event.content.slice(0, 120)}${event.content.length > 120 ? "…" : ""}»? (${event.reason})`,
+          taskId: event.task_id,
         },
       ]);
       break;
@@ -175,6 +176,7 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
         {
           role: "system",
           text: `Память предложена [${event.scope}/${event.kind}]: ${event.content.slice(0, 100)}${event.content.length > 100 ? "…" : ""}`,
+          taskId: event.task_id,
         },
       ]);
       break;
@@ -184,7 +186,7 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
       );
       ctx.setLines((current) => [
         ...current,
-        { role: "system", text: `Память сохранена: ${event.memory_id}` },
+        { role: "system", text: `Память сохранена: ${event.memory_id}`, taskId: event.task_id },
       ]);
       break;
     case "memory.rejected":
@@ -193,7 +195,7 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
       );
       ctx.setLines((current) => [
         ...current,
-        { role: "system", text: `Память отклонена: ${event.memory_id}` },
+        { role: "system", text: `Память отклонена: ${event.memory_id}`, taskId: event.task_id },
       ]);
       break;
     case "memory.used":
@@ -202,6 +204,7 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
         {
           role: "system",
           text: `Память feedback [${event.signal}]: ${event.memory_id} → conf ${event.confidence.toFixed(2)}`,
+          taskId: event.task_id,
         },
       ]);
       break;
@@ -211,6 +214,7 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
         {
           role: "tool",
           text: `${event.tool_name}: ${event.success ? "завершён успешно" : "завершён с ошибкой"}`,
+          taskId: event.task_id,
         },
       ]);
       if (event.tool_name === "shell.execute") {
@@ -249,7 +253,7 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
       );
       ctx.setLines((current) => [
         ...current,
-        { role: "system", text: `Задача завершилась с ошибкой: ${event.error}` },
+        { role: "system", text: `Задача завершилась с ошибкой: ${event.error}`, taskId: event.task_id },
       ]);
       ctx.setStream("");
       break;
@@ -353,6 +357,7 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
         {
           role: "system",
           text: formatPlan(event.plan as PlanStep[]),
+          taskId: event.task_id,
         },
       ]);
       break;

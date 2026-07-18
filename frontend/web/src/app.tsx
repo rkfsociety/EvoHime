@@ -608,6 +608,16 @@ export function App() {
     () => lines.filter((line) => line.role === "system" || line.role === "tool"),
     [lines],
   );
+  const traceLinesByTask = useMemo(() => {
+    const grouped: Record<string, ChatLine[]> = {};
+    for (const line of traceLines) {
+      if (!line.taskId) {
+        continue;
+      }
+      (grouped[line.taskId] ??= []).push(line);
+    }
+    return grouped;
+  }, [traceLines]);
   const visibleChatLines = useMemo(
     () => lines.filter((line) => line.role !== "system" && line.role !== "tool"),
     [lines],
@@ -1471,21 +1481,22 @@ export function App() {
           ) : (
             visibleChatLines.map((line, index) => (
               <Fragment key={`${line.role}-${index}`}>
-                {index === lastAssistantLineIndex && traceLines.length > 0 && (hasConversation || Boolean(activeTaskId)) ? (
-                  <ChatTraceSummary traceLines={traceLines} active={Boolean(activeTaskId)} userLogin={githubAuth?.login} />
-                ) : null}
                 <article className={`line ${line.role}`} tabIndex={-1}>
                   {line.role === "assistant" ? <AgentAvatar size="sm" /> : null}
                   <strong>{translateChatRole(line.role, githubAuth?.login)}</strong>
                   <CopyMessageButton text={chatLinePlainText(line.role, line.text)} />
                   {line.role === "assistant" ? <MarkdownMessage text={line.text} /> : <pre>{line.text}</pre>}
                 </article>
+                {line.role === "user" && line.taskId && traceLinesByTask[line.taskId]?.length ? (
+                  <ChatTraceSummary
+                    traceLines={traceLinesByTask[line.taskId]}
+                    active={activeTaskId === line.taskId}
+                    userLogin={githubAuth?.login}
+                  />
+                ) : null}
               </Fragment>
             ))
           )}
-          {lastAssistantLineIndex === -1 && traceLines.length > 0 && (hasConversation || Boolean(activeTaskId)) ? (
-            <ChatTraceSummary traceLines={traceLines} active={Boolean(activeTaskId)} userLogin={githubAuth?.login} />
-          ) : null}
           {stream && lastAssistantLineIndex === -1 ? (
             <>
               <article className="line assistant streaming" tabIndex={-1}>
