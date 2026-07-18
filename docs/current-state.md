@@ -4,6 +4,8 @@ Last updated: 2026-07-18
 
 ## Stage: 7 planned (Stage 6 foundations done)
 
+Normal tasks execute their generated plan immediately; plan approval is not an automatic pause. Tool-level permission approvals remain enabled for protected operations.
+
 Stages 1–5 complete. Stage 6 structured memory `6.16`–`6.25` and optional polish landed. **Next:** Stage 7 hardening + product surface — see roadmap.
 
 ## Crates

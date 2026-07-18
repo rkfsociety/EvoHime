@@ -23,6 +23,28 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+/// Normal chat tasks execute their generated plan immediately.
+/// Plan approval remains supported for explicitly paused tasks, but is not a
+/// default gate because it otherwise prevents every tool call from starting.
+fn should_pause_for_plan_approval(_is_initial_plan: bool) -> bool {
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_pause_for_plan_approval;
+
+    #[test]
+    fn initial_plan_does_not_pause_normal_task_execution() {
+        assert!(!should_pause_for_plan_approval(true));
+    }
+
+    #[test]
+    fn non_initial_plan_does_not_pause_normal_task_execution() {
+        assert!(!should_pause_for_plan_approval(false));
+    }
+}
+
 pub(crate) async fn process_user_message(
     state: &Arc<AppState>,
     session_id: Uuid,
@@ -259,7 +281,7 @@ pub(crate) async fn run_task_pipeline(
                             persist_task_plan(state, task.id, plan)
                                 .await
                                 .map_err(|error| (task.id, error))?;
-                            plan_approval_requested |= is_initial_plan;
+                            plan_approval_requested |= should_pause_for_plan_approval(is_initial_plan);
                         }
                         ServerEvent::ToolStarted { tool_name, .. } => {
                             state.metrics.tool_started(session_id, task.id, tool_name);
