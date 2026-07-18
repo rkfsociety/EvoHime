@@ -100,7 +100,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             put(crate::permissions_api::update_permission),
         )
         .route("/api/tools", get(crate::permissions_api::list_tools))
-        .route("/api/memory", get(memory_api::list_memory))
+        .route(
+            "/api/memory",
+            get(memory_api::list_memory).post(memory_api::create_memory),
+        )
         .route(
             "/api/memory/:id",
             get(memory_api::get_memory)

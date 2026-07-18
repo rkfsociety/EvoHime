@@ -126,8 +126,10 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.43` реализован: конфликтные записи показываются в MemoryPanel side-by-side, а выбор winner/loser проходит атомарно через `POST /api/memory/:id`.
 
-**Актуализация 2026-07-18:** `7.43` выполнен: MemoryPanel поддерживает side-by-side conflict resolution с supersede-связью. Следующий пункт — `7.44`.
+`7.44` реализован: MemoryPanel получил ручное добавление memory item и шаблоны; backend прогоняет запись через redaction, normalization, embedding, dedupe и conflict flow.
 
-1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.34`, `7.52` ✅; next plan approve `7.35`
-2. Рекомендуемая следующая волна: plan approve (`7.35`), experience playbook auto-suggest (`7.48`)
+**Актуализация 2026-07-18:** `7.44` выполнен: MemoryPanel поддерживает ручное добавление памяти с шаблонами и общим admission flow. Следующий пункт — `7.45`.
+
+1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.44`, `7.52` ✅; следующий пункт — `7.45`
+2. Рекомендуемая следующая волна: pagination/cursor для memory API (`7.45`), затем delete confirm + undo (`7.46`)
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

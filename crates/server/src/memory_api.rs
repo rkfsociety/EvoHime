@@ -6,11 +6,13 @@ use axum::{
     http::StatusCode,
     Json,
 };
-use evohime_memory::{embed_text, normalize_content, redact_secrets};
+use evohime_memory::{
+    admit_memory_item, embed_text, normalize_content, redact_secrets, AdmitOutcome,
+};
 use evohime_storage::{
     delete_memory_item, get_memory_item, list_memory_items_overview,
     resolve_memory_conflict as resolve_storage_conflict, update_memory_item_fields_with_embedding,
-    MemoryItemRow, MemoryScope, MemoryStatus,
+    MemoryItemRow, MemoryKind, MemoryScope, MemoryStatus, NewMemoryItem,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -49,6 +51,31 @@ pub struct ResolveMemoryConflictRequest {
 pub struct ResolveMemoryConflictResponse {
     pub winner: MemoryItemRow,
     pub loser: MemoryItemRow,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateMemoryRequest {
+    pub content: String,
+    #[serde(default)]
+    pub scope: Option<String>,
+    #[serde(default)]
+    pub scope_key: Option<String>,
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub confidence: Option<f64>,
+    #[serde(default)]
+    pub importance: Option<f64>,
+    #[serde(default)]
+    pub pinned: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreateMemoryResponse {
+    pub outcome: String,
+    pub item: Option<MemoryItemRow>,
+    pub existing_id: Option<Uuid>,
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -139,6 +166,83 @@ pub async fn list_memory(
         items,
         privacy: privacy_info(),
     }))
+}
+
+pub async fn create_memory(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<CreateMemoryRequest>,
+) -> Result<(StatusCode, Json<CreateMemoryResponse>), ApiError> {
+    let scope = body
+        .scope
+        .as_deref()
+        .unwrap_or(MemoryScope::Global.as_str());
+    let scope = MemoryScope::parse(scope)
+        .ok_or_else(|| ApiError::BadRequest(format!("unknown memory scope: {scope}")))?;
+    let kind = body.kind.as_deref().unwrap_or(MemoryKind::Fact.as_str());
+    let kind = MemoryKind::parse(kind)
+        .ok_or_else(|| ApiError::BadRequest(format!("unknown memory kind: {kind}")))?;
+    let content = body.content.trim();
+    if content.is_empty() {
+        return Err(ApiError::BadRequest("content must not be empty".into()));
+    }
+    let item = NewMemoryItem {
+        scope,
+        scope_key: body
+            .scope_key
+            .unwrap_or_else(|| "local".to_string())
+            .trim()
+            .to_string(),
+        kind,
+        status: MemoryStatus::Candidate,
+        content: content.to_string(),
+        content_json: None,
+        confidence: body.confidence.unwrap_or(0.5),
+        importance: body.importance.unwrap_or(0.5),
+        pinned: body.pinned.unwrap_or(false),
+        source_session_id: None,
+        source_task_id: None,
+        source_label: Some("manual".into()),
+        supersedes: None,
+        valid_until: None,
+        validity_hint: None,
+        embedding: None,
+        embedding_version: 0,
+    };
+
+    let response = match admit_memory_item(&state.pool, item)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?
+    {
+        AdmitOutcome::Inserted(item) => CreateMemoryResponse {
+            outcome: "inserted".into(),
+            item: Some(item),
+            existing_id: None,
+            reason: None,
+        },
+        AdmitOutcome::Duplicate { existing_id } => CreateMemoryResponse {
+            outcome: "duplicate".into(),
+            item: None,
+            existing_id: Some(existing_id),
+            reason: Some("matching memory already exists".into()),
+        },
+        AdmitOutcome::Conflict {
+            existing_id,
+            item,
+            reason,
+        } => CreateMemoryResponse {
+            outcome: "conflict".into(),
+            item: Some(item),
+            existing_id: Some(existing_id),
+            reason: Some(reason),
+        },
+        AdmitOutcome::Rejected { reason } => CreateMemoryResponse {
+            outcome: "rejected".into(),
+            item: None,
+            existing_id: None,
+            reason: Some(reason),
+        },
+    };
+    Ok((StatusCode::CREATED, Json(response)))
 }
 
 pub async fn get_memory(

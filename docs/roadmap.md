@@ -365,7 +365,7 @@
 | 7.41 | Startup/one-shot `import_legacy_memory_notes` wired | S | ✅ | server startup; idempotent `source_label` markers |
 | 7.42 | Semantic / fuzzy dedupe (не только fingerprint) | M | ✅ | kind-aware cosine dedupe over stored embeddings; conservative `0.58` threshold; exact fingerprint remains first |
 | 7.43 | Conflict UI: side-by-side resolve / supersede flow | M | ✅ | atomic `POST /api/memory/:id` resolve; MemoryPanel side-by-side winner selection |
-| 7.44 | Manual «добавить память» + templates | M | ⬜ | API list/patch/delete only |
+| 7.44 | Manual «добавить память» + templates | M | ✅ | POST /api/memory uses redaction/embedding/dedupe/conflict flow; MemoryPanel form with fact/preference/constraint/verification templates |
 | 7.45 | Pagination / cursor для `/api/memory` (лимит 150) | M | ⬜ | MemoryPanel |
 | 7.46 | Memory delete confirm + undo window | S | ⬜ | frontend |
 | 7.47 | Local embedding model option (onnx / candle) без remote API | L | ⬜ | hash default + remote only |
@@ -470,11 +470,11 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-18:** `7.43` ✅ — конфликты памяти показываются парами и разрешаются атомарным выбором winner; следующий пункт — `7.44`.
+**Актуальный статус 2026-07-18:** `7.44` ✅ — ручное добавление памяти проходит общий safety/admission flow и доступно через MemoryPanel; следующий пункт — `7.45`.
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
-3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.43`, `7.52` ✅ → next `7.44`+
+3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.44`, `7.52` ✅ → next `7.45`+
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  
 5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+

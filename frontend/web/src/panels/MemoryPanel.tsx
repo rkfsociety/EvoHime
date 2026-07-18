@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  createMemory,
   deleteMemory,
   listMemory,
   resolveMemoryConflict,
@@ -18,6 +19,13 @@ type PlaybookView = {
 };
 
 type ExperienceKindFilter = "all" | "playbook" | "success_pattern" | "failure_pattern" | "verification_rule";
+
+const MEMORY_TEMPLATES = [
+  { id: "fact", label: "Факт", kind: "fact", content: "Этот workspace использует ..." },
+  { id: "preference", label: "Предпочтение", kind: "preference", content: "Предпочитаю ..." },
+  { id: "constraint", label: "Ограничение", kind: "constraint", content: "Всегда ..." },
+  { id: "verification", label: "Проверка", kind: "verification_rule", content: "После изменений проверять ..." },
+] as const;
 
 const TABS: Array<{ id: MemoryTab; label: string; status: string }> = [
   { id: "active", label: "Активные", status: "active" },
@@ -109,6 +117,13 @@ export function MemoryPanel() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [addOpen, setAddOpen] = useState(false);
+  const [addTemplate, setAddTemplate] = useState("fact");
+  const [addKind, setAddKind] = useState("fact");
+  const [addScope, setAddScope] = useState("global");
+  const [addScopeKey, setAddScopeKey] = useState("local");
+  const [addContent, setAddContent] = useState("");
+  const [addBusy, setAddBusy] = useState(false);
 
   useEffect(() => {
     const handle = window.setTimeout(() => setQuery(queryDraft.trim()), 300);
@@ -173,6 +188,47 @@ export function MemoryPanel() {
     await runAction(conflictId, () => resolveMemoryConflict(conflictId, winnerId));
   }
 
+  function applyTemplate(templateId: string) {
+    const template = MEMORY_TEMPLATES.find((item) => item.id === templateId) ?? MEMORY_TEMPLATES[0];
+    setAddTemplate(template.id);
+    setAddKind(template.kind);
+    setAddContent(template.content);
+  }
+
+  async function submitMemory() {
+    if (!addContent.trim()) {
+      setError("Заполните содержание записи");
+      return;
+    }
+    setAddBusy(true);
+    setError(null);
+    try {
+      const response = await createMemory({
+        content: addContent,
+        kind: addKind,
+        scope: addScope,
+        scope_key: addScopeKey,
+      });
+      if (response.outcome === "duplicate") {
+        setError(`Такая память уже существует: ${response.existing_id?.slice(0, 8) ?? "известная запись"}`);
+      } else if (response.outcome === "rejected") {
+        setError(response.reason ?? "Запись отклонена");
+      } else {
+        setAddOpen(false);
+        setAddContent("");
+        setTab(response.outcome === "conflict" ? "conflicts" : "candidates");
+        await refresh();
+        if (response.outcome === "conflict") {
+          setError("Запись добавлена как конфликт — выберите актуальную версию во вкладке конфликтов");
+        }
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Не удалось добавить запись памяти");
+    } finally {
+      setAddBusy(false);
+    }
+  }
+
   return (
     <div className="actionsPanel memoryPanel">
       <div className="panelToolbar">
@@ -195,8 +251,66 @@ export function MemoryPanel() {
           <button type="button" onClick={() => void refresh()} disabled={loading}>
             Обновить
           </button>
+          <button type="button" onClick={() => setAddOpen((open) => !open)}>
+            {addOpen ? "Закрыть форму" : "Добавить память"}
+          </button>
         </div>
       </div>
+
+      {addOpen ? (
+        <div className="memoryAddForm">
+          <div className="memoryAddHeader">
+            <strong>Новая запись памяти</strong>
+            <span>Запись пройдёт redaction, dedupe и conflict check.</span>
+          </div>
+          <div className="memoryAddFields">
+            <label>
+              <span>Шаблон</span>
+              <select value={addTemplate} onChange={(event) => applyTemplate(event.target.value)}>
+                {MEMORY_TEMPLATES.map((template) => (
+                  <option value={template.id} key={template.id}>{template.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Тип</span>
+              <select value={addKind} onChange={(event) => setAddKind(event.target.value)}>
+                {MEMORY_TEMPLATES.map((template) => (
+                  <option value={template.kind} key={template.kind}>{template.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Область</span>
+              <select value={addScope} onChange={(event) => setAddScope(event.target.value)}>
+                <option value="global">Пользовательская</option>
+                <option value="workspace">Workspace</option>
+                <option value="project">Проект</option>
+                <option value="session">Сессия</option>
+              </select>
+            </label>
+            <label>
+              <span>Ключ области</span>
+              <input value={addScopeKey} onChange={(event) => setAddScopeKey(event.target.value)} />
+            </label>
+          </div>
+          <textarea
+            className="memoryEdit"
+            value={addContent}
+            onChange={(event) => setAddContent(event.target.value)}
+            rows={4}
+            placeholder="Например: проект использует native PostgreSQL для локальной разработки"
+          />
+          <div className="memoryActions">
+            <button type="button" disabled={addBusy} onClick={() => void submitMemory()}>
+              {addBusy ? "Добавление..." : "Добавить запись"}
+            </button>
+            <button type="button" disabled={addBusy} onClick={() => setAddOpen(false)}>
+              Отмена
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {privacy ? (
         <div className="memoryPrivacy">

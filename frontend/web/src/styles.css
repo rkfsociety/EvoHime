@@ -3570,6 +3570,49 @@ h1 {
   background: rgba(255, 255, 255, 0.03);
 }
 
+.memoryAddForm {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(159, 192, 255, 0.35);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(159, 192, 255, 0.06);
+}
+
+.memoryAddHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.memoryAddHeader span {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.memoryAddFields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.memoryAddFields label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.memoryAddFields input,
+.memoryAddFields select {
+  min-width: 0;
+  border: 1px solid var(--border-1);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  padding: 9px 10px;
+}
+
 .memoryPrivacy strong {
   display: block;
   margin-bottom: 6px;
@@ -3801,6 +3844,22 @@ h1 {
 
 .panelError {
   color: #f2a3a3;
+}
+
+@media (max-width: 900px) {
+  .memoryAddFields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .memoryAddFields {
+    grid-template-columns: 1fr;
+  }
+
+  .memoryAddHeader {
+    flex-direction: column;
+  }
 }
 
 @media (max-width: 720px) {

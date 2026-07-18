@@ -49,6 +49,23 @@ export type MemoryUpdatePayload = {
   pinned?: boolean;
 };
 
+export type MemoryCreatePayload = {
+  content: string;
+  scope?: string;
+  scope_key?: string;
+  kind?: string;
+  confidence?: number;
+  importance?: number;
+  pinned?: boolean;
+};
+
+export type MemoryCreateResponse = {
+  outcome: "inserted" | "duplicate" | "conflict" | "rejected";
+  item?: MemoryItem | null;
+  existing_id?: string | null;
+  reason?: string | null;
+};
+
 function toQuery(params: MemoryListParams) {
   const query = new URLSearchParams();
   if (params.scope) query.set("scope", params.scope);
@@ -65,6 +82,18 @@ export function listMemory(params: MemoryListParams = {}) {
     `/api/memory${toQuery(params)}`,
     undefined,
     "Не удалось загрузить память",
+  );
+}
+
+export function createMemory(payload: MemoryCreatePayload) {
+  return apiRequest<MemoryCreateResponse>(
+    "/api/memory",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+    "Не удалось добавить запись памяти",
   );
 }
 
