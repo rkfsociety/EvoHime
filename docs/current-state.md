@@ -140,8 +140,10 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.49` реализован: backend экспортирует переносимые memory items в JSON или ZIP с `memory.json`, а импорт прогоняет записи через redaction, normalization, embedding, dedupe и conflict admission как кандидатов.
 
-**Актуализация 2026-07-18:** `7.49` выполнен: MemoryPanel поддерживает JSON/ZIP pack export и импорт файла с итоговой статистикой admission. Следующий пункт — `7.50`.
+`7.50` реализован как design milestone: спецификация multi-device sync определяет replica identity, append-only change log, cursor pull/push, snapshot recovery, offline outbox, tombstones и запрет тихого last-write-wins для конфликтов. Реализация разбита на `7.50a`–`7.50e`.
 
-1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.49`, `7.52` ✅; следующий пункт — `7.50`
-2. Рекомендуемая следующая волна: multi-device sync design (`7.50`), затем product honesty для Sites/Scheduled
+**Актуализация 2026-07-18:** `7.50` выполнен как утверждённый дизайн: multi-device sync остаётся отключённым по умолчанию и не меняет local-only путь до отдельной реализации. Следующий пункт — `7.51`.
+
+1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.50`, `7.52` ✅; следующий пункт — `7.51`
+2. Рекомендуемая следующая волна: worker ML handlers (`7.51`), затем product honesty для Sites/Scheduled
 3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI

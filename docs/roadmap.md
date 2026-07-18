@@ -371,7 +371,7 @@
 | 7.47 | Local embedding model option (onnx / candle) без remote API | L | ✅ | `EVOHIME_EMBEDDING_MODE=local`; fastembed/ONNX BGE-small, MiniLM-L6 или multilingual E5; hash default + remote remain available |
 | 7.48 | Experience playbook auto-suggest in planner | M | ✅ | Up to 3 relevant structured playbooks exposed as untrusted optional hints to plan/replan; no automatic execution |
 | 7.49 | Memory export/import workspace pack (zip/json) | M | ✅ | GET /api/memory/export JSON/ZIP; POST /api/memory/import; MemoryPanel pack buttons + file import; imported rows enter candidate admission flow |
-| 7.50 | Multi-device sync (out of earlier memory scope) | L | ⬜ | design out-of-scope follow-up |
+| 7.50 | Multi-device sync (out of earlier memory scope) | L | ✅ | Approved design: replica identity, append-only change log, cursor pull/push, snapshot recovery, offline outbox, conflict/tombstone rules; implementation split into 7.50a–e |
 
 ### 7.E — Workers & ML
 
@@ -470,11 +470,11 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-18:** `7.49` ✅ — memory pack экспортируется в JSON/ZIP и импортируется через candidate admission flow; следующий пункт — `7.50`.
+**Актуальный статус 2026-07-18:** `7.50` ✅ — утверждён дизайн multi-device memory sync с replica identity, append-only change log, cursor pull/push, snapshot recovery, offline outbox и явным conflict flow; следующий пункт — `7.51`.
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
-3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.49`, `7.52` ✅ → next `7.50`+
+3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.50`, `7.52` ✅ → next `7.51`+
 4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  
 5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+
