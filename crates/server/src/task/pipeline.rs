@@ -1,12 +1,11 @@
-//! Task run pipeline: plan execute, pause/resume, list tasks.
+//! Task run pipeline: ReAct execution, pause/resume, list tasks.
 use crate::app::AppState;
 use crate::permissions_api::permission_name;
 use crate::sessions_api::summarize_session_title;
 use crate::task::helpers::{emit_event, load_chat_history, map_agent_error, resolve_model_route};
 use crate::task::memory::{apply_task_memory_feedback, persist_structured_memory};
 use crate::task::steps::{
-    build_agent_resume_context, finalize_open_task_steps, persist_task_plan,
-    update_task_step_status,
+    build_agent_resume_context, finalize_open_task_steps, update_task_step_status,
 };
 use crate::ApiError;
 use axum::{extract::State, Json};
@@ -22,13 +21,6 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
-
-/// Normal chat tasks execute their generated plan immediately.
-/// Plan approval remains supported for explicitly paused tasks, but is not a
-/// default gate because it otherwise prevents every tool call from starting.
-fn should_pause_for_plan_approval(_is_initial_plan: bool) -> bool {
-    false
-}
 
 pub(crate) async fn process_user_message(
     state: &Arc<AppState>,
@@ -244,7 +236,6 @@ pub(crate) async fn run_task_pipeline(
         }
     });
 
-    let mut plan_approval_requested = false;
     loop {
         tokio::select! {
             _ = cancellation.cancelled() => {
@@ -256,18 +247,6 @@ pub(crate) async fn run_task_pipeline(
             event = event_rx.recv() => match event {
                 Some(event) => {
                     match &event {
-                        ServerEvent::AgentPlanUpdated { plan, .. } => {
-                            state.metrics.plan_updated(session_id, task.id, plan.len());
-                            let is_initial_plan = emit_started
-                                && evohime_storage::list_task_steps(&state.pool, task.id)
-                                    .await
-                                    .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?
-                                    .is_empty();
-                            persist_task_plan(state, task.id, plan)
-                                .await
-                                .map_err(|error| (task.id, error))?;
-                            plan_approval_requested |= should_pause_for_plan_approval(is_initial_plan);
-                        }
                         ServerEvent::ToolStarted { tool_name, .. } => {
                             state.metrics.tool_started(session_id, task.id, tool_name);
                             let _ = update_task_step_status(
@@ -332,46 +311,6 @@ pub(crate) async fn run_task_pipeline(
                         _ => {}
                     }
                     emit_event(state, session_id, Some(task.id), event).await?;
-                    if plan_approval_requested {
-                        agent_handle.abort();
-                        pause_task(&state.pool, task.id)
-                            .await
-                            .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
-                        evohime_storage::merge_checkpoint(
-                            &state.pool,
-                            task.id,
-                            None,
-                            &json!({
-                                "pause_reason": "plan_approval_required",
-                                "approval_wait": Value::Null,
-                            }),
-                        )
-                        .await
-                        .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
-                        emit_event(
-                            state,
-                            session_id,
-                            Some(task.id),
-                            ServerEvent::TaskStatusChanged {
-                                task_id: task.id,
-                                status: "paused".to_string(),
-                            },
-                        )
-                        .await?;
-                        emit_event(
-                            state,
-                            session_id,
-                            Some(task.id),
-                            ServerEvent::ActionLogged {
-                                task_id: task.id,
-                                action: "plan.approval.required".to_string(),
-                                detail: "Waiting for user plan approval before tool execution".to_string(),
-                                created_at: chrono::Utc::now(),
-                            },
-                        )
-                        .await?;
-                        return Ok(());
-                    }
                 }
                 None => break,
             }
@@ -520,19 +459,4 @@ pub(crate) async fn list_tasks(
         .await
         .map(Json)
         .map_err(|error| ApiError::Internal(error.to_string()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::should_pause_for_plan_approval;
-
-    #[test]
-    fn initial_plan_does_not_pause_normal_task_execution() {
-        assert!(!should_pause_for_plan_approval(true));
-    }
-
-    #[test]
-    fn non_initial_plan_does_not_pause_normal_task_execution() {
-        assert!(!should_pause_for_plan_approval(false));
-    }
 }
