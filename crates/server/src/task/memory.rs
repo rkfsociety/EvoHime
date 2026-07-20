@@ -78,14 +78,8 @@ pub(crate) async fn llm_extract_memory_json(
         "Task status: {status}\nUser message:\n{user_message}\n\nAssistant reply:\n{final_message}"
     );
     let messages = [
-        ChatMessage {
-            role: ChatRole::System,
-            content: MEMORY_EXTRACT_PROMPT.to_string(),
-        },
-        ChatMessage {
-            role: ChatRole::User,
-            content: user,
-        },
+        ChatMessage::text(ChatRole::System, MEMORY_EXTRACT_PROMPT),
+        ChatMessage::text(ChatRole::User, user),
     ];
     collect_gateway_text(gateway, &messages, std::time::Duration::from_secs(20)).await
 }

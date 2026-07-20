@@ -44,6 +44,7 @@ pub enum ChatRole {
     System,
     User,
     Assistant,
+    Tool,
 }
 
 impl ChatRole {
@@ -52,6 +53,7 @@ impl ChatRole {
             Self::System => "system",
             Self::User => "user",
             Self::Assistant => "assistant",
+            Self::Tool => "tool",
         }
     }
 }
@@ -60,6 +62,40 @@ impl ChatRole {
 pub struct ChatMessage {
     pub role: ChatRole,
     pub content: String,
+    pub tool_calls: Vec<crate::tools::NativeToolCall>,
+    pub tool_call_id: Option<String>,
+}
+
+impl ChatMessage {
+    pub fn text(role: ChatRole, content: impl Into<String>) -> Self {
+        Self {
+            role,
+            content: content.into(),
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+        }
+    }
+
+    pub fn assistant_tool_calls(
+        content: impl Into<String>,
+        tool_calls: Vec<crate::tools::NativeToolCall>,
+    ) -> Self {
+        Self {
+            role: ChatRole::Assistant,
+            content: content.into(),
+            tool_calls,
+            tool_call_id: None,
+        }
+    }
+
+    pub fn tool_observation(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            role: ChatRole::Tool,
+            content: content.into(),
+            tool_calls: Vec::new(),
+            tool_call_id: Some(tool_call_id.into()),
+        }
+    }
 }
 
 pub type TokenStream = Pin<Box<dyn Stream<Item = Result<ChatStreamItem, ProviderError>> + Send>>;

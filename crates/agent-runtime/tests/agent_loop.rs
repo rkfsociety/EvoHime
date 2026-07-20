@@ -74,10 +74,7 @@ async fn agent_loop_streams_model_tokens() {
         },
         &gateway,
         &tools,
-        vec![ChatMessage {
-            role: ChatRole::User,
-            content: "previous".to_string(),
-        }],
+        vec![ChatMessage::text(ChatRole::User, "previous")],
         vec![],
         tx,
     )

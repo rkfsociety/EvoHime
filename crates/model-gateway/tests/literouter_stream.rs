@@ -39,10 +39,7 @@ async fn literouter_streams_sse_chunks() {
     })
     .expect("provider");
 
-    let mut stream = provider.stream_chat(&[ChatMessage {
-        role: ChatRole::User,
-        content: "hi".to_string(),
-    }]);
+    let mut stream = provider.stream_chat(&[ChatMessage::text(ChatRole::User, "hi")]);
 
     let mut output = String::new();
     while let Some(chunk) = stream.next().await {
@@ -78,10 +75,7 @@ async fn literouter_streams_usage_chunk() {
     })
     .expect("provider");
 
-    let mut stream = provider.stream_chat(&[ChatMessage {
-        role: ChatRole::User,
-        content: "hi".to_string(),
-    }]);
+    let mut stream = provider.stream_chat(&[ChatMessage::text(ChatRole::User, "hi")]);
 
     let mut output = String::new();
     let mut usage = None;
@@ -142,10 +136,7 @@ async fn literouter_retries_after_429_then_streams() {
     )
     .expect("provider");
 
-    let mut stream = provider.stream_chat(&[ChatMessage {
-        role: ChatRole::User,
-        content: "hi".to_string(),
-    }]);
+    let mut stream = provider.stream_chat(&[ChatMessage::text(ChatRole::User, "hi")]);
 
     let mut output = String::new();
     while let Some(chunk) = stream.next().await {
@@ -175,10 +166,7 @@ async fn literouter_does_not_retry_client_errors() {
     )
     .expect("provider");
 
-    let mut stream = provider.stream_chat(&[ChatMessage {
-        role: ChatRole::User,
-        content: "hi".to_string(),
-    }]);
+    let mut stream = provider.stream_chat(&[ChatMessage::text(ChatRole::User, "hi")]);
 
     let err = stream
         .next()

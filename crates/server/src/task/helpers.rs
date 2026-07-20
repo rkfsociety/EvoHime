@@ -22,10 +22,7 @@ pub(crate) async fn load_chat_history(
             "assistant" => ChatRole::Assistant,
             _ => ChatRole::User,
         };
-        messages.push(ChatMessage {
-            role,
-            content: row.content,
-        });
+        messages.push(ChatMessage::text(role, row.content));
     }
 
     Ok(messages)

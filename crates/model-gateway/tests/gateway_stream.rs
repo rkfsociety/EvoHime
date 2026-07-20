@@ -15,10 +15,7 @@ fn push_delta(output: &mut String, item: ChatStreamItem) {
 #[tokio::test]
 async fn gateway_streams_tokens_from_mock_provider() {
     let gateway = mock_gateway(vec!["Lite".into(), "Router".into()]);
-    let mut stream = gateway.stream_chat(&[ChatMessage {
-        role: ChatRole::User,
-        content: "ping".to_string(),
-    }]);
+    let mut stream = gateway.stream_chat(&[ChatMessage::text(ChatRole::User, "ping")]);
 
     let mut output = String::new();
     while let Some(chunk) = stream.next().await {
@@ -51,13 +48,7 @@ async fn gateway_streams_tokens_from_named_route() {
     );
 
     let mut stream = gateway
-        .stream_chat_for_route(
-            "planner",
-            &[ChatMessage {
-                role: ChatRole::User,
-                content: "ping".to_string(),
-            }],
-        )
+        .stream_chat_for_route("planner", &[ChatMessage::text(ChatRole::User, "ping")])
         .expect("named route exists");
 
     let mut output = String::new();

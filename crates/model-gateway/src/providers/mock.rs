@@ -81,10 +81,7 @@ mod tests {
     #[tokio::test]
     async fn streams_configured_chunks() {
         let provider = MockProvider::new("mock-model", vec!["Hello".into(), " world".into()]);
-        let mut stream = provider.stream_chat(&[ChatMessage {
-            role: ChatRole::User,
-            content: "hi".to_string(),
-        }]);
+        let mut stream = provider.stream_chat(&[ChatMessage::text(ChatRole::User, "hi")]);
 
         let first = stream.next().await.unwrap().unwrap();
         let second = stream.next().await.unwrap().unwrap();

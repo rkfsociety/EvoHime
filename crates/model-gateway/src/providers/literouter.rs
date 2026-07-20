@@ -64,13 +64,7 @@ impl LiteRouterProvider {
     ) -> Result<reqwest::Response, ProviderError> {
         let body = ChatCompletionRequest {
             model: model.to_string(),
-            messages: messages
-                .iter()
-                .map(|message| ApiMessage {
-                    role: message.role.as_str().to_string(),
-                    content: message.content.clone(),
-                })
-                .collect(),
+            messages: messages.iter().map(ApiMessage::from_chat_message).collect(),
             stream,
             stream_options: stream.then_some(StreamOptions {
                 include_usage: true,
@@ -241,6 +235,46 @@ struct StreamOptions {
 struct ApiMessage {
     role: String,
     content: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tool_calls: Vec<ApiRequestToolCall>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_call_id: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ApiRequestToolCall {
+    id: String,
+    #[serde(rename = "type")]
+    kind: &'static str,
+    function: ApiRequestFunction,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ApiRequestFunction {
+    name: String,
+    arguments: String,
+}
+
+impl ApiMessage {
+    fn from_chat_message(message: &ChatMessage) -> Self {
+        Self {
+            role: message.role.as_str().to_string(),
+            content: message.content.clone(),
+            tool_calls: message
+                .tool_calls
+                .iter()
+                .map(|call| ApiRequestToolCall {
+                    id: call.id.clone(),
+                    kind: "function",
+                    function: ApiRequestFunction {
+                        name: call.name.replace('.', "_"),
+                        arguments: call.arguments.clone(),
+                    },
+                })
+                .collect(),
+            tool_call_id: message.tool_call_id.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -412,7 +446,8 @@ fn parse_sse_line(line: &str) -> Option<Result<ChatStreamItem, ProviderError>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tools::ToolSpec;
+    use crate::providers::ChatMessage;
+    use crate::tools::{NativeToolCall, ToolSpec};
     use serde_json::json;
 
     #[test]
@@ -442,6 +477,34 @@ mod tests {
         .expect_err("empty key rejected");
 
         assert!(error.to_string().contains("API key"));
+    }
+
+    #[test]
+    fn serializes_assistant_tool_call_and_tool_observation_messages() {
+        let call = NativeToolCall {
+            id: "call-1".into(),
+            name: "filesystem_read".into(),
+            arguments: r#"{"path":"src/lib.rs"}"#.into(),
+        };
+        let assistant = ChatMessage::assistant_tool_calls("", vec![call.clone()]);
+        let observation = ChatMessage::tool_observation("call-1", r#"{"ok":true}"#);
+
+        let assistant_payload = ApiMessage::from_chat_message(&assistant);
+        let observation_payload = ApiMessage::from_chat_message(&observation);
+
+        assert_eq!(assistant_payload.role, "assistant");
+        assert_eq!(assistant_payload.tool_calls[0].id, "call-1");
+        assert_eq!(
+            assistant_payload.tool_calls[0].function.name,
+            "filesystem_read"
+        );
+        assert_eq!(
+            assistant_payload.tool_calls[0].function.arguments,
+            call.arguments
+        );
+        assert_eq!(observation_payload.role, "tool");
+        assert_eq!(observation_payload.tool_call_id.as_deref(), Some("call-1"));
+        assert_eq!(observation_payload.content, r#"{"ok":true}"#);
     }
 
     #[test]
