@@ -234,6 +234,7 @@ impl PipelineMetrics {
         }
     }
 
+    #[allow(dead_code)]
     pub fn plan_updated(&self, session_id: Uuid, task_id: Uuid, step_count: usize) {
         let mut inner = self
             .inner
