@@ -4,7 +4,7 @@ Last updated: 2026-07-18
 
 ## Stage: 7 planned (Stage 6 foundations done)
 
-Normal tasks execute their generated plan immediately; plan approval is not an automatic pause. Tool-level permission approvals remain enabled for protected operations.
+Normal tasks use native ReAct tool calling: the model selects a tool, receives its observation, and selects the next action until `assistant.reply`. Tool-level permission approvals remain enabled for protected operations.
 
 Stages 1–5 complete. Stage 6 structured memory `6.16`–`6.25` and optional polish landed. **Next:** Stage 7 hardening + product surface — see roadmap.
 
@@ -17,7 +17,7 @@ Stages 1–5 complete. Stage 6 structured memory `6.16`–`6.25` and optional po
 | `memory` | Active | Redact/dedupe/conflict + retrieve + extract/gate + experience + feedback + hybrid embeddings (hash default, optional remote neural) |
 | `storage` | Active | Sessions, tasks, events, messages, legacy notes, **memory_items**, settings, worker jobs |
 | `tool-runtime` | Active | Sandboxed filesystem, shell, Git, browser, MCP call |
-| `agent-runtime` | Active | Plan → batches → bounded replan; checkpoints; structured memory context |
+| `agent-runtime` | Active | Native ReAct loop; bounded iterations/calls; checkpoints; structured memory context |
 | `model-gateway` | Active | Route-based gateway, LiteRouter + OpenAI-compatible + mock |
 | `task-engine` | Active | Lifecycle, dependency batching, checkpoints, cancel/resume/retry |
 | `permissions` | Active | ask/allow/deny + session/path overrides + temp allow + durable approval audit (PG) |
@@ -76,8 +76,8 @@ user.message
   → save user message (session_messages)
   → load prior chat history
   → retrieve structured memory_items (budget + untrusted tag)
-  → plan steps → dependency batches → tools
-  → bounded replan (≤3) → respond
+  → native tool call → observation → next action
+  → bounded ReAct loop → respond
   → checkpoints / approval pause / resume
   → extract candidates on success only (LLM JSON + heuristic; skipped on task.failed)
   → admit → decision gate (auto-promote | memory.ask | drop)
@@ -142,7 +142,7 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.47` реализован: `evohime-memory` поддерживает локальный ONNX provider через fastembed без API-ключа; модель кэшируется локально, а hash и remote режимы сохранены.
 
-`7.48` реализован: retrieval выделяет до трёх релевантных структурированных playbook suggestions, а planner/replan получают их отдельным untrusted optional context без автоматического исполнения шагов.
+`7.48` реализован: retrieval выделяет до трёх релевантных структурированных playbook suggestions, а ReAct получает их как untrusted optional context без автоматического исполнения шагов.
 
 `7.49` реализован: backend экспортирует переносимые memory items в JSON или ZIP с `memory.json`, а импорт прогоняет записи через redaction, normalization, embedding, dedupe и conflict admission как кандидатов.
 

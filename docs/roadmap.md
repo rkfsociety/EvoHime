@@ -236,7 +236,7 @@
 
 | Приоритет | Улучшение | Что добавить |
 | --- | --- | --- |
-| P1 | Реальный executor плана | ✅ `plan → execute(batches) → observe → replan → respond` (до 3 replan) |
+| P1 | Native ReAct executor | ✅ `tool call → execute → observation → next action → respond` с bounded limits |
 | P1 | Усиленный checkpoint/recovery | ✅ plan + pause_reason + approval_wait; merge; resume skips completed steps |
 | P1 | Наблюдаемость task pipeline | ✅ correlation id + logs + `GET /api/metrics` + optional OTLP + Settings Metrics UI |
 | P1 | Больше интеграционных сценариев | ✅ `pipeline_integration` + `lifecycle_integration` (approval pause/resume, recovery) |
@@ -267,7 +267,7 @@
 
 ### Кандидаты на следующий milestone
 
-- `6.11` План-исполнитель с реальным графом шагов и повторным планированием ✅ (batches + bounded replan)
+- `6.11` План-исполнитель с реальным графом шагов и повторным планированием ✅ (legacy compatibility; runtime использует native ReAct)
 - `6.12` Расширенные checkpoints, approvals recovery и task replay ✅
 - `6.13` Декомпозиция frontend shell (`app.tsx` -> panels/hooks/services) ✅
 - `6.14` GitHub PR workflow: diff, review comments, checks, create PR ✅
@@ -344,7 +344,7 @@
 
 | # | Задача | Size | Статус | Notes / evidence |
 | --- | --- | --- | --- | --- |
-| 7.28 | Native provider `tool_calls` (OpenAI-compatible tools array) | L | ✅ | `chat_with_tools` + planning path; text fallback; `EVOHIME_NATIVE_TOOL_CALLS` |
+| 7.28 | Native provider `tool_calls` (OpenAI-compatible tools array) | L | ✅ | `chat_with_tools` + ReAct controller; bounded observations; `EVOHIME_NATIVE_TOOL_CALLS` |
 | 7.29 | Распилить `agent_loop.rs` (plan / execute / context / parse) | L | ✅ | `agent_loop/{mod,parse,plan,execute,context,util}.rs` |
 | 7.30 | Распилить `server/main.rs` на routers/modules | L | ✅ | `startup`/`routes`/`task/*`/`*_api`/`ws`; main ~64 LOC |
 | 7.31 | Multi-agent / subagent fan-out с бюджетом | L | ✅ | tool `agent.run` + depth/concurrency/step/timeout budgets |
@@ -369,7 +369,7 @@
 | 7.45 | Pagination / cursor для `/api/memory` (лимит 150) | M | ✅ | Stable keyset cursor по pinned/importance/updated_at/id; MemoryPanel дозагружает страницы по 50 |
 | 7.46 | Memory delete confirm + undo window | S | ✅ | MemoryPanel confirmation plus 8-second Undo; restore reuses POST /api/memory admission flow |
 | 7.47 | Local embedding model option (onnx / candle) без remote API | L | ✅ | `EVOHIME_EMBEDDING_MODE=local`; fastembed/ONNX BGE-small, MiniLM-L6 или multilingual E5; hash default + remote remain available |
-| 7.48 | Experience playbook auto-suggest in planner | M | ✅ | Up to 3 relevant structured playbooks exposed as untrusted optional hints to plan/replan; no automatic execution |
+| 7.48 | Experience playbook auto-suggest in ReAct | M | ✅ | Up to 3 relevant structured playbooks exposed as untrusted optional hints; no automatic execution |
 | 7.49 | Memory export/import workspace pack (zip/json) | M | ✅ | GET /api/memory/export JSON/ZIP; POST /api/memory/import; MemoryPanel pack buttons + file import; imported rows enter candidate admission flow |
 | 7.50 | Multi-device sync (out of earlier memory scope) | L | ✅ | Approved design: replica identity, append-only change log, cursor pull/push, snapshot recovery, offline outbox, conflict/tombstone rules; implementation split into 7.50a–e |
 

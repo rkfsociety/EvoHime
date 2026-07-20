@@ -61,7 +61,7 @@ User message
 - HTTP: health, sessions, files, git, models, permissions, tools, MCP, GitHub PRs, worker jobs
 - WebSocket: typed event protocol + approvals
 - Tools: filesystem, shell, Git, browser, MCP call (sandboxed)
-- Agent loop: plan → dependency batches → bounded replan; checkpoints with pause/resume
+- Agent loop: native ReAct tool call → observation → next action; bounded iterations with checkpoints and pause/resume
 - Frontend shell split (`6.13`): `types` / `api` / `lib` / `hooks` / `panels`
 - Panels: Chat, Settings (Worker + Metrics), Tasks (deep), Actions (deep), Terminal, Files, Editor, Git, Plugins, Pull Requests (detail/diff/checks/create), Sites, Memory
 - Structured memory: `memory_items` + admit/retrieve/extract/experience/feedback + hybrid embeddings (`6.16`–`6.25`, optional remote neural); legacy notes still written/loaded
@@ -204,7 +204,7 @@ LITEROUTER_MODEL=deepseek:free
 | `crates/server/src/main.rs` | Server entrypoint (bootstrap + bind) |
 | `crates/server/src/routes.rs` | HTTP router assembly |
 | `crates/server/src/task/` | Task pipeline / steps / memory |
-| `crates/agent-runtime/src/agent_loop/` | Agent orchestration (plan / execute / context / parse) |
+| `crates/agent-runtime/src/agent_loop/` | Agent orchestration (ReAct / execute / context / protocol parsing) |
 | `crates/memory/` | Memory admit service (redact/dedupe/conflict) |
 | `crates/storage/src/memory.rs` | `memory_items` CRUD |
 | `crates/tool-runtime/src/tools/` | filesystem, shell, Git, browser, MCP |

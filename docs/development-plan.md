@@ -66,7 +66,7 @@ EvoHime Server — Rust
 Этапы 1–5 завершены. Stage 6: foundations + PR workflow + shell split + memory `6.16`–`6.25` (включая Memory panel, feedback loop и hybrid embeddings).
 
 - tools: filesystem / shell / Git / browser / MCP в `tool-runtime`;
-- `agent-runtime`: plan → dependency batches → bounded replan; checkpoints; structured memory в prompt;
+- `agent-runtime`: native ReAct tool call → observation → next action; bounded limits; checkpoints; structured memory в prompt;
 - `crates/memory`: redact / normalize / dedupe / conflict / retrieve / extract / decision gate / experience playbooks / feedback / hybrid embeddings;
 - `storage` + `/api/memory`: CRUD/override; frontend MemoryPanel + MemoryAskModal;
 - workers: health/stall + `text.summarize` / `text.chunk`.
@@ -272,7 +272,7 @@ Git backend реализован: `git.status`, `git.diff`, `git.commit`, `git.p
 
 ### Этап 5 — Планирование задач и оркестрация ✅
 
-Task lifecycle реализован: start/complete/fail/cancel/resume/retry. Storage содержит `task_steps` и `task_checkpoints`, `agent-runtime` строит structured plan steps, а `server` материализует план в историю шагов и публикует `task.step.changed`.
+Task lifecycle реализован: start/complete/fail/cancel/resume/retry. Storage содержит `task_steps` и `task_checkpoints`, а `agent-runtime` исполняет native ReAct calls и публикует tool/task events.
 
 - Реальное планирование (`agent.plan.updated`) с fallback-парсингом JSON, fenced JSON и wrapper-объектов
 - Параллельное выполнение независимых инструментов через dependency batching
@@ -297,7 +297,7 @@ Task lifecycle реализован: start/complete/fail/cancel/resume/retry. St
 
 Следующий подэтап Stage 6:
 
-- реальный executor плана: граф шагов, цикл `plan -> execute -> observe -> replan -> respond`, явная обработка результатов инструментов;
+- native ReAct executor: цикл `tool call -> execute -> observation -> next action -> respond`, явная обработка результатов инструментов;
 - расширенные checkpoints и recovery: прогресс по шагам, результаты завершённых tool calls, причина паузы и состояние approval wait;
 - декомпозиция `frontend/web/src/app.tsx` на panels/hooks/services и вынесение WebSocket/event orchestration из корневого компонента;
 - typed API client для frontend вместо разрозненных `fetch()` и локальных обработчиков ошибок;
