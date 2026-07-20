@@ -655,6 +655,7 @@ mod tests {
             permission: evohime_permissions::Permission::GitWrite,
             scope: "workspace".to_string(),
             approval_id: Uuid::nil(),
+            input: serde_json::json!({}),
         });
 
         assert!(matches!(error, ApiError::ApprovalRequired { tool, .. } if tool == "git.push"));

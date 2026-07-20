@@ -21,6 +21,7 @@ pub enum ToolError {
         permission: Permission,
         scope: String,
         approval_id: uuid::Uuid,
+        input: Value,
     },
     #[error("tool execution failed: {0}")]
     Execution(String),
@@ -270,6 +271,7 @@ impl ToolRegistry {
                         permission: *permission,
                         scope: approval.scope,
                         approval_id: approval.id,
+                        input: input.clone(),
                     });
                 }
             }

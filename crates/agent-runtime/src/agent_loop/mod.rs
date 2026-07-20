@@ -13,7 +13,9 @@ mod util;
 pub use tool_budget::{budget_tool_result_list, budget_tool_results, ToolResultBudget};
 
 use chrono::{DateTime, Utc};
-use evohime_model_gateway::{providers::ChatMessage, providers::ChatRole, ModelGateway};
+use evohime_model_gateway::{
+    providers::ChatMessage, providers::ChatRole, ModelGateway, NativeToolCall,
+};
 use evohime_project_index::ProjectIndex;
 use evohime_protocol::{PlanStep, ServerEvent};
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
@@ -78,6 +80,11 @@ pub struct AgentResumeContext {
     pub completed_step_ids: Vec<String>,
     pub tool_results: Vec<String>,
     pub pause_reason: Option<String>,
+    pub react_messages: Vec<ChatMessage>,
+    pub react_iteration: usize,
+    pub react_tool_calls: usize,
+    pub react_completed_call_ids: Vec<String>,
+    pub react_pending_call: Option<NativeToolCall>,
 }
 
 #[derive(Debug, Error)]
@@ -1207,6 +1214,7 @@ mod tests {
                 completed_step_ids: vec!["step-1".into()],
                 tool_results: vec![],
                 pause_reason: Some("approval_required".into()),
+                ..AgentResumeContext::default()
             },
         )
         .await

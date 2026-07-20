@@ -333,6 +333,7 @@ pub(crate) async fn run_task_pipeline(
                 permission,
                 scope,
                 approval_id,
+                input,
             })) => {
                 emit_event(
                     state,
@@ -363,7 +364,13 @@ pub(crate) async fn run_task_pipeline(
                             "tool_name": tool,
                             "permission": permission_name(permission),
                             "scope": scope,
-                        }
+                            "input": input.clone(),
+                        },
+                        "react_pending_call": {
+                            "id": approval_id.to_string(),
+                            "name": tool.replace('.', "_"),
+                            "arguments": serde_json::to_string(&input).unwrap_or_else(|_| "{}".into()),
+                        },
                     }),
                 )
                 .await;

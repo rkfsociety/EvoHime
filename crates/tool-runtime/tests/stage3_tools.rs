@@ -60,9 +60,11 @@ async fn registry_requires_approval_for_write() {
             json!({"path":"a.txt","content":"x"}),
         )
         .await;
-    assert!(
-        matches!(result, Err(ToolError::NeedsApproval { tool, .. }) if tool == "filesystem.write")
-    );
+    assert!(matches!(
+        result,
+        Err(ToolError::NeedsApproval { tool, input, .. })
+            if tool == "filesystem.write" && input["path"] == "a.txt"
+    ));
 }
 
 #[tokio::test]

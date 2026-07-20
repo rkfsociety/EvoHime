@@ -25,6 +25,32 @@ pub(crate) fn build_agent_resume_context(
         .and_then(|value| value.get("pause_reason"))
         .and_then(Value::as_str)
         .map(str::to_string);
+    let react_messages = state
+        .and_then(|value| value.get("react_messages"))
+        .and_then(|value| {
+            serde_json::from_value::<Vec<evohime_model_gateway::providers::ChatMessage>>(
+                value.clone(),
+            )
+            .ok()
+        })
+        .unwrap_or_default();
+    let react_pending_call = state
+        .and_then(|value| value.get("react_pending_call"))
+        .and_then(|value| {
+            serde_json::from_value::<evohime_model_gateway::NativeToolCall>(value.clone()).ok()
+        });
+    let react_iteration = state
+        .and_then(|value| value.get("react_iteration"))
+        .and_then(Value::as_u64)
+        .unwrap_or_default() as usize;
+    let react_tool_calls = state
+        .and_then(|value| value.get("react_tool_calls"))
+        .and_then(Value::as_u64)
+        .unwrap_or_default() as usize;
+    let react_completed_call_ids = state
+        .and_then(|value| value.get("react_completed_call_ids"))
+        .and_then(|value| serde_json::from_value::<Vec<String>>(value.clone()).ok())
+        .unwrap_or_default();
     let mut completed_step_ids = Vec::new();
     let mut tool_results = Vec::new();
     for step in task_steps {
@@ -50,6 +76,11 @@ pub(crate) fn build_agent_resume_context(
         completed_step_ids,
         tool_results,
         pause_reason,
+        react_messages,
+        react_iteration,
+        react_tool_calls,
+        react_completed_call_ids,
+        react_pending_call,
     }
 }
 
@@ -284,6 +315,10 @@ mod tests {
                 "workspace_context": "ctx",
                 "plan": [{"id":"step-1","tool_name":"filesystem.read","description":"read","depends_on":[]}],
                 "pause_reason": "approval_required",
+                "react_iteration": 2,
+                "react_tool_calls": 1,
+                "react_completed_call_ids": ["call-1"],
+                "react_pending_call": {"id":"approval-1","name":"filesystem_write","arguments":"{\"path\":\"a.txt\",\"content\":\"x\"}"},
             }),
             updated_at: chrono::Utc::now(),
         };
@@ -303,6 +338,16 @@ mod tests {
         assert_eq!(resume.completed_step_ids, vec!["step-1".to_string()]);
         assert_eq!(resume.pause_reason.as_deref(), Some("approval_required"));
         assert_eq!(resume.plan.as_ref().map(|p| p.len()), Some(1));
+        assert_eq!(resume.react_iteration, 2);
+        assert_eq!(resume.react_tool_calls, 1);
+        assert_eq!(resume.react_completed_call_ids, vec!["call-1".to_string()]);
+        assert_eq!(
+            resume
+                .react_pending_call
+                .as_ref()
+                .map(|call| call.id.as_str()),
+            Some("approval-1")
+        );
         assert!(resume.tool_results[0].contains("file body"));
     }
 }

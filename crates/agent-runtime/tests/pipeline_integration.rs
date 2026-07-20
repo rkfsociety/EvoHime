@@ -262,6 +262,7 @@ async fn approval_pauses_write_then_resume_completes() {
             completed_step_ids: vec![],
             tool_results: vec![],
             pause_reason: Some("approval_required".into()),
+            ..AgentResumeContext::default()
         },
     )
     .await

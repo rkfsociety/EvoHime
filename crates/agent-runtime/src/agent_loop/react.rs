@@ -60,7 +60,7 @@ pub(crate) async fn run_react_loop(
     history: Vec<ChatMessage>,
     memory_notes: Vec<String>,
     event_tx: UnboundedSender<ServerEvent>,
-    _resume: AgentResumeContext,
+    resume: AgentResumeContext,
 ) -> Result<AgentRunResult, AgentError> {
     let limits = ReActLimits::default();
     let rules_context = build_workspace_rules(&config.workspace_root);
@@ -91,13 +91,44 @@ pub(crate) async fn run_react_loop(
             config.user_message
         ),
     ));
+    if !resume.react_messages.is_empty() {
+        messages = resume.react_messages.clone();
+    }
 
     let tool_specs = openai_tools_for_registry(tools);
-    let mut iterations = 0;
-    let mut tool_calls = 0;
+    let mut iterations = resume.react_iteration;
+    let mut tool_calls = resume.react_tool_calls;
     let mut retries: HashMap<String, usize> = HashMap::new();
     let mut fingerprints = HashSet::new();
     let mut final_message = String::new();
+
+    if let Some(call) = resume.react_pending_call {
+        let tool_name = canonical_tool_name(&call.name);
+        let args = serde_json::from_str::<Value>(&call.arguments).map_err(|error| {
+            AgentError::PlanStepFailed {
+                step_id: call.id.clone(),
+                tool_name: tool_name.clone(),
+                message: error.to_string(),
+            }
+        })?;
+        let plan_step = PlanStep {
+            id: call.id.clone(),
+            tool_name,
+            description: serde_json::to_string(&args).unwrap_or_else(|_| "{}".into()),
+            depends_on: Vec::new(),
+        };
+        let outcome = Box::pin(execute_single_plan_step(
+            &plan_step, &config, gateway, tools, &event_tx,
+        ))
+        .await?;
+        if let StepOutcome::Completed { output, .. } = outcome {
+            messages.push(ChatMessage::tool_observation(
+                &call.id,
+                truncate_tool_result(&output, ToolResultBudget::from_env().per_result_chars),
+            ));
+        }
+        tool_calls += 1;
+    }
 
     loop {
         if limits.reached(iterations, tool_calls) {
