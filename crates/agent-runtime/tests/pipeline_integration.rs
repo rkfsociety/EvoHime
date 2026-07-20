@@ -4,9 +4,9 @@ use evohime_agent_runtime::{
     run_agent_loop, run_agent_loop_resumed, AgentConfig, AgentError, AgentResumeContext,
 };
 use evohime_model_gateway::providers::{
-    ChatMessage, ModelProvider, ProviderError, ProviderKind, TokenStream,
+    ChatFuture, ChatMessage, ModelProvider, ProviderError, ProviderKind, TokenStream,
 };
-use evohime_model_gateway::ModelGateway;
+use evohime_model_gateway::{ChatResult, ModelGateway, NativeToolCall, ToolSpec};
 use evohime_permissions::{Permission, PermissionEngine, PermissionMode};
 use evohime_protocol::{PlanStep, ServerEvent};
 use evohime_tool_runtime::{ToolError, ToolRegistry};
@@ -58,6 +58,62 @@ impl ModelProvider for ScriptedProvider {
             Ok::<_, ProviderError>(evohime_model_gateway::ChatStreamItem::Delta(chunk))
         })))
     }
+
+    fn chat_with_tools(
+        &self,
+        _model: Option<&str>,
+        _messages: &[ChatMessage],
+        _tools: &[ToolSpec],
+    ) -> ChatFuture {
+        let index = self.calls.fetch_add(1, Ordering::SeqCst);
+        let response = self
+            .responses
+            .lock()
+            .expect("responses")
+            .get(index)
+            .and_then(|chunks| chunks.first())
+            .cloned()
+            .unwrap_or_default();
+        let value = serde_json::from_str::<serde_json::Value>(&response).ok();
+        let tool_calls = value
+            .as_ref()
+            .and_then(|value| value.get("tool"))
+            .and_then(serde_json::Value::as_str)
+            .map(|tool| {
+                vec![NativeToolCall {
+                    id: format!("call-{index}"),
+                    name: tool.replace('.', "_"),
+                    arguments: serde_json::to_string(
+                        value
+                            .as_ref()
+                            .and_then(|value| value.get("input"))
+                            .unwrap_or(&serde_json::Value::Null),
+                    )
+                    .unwrap_or_else(|_| "{}".into()),
+                }]
+            })
+            .or_else(|| {
+                value
+                    .as_ref()
+                    .and_then(|value| value.get("message"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(|message| {
+                        vec![NativeToolCall {
+                            id: format!("reply-{index}"),
+                            name: "assistant_reply".into(),
+                            arguments: serde_json::json!({"message": message}).to_string(),
+                        }]
+                    })
+            })
+            .unwrap_or_default();
+        Box::pin(async move {
+            Ok(ChatResult {
+                content: String::new(),
+                tool_calls,
+                usage: None,
+            })
+        })
+    }
 }
 
 fn agent_config(temp: &std::path::Path, demo_file: &std::path::Path) -> AgentConfig {
@@ -88,11 +144,9 @@ async fn task_start_tool_events_then_completion() {
     let demo_file = temp.path().join("notes.md");
     std::fs::write(&demo_file, "hello notes").expect("write");
 
-    let plan = r#"[{"id":"step-1","tool_name":"filesystem.read","description":"Read `notes.md`","depends_on":[]},{"id":"step-2","tool_name":"assistant.reply","description":"Respond","depends_on":["step-1"]}]"#;
     let provider = ScriptedProvider::new(vec![
-        vec![plan.to_string()],
-        vec![r#"{"done":true}"#.into()],
-        vec!["ok".into(), "-done".into()],
+        vec![r#"{"tool":"filesystem.read","input":{"path":"notes.md"}}"#.into()],
+        vec![r#"{"message":"ok-done"}"#.into()],
     ]);
     let gateway = ModelGateway::from_provider(Arc::new(provider));
     let tools = ToolRegistry::bootstrap();
@@ -146,10 +200,9 @@ async fn approval_pauses_write_then_resume_completes() {
     let tools = ToolRegistry::bootstrap_with_permissions(permissions.clone());
 
     let write_desc = "Update `out.txt` with:\n```text\napproved\n```";
-    let plan = format!(
-        r#"[{{"id":"step-1","tool_name":"filesystem.write","description":{write_desc:?},"depends_on":[]}}]"#
-    );
-    let provider = ScriptedProvider::new(vec![vec![plan]]);
+    let provider = ScriptedProvider::new(vec![vec![
+        r#"{"tool":"filesystem.write","input":{"path":"out.txt","content":"approved"}}"#.into(),
+    ]]);
     let gateway = ModelGateway::from_provider(Arc::new(provider));
     let (tx, _rx) = mpsc::unbounded_channel();
     let config = agent_config(temp.path(), &demo_file);
@@ -183,8 +236,10 @@ async fn approval_pauses_write_then_resume_completes() {
         .await;
 
     let resume_provider = ScriptedProvider::new(vec![
-        vec![r#"{"done":true}"#.into()],
-        vec!["wrote file".into()],
+        vec![
+            r#"{"tool":"filesystem.write","input":{"path":"out.txt","content":"approved"}}"#.into(),
+        ],
+        vec![r#"{"message":"wrote file"}"#.into()],
     ]);
     let resume_gateway = ModelGateway::from_provider(Arc::new(resume_provider));
     let (resume_tx, mut resume_rx) = mpsc::unbounded_channel();

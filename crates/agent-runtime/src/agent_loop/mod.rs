@@ -6,6 +6,7 @@ mod context;
 mod execute;
 mod parse;
 mod plan;
+mod react;
 mod tool_budget;
 mod util;
 
@@ -162,7 +163,7 @@ pub async fn run_agent_loop_resumed(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, unreachable_code)]
 async fn run_agent_loop_inner(
     config: AgentConfig,
     gateway: &ModelGateway,
@@ -186,6 +187,17 @@ async fn run_agent_loop_inner(
     }
 
     let resume = resume.unwrap_or_default();
+    return react::run_react_loop(
+        config,
+        gateway,
+        tools,
+        history,
+        memory_notes,
+        event_tx,
+        resume.clone(),
+    )
+    .await;
+
     let tool_output = match resume.workspace_context.clone() {
         Some(output) => output,
         None => {
@@ -244,48 +256,36 @@ async fn run_agent_loop_inner(
     let rules_context = build_workspace_rules(&config.workspace_root);
 
     let mut planning_messages = Vec::with_capacity(history.len() + 4);
-    planning_messages.push(ChatMessage {
-        role: ChatRole::System,
-        content: if crate::native_tools::native_tool_calls_enabled() {
+    planning_messages.push(ChatMessage::text(
+        ChatRole::System,
+        if crate::native_tools::native_tool_calls_enabled() {
             crate::native_tools::native_planning_prompt()
         } else {
             planning_prompt_for_tools(tools)
         },
-    });
+    ));
     if let Some(context) = &rules_context {
-        planning_messages.push(ChatMessage {
-            role: ChatRole::System,
-            content: context.clone(),
-        });
+        planning_messages.push(ChatMessage::text(ChatRole::System, context.clone()));
     }
     if let Some(context) = &project_context {
-        planning_messages.push(ChatMessage {
-            role: ChatRole::System,
-            content: context.clone(),
-        });
+        planning_messages.push(ChatMessage::text(ChatRole::System, context.clone()));
     }
     if let Some(context) = &memory_context {
-        planning_messages.push(ChatMessage {
-            role: ChatRole::System,
-            content: context.clone(),
-        });
+        planning_messages.push(ChatMessage::text(ChatRole::System, context.clone()));
     }
     if let Some(context) = &config.planning_memory_context {
-        planning_messages.push(ChatMessage {
-            role: ChatRole::System,
-            content: context.clone(),
-        });
+        planning_messages.push(ChatMessage::text(ChatRole::System, context.clone()));
     }
     planning_messages.extend(history.clone());
-    planning_messages.push(ChatMessage {
-        role: ChatRole::User,
-        content: format!(
+    planning_messages.push(ChatMessage::text(
+        ChatRole::User,
+        format!(
             "User request:\n{}\n\nWorkspace context from `{}`:\n```\n{}\n```",
             config.user_message,
             config.demo_file_path.display(),
             tool_output
         ),
-    });
+    ));
 
     let (plan, mut plan_outputs, mut mutation_executed, mut satisfied_steps, truncated) =
         if let Some(existing_plan) = resume.plan.clone() {
@@ -360,34 +360,22 @@ async fn run_agent_loop_inner(
                 }
             };
             let mut replan_messages = Vec::with_capacity(history.len() + 5);
-            replan_messages.push(ChatMessage {
-                role: ChatRole::System,
-                content: REPLAN_PROMPT.to_string(),
-            });
+            replan_messages.push(ChatMessage::text(ChatRole::System, REPLAN_PROMPT));
             if let Some(context) = &rules_context {
-                replan_messages.push(ChatMessage {
-                    role: ChatRole::System,
-                    content: context.clone(),
-                });
+                replan_messages.push(ChatMessage::text(ChatRole::System, context.clone()));
             }
             if let Some(context) = &config.planning_memory_context {
-                replan_messages.push(ChatMessage {
-                    role: ChatRole::System,
-                    content: context.clone(),
-                });
+                replan_messages.push(ChatMessage::text(ChatRole::System, context.clone()));
             }
             replan_messages.extend(history.clone());
-            replan_messages.push(ChatMessage {
-                role: ChatRole::User,
-                content: format!(
+            replan_messages.push(ChatMessage::text(ChatRole::User, format!(
                     "User request:\n{}\n\nCurrent plan:\n{}\n\nTool results so far:\n{}\n\nRound {} of {}.",
                     config.user_message,
                     format_plan(&accumulated_plan),
                     observe,
                     round + 1,
                     MAX_REPLAN_ROUNDS
-                ),
-            });
+                )));
 
             let raw_replan = collect_llm_stream_with_telemetry(
                 &config,
@@ -448,27 +436,15 @@ async fn run_agent_loop_inner(
     tokio::time::sleep(MODEL_REQUEST_COOLDOWN).await;
 
     let mut messages = Vec::with_capacity(history.len() + 4);
-    messages.push(ChatMessage {
-        role: ChatRole::System,
-        content: SYSTEM_PROMPT.to_string(),
-    });
+    messages.push(ChatMessage::text(ChatRole::System, SYSTEM_PROMPT));
     if let Some(context) = &rules_context {
-        messages.push(ChatMessage {
-            role: ChatRole::System,
-            content: context.clone(),
-        });
+        messages.push(ChatMessage::text(ChatRole::System, context.clone()));
     }
     if let Some(context) = &project_context {
-        messages.push(ChatMessage {
-            role: ChatRole::System,
-            content: context.clone(),
-        });
+        messages.push(ChatMessage::text(ChatRole::System, context.clone()));
     }
     if let Some(context) = &memory_context {
-        messages.push(ChatMessage {
-            role: ChatRole::System,
-            content: context.clone(),
-        });
+        messages.push(ChatMessage::text(ChatRole::System, context.clone()));
     }
     messages.extend(history);
     let tool_results_for_prompt = budget_tool_results(&plan_outputs, ToolResultBudget::from_env());
@@ -476,16 +452,13 @@ async fn run_agent_loop_inner(
         "{}\n\nPlan tool results:\n{}",
         tool_output, tool_results_for_prompt
     );
-    messages.push(ChatMessage {
-        role: ChatRole::User,
-        content: format!(
+    messages.push(ChatMessage::text(ChatRole::User, format!(
             "{}\n\nPlan:\n{}\n\nContext from `{}`:\n```\n{}\n```\n\nFinal answer rules: all requested tools have already been executed. Reply only with ordinary human-readable text. Never return JSON, tool.call, XML, or any internal protocol.",
             config.user_message,
             format_plan(&accumulated_plan),
             config.demo_file_path.display(),
             context
-        ),
-    });
+        )));
 
     let mut final_message = String::new();
     let mut response_usage = None;
@@ -992,13 +965,7 @@ mod tests {
         )
         .expect("write");
 
-        let provider = RecordingProvider::new(vec![
-            vec![
-                r#"[{"id":"step-1","tool_name":"assistant.reply","description":"Respond","depends_on":[] }]"#
-                    .to_string(),
-            ],
-            vec!["Indexed answer".to_string()],
-        ]);
+        let provider = RecordingProvider::new(vec![vec!["Indexed answer".to_string()]]);
         let gateway = evohime_model_gateway::ModelGateway::from_provider(std::sync::Arc::new(
             provider.clone(),
         ));
@@ -1027,10 +994,7 @@ mod tests {
             },
             &gateway,
             &tools,
-            vec![ChatMessage {
-                role: ChatRole::User,
-                content: "previous".to_string(),
-            }],
+            vec![ChatMessage::text(ChatRole::User, "previous")],
             vec!["memory fact".to_string()],
             tx,
         )
@@ -1057,12 +1021,10 @@ mod tests {
 
         let provider = RecordingProvider::new(vec![
             vec![
-                r#"[{"id":"step-1","tool_name":"assistant.reply","description":"Respond","depends_on":[]}]"#
+                r#"{"type":"tool.call","tool":"filesystem.read","input":{"path":"answer.txt"}}"#
                     .to_string(),
             ],
-            vec![
-                r#"{"type":"tool.call","tool":"filesystem.read","input":{"path":"answer.txt"}}"#.to_string(),
-            ],
+            vec!["answer from file".to_string()],
         ]);
         let gateway =
             evohime_model_gateway::ModelGateway::from_provider(std::sync::Arc::new(provider));
@@ -1267,10 +1229,7 @@ mod tests {
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let gateway = evohime_model_gateway::ModelGateway::from_provider(std::sync::Arc::new(
-            RecordingProvider::new(vec![
-                vec![r#"[{"id":"step-1","tool_name":"assistant.reply","description":"Respond","depends_on":[]}]"#.into()],
-                vec!["Recovered response".into()],
-            ]),
+            RecordingProvider::new(vec![vec!["Recovered response".into()]]),
         ));
         let tools = evohime_tool_runtime::ToolRegistry::bootstrap();
 
@@ -1296,10 +1255,7 @@ mod tests {
             },
             &gateway,
             &tools,
-            vec![ChatMessage {
-                role: ChatRole::User,
-                content: "previous".to_string(),
-            }],
+            vec![ChatMessage::text(ChatRole::User, "previous")],
             vec!["memory fact".to_string()],
             tx,
             AgentResumeContext {
@@ -1380,5 +1336,45 @@ impl evohime_model_gateway::providers::ModelProvider for RecordingProvider {
                 )
             },
         )))
+    }
+
+    fn chat_with_tools(
+        &self,
+        _model: Option<&str>,
+        messages: &[ChatMessage],
+        _tools: &[evohime_model_gateway::ToolSpec],
+    ) -> evohime_model_gateway::providers::ChatFuture {
+        self.calls.lock().expect("calls").push(messages.to_vec());
+        let response = self
+            .responses
+            .lock()
+            .expect("responses")
+            .pop_front()
+            .unwrap_or_default()
+            .join("");
+        let parsed = serde_json::from_str::<serde_json::Value>(&response).ok();
+        let tool_calls = parsed
+            .filter(|value| {
+                value.get("type").and_then(serde_json::Value::as_str) == Some("tool.call")
+            })
+            .and_then(|value| {
+                Some(vec![evohime_model_gateway::NativeToolCall {
+                    id: "recording-call".into(),
+                    name: value.get("tool")?.as_str()?.into(),
+                    arguments: serde_json::to_string(value.get("input")?).ok()?,
+                }])
+            })
+            .unwrap_or_default();
+        Box::pin(async move {
+            Ok(evohime_model_gateway::ChatResult {
+                content: if tool_calls.is_empty() {
+                    response
+                } else {
+                    String::new()
+                },
+                tool_calls,
+                usage: None,
+            })
+        })
     }
 }

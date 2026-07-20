@@ -1,8 +1,9 @@
 use evohime_agent_runtime::{run_agent_loop, AgentConfig};
 use evohime_model_gateway::providers::{
-    ChatMessage, ChatRole, ModelProvider, ProviderError, ProviderKind, TokenStream,
+    ChatFuture, ChatMessage, ChatRole, ModelProvider, ProviderError, ProviderKind, TokenStream,
 };
 use evohime_model_gateway::ModelGateway;
+use evohime_model_gateway::{ChatResult, NativeToolCall, ToolSpec};
 use evohime_protocol::ServerEvent;
 use evohime_tool_runtime::ToolRegistry;
 use futures_util::stream;
@@ -37,6 +38,25 @@ impl ModelProvider for TwoPhaseProvider {
         Box::pin(stream::iter(chunks.into_iter().map(|chunk| {
             Ok::<_, ProviderError>(evohime_model_gateway::ChatStreamItem::Delta(chunk))
         })))
+    }
+
+    fn chat_with_tools(
+        &self,
+        _model: Option<&str>,
+        _messages: &[ChatMessage],
+        _tools: &[ToolSpec],
+    ) -> ChatFuture {
+        Box::pin(async {
+            Ok(ChatResult {
+                content: String::new(),
+                tool_calls: vec![NativeToolCall {
+                    id: "reply-1".into(),
+                    name: "assistant_reply".into(),
+                    arguments: r#"{"message":"EvoHime"}"#.into(),
+                }],
+                usage: None,
+            })
+        })
     }
 }
 

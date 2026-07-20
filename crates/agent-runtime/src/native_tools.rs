@@ -92,7 +92,7 @@ fn provider_tool_name(name: &str) -> String {
     name.replace('.', "_")
 }
 
-fn canonical_tool_name(name: &str) -> String {
+pub(crate) fn canonical_tool_name(name: &str) -> String {
     match name {
         "agent_run" => "agent.run",
         "filesystem_read" => "filesystem.read",
