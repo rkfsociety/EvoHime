@@ -28,6 +28,8 @@ pub enum ServerEvent {
     },
     #[serde(rename = "agent.message.delta")]
     AgentMessageDelta { task_id: Uuid, delta: String },
+    #[serde(rename = "agent.status")]
+    AgentStatus { task_id: Uuid, phase: String },
     #[serde(rename = "agent.plan.updated")]
     AgentPlanUpdated { task_id: Uuid, plan: Vec<PlanStep> },
     #[serde(rename = "tool.started")]
@@ -215,6 +217,18 @@ mod tests {
         let json = serde_json::to_value(&event).expect("event serializes");
         assert_eq!(json["type"], "task.completed");
         assert_eq!(json["final_message"], "done");
+    }
+
+    #[test]
+    fn serializes_react_status_without_reasoning_payload() {
+        let event = ServerEvent::AgentStatus {
+            task_id: Uuid::nil(),
+            phase: "selecting_action".into(),
+        };
+        let json = serde_json::to_value(event).expect("status serializes");
+        assert_eq!(json["type"], "agent.status");
+        assert_eq!(json["phase"], "selecting_action");
+        assert!(json.get("rationale").is_none());
     }
 
     #[test]

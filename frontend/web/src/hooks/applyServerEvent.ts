@@ -105,6 +105,20 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
       ctx.setLines((current) => [...current, { role: "user", text: event.user_message, taskId: event.task_id }]);
       ctx.setStream("");
       break;
+    case "agent.status": {
+      const labels: Record<typeof event.phase, string> = {
+        selecting_action: "Модель выбирает действие",
+        executing_tools: "Выполняю инструмент",
+        waiting_approval: "Ожидаю подтверждение",
+        responding: "Формирую ответ",
+        stopped: "Выполнение остановлено",
+      };
+      ctx.setLines((current) => [
+        ...current,
+        { role: "system", text: labels[event.phase], taskId: event.task_id },
+      ]);
+      break;
+    }
     case "agent.message.delta":
       ctx.setStream((current) => {
         const next = `${current}${event.delta}`;

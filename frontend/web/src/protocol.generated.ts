@@ -9,6 +9,7 @@ export type ServerEvent =
   | SessionCreatedEvent
   | TaskStartedEvent
   | AgentMessageDeltaEvent
+  | AgentStatusEvent
   | AgentPlanUpdatedEvent
   | ToolStartedEvent
   | ToolOutputEvent
@@ -57,6 +58,11 @@ export interface AgentMessageDeltaEvent {
   type: "agent.message.delta";
   task_id: Uuid;
   delta: string;
+}
+export interface AgentStatusEvent {
+  type: "agent.status";
+  task_id: Uuid;
+  phase: "selecting_action" | "executing_tools" | "waiting_approval" | "responding" | "stopped";
 }
 export interface AgentPlanUpdatedEvent {
   type: "agent.plan.updated";

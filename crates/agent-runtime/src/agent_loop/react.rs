@@ -141,6 +141,13 @@ pub(crate) async fn run_react_loop(
             });
         }
         iterations += 1;
+        emit(
+            &event_tx,
+            ServerEvent::AgentStatus {
+                task_id: config.task_id,
+                phase: "selecting_action".into(),
+            },
+        )?;
         tokio::time::sleep(MODEL_REQUEST_COOLDOWN).await;
         let result = tokio::time::timeout(
             limits.model_timeout,
@@ -187,6 +194,14 @@ pub(crate) async fn run_react_loop(
                     .to_string();
                 break;
             }
+
+            emit(
+                &event_tx,
+                ServerEvent::AgentStatus {
+                    task_id: config.task_id,
+                    phase: "executing_tools".into(),
+                },
+            )?;
 
             let fingerprint = call_fingerprint(&tool_name, &args);
             if !fingerprints.insert(fingerprint.clone()) {
@@ -256,6 +271,13 @@ pub(crate) async fn run_react_loop(
     if final_message.trim().is_empty() {
         final_message = "Модель не вернула финальный ответ.".into();
     }
+    emit(
+        &event_tx,
+        ServerEvent::AgentStatus {
+            task_id: config.task_id,
+            phase: "responding".into(),
+        },
+    )?;
     emit(
         &event_tx,
         ServerEvent::AgentMessageDelta {

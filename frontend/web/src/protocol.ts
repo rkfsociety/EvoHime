@@ -1,5 +1,6 @@
 export type {
   AgentMessageDeltaEvent,
+  AgentStatusEvent,
   AgentPlanUpdatedEvent,
   ActionLoggedEvent,
   ApprovalRequiredEvent,

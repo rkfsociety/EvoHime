@@ -339,6 +339,16 @@ pub(crate) async fn run_task_pipeline(
                     state,
                     session_id,
                     Some(task.id),
+                    ServerEvent::AgentStatus {
+                        task_id: task.id,
+                        phase: "waiting_approval".into(),
+                    },
+                )
+                .await?;
+                emit_event(
+                    state,
+                    session_id,
+                    Some(task.id),
                     ServerEvent::ApprovalRequired {
                         approval_id,
                         task_id: task.id,

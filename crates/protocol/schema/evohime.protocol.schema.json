@@ -34,6 +34,7 @@
         { "$ref": "#/$defs/SessionCreatedEvent" },
         { "$ref": "#/$defs/TaskStartedEvent" },
         { "$ref": "#/$defs/AgentMessageDeltaEvent" },
+        { "$ref": "#/$defs/AgentStatusEvent" },
         { "$ref": "#/$defs/AgentPlanUpdatedEvent" },
         { "$ref": "#/$defs/ToolStartedEvent" },
         { "$ref": "#/$defs/ToolOutputEvent" },
@@ -97,6 +98,19 @@
         "type": { "const": "agent.message.delta" },
         "task_id": { "$ref": "#/$defs/Uuid" },
         "delta": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "AgentStatusEvent": {
+      "type": "object",
+      "required": ["type", "task_id", "phase"],
+      "properties": {
+        "type": { "const": "agent.status" },
+        "task_id": { "$ref": "#/$defs/Uuid" },
+        "phase": {
+          "type": "string",
+          "enum": ["selecting_action", "executing_tools", "waiting_approval", "responding", "stopped"]
+        }
       },
       "additionalProperties": false
     },
