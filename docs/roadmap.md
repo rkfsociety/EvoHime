@@ -424,7 +424,7 @@
 | 7.80 | i18n consistency (RU/EN mix в Memory/Actions) | S | ✅ | `translateActionLabel/Detail` + русский MemoryPanel |
 | 7.81 | Project chip: real git branch (не hardcoded `main`) | S | ✅ | `parseGitBranchFromStatus` + chip в app.tsx |
 | 7.82 | Dead code cleanup (`addModelRoute` unused, placeholderPanel) | S | ✅ | удалены мёртвые route helpers и placeholder fallback |
-| 7.83 | Show all chats (не `slice(0,5)` без «ещё») | S | ⬜ | sidebar |
+| 7.83 | Show all chats (не `slice(0,5)` без «ещё») | S | ✅ | sidebar показывает все standalone-чаты |
 
 ### 7.I — Protocol, CI, DX
 
@@ -470,7 +470,7 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-21:** `7.82` ✅ — убран мёртвый frontend-код; следующий — `7.83` или Wave E.
+**Актуальный статус 2026-07-21:** `7.83` ✅ — sidebar показывает все чаты; Wave D закрыт; следующий — Wave E (`7.84`–`7.86`).
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  

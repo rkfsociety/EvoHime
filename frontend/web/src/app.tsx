@@ -1992,7 +1992,7 @@ export function App() {
             </header>
             {standaloneChatSessions.length > 0 ? (
               <div className="standaloneSidebarChatList">
-                {standaloneChatSessions.slice(0, 5).map((chat, index) => (
+                {standaloneChatSessions.map((chat, index) => (
                   <div className="standaloneSidebarChatRow" key={chat.session_id}>
                     <button
                       type="button"

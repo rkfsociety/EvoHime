@@ -120,7 +120,9 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-`7.82` выполнен: удалены неиспользуемые `addModelRoute`/`removeModelRoute`, мёртвый placeholder fallback в `renderPanelContent`, CSS `.placeholderPanel`; EditorPanel переведён на `emptyPanelState`. Следующий пункт — `7.83` или Wave E (CI: `7.84`–`7.86`).
+`7.83` выполнен: sidebar больше не обрезает standalone-чаты до пяти — показываются все, sidebar скроллится. Wave D product polish закрыт. Следующий пункт — Wave E (CI: `7.84`–`7.86`).
+
+`7.82` выполнен: удалены неиспользуемые `addModelRoute`/`removeModelRoute`, мёртвый placeholder fallback в `renderPanelContent`, CSS `.placeholderPanel`; EditorPanel переведён на `emptyPanelState`.
 
 `7.81` выполнен: chip проекта показывает текущую git-ветку из `git status --short --branch` (не hardcoded `main`); парсинг через `parseGitBranchFromStatus`.
 
@@ -178,6 +180,5 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 **Актуализация 2026-07-18:** `7.51` выполнен: worker ML handlers расширены deterministic classify/language/redact задачами с контрактными тестами. Следующий пункт — product honesty для Sites/Scheduled.
 
-1. **Stage 7** — Wave D product polish ✅; следующий — `7.83` или Wave E
+1. **Stage 7** — Wave D product polish ✅; Wave E (CI) — следующий
 2. Рекомендуемая следующая волна: Wave E (DX/CI): `7.84`–`7.86`, `7.56`, `7.69`–`7.71`
-3. Локальный продуктовый хвост: `7.83`
