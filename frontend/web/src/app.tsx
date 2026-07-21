@@ -22,6 +22,7 @@ import { PluginsPanel } from "./panels/PluginsPanel";
 import { MemoryPanel } from "./panels/MemoryPanel";
 import { PullRequestsPanel } from "./panels/PullRequestsPanel";
 import { ScheduledPanel } from "./panels/ScheduledPanel";
+import { BootNoticeBanner } from "./components/BootNoticeBanner";
 import { SettingsModal } from "./components/SettingsModal";
 import { SettingsPanel } from "./panels/SettingsPanel";
 import { SitesPanel } from "./panels/SitesPanel";
@@ -40,6 +41,7 @@ import {
 } from "./api";
 import { websocketUrl } from "./api/client";
 import { createChatLine } from "./lib/chat-lines";
+import { appendBootNotice, formatBootError, type BootNotice } from "./lib/boot-notices";
 import { reconcileModelForBilling } from "./lib/modelBilling";
 import {
   chatLinePlainText,
@@ -116,6 +118,8 @@ export function App() {
   const [stream, setStream] = useState("");
   const [chatActionNotice, setChatActionNotice] = useState<string | null>(null);
   const [composerNotice, setComposerNotice] = useState<string | null>(null);
+  const [bootNotices, setBootNotices] = useState<BootNotice[]>([]);
+  const [bootNoticesDismissed, setBootNoticesDismissed] = useState(false);
   const [activePanel, setActivePanel] = useState<WorkspacePanel>(initialPanelFromLocation);
   const navigateToPanel = useCallback((panel: WorkspacePanel) => {
     setActivePanel(panel);
@@ -216,6 +220,14 @@ export function App() {
   useEffect(() => {
     let cancelled = false;
 
+    const noteBootError = (label: string, error: unknown) => {
+      if (cancelled) {
+        return;
+      }
+      setBootNoticesDismissed(false);
+      setBootNotices((current) => appendBootNotice(current, formatBootError(label, error)));
+    };
+
     const loadModelConfig = async () => {
       const data = await modelsApi.getModelConfig();
       if (!cancelled) {
@@ -231,16 +243,20 @@ export function App() {
         setModelDrafts(routes);
       }
     };
-    permissionsApi.getPermissions().then((data) => setPermissionSettings(data)).catch(() => undefined);
+    permissionsApi.getPermissions()
+      .then((data) => setPermissionSettings(data))
+      .catch((error) => noteBootError("Разрешения", error));
     permissionsApi
       .getPermissionAudit()
       .then((data) => setPermissionAudit(data.entries ?? []))
-      .catch(() => undefined);
+      .catch((error) => noteBootError("Аудит разрешений", error));
     permissionsApi
       .getPermissionScopes()
       .then((data) => setPermissionScopes(data))
-      .catch(() => undefined);
-    sessionsApi.listArchivedSessions().then((data) => setArchivedChats(data)).catch(() => undefined);
+      .catch((error) => noteBootError("Области разрешений", error));
+    sessionsApi.listArchivedSessions()
+      .then((data) => setArchivedChats(data))
+      .catch((error) => noteBootError("Архив чатов", error));
     mcpApi.listTools()
       .then((data) => {
         if (!cancelled) {
@@ -269,9 +285,10 @@ export function App() {
           setGithubAuth(data);
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (!cancelled) {
           setGithubAuth({ authenticated: false, login: null, source: "gh" });
+          noteBootError("GitHub auth", error);
         }
       });
 
@@ -349,7 +366,10 @@ export function App() {
     }
     projectsApi.listProjects()
       .then((data) => setProjects(data))
-      .catch(() => undefined);
+      .catch((error) => {
+        setBootNoticesDismissed(false);
+        setBootNotices((current) => appendBootNotice(current, formatBootError("Проекты", error)));
+      });
   }, [projectPickerOpen]);
 
   useEffect(() => {
@@ -391,9 +411,13 @@ export function App() {
           setOrchestratorModels(data.models);
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (!cancelled) {
           setOrchestratorModels([]);
+          setBootNoticesDismissed(false);
+          setBootNotices((current) =>
+            appendBootNotice(current, formatBootError("Модели оркестратора", error)),
+          );
         }
       });
     return () => {
@@ -1878,6 +1902,13 @@ export function App() {
         </div>
       </header>
 
+      {!bootNoticesDismissed && bootNotices.length > 0 ? (
+        <BootNoticeBanner
+          notices={bootNotices}
+          onDismiss={() => setBootNoticesDismissed(true)}
+        />
+      ) : null}
+
       <section className={traceOpen ? "workspace traceOpen" : "workspace"}>
         <nav className="sidebar">
           <div className="sidebarTop">
@@ -2101,7 +2132,7 @@ export function App() {
 
       </section>
       {settingsOpen ? (
-        <SettingsModal onClose={() => setSettingsOpen(false)}>
+        <SettingsModal onClose={() => setSettingsOpen(false)} bootNotices={bootNotices}>
           {settingsPanelElement()}
         </SettingsModal>
       ) : null}

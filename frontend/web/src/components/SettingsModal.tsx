@@ -1,13 +1,16 @@
 import type { ReactNode } from "react";
+import type { BootNotice } from "../lib/boot-notices";
+import { BootNoticeBanner } from "./BootNoticeBanner";
 import { AgentBrand } from "./AgentBrand";
 import { useModalA11y } from "../hooks/useModalA11y";
 
 type SettingsModalProps = {
   onClose: () => void;
+  bootNotices?: BootNotice[];
   children: ReactNode;
 };
 
-export function SettingsModal({ onClose, children }: SettingsModalProps) {
+export function SettingsModal({ onClose, bootNotices = [], children }: SettingsModalProps) {
   const modalRef = useModalA11y<HTMLElement>(true, onClose);
 
   return (
@@ -35,7 +38,10 @@ export function SettingsModal({ onClose, children }: SettingsModalProps) {
             Закрыть
           </button>
         </header>
-        <div className="settingsModalBody">{children}</div>
+        <div className="settingsModalBody">
+          {bootNotices.length > 0 ? <BootNoticeBanner notices={bootNotices} compact /> : null}
+          {children}
+        </div>
       </section>
     </div>
   );

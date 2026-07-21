@@ -1241,6 +1241,64 @@ h1 {
   font-size: 12px;
 }
 
+.bootNoticeBanner {
+  position: fixed;
+  top: 72px;
+  right: 24px;
+  z-index: 25;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  max-width: min(520px, calc(100vw - 48px));
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 196, 120, 0.35);
+  border-radius: 12px;
+  background: rgba(42, 28, 8, 0.96);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+}
+
+.bootNoticeBannerCompact {
+  position: static;
+  max-width: none;
+  margin-bottom: 16px;
+  box-shadow: none;
+}
+
+.bootNoticeBannerBody {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.bootNoticeBannerBody strong {
+  color: #ffdca8;
+  font-size: 13px;
+}
+
+.bootNoticeList {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-1);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.bootNoticeDismiss {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 8px;
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-0);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.bootNoticeDismiss:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
 .chatLog,
 .eventList {
   padding: 20px;
