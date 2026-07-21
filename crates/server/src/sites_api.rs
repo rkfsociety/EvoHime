@@ -6,7 +6,8 @@ use axum::{
     Json,
 };
 use evohime_storage::sites::{
-    create_site, delete_site, list_sites, publish_site, update_site, SiteRow,
+    create_site, delete_site, list_sites, list_sites_filtered, publish_site, update_site,
+    SiteListFilter, SiteRow,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -15,6 +16,8 @@ use uuid::Uuid;
 #[derive(Debug, Deserialize)]
 pub struct SiteQuery {
     pub workspace_path: Option<String>,
+    pub q: Option<String>,
+    pub status: Option<String>,
 }
 #[derive(Debug, Deserialize)]
 pub struct SiteInput {
@@ -96,13 +99,32 @@ fn response(row: SiteRow) -> SiteResponse {
     }
 }
 
+fn parse_status_filter(raw: Option<&str>) -> Result<Option<String>, ApiError> {
+    let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    if raw == "all" {
+        return Ok(None);
+    }
+    if raw == "draft" || raw == "published" {
+        return Ok(Some(raw.to_string()));
+    }
+    Err(ApiError::BadRequest(
+        "status должен быть all, draft или published".into(),
+    ))
+}
+
 pub async fn list(
     State(state): State<Arc<AppState>>,
     Query(query): Query<SiteQuery>,
 ) -> Result<Json<Vec<SiteResponse>>, ApiError> {
     let workspace = scope(&state, query.workspace_path.as_deref())?;
+    let filter = SiteListFilter {
+        query: query.q.clone(),
+        status: parse_status_filter(query.status.as_deref())?,
+    };
     Ok(Json(
-        list_sites(&state.pool, &workspace)
+        list_sites_filtered(&state.pool, &workspace, &filter)
             .await
             .map_err(|e| ApiError::Internal(e.to_string()))?
             .into_iter()
@@ -218,7 +240,7 @@ fn map_db(error: evohime_storage::StorageError) -> ApiError {
 
 #[cfg(test)]
 mod tests {
-    use super::escape_html;
+    use super::{escape_html, parse_status_filter};
 
     #[test]
     fn preview_escapes_user_content() {
@@ -226,5 +248,20 @@ mod tests {
             escape_html("<script>alert(\"x\")</script>"),
             "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;"
         );
+    }
+
+    #[test]
+    fn parse_status_filter_accepts_known_values() {
+        assert_eq!(parse_status_filter(None).unwrap(), None);
+        assert_eq!(parse_status_filter(Some("all")).unwrap(), None);
+        assert_eq!(
+            parse_status_filter(Some("draft")).unwrap(),
+            Some("draft".into())
+        );
+        assert_eq!(
+            parse_status_filter(Some("published")).unwrap(),
+            Some("published".into())
+        );
+        assert!(parse_status_filter(Some("archived")).is_err());
     }
 }

@@ -15,13 +15,78 @@ pub struct SiteRow {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SiteListFilter {
+    pub query: Option<String>,
+    pub status: Option<String>,
+}
+
+pub fn site_search_pattern(query: &str) -> Option<String> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(format!("%{trimmed}%"))
+}
+
 pub async fn list_sites(pool: &PgPool, workspace_path: &str) -> Result<Vec<SiteRow>, StorageError> {
+    list_sites_filtered(pool, workspace_path, &SiteListFilter::default()).await
+}
+
+pub async fn list_sites_filtered(
+    pool: &PgPool,
+    workspace_path: &str,
+    filter: &SiteListFilter,
+) -> Result<Vec<SiteRow>, StorageError> {
+    let status = filter
+        .status
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let query_pattern = filter
+        .query
+        .as_deref()
+        .and_then(site_search_pattern);
+
     Ok(sqlx::query_as::<_, SiteRow>(
-        "SELECT id, workspace_path, name, slug, description, status, created_at, updated_at FROM sites WHERE workspace_path = $1 ORDER BY updated_at DESC",
+        r#"
+        SELECT id, workspace_path, name, slug, description, status, created_at, updated_at
+        FROM sites
+        WHERE workspace_path = $1
+          AND ($2::text IS NULL OR status = $2)
+          AND (
+            $3::text IS NULL
+            OR name ILIKE $3
+            OR slug ILIKE $3
+            OR description ILIKE $3
+          )
+        ORDER BY updated_at DESC
+        "#,
     )
     .bind(workspace_path)
+    .bind(status)
+    .bind(query_pattern)
     .fetch_all(pool)
     .await?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{site_search_pattern, SiteListFilter};
+
+    #[test]
+    fn site_search_pattern_trims_and_wraps() {
+        assert_eq!(site_search_pattern("  blog  "), Some("%blog%".into()));
+        assert_eq!(site_search_pattern("   "), None);
+        assert_eq!(site_search_pattern(""), None);
+    }
+
+    #[test]
+    fn site_list_filter_defaults_to_all() {
+        let filter = SiteListFilter::default();
+        assert!(filter.query.is_none());
+        assert!(filter.status.is_none());
+    }
 }
 
 pub async fn create_site(

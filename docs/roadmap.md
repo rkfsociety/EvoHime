@@ -400,7 +400,7 @@
 | --- | --- | --- | --- | --- |
 | 7.62 | Sites: data model + `/api/sites` CRUD | L | ✅ | PostgreSQL + workspace-scoped API + real panel |
 | 7.63 | Sites: preview / publish / open-in-browser | L | ✅ | Workspace-scoped HTML preview, publish action, and browser launch |
-| 7.64 | Sites: search/filter wired to real data | S | ⬜ | `siteSearch` dead |
+| 7.64 | Sites: search/filter wired to real data | S | ✅ | `GET /api/sites?q=&status=`; SitesPanel tabs + debounced search |
 | 7.65 | Scheduled: real cron/timer jobs (storage + runner) | L | ⬜ | `ScheduledPanel` templates only |
 | 7.66 | Scheduled: honest copy (убрать fake mail/calendar claims) | S | ⬜ | misleading recommendations |
 | 7.67 | Scheduled: list/pause/delete active schedules | M | ⬜ | после 7.65 |
@@ -470,7 +470,7 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-18:** `7.51` ✅ — worker получил `text.classify`, `text.language` и `text.redact` с зеркальной Rust-валидацией и контрактными тестами; следующий пункт — product honesty для Sites/Scheduled.
+**Актуальный статус 2026-07-21:** `7.64` ✅ — Sites search/filter на сервере и в SitesPanel; следующий пункт — Scheduled `7.65`.
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
@@ -506,7 +506,7 @@
 | Settings | 2 | M1 | ✅ Модели + permissions + MCP + tools + worker + metrics |
 | Pull Requests | 6 | M5 | ✅ List/detail/create (`6.14`) |
 | Memory | 6 | M5 | ✅ Panel + ask modal (`6.22`–`6.24`); Stage 7: resolve/pagination |
-| Sites | 7 | M6 | ⬜ Stub UI — backlog `7.62`–`7.64` |
+| Sites | 7 | M6 | ✅ CRUD + preview/publish + search/filter (`7.62`–`7.64`) |
 | Scheduled | 7 | M6 | ⬜ Templates only — backlog `7.65`–`7.67` |
 
 ---

@@ -120,7 +120,9 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-`7.63` выполнен: Sites имеют workspace-scoped HTML preview, publish-операцию и открытие предпросмотра в браузере через реальный SitesPanel. Следующий пункт — `7.64`.
+`7.64` выполнен: Sites search/filter подключены к `GET /api/sites` с параметрами `q` и `status`; SitesPanel показывает вкладки «Все / Черновики / Опубликованные», debounced поиск и отдельные empty states для пустого списка и отсутствия совпадений. Следующий пункт — `7.65`.
+
+`7.63` выполнен: Sites имеют workspace-scoped HTML preview, publish-операцию и открытие предпросмотра в браузере через реальный SitesPanel.
 
 `7.36` реализован: `http.fetch` зарегистрирован с SSRF-защитой редиректов и лимитом текста; `filesystem.list` отражён в каталоге инструментов и матрице UI.
 
@@ -152,6 +154,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 **Актуализация 2026-07-18:** `7.51` выполнен: worker ML handlers расширены deterministic classify/language/redact задачами с контрактными тестами. Следующий пункт — product honesty для Sites/Scheduled.
 
-1. **Stage 7** — Wave A/B ✅; Wave C: `7.28`–`7.51`, `7.52` ✅; следующий пункт — product honesty для Sites/Scheduled
-2. Рекомендуемая следующая волна: product honesty для Sites/Scheduled (`7.62`+)
-3. Product honesty: Sites/Scheduled либо реализовать (`7.62`+), либо убрать вводящий в заблуждение UI
+1. **Stage 7** — Wave A/B ✅; Wave C ✅; Wave D: Sites `7.62`–`7.64` ✅; следующий пункт — Scheduled `7.65`+
+2. Рекомендуемая следующая волна: Scheduled (`7.65`–`7.67`) и product honesty (`7.66`)
+3. Product honesty: Scheduled либо реализовать (`7.65`+), либо убрать вводящий в заблуждение UI
