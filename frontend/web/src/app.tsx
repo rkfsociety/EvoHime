@@ -1026,24 +1026,6 @@ export function App() {
     );
   }
 
-  function addModelRoute() {
-    setModelDrafts((current) => [
-      ...current,
-      {
-        name: `route-${current.length + 1}`,
-        provider: "openai-compatible",
-        model: "",
-        base_url: "https://api.openai.com/v1",
-        api_key: "",
-        billing_mode: "paid",
-      },
-    ]);
-  }
-
-  function removeModelRoute(index: number) {
-    setModelDrafts((current) => current.filter((_, routeIndex) => routeIndex !== index));
-  }
-
   async function saveModelConfig() {
     setModelSaving(true);
     setModelNotice(null);
@@ -1550,16 +1532,6 @@ export function App() {
           onSearchChange={setPullRequestSearch}
           onScopeChange={setPullRequestScope}
         />
-      );
-    }
-
-    if (activePanel !== "chat") {
-      const panel = workspacePanels.find((item) => item.id === activePanel);
-      return (
-        <div className="placeholderPanel">
-          <h3>{panel?.label}</h3>
-          <p>Запланировано на {panel?.phase}.</p>
-        </div>
       );
     }
 

@@ -96,9 +96,9 @@ export function EditorPanel({
           }}
         />
       ) : (
-        <div className="placeholderPanel">
-          <h3>Выберите файл</h3>
-          <p>Выбери файл во вкладке «Файлы», чтобы открыть его в редакторе Monaco.</p>
+        <div className="emptyPanelState">
+          <strong>Выберите файл</strong>
+          <span>Выбери файл во вкладке «Файлы», чтобы открыть его в редакторе Monaco.</span>
         </div>
       )}
     </div>

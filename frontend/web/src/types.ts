@@ -238,20 +238,20 @@ export type McpServerConfig = {
   description?: string | null;
 };
 
-export const workspacePanels: Array<{ id: WorkspacePanel; label: string; phase: string }> = [
-  { id: "chat", label: "Чат", phase: "активно" },
-  { id: "files", label: "Файлы", phase: "этап 4" },
-  { id: "sites", label: "Сайты", phase: "этап 6" },
-  { id: "editor", label: "Редактор", phase: "этап 4" },
-  { id: "terminal", label: "Терминал", phase: "этап 3" },
-  { id: "git", label: "Гит", phase: "этап 4" },
-  { id: "plugins", label: "Плагины", phase: "этап 6" },
-  { id: "memory", label: "Память", phase: "этап 6" },
-  { id: "pull-requests", label: "Пулл-реквесты", phase: "GitHub" },
-  { id: "scheduled", label: "Запланировано", phase: "этап 5" },
-  { id: "tasks", label: "Задачи", phase: "этап 5" },
-  { id: "actions", label: "Действия", phase: "этап 5" },
-  { id: "settings", label: "Настройки", phase: "этап 2" },
+export const workspacePanels: Array<{ id: WorkspacePanel; label: string }> = [
+  { id: "chat", label: "Чат" },
+  { id: "files", label: "Файлы" },
+  { id: "sites", label: "Сайты" },
+  { id: "editor", label: "Редактор" },
+  { id: "terminal", label: "Терминал" },
+  { id: "git", label: "Гит" },
+  { id: "plugins", label: "Плагины" },
+  { id: "memory", label: "Память" },
+  { id: "pull-requests", label: "Пулл-реквесты" },
+  { id: "scheduled", label: "Запланировано" },
+  { id: "tasks", label: "Задачи" },
+  { id: "actions", label: "Действия" },
+  { id: "settings", label: "Настройки" },
 ];
 
 export const sidebarQuickLinks: Array<{

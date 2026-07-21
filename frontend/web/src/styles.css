@@ -601,17 +601,6 @@ h1 {
   min-height: 0;
 }
 
-.placeholderPanel {
-  padding: 28px;
-  color: #a9b8d9;
-  line-height: 1.6;
-}
-
-.placeholderPanel h3 {
-  margin: 0 0 10px;
-  color: #e7eefc;
-}
-
 .settingsPanel {
   padding: 0;
   color: #a9b8d9;
