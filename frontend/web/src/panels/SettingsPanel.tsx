@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from "react";
 import type {
   ChatSessionSummary,
   McpServerConfig,
@@ -59,6 +60,18 @@ const SETTINGS_TABS: Array<[SettingsTab, string, string]> = [
   ["archive", "Архив", "Скрытые чаты"],
 ];
 
+function settingsTabId(tab: SettingsTab) {
+  return `settings-tab-${tab}`;
+}
+
+function settingsTabPanelId(tab: SettingsTab) {
+  return `settings-tabpanel-${tab}`;
+}
+
+function focusSettingsTab(tab: SettingsTab) {
+  document.getElementById(settingsTabId(tab))?.focus();
+}
+
 export function SettingsPanel({
   settingsTab,
   onSettingsTabChange,
@@ -91,17 +104,45 @@ export function SettingsPanel({
   deletingSessionId,
   onDeleteSession,
 }: SettingsPanelProps) {
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    const tabIds = SETTINGS_TABS.map(([id]) => id);
+    let nextIndex: number | null = null;
+
+    if (event.key === "ArrowRight") {
+      nextIndex = (index + 1) % tabIds.length;
+    } else if (event.key === "ArrowLeft") {
+      nextIndex = (index - 1 + tabIds.length) % tabIds.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = tabIds.length - 1;
+    }
+
+    if (nextIndex === null) {
+      return;
+    }
+
+    event.preventDefault();
+    const nextTab = tabIds[nextIndex];
+    onSettingsTabChange(nextTab);
+    focusSettingsTab(nextTab);
+  }
+
   return (
     <div className="settingsPanel">
-      <nav className="settingsTabs" aria-label="Разделы настроек">
-        {SETTINGS_TABS.map(([id, label, hint]) => (
+      <nav className="settingsTabs" role="tablist" aria-label="Разделы настроек">
+        {SETTINGS_TABS.map(([id, label, hint], index) => (
           <button
             key={id}
             type="button"
+            id={settingsTabId(id)}
             className={settingsTab === id ? "settingsTab active" : "settingsTab"}
             onClick={() => onSettingsTabChange(id)}
+            onKeyDown={(event) => handleTabKeyDown(event, index)}
             aria-selected={settingsTab === id}
+            aria-controls={settingsTabPanelId(id)}
             role="tab"
+            tabIndex={settingsTab === id ? 0 : -1}
           >
             <strong>{label}</strong>
             <span>{hint}</span>
@@ -109,7 +150,13 @@ export function SettingsPanel({
         ))}
       </nav>
 
-      <div className="settingsTabContent">
+      <div
+        className="settingsTabContent"
+        role="tabpanel"
+        id={settingsTabPanelId(settingsTab)}
+        aria-labelledby={settingsTabId(settingsTab)}
+        tabIndex={0}
+      >
         {settingsTab === "model" ? (
           <section className="settingsSection">
             <h3>Провайдер модели</h3>

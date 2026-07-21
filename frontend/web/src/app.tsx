@@ -22,6 +22,7 @@ import { PluginsPanel } from "./panels/PluginsPanel";
 import { MemoryPanel } from "./panels/MemoryPanel";
 import { PullRequestsPanel } from "./panels/PullRequestsPanel";
 import { ScheduledPanel } from "./panels/ScheduledPanel";
+import { SettingsModal } from "./components/SettingsModal";
 import { SettingsPanel } from "./panels/SettingsPanel";
 import { SitesPanel } from "./panels/SitesPanel";
 import { TasksPanel } from "./panels/TasksPanel";
@@ -2073,24 +2074,9 @@ export function App() {
 
       </section>
       {settingsOpen ? (
-        <div
-          className="settingsBackdrop"
-          onClick={() => setSettingsOpen(false)}
-          role="presentation"
-        >
-          <section className="settingsModal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Настройки">
-            <header className="settingsModalHeader">
-              <div>
-                <span className="sidebarFooterLabel">Настройки</span>
-                <AgentBrand title="Параметры EvoHime" as="h2" markSize="sm" />
-              </div>
-              <button type="button" className="settingsCloseButton" onClick={() => setSettingsOpen(false)}>
-                Закрыть
-              </button>
-            </header>
-            <div className="settingsModalBody">{settingsPanelElement()}</div>
-          </section>
-        </div>
+        <SettingsModal onClose={() => setSettingsOpen(false)}>
+          {settingsPanelElement()}
+        </SettingsModal>
       ) : null}
       {approval ? <ApprovalModal request={approval} onGrant={() => resolveApproval("approval.granted")} onDeny={() => resolveApproval("approval.denied")} /> : null}
       {memoryAsk ? (
