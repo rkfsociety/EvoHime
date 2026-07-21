@@ -120,7 +120,9 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-`7.79` выполнен: boot-загрузки permissions/audit/scopes/archive/github/projects/orchestrator больше не `.catch(() => undefined)` — ошибки собираются в `bootNotices`, показываются toast-баннером и дублируются в Settings. Следующий пункт — `7.80` или Wave E (CI: `7.84`–`7.86`).
+`7.80` выполнен: MemoryPanel и ActionsPanel приведены к русскому UI; EN action labels/details с WS переводятся через `translateActionLabel`/`translateActionDetail`; исправлен mojibake в «Загрузить ещё». Следующий пункт — `7.81` или Wave E (CI: `7.84`–`7.86`).
+
+`7.79` выполнен: boot-загрузки permissions/audit/scopes/archive/github/projects/orchestrator больше не `.catch(() => undefined)` — ошибки собираются в `bootNotices`, показываются toast-баннером и дублируются в Settings.
 
 `7.78` выполнен: `approval.granted` принимает `remember_path`; модал — «Один раз» vs «Запомнить путь (1 ч)»; audit показывает «путь запомнен».
 
@@ -172,6 +174,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 **Актуализация 2026-07-18:** `7.51` выполнен: worker ML handlers расширены deterministic classify/language/redact задачами с контрактными тестами. Следующий пункт — product honesty для Sites/Scheduled.
 
-1. **Stage 7** — Wave D product polish ✅; следующий — `7.80` или Wave E
+1. **Stage 7** — Wave D product polish ✅; следующий — `7.81` или Wave E
 2. Рекомендуемая следующая волна: Wave E (DX/CI): `7.84`–`7.86`, `7.56`, `7.69`–`7.71`
-3. Локальный продуктовый хвост: `7.80` (i18n consistency), `7.81` (git branch chip)
+3. Локальный продуктовый хвост: `7.81` (git branch chip), `7.82`–`7.83`

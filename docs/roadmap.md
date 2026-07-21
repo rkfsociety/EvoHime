@@ -421,7 +421,7 @@
 | 7.77 | Plugins: uninstall, update, skill browser | M | ✅ | uninstall/update API + skills preview в PluginsPanel |
 | 7.78 | Approval modal: remember-path / temp-allow controls | M | ✅ | `remember_path` в protocol + UI «Один раз» / «Запомнить путь (1 ч)» |
 | 7.79 | Silent boot errors → toast / Settings banner | M | ✅ | `BootNoticeBanner` + boot error collection в app startup |
-| 7.80 | i18n consistency (RU/EN mix в Memory/Actions) | S | ⬜ | MemoryPanel actions |
+| 7.80 | i18n consistency (RU/EN mix в Memory/Actions) | S | ✅ | `translateActionLabel/Detail` + русский MemoryPanel |
 | 7.81 | Project chip: real git branch (не hardcoded `main`) | S | ⬜ | `app.tsx` |
 | 7.82 | Dead code cleanup (`addModelRoute` unused, placeholderPanel) | S | ⬜ | frontend |
 | 7.83 | Show all chats (не `slice(0,5)` без «ещё») | S | ⬜ | sidebar |
@@ -470,7 +470,7 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-21:** `7.79` ✅ — ошибки boot API больше не глотаются; toast + banner в настройках; следующий — `7.80` или Wave E.
+**Актуальный статус 2026-07-21:** `7.80` ✅ — MemoryPanel и ActionsPanel на русском; EN action detail переводится на фронте; следующий — `7.81` или Wave E.
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  

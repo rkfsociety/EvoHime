@@ -39,7 +39,7 @@ const TABS: Array<{ id: MemoryTab; label: string; status: string }> = [
 
 const EXPERIENCE_KIND_FILTERS: Array<{ id: ExperienceKindFilter; label: string }> = [
   { id: "all", label: "Все" },
-  { id: "playbook", label: "Playbooks" },
+  { id: "playbook", label: "Сценарии" },
   { id: "success_pattern", label: "Успех" },
   { id: "failure_pattern", label: "Провалы" },
   { id: "verification_rule", label: "Проверки" },
@@ -52,11 +52,34 @@ const KIND_LABELS: Record<string, string> = {
   success_pattern: "паттерн успеха",
   failure_pattern: "паттерн провала",
   verification_rule: "правило проверки",
-  playbook: "playbook",
+  playbook: "сценарий",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  active: "активна",
+  candidate: "кандидат",
+  conflict: "конфликт",
+  archived: "архив",
+  rejected: "отклонена",
+};
+
+const SCOPE_LABELS: Record<string, string> = {
+  global: "пользовательская",
+  workspace: "workspace",
+  project: "проект",
+  session: "сессия",
 };
 
 function kindLabel(kind: string) {
   return KIND_LABELS[kind] ?? kind;
+}
+
+function statusLabel(status: string) {
+  return STATUS_LABELS[status] ?? status;
+}
+
+function scopeLabel(scope: string) {
+  return SCOPE_LABELS[scope] ?? scope;
 }
 
 function parsePlaybook(value: unknown): PlaybookView | null {
@@ -186,7 +209,7 @@ export function MemoryPanel() {
       setPrivacy(response.privacy);
       setNextCursor(response.next_cursor ?? null);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РґРѕРіСЂСѓР·РёС‚СЊ РїР°РјСЏС‚СЊ");
+      setError(err instanceof Error ? err.message : "Не удалось догрузить память");
     } finally {
       setLoadingMore(false);
     }
@@ -210,7 +233,7 @@ export function MemoryPanel() {
       const blob = await exportMemoryPack(format);
       downloadBlob(blob, `evohime-memory-pack.${format}`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Не удалось экспортировать memory pack");
+      setError(err instanceof Error ? err.message : "Не удалось экспортировать пакет памяти");
     }
   }
 
@@ -225,7 +248,7 @@ export function MemoryPanel() {
       const details = response.errors.length > 0 ? ` Ошибок: ${response.errors.length}.` : "";
       setNotice(`Импорт завершён: добавлено ${response.inserted}, дублей ${response.duplicates}, конфликтов ${response.conflicts}, отклонено ${response.rejected}.${details}`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Не удалось импортировать memory pack");
+      setError(err instanceof Error ? err.message : "Не удалось импортировать пакет памяти");
     }
   }
 
@@ -365,7 +388,7 @@ export function MemoryPanel() {
       <div className="panelToolbar">
         <div>
           <strong>Память</strong>
-          <span>Override и прозрачность — не очередь обязательных approve</span>
+          <span>Ручное управление и прозрачность — без обязательных подтверждений</span>
         </div>
         <div className="actionMetrics">
           <span>
@@ -409,7 +432,7 @@ export function MemoryPanel() {
         <div className="memoryAddForm">
           <div className="memoryAddHeader">
             <strong>Новая запись памяти</strong>
-            <span>Запись пройдёт redaction, dedupe и conflict check.</span>
+            <span>Запись пройдёт редактирование, дедупликацию и проверку конфликтов.</span>
           </div>
           <div className="memoryAddFields">
             <label>
@@ -462,9 +485,9 @@ export function MemoryPanel() {
 
       {privacy ? (
         <div className="memoryPrivacy">
-          <strong>Privacy</strong>
+          <strong>Конфиденциальность</strong>
           <p>
-            Redaction: {privacy.redaction_enabled ? "всегда включена" : "выключена"}. {privacy.policy}
+            Редактирование: {privacy.redaction_enabled ? "всегда включено" : "выключено"}. {privacy.policy}
           </p>
         </div>
       ) : null}
@@ -518,7 +541,7 @@ export function MemoryPanel() {
           <strong>Записей нет</strong>
           <span>
             {tab === "experiences"
-              ? "Пока нет опыта и playbooks — они появятся после задач с паттернами успеха/провала."
+              ? "Пока нет опыта и сценариев — они появятся после задач с паттернами успеха и провала."
               : "На этой вкладке пока пусто — агент накопит факты и опыт сам."}
           </span>
         </div>
@@ -547,9 +570,9 @@ export function MemoryPanel() {
                         <div className="memoryItemHeader">
                           <strong>
                             <span className="memoryKindBadge">{candidate.id === item.id ? "Новая" : "Текущая"}</span>
-                            <span className="memoryScopeLabel">{candidate.scope}</span>
+                            <span className="memoryScopeLabel">{scopeLabel(candidate.scope)}</span>
                           </strong>
-                          <span>conf {candidate.confidence.toFixed(2)}</span>
+                          <span>увер. {candidate.confidence.toFixed(2)}</span>
                         </div>
                         <p>{candidate.content}</p>
                         <div className="memoryMeta">
@@ -580,13 +603,13 @@ export function MemoryPanel() {
                   <strong>
                     <span className="memoryKindBadge">{kindLabel(item.kind)}</span>
                     <span className="memoryScopeLabel">
-                      {item.scope}
-                      {item.pinned ? " · pinned" : ""}
+                      {scopeLabel(item.scope)}
+                      {item.pinned ? " · закреплено" : ""}
                     </span>
                   </strong>
                   <span>
-                    {item.status} · conf {item.confidence.toFixed(2)}
-                    {typeof item.use_count === "number" ? ` · used ${item.use_count}` : ""}
+                    {statusLabel(item.status)} · увер. {item.confidence.toFixed(2)}
+                    {typeof item.use_count === "number" ? ` · использовано ${item.use_count}` : ""}
                     {typeof item.helpful_count === "number" && item.helpful_count > 0
                       ? ` · +${item.helpful_count}`
                       : ""}
@@ -629,9 +652,9 @@ export function MemoryPanel() {
                 )}
                 <div className="memoryMeta">
                   <code>{item.scope_key}</code>
-                  {item.source_label ? <span title="source">{item.source_label}</span> : null}
+                  {item.source_label ? <span title="источник">{item.source_label}</span> : null}
                   {item.supersedes ? (
-                    <span title="supersedes">→ {item.supersedes.slice(0, 8)}</span>
+                    <span title="заменяет">→ {item.supersedes.slice(0, 8)}</span>
                   ) : null}
                   <time dateTime={item.updated_at}>{formatUpdatedAt(item.updated_at)}</time>
                 </div>
@@ -655,7 +678,7 @@ export function MemoryPanel() {
                     disabled={busy}
                     onClick={() => void runAction(item.id, () => updateMemory(item.id, { pinned: !item.pinned }))}
                   >
-                    {item.pinned ? "Unpin" : "Pin"}
+                    {item.pinned ? "Открепить" : "Закрепить"}
                   </button>
                   {item.status !== "active" ? (
                     <button
@@ -663,7 +686,7 @@ export function MemoryPanel() {
                       disabled={busy}
                       onClick={() => void runAction(item.id, () => updateMemory(item.id, { status: "active" }))}
                     >
-                      Activate
+                      Активировать
                     </button>
                   ) : null}
                   {item.status !== "rejected" ? (
@@ -672,7 +695,7 @@ export function MemoryPanel() {
                       disabled={busy}
                       onClick={() => void runAction(item.id, () => updateMemory(item.id, { status: "rejected" }))}
                     >
-                      Reject
+                      Отклонить
                     </button>
                   ) : null}
                   {item.status !== "archived" ? (
@@ -681,7 +704,7 @@ export function MemoryPanel() {
                       disabled={busy}
                       onClick={() => void runAction(item.id, () => updateMemory(item.id, { status: "archived" }))}
                     >
-                      Archive
+                      В архив
                     </button>
                   ) : null}
                   <button
@@ -689,7 +712,7 @@ export function MemoryPanel() {
                     disabled={busy}
                     onClick={() => void deleteItem(item)}
                   >
-                    Delete
+                    Удалить
                   </button>
                 </div>
               </article>
@@ -701,7 +724,7 @@ export function MemoryPanel() {
       {nextCursor && !loading ? (
         <div className="memoryLoadMore">
           <button type="button" onClick={() => void loadMore()} disabled={loadingMore}>
-            {loadingMore ? "Р—Р°РіСЂСѓР·РєР°..." : "Р—Р°РіСЂСѓР·РёС‚СЊ РµС‰С‘"}
+            {loadingMore ? "Загрузка..." : "Загрузить ещё"}
           </button>
         </div>
       ) : null}
@@ -710,7 +733,7 @@ export function MemoryPanel() {
         <div className="memoryUndo" role="status">
           <span>Запись удалена. Восстановить?</span>
           <button type="button" onClick={() => void restoreDeletedItem()} disabled={undoBusy}>
-            {undoBusy ? "Восстановление..." : "Undo"}
+            {undoBusy ? "Восстановление..." : "Отменить удаление"}
           </button>
         </div>
       ) : null}

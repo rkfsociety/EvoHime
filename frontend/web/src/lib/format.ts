@@ -266,3 +266,75 @@ export function formatPlan(plan: { id: string; tool_name: string; description: s
     }),
   ].join("\n");
 }
+
+const ACTION_LABELS: Record<string, string> = {
+  "approval.required": "Требуется подтверждение",
+  "approval.granted": "Подтверждение",
+  "approval.denied": "Отказ",
+  "plan.approval.required": "План: подтверждение",
+  "plan.approval.granted": "План одобрен",
+  "plan.approval.rejected": "План отклонён",
+  "plan.approval.invalid": "План: ошибка",
+  "task.cancel": "Отмена задачи",
+  "task.resume": "Возобновление",
+  "task.retry": "Повтор",
+  "task.recovered": "Восстановление",
+  "task.recovery_deferred": "Восстановление отложено",
+  "rate.limited": "Лимит запросов",
+};
+
+const ACTION_DETAIL_EXACT: Record<string, string> = {
+  "Task cancellation requested": "Запрошена отмена задачи",
+  "Plan approval ignored because the task is not awaiting approval":
+    "Подтверждение плана проигнорировано: задача не ждёт одобрения",
+  "Approved plan scheduled for execution": "План одобрен и поставлен в очередь",
+  "Plan rejected by user; task cancelled": "План отклонён пользователем, задача отменена",
+  "Task resumed from checkpoint": "Задача возобновлена с checkpoint",
+  "Failed task scheduled for retry": "Сбойная задача поставлена на повтор",
+  "Approval granted once": "Подтверждение выдано один раз",
+  "Approval granted; path remembered for 1h in this session":
+    "Подтверждение выдано, путь запомнен на 1 ч в этой сессии",
+  "Approval denied": "Подтверждение отклонено",
+  "Approval was already resolved or unknown": "Подтверждение уже обработано или не найдено",
+  "Task restored after server restart": "Задача восстановлена после перезапуска сервера",
+  "Mutating task auto-resumed after server restart (EVOHIME_AUTO_RESUME_ON_RESTART)":
+    "Изменяющая задача автоматически возобновлена после перезапуска (EVOHIME_AUTO_RESUME_ON_RESTART)",
+  "Mutating task left paused after server restart; resume manually or set EVOHIME_AUTO_RESUME_ON_RESTART=1":
+    "Изменяющая задача оставлена на паузе после перезапуска; возобновите вручную или задайте EVOHIME_AUTO_RESUME_ON_RESTART=1",
+};
+
+export function translateActionLabel(action: string) {
+  if (ACTION_LABELS[action]) {
+    return ACTION_LABELS[action];
+  }
+  if (/approval/i.test(action)) {
+    return "Подтверждение";
+  }
+  if (/retry/i.test(action)) {
+    return "Повтор";
+  }
+  if (/recover|restart/i.test(action)) {
+    return "Восстановление";
+  }
+  if (/cancel/i.test(action)) {
+    return "Отмена";
+  }
+  return action;
+}
+
+export function translateActionDetail(detail: string) {
+  const exact = ACTION_DETAIL_EXACT[detail.trim()];
+  if (exact) {
+    return exact;
+  }
+  if (detail.startsWith("Invalid plan: ")) {
+    return `Некорректный план: ${detail.slice("Invalid plan: ".length)}`;
+  }
+  if (detail.startsWith("Waiting for approval on ")) {
+    return detail.replace(
+      /^Waiting for approval on (.+) \((.+)\) in scope (.+)$/,
+      "Ожидание подтверждения для $1 ($2) в области $3",
+    );
+  }
+  return detail;
+}
