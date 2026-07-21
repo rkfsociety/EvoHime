@@ -7,9 +7,31 @@ import type {
 } from "../types";
 import { normalizePath } from "./paths";
 
+export function parseGitBranchFromStatus(status: string) {
+  const lines = status.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const first = lines[0];
+  if (!first) {
+    return null;
+  }
+  if (first.startsWith("##")) {
+    const body = first.slice(2).trim();
+    if (body.startsWith("HEAD")) {
+      return "HEAD";
+    }
+    const branchPart = body.split("...")[0] ?? body;
+    const bracketIdx = branchPart.indexOf("[");
+    const name = (bracketIdx >= 0 ? branchPart.slice(0, bracketIdx) : branchPart).trim();
+    return name || null;
+  }
+  if (first.startsWith("Загрузка") || first.startsWith("git -C")) {
+    return null;
+  }
+  return first;
+}
+
 export function summarizeGitStatus(status: string) {
   const lines = status.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const branch = lines[0] ?? "Нет статуса";
+  const branch = parseGitBranchFromStatus(status) ?? "Нет статуса";
   const changed = lines.filter((line) => !line.startsWith("##")).length;
   return {
     branch,

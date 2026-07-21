@@ -674,6 +674,15 @@ export function App() {
     [selectedFilePath],
   );
   const gitSummary = useMemo(() => summarizeGitStatus(gitStatus), [gitStatus]);
+  const projectBranchLabel = useMemo(() => {
+    if (gitStatus.startsWith("Загрузка")) {
+      return "…";
+    }
+    if (gitSummary.branch === "Нет статуса") {
+      return "—";
+    }
+    return gitSummary.branch;
+  }, [gitStatus, gitSummary.branch]);
   const activeTaskId = useMemo(
     () => Object.values(tasks).find((task) => task.status === "running" || task.status === "cancelling")?.id ?? null,
     [tasks],
@@ -1625,7 +1634,7 @@ export function App() {
               <span className="projectContextMark">▱</span>
               <strong>{selectedProject.label}</strong>
               <span className="projectContextMeta">Локальный</span>
-              <span className="projectContextMeta">main</span>
+              <span className="projectContextMeta">{projectBranchLabel}</span>
               <span className="composerMenuChevron" aria-hidden="true" />
             </button>
             {projectPickerOpen ? (
