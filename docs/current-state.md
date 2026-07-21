@@ -120,7 +120,9 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-`7.65`–`7.67` выполнены: Scheduled tasks полностью реализованы. Миграция `0022_scheduled_tasks.sql`, storage CRUD, tokio cron runner (`scheduler.rs`), REST API `/api/scheduled` с pause/resume/trigger, ScheduledPanel с реальными данными, вкладки по статусу, cron-шпаргалка. Fake mail/calendar claims убраны (`7.66`). Следующий пункт — `7.68` (deep-link router) или Wave E (DX/CI).
+`7.72` + `7.68` выполнены: sidebar получил секцию «Инструменты» (Файлы, Редактор, Терминал, Git, Задачи, Действия); панели открываются через `?panel=` с поддержкой browser back/forward. Следующий пункт — `7.73` (file attachments) или Wave E (CI: `7.84`–`7.86`).
+
+`7.65`–`7.67` выполнены: Scheduled tasks полностью реализованы.
 
 `7.64` выполнен: Sites search/filter подключены к `GET /api/sites` с параметрами `q` и `status`; SitesPanel показывает вкладки «Все / Черновики / Опубликованные», debounced поиск и отдельные empty states.
 
@@ -156,6 +158,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 **Актуализация 2026-07-18:** `7.51` выполнен: worker ML handlers расширены deterministic classify/language/redact задачами с контрактными тестами. Следующий пункт — product honesty для Sites/Scheduled.
 
-1. **Stage 7** — Wave A/B/C ✅; Wave D: Sites `7.62`–`7.64` ✅, Scheduled `7.65`–`7.67` ✅; следующий — `7.68`+ или Wave E
+1. **Stage 7** — Wave D: Sites/Scheduled ✅, nav `7.72` + router `7.68` ✅; следующий — `7.73` или Wave E
 2. Рекомендуемая следующая волна: Wave E (DX/CI): `7.84`–`7.86`, `7.56`, `7.69`–`7.71`
 3. Wave D хвосты: `7.72` (orphan panels nav), `7.73` (file attachments)

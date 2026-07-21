@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, Fragment, UIEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, Fragment, UIEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
@@ -26,6 +26,7 @@ import { SettingsPanel } from "./panels/SettingsPanel";
 import { SitesPanel } from "./panels/SitesPanel";
 import { TasksPanel } from "./panels/TasksPanel";
 import { useServerEventHandler } from "./hooks/useServerEventHandler";
+import { initialPanelFromLocation, panelFromLocation, syncPanelToLocation } from "./lib/panel-route";
 import {
   filesApi,
   gitApi,
@@ -95,7 +96,7 @@ import type {
   ToolDefinition,
   WorkspacePanel,
 } from "./types";
-import { sidebarQuickLinks, workspacePanels } from "./types";
+import { sidebarQuickLinks, sidebarWorkspaceLinks, workspacePanels } from "./types";
 
 const initialLines: ChatLine[] = [];
 
@@ -111,7 +112,19 @@ export function App() {
   const [stream, setStream] = useState("");
   const [chatActionNotice, setChatActionNotice] = useState<string | null>(null);
   const [composerNotice, setComposerNotice] = useState<string | null>(null);
-  const [activePanel, setActivePanel] = useState<WorkspacePanel>("chat");
+  const [activePanel, setActivePanel] = useState<WorkspacePanel>(initialPanelFromLocation);
+  const navigateToPanel = useCallback((panel: WorkspacePanel) => {
+    setActivePanel(panel);
+    syncPanelToLocation(panel);
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => {
+      setActivePanel(panelFromLocation() ?? "chat");
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
   const [traceOpen, setTraceOpen] = useState(loadTraceOpen);
   const [selectedProject, setSelectedProject] = useState<ProjectSelection>(loadSelectedProject);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -785,7 +798,7 @@ export function App() {
       last_role: null,
     };
     setChatSessions((current) => [createdSummary, ...current]);
-    setActivePanel("chat");
+    navigateToPanel("chat");
     hydrateSession(createdSummary, bootstrap.events);
   }
 
@@ -1048,7 +1061,7 @@ export function App() {
 
   async function openFile(path: string) {
     try {
-      setActivePanel("editor");
+      navigateToPanel("editor");
       setSelectedFileNotice(null);
       await refreshSelectedFile(path);
       await refreshGitSnapshot(path);
@@ -1406,7 +1419,7 @@ export function App() {
           workspacePath={selectedProject?.path ?? ""}
           onPickPrompt={(prompt) => {
             setInput(prompt);
-            setActivePanel("chat");
+            navigateToPanel("chat");
           }}
         />
       );
@@ -1418,9 +1431,9 @@ export function App() {
           tasks={tasks}
           chatSessions={chatSessions}
           activeSessionId={activeSessionId}
-          onNewChat={() => setActivePanel("chat")}
+          onNewChat={() => navigateToPanel("chat")}
           onOpenSession={(chat) => {
-            setActivePanel("chat");
+            navigateToPanel("chat");
             void openSession(chat).catch((error) => {
               setSocketState("failed");
               setLines((current) => [...current, { role: "system", text: String(error) }]);
@@ -1833,8 +1846,27 @@ export function App() {
                       });
                       return;
                     }
-                    setActivePanel(item.panel);
+                    navigateToPanel(item.panel);
                   }}
+                >
+                  <span className="quickLinkIcon">{item.icon}</span>
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="sidebarSection">
+            <header className="sidebarHeader">
+              <strong>Инструменты</strong>
+            </header>
+            <div className="quickLinks">
+              {sidebarWorkspaceLinks.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={item.id === activePanel ? "quickLink active" : "quickLink"}
+                  onClick={() => navigateToPanel(item.id)}
                 >
                   <span className="quickLinkIcon">{item.icon}</span>
                   <span>{item.label}</span>
@@ -1850,7 +1882,7 @@ export function App() {
             <button
               type="button"
               className="projectCard"
-              onClick={() => setActivePanel("chat")}
+              onClick={() => navigateToPanel("chat")}
             >
               <span className="projectIcon">⌂</span>
               <span className="projectName">{activeProjectLabel}</span>
@@ -1863,7 +1895,7 @@ export function App() {
                       type="button"
                       className={chat.session_id === activeSessionId ? "projectChatItem active" : "projectChatItem"}
                       onClick={() => {
-                        setActivePanel("chat");
+                        navigateToPanel("chat");
                         void openSession(chat).catch((error) => setLines((current) => [...current, { role: "system", text: String(error) }]));
                       }}
                     >
@@ -1900,7 +1932,7 @@ export function App() {
                       type="button"
                       className={chat.session_id === activeSessionId ? "standaloneSidebarChat active" : "standaloneSidebarChat"}
                       onClick={() => {
-                        setActivePanel("chat");
+                        navigateToPanel("chat");
                         void openSession(chat).catch((error) => setLines((current) => [...current, { role: "system", text: String(error) }]));
                       }}
                     >
@@ -1950,7 +1982,7 @@ export function App() {
         </nav>
 
         <div className="panel mainPanel">
-          {activePanel !== "pull-requests" && activePanel !== "plugins" && activePanel !== "sites" && activePanel !== "memory" ? (
+          {activePanel !== "pull-requests" && activePanel !== "plugins" && activePanel !== "sites" && activePanel !== "memory" && activePanel !== "scheduled" ? (
             <header>
               <h2>{activePanel === "chat" ? activeChatTitle : currentPanelLabel}</h2>
               <div className="panelHeaderActions">

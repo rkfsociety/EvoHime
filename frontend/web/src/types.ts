@@ -254,3 +254,16 @@ export const sidebarQuickLinks: Array<{
   { id: "pull-requests", label: "Пулл-реквесты", icon: "⟡", panel: "pull-requests" },
   { id: "chat", label: "Чат", icon: "⊕", panel: "chat" },
 ];
+
+export const sidebarWorkspaceLinks: Array<{
+  id: Extract<WorkspacePanel, "files" | "editor" | "terminal" | "git" | "tasks" | "actions">;
+  label: string;
+  icon: string;
+}> = [
+  { id: "files", label: "Файлы", icon: "▤" },
+  { id: "editor", label: "Редактор", icon: "⌥" },
+  { id: "terminal", label: "Терминал", icon: "▷" },
+  { id: "git", label: "Git", icon: "⟐" },
+  { id: "tasks", label: "Задачи", icon: "☰" },
+  { id: "actions", label: "Действия", icon: "◎" },
+];
