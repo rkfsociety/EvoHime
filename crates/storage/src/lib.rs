@@ -9,6 +9,7 @@ pub mod memory;
 pub mod metrics_snapshots;
 pub mod permission_audit;
 pub mod pool;
+pub mod scheduled;
 pub mod sites;
 
 pub use memory::{

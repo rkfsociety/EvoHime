@@ -1403,6 +1403,7 @@ export function App() {
     if (activePanel === "scheduled") {
       return (
         <ScheduledPanel
+          workspacePath={selectedProject?.path ?? ""}
           onPickPrompt={(prompt) => {
             setInput(prompt);
             setActivePanel("chat");

@@ -1,6 +1,7 @@
 //! Server bootstrap: pool, AppState, settings restore, crash recovery, background loops.
 use crate::app::{AppConfig, AppState, McpServerConfig};
 use crate::metrics_api::metrics_persist_loop;
+use crate::scheduler;
 use crate::metrics_export;
 use crate::models_api::{build_model_config, ModelSettingsRequest};
 use crate::observability;
@@ -12,6 +13,7 @@ use crate::worker;
 use crate::worker_api::{recover_worker_jobs, worker_health_loop, worker_retention_loop};
 use crate::worker_observability;
 use anyhow::Context;
+use std::time::Duration;
 use evohime_model_gateway::ModelGateway;
 use evohime_permissions::{ApprovalAuditEntry, PermissionMode};
 use evohime_protocol::ServerEvent;
@@ -22,6 +24,15 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
+
+fn duration_secs_env_local(name: &str, default_secs: u64) -> Duration {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|s: &u64| *s > 0)
+        .map(Duration::from_secs)
+        .unwrap_or_else(|| Duration::from_secs(default_secs))
+}
 
 pub struct StartupInfo {
     pub state: Arc<AppState>,
@@ -129,6 +140,15 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
         worker_health_loop(health_state, health_interval, health_stale).await;
     });
     recover_worker_jobs(state.clone()).await;
+    {
+        let sched_state = state.clone();
+        let sched_interval = duration_secs_env_local("EVOHIME_SCHEDULER_INTERVAL_SECS", 30);
+        info!(interval_secs = sched_interval.as_secs(), "starting cron scheduler");
+        tokio::spawn(async move {
+            scheduler::scheduler_loop(sched_state, sched_interval).await;
+        });
+    }
+
     let metrics_persist = metrics_export::MetricsPersistConfig::from_env();
     if metrics_persist.enabled() {
         info!(

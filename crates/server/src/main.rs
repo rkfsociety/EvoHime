@@ -17,6 +17,8 @@ mod plugins;
 mod rate_limit;
 mod routes;
 mod sessions_api;
+mod scheduled_api;
+mod scheduler;
 mod sites_api;
 mod startup;
 mod task;

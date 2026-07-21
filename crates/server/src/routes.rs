@@ -4,6 +4,7 @@ use crate::auth;
 use crate::cors;
 use crate::memory_api;
 use crate::plugins;
+use crate::scheduled_api;
 use crate::sites_api;
 use crate::workspace;
 use axum::{
@@ -71,6 +72,19 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/git/pull", post(workspace::git_pull))
         .route("/api/git/push", post(workspace::git_push))
         .route("/api/tasks", get(crate::task::list_tasks))
+        .route(
+            "/api/scheduled",
+            get(scheduled_api::list).post(scheduled_api::create),
+        )
+        .route(
+            "/api/scheduled/:id",
+            get(scheduled_api::get)
+                .put(scheduled_api::update)
+                .delete(scheduled_api::delete),
+        )
+        .route("/api/scheduled/:id/pause", post(scheduled_api::pause))
+        .route("/api/scheduled/:id/resume", post(scheduled_api::resume))
+        .route("/api/scheduled/:id/trigger", post(scheduled_api::trigger))
         .route("/api/sites", get(sites_api::list).post(sites_api::create))
         .route("/api/sites/:id/preview", get(sites_api::preview))
         .route("/api/sites/:id/publish", post(sites_api::publish))

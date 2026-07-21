@@ -21,3 +21,5 @@ export * as workerApi from "./worker";
 export * as metricsApi from "./metrics";
 export * as sitesApi from "./sites";
 export type { Site, SiteStatusFilter } from "./sites";
+export * as scheduledApi from "./scheduled";
+export type { ScheduledTask, ScheduledTaskInput } from "./scheduled";

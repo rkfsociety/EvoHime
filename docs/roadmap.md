@@ -401,9 +401,9 @@
 | 7.62 | Sites: data model + `/api/sites` CRUD | L | ✅ | PostgreSQL + workspace-scoped API + real panel |
 | 7.63 | Sites: preview / publish / open-in-browser | L | ✅ | Workspace-scoped HTML preview, publish action, and browser launch |
 | 7.64 | Sites: search/filter wired to real data | S | ✅ | `GET /api/sites?q=&status=`; SitesPanel tabs + debounced search |
-| 7.65 | Scheduled: real cron/timer jobs (storage + runner) | L | ⬜ | `ScheduledPanel` templates only |
-| 7.66 | Scheduled: honest copy (убрать fake mail/calendar claims) | S | ⬜ | misleading recommendations |
-| 7.67 | Scheduled: list/pause/delete active schedules | M | ⬜ | после 7.65 |
+| 7.65 | Scheduled: real cron/timer jobs (storage + runner) | L | ✅ | `scheduled_tasks` PG table + tokio cron loop + CRUD API; 6-field cron via `cron` v0.17 |
+| 7.66 | Scheduled: honest copy (убрать fake mail/calendar claims) | S | ✅ | removed fake mail/calendar templates; cron-only UI |
+| 7.67 | Scheduled: list/pause/delete active schedules | M | ✅ | ScheduledPanel: list + tabs + create + pause/resume/trigger/delete |
 | 7.68 | Deep-link / router для панелей (`?panel=`, history) | M | ⬜ | нет router |
 
 ### 7.H — Frontend shell, UX, a11y
@@ -470,12 +470,12 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-21:** `7.64` ✅ — Sites search/filter на сервере и в SitesPanel; следующий пункт — Scheduled `7.65`.
+**Актуальный статус 2026-07-21:** `7.67` ✅ — Scheduled: `scheduled_tasks` таблица, tokio cron runner, CRUD API, ScheduledPanel с реальными данными; следующий пункт — `7.68` (deep-link router) или Wave E (DX/CI).
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
 3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.51`, `7.52` ✅ → next product honesty `7.62`+
-4. **Wave D (product honesty):** 7.62–7.67, 7.72–7.73, 7.66  
+4. **Wave D (product honesty):** 7.62–7.67 ✅; remaining: 7.72–7.73  
 5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+
 
@@ -507,7 +507,7 @@
 | Pull Requests | 6 | M5 | ✅ List/detail/create (`6.14`) |
 | Memory | 6 | M5 | ✅ Panel + ask modal (`6.22`–`6.24`); Stage 7: resolve/pagination |
 | Sites | 7 | M6 | ✅ CRUD + preview/publish + search/filter (`7.62`–`7.64`) |
-| Scheduled | 7 | M6 | ⬜ Templates only — backlog `7.65`–`7.67` |
+| Scheduled | 7 | M6 | ✅ Real cron jobs: storage + runner + CRUD + panel (`7.65`–`7.67`) |
 
 ---
 
