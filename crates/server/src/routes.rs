@@ -44,6 +44,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             post(crate::sessions_api::archive_session),
         )
         .route(
+            "/api/sessions/:session_id/unarchive",
+            post(crate::sessions_api::unarchive_session),
+        )
+        .route(
             "/api/sessions/:session_id/history",
             get(crate::sessions_api::session_history),
         )

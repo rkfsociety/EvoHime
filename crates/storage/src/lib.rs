@@ -521,6 +521,16 @@ pub async fn archive_session(pool: &PgPool, session_id: Uuid) -> Result<bool, St
     Ok(result.rows_affected() > 0)
 }
 
+pub async fn unarchive_session(pool: &PgPool, session_id: Uuid) -> Result<bool, StorageError> {
+    let result = sqlx::query(
+        "UPDATE sessions SET archived_at = NULL WHERE id = $1 AND archived_at IS NOT NULL",
+    )
+    .bind(session_id)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
 pub async fn set_session_title_if_empty(
     pool: &PgPool,
     session_id: Uuid,

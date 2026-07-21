@@ -39,6 +39,14 @@ export function archiveSession(sessionId: string) {
   );
 }
 
+export function unarchiveSession(sessionId: string) {
+  return apiRequestVoid(
+    `/api/sessions/${sessionId}/unarchive`,
+    { method: "POST" },
+    "Не удалось восстановить чат",
+  );
+}
+
 export function deleteSession(sessionId: string) {
   return apiRequestVoid(
     `/api/sessions/${sessionId}`,

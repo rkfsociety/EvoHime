@@ -876,6 +876,28 @@ export function App() {
     }
   }
 
+  async function restoreArchivedChat(summary: ChatSessionSummary) {
+    setDeletingSessionId(summary.session_id);
+    try {
+      await sessionsApi.unarchiveSession(summary.session_id);
+
+      setArchivedChats((current) => current.filter((chat) => chat.session_id !== summary.session_id));
+      setChatSessions((current) => {
+        if (current.some((chat) => chat.session_id === summary.session_id)) {
+          return current;
+        }
+        return [summary, ...current];
+      });
+      setSettingsOpen(false);
+      navigateToPanel("chat");
+      await openSession(summary);
+    } catch (error) {
+      setLines((current) => [...current, createChatLine({ role: "system", text: String(error) })]);
+    } finally {
+      setDeletingSessionId(null);
+    }
+  }
+
   async function deleteSession(summary: ChatSessionSummary) {
     setDeletingSessionId(summary.session_id);
     try {
@@ -1338,6 +1360,7 @@ export function App() {
         toolCatalogError={toolCatalogError}
         archivedChats={archivedChats}
         deletingSessionId={deletingSessionId}
+        onRestoreSession={(chat) => void restoreArchivedChat(chat)}
         onDeleteSession={(chat) => void deleteSession(chat)}
       />
     );

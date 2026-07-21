@@ -47,6 +47,7 @@ type SettingsPanelProps = {
   toolCatalogError: string | null;
   archivedChats: ChatSessionSummary[];
   deletingSessionId: string | null;
+  onRestoreSession: (chat: ChatSessionSummary) => void;
   onDeleteSession: (chat: ChatSessionSummary) => void;
 };
 
@@ -102,6 +103,7 @@ export function SettingsPanel({
   toolCatalogError,
   archivedChats,
   deletingSessionId,
+  onRestoreSession,
   onDeleteSession,
 }: SettingsPanelProps) {
   function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
@@ -438,7 +440,9 @@ export function SettingsPanel({
         {settingsTab === "archive" ? (
           <section className="settingsSection">
             <h3>Архивированные чаты</h3>
-            <p className="settingsHint">Архивация скрывает чат из левого бара. Здесь его можно удалить окончательно.</p>
+            <p className="settingsHint">
+              Архивация скрывает чат из левого бара. Здесь его можно восстановить или удалить окончательно.
+            </p>
             <div className="archivedChatList">
               {archivedChats.length === 0 ? (
                 <div className="emptyState">
@@ -452,13 +456,26 @@ export function SettingsPanel({
                       <strong>{formatSessionTitle(chat, index)}</strong>
                       <span>{formatSessionPreview(chat)}</span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => onDeleteSession(chat)}
-                      disabled={deletingSessionId === chat.session_id}
-                    >
-                      {deletingSessionId === chat.session_id ? "Удаляем..." : "Удалить навсегда"}
-                    </button>
+                    <div className="archivedChatActions">
+                      <button
+                        type="button"
+                        className="archivedChatRestoreButton"
+                        onClick={() => onRestoreSession(chat)}
+                        disabled={deletingSessionId === chat.session_id}
+                        aria-label={`Восстановить чат ${formatSessionTitle(chat, index)}`}
+                      >
+                        {deletingSessionId === chat.session_id ? "..." : "Восстановить"}
+                      </button>
+                      <button
+                        type="button"
+                        className="archivedChatDeleteButton"
+                        onClick={() => onDeleteSession(chat)}
+                        disabled={deletingSessionId === chat.session_id}
+                        aria-label={`Удалить чат ${formatSessionTitle(chat, index)} навсегда`}
+                      >
+                        {deletingSessionId === chat.session_id ? "..." : "Удалить навсегда"}
+                      </button>
+                    </div>
                   </article>
                 ))
               )}

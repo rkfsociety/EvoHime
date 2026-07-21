@@ -120,7 +120,9 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-`7.75` выполнен: модал настроек вынесен в `SettingsModal` с `useModalA11y` (Escape закрывает, Tab не уходит наружу, фокус возвращается на триггер); вкладки — `tablist`/`tab`/`tabpanel` с arrow/home/end; ApprovalModal получил тот же trap и Escape=отказ. Следующий пункт — `7.76` или Wave E (CI: `7.84`–`7.86`).
+`7.76` выполнен: `POST /api/sessions/:session_id/unarchive` сбрасывает `archived_at`; в настройках → Архив кнопка «Восстановить» возвращает чат в sidebar и открывает его. Следующий пункт — `7.77` или Wave E (CI: `7.84`–`7.86`).
+
+`7.75` выполнен: модал настроек вынесен в `SettingsModal` с `useModalA11y` (Escape закрывает, Tab не уходит наружу, фокус возвращается на триггер); вкладки — `tablist`/`tab`/`tabpanel` с arrow/home/end; ApprovalModal получил тот же trap и Escape=отказ.
 
 `7.74` выполнен: у `ChatLine` стабильный `id` (React keys без remount при streaming), в шапке чата toggle «Показать/Скрыть ход» (localStorage), aria-labels на лог чата, composer и trace summary.
 
@@ -164,6 +166,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 **Актуализация 2026-07-18:** `7.51` выполнен: worker ML handlers расширены deterministic classify/language/redact задачами с контрактными тестами. Следующий пункт — product honesty для Sites/Scheduled.
 
-1. **Stage 7** — Wave D product polish ✅; следующий — `7.76` или Wave E
+1. **Stage 7** — Wave D product polish ✅; следующий — `7.77` или Wave E
 2. Рекомендуемая следующая волна: Wave E (DX/CI): `7.84`–`7.86`, `7.56`, `7.69`–`7.71`
-3. Локальный продуктовый хвост: `7.76` (chat archive restore), `7.77` (plugins uninstall)
+3. Локальный продуктовый хвост: `7.77` (plugins uninstall), `7.78` (approval remember-path)

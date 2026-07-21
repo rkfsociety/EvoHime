@@ -75,6 +75,21 @@ pub(crate) async fn archive_session(
     Ok(StatusCode::NO_CONTENT)
 }
 
+pub(crate) async fn unarchive_session(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<Uuid>,
+) -> Result<StatusCode, ApiError> {
+    let restored = evohime_storage::unarchive_session(&state.pool, session_id)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    if !restored {
+        return Err(ApiError::BadRequest(
+            "Чат не найден или не архивирован".to_string(),
+        ));
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct SessionSummary {
     session_id: Uuid,
