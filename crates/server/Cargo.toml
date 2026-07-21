@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
-axum = { version = "0.7", features = ["ws", "json"] }
+axum = { version = "0.7", features = ["ws", "json", "multipart"] }
 chrono = { version = "0.4", features = ["serde"] }
 cron = "0.17.0"
 evohime-agent-runtime = { path = "../agent-runtime" }

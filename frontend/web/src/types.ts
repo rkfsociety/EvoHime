@@ -90,6 +90,19 @@ export type ChatSessionSummary = {
   last_role: string | null;
 };
 
+export type SessionAttachment = {
+  id: string;
+  session_id: string;
+  task_id?: string | null;
+  workspace_path: string;
+  original_name: string;
+  stored_path: string;
+  mime_type?: string | null;
+  size_bytes: number;
+  consumed_at?: string | null;
+  created_at: string;
+};
+
 export type ProjectSelection = {
   label: string;
   path: string | null;

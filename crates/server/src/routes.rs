@@ -1,5 +1,6 @@
 //! HTTP router assembly for the EvoHime server.
 use crate::app::AppState;
+use crate::attachments_api;
 use crate::auth;
 use crate::cors;
 use crate::memory_api;
@@ -45,6 +46,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/api/sessions/:session_id/history",
             get(crate::sessions_api::session_history),
+        )
+        .route(
+            "/api/sessions/:session_id/attachments",
+            get(attachments_api::list_attachments).post(attachments_api::upload_attachments),
         )
         .route("/api/auth/github", get(crate::github_api::github_auth))
         .route(

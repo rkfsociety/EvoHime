@@ -5,6 +5,7 @@ use sqlx::{FromRow, PgPool};
 use thiserror::Error;
 use uuid::Uuid;
 
+pub mod attachments;
 pub mod memory;
 pub mod metrics_snapshots;
 pub mod permission_audit;
@@ -12,6 +13,10 @@ pub mod pool;
 pub mod scheduled;
 pub mod sites;
 
+pub use attachments::{
+    claim_pending_session_attachments, create_session_attachment, list_pending_session_attachments,
+    list_session_attachments, SessionAttachmentRow,
+};
 pub use memory::{
     apply_memory_item_feedback, delete_memory_item, delete_memory_items_by_scope_key,
     get_memory_item, import_legacy_memory_notes, insert_memory_item, is_synthetic_test_scope_key,

@@ -1154,12 +1154,25 @@ export function App() {
     }
     setComposerNotice(null);
 
-    const attachmentNote = attachments.length > 0
-      ? `\n\nВложения: ${attachments.map((file) => file.name).join(", ")}`
-      : "";
+    if (!activeSessionId) {
+      setComposerNotice("Нет активной сессии для загрузки вложений.");
+      return;
+    }
+    if (attachments.length > 0) {
+      try {
+        await sessionsApi.uploadAttachments(
+          activeSessionId,
+          attachments,
+          selectedProject.path ?? undefined,
+        );
+      } catch (error) {
+        setComposerNotice(String(error));
+        return;
+      }
+    }
     const payload: ClientCommand = {
       type: "user.message",
-      content: `${text}${attachmentNote}`,
+      content: text,
       model_route: selectedModelRoute || undefined,
       model: selectedComposerModel || undefined,
       workspace_path: selectedProject.path ?? undefined,

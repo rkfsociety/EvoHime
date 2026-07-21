@@ -7,6 +7,7 @@ use evohime_protocol::ServerEvent;
 use sqlx::PgPool;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::fs;
 use uuid::Uuid;
 
 pub(crate) async fn load_chat_history(
@@ -86,6 +87,70 @@ pub(crate) fn public_fs_path_str(path: &str) -> String {
         .trim_start_matches("//?/")
         .trim_start_matches("//./")
         .to_string()
+}
+
+pub(crate) async fn claim_attachment_context(
+    state: &Arc<AppState>,
+    session_id: Uuid,
+    task_id: Uuid,
+    workspace_root: &std::path::Path,
+) -> Result<Option<String>, ApiError> {
+    let attachments = evohime_storage::claim_pending_session_attachments(&state.pool, session_id, task_id)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    if attachments.is_empty() {
+        return Ok(None);
+    }
+
+    const MAX_FILE_CHARS: usize = 16_000;
+    const MAX_TOTAL_CHARS: usize = 48_000;
+    let mut remaining = MAX_TOTAL_CHARS;
+    let mut sections = Vec::with_capacity(attachments.len());
+
+    for attachment in attachments {
+        let rel_path = attachment.stored_path.clone();
+        let abs_path = workspace_root.join(&rel_path);
+        let mut section = format!(
+            "- name: {}\n  path: {}\n  mime: {}\n  bytes: {}\n",
+            attachment.original_name,
+            rel_path,
+            attachment.mime_type.as_deref().unwrap_or("unknown"),
+            attachment.size_bytes
+        );
+
+        let bytes = fs::read(&abs_path)
+            .await
+            .map_err(|error| ApiError::Internal(format!("не удалось прочитать вложение: {error}")))?;
+        match String::from_utf8(bytes) {
+            Ok(text) => {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() && remaining > 0 {
+                    let excerpt: String = trimmed.chars().take(MAX_FILE_CHARS.min(remaining)).collect();
+                    section.push_str("  content: |\n");
+                    for line in excerpt.lines() {
+                        section.push_str("    ");
+                        section.push_str(line);
+                        section.push('\n');
+                    }
+                    remaining = remaining.saturating_sub(excerpt.chars().count());
+                } else {
+                    section.push_str("  content: <empty text file>\n");
+                }
+            }
+            Err(_) => {
+                section.push_str("  content: <binary or non-UTF8 file; inspect manually via filesystem.read>\n");
+            }
+        }
+        sections.push(section);
+        if remaining == 0 {
+            break;
+        }
+    }
+
+    Ok(Some(format!(
+        "Attached files were uploaded for this task. Use their paths directly if you need deeper inspection.\n\n{}",
+        sections.join("\n")
+    )))
 }
 
 pub(crate) async fn emit_event(

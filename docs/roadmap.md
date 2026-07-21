@@ -414,7 +414,7 @@
 | 7.70 | CSS modules / split `styles.css` | L | ⬜ | ~3000+ lines |
 | 7.71 | React Error Boundary per panel | M | ⬜ | `main.tsx` |
 | 7.72 | Орphan panels: Files/Git/Terminal/Tasks/Actions в навигации | M | ✅ | sidebar «Инструменты»: files/editor/terminal/git/tasks/actions |
-| 7.73 | Реальные file attachments (upload + server store + tool access) | M | ⬜ | сейчас только имена в тексте |
+| 7.73 | Реальные file attachments (upload + server store + tool access) | M | ✅ | session uploads API + DB metadata + workspace `.evohime/attachments` + prompt context |
 | 7.74 | Chat: stable message keys, tool lines toggle, a11y labels | S | ⬜ | `app.tsx` |
 | 7.75 | Settings modal: Escape, focus trap, tabpanel pattern | M | ⬜ | Settings + Approval tabs |
 | 7.76 | Chat archive restore / unarchive | M | ⬜ | delete-only archive |
@@ -470,12 +470,12 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-21:** `7.72` + `7.68` ✅ — orphan panels в sidebar «Инструменты», deep-link `?panel=` с history; следующий — `7.73` (file attachments) или Wave E.
+**Актуальный статус 2026-07-21:** `7.73` ✅ — file attachments реально загружаются в session API, пишутся в workspace storage и попадают в агентский контекст; следующий — Wave E или `7.74`.
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
 3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.51`, `7.52` ✅ → next product honesty `7.62`+
-4. **Wave D (product honesty):** 7.62–7.68, 7.72 ✅; remaining: 7.73  
+4. **Wave D (product honesty):** 7.62–7.68, 7.72–7.73 ✅
 5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+
 

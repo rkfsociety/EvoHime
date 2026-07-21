@@ -1,6 +1,7 @@
 //! EvoHime HTTP + WebSocket server entrypoint.
 mod api_error;
 mod app;
+mod attachments_api;
 mod auth;
 mod cors;
 mod github_api;

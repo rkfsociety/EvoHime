@@ -2,7 +2,9 @@
 use crate::app::AppState;
 use crate::permissions_api::permission_name;
 use crate::sessions_api::summarize_session_title;
-use crate::task::helpers::{emit_event, load_chat_history, map_agent_error, resolve_model_route};
+use crate::task::helpers::{
+    claim_attachment_context, emit_event, load_chat_history, map_agent_error, resolve_model_route,
+};
 use crate::task::memory::{apply_task_memory_feedback, persist_structured_memory};
 use crate::task::steps::{
     build_agent_resume_context, finalize_open_task_steps, update_task_step_status,
@@ -68,6 +70,22 @@ pub(crate) async fn run_task_pipeline(
         .workspace_path
         .clone()
         .unwrap_or_else(|| state.workspace_root.to_string_lossy().into_owned());
+    let workspace_root = task
+        .workspace_path
+        .as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| state.workspace_root.clone());
+    let attachment_context = if emit_started {
+        claim_attachment_context(state, session_id, task.id, &workspace_root)
+            .await
+            .map_err(|error| (task.id, error))?
+    } else {
+        None
+    };
+    let agent_user_message = match attachment_context {
+        Some(context) => format!("{}\n\n[Attachment Context]\n{}", task.user_message, context),
+        None => task.user_message.clone(),
+    };
 
     let structured = evohime_memory::retrieve_for_prompt(
         &state.pool,
@@ -166,7 +184,7 @@ pub(crate) async fn run_task_pipeline(
     let agent_config = AgentConfig {
         task_id: task.id,
         session_id,
-        user_message: task.user_message.clone(),
+        user_message: agent_user_message,
         created_at: task.created_at,
         demo_file_path: task
             .workspace_path
@@ -174,11 +192,7 @@ pub(crate) async fn run_task_pipeline(
             .map(PathBuf::from)
             .unwrap_or_else(|| state.workspace_root.clone())
             .join("docs/sample-context.md"),
-        workspace_root: task
-            .workspace_path
-            .as_deref()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| state.workspace_root.clone()),
+        workspace_root,
         model_route,
         model: task.model.clone(),
         planning_model_route,

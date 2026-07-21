@@ -1,6 +1,6 @@
 import type { HistoryItem, SessionBootstrap } from "../protocol";
-import type { ChatSessionSummary } from "../types";
-import { apiRequest, apiRequestVoid } from "./client";
+import type { ChatSessionSummary, SessionAttachment } from "../types";
+import { ApiError, apiRequest, apiRequestVoid, parseApiErrorBody, withAuth } from "./client";
 
 export function listSessions() {
   return apiRequest<ChatSessionSummary[]>("/api/sessions", undefined, "Не удалось загрузить сессии");
@@ -45,4 +45,32 @@ export function deleteSession(sessionId: string) {
     { method: "DELETE" },
     "Не удалось удалить чат",
   );
+}
+
+export async function uploadAttachments(
+  sessionId: string,
+  files: File[],
+  workspacePath?: string | null,
+) {
+  const form = new FormData();
+  for (const file of files) {
+    form.append("files", file, file.name);
+  }
+  const query = workspacePath
+    ? `?workspace_path=${encodeURIComponent(workspacePath)}`
+    : "";
+  const response = await fetch(
+    `/api/sessions/${sessionId}/attachments${query}`,
+    withAuth({ method: "POST", body: form }),
+  );
+  const text = await response.text();
+  if (!response.ok) {
+    throw new ApiError(
+      response.status,
+      text,
+      "Не удалось загрузить вложения",
+      parseApiErrorBody(text),
+    );
+  }
+  return JSON.parse(text) as SessionAttachment[];
 }
