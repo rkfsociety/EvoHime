@@ -1,5 +1,9 @@
 use crate::{app::AppState, ApiError};
-use axum::{extract::State, Json};
+use axum::{
+    extract::{Path as AxumPath, State},
+    http::StatusCode,
+    Json,
+};
 use chrono::{DateTime, Utc};
 use futures_util::future::join_all;
 use serde::{Deserialize, Serialize};
@@ -152,6 +156,12 @@ pub struct PluginCatalogCache {
     inner: Arc<Mutex<Option<CachedCatalog>>>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct PluginSkillSummary {
+    pub name: String,
+    pub preview: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct InstallPluginRequest {
     pub name: String,
@@ -243,9 +253,58 @@ pub async fn install_plugin(
     State(state): State<Arc<AppState>>,
     Json(body): Json<InstallPluginRequest>,
 ) -> Result<Json<InstalledPlugin>, ApiError> {
+    let installed = install_plugin_internal(&state, &body.name, false).await?;
+    Ok(Json(installed))
+}
+
+pub async fn update_plugin(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<InstallPluginRequest>,
+) -> Result<Json<InstalledPlugin>, ApiError> {
+    let installed = install_plugin_internal(&state, &body.name, true).await?;
+    Ok(Json(installed))
+}
+
+pub async fn uninstall_plugin(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<InstallPluginRequest>,
+) -> Result<StatusCode, ApiError> {
     let name = sanitize_plugin_name(&body.name)
         .ok_or_else(|| ApiError::BadRequest("некорректное имя плагина".into()))?;
-    let cached = load_catalog(&state).await?;
+    let target = plugin_install_path(&state.workspace_root, &name);
+    if !target.is_dir() {
+        return Err(ApiError::BadRequest(format!(
+            "плагин `{name}` не установлен"
+        )));
+    }
+    tokio::fs::remove_dir_all(&target)
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn list_plugin_skills(
+    State(state): State<Arc<AppState>>,
+    AxumPath(name): AxumPath<String>,
+) -> Result<Json<Vec<PluginSkillSummary>>, ApiError> {
+    let name = sanitize_plugin_name(&name)
+        .ok_or_else(|| ApiError::BadRequest("некорректное имя плагина".into()))?;
+    let workspace_root = state.workspace_root.clone();
+    let skills = tokio::task::spawn_blocking(move || list_plugin_skill_summaries(&workspace_root, &name))
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?
+        .map_err(|message| ApiError::BadRequest(message))?;
+    Ok(Json(skills))
+}
+
+async fn install_plugin_internal(
+    state: &AppState,
+    raw_name: &str,
+    replace_existing: bool,
+) -> Result<InstalledPlugin, ApiError> {
+    let name = sanitize_plugin_name(raw_name)
+        .ok_or_else(|| ApiError::BadRequest("некорректное имя плагина".into()))?;
+    let cached = load_catalog(state).await?;
     let entry = cached
         .entries
         .iter()
@@ -260,16 +319,17 @@ pub async fn install_plugin(
         validate_source_subdir(path)?;
     }
 
-    let target = state
-        .workspace_root
-        .join(".evohime")
-        .join("plugins")
-        .join(&name);
+    let target = plugin_install_path(&state.workspace_root, &name);
     if target.exists() {
-        return Err(ApiError::Conflict(format!(
-            "плагин `{name}` уже установлен в {}",
-            target.display()
-        )));
+        if !replace_existing {
+            return Err(ApiError::Conflict(format!(
+                "плагин `{name}` уже установлен в {}",
+                target.display()
+            )));
+        }
+        tokio::fs::remove_dir_all(&target)
+            .await
+            .map_err(|error| ApiError::Internal(error.to_string()))?;
     }
 
     let parent = target
@@ -293,17 +353,15 @@ pub async fn install_plugin(
     }
 
     let workspace_root = state.workspace_root.clone();
-    let installed =
-        tokio::task::spawn_blocking(move || load_installed_plugin(&workspace_root, &target))
-            .await
-            .map_err(|error| ApiError::Internal(error.to_string()))?
-            .ok_or_else(|| {
-                ApiError::Internal(
-                    "плагин склонирован, но manifest (.codex-plugin/.cursor-plugin/.claude-plugin) не найден"
-                        .into(),
-                )
-            })?;
-    Ok(Json(installed))
+    tokio::task::spawn_blocking(move || load_installed_plugin(&workspace_root, &target))
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?
+        .ok_or_else(|| {
+            ApiError::Internal(
+                "плагин склонирован, но manifest (.codex-plugin/.cursor-plugin/.claude-plugin) не найден"
+                    .into(),
+            )
+        })
 }
 
 async fn load_catalog(state: &AppState) -> Result<CachedCatalog, ApiError> {
@@ -787,6 +845,47 @@ fn validate_https_git_url(url: &str) -> Result<(), ApiError> {
     Ok(())
 }
 
+fn plugin_install_path(workspace_root: &Path, name: &str) -> PathBuf {
+    workspace_root.join(".evohime").join("plugins").join(name)
+}
+
+fn list_plugin_skill_summaries(
+    workspace_root: &Path,
+    plugin_id: &str,
+) -> Result<Vec<PluginSkillSummary>, String> {
+    let target = plugin_install_path(workspace_root, plugin_id);
+    if !target.is_dir() {
+        return Err(format!("плагин `{plugin_id}` не установлен"));
+    }
+    let manifest = read_plugin_manifest(&target)
+        .ok_or_else(|| "manifest плагина не найден".to_string())?;
+    let skills_root = resolve_skills_root(&target, &manifest.skills)
+        .ok_or_else(|| "каталог skills не найден".to_string())?;
+    Ok(list_skill_summaries(&skills_root))
+}
+
+fn list_skill_summaries(skills_root: &Path) -> Vec<PluginSkillSummary> {
+    list_skill_names(skills_root)
+        .into_iter()
+        .map(|name| {
+            let preview = read_skill_preview(&skills_root.join(&name));
+            PluginSkillSummary { name, preview }
+        })
+        .collect()
+}
+
+fn read_skill_preview(skill_dir: &Path) -> String {
+    let path = skill_dir.join("SKILL.md");
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return String::new();
+    };
+    let normalized = content.trim();
+    if normalized.chars().count() <= 400 {
+        return normalized.to_string();
+    }
+    normalized.chars().take(400).collect::<String>() + "…"
+}
+
 fn sanitize_plugin_name(name: &str) -> Option<String> {
     let trimmed = name.trim();
     if trimmed.is_empty() || trimmed.len() > 80 {
@@ -1025,6 +1124,29 @@ mod tests {
         assert_eq!(plugins[0].path, ".evohime/plugins/demo");
         assert_eq!(plugins[0].skills, vec!["bootstrap".to_string()]);
         assert_eq!(plugins[0].skills_count, 1);
+    }
+
+    #[test]
+    fn lists_skill_previews_for_installed_plugin() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let plugin = temp.path().join(".evohime/plugins/demo");
+        fs::create_dir_all(plugin.join(".codex-plugin")).expect("meta");
+        fs::create_dir_all(plugin.join("skills/bootstrap")).expect("skill");
+        fs::write(
+            plugin.join(".codex-plugin/plugin.json"),
+            r#"{"name":"demo","version":"1.0.0","description":"Demo","skills":"./skills/"}"#,
+        )
+        .expect("manifest");
+        fs::write(
+            plugin.join("skills/bootstrap/SKILL.md"),
+            "# Bootstrap skill\n\nUse this before planning.",
+        )
+        .expect("skill md");
+
+        let skills = list_plugin_skill_summaries(temp.path(), "demo").expect("skills");
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].name, "bootstrap");
+        assert!(skills[0].preview.contains("Bootstrap skill"));
     }
 
     #[test]

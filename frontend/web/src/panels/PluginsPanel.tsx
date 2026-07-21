@@ -2,22 +2,42 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   installPlugin,
   listCatalog,
+  listPluginSkills,
   listPlugins,
+  uninstallPlugin,
+  updatePlugin,
   type CatalogGroup,
   type CatalogPlugin,
   type InstalledPlugin,
   type PluginCatalogResponse,
+  type PluginSkillSummary,
 } from "../api/plugins";
+
+type PluginAction = "install" | "update" | "uninstall";
+
+function pluginNeedsUpdate(plugin: CatalogPlugin) {
+  if (!plugin.installed || !plugin.installable) {
+    return false;
+  }
+  if (!plugin.installed_version || !plugin.version) {
+    return true;
+  }
+  return plugin.installed_version !== plugin.version;
+}
 
 export function PluginsPanel() {
   const [plugins, setPlugins] = useState<InstalledPlugin[]>([]);
   const [catalog, setCatalog] = useState<PluginCatalogResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [installing, setInstalling] = useState<string | null>(null);
-  const [installError, setInstallError] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ name: string; action: PluginAction } | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [catalogQuery, setCatalogQuery] = useState("");
   const [activeGroup, setActiveGroup] = useState("all");
+  const [expandedSkillsPluginId, setExpandedSkillsPluginId] = useState<string | null>(null);
+  const [skillsByPlugin, setSkillsByPlugin] = useState<Record<string, PluginSkillSummary[]>>({});
+  const [skillsLoadingId, setSkillsLoadingId] = useState<string | null>(null);
+  const [skillsError, setSkillsError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -45,19 +65,57 @@ export function PluginsPanel() {
     void refresh();
   }, [refresh]);
 
-  async function handleInstall(plugin: CatalogPlugin) {
-    if (!plugin.installable || plugin.installed || installing) {
+  async function runPluginAction(name: string, action: PluginAction) {
+    if (pendingAction) {
       return;
     }
-    setInstalling(plugin.name);
-    setInstallError(null);
+    setPendingAction({ name, action });
+    setActionError(null);
     try {
-      await installPlugin(plugin.name);
+      if (action === "install") {
+        await installPlugin(name);
+      } else if (action === "update") {
+        await updatePlugin(name);
+      } else {
+        await uninstallPlugin(name);
+        if (expandedSkillsPluginId === name) {
+          setExpandedSkillsPluginId(null);
+        }
+        setSkillsByPlugin((current) => {
+          const next = { ...current };
+          delete next[name];
+          return next;
+        });
+      }
       await refresh();
     } catch (err: unknown) {
-      setInstallError(err instanceof Error ? err.message : "Установка не удалась");
+      setActionError(err instanceof Error ? err.message : "Операция с плагином не удалась");
     } finally {
-      setInstalling(null);
+      setPendingAction(null);
+    }
+  }
+
+  async function toggleSkills(plugin: InstalledPlugin) {
+    if (expandedSkillsPluginId === plugin.id) {
+      setExpandedSkillsPluginId(null);
+      setSkillsError(null);
+      return;
+    }
+
+    setExpandedSkillsPluginId(plugin.id);
+    setSkillsError(null);
+    if (skillsByPlugin[plugin.id]) {
+      return;
+    }
+
+    setSkillsLoadingId(plugin.id);
+    try {
+      const skills = await listPluginSkills(plugin.id);
+      setSkillsByPlugin((current) => ({ ...current, [plugin.id]: skills }));
+    } catch (err: unknown) {
+      setSkillsError(err instanceof Error ? err.message : "Не удалось загрузить skills");
+    } finally {
+      setSkillsLoadingId(null);
     }
   }
 
@@ -120,13 +178,92 @@ export function PluginsPanel() {
         ? `${catalog.marketplace}: ${catalogPlugins.length} плагинов, ${groups.length} категорий, ${sourceCount} OSS-источников. Установлено: ${plugins.length}.`
         : "Каталог плагинов пока не подключён.";
 
+  function renderCatalogActions(plugin: CatalogPlugin) {
+    const busy = pendingAction?.name === plugin.name;
+    if (!plugin.installed) {
+      return (
+        <button
+          type="button"
+          className="pluginInstallButton"
+          disabled={!plugin.installable || Boolean(pendingAction)}
+          onClick={() => void runPluginAction(plugin.name, "install")}
+        >
+          {busy && pendingAction?.action === "install" ? "Ставлю…" : "Установить"}
+        </button>
+      );
+    }
+
+    return (
+      <div className="pluginCardActions">
+        {plugin.installable && pluginNeedsUpdate(plugin) ? (
+          <button
+            type="button"
+            className="pluginUpdateButton"
+            disabled={Boolean(pendingAction)}
+            onClick={() => void runPluginAction(plugin.name, "update")}
+          >
+            {busy && pendingAction?.action === "update" ? "Обновляю…" : "Обновить"}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="pluginUninstallButton"
+          disabled={Boolean(pendingAction)}
+          onClick={() => void runPluginAction(plugin.name, "uninstall")}
+        >
+          {busy && pendingAction?.action === "uninstall" ? "Удаляю…" : "Удалить"}
+        </button>
+      </div>
+    );
+  }
+
+  function renderInstalledActions(plugin: InstalledPlugin) {
+    const catalogEntry = catalogPlugins.find(
+      (entry) => entry.name === plugin.id || entry.name === plugin.name,
+    );
+    const busy = pendingAction?.name === plugin.id || pendingAction?.name === plugin.name;
+    const actionName = catalogEntry?.name ?? plugin.id;
+
+    return (
+      <div className="pluginCardActions">
+        <button
+          type="button"
+          className="pluginSkillsButton"
+          disabled={Boolean(pendingAction)}
+          onClick={() => void toggleSkills(plugin)}
+          aria-expanded={expandedSkillsPluginId === plugin.id}
+        >
+          {expandedSkillsPluginId === plugin.id ? "Скрыть skills" : "Skills"}
+        </button>
+        {catalogEntry?.installable && (catalogEntry ? pluginNeedsUpdate(catalogEntry) : false) ? (
+          <button
+            type="button"
+            className="pluginUpdateButton"
+            disabled={Boolean(pendingAction)}
+            onClick={() => void runPluginAction(actionName, "update")}
+          >
+            {busy && pendingAction?.action === "update" ? "Обновляю…" : "Обновить"}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="pluginUninstallButton"
+          disabled={Boolean(pendingAction)}
+          onClick={() => void runPluginAction(plugin.id, "uninstall")}
+        >
+          {busy && pendingAction?.action === "uninstall" ? "Удаляю…" : "Удалить"}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="pluginsPage">
       <section className="pluginsHero">
         <div>
           <h3>Плагины</h3>
           <p>{heroText}</p>
-          {installError ? <p className="pluginsInstallError">{installError}</p> : null}
+          {actionError ? <p className="pluginsInstallError">{actionError}</p> : null}
         </div>
       </section>
 
@@ -217,18 +354,7 @@ export function PluginsPanel() {
                             </small>
                           </div>
                         </div>
-                        {plugin.installed ? (
-                          <span className="pluginInstalledBadge">Установлен</span>
-                        ) : (
-                          <button
-                            type="button"
-                            className="pluginInstallButton"
-                            disabled={!plugin.installable || installing === plugin.name}
-                            onClick={() => void handleInstall(plugin)}
-                          >
-                            {installing === plugin.name ? "Ставлю…" : "Установить"}
-                          </button>
-                        )}
+                        {renderCatalogActions(plugin)}
                       </article>
                     ))}
                   </div>
@@ -256,21 +382,42 @@ export function PluginsPanel() {
             ) : (
               <div className="pluginsGrid pluginsGridCompact">
                 {plugins.map((plugin) => (
-                  <article key={plugin.id} className="pluginCard pluginCardCompact">
-                    <div className="pluginIcon" aria-hidden="true">
-                      ◌
-                    </div>
-                    <div className="pluginBody">
-                      <div className="pluginTopRow">
-                        <strong>{plugin.display_name || plugin.name}</strong>
-                        <small>v{plugin.version || "?"}</small>
+                    <article key={plugin.id} className="pluginCard pluginCardCompact pluginCardInstalled">
+                      <div className="pluginIcon" aria-hidden="true">
+                        ◌
                       </div>
-                      <p>{plugin.description || "Без описания."}</p>
-                      <small>
-                        {plugin.skills_count} skills · {plugin.path}
-                      </small>
-                    </div>
-                  </article>
+                      <div className="pluginBody">
+                        <div className="pluginTopRow">
+                          <strong>{plugin.display_name || plugin.name}</strong>
+                          <small>v{plugin.version || "?"}</small>
+                        </div>
+                        <p>{plugin.description || "Без описания."}</p>
+                        <small>
+                          {plugin.skills_count} skills · {plugin.path}
+                        </small>
+                        {expandedSkillsPluginId === plugin.id ? (
+                          <div className="pluginSkillBrowser" aria-label={`Skills плагина ${plugin.display_name || plugin.name}`}>
+                            {skillsLoadingId === plugin.id ? (
+                              <p className="pluginSkillBrowserMeta">Загружаю skills…</p>
+                            ) : skillsError ? (
+                              <p className="pluginsInstallError">{skillsError}</p>
+                            ) : (skillsByPlugin[plugin.id] ?? []).length === 0 ? (
+                              <p className="pluginSkillBrowserMeta">Skills не найдены.</p>
+                            ) : (
+                              <ul className="pluginSkillList">
+                                {(skillsByPlugin[plugin.id] ?? []).map((skill) => (
+                                  <li key={skill.name} className="pluginSkillItem">
+                                    <strong>{skill.name}</strong>
+                                    {skill.preview ? <pre>{skill.preview}</pre> : <p className="pluginSkillBrowserMeta">SKILL.md пуст.</p>}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
+                      {renderInstalledActions(plugin)}
+                    </article>
                 ))}
               </div>
             )}

@@ -120,7 +120,9 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-`7.76` выполнен: `POST /api/sessions/:session_id/unarchive` сбрасывает `archived_at`; в настройках → Архив кнопка «Восстановить» возвращает чат в sidebar и открывает его. Следующий пункт — `7.77` или Wave E (CI: `7.84`–`7.86`).
+`7.77` выполнен: `POST /api/plugins/uninstall`, `POST /api/plugins/update`, `GET /api/plugins/:name/skills`; PluginsPanel — удаление, обновление при расхождении версий, просмотр SKILL.md previews. Следующий пункт — `7.78` или Wave E (CI: `7.84`–`7.86`).
+
+`7.76` выполнен: `POST /api/sessions/:session_id/unarchive` сбрасывает `archived_at`; в настройках → Архив кнопка «Восстановить» возвращает чат в sidebar и открывает его.
 
 `7.75` выполнен: модал настроек вынесен в `SettingsModal` с `useModalA11y` (Escape закрывает, Tab не уходит наружу, фокус возвращается на триггер); вкладки — `tablist`/`tab`/`tabpanel` с arrow/home/end; ApprovalModal получил тот же trap и Escape=отказ.
 

@@ -1,4 +1,4 @@
-import { apiRequest } from "./client";
+import { apiRequest, apiRequestVoid } from "./client";
 
 export type InstalledPlugin = {
   id: string;
@@ -39,6 +39,11 @@ export type PluginCatalogResponse = {
   plugins: CatalogPlugin[];
 };
 
+export type PluginSkillSummary = {
+  name: string;
+  preview: string;
+};
+
 export function listPlugins() {
   return apiRequest<InstalledPlugin[]>(
     "/api/plugins",
@@ -64,5 +69,37 @@ export function installPlugin(name: string) {
       body: JSON.stringify({ name }),
     },
     "Не удалось установить плагин",
+  );
+}
+
+export function updatePlugin(name: string) {
+  return apiRequest<InstalledPlugin>(
+    "/api/plugins/update",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    },
+    "Не удалось обновить плагин",
+  );
+}
+
+export function uninstallPlugin(name: string) {
+  return apiRequestVoid(
+    "/api/plugins/uninstall",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    },
+    "Не удалось удалить плагин",
+  );
+}
+
+export function listPluginSkills(name: string) {
+  return apiRequest<PluginSkillSummary[]>(
+    `/api/plugins/${encodeURIComponent(name)}/skills`,
+    undefined,
+    "Не удалось загрузить skills плагина",
   );
 }

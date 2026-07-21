@@ -3736,6 +3736,109 @@ h1 {
   font-weight: 600;
 }
 
+.pluginCardActions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.pluginUpdateButton,
+.pluginUninstallButton,
+.pluginSkillsButton {
+  border: 0;
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pluginUpdateButton {
+  background: rgba(91, 134, 255, 0.18);
+  color: var(--text-0);
+}
+
+.pluginUpdateButton:hover:not(:disabled) {
+  background: rgba(91, 134, 255, 0.28);
+}
+
+.pluginUninstallButton {
+  background: rgba(255, 104, 118, 0.12);
+  color: #ff9aa4;
+}
+
+.pluginUninstallButton:hover:not(:disabled) {
+  background: rgba(255, 104, 118, 0.2);
+}
+
+.pluginSkillsButton {
+  background: var(--surface-4);
+  color: var(--text-0);
+}
+
+.pluginSkillsButton:hover:not(:disabled) {
+  background: rgba(91, 134, 255, 0.14);
+}
+
+.pluginUpdateButton:disabled,
+.pluginUninstallButton:disabled,
+.pluginSkillsButton:disabled,
+.pluginInstallButton:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.pluginCardInstalled {
+  align-items: start;
+}
+
+.pluginSkillBrowser {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-0);
+}
+
+.pluginSkillBrowserMeta {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.pluginSkillList {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pluginSkillItem {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-0);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.pluginSkillItem strong {
+  color: var(--text-0);
+  font-size: 13px;
+}
+
+.pluginSkillItem pre {
+  margin: 0;
+  overflow: auto;
+  max-height: 160px;
+  color: var(--text-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
 
 .pluginInstalledBadge {
   align-self: center;

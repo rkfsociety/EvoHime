@@ -153,6 +153,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/plugins", get(plugins::list_plugins))
         .route("/api/plugins/catalog", get(plugins::list_plugin_catalog))
         .route("/api/plugins/install", post(plugins::install_plugin))
+        .route("/api/plugins/update", post(plugins::update_plugin))
+        .route("/api/plugins/uninstall", post(plugins::uninstall_plugin))
+        .route(
+            "/api/plugins/:name/skills",
+            get(plugins::list_plugin_skills),
+        )
         .route(
             "/api/mcp/servers",
             get(crate::permissions_api::list_mcp_servers)
