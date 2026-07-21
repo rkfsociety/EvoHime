@@ -12,6 +12,7 @@ pub mod permission_audit;
 pub mod pool;
 pub mod scheduled;
 pub mod sites;
+pub mod test_db;
 
 pub use attachments::{
     claim_pending_session_attachments, create_session_attachment, list_pending_session_attachments,
@@ -34,6 +35,9 @@ pub use permission_audit::{
     insert_permission_audit, list_permission_audit, NewPermissionAudit, PermissionAuditRow,
 };
 pub use pool::{connect_pool, PoolConfig};
+pub use test_db::{
+    connect_integration_pool, integration_database_url, require_integration_database,
+};
 
 #[derive(Debug, Error)]
 pub enum StorageError {
@@ -970,21 +974,9 @@ mod worker_claim_tests {
     use super::*;
     use serde_json::json;
 
-    async fn connect_pool() -> Option<PgPool> {
-        let url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://evohime:evohime@localhost:5432/evohime".into());
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(2)
-            .connect(&url)
-            .await
-            .ok()?;
-        run_migrations(&pool).await.ok()?;
-        Some(pool)
-    }
-
     #[tokio::test]
     async fn claim_token_blocks_stale_complete_and_allows_holder() {
-        let Some(pool) = connect_pool().await else {
+        let Some(pool) = connect_integration_pool().await else {
             eprintln!("skipping worker claim test: database unavailable");
             return;
         };
@@ -1026,7 +1018,7 @@ mod worker_claim_tests {
 
     #[tokio::test]
     async fn steal_invalidates_previous_claim() {
-        let Some(pool) = connect_pool().await else {
+        let Some(pool) = connect_integration_pool().await else {
             eprintln!("skipping worker steal test: database unavailable");
             return;
         };

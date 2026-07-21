@@ -890,15 +890,7 @@ mod tests {
     }
 
     async fn connect_pool() -> Option<PgPool> {
-        let url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://evohime:evohime@localhost:5432/evohime".into());
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(2)
-            .connect(&url)
-            .await
-            .ok()?;
-        crate::run_migrations(&pool).await.ok()?;
-        Some(pool)
+        crate::connect_integration_pool().await
     }
 
     #[tokio::test]

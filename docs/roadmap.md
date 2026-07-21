@@ -430,7 +430,7 @@
 
 | # | Задача | Size | Статус | Notes / evidence |
 | --- | --- | --- | --- | --- |
-| 7.84 | CI: PostgreSQL service + storage/memory integration tests | L | ⬜ | tests skip без `DATABASE_URL` |
+| 7.84 | CI: PostgreSQL service + storage/memory integration tests | L | ✅ | `postgres:16` service; `DATABASE_URL` + `EVOHIME_REQUIRE_DB`; `connect_integration_pool` fails hard in CI |
 | 7.85 | CI: frontend `tsc` + build (+ optional playwright smoke) | M | ⬜ | только `rust.yml` |
 | 7.86 | CI: protocol schema ↔ Rust ↔ generated TS drift check | M | ⬜ | manual sync today |
 | 7.87 | CI: Clippy `-D warnings` already; add fmt/docs gates docs for stage 7 | S | ⬜ | keep current |
@@ -470,13 +470,13 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-21:** `7.83` ✅ — sidebar показывает все чаты; Wave D закрыт; следующий — Wave E (`7.84`–`7.86`).
+**Актуальный статус 2026-07-21:** `7.84` ✅ — CI крутит Postgres + storage/memory/task-engine integration; следующий — Wave E (`7.85`–`7.86`).
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
 3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.51`, `7.52` ✅ → next product honesty `7.62`+
 4. **Wave D (product honesty):** 7.62–7.68, 7.72–7.73 ✅
-5. **Wave E (DX/CI):** 7.84–7.86, 7.56, 7.69–7.71  
+5. **Wave E (DX/CI):** `7.84` ✅ → next `7.85`–`7.86`, `7.56`, `7.69`–`7.71`  
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+
 
 ### Критерий готовности Stage 7 (минимум)
@@ -488,6 +488,7 @@
 - Legacy memory dual-write выключен или явно deprecated  
 - Sites/Scheduled либо реализованы, либо убраны из «как будто работают»  
 - CI гоняет frontend + Postgres integration + Python worker tests  
+  (`7.84` Postgres ✅; frontend/`7.85` и worker/`7.56` ещё в Wave E)  
 
 ---
 

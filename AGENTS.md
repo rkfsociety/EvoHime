@@ -71,7 +71,7 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Wave A/B ✅; Wave C: `7.28`–`7.33`, `7.52` ✅; next `7.34`+
+- **Stage 7** Hardening + Product — Wave A–D ✅; Wave E: `7.84` ✅; next `7.85`+
 - Wave C next: planner cost/latency telemetry (`7.34`)…
 - Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
 

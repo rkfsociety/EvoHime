@@ -218,20 +218,10 @@ mod tests {
 
     #[tokio::test]
     async fn admit_inserts_and_dedupes_against_database() {
-        let url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://evohime:evohime@localhost:5432/evohime".into());
-        let Ok(pool) = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(2)
-            .connect(&url)
-            .await
-        else {
+        let Some(pool) = evohime_storage::connect_integration_pool().await else {
             eprintln!("skipping admit integration test: database unavailable");
             return;
         };
-        if evohime_storage::run_migrations(&pool).await.is_err() {
-            eprintln!("skipping admit integration test: migrations failed");
-            return;
-        }
 
         let scope_key = format!("mem-svc-{}", uuid::Uuid::new_v4());
         let item = NewMemoryItem::candidate_fact(

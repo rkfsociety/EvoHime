@@ -1,7 +1,8 @@
 //! Integration scenarios for task lifecycle (roadmap P1).
 //!
 //! Covers: start → pause → resume → complete, fail → retry,
-//! and recover_after_restart. Skips when Postgres is unavailable.
+//! and recover_after_restart. Soft-skips when Postgres is unavailable
+//! locally; fails hard in CI / when `EVOHIME_REQUIRE_DB=1` (Stage 7.84).
 
 use evohime_protocol::TaskStatus;
 use evohime_task_engine::{
@@ -16,15 +17,7 @@ use uuid::Uuid;
 static TEST_MUTEX: std::sync::LazyLock<Mutex<()>> = std::sync::LazyLock::new(|| Mutex::new(()));
 
 async fn connect_pool() -> Option<PgPool> {
-    let url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://evohime:evohime@localhost:5432/evohime".into());
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .connect(&url)
-        .await
-        .ok()?;
-    evohime_storage::run_migrations(&pool).await.ok()?;
-    Some(pool)
+    evohime_storage::connect_integration_pool().await
 }
 
 #[tokio::test]
