@@ -219,6 +219,7 @@ export interface TaskPlanRejectCommand {
 export interface ApprovalGrantedCommand {
   type: "approval.granted";
   approval_id: Uuid;
+  remember_path?: boolean;
 }
 export interface ApprovalDeniedCommand {
   type: "approval.denied";

@@ -528,14 +528,20 @@ pub(crate) async fn handle_socket(
                                     .remove(&task_id);
                             });
                         }
-                        ClientCommand::ApprovalGranted { approval_id } => {
+                        ClientCommand::ApprovalGranted {
+                            approval_id,
+                            remember_path,
+                        } => {
                             let task_id = state
                                 .permissions
                                 .approval(approval_id)
                                 .await
                                 .map(|(request, _)| request.task_id)
                                 .unwrap_or(Uuid::nil());
-                            let status = state.permissions.resolve(approval_id, true).await;
+                            let status = state
+                                .permissions
+                                .resolve_with_options(approval_id, true, remember_path)
+                                .await;
                             if status.is_some() {
                                 if let Err(error) = persist_permission_scopes(&state).await {
                                     warn!(error = %error, "failed to persist permission scopes after grant");
@@ -548,7 +554,11 @@ pub(crate) async fn handle_socket(
                                 true,
                             );
                             let detail = if status.is_some() {
-                                "Approval granted"
+                                if remember_path {
+                                    "Approval granted; path remembered for 1h in this session"
+                                } else {
+                                    "Approval granted once"
+                                }
                             } else {
                                 "Approval was already resolved or unknown"
                             };

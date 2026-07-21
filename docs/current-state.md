@@ -120,7 +120,9 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-`7.77` выполнен: `POST /api/plugins/uninstall`, `POST /api/plugins/update`, `GET /api/plugins/:name/skills`; PluginsPanel — удаление, обновление при расхождении версий, просмотр SKILL.md previews. Следующий пункт — `7.78` или Wave E (CI: `7.84`–`7.86`).
+`7.78` выполнен: `approval.granted` принимает `remember_path`; модал — «Один раз» vs «Запомнить путь (1 ч)»; audit показывает «путь запомнен». Следующий пункт — `7.79` или Wave E (CI: `7.84`–`7.86`).
+
+`7.77` выполнен: `POST /api/plugins/uninstall`, `POST /api/plugins/update`, `GET /api/plugins/:name/skills`; PluginsPanel — удаление, обновление при расхождении версий, просмотр SKILL.md previews.
 
 `7.76` выполнен: `POST /api/sessions/:session_id/unarchive` сбрасывает `archived_at`; в настройках → Архив кнопка «Восстановить» возвращает чат в sidebar и открывает его.
 
@@ -168,6 +170,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 **Актуализация 2026-07-18:** `7.51` выполнен: worker ML handlers расширены deterministic classify/language/redact задачами с контрактными тестами. Следующий пункт — product honesty для Sites/Scheduled.
 
-1. **Stage 7** — Wave D product polish ✅; следующий — `7.77` или Wave E
+1. **Stage 7** — Wave D product polish ✅; следующий — `7.79` или Wave E
 2. Рекомендуемая следующая волна: Wave E (DX/CI): `7.84`–`7.86`, `7.56`, `7.69`–`7.71`
-3. Локальный продуктовый хвост: `7.77` (plugins uninstall), `7.78` (approval remember-path)
+3. Локальный продуктовый хвост: `7.79` (silent boot errors), `7.80` (i18n consistency)

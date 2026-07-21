@@ -337,7 +337,7 @@ impl PermissionEngine {
     }
 
     pub async fn resolve(&self, id: Uuid, granted: bool) -> Option<ApprovalState> {
-        self.resolve_with_options(id, granted, true).await
+        self.resolve_with_options(id, granted, false).await
     }
 
     /// Resolve an approval. When `remember_path` is true and the grant succeeds,

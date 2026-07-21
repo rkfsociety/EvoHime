@@ -157,7 +157,11 @@ pub enum ClientCommand {
     #[serde(rename = "task.plan.reject")]
     TaskPlanReject { task_id: Uuid },
     #[serde(rename = "approval.granted")]
-    ApprovalGranted { approval_id: Uuid },
+    ApprovalGranted {
+        approval_id: Uuid,
+        #[serde(default)]
+        remember_path: bool,
+    },
     #[serde(rename = "approval.denied")]
     ApprovalDenied { approval_id: Uuid },
     #[serde(rename = "memory.accept")]
@@ -305,6 +309,11 @@ mod tests {
         for command in [
             ClientCommand::ApprovalGranted {
                 approval_id: Uuid::nil(),
+                remember_path: false,
+            },
+            ClientCommand::ApprovalGranted {
+                approval_id: Uuid::nil(),
+                remember_path: true,
             },
             ClientCommand::ApprovalDenied {
                 approval_id: Uuid::nil(),

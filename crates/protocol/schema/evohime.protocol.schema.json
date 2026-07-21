@@ -343,7 +343,14 @@
       "additionalProperties": false
     },
     "ApprovalGrantedCommand": {
-      "type": "object", "required": ["type", "approval_id"], "properties": { "type": { "const": "approval.granted" }, "approval_id": { "$ref": "#/$defs/Uuid" } }, "additionalProperties": false
+      "type": "object",
+      "required": ["type", "approval_id"],
+      "properties": {
+        "type": { "const": "approval.granted" },
+        "approval_id": { "$ref": "#/$defs/Uuid" },
+        "remember_path": { "type": "boolean", "default": false }
+      },
+      "additionalProperties": false
     },
     "ApprovalDeniedCommand": {
       "type": "object", "required": ["type", "approval_id"], "properties": { "type": { "const": "approval.denied" }, "approval_id": { "$ref": "#/$defs/Uuid" } }, "additionalProperties": false

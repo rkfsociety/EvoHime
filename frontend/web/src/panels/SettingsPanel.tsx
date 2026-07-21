@@ -332,7 +332,7 @@ export function SettingsPanel({
                     <li key={`${entry.approval_id}-${entry.decision}-${entry.at_ms}`}>
                       <strong>{entry.decision}</strong> · {entry.tool_name} ·{" "}
                       <code>{entry.scope}</code>
-                      {entry.remembered_path ? " · remembered" : ""}
+                      {entry.remembered_path ? " · путь запомнен" : ""}
                     </li>
                   ))}
               </ul>

@@ -3860,8 +3860,17 @@ h1 {
 .approvalModal { width: min(460px, calc(100vw - 32px)); padding: 24px; border: 1px solid rgba(159, 192, 255, .4); border-radius: 18px; background: #0a1021; box-shadow: 0 24px 80px rgba(0,0,0,.5); }
 .approvalModal h3 { margin: 0 0 18px; }
 .approvalScope { overflow-wrap: anywhere; }
-.approvalActions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
-.approvalActions button { border: 0; border-radius: 10px; padding: 10px 16px; cursor: pointer; }
+.approvalHint {
+  margin: 0 0 12px;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.approvalActions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
+.approvalActions button { border: 0; border-radius: 10px; padding: 10px 16px; cursor: pointer; font-weight: 600; }
+.approvalDenyButton { background: rgba(255, 104, 118, 0.16); color: #ff9aa4; }
+.approvalGrantButton { background: var(--surface-4); color: var(--text-0); }
+.approvalRememberButton { background: rgba(91, 134, 255, 0.22); color: var(--text-0); }
 
 .settingsBackdrop {
   position: fixed;

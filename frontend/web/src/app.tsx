@@ -1268,9 +1268,13 @@ export function App() {
     }
   }
 
-  function resolveApproval(type: "approval.granted" | "approval.denied") {
+  function resolveApproval(type: "approval.granted" | "approval.denied", rememberPath = false) {
     if (approval && socketRef.current?.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type, approval_id: approval.approval_id }));
+      const payload =
+        type === "approval.granted"
+          ? { type, approval_id: approval.approval_id, remember_path: rememberPath }
+          : { type, approval_id: approval.approval_id };
+      socketRef.current.send(JSON.stringify(payload));
       setApproval(null);
     }
   }
@@ -2101,7 +2105,13 @@ export function App() {
           {settingsPanelElement()}
         </SettingsModal>
       ) : null}
-      {approval ? <ApprovalModal request={approval} onGrant={() => resolveApproval("approval.granted")} onDeny={() => resolveApproval("approval.denied")} /> : null}
+      {approval ? (
+        <ApprovalModal
+          request={approval}
+          onGrant={(rememberPath) => resolveApproval("approval.granted", rememberPath)}
+          onDeny={() => resolveApproval("approval.denied")}
+        />
+      ) : null}
       {memoryAsk ? (
         <MemoryAskModal
           request={memoryAsk}

@@ -419,7 +419,7 @@
 | 7.75 | Settings modal: Escape, focus trap, tabpanel pattern | M | ✅ | `useModalA11y` + SettingsModal + tablist/tabpanel + ApprovalModal |
 | 7.76 | Chat archive restore / unarchive | M | ✅ | `POST /api/sessions/:id/unarchive` + restore in Settings archive |
 | 7.77 | Plugins: uninstall, update, skill browser | M | ✅ | uninstall/update API + skills preview в PluginsPanel |
-| 7.78 | Approval modal: remember-path / temp-allow controls | M | ⬜ | audit знает `remembered_path` |
+| 7.78 | Approval modal: remember-path / temp-allow controls | M | ✅ | `remember_path` в protocol + UI «Один раз» / «Запомнить путь (1 ч)» |
 | 7.79 | Silent boot errors → toast / Settings banner | M | ⬜ | `.catch(() => undefined)` |
 | 7.80 | i18n consistency (RU/EN mix в Memory/Actions) | S | ⬜ | MemoryPanel actions |
 | 7.81 | Project chip: real git branch (не hardcoded `main`) | S | ⬜ | `app.tsx` |
@@ -470,7 +470,7 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-21:** `7.77` ✅ — плагины можно обновлять/удалять, skills browser в UI; следующий — `7.78` или Wave E.
+**Актуальный статус 2026-07-21:** `7.78` ✅ — approval modal с выбором разового/временного path grant; следующий — `7.79` или Wave E.
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
