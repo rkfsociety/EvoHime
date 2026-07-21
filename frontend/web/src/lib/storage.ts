@@ -3,6 +3,7 @@ import type { ProjectComposerPreference, ProjectSelection } from "../types";
 export const selectedProjectStorageKey = "evohime.selectedProject";
 export const projectComposerPreferencesStorageKey = "evohime.projectComposerPreferences";
 export const traceOpenStorageKey = "evohime.traceOpen";
+export const showToolLinesStorageKey = "evohime.showToolLines";
 
 export function loadTraceOpen() {
   try {
@@ -73,6 +74,23 @@ export function saveSelectedProject(project: ProjectSelection) {
 export function saveTraceOpen(open: boolean) {
   try {
     localStorage.setItem(traceOpenStorageKey, open ? "true" : "false");
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+export function loadShowToolLines() {
+  try {
+    const stored = localStorage.getItem(showToolLinesStorageKey);
+    return stored !== "false";
+  } catch {
+    return true;
+  }
+}
+
+export function saveShowToolLines(show: boolean) {
+  try {
+    localStorage.setItem(showToolLinesStorageKey, show ? "true" : "false");
   } catch {
     // Ignore storage failures.
   }

@@ -1,4 +1,5 @@
 export type ChatLine = {
+  id: string;
   role: "assistant" | "tool" | "system" | "user";
   text: string;
   taskId?: string;

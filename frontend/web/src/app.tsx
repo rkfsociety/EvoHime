@@ -38,6 +38,7 @@ import {
   sessionsApi,
 } from "./api";
 import { websocketUrl } from "./api/client";
+import { createChatLine } from "./lib/chat-lines";
 import { reconcileModelForBilling } from "./lib/modelBilling";
 import {
   chatLinePlainText,
@@ -67,10 +68,12 @@ import {
 import {
   loadProjectComposerPreference,
   loadSelectedProject,
+  loadShowToolLines,
   loadTraceOpen,
   projectPreferenceKey,
   saveProjectComposerPreference,
   saveSelectedProject,
+  saveShowToolLines,
   saveTraceOpen,
 } from "./lib/storage";
 import type {
@@ -126,6 +129,7 @@ export function App() {
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
   const [traceOpen, setTraceOpen] = useState(loadTraceOpen);
+  const [showToolLines, setShowToolLines] = useState(loadShowToolLines);
   const [selectedProject, setSelectedProject] = useState<ProjectSelection>(loadSelectedProject);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -289,7 +293,7 @@ export function App() {
             setSocketState("failed");
             setLines((current) => [
               ...current,
-              { role: "system", text: String(error) },
+              createChatLine({ role: "system", text: String(error) }),
             ]);
           }
         });
@@ -317,7 +321,7 @@ export function App() {
         setSocketState("failed");
         setLines((current) => [
           ...current,
-          { role: "system", text: String(error) },
+          createChatLine({ role: "system", text: String(error) }),
         ]);
       }
     });
@@ -354,6 +358,9 @@ export function App() {
   useEffect(() => {
     saveTraceOpen(traceOpen);
   }, [traceOpen]);
+  useEffect(() => {
+    saveShowToolLines(showToolLines);
+  }, [showToolLines]);
 
   useEffect(() => {
     const closeFloatingMenus = (event: PointerEvent) => {
@@ -821,7 +828,7 @@ export function App() {
       visible.otherChats.some((chat) => chat.session_id === activeSessionId);
     if (!stillVisible) {
       void openPreferredSession(chatSessions, project).catch((error) => {
-        setLines((current) => [...current, { role: "system", text: String(error) }]);
+        setLines((current) => [...current, createChatLine({ role: "system", text: String(error) })]);
       });
     }
   }
@@ -841,7 +848,7 @@ export function App() {
       setNewProjectName("");
       setProjectPickerOpen(false);
       void openPreferredSession(chatSessions, nextProject).catch((error) => {
-        setLines((current) => [...current, { role: "system", text: String(error) }]);
+        setLines((current) => [...current, createChatLine({ role: "system", text: String(error) })]);
       });
     } catch (error) {
       setProjectCreateError(error instanceof Error ? error.message : String(error).replace(/^Error:\s*/, ""));
@@ -862,7 +869,7 @@ export function App() {
         await openPreferredSession(remaining, selectedProject);
       }
     } catch (error) {
-      setLines((current) => [...current, { role: "system", text: String(error) }]);
+      setLines((current) => [...current, createChatLine({ role: "system", text: String(error) })]);
     } finally {
       setDeletingSessionId(null);
     }
@@ -882,7 +889,7 @@ export function App() {
 
       await openPreferredSession(remaining, selectedProject);
     } catch (error) {
-      setLines((current) => [...current, { role: "system", text: String(error) }]);
+      setLines((current) => [...current, createChatLine({ role: "system", text: String(error) })]);
     } finally {
       setDeletingSessionId(null);
     }
@@ -1068,7 +1075,7 @@ export function App() {
     } catch (error) {
       setLines((current) => [
         ...current,
-        { role: "system", text: String(error) },
+        createChatLine({ role: "system", text: String(error) }),
       ]);
     }
   }
@@ -1091,7 +1098,7 @@ export function App() {
       setSaveState("idle");
       setLines((current) => [
         ...current,
-        { role: "system", text: String(error) },
+        createChatLine({ role: "system", text: String(error) }),
       ]);
     }
   }
@@ -1449,7 +1456,7 @@ export function App() {
             navigateToPanel("chat");
             void openSession(chat).catch((error) => {
               setSocketState("failed");
-              setLines((current) => [...current, { role: "system", text: String(error) }]);
+              setLines((current) => [...current, createChatLine({ role: "system", text: String(error) })]);
             });
           }}
           onApprovePlan={(taskId, plan) => {
@@ -1501,6 +1508,8 @@ export function App() {
           ref={chatLogRef}
           onScroll={handleChatScroll}
           className={`chatLog${lines.every((line) => line.role === "system") && !stream ? " empty" : ""}`}
+          role="log"
+          aria-label="История сообщений чата"
         >
           {lines.every((line) => line.role === "system") && !stream ? (
             <div className="chatWelcome">
@@ -1522,15 +1531,19 @@ export function App() {
               </div>
             </div>
           ) : (
-            visibleChatLines.map((line, index) => (
-              <Fragment key={`${line.role}-${index}`}>
-                <article className={`line ${line.role}`} tabIndex={-1}>
+            visibleChatLines.map((line) => (
+              <Fragment key={line.id}>
+                <article
+                  className={`line ${line.role}`}
+                  tabIndex={-1}
+                  aria-label={translateChatRole(line.role, githubAuth?.login)}
+                >
                   {line.role === "assistant" ? <AgentAvatar size="sm" /> : null}
                   <strong>{translateChatRole(line.role, githubAuth?.login)}</strong>
                   <CopyMessageButton text={chatLinePlainText(line.role, line.text)} />
                   {line.role === "assistant" ? <MarkdownMessage text={line.text} /> : <pre>{line.text}</pre>}
                 </article>
-                {line.role === "user" && line.taskId ? (
+                {showToolLines && line.role === "user" && line.taskId ? (
                   <ChatTraceSummary
                     traceLines={traceLinesByTask[line.taskId] ?? []}
                     active={activeTaskId === line.taskId}
@@ -1541,14 +1554,12 @@ export function App() {
             ))
           )}
           {stream && lastAssistantLineIndex === -1 ? (
-            <>
-              <article className="line assistant streaming" tabIndex={-1}>
-                <AgentAvatar size="sm" />
-                <strong>Ассистент</strong>
-                <CopyMessageButton text={chatLinePlainText("assistant", stream)} />
-                <MarkdownMessage text={stream} />
-              </article>
-            </>
+            <article className="line assistant streaming" tabIndex={-1} aria-label="Ассистент, ответ формируется">
+              <AgentAvatar size="sm" />
+              <strong>Ассистент</strong>
+              <CopyMessageButton text={chatLinePlainText("assistant", stream)} />
+              <MarkdownMessage text={stream} />
+            </article>
           ) : null}
         </div>
         {!hasConversation ? (
@@ -1642,7 +1653,7 @@ export function App() {
           </div>
         ) : null}
         {composerNotice ? <p className="composerNotice">{composerNotice}</p> : null}
-        <form onSubmit={sendMessage} className="composer">
+        <form onSubmit={sendMessage} className="composer" aria-label="Отправка сообщения">
           <div className="composerField">
             <div className="composerLeading">
               <input
@@ -1707,6 +1718,7 @@ export function App() {
                 }
               }}
               placeholder="Введите сообщение..."
+              aria-label="Текст сообщения"
             />
             <div className="composerControls">
               <div className="composerMenu composerRouteMenu">
@@ -1824,6 +1836,7 @@ export function App() {
           onClick={() => setTraceOpen((open) => !open)}
           aria-expanded={traceOpen}
           aria-controls="task-trace"
+          aria-label="Показать или скрыть боковую панель трейса"
         >
           <span aria-hidden="true">⌁</span>
           Трейс
@@ -1855,7 +1868,7 @@ export function App() {
                   onClick={() => {
                     if (item.id === "new-task") {
                       void createNewChat().catch((error) => {
-                        setLines((current) => [...current, { role: "system", text: String(error) }]);
+                        setLines((current) => [...current, createChatLine({ role: "system", text: String(error) })]);
                       });
                       return;
                     }
@@ -1909,7 +1922,7 @@ export function App() {
                       className={chat.session_id === activeSessionId ? "projectChatItem active" : "projectChatItem"}
                       onClick={() => {
                         navigateToPanel("chat");
-                        void openSession(chat).catch((error) => setLines((current) => [...current, { role: "system", text: String(error) }]));
+                        void openSession(chat).catch((error) => setLines((current) => [...current, createChatLine({ role: "system", text: String(error) })]));
                       }}
                     >
                       <strong>{formatSessionTitle(chat, index)}</strong>
@@ -1946,7 +1959,7 @@ export function App() {
                       className={chat.session_id === activeSessionId ? "standaloneSidebarChat active" : "standaloneSidebarChat"}
                       onClick={() => {
                         navigateToPanel("chat");
-                        void openSession(chat).catch((error) => setLines((current) => [...current, { role: "system", text: String(error) }]));
+                        void openSession(chat).catch((error) => setLines((current) => [...current, createChatLine({ role: "system", text: String(error) })]));
                       }}
                     >
                       <strong>{formatSessionTitle(chat, index)}</strong>
@@ -2000,9 +2013,25 @@ export function App() {
               <h2>{activePanel === "chat" ? activeChatTitle : currentPanelLabel}</h2>
               <div className="panelHeaderActions">
                 {activePanel === "chat" ? (
-                  <button type="button" className="panelHeaderButton" onClick={() => void copyChat()}>
-                    Копировать чат
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className={showToolLines ? "panelHeaderButton active" : "panelHeaderButton"}
+                      onClick={() => setShowToolLines((open) => !open)}
+                      aria-pressed={showToolLines}
+                      aria-label={showToolLines ? "Скрыть ход работы агента в чате" : "Показать ход работы агента в чате"}
+                    >
+                      {showToolLines ? "Скрыть ход" : "Показать ход"}
+                    </button>
+                    <button
+                      type="button"
+                      className="panelHeaderButton"
+                      onClick={() => void copyChat()}
+                      aria-label="Копировать чат в буфер обмена"
+                    >
+                      Копировать чат
+                    </button>
+                  </>
                 ) : null}
               </div>
             </header>
@@ -2018,7 +2047,7 @@ export function App() {
                 <span>{activeTaskId ? "Текущая задача" : "События чата"}</span>
               </div>
               <div className="traceHeaderActions">
-                <button type="button" className="panelHeaderButton" onClick={exportTrace}>
+                <button type="button" className="panelHeaderButton" onClick={exportTrace} aria-label="Экспортировать трейс задачи">
                   Экспорт
                 </button>
                 <button type="button" className="traceClose" onClick={() => setTraceOpen(false)} aria-label="Закрыть трейс">
@@ -2028,8 +2057,8 @@ export function App() {
             </header>
             <div className="traceList">
               {lines.filter((line) => line.role === "system" || line.role === "tool").length > 0 ? (
-                lines.filter((line) => line.role === "system" || line.role === "tool").map((line, index) => (
-                  <article className={`traceItem ${line.role}`} key={`${line.role}-${index}`}>
+                lines.filter((line) => line.role === "system" || line.role === "tool").map((line) => (
+                  <article className={`traceItem ${line.role}`} key={line.id} aria-label={translateChatRole(line.role, githubAuth?.login)}>
                     <strong>{translateChatRole(line.role, githubAuth?.login)}</strong>
                     <pre>{line.text}</pre>
                   </article>
@@ -2140,8 +2169,8 @@ function CopyMessageButton({ text }: { text: string }) {
 
 function ChatTraceSummary({ traceLines, active, userLogin }: { traceLines: ChatLine[]; active: boolean; userLogin?: string | null }) {
   return (
-    <details className="chatTraceSummary" open={active}>
-      <summary>
+    <details className="chatTraceSummary" open={active} aria-label="Ход работы агента">
+      <summary aria-label={active ? "Модель думает, развернуть ход работы" : "Развернуть ход работы агента"}>
         <span className={`chatTraceSummaryTitle${active ? " isThinking" : ""}`}>
           {active ? (
             <AgentAvatar size="sm" className="agentAvatarThinking" />
@@ -2164,8 +2193,8 @@ function ChatTraceSummary({ traceLines, active, userLogin }: { traceLines: ChatL
         <span className="chatTraceSummaryMeta">{active ? "Выполняю план" : "Завершено"}</span>
       </summary>
       <div className="chatTraceSummaryBody">
-        {traceLines.map((line, index) => (
-          <article className={`chatTraceEntry ${line.role}`} key={`${line.role}-${index}`}>
+        {traceLines.map((line) => (
+          <article className={`chatTraceEntry ${line.role}`} key={line.id} aria-label={translateChatRole(line.role, userLogin)}>
             <strong>{translateChatRole(line.role, userLogin)}</strong>
             <pre>{line.text}</pre>
           </article>

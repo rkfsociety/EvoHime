@@ -1221,6 +1221,12 @@ h1 {
   background: rgba(91, 134, 255, 0.14);
 }
 
+.panelHeaderButton.active {
+  border-color: rgba(143, 180, 255, 0.55);
+  color: var(--text-0);
+  background: rgba(91, 134, 255, 0.22);
+}
+
 .chatActionNotice {
   position: fixed;
   right: 24px;

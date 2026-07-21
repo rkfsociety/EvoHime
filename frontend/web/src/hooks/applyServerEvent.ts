@@ -9,6 +9,7 @@ import type {
   TaskStepChangedEvent,
 } from "../protocol";
 import type { ActionView, ChatLine, ChatSessionSummary, TaskStepView, TaskView } from "../types";
+import { createChatLine } from "../lib/chat-lines";
 import { formatPlan, summarizeChatTitle } from "../lib/format";
 import { normalizePath, parentPath } from "../lib/paths";
 
@@ -67,10 +68,10 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
     case "session.created":
       ctx.setLines((current) => [
         ...current,
-        {
+        createChatLine({
           role: "system",
           text: `Сессия создана: ${event.session_id}`,
-        },
+        }),
       ]);
       break;
     case "task.started":
@@ -102,7 +103,7 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
           pendingPlan: null,
         },
       }));
-      ctx.setLines((current) => [...current, { role: "user", text: event.user_message, taskId: event.task_id }]);
+      ctx.setLines((current) => [...current, createChatLine({ role: "user", text: event.user_message, taskId: event.task_id })]);
       ctx.setStream("");
       break;
     case "agent.status": {
@@ -115,7 +116,7 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
       };
       ctx.setLines((current) => [
         ...current,
-        { role: "system", text: labels[event.phase], taskId: event.task_id },
+        createChatLine({ role: "system", text: labels[event.phase], taskId: event.task_id }),
       ]);
       break;
     }
@@ -126,10 +127,10 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
           const copy = [...items];
           const index = copy.findIndex((line) => line.role === "assistant" && line.taskId === event.task_id);
           if (index !== -1) {
-            copy[index] = { role: "assistant", text: next, taskId: event.task_id };
+            copy[index] = { ...copy[index], text: next };
             return copy;
           }
-          copy.push({ role: "assistant", text: next, taskId: event.task_id });
+          copy.push(createChatLine({ role: "assistant", text: next, taskId: event.task_id }));
           return copy;
         });
         return next;
@@ -138,7 +139,7 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
     case "tool.started":
       ctx.setLines((current) => [
         ...current,
-        { role: "tool", text: `Запускаю инструмент: ${event.tool_name}`, taskId: event.task_id },
+        createChatLine({ role: "tool", text: `Запускаю инструмент: ${event.tool_name}`, taskId: event.task_id }),
       ]);
       break;
     case "tool.output":
@@ -177,21 +178,21 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
       ctx.setMemoryAsk(event);
       ctx.setLines((current) => [
         ...current,
-        {
+        createChatLine({
           role: "system",
           text: `Память: запомнить «${event.content.slice(0, 120)}${event.content.length > 120 ? "…" : ""}»? (${event.reason})`,
           taskId: event.task_id,
-        },
+        }),
       ]);
       break;
     case "memory.proposed":
       ctx.setLines((current) => [
         ...current,
-        {
+        createChatLine({
           role: "system",
           text: `Память предложена [${event.scope}/${event.kind}]: ${event.content.slice(0, 100)}${event.content.length > 100 ? "…" : ""}`,
           taskId: event.task_id,
-        },
+        }),
       ]);
       break;
     case "memory.accepted":
@@ -200,7 +201,7 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
       );
       ctx.setLines((current) => [
         ...current,
-        { role: "system", text: `Память сохранена: ${event.memory_id}`, taskId: event.task_id },
+        createChatLine({ role: "system", text: `Память сохранена: ${event.memory_id}`, taskId: event.task_id }),
       ]);
       break;
     case "memory.rejected":
@@ -209,27 +210,27 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
       );
       ctx.setLines((current) => [
         ...current,
-        { role: "system", text: `Память отклонена: ${event.memory_id}`, taskId: event.task_id },
+        createChatLine({ role: "system", text: `Память отклонена: ${event.memory_id}`, taskId: event.task_id }),
       ]);
       break;
     case "memory.used":
       ctx.setLines((current) => [
         ...current,
-        {
+        createChatLine({
           role: "system",
           text: `Память feedback [${event.signal}]: ${event.memory_id} → conf ${event.confidence.toFixed(2)}`,
           taskId: event.task_id,
-        },
+        }),
       ]);
       break;
     case "tool.completed":
       ctx.setLines((current) => [
         ...current,
-        {
+        createChatLine({
           role: "tool",
           text: `${event.tool_name}: ${event.success ? "завершён успешно" : "завершён с ошибкой"}`,
           taskId: event.task_id,
-        },
+        }),
       ]);
       if (event.tool_name === "shell.execute") {
         ctx.setTerminalEntries((current) => [
@@ -251,10 +252,10 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
         const copy = [...current];
         const index = copy.findIndex((line) => line.role === "assistant" && line.taskId === event.task_id);
         if (index !== -1) {
-          copy[index] = { role: "assistant", text: event.final_message, taskId: event.task_id };
+          copy[index] = { ...copy[index], text: event.final_message };
           return copy;
         }
-        copy.push({ role: "assistant", text: event.final_message, taskId: event.task_id });
+        copy.push(createChatLine({ role: "assistant", text: event.final_message, taskId: event.task_id }));
         return copy;
       });
       ctx.setStream("");
@@ -267,7 +268,7 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
       );
       ctx.setLines((current) => [
         ...current,
-        { role: "system", text: `Задача завершилась с ошибкой: ${event.error}`, taskId: event.task_id },
+        createChatLine({ role: "system", text: `Задача завершилась с ошибкой: ${event.error}`, taskId: event.task_id }),
       ]);
       ctx.setStream("");
       break;
@@ -368,11 +369,11 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
       });
       ctx.setLines((current) => [
         ...current,
-        {
+        createChatLine({
           role: "system",
           text: formatPlan(event.plan as PlanStep[]),
           taskId: event.task_id,
-        },
+        }),
       ]);
       break;
     case "file.changed":

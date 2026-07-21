@@ -120,7 +120,9 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-`7.73` выполнен: вложения теперь реально загружаются через `/api/sessions/:session_id/attachments`, пишутся в `.evohime/attachments/<session>/`, сохраняются в `session_attachments` и на старте задачи атомарно claim'ятся в attachment context для агента. Следующий пункт — `7.74` или Wave E (CI: `7.84`–`7.86`).
+`7.74` выполнен: у `ChatLine` стабильный `id` (React keys без remount при streaming), в шапке чата toggle «Показать/Скрыть ход» (localStorage), aria-labels на лог чата, composer и trace summary. Следующий пункт — `7.75` или Wave E (CI: `7.84`–`7.86`).
+
+`7.73` выполнен: вложения теперь реально загружаются через `/api/sessions/:session_id/attachments`, пишутся в `.evohime/attachments/<session>/`, сохраняются в `session_attachments` и на старте задачи атомарно claim'ятся в attachment context для агента.
 
 `7.72` + `7.68` выполнены: sidebar получил секцию «Инструменты» (Файлы, Редактор, Терминал, Git, Задачи, Действия); панели открываются через `?panel=` с поддержкой browser back/forward.
 
@@ -160,6 +162,6 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 **Актуализация 2026-07-18:** `7.51` выполнен: worker ML handlers расширены deterministic classify/language/redact задачами с контрактными тестами. Следующий пункт — product honesty для Sites/Scheduled.
 
-1. **Stage 7** — Wave D: Sites/Scheduled/nav/router/attachments ✅; следующий — `7.74` или Wave E
+1. **Stage 7** — Wave D: Sites/Scheduled/nav/router/attachments/chat polish ✅; следующий — `7.75` или Wave E
 2. Рекомендуемая следующая волна: Wave E (DX/CI): `7.84`–`7.86`, `7.56`, `7.69`–`7.71`
-3. Локальный продуктовый хвост: `7.74` (chat polish), `7.75` (Settings modal a11y)
+3. Локальный продуктовый хвост: `7.75` (Settings modal a11y), `7.76` (chat archive restore)
