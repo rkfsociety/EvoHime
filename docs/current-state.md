@@ -120,7 +120,9 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-`7.84` выполнен: CI job `test` поднимает `postgres:16`, задаёт `DATABASE_URL`/`EVOHIME_REQUIRE_DB`, а `connect_integration_pool` в CI падает вместо тихого skip. Следующий пункт — Wave E (`7.85` frontend CI, `7.86` protocol drift).
+`7.85` выполнен: CI job `frontend` — Node 22, `npm ci`, `npm run typecheck`, `npm run build` (Playwright smoke отложен). Следующий пункт — `7.86` (protocol schema ↔ Rust ↔ TS drift).
+
+`7.84` выполнен: CI job `test` поднимает `postgres:16`, задаёт `DATABASE_URL`/`EVOHIME_REQUIRE_DB`, а `connect_integration_pool` в CI падает вместо тихого skip.
 
 `7.83` выполнен: sidebar больше не обрезает standalone-чаты до пяти — показываются все, sidebar скроллится. Wave D product polish закрыт.
 
@@ -182,5 +184,5 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 **Актуализация 2026-07-18:** `7.51` выполнен: worker ML handlers расширены deterministic classify/language/redact задачами с контрактными тестами. Следующий пункт — product honesty для Sites/Scheduled.
 
-1. **Stage 7** — Wave E: `7.84` ✅; next `7.85`–`7.86`, `7.56`, `7.69`–`7.71`
-2. Рекомендуемая следующая волна: Wave E остаток (frontend CI + protocol drift), затем DX (`7.69`–`7.71`)
+1. **Stage 7** — Wave E: `7.84`–`7.85` ✅; next `7.86`, `7.56`, `7.69`–`7.71`
+2. Рекомендуемая следующая волна: protocol drift check, затем worker CI / DX
