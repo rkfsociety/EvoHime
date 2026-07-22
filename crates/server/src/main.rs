@@ -4,6 +4,7 @@ mod app;
 mod attachments_api;
 mod auth;
 mod cors;
+mod features;
 mod github_api;
 mod health;
 mod llm_telemetry;

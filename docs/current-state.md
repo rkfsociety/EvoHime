@@ -135,6 +135,8 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.89` выполнен: `scripts/generate-openapi.mjs` извлекает 75 операций из `crates/server/src/routes.rs`, генерирует `docs/openapi.json` и `frontend/web/src/api/generated.ts`, а сервер отдаёт контракт через `/openapi.json`. Сейчас это route-level контракт; DTO-схемы остаются в domain API modules.
 
+`7.90` выполнен: `/api/features` публикует Sites/Scheduled/OTLP flags; `EVOHIME_FEATURE_SITES` и `EVOHIME_FEATURE_SCHEDULED` скрывают панели и возвращают deep-link в чат, а `EVOHIME_FEATURE_OTLP=0` отключает экспорт OTLP.
+
 Локальный `cargo fmt --all -- --check` сейчас обнаруживает pre-existing форматирование в нескольких файлах `crates/server` и `crates/storage`; эти посторонние изменения в `7.87` не включались.
 
 `7.86` выполнен: CI job `protocol-drift` на Node 22 устанавливает frontend и корневые зависимости, запускает `npm run generate:protocol` и падает при diff в `frontend/web/src/protocol.generated.ts`.

@@ -136,6 +136,10 @@ BIND_ADDR=127.0.0.1:3000
 # EVOHIME_API_TOKEN=dev-local-token
 # Optional: comma-separated CORS origins (default: localhost Vite + :3000)
 # EVOHIME_CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
+# Experimental feature flags (default enabled; set to 0/false to disable)
+# EVOHIME_FEATURE_SITES=1
+# EVOHIME_FEATURE_SCHEDULED=1
+# EVOHIME_FEATURE_OTLP=1
 # EVOHIME_CORS_PERMISSIVE=1
 WORKSPACE_ROOT=.
 DEMO_FILE_PATH=docs/sample-context.md

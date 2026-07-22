@@ -86,6 +86,9 @@ pub fn export_enabled() -> bool {
 }
 
 fn otel_enabled() -> bool {
+    if !crate::features::enabled("EVOHIME_FEATURE_OTLP", true) {
+        return false;
+    }
     if std::env::var("OTEL_SDK_DISABLED")
         .map(|value| value.eq_ignore_ascii_case("true"))
         .unwrap_or(false)

@@ -20,6 +20,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/health", get(crate::health::health))
         .route("/openapi.json", get(crate::openapi::document))
         .route("/api/auth/status", get(crate::health::auth_status))
+        .route("/api/features", get(crate::features::list))
         .route(
             "/api/models/config",
             get(crate::models_api::model_config).put(crate::models_api::update_model_config),

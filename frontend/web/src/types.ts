@@ -238,6 +238,12 @@ export type McpServerConfig = {
   description?: string | null;
 };
 
+export type FeatureFlags = {
+  sites: boolean;
+  scheduled: boolean;
+  otlp: boolean;
+};
+
 export const workspacePanels: Array<{ id: WorkspacePanel; label: string }> = [
   { id: "chat", label: "Чат" },
   { id: "files", label: "Файлы" },

@@ -33,6 +33,7 @@ import { useWebSocket } from "./hooks/useWebSocket";
 import { useWorkspace } from "./hooks/useWorkspace";
 import {
   githubApi,
+  featuresApi,
   mcpApi,
   modelsApi,
   permissionsApi,
@@ -74,6 +75,7 @@ import type {
   ActionView,
   ChatLine,
   ChatSessionSummary,
+  FeatureFlags,
   GithubAuthInfo,
   McpServerConfig,
   ModelConfig,
@@ -122,6 +124,7 @@ export function App() {
   } = workspaceState;
   const [bootNotices, setBootNotices] = useState<BootNotice[]>([]);
   const [bootNoticesDismissed, setBootNoticesDismissed] = useState(false);
+  const [featureFlags, setFeatureFlags] = useState<FeatureFlags>({ sites: true, scheduled: true, otlp: true });
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
   const [modelConfigError, setModelConfigError] = useState<string | null>(null);
   const [selectedModelRoute, setSelectedModelRoute] = useState(() => loadProjectComposerPreference(loadSelectedProject().path).modelRoute ?? "");
@@ -177,6 +180,12 @@ export function App() {
       setBootNoticesDismissed(false);
       setBootNotices((current) => appendBootNotice(current, formatBootError(label, error)));
     };
+
+    featuresApi.getFeatures()
+      .then((data) => {
+        if (!cancelled) setFeatureFlags(data);
+      })
+      .catch((error) => noteBootError("Feature flags", error));
 
     const loadModelConfig = async () => {
       const data = await modelsApi.getModelConfig();
@@ -298,6 +307,11 @@ export function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (activePanel === "sites" && !featureFlags.sites) navigateToPanel("chat");
+    if (activePanel === "scheduled" && !featureFlags.scheduled) navigateToPanel("chat");
+  }, [activePanel, featureFlags, navigateToPanel]);
 
   useEffect(() => {
     if (!modelConfig) {
@@ -1617,7 +1631,10 @@ export function App() {
 
           <section className="sidebarSection">
             <div className="quickLinks">
-              {sidebarQuickLinks.map((item) => (
+              {sidebarQuickLinks.filter((item) =>
+                (item.panel !== "sites" || featureFlags.sites) &&
+                (item.panel !== "scheduled" || featureFlags.scheduled),
+              ).map((item) => (
                 <button
                   key={item.id}
                   type="button"
