@@ -125,3 +125,15 @@ jobs:
         run: npm run generate:protocol
       - name: Check generated protocol types are committed
         run: git diff --exit-code -- frontend/web/src/protocol.generated.ts
+
+  # Stage 7.56 — Python worker unit/integration tests.
+  python-worker:
+    name: Python Worker Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run worker tests
+        run: python -m unittest discover -s workers/python -p "test_*.py"

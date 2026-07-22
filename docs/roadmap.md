@@ -382,7 +382,7 @@
 | 7.53 | Worker job UI: submit form + payload editor в Settings | M | ⬜ | сейчас status/list/retry |
 | 7.54 | Horizontal worker scale (N processes / queue backend) | L | ⬜ | single in-proc Python queue |
 | 7.55 | Typed JSON Schema registry для worker tasks (shared) | M | ⬜ | duplicate validate Rust/Python |
-| 7.56 | CI job для `workers/python` unittest | S | ⬜ | не в workflow |
+| 7.56 | CI job для `workers/python` unittest | S | ✅ | `python-worker` job на Python 3.12 |
 
 ### 7.F — Project index & context
 
@@ -470,13 +470,13 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-22:** `7.86` ✅ — CI проверяет drift между schema и generated TS; следующий — `7.56` (worker unittest в CI).
+**Актуальный статус 2026-07-22:** `7.56` ✅ — CI запускает 25 Python worker tests на Python 3.12; следующий — `7.69` (дораспил frontend shell).
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
 3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.51`, `7.52` ✅ → next product honesty `7.62`+
 4. **Wave D (product honesty):** 7.62–7.68, 7.72–7.73 ✅
-5. **Wave E (DX/CI):** `7.84`–`7.86` ✅ → next `7.56`, `7.69`–`7.71`
+5. **Wave E (DX/CI):** `7.84`–`7.86` ✅, `7.56` ✅ → next `7.69`–`7.71`
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+
 
 ### Критерий готовности Stage 7 (минимум)
