@@ -1,0 +1,730 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "EvoHime HTTP API",
+    "version": "0.1.0",
+    "description": "Generated from crates/server/src/routes.rs."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "get_health",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "get_openapi_json",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/auth/status": {
+      "get": {
+        "operationId": "get_api_auth_status",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/models/config": {
+      "get": {
+        "operationId": "get_api_models_config",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_models_config",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/models/available": {
+      "get": {
+        "operationId": "get_api_models_available",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/sessions": {
+      "get": {
+        "operationId": "get_api_sessions",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_sessions",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/sessions/archived": {
+      "get": {
+        "operationId": "get_api_sessions_archived",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/sessions/:session_id": {
+      "delete": {
+        "operationId": "delete_api_sessions_session_id",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/sessions/:session_id/archive": {
+      "post": {
+        "operationId": "post_api_sessions_session_id_archive",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/sessions/:session_id/unarchive": {
+      "post": {
+        "operationId": "post_api_sessions_session_id_unarchive",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/sessions/:session_id/history": {
+      "get": {
+        "operationId": "get_api_sessions_session_id_history",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/sessions/:session_id/attachments": {
+      "get": {
+        "operationId": "get_api_sessions_session_id_attachments",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_sessions_session_id_attachments",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/auth/github": {
+      "get": {
+        "operationId": "get_api_auth_github",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/github/pull-requests": {
+      "get": {
+        "operationId": "get_api_github_pull_requests",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_github_pull_requests",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/github/pull-requests/:number": {
+      "get": {
+        "operationId": "get_api_github_pull_requests_number",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/files": {
+      "get": {
+        "operationId": "get_api_files",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/projects": {
+      "get": {
+        "operationId": "get_api_projects",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_projects",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/files/content": {
+      "get": {
+        "operationId": "get_api_files_content",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_files_content",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_files_content",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/git/status": {
+      "get": {
+        "operationId": "get_api_git_status",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/git/diff": {
+      "get": {
+        "operationId": "get_api_git_diff",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/git/commit": {
+      "post": {
+        "operationId": "post_api_git_commit",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/git/pull": {
+      "post": {
+        "operationId": "post_api_git_pull",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/git/push": {
+      "post": {
+        "operationId": "post_api_git_push",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/tasks": {
+      "get": {
+        "operationId": "get_api_tasks",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/scheduled": {
+      "get": {
+        "operationId": "get_api_scheduled",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_scheduled",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/scheduled/:id": {
+      "get": {
+        "operationId": "get_api_scheduled_id",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_scheduled_id",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_scheduled_id",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/scheduled/:id/pause": {
+      "post": {
+        "operationId": "post_api_scheduled_id_pause",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/scheduled/:id/resume": {
+      "post": {
+        "operationId": "post_api_scheduled_id_resume",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/scheduled/:id/trigger": {
+      "post": {
+        "operationId": "post_api_scheduled_id_trigger",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/sites": {
+      "get": {
+        "operationId": "get_api_sites",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_sites",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/sites/:id/preview": {
+      "get": {
+        "operationId": "get_api_sites_id_preview",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/sites/:id/publish": {
+      "post": {
+        "operationId": "post_api_sites_id_publish",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/sites/:id": {
+      "put": {
+        "operationId": "put_api_sites_id",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_sites_id",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/worker/jobs": {
+      "get": {
+        "operationId": "get_api_worker_jobs",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_worker_jobs",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/worker/jobs/:job_id": {
+      "get": {
+        "operationId": "get_api_worker_jobs_job_id",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/worker/jobs/:job_id/retry": {
+      "post": {
+        "operationId": "post_api_worker_jobs_job_id_retry",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/worker/status": {
+      "get": {
+        "operationId": "get_api_worker_status",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/permissions": {
+      "get": {
+        "operationId": "get_api_permissions",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/permissions/audit": {
+      "get": {
+        "operationId": "get_api_permissions_audit",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/permissions/scopes": {
+      "get": {
+        "operationId": "get_api_permissions_scopes",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/permissions/:permission": {
+      "put": {
+        "operationId": "put_api_permissions_permission",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/tools": {
+      "get": {
+        "operationId": "get_api_tools",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/memory": {
+      "get": {
+        "operationId": "get_api_memory",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_memory",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/memory/export": {
+      "get": {
+        "operationId": "get_api_memory_export",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/memory/import": {
+      "post": {
+        "operationId": "post_api_memory_import",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/memory/:id": {
+      "get": {
+        "operationId": "get_api_memory_id",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patch_api_memory_id",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_memory_id",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_memory_id",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/metrics": {
+      "get": {
+        "operationId": "get_api_metrics",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/metrics/history": {
+      "get": {
+        "operationId": "get_api_metrics_history",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "get_metrics",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/plugins": {
+      "get": {
+        "operationId": "get_api_plugins",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/plugins/catalog": {
+      "get": {
+        "operationId": "get_api_plugins_catalog",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/plugins/install": {
+      "post": {
+        "operationId": "post_api_plugins_install",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/plugins/update": {
+      "post": {
+        "operationId": "post_api_plugins_update",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/plugins/uninstall": {
+      "post": {
+        "operationId": "post_api_plugins_uninstall",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/plugins/:name/skills": {
+      "get": {
+        "operationId": "get_api_plugins_name_skills",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/mcp/servers": {
+      "get": {
+        "operationId": "get_api_mcp_servers",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_mcp_servers",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/ws/:session_id": {
+      "get": {
+        "operationId": "get_ws_session_id",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    }
+  },
+  "x-evohime-source": "crates/server/src/routes.rs"
+}

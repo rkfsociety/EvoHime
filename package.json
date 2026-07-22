@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "generate:protocol": "node scripts/generate-protocol-types.mjs"
+    "generate:protocol": "node scripts/generate-protocol-types.mjs",
+    "generate:openapi": "node scripts/generate-openapi.mjs"
   },
   "devDependencies": {
     "json-schema-to-typescript": "^15.0.4"

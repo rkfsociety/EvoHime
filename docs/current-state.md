@@ -30,6 +30,7 @@ Errors return `{ "error", "code", "retryable" }` (plus `tool` / `approval_id` fo
 
 | Method | Path | Description |
 | --- | --- | --- |
+| GET | `/openapi.json` | Generated route-level OpenAPI contract |
 | GET | `/health` | Health check (public) |
 | GET | `/api/auth/status` | Local auth mode (`token_configured`, public) |
 | GET/PUT | `/api/models/config` | Model routes from web panel |
@@ -131,6 +132,8 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 `7.87` выполнен: CI явно проверяет `cargo fmt --all -- --check`, а Rust docs job запускает `cargo doc` с `RUSTDOCFLAGS=-D warnings`, поэтому rustdoc warnings ломают сборку.
 
 `7.88` выполнен: `.devcontainer/` поднимает переносимый workspace-контейнер, PostgreSQL 16 и Python worker через Compose; API/Web/worker ports и container env задокументированы в README.
+
+`7.89` выполнен: `scripts/generate-openapi.mjs` извлекает 75 операций из `crates/server/src/routes.rs`, генерирует `docs/openapi.json` и `frontend/web/src/api/generated.ts`, а сервер отдаёт контракт через `/openapi.json`. Сейчас это route-level контракт; DTO-схемы остаются в domain API modules.
 
 Локальный `cargo fmt --all -- --check` сейчас обнаруживает pre-existing форматирование в нескольких файлах `crates/server` и `crates/storage`; эти посторонние изменения в `7.87` не включались.
 

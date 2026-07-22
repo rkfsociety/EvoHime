@@ -130,6 +130,24 @@ jobs:
       - name: Check generated protocol types are committed
         run: git diff --exit-code -- frontend/web/src/protocol.generated.ts
 
+  # Stage 7.89 — generated OpenAPI route inventory and typed path union.
+  openapi-drift:
+    name: OpenAPI Drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install generator dependencies
+        run: npm ci
+      - name: Regenerate OpenAPI contract and typed paths
+        run: npm run generate:openapi
+      - name: Check generated OpenAPI files are committed
+        run: git diff --exit-code -- docs/openapi.json frontend/web/src/api/generated.ts
+
   # Stage 7.56 — Python worker unit/integration tests.
   python-worker:
     name: Python Worker Tests

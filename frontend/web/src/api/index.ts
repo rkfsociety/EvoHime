@@ -23,3 +23,5 @@ export * as sitesApi from "./sites";
 export type { Site, SiteStatusFilter } from "./sites";
 export * as scheduledApi from "./scheduled";
 export type { ScheduledTask, ScheduledTaskInput } from "./scheduled";
+export { openApiPaths } from "./generated";
+export type { OpenApiMethod, OpenApiPath } from "./generated";

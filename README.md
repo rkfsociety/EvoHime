@@ -109,6 +109,17 @@ npm install
 npm run generate:protocol
 ```
 
+Generate the OpenAPI route contract and frontend typed path union:
+
+```bash
+npm run generate:openapi
+```
+
+The generated route-level contract is available at `docs/openapi.json` and
+from the server at `/openapi.json`. Request/response DTOs remain in the
+domain-specific typed API modules until their schemas are promoted to the
+shared contract.
+
 - Web: http://localhost:5173
 - API: http://localhost:3000/health
 

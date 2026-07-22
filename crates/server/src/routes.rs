@@ -18,6 +18,7 @@ use std::sync::Arc;
 pub fn build_router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/health", get(crate::health::health))
+        .route("/openapi.json", get(crate::openapi::document))
         .route("/api/auth/status", get(crate::health::auth_status))
         .route(
             "/api/models/config",
