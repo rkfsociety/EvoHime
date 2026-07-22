@@ -1,0 +1,593 @@
+
+@keyframes thinkingPulse {
+  0%, 100% { opacity: 0.55; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+@keyframes thinkingDot {
+  0%, 20% { opacity: 0.2; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-1px); }
+  100% { opacity: 0.2; transform: translateY(0); }
+}
+
+@keyframes thinkingAvatarPulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 0 rgba(62, 215, 178, 0.08),
+      0 0 0 2px rgba(143, 180, 255, 0.22);
+  }
+  50% {
+    transform: scale(1.06);
+    box-shadow:
+      0 0 0 6px rgba(62, 215, 178, 0.12),
+      0 0 0 2px rgba(143, 180, 255, 0.45);
+  }
+}
+
+@keyframes thinkingMetaFade {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+.composer {
+  width: min(100%, 920px);
+  margin: 0 auto;
+  padding: 18px clamp(20px, 4vw, 56px) 24px;
+  border-top: 1px solid var(--border-0);
+}
+
+.projectContext {
+  position: relative;
+  width: min(100%, 920px);
+  margin: 0 auto;
+  padding: 12px clamp(20px, 4vw, 56px) 0;
+}
+
+.projectContextButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid rgba(143, 180, 255, 0.18);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text-1);
+  text-align: left;
+  cursor: pointer;
+}
+
+.projectContextButton:hover,
+.projectContextButton[aria-expanded="true"] {
+  border-color: rgba(143, 180, 255, 0.42);
+  background: rgba(91, 134, 255, 0.1);
+}
+
+.projectContextMark {
+  color: var(--accent-2);
+  font-size: 18px;
+}
+
+.projectContextButton small,
+.projectContextButton strong {
+  display: block;
+}
+
+.projectContextMeta {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.projectContextButton small {
+  color: var(--text-3);
+  font-size: 10px;
+}
+
+.projectContextButton strong {
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+.projectContextButton .composerMenuChevron {
+  margin-left: auto;
+  color: var(--text-2);
+}
+
+.projectPicker {
+  position: absolute;
+  z-index: 10;
+  bottom: calc(100% + 8px);
+  left: clamp(20px, 4vw, 56px);
+  width: min(320px, calc(100vw - 80px));
+  max-height: min(420px, 48vh);
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--border-1);
+  border-radius: 16px;
+  background: #111a2d;
+  box-shadow: 0 18px 46px rgba(3, 8, 20, 0.42);
+}
+
+.projectPickerHeader {
+  padding: 8px 10px 6px;
+  color: var(--text-3);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.projectPickerSearch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-3);
+}
+
+.projectPickerSearch input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-0);
+  font-size: 12px;
+}
+
+.projectOption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-1);
+  text-align: left;
+  cursor: pointer;
+}
+
+.projectOption:hover,
+.projectOption.active {
+  background: rgba(91, 134, 255, 0.14);
+}
+
+.projectOption > span:first-child {
+  width: 20px;
+  color: var(--accent-2);
+  text-align: center;
+}
+
+.projectOption strong,
+.projectOption small {
+  display: block;
+}
+
+.projectCreateOption {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 0 0 12px 12px;
+}
+
+.projectCreateForm {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.projectCreateForm input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(143, 180, 255, 0.28);
+  border-radius: 9px;
+  outline: 0;
+  background: rgba(4, 8, 18, 0.75);
+  color: var(--text-0);
+  padding: 9px 10px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.projectCreateForm div {
+  display: flex;
+  gap: 7px;
+}
+
+.projectCreateForm button {
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: var(--surface-4);
+  color: var(--text-1);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.projectCreateForm button:first-child {
+  background: linear-gradient(135deg, var(--accent-0), var(--accent-1));
+  color: #07111c;
+  font-weight: 700;
+}
+
+.projectCreateForm button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.projectCreateError {
+  display: block;
+  padding: 5px 12px 8px;
+  color: #ff9b9b;
+  font-size: 11px;
+}
+
+.projectOption small {
+  margin-top: 2px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.composerField {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(54px, auto) auto;
+  gap: 0;
+  flex-wrap: wrap;
+  min-height: 92px;
+  border: 1px solid rgba(143, 180, 255, 0.24);
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(20, 29, 52, 0.96), rgba(8, 13, 27, 0.98));
+  box-shadow: 0 16px 34px rgba(3, 8, 20, 0.24);
+}
+
+.composerNotice {
+  margin: 0 0 10px;
+  color: #ffbd8a;
+  font-size: 12px;
+}
+
+.composerField:focus-within {
+  border-color: rgba(143, 180, 255, 0.5);
+  box-shadow: 0 0 0 3px rgba(91, 134, 255, 0.1);
+}
+
+.composer input,
+.composer textarea {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  color: var(--text-0);
+  padding: 16px 18px 8px;
+  font-size: 14px;
+  line-height: 1.45;
+  font-family: inherit;
+}
+
+.composerLeading {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 50px;
+  padding: 8px 0 10px 10px;
+  box-sizing: border-box;
+}
+
+.attachmentInput {
+  display: none;
+}
+
+.attachmentButton {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.attachmentButton:hover {
+  background: var(--surface-4);
+  color: var(--text-0);
+}
+
+.workModeSelect {
+  box-sizing: border-box;
+  height: 34px;
+  max-width: 168px;
+  border: 1px solid rgba(143, 180, 255, 0.16);
+  border-radius: 10px;
+  outline: 0;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-2);
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  color-scheme: dark;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.workModeAllow {
+  border-color: rgba(255, 137, 67, 0.32);
+  color: #ff995e;
+}
+
+.composerMenu {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.composerChipLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.composerMenuChevron {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-top: -2px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  opacity: 0.72;
+}
+
+.composerMenuPopover {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: grid;
+  min-width: 178px;
+  padding: 5px;
+  border: 1px solid rgba(143, 180, 255, 0.28);
+  border-radius: 12px;
+  background: #111b32;
+  box-shadow: 0 14px 32px rgba(2, 6, 18, 0.46);
+}
+
+.composerMenuPopover button {
+  border: 0;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: transparent;
+  color: var(--text-1);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composerMenuPopover button:hover,
+.composerMenuPopover button[aria-selected="true"] {
+  background: rgba(91, 134, 255, 0.2);
+  color: var(--text-0);
+}
+
+.workModePopover {
+  left: 0;
+  right: auto;
+}
+
+.modelPopover {
+  width: 220px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.routePopover {
+  width: 210px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.routePopover button {
+  display: grid;
+  gap: 3px;
+}
+
+.routePopover small {
+  color: var(--text-3);
+  font-size: 10px;
+}
+
+.composerControls {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  padding: 8px 10px 10px 0;
+  box-sizing: border-box;
+}
+
+.composerModelSelect {
+  box-sizing: border-box;
+  width: min(220px, 28vw);
+  min-width: 150px;
+  height: 34px;
+  border: 1px solid rgba(143, 180, 255, 0.2);
+  border-radius: 10px;
+  outline: 0;
+  background: rgba(17, 27, 50, 0.92);
+  color: var(--text-1);
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color-scheme: dark;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  overflow: hidden;
+  text-align: left;
+}
+
+.composerRouteSelect {
+  width: min(150px, 18vw);
+  min-width: 112px;
+}
+
+.composerModelSelect .composerChipLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composerModelSelect:hover:not(:disabled),
+.composerModelSelect:focus-visible {
+  border-color: rgba(143, 180, 255, 0.5);
+  background: rgba(28, 42, 74, 0.96);
+}
+
+.composerModelSelect:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.composerModelSelect option {
+  background: #111b32;
+  color: var(--text-0);
+}
+
+.attachmentList {
+  display: flex;
+  flex-basis: 100%;
+  gap: 6px;
+  padding: 0 14px 8px;
+  overflow: hidden;
+}
+
+.attachmentList span {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--surface-4);
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.sendButton {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 11px;
+  padding: 0;
+  background: linear-gradient(135deg, var(--accent-0), var(--accent-1));
+  color: #07111c;
+  cursor: pointer;
+}
+
+.sendButtonArrow {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
+.sendButtonStop {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.stopButton {
+  background: var(--surface-4);
+  color: var(--text-0);
+}
+
+.composer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.filesPanel,
+.editorPanel,
+.gitPanel {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.panelToolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.panelToolbar strong,
+.panelToolbar span {
+  display: block;
+}
+
+.panelToolbar strong {
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: #edf4ff;
+}
+
+.panelToolbar span {
+  color: #8fa4cd;
+  font-size: 12px;
+}
+
+.panelToolbar button {
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #4c7dff, #39d8b2);
+  color: #04111d;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.panelToolbar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

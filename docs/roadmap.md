@@ -411,7 +411,7 @@
 | # | Задача | Size | Статус | Notes / evidence |
 | --- | --- | --- | --- | --- |
 | 7.69 | Дораспилить `app.tsx` → hooks (`useWebSocket`, `useChat`, `useWorkspace`) | L | ✅ | socket transport/chat state/workspace file+Git runtime extracted; app 1968 LOC |
-| 7.70 | CSS modules / split `styles.css` | L | ⬜ | ~3000+ lines |
+| 7.70 | CSS modules / split `styles.css` | L | ✅ | `styles.css` import-map + 8 ordered thematic files |
 | 7.71 | React Error Boundary per panel | M | ⬜ | `main.tsx` |
 | 7.72 | Орphan panels: Files/Git/Terminal/Tasks/Actions в навигации | M | ✅ | sidebar «Инструменты»: files/editor/terminal/git/tasks/actions |
 | 7.73 | Реальные file attachments (upload + server store + tool access) | M | ✅ | session uploads API + DB metadata + workspace `.evohime/attachments` + prompt context |
@@ -470,13 +470,13 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-22:** `7.69` ✅ — socket transport, chat state и workspace file/Git runtime вынесены в hooks; следующий — `7.70` (разделение CSS).
+**Актуальный статус 2026-07-22:** `7.70` ✅ — `styles.css` разделён на 8 синтаксически самостоятельных файлов с сохранённым порядком каскада; следующий — `7.71` (Error Boundary для панелей).
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
 3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.51`, `7.52` ✅ → next product honesty `7.62`+
 4. **Wave D (product honesty):** 7.62–7.68, 7.72–7.73 ✅
-5. **Wave E (DX/CI):** `7.84`–`7.86` ✅, `7.56`, `7.69` ✅ → next `7.70`–`7.71`
+5. **Wave E (DX/CI):** `7.84`–`7.86` ✅, `7.56`, `7.69`–`7.70` ✅ → next `7.71`
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+
 
 ### Критерий готовности Stage 7 (минимум)

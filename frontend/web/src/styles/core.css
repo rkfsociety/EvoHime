@@ -1,0 +1,302 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --bg-0: #050815;
+  --bg-1: #08101f;
+  --surface-0: rgba(12, 17, 29, 0.96);
+  --surface-1: rgba(14, 20, 34, 0.9);
+  --surface-2: rgba(19, 25, 40, 0.82);
+  --surface-3: rgba(255, 255, 255, 0.04);
+  --surface-4: rgba(255, 255, 255, 0.06);
+  --border-0: rgba(255, 255, 255, 0.08);
+  --border-1: rgba(255, 255, 255, 0.12);
+  --text-0: #eef3fb;
+  --text-1: #c7d1e3;
+  --text-2: #93a2b9;
+  --text-3: #6f7d91;
+  --accent-0: #5b86ff;
+  --accent-1: #3ed7b2;
+  --accent-2: #8fb4ff;
+  --danger-0: #ff8f8f;
+  background:
+    radial-gradient(circle at top left, rgba(91, 134, 255, 0.22), transparent 35%),
+    radial-gradient(circle at top right, rgba(62, 215, 178, 0.12), transparent 30%),
+    linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
+  color: var(--text-0);
+}
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  min-height: 100vh;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.shell {
+  height: 100vh;
+  padding: 0 0 32px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 24px;
+  overflow: hidden;
+}
+
+.topBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border: 1px solid var(--border-0);
+  border-radius: 0 0 20px 20px;
+  background: linear-gradient(135deg, rgba(11, 17, 31, 0.96), rgba(15, 22, 38, 0.92));
+  backdrop-filter: blur(18px);
+  box-shadow: 0 18px 48px rgba(3, 8, 22, 0.3);
+}
+
+.agentBrand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.agentBrand h1,
+.agentBrand h2 {
+  margin: 0;
+  font-size: clamp(1.1rem, 2vw, 1.55rem);
+  line-height: 1;
+  max-width: none;
+}
+
+.agentMark {
+  display: block;
+  flex-shrink: 0;
+  border-radius: 8px;
+}
+
+.agentAvatar {
+  display: block;
+  flex-shrink: 0;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid var(--border-0);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.chatWelcome .agentAvatar {
+  margin: 0 auto 12px;
+}
+
+.projectOption .agentMark,
+.scheduledHero .agentMark {
+  flex-shrink: 0;
+}
+
+.scheduledHeroBrand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settingsModalHeader .agentBrand {
+  gap: 8px;
+}
+
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--accent-2);
+  font-size: 12px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: clamp(1.4rem, 2.4vw, 2rem);
+  line-height: 1;
+  max-width: 12ch;
+}
+
+.lede {
+  margin-top: 14px;
+  max-width: 64ch;
+  color: var(--text-1);
+  line-height: 1.6;
+}
+
+.statusCard {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 10px 14px;
+  border: 1px solid var(--border-0);
+  border-radius: 14px;
+  background: var(--surface-1);
+  backdrop-filter: blur(18px);
+}
+
+.statusCard span {
+  display: block;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.statusDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #60789b;
+  box-shadow: 0 0 0 6px rgba(96, 120, 155, 0.12);
+}
+
+.traceToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  padding: 9px 13px;
+  border: 1px solid var(--border-0);
+  border-radius: 12px;
+  color: var(--text-1);
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+}
+
+.traceToggle:hover,
+.traceToggle.active {
+  border-color: rgba(143, 180, 255, 0.4);
+  color: var(--text-0);
+  background: rgba(91, 134, 255, 0.14);
+}
+
+.statusDot[data-state="connected"] {
+  background: #43d19e;
+  box-shadow: 0 0 0 6px rgba(67, 209, 158, 0.14);
+}
+
+.statusDot[data-state="connecting"],
+.statusDot[data-state="reconnecting"] {
+  background: #f3c969;
+  box-shadow: 0 0 0 6px rgba(243, 201, 105, 0.14);
+}
+
+.statusDot[data-state="failed"] {
+  background: #ff6d6d;
+  box-shadow: 0 0 0 6px rgba(255, 109, 109, 0.14);
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 24px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspace.traceOpen {
+  grid-template-columns: 280px minmax(0, 1fr) 320px;
+}
+
+.traceSidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-0);
+  border-radius: 24px;
+  background: var(--surface-0);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+}
+
+.traceHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border-0);
+}
+
+.traceHeader > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.traceHeader span,
+.traceEmpty {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.traceClose {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  color: var(--text-2);
+  background: transparent;
+  cursor: pointer;
+  font-size: 22px;
+}
+
+.traceList {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 14px;
+  overflow: auto;
+}
+
+.traceItem {
+  padding: 11px 12px;
+  border: 1px solid var(--border-0);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.traceItem strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--accent-2);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.traceItem.tool strong {
+  color: var(--accent-1);
+}
+
+.traceItem pre {
+  margin: 0;
+  color: var(--text-1);
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+}
+
+.traceEmpty {
+  padding: 16px 4px;
+  line-height: 1.5;
+}

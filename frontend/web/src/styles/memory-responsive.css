@@ -1,0 +1,628 @@
+
+.pluginUpdateButton {
+  background: rgba(91, 134, 255, 0.18);
+  color: var(--text-0);
+}
+
+.pluginUpdateButton:hover:not(:disabled) {
+  background: rgba(91, 134, 255, 0.28);
+}
+
+.pluginUninstallButton {
+  background: rgba(255, 104, 118, 0.12);
+  color: #ff9aa4;
+}
+
+.pluginUninstallButton:hover:not(:disabled) {
+  background: rgba(255, 104, 118, 0.2);
+}
+
+.pluginSkillsButton {
+  background: var(--surface-4);
+  color: var(--text-0);
+}
+
+.pluginSkillsButton:hover:not(:disabled) {
+  background: rgba(91, 134, 255, 0.14);
+}
+
+.pluginUpdateButton:disabled,
+.pluginUninstallButton:disabled,
+.pluginSkillsButton:disabled,
+.pluginInstallButton:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.pluginCardInstalled {
+  align-items: start;
+}
+
+.pluginSkillBrowser {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-0);
+}
+
+.pluginSkillBrowserMeta {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.pluginSkillList {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pluginSkillItem {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-0);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.pluginSkillItem strong {
+  color: var(--text-0);
+  font-size: 13px;
+}
+
+.pluginSkillItem pre {
+  margin: 0;
+  overflow: auto;
+  max-height: 160px;
+  color: var(--text-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+
+.pluginInstalledBadge {
+  align-self: center;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--surface-4);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pluginsInstallError {
+  margin: 8px 0 0;
+  color: #f2a3a3;
+}
+.terminalPanel { flex: 1; min-height: 0; padding: 16px; }
+.approvalBackdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: rgba(0, 0, 0, .62); }
+.approvalModal { width: min(460px, calc(100vw - 32px)); padding: 24px; border: 1px solid rgba(159, 192, 255, .4); border-radius: 18px; background: #0a1021; box-shadow: 0 24px 80px rgba(0,0,0,.5); }
+.approvalModal h3 { margin: 0 0 18px; }
+.approvalScope { overflow-wrap: anywhere; }
+.approvalHint {
+  margin: 0 0 12px;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.approvalActions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
+.approvalActions button { border: 0; border-radius: 10px; padding: 10px 16px; cursor: pointer; font-weight: 600; }
+.approvalDenyButton { background: rgba(255, 104, 118, 0.16); color: #ff9aa4; }
+.approvalGrantButton { background: var(--surface-4); color: var(--text-0); }
+.approvalRememberButton { background: rgba(91, 134, 255, 0.22); color: var(--text-0); }
+
+.settingsBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(5, 9, 18, 0.72);
+  backdrop-filter: blur(12px);
+}
+
+.settingsModal {
+  width: min(1120px, 100%);
+  max-height: min(88vh, 980px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border: 1px solid var(--border-1);
+  border-radius: 26px;
+  background: linear-gradient(180deg, rgba(11, 17, 31, 0.98), rgba(8, 12, 23, 0.98));
+  box-shadow: 0 28px 120px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.settingsModalHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border-0);
+}
+
+.settingsModalHeader h2 {
+  margin: 4px 0 0;
+  font-size: 1.15rem;
+}
+
+.settingsCloseButton {
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 14px;
+  background: var(--surface-4);
+  color: var(--text-0);
+  cursor: pointer;
+}
+
+.settingsModalBody {
+  min-height: 0;
+  overflow: auto;
+  padding: 22px;
+}
+
+@media (max-width: 1100px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    min-height: 0;
+    max-height: 38vh;
+  }
+
+  .panel,
+  .mainPanel {
+    min-height: 0;
+    max-height: 34vh;
+  }
+
+  .pullRequestsPage {
+    max-height: 34vh;
+  }
+
+  .pluginsPage {
+    max-height: 34vh;
+  }
+
+  .sitesPage {
+    max-height: 34vh;
+  }
+
+  .settingsModal {
+    max-height: 92vh;
+  }
+
+  .treeBranch[data-depth="1"],
+  .treeBranch[data-depth="2"],
+  .treeBranch[data-depth="3"] {
+    margin-left: 10px;
+    padding-left: 10px;
+  }
+}
+
+@media (max-width: 720px) {
+  .shell {
+    padding: 0 16px 16px;
+  }
+
+  .topBar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .workspace.traceOpen {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    order: 2;
+    min-height: 0;
+    max-height: 34vh;
+  }
+
+  .panel {
+    min-height: 0;
+    max-height: 44vh;
+  }
+
+  .traceSidebar {
+    order: 3;
+    max-height: 34vh;
+  }
+
+  .pullRequestsPage {
+    max-height: 44vh;
+  }
+
+  .pluginsPage {
+    max-height: 44vh;
+  }
+
+  .sitesPage {
+    max-height: 44vh;
+  }
+
+  .settingsBackdrop {
+    padding: 12px;
+  }
+
+  .statusCard {
+    width: 100%;
+  }
+
+  .composer {
+    grid-template-columns: 1fr;
+  }
+
+  .composerModelSelect {
+    width: min(190px, calc(100vw - 120px));
+    min-width: 0;
+  }
+
+  .composerRouteSelect {
+    width: min(150px, calc(100vw - 250px));
+  }
+
+  .createFileForm,
+  .gitRemoteFields {
+    grid-template-columns: 1fr;
+  }
+}
+
+.memoryPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.memoryPrivacy {
+  border: 1px solid var(--border-1);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.memoryAddForm {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(159, 192, 255, 0.35);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(159, 192, 255, 0.06);
+}
+
+.memoryLoadMore {
+  display: flex;
+  justify-content: center;
+  padding: 14px 0 4px;
+}
+
+.memoryUndo {
+  align-items: center;
+  background: rgba(255, 204, 128, 0.12);
+  border: 1px solid rgba(255, 204, 128, 0.38);
+  border-radius: 10px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 12px;
+  padding: 10px 12px;
+}
+
+.memoryAddHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.memoryAddHeader span {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.memoryAddFields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.memoryAddFields label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.memoryAddFields input,
+.memoryAddFields select {
+  min-width: 0;
+  border: 1px solid var(--border-1);
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  padding: 9px 10px;
+}
+
+.memoryPrivacy strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.memoryPrivacy p {
+  margin: 0;
+  opacity: 0.85;
+  line-height: 1.45;
+}
+
+.memoryTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.memoryTab {
+  border: 1px solid var(--border-1);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.memoryTab.active {
+  border-color: rgba(159, 192, 255, 0.55);
+  background: rgba(159, 192, 255, 0.12);
+}
+
+.memorySearch {
+  width: min(420px, 100%);
+  border: 1px solid var(--border-1);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  padding: 10px 12px;
+}
+
+.memoryKindFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.memoryKindFilter {
+  border: 1px solid var(--border-1);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.memoryKindFilter.active {
+  border-color: rgba(180, 220, 170, 0.55);
+  background: rgba(180, 220, 170, 0.12);
+}
+
+.memoryList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.memoryConflictPair {
+  border: 1px solid rgba(240, 190, 120, 0.38);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(240, 190, 120, 0.05);
+}
+
+.memoryConflictHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.memoryConflictHeader span {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.memoryConflictColumns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.memoryConflictCard {
+  border: 1px solid var(--border-1);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.memoryConflictCard > button {
+  border: 1px solid rgba(159, 192, 255, 0.42);
+  border-radius: 9px;
+  background: rgba(159, 192, 255, 0.1);
+  color: inherit;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.memoryConflictCard > button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.memoryItem {
+  border: 1px solid var(--border-1);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.memoryItem[data-pinned="true"] {
+  border-color: rgba(159, 192, 255, 0.45);
+}
+
+.memoryItem[data-kind="playbook"] {
+  border-color: rgba(200, 180, 120, 0.35);
+}
+
+.memoryItemHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.memoryItemHeader strong {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.memoryKindBadge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.memoryScopeLabel {
+  opacity: 0.8;
+  font-weight: 500;
+}
+
+.memoryItem p {
+  margin: 0 0 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.memoryPlaybook {
+  margin-bottom: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.memoryPlaybook ol {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.memoryPlaybook li {
+  margin: 2px 0;
+}
+
+.memoryPlaybookTrigger,
+.memoryPlaybook p {
+  margin: 0;
+}
+
+.memoryPlaybookFallback {
+  opacity: 0.55;
+  font-size: 12px;
+}
+
+.memoryEdit {
+  width: 100%;
+  margin-bottom: 10px;
+  border: 1px solid var(--border-1);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  padding: 10px;
+  resize: vertical;
+}
+
+.memoryMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  opacity: 0.7;
+  font-size: 0.85rem;
+}
+
+.memoryActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.memoryActions button {
+  border: 1px solid var(--border-1);
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.memoryActions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.panelError {
+  color: #f2a3a3;
+}
+
+.panelNotice {
+  color: #8ee0ad;
+  background: rgba(47, 126, 78, 0.18);
+  border: 1px solid rgba(105, 210, 139, 0.38);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+@media (max-width: 900px) {
+  .memoryAddFields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .memoryAddFields {
+    grid-template-columns: 1fr;
+  }
+
+  .memoryAddHeader {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 720px) {
+  .memoryConflictColumns {
+    grid-template-columns: 1fr;
+  }
+
+  .memoryConflictHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

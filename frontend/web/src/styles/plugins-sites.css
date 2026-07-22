@@ -1,0 +1,603 @@
+
+.pullRequestsTab.active {
+  background: var(--surface-2);
+  color: var(--text-0);
+}
+
+.pullRequestsBody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.pullRequestsError {
+  margin: 0 0 12px;
+  color: var(--danger-0);
+}
+
+.pullRequestsList {
+  display: grid;
+  gap: 14px;
+}
+
+.pullRequestsEmpty {
+  padding: 26px 10px;
+  color: var(--text-3);
+}
+
+.pullRequestsEmpty strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-0);
+}
+
+.pullRequestItem {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  color: inherit;
+  text-decoration: none;
+}
+
+.pullRequestItem:hover {
+  background: rgba(27, 34, 48, 0.96);
+}
+
+.pullRequestLine,
+.pullRequestSubline,
+.pullRequestFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+}
+
+.pullRequestLine strong {
+  color: var(--text-0);
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.pullRequestLine span,
+.pullRequestSubline span,
+.pullRequestFooter span {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.pullRequestSubline {
+  color: var(--text-2);
+}
+
+.pullRequestState {
+  text-transform: capitalize;
+}
+
+.sitesPage {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  flex: 1;
+  min-height: 0;
+  padding: 20px;
+  overflow: hidden;
+}
+
+.sitesHero {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: end;
+}
+
+.sitesHero h3 {
+  margin: 0 0 8px;
+  font-size: clamp(1.8rem, 3vw, 2.6rem);
+  line-height: 1.02;
+  color: var(--text-0);
+  letter-spacing: -0.03em;
+}
+
+.sitesHero p {
+  color: var(--text-2);
+  line-height: 1.5;
+  max-width: 50ch;
+}
+
+.sitesMeta {
+  display: grid;
+  gap: 4px;
+  text-align: right;
+  color: var(--text-3);
+}
+
+.sitesMeta strong {
+  font-size: 1.5rem;
+  color: var(--text-0);
+}
+
+.sitesSearchRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.sitesSearch {
+  flex: 1;
+  position: relative;
+}
+
+.sitesSearchIcon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-3);
+  font-size: 15px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.sitesSearch input {
+  width: 100%;
+  border: 1px solid var(--border-1);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-0);
+  padding: 12px 16px 12px 38px;
+  outline: none;
+}
+
+.sitesTabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sitesTab {
+  border: 0;
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.sitesTab.active {
+  background: var(--surface-2);
+  color: var(--text-0);
+}
+
+.sitesCreateForm {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border-1);
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+
+.sitesCreateForm input,
+.sitesCreateForm textarea {
+  width: 100%;
+  border: 1px solid var(--border-1);
+  border-radius: 10px;
+  background: var(--surface-1);
+  color: var(--text-0);
+  padding: 10px 12px;
+}
+
+.sitesBody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.sitesGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  width: 100%;
+}
+
+.siteCard {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--border-1);
+  border-radius: 16px;
+  background: var(--surface-2);
+}
+
+.siteCard strong {
+  color: var(--text-0);
+  font-size: 1.05rem;
+}
+
+.siteCard span {
+  color: var(--text-3);
+  font-size: 0.9rem;
+}
+
+.siteCard p {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+
+.siteCard small {
+  color: var(--text-3);
+}
+
+.siteCardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.siteCardActions button {
+  border: 1px solid var(--border-1);
+  border-radius: 10px;
+  padding: 7px 10px;
+  background: var(--surface-3);
+  color: var(--text-0);
+  cursor: pointer;
+}
+
+.siteCardActions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sitesBody:has(.sitesEmptyState) {
+  display: grid;
+  place-items: center;
+}
+
+.sitesEmptyState {
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  text-align: center;
+  color: var(--text-3);
+  transform: translateY(-18px);
+}
+
+.sitesEmptyIcon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  border: 1px solid var(--border-0);
+  background: var(--surface-3);
+  color: var(--text-1);
+  font-size: 22px;
+}
+
+.sitesEmptyState strong {
+  color: var(--text-0);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.sitesCreateButton {
+  border: 1px solid var(--border-1);
+  border-radius: 12px;
+  padding: 9px 14px;
+  background: var(--surface-3);
+  color: var(--text-0);
+  cursor: pointer;
+}
+
+.pluginsPage {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  flex: 1;
+  min-height: 0;
+  padding: 20px;
+}
+
+.pluginsHero {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: end;
+}
+
+.pluginsHero h3 {
+  margin: 0 0 8px;
+  font-size: clamp(1.8rem, 3vw, 2.5rem);
+  line-height: 1.02;
+  color: var(--text-0);
+  letter-spacing: -0.03em;
+}
+
+.pluginsHero p {
+  color: var(--text-2);
+  line-height: 1.5;
+  max-width: 50ch;
+}
+
+.pluginsActions {
+  display: flex;
+  align-items: center;
+}
+
+.pluginsGearButton {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border-0);
+  border-radius: 10px;
+  background: var(--surface-3);
+  color: var(--text-1);
+  cursor: pointer;
+}
+
+.pluginsSearchRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.pluginsSearch {
+  flex: 1;
+  display: grid;
+  gap: 8px;
+}
+
+.pluginsSearch span {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.pluginsSearch input {
+  width: 100%;
+  border: 1px solid var(--border-1);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-0);
+  padding: 12px 16px;
+  outline: none;
+}
+
+.pluginsInstalled,
+.pluginsCatalog {
+  display: grid;
+  gap: 12px;
+}
+
+.pluginsSectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.pluginsSectionHeader h4 {
+  margin: 0;
+  color: var(--text-0);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.pluginsInstalledList {
+  border-top: 1px solid var(--border-0);
+  padding-top: 8px;
+}
+
+.pluginsInstalledEmpty {
+  padding: 12px 0 8px;
+  color: var(--text-3);
+}
+
+.pluginsInstalledEmpty strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-0);
+}
+
+.pluginsSwitcherRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+
+.pluginsTabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pluginsTab {
+  border: 0;
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+.pluginsTab.active {
+  background: var(--surface-2);
+  color: var(--text-0);
+}
+
+.pluginsGroupedList {
+  display: grid;
+  gap: 22px;
+}
+
+.pluginsGroupSection {
+  display: grid;
+  gap: 12px;
+}
+
+.pluginsGroupHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-0);
+  padding-bottom: 6px;
+}
+
+.pluginsGroupHeader h5 {
+  margin: 0;
+  color: var(--text-0);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.pluginsGroupHeader span {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.pluginMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.pluginCategoryChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface-4);
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.pluginsFilterButton {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.pluginsBody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.pluginsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.pluginsGridCompact .pluginCard {
+  min-height: 106px;
+}
+
+.pluginCard {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border-radius: 18px;
+  background: var(--surface-2);
+}
+
+.pluginCardCompact {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.pluginIcon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: var(--surface-4);
+  color: var(--text-0);
+  font-size: 20px;
+  flex: 0 0 auto;
+}
+
+.pluginBody {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.pluginTopRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.pluginTopRow strong {
+  color: var(--text-0);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.pluginBody p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.pluginBody small {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.pluginMenuButton,
+.pluginInstallButton {
+  border: 0;
+  border-radius: 12px;
+  background: var(--surface-4);
+  color: var(--text-0);
+  cursor: pointer;
+}
+
+.pluginMenuButton {
+  width: 28px;
+  height: 28px;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.pluginInstallButton {
+  padding: 10px 14px;
+  font-weight: 600;
+}
+
+.pluginCardActions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.pluginUpdateButton,
+.pluginUninstallButton,
+.pluginSkillsButton {
+  border: 0;
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}

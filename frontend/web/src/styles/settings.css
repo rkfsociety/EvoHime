@@ -1,0 +1,559 @@
+.mainPanel {
+  min-height: 0;
+}
+.settingsPanel {
+  padding: 0;
+  color: #a9b8d9;
+  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chatArchiveButton {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 18px;
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.projectChatRow:hover .chatArchiveButton,
+.standaloneSidebarChatRow:hover .chatArchiveButton,
+.chatArchiveButton:focus-visible {
+  opacity: 1;
+}
+
+.chatArchiveButton:hover {
+  background: rgba(143, 180, 255, 0.12);
+  color: var(--accent-2);
+}
+
+.chatArchiveButton:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+.settingsTabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 14px 22px 0;
+  border-bottom: 1px solid var(--border-0);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.settingsTab {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 12px 14px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 12px 12px 0 0;
+  background: transparent;
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.settingsTab:hover {
+  background: var(--surface-3);
+  color: var(--text-1);
+}
+
+.settingsTab.active {
+  border-bottom-color: var(--accent-0);
+  background: rgba(91, 134, 255, 0.1);
+  color: var(--text-0);
+}
+
+.settingsTab strong {
+  font-size: 13px;
+}
+
+.settingsTab span {
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settingsTab.active span {
+  color: var(--accent-2);
+}
+
+.settingsTabContent {
+  min-height: 0;
+  overflow: auto;
+  padding: 28px;
+  display: grid;
+  align-content: start;
+  gap: 24px;
+}
+
+.settingsPanel h3 {
+  margin: 0 0 16px;
+  color: #e7eefc;
+}
+
+.settingsSection {
+  display: grid;
+  gap: 16px;
+}
+
+.settingsHeaderRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.settingsGrid {
+  display: grid;
+  gap: 14px;
+  margin: 0 0 20px;
+}
+
+.settingsGrid div {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 14px 16px;
+}
+
+.settingsGrid dt {
+  margin: 0 0 6px;
+  color: #9fc0ff;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.settingsGrid dd {
+  margin: 0;
+  color: #ecf3ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+}
+
+.settingsGrid dd[data-configured="false"] {
+  color: #ff9b9b;
+}
+
+.settingsHint,
+.settingsError {
+  margin: 0;
+}
+
+.modelSettingsEditor {
+  display: grid;
+  gap: 16px;
+}
+
+.modelProviderForm {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(220px, 0.7fr) minmax(280px, 1.6fr);
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.modelProviderForm label {
+  display: grid;
+  gap: 7px;
+}
+
+.modelProviderForm span {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.modelProviderForm input,
+.modelProviderForm select {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(4, 8, 18, 0.8);
+  color: var(--text-0);
+  padding: 10px 12px;
+}
+
+.modelProviderKey {
+  grid-column: 1 / -1;
+}
+
+.settingsInlineBar,
+.modelRouteHeader,
+.modelSettingsActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.settingsInlineBar label,
+.modelRouteFields label {
+  display: grid;
+  gap: 7px;
+}
+
+.settingsInlineBar label {
+  grid-template-columns: auto minmax(180px, 260px);
+  align-items: center;
+}
+
+.settingsInlineBar span,
+.modelRouteFields span {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.settingsInlineBar select,
+.modelRouteFields input,
+.modelRouteFields select {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(4, 8, 18, 0.8);
+  color: var(--text-0);
+  padding: 10px 12px;
+}
+
+.modelStatus {
+  color: #f3c969 !important;
+}
+
+.modelStatus.configured {
+  color: var(--accent-1) !important;
+}
+
+.modelRouteList {
+  display: grid;
+  gap: 12px;
+}
+
+.modelRouteCard {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.modelRouteHeader strong {
+  color: var(--text-0);
+}
+
+.modelRouteHeader button,
+.modelSettingsActions button {
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: var(--surface-4);
+  color: var(--text-0);
+  cursor: pointer;
+}
+
+.modelRouteHeader button:disabled,
+.modelSettingsActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.modelSettingsActions button:last-child {
+  background: linear-gradient(135deg, var(--accent-0), var(--accent-1));
+  color: #07111c;
+  font-weight: 700;
+}
+
+.modelRouteFields {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(170px, 1fr) minmax(180px, 1fr);
+  gap: 12px;
+}
+
+.modelRouteKey {
+  grid-column: 1 / -1;
+}
+
+.modelKeyStatus {
+  display: block;
+  margin-top: 5px;
+  color: var(--accent-1);
+  font-size: 11px;
+}
+
+@media (max-width: 760px) {
+  .modelProviderForm {
+    grid-template-columns: 1fr;
+  }
+
+  .modelProviderKey {
+    grid-column: auto;
+  }
+}
+.permissionList { display: grid; gap: 8px; margin-top: 12px; }
+.permissionList label { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid rgba(255,255,255,.07); border-radius: 10px; }
+.permissionList select { background: #111a31; color: #edf4ff; border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 6px 8px; }
+.permissionAuditList { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 6px; }
+.permissionAuditList li { padding: 8px 10px; border: 1px solid rgba(255,255,255,.06); border-radius: 8px; font-size: 13px; color: #c7d4ea; }
+.permissionAuditList code { color: #9ec5ff; }
+
+.workerSettings .settingsInlineBar {
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.workerHealthRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: center;
+  margin: 8px 0 14px;
+  color: #b7c7e0;
+  font-size: 13px;
+}
+
+.workerHealthBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.workerHealthBadge.ok {
+  color: #7dffc4;
+  border-color: rgba(67, 209, 158, 0.45);
+  background: rgba(67, 209, 158, 0.12);
+}
+
+.workerHealthBadge.bad {
+  color: #ff9aa8;
+  border-color: rgba(255, 109, 109, 0.45);
+  background: rgba(255, 109, 109, 0.12);
+}
+
+.workerMetricsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.workerMetricsGrid article {
+  padding: 10px 12px;
+  border: 1px solid rgba(143, 180, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(14, 20, 34, 0.55);
+  display: grid;
+  gap: 4px;
+}
+
+.workerMetricsGrid strong {
+  font-size: 18px;
+  color: #edf4ff;
+}
+
+.workerMetricsGrid span {
+  font-size: 11px;
+  color: #8fa6c7;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.workerSubheading {
+  margin: 18px 0 8px;
+  font-size: 14px;
+  color: #d7e4f8;
+}
+
+.workerDbCounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  font-size: 13px;
+  color: #b7c7e0;
+}
+
+.workerDbCounts code {
+  color: #9ec5ff;
+}
+
+.workerJobList {
+  display: grid;
+  gap: 10px;
+}
+
+.workerJobCard {
+  padding: 12px 14px;
+  border: 1px solid rgba(143, 180, 255, 0.14);
+  border-radius: 10px;
+  background: rgba(14, 20, 34, 0.45);
+  display: grid;
+  gap: 8px;
+}
+
+.workerJobHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.workerJobStatus {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  text-transform: lowercase;
+}
+
+.workerJobStatus.status-completed {
+  color: #7dffc4;
+  border-color: rgba(67, 209, 158, 0.4);
+}
+
+.workerJobStatus.status-failed,
+.workerJobStatus.status-stalled {
+  color: #ff9aa8;
+  border-color: rgba(255, 109, 109, 0.4);
+}
+
+.workerJobStatus.status-running,
+.workerJobStatus.status-submitted,
+.workerJobStatus.status-pending {
+  color: #9ec5ff;
+  border-color: rgba(143, 180, 255, 0.4);
+}
+
+.workerJobMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  font-size: 12px;
+  color: #8fa6c7;
+}
+
+.workerJobError {
+  margin: 0;
+  color: #ffb4bc;
+  font-size: 13px;
+}
+
+.workerRetryButton {
+  justify-self: start;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(143, 180, 255, 0.35);
+  background: rgba(91, 134, 255, 0.14);
+  color: #edf4ff;
+  cursor: pointer;
+}
+
+.workerRetryButton:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.mcpServerList,
+.toolCatalog {
+  display: grid;
+  gap: 12px;
+}
+
+.mcpServerCard,
+.toolCard {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.mcpServerRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mcpServerCard label {
+  display: grid;
+  gap: 8px;
+}
+
+.mcpServerCard span,
+.toolCard small {
+  color: #8fa4cd;
+  font-size: 12px;
+}
+
+.mcpServerCard input {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background: rgba(4, 8, 18, 0.8);
+  color: #fff;
+  padding: 10px 12px;
+}
+
+.mcpServerFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.toggleRow {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+}
+
+.emptyState {
+  padding: 18px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  color: #a9b8d9;
+}
+
+.emptyState strong {
+  display: block;
+  color: var(--text-0);
+  margin-bottom: 6px;
+}
+
+.toolCard strong {
+  color: var(--text-0);
+}
+
+.toolCard p {
+  margin: 0;
+  color: var(--text-1);
+}
+
+.toolCard span {
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.settingsError {
+  color: var(--danger-0);
+  margin-bottom: 12px;
+}

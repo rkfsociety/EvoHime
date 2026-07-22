@@ -1,0 +1,293 @@
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  align-content: start;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 16px;
+  border: 1px solid var(--border-0);
+  border-radius: 24px;
+  background: var(--surface-0);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+}
+.sidebarTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.sidebarSearchButton {
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.sidebarSection {
+  display: grid;
+  gap: 12px;
+}
+
+.sidebarHeader {
+  padding: 0 4px;
+}
+
+.sidebarHeader strong {
+  color: var(--text-3);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.quickLinks,
+.projectChatList,
+.projectChatRow,
+.standaloneSidebarChatRow,
+.standaloneSidebarChatList {
+  display: grid;
+  gap: 4px;
+}
+
+.projectChatRow,
+.standaloneSidebarChatRow {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.quickLink {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-1);
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.quickLink:hover,
+.projectChatItem:hover,
+.taskSummaryCard:hover {
+  background: var(--surface-3);
+}
+
+.quickLink.active {
+  background: var(--surface-4);
+}
+
+.quickLinkIcon {
+  width: 20px;
+  color: var(--text-2);
+  text-align: center;
+}
+
+.projectCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-1);
+  text-align: left;
+  cursor: pointer;
+}
+
+.projectIcon {
+  color: var(--text-2);
+}
+
+.projectName {
+  font-weight: 600;
+}
+
+.projectChatItem {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-1);
+  text-align: left;
+  cursor: pointer;
+}
+
+.projectChatItem.active {
+  background: var(--surface-4);
+}
+
+.projectChatTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectChatStatus {
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--text-3);
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.projectChatItem.active .projectChatStatus {
+  border-color: var(--text-0);
+  background: var(--text-0);
+}
+
+.taskSummaryCard {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-1);
+  text-align: left;
+  cursor: pointer;
+}
+
+.taskSummaryCard strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.taskSummaryCard span {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.standaloneSidebarChat {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--text-1);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.projectChatItem strong,
+.projectChatItem span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectChatItem strong {
+  color: var(--text-0);
+  font-size: 13px;
+}
+
+.projectChatItem span {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.standaloneSidebarChat:hover,
+.standaloneSidebarChat.active {
+  background: var(--surface-3);
+}
+
+.standaloneSidebarChat.active {
+  box-shadow: inset 2px 0 0 var(--accent-2);
+}
+
+.standaloneSidebarChat strong,
+.standaloneSidebarChat span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.standaloneSidebarChat strong {
+  color: var(--text-0);
+  font-size: 13px;
+}
+
+.standaloneSidebarChat span {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.sidebarFooter {
+  margin-top: auto;
+  flex: 0 0 auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-0);
+}
+
+.sidebarFooterTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.profileChip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.profileAvatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--text-2);
+  color: #f8fafc;
+  font-size: 11px;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.profileText {
+  min-width: 0;
+  display: grid;
+}
+
+.profileText strong {
+  color: var(--text-0);
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profileText small {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.settingsGear {
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
