@@ -24,7 +24,7 @@ use std::{
 
 use crate::app::AppState;
 
-const PUBLIC_PATHS: &[&str] = &["/health", "/api/auth/status"];
+const PUBLIC_PATHS: &[&str] = &["/health", "/health/deep", "/api/auth/status"];
 
 #[derive(Debug, Clone, Default)]
 pub struct AuthConfig {
@@ -245,6 +245,7 @@ mod tests {
         };
         let remote = "192.168.1.5:9".parse().unwrap();
         assert!(authorize_request(&config, "/health", Some(remote), None).is_ok());
+        assert!(authorize_request(&config, "/health/deep", Some(remote), None).is_ok());
         assert!(authorize_request(&config, "/api/auth/status", Some(remote), None).is_ok());
     }
 
