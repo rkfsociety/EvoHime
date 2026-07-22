@@ -18,7 +18,7 @@
 | API | HTTP/REST |
 | База данных | PostgreSQL |
 | AI/ML workers | Изолированные Python workers |
-| Развёртывание | Native Windows launcher |
+| Развёртывание | Native Windows launcher + Dev Container/Compose |
 
 ---
 
@@ -61,17 +61,18 @@ EvoHime Server — Rust
 13. Параллельное выполнение независимых инструментов
 14. Восстановление задач после перезапуска сервера
 
-## Фактический статус на 2026-07-17
+## Фактический статус на 2026-07-22
 
-Этапы 1–5 завершены. Stage 6: foundations + PR workflow + shell split + memory `6.16`–`6.25` (включая Memory panel, feedback loop и hybrid embeddings).
+Этапы 1–6 завершены на уровне foundations. Stage 7: hardening/product waves `7.1`–`7.91` выполнены; документация синхронизирована с текущим состоянием, следующий незакрытый пункт roadmap — `7.93`.
 
 - tools: filesystem / shell / Git / browser / MCP в `tool-runtime`;
 - `agent-runtime`: native ReAct tool call → observation → next action; bounded limits; checkpoints; structured memory в prompt;
 - `crates/memory`: redact / normalize / dedupe / conflict / retrieve / extract / decision gate / experience playbooks / feedback / hybrid embeddings;
 - `storage` + `/api/memory`: CRUD/override; frontend MemoryPanel + MemoryAskModal;
-- workers: health/stall + `text.summarize` / `text.chunk`.
+- workers: health/stall + summarize/chunk/similarity/entities/diff/classify/language/redact handlers;
+- Stage 7: auth/permissions, recovery, memory quality, product honesty для Sites/Scheduled, CI gates, Dev Container/Compose, OpenAPI contract и experimental feature flags.
 
-**Следующий сквозной приоритет:** Stage 7 — Hardening + Product ([roadmap.md](roadmap.md) § Этап 7, пункты `7.1`–`7.110`).
+**Текущий сквозной приоритет:** observability/ops Stage 7 — request-id (`7.93`), timeline/latency (`7.94`) и следующие пункты ([roadmap.md](roadmap.md) § Этап 7).
 
 ---
 
@@ -282,37 +283,24 @@ Task lifecycle реализован: start/complete/fail/cancel/resume/retry. St
 
 **Результат:** надёжный task orchestrator с recovery и видимыми шагами в UI.
 
-### Этап 6 — Индексация, MCP, память, workers 🟡
+### Этап 6 — Индексация, MCP, память, workers ✅
 
 - Project index для контекстного поиска
 - MCP-интеграции (`mcp.call`) уже есть на уровне tool-runtime и UI управления серверами
 - Память агента
 - Multi-model routing с task-scoped `model_route` и OpenAI-compatible маршрутами — после LiteRouter
-- HTTP/queue Python worker для изолированных задач; специализированные ML handlers — следующий подэтап
+- HTTP/queue Python worker для изолированных задач; reliability и специализированные ML handlers реализованы
 - Rust server должен владеть persistence/retry policy worker jobs, сохраняя выполнение изолированным в Python worker
 - `browser.open`, `browser.extract`
 - UI управления MCP и инструментами
 
-**Результат:** production-ready агент с расширяемой экосистемой, multi-model support и worker integrations. Маршруты модели выбираются на уровне задачи и могут указывать на отдельные OpenAI-compatible endpoints.
+**Результат:** foundations Stage 6 завершены: агент поддерживает расширяемую экосистему, multi-model routing, project index, memory и worker integrations.
 
-Следующий подэтап Stage 6:
+### Этап 7 — Hardening + Product 🟡
 
-- native ReAct executor: цикл `tool call -> execute -> observation -> next action -> respond`, явная обработка результатов инструментов;
-- расширенные checkpoints и recovery: прогресс по шагам, результаты завершённых tool calls, причина паузы и состояние approval wait;
-- декомпозиция `frontend/web/src/app.tsx` на panels/hooks/services и вынесение WebSocket/event orchestration из корневого компонента;
-- typed API client для frontend вместо разрозненных `fetch()` и локальных обработчиков ошибок;
-- усиление `project-index`: chunk-based поиск, отдельные веса для path/symbol hits, фильтрация шумных/бинарных файлов ✅;
-- более гибкая permission model: per-session / per-task / per-path разрешения, аудит approvals и временные allow-решения;
-- расширение GitHub/PR workflow в UI: diff, review comments, checks и создание PR;
-- укрепление worker subsystem: retry/backoff, heartbeat, stalled-job detection, retention policy и typed payload/result schemas.
-
-Кандидаты на ближайшие deliverables:
-
-- `6.11` Plan executor и повторное планирование;
-- `6.12` Checkpoint/recovery для approvals и replay шагов;
-- `6.13` Frontend shell refactor (`app.tsx` -> panels/hooks/services);
-- `6.14` GitHub PR workflow и CI visibility;
-- `6.15` Worker reliability и специализированные handlers.
+- Waves A–D закрыли trust/security, recovery, agent quality и product honesty для Sites/Scheduled;
+- Wave E `7.84`–`7.91` закрыла PostgreSQL/frontend/protocol/docs CI, Dev Container, OpenAPI и feature flags;
+- следующий незакрытый пункт — `7.93` request-id на HTTP; `7.92` уже реализован через `/metrics` в `7.24`.
 
 ---
 

@@ -2,11 +2,11 @@
 
 Last updated: 2026-07-22
 
-## Stage: 7 planned (Stage 6 foundations done)
+## Stage: 7 active (Stages 1–6 foundations complete)
 
 Normal tasks use native ReAct tool calling: the model selects a tool, receives its observation, and selects the next action until `assistant.reply`. Tool-level permission approvals remain enabled for protected operations.
 
-Stages 1–5 complete. Stage 6 structured memory `6.16`–`6.25` and optional polish landed. **Next:** Stage 7 hardening + product surface — see roadmap.
+Stages 1–6 foundations are complete. Stage 7 hardening/product items through `7.91` are implemented; the next roadmap item is `7.93` request-id on HTTP.
 
 ## Crates
 
@@ -33,6 +33,7 @@ Errors return `{ "error", "code", "retryable" }` (plus `tool` / `approval_id` fo
 | GET | `/openapi.json` | Generated route-level OpenAPI contract |
 | GET | `/health` | Health check (public) |
 | GET | `/api/auth/status` | Local auth mode (`token_configured`, public) |
+| GET | `/api/features` | Experimental feature flags and effective state |
 | GET/PUT | `/api/models/config` | Model routes from web panel |
 | GET | `/api/auth/github` | GitHub auth via local `gh` |
 | GET | `/api/permissions` | Permission policy snapshot |
@@ -105,7 +106,9 @@ user.message
 | Tasks | ✅ deep: steps, deps, pause reason, retries, recovery, approvals |
 | Actions | ✅ deep: timeline + retry/approval/recovery metrics |
 | Terminal / Files / Editor / Git | ✅ |
-| Plugins / Sites | ✅ Plugins: installed list + remote catalog/install |
+| Plugins | ✅ Installed list + remote catalog/install |
+| Sites | ✅ Workspace-scoped preview and publish, feature-gated |
+| Scheduled | ✅ Real scheduled jobs, feature-gated |
 | Pull Requests | ✅ list + detail (diff/comments/checks) + create |
 | Memory | ✅ tabs + playbook view + kind filters + JSON export; feedback; hybrid retrieve |
 
@@ -120,6 +123,8 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 - `crates/model-gateway`, `protocol`, `tool-runtime`, `permissions`, `server`
 
 ## Next recommended step
+
+`7.91` выполнен: `AGENTS.md`, `docs/development-plan.md` и этот файл синхронизированы с фактическим Stage 7; следующий незакрытый пункт roadmap — `7.93`.
 
 `7.56` выполнен: CI job `python-worker` на Python 3.12 запускает `python -m unittest discover -s workers/python -p "test_*.py"`; локально suite проходит: 25 тестов.
 
@@ -203,7 +208,7 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.51` реализован: Python worker и зеркальная Rust-валидация получили `text.classify`, `text.language` и `text.redact`; все три handler доступны также через `worker.run`.
 
-**Актуализация 2026-07-18:** `7.51` выполнен: worker ML handlers расширены deterministic classify/language/redact задачами с контрактными тестами. Следующий пункт — product honesty для Sites/Scheduled.
+**Актуализация 2026-07-22:** `7.51` и product honesty для Sites/Scheduled выполнены; Wave E `7.84`–`7.91` также закрыта. `7.92` уже покрыт `7.24`, следующий пункт — `7.93`.
 
-1. **Stage 7** — Wave E: `7.84`–`7.85` ✅; next `7.86`, `7.56`, `7.69`–`7.71`
-2. Рекомендуемая следующая волна: protocol drift check, затем worker CI / DX
+1. **Stage 7** — Waves A–D ✅; Wave E `7.84`–`7.91` ✅; next `7.93`
+2. Рекомендуемая следующая волна: observability/ops, начиная с request-id на HTTP

@@ -19,7 +19,7 @@ Web-first AI-agent platform. **Browser only** — no Electron, desktop, or mobil
 | API | HTTP/REST |
 | Database | PostgreSQL (`migrations/`, `crates/storage/`) |
 | ML workers | Python (`workers/python/`) — stage 6 |
-| Deploy | Native Windows launcher |
+| Deploy | Native Windows launcher + Dev Container/Compose |
 
 ## Architecture
 
@@ -40,7 +40,7 @@ EvoHime Server (crates/server)
 └── storage/           — PostgreSQL access (incl. memory_items)
 ```
 
-## Current state (Stages 1–5 ✅; Stage 6 in progress)
+## Current state (Stages 1–6 ✅; Stage 7 in progress)
 
 Vertical slice works end-to-end:
 
@@ -58,22 +58,22 @@ User message
 ### Implemented
 
 - Monorepo with modular crates (incl. `evohime-memory`)
-- HTTP: health, sessions, files, git, models, permissions, tools, MCP, GitHub PRs, worker jobs
+- HTTP: health, sessions, files, git, models, permissions, tools, MCP, GitHub PRs, worker jobs, OpenAPI, feature flags
 - WebSocket: typed event protocol + approvals
 - Tools: filesystem, shell, Git, browser, MCP call (sandboxed)
 - Agent loop: native ReAct tool call → observation → next action; bounded iterations with checkpoints and pause/resume
 - Frontend shell split (`6.13`): `types` / `api` / `lib` / `hooks` / `panels`
-- Panels: Chat, Settings (Worker + Metrics), Tasks (deep), Actions (deep), Terminal, Files, Editor, Git, Plugins, Pull Requests (detail/diff/checks/create), Sites, Memory
+- Panels: Chat, Settings (Worker + Metrics), Tasks (deep), Actions (deep), Terminal, Files, Editor, Git, Plugins, Pull Requests (detail/diff/checks/create), Sites, Scheduled, Memory
 - Structured memory: `memory_items` + admit/retrieve/extract/experience/feedback + hybrid embeddings (`6.16`–`6.25`, optional remote neural); legacy notes still written/loaded
 - Workers: health/stall reliability + `text.summarize` / `text.chunk` / `text.similarity` / `text.entities`
 - Native launcher + GitHub auth via local `gh`
-- CI: format, Clippy, docs, tests (ripgrep preferred for `filesystem.search`; built-in walk fallback if missing)
+- CI: Rust format/Clippy/docs, protocol and OpenAPI drift, frontend typecheck/build, Python worker tests, PostgreSQL integration tests
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Wave A–D ✅; Wave E: `7.84`–`7.85` ✅; next `7.86`+
-- Wave C next: planner cost/latency telemetry (`7.34`)…
-- Product stubs: Sites / Scheduled (реализовать или убрать fake UX)
+- **Stage 7** Hardening + Product — Waves A–D ✅; Wave E `7.84`–`7.91` ✅; next implementation item `7.93`
+- Sites, Scheduled и OTLP имеют реальные backend/UI gates через `EVOHIME_FEATURE_*` и `/api/features`
+- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; следующий незакрытый пункт — request-id (`7.93`)
 
 ## WebSocket events
 
@@ -151,6 +151,9 @@ DEMO_FILE_PATH=docs/sample-context.md
 # Native Windows local stack WITH tray icons (обязательный способ «запустить»)
 .\start-dev.ps1
 
+# Cross-platform development stack (Docker required)
+docker compose -f .devcontainer/docker-compose.yml up -d
+
 # One-shot setup only
 .\scripts\setup-local.ps1 -InstallPostgres -ApplyMigrations
 
@@ -183,7 +186,8 @@ See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](d
 | 3 Tools + shell | ✅ Done |
 | 4 Editor + Git | ✅ Done |
 | 5 Task orchestration | ✅ Done |
-| 6 Advanced | 🟡 Foundations done; **next Stage 7** hardening/product |
+| 6 Advanced | ✅ Foundations complete |
+| 7 Hardening + Product | 🟡 In progress; `7.1`–`7.91` complete, next `7.93` |
 
 Memory design: [docs/superpowers/specs/2026-07-16-agent-memory-design.md](docs/superpowers/specs/2026-07-16-agent-memory-design.md)
 

@@ -437,7 +437,7 @@
 | 7.88 | Devcontainer / cross-platform launcher (не только Windows tray) | L | ✅ | `.devcontainer` Compose: workspace + PostgreSQL + Python worker |
 | 7.89 | OpenAPI / typed HTTP client gen из server routes | L | ✅ | `generate:openapi` → `/openapi.json` + typed `OpenApiPath`/method union |
 | 7.90 | Feature flags (`EVOHIME_FEATURE_*`) для experimental surfaces | M | ✅ | `/api/features`; Sites/Scheduled UI gates; OTLP export gate |
-| 7.91 | Docs sync: `development-plan.md` / `AGENTS.md` / `current-state` под Stage 7 | S | ⬜ | этот PR |
+| 7.91 | Docs sync: `development-plan.md` / `AGENTS.md` / `current-state` под Stage 7 | S | ✅ | синхронизированы с текущим Stage 7 |
 
 ### 7.J — Observability & ops
 
@@ -470,13 +470,13 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-22:** `7.90` ✅ — Sites, Scheduled и OTLP управляются `EVOHIME_FEATURE_*` через `/api/features`; следующий — `7.91` (docs sync).
+**Актуальный статус 2026-07-22:** `7.91` ✅ — документация синхронизирована с текущим Stage 7; следующий незакрытый пункт — `7.93` (request-id на HTTP; `7.92` уже покрыт `7.24`).
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
 3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.51`, `7.52` ✅ → next product honesty `7.62`+
 4. **Wave D (product honesty):** 7.62–7.68, 7.72–7.73 ✅
-5. **Wave E (DX/CI):** `7.84`–`7.90` ✅, `7.56`, `7.69`–`7.71` ✅ → next `7.91`
+5. **Wave E (DX/CI):** `7.84`–`7.91` ✅, `7.56`, `7.69`–`7.71` ✅ → next `7.93`
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+
 
 ### Критерий готовности Stage 7 (минимум)
