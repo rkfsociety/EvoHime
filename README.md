@@ -67,6 +67,24 @@ Invoke-RestMethod http://localhost:3000/api/auth/github
 
 The convenience files `start-dev.bat` and `start-dev.vbs` start the same local launcher.
 
+### Devcontainer / cross-platform development
+
+On Docker Desktop, Podman, or any VS Code Dev Containers-compatible host, open
+the repository in the devcontainer defined in `.devcontainer/`. PostgreSQL and
+the Python worker start through Compose; the workspace container provides Rust,
+Node.js, Python, and ripgrep.
+
+Inside the container, start the API and web processes in separate terminals:
+
+```bash
+cargo run -p evohime-server
+cd frontend/web && npm run dev -- --host 0.0.0.0
+```
+
+The browser UI is available at http://localhost:5173 and the API health check
+at http://localhost:3000/health. The Windows tray launcher remains the
+recommended native path on Windows.
+
 ## Manual local development
 
 Frontend:

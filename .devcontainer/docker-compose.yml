@@ -1,0 +1,54 @@
+services:
+  workspace:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+    command: sleep infinity
+    volumes:
+      - ..:/workspaces/EvoHime:cached
+      - cargo-target:/workspaces/EvoHime/target
+    working_dir: /workspaces/EvoHime
+    environment:
+      DATABASE_URL: postgres://evohime:evohime@db:5432/evohime
+      BIND_ADDR: 0.0.0.0:3000
+      EVOHIME_CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      WORKSPACE_ROOT: /workspaces/EvoHime
+      DEMO_FILE_PATH: docs/sample-context.md
+      PYTHON_WORKER_URL: http://worker:8090
+    ports:
+      - "3000:3000"
+      - "5173:5173"
+    depends_on:
+      db:
+        condition: service_healthy
+      worker:
+        condition: service_started
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: evohime
+      POSTGRES_PASSWORD: evohime
+      POSTGRES_DB: evohime
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evohime -d evohime"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  worker:
+    image: python:3.12-slim
+    command: python workers/python/worker.py --host 0.0.0.0 --port 8090
+    volumes:
+      - ..:/workspaces/EvoHime:cached
+    working_dir: /workspaces/EvoHime
+    ports:
+      - "8090:8090"
+
+volumes:
+  cargo-target:
+  postgres-data:

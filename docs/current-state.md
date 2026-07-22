@@ -130,6 +130,8 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.87` выполнен: CI явно проверяет `cargo fmt --all -- --check`, а Rust docs job запускает `cargo doc` с `RUSTDOCFLAGS=-D warnings`, поэтому rustdoc warnings ломают сборку.
 
+`7.88` выполнен: `.devcontainer/` поднимает переносимый workspace-контейнер, PostgreSQL 16 и Python worker через Compose; API/Web/worker ports и container env задокументированы в README.
+
 Локальный `cargo fmt --all -- --check` сейчас обнаруживает pre-existing форматирование в нескольких файлах `crates/server` и `crates/storage`; эти посторонние изменения в `7.87` не включались.
 
 `7.86` выполнен: CI job `protocol-drift` на Node 22 устанавливает frontend и корневые зависимости, запускает `npm run generate:protocol` и падает при diff в `frontend/web/src/protocol.generated.ts`.
