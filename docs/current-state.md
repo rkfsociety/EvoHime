@@ -126,6 +126,8 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.70` выполнен: `styles.css` сохранён как import-map, а исходный каскад разнесён на 8 самостоятельных CSS-файлов; объединённый текст совпадает с исходным SHA-256.
 
+`7.71` выполнен: `PanelErrorBoundary` изолирует падение активной панели и Settings modal, показывает русский fallback с повторной попыткой и сбрасывается при переключении панели.
+
 `7.86` выполнен: CI job `protocol-drift` на Node 22 устанавливает frontend и корневые зависимости, запускает `npm run generate:protocol` и падает при diff в `frontend/web/src/protocol.generated.ts`.
 
 `7.85` выполнен: CI job `frontend` — Node 22, `npm ci`, `npm run typecheck`, `npm run build` (Playwright smoke отложен).

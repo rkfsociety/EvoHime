@@ -799,3 +799,33 @@
   color: var(--text-3);
   cursor: pointer;
 }
+
+.panelErrorState {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  margin: auto;
+  max-width: 520px;
+  padding: 28px;
+  border: 1px solid rgba(255, 122, 122, 0.35);
+  border-radius: 16px;
+  background: rgba(120, 30, 45, 0.16);
+  color: var(--text-1);
+}
+
+.panelErrorState strong {
+  color: #ffd6d6;
+}
+
+.panelErrorState span {
+  color: var(--text-2);
+}
+
+.panelErrorState button {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: var(--surface-3);
+  color: var(--text-0);
+  cursor: pointer;
+}

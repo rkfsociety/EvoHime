@@ -22,6 +22,7 @@ import { MemoryPanel } from "./panels/MemoryPanel";
 import { PullRequestsPanel } from "./panels/PullRequestsPanel";
 import { ScheduledPanel } from "./panels/ScheduledPanel";
 import { BootNoticeBanner } from "./components/BootNoticeBanner";
+import { PanelErrorBoundary } from "./components/PanelErrorBoundary";
 import { SettingsModal } from "./components/SettingsModal";
 import { SettingsPanel } from "./panels/SettingsPanel";
 import { SitesPanel } from "./panels/SitesPanel";
@@ -1792,7 +1793,9 @@ export function App() {
               </div>
             </header>
           ) : null}
-          {renderPanelContent()}
+          <PanelErrorBoundary key={activePanel} panelLabel={currentPanelLabel}>
+            {renderPanelContent()}
+          </PanelErrorBoundary>
         </div>
 
         {traceOpen ? (
@@ -1830,7 +1833,9 @@ export function App() {
       </section>
       {settingsOpen ? (
         <SettingsModal onClose={() => setSettingsOpen(false)} bootNotices={bootNotices}>
-          {settingsPanelElement()}
+          <PanelErrorBoundary panelLabel="Настройки">
+            {settingsPanelElement()}
+          </PanelErrorBoundary>
         </SettingsModal>
       ) : null}
       {approval ? (
