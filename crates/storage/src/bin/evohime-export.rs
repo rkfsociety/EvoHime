@@ -69,7 +69,10 @@ fn validate_output_path(path: &Path) -> Result<(), String> {
     }
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     if !parent.is_dir() {
-        return Err(format!("output parent does not exist: {}", parent.display()));
+        return Err(format!(
+            "output parent does not exist: {}",
+            parent.display()
+        ));
     }
     Ok(())
 }
@@ -172,7 +175,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(tokio::fs::read(&output).await.unwrap(), br#"{"format":"evohime-backup"}"#);
+        assert_eq!(
+            tokio::fs::read(&output).await.unwrap(),
+            br#"{"format":"evohime-backup"}"#
+        );
         let temporary = temporary_path(&output);
         assert!(!temporary.exists());
         tokio::fs::remove_file(output).await.unwrap();
