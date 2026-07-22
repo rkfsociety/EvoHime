@@ -71,9 +71,9 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Waves A–D ✅; Wave E `7.84`–`7.91` ✅; next implementation item `7.93`
+- **Stage 7** Hardening + Product — Waves A–D ✅; Wave E `7.84`–`7.91` ✅; first audit phase is Scheduler correctness, then `7.93`
 - Sites, Scheduled и OTLP имеют реальные backend/UI gates через `EVOHIME_FEATURE_*` и `/api/features`
-- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; следующий незакрытый пункт — request-id (`7.93`)
+- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; request-id (`7.93`) идёт после scheduler hardening
 
 ## WebSocket events
 

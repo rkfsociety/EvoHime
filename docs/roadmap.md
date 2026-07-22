@@ -313,14 +313,14 @@
 | 7.4 | SSRF guard для `browser.*` (block localhost / private / link-local / metadata) | M | ✅ | `ssrf.rs` + browser validate/redirect/final; `EVOHIME_SSRF_ALLOW_PRIVATE` |
 | 7.5 | SSRF guard для `mcp.call` + optional allowlist hosts | M | ✅ | `ssrf` + redirect/final; `EVOHIME_MCP_ALLOWED_HOSTS` |
 | 7.6 | Shell: scrub / allowlist env (не наследовать API keys) | M | ✅ | `shell_env.rs`; allowlist + secret scrub; `EVOHIME_SHELL_*` |
-| 7.7 | Encrypt-at-rest для API keys в `app_settings` (или OS keychain) | M | ⬜ | model config в PG plaintext |
-| 7.8 | Plugin install: pin commit/tag, signature/hash, uninstall/update | L | ⬜ | `server/src/plugins.rs` |
-| 7.9 | Plugin skills quarantine (не все skills → system prompt без opt-in) | L | ⬜ | `agent_loop` workspace rules |
+| 7.7 | Encrypt-at-rest для API keys в `app_settings` (или OS keychain) | M | ⬜ | model config в PG plaintext; security phase 5 |
+| 7.8 | Plugin install: pin commit/tag, signature/hash, uninstall/update | L | ⬜ | `server/src/plugins.rs`; security phase 5 |
+| 7.9 | Plugin skills quarantine (не все skills → system prompt без opt-in) | L | ⬜ | `agent_loop` workspace rules; security phase 5 |
 | 7.10 | Permission для `memory.search` + audit | S | ⬜ | сейчас `PERMISSIONS: &[]` |
 | 7.11 | Rate limiting / concurrency caps на sessions, tasks, worker jobs | M | ✅ | `rate_limit.rs`; 429 + WS `rate.limited`; `EVOHIME_RATE_LIMIT_*` |
 | 7.12 | Git push/pull network policy (remote allowlist, deny force) | M | ⬜ | `tools/git.rs` |
-| 7.13 | Content-Security-Policy / secure headers для static web | S | ⬜ | Vite/static serve path |
-| 7.14 | Secrets scan в CI (gitleaks / similar) | S | ⬜ | `.github/workflows` |
+| 7.13 | Content-Security-Policy / secure headers для static web | S | ⬜ | Vite/static serve path; security phase 5 |
+| 7.14 | Secrets scan в CI (gitleaks / similar) | S | ⬜ | `.github/workflows`; security phase 5 |
 
 ### 7.B — Reliability & recovery
 
@@ -401,7 +401,7 @@
 | 7.62 | Sites: data model + `/api/sites` CRUD | L | ✅ | PostgreSQL + workspace-scoped API + real panel |
 | 7.63 | Sites: preview / publish / open-in-browser | L | ✅ | Workspace-scoped HTML preview, publish action, and browser launch |
 | 7.64 | Sites: search/filter wired to real data | S | ✅ | `GET /api/sites?q=&status=`; SitesPanel tabs + debounced search |
-| 7.65 | Scheduled: real cron/timer jobs (storage + runner) | L | ✅ | `scheduled_tasks` PG table + tokio cron loop + CRUD API; 6-field cron via `cron` v0.17 |
+| 7.65 | Scheduled: real cron/timer jobs (storage + runner) | L | ✅ | `scheduled_tasks` PG table + tokio cron loop + CRUD API; 6-field cron via `cron` v0.17; atomic claim/idempotency hardening planned in audit phase 1 |
 | 7.66 | Scheduled: honest copy (убрать fake mail/calendar claims) | S | ✅ | removed fake mail/calendar templates; cron-only UI |
 | 7.67 | Scheduled: list/pause/delete active schedules | M | ✅ | ScheduledPanel: list + tabs + create + pause/resume/trigger/delete |
 | 7.68 | Deep-link / router для панелей (`?panel=`, history) | M | ✅ | `lib/panel-route.ts`; `?panel=` + pushState/popstate |
@@ -431,12 +431,12 @@
 | # | Задача | Size | Статус | Notes / evidence |
 | --- | --- | --- | --- | --- |
 | 7.84 | CI: PostgreSQL service + storage/memory integration tests | L | ✅ | `postgres:16` service; `DATABASE_URL` + `EVOHIME_REQUIRE_DB`; `connect_integration_pool` fails hard in CI |
-| 7.85 | CI: frontend `tsc` + build (+ optional playwright smoke) | M | ✅ | job `frontend` in CI: Node 22, `npm ci`, `typecheck`, `build`; Playwright deferred |
+| 7.85 | CI: frontend `tsc` + build (+ optional playwright smoke) | M | ✅ | job `frontend` in CI: Node 22, `npm ci`, `typecheck`, `build`; Playwright deferred; server HTTP/WS integration harness planned in audit phase 4 |
 | 7.86 | CI: protocol schema ↔ Rust ↔ generated TS drift check | M | ✅ | `protocol-drift` job regenerates TS and fails on diff |
 | 7.87 | CI: Clippy `-D warnings` already; add fmt/docs gates docs for stage 7 | S | ✅ | fmt check is explicit; rustdoc runs with `RUSTDOCFLAGS=-D warnings` |
 | 7.88 | Devcontainer / cross-platform launcher (не только Windows tray) | L | ✅ | `.devcontainer` Compose: workspace + PostgreSQL + Python worker |
-| 7.89 | OpenAPI / typed HTTP client gen из server routes | L | ✅ | `generate:openapi` → `/openapi.json` + typed `OpenApiPath`/method union |
-| 7.90 | Feature flags (`EVOHIME_FEATURE_*`) для experimental surfaces | M | ✅ | `/api/features`; Sites/Scheduled UI gates; OTLP export gate |
+| 7.89 | OpenAPI / typed HTTP client gen из server routes | L | ✅ | `generate:openapi` → `/openapi.json` + typed `OpenApiPath`/method union; full DTO/operation schemas planned in audit phase 3 |
+| 7.90 | Feature flags (`EVOHIME_FEATURE_*`) для experimental surfaces | M | ✅ | `/api/features`; Sites/Scheduled UI gates; OTLP export gate; server-side route gates planned in audit phase 3 |
 | 7.91 | Docs sync: `development-plan.md` / `AGENTS.md` / `current-state` под Stage 7 | S | ✅ | синхронизированы с текущим Stage 7 |
 
 ### 7.J — Observability & ops
@@ -444,11 +444,33 @@
 | # | Задача | Size | Статус | Notes / evidence |
 | --- | --- | --- | --- | --- |
 | 7.92 | Prometheus `/metrics` exposition (или OTEL metrics) | M | ✅ | done in 7.24 (`GET /metrics`); OTLP traces already optional |
-| 7.93 | Per-request/request-id on HTTP (не только task correlation) | S | ⬜ | |
-| 7.94 | Task timeline UI: correlation id copy + latency bars | M | ⬜ | Actions/Tasks panels |
-| 7.95 | Log sampling / redaction of secrets in tracing | M | ⬜ | shell/env, model keys |
+| 7.93 | Per-request/request-id on HTTP (не только task correlation) | S | ⬜ | First implementation item; `tower-http` TraceLayer + `X-Request-Id` propagation |
+| 7.94 | Task timeline UI: correlation id copy + latency bars | M | ⬜ | Actions/Tasks panels; depends on 7.93 |
+| 7.95 | Log sampling / redaction of secrets in tracing | M | ⬜ | shell/env, model keys; pair with internal error redaction |
 | 7.96 | Health endpoint: deep checks (DB, worker, disk) | S | ⬜ | сейчас `{status:ok}` |
 | 7.97 | Backup/export: sessions+memory dump CLI | M | ⬜ | |
+
+### First implementation wave — code audit hardening
+
+Эта волна — непосредственный план после `7.91`. Порядок фиксирован зависимостями: сначала устраняем дублирование/двойные запуски, затем делаем наблюдаемость и единый контур ошибок, после этого расширяем контракты и тестовую инфраструктуру.
+
+| Фаза | Deliverable | Основные файлы/границы | Критерий готовности |
+| --- | --- | --- | --- |
+| 1 | **Scheduler correctness**: атомарный claim due-задач, lease/idempotency, связь scheduled run с созданной task, корректный success/failure count | `crates/storage/src/scheduled.rs`, `crates/server/src/scheduler.rs`, `crates/server/src/scheduled_api.rs`, новая migration при необходимости | два scheduler-процесса не выполняют один run дважды; manual trigger и cron не перетирают состояние; есть race/integration tests |
+| 2 | **Request context**: request-id, безопасные internal errors, header-only HTTP auth | `crates/server/src/auth.rs`, `api_error.rs`, новый middleware/observability module, `frontend/web/src/api/client.ts`, WS handshake | каждый HTTP ответ содержит request-id; подробности остаются в logs; HTTP не принимает token из query, WS продолжает работать |
+| 3 | **Feature and API contracts**: backend enforcement для Sites/Scheduled/OTLP и схемы DTO в OpenAPI/typed client | `crates/server/src/features.rs`, `routes.rs`, `sites_api.rs`, `scheduled_api.rs`, `scripts/generate-openapi.mjs`, `docs/openapi.json`, `frontend/web/src/api/generated.ts` | выключенный flag закрывает UI и прямой API; генератор описывает request/response schemas; drift check остаётся зелёным |
+| 4 | **Test and lifecycle foundation**: HTTP/WS integration harness, scheduler regression tests, graceful shutdown, bounded cleanup `session_buses` | `crates/server/tests/`, `crates/server/src/startup.rs`, `app.rs`, `ws.rs`, `scheduler.rs` | auth/CORS/features/errors/WS resume/scheduler races покрыты; фоновые loops завершаются по cancellation token; session buses не растут бесконечно |
+| 5 | **Security and performance**: API-key encryption, plugin pin/quarantine, CSP/secure headers, gitleaks, frontend code splitting | `crates/server/src/models_api.rs`, `plugins.rs`, `auth.rs`, static serving, `.github/workflows/rust.yml`, `frontend/web/src/app.tsx` и panel imports | секреты не хранятся plaintext и не попадают в prompt/logs; plugin trust boundary явный; CI сканирует секреты; JS initial chunk уменьшается |
+
+#### Правила выполнения первой волны
+
+1. Каждая фаза — отдельный небольшой коммит с тестом и обновлением evidence в соответствующем roadmap item.
+2. Для миграций сначала добавляется backward-compatible схема, затем код чтения/записи и только после этого cleanup старого пути.
+3. Нельзя решать scheduler race только in-process mutex: защита должна жить в PostgreSQL и работать при нескольких server processes.
+4. Нельзя скрывать Clippy/fmt проблемы через `#[allow]` или ослабление CI; исправления должны оставаться локальными и форматироваться workspace-правилом.
+5. После каждой фазы обязательны: `cargo test --workspace --all-features --all-targets`, `cargo clippy --workspace --all-features --all-targets -- -D warnings`, frontend typecheck/build и generated drift checks.
+
+**Первый практический шаг:** фаза 1, Scheduler correctness. Она предотвращает повторное выполнение пользовательских задач и должна быть завершена до новых масштабных product/worker функций.
 
 ### 7.K — Moonshots / Stage 8 candidates
 
@@ -470,7 +492,7 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-22:** `7.91` ✅ — документация синхронизирована с текущим Stage 7; следующий незакрытый пункт — `7.93` (request-id на HTTP; `7.92` уже покрыт `7.24`).
+**Актуальный статус 2026-07-22:** `7.91` ✅ — документация синхронизирована с текущим Stage 7; первая implementation wave начинается с фазы 1 Scheduler correctness, затем `7.93` request-id (при этом `7.92` уже покрыт `7.24`).
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
