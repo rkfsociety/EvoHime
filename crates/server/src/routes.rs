@@ -172,5 +172,6 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             auth::require_local_auth,
         ))
         .layer(cors::cors_layer_from_env())
+        .layer(middleware::from_fn(crate::request_id::request_id))
         .with_state(state)
 }

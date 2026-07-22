@@ -2,7 +2,8 @@
 //!
 //! Policy:
 //! - `/health` and `/api/auth/status` are always public (launcher + UI bootstrap).
-//! - Valid `Authorization: Bearer <token>` / `X-EvoHime-Token` / `?access_token=` unlocks any peer.
+//! - HTTP accepts `Authorization: Bearer <token>` / `X-EvoHime-Token` only.
+//! - WebSocket handshakes also accept `?access_token=` for browser compatibility.
 //! - Loopback peers are allowed when `EVOHIME_API_TOKEN` is **unset** (local DX).
 //! - Non-loopback peers without a matching token are rejected (401).
 //! - When `EVOHIME_API_TOKEN` is set, it is required even from loopback.
@@ -57,7 +58,7 @@ pub fn status_payload(config: &AuthConfig) -> AuthStatus {
         AuthStatus {
             token_configured: true,
             mode: "bearer",
-            hint: "Send Authorization: Bearer <EVOHIME_API_TOKEN> (or X-EvoHime-Token / ?access_token=).",
+            hint: "Send Authorization: Bearer <EVOHIME_API_TOKEN> (or X-EvoHime-Token); WebSocket may use ?access_token=.",
         }
     } else {
         AuthStatus {
@@ -75,7 +76,7 @@ pub fn is_loopback_addr(addr: &SocketAddr) -> bool {
     }
 }
 
-pub fn extract_token(headers: &axum::http::HeaderMap, query: Option<&str>) -> Option<String> {
+pub fn extract_header_token(headers: &axum::http::HeaderMap) -> Option<String> {
     if let Some(value) = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
@@ -99,7 +100,28 @@ pub fn extract_token(headers: &axum::http::HeaderMap, query: Option<&str>) -> Op
     {
         return Some(value.to_string());
     }
-    query.and_then(token_from_query)
+    None
+}
+
+fn is_websocket_request(headers: &axum::http::HeaderMap, path: &str) -> bool {
+    path.starts_with("/ws/")
+        || headers
+            .get(header::UPGRADE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.eq_ignore_ascii_case("websocket"))
+}
+
+fn extract_request_token(
+    headers: &axum::http::HeaderMap,
+    query: Option<&str>,
+    path: &str,
+) -> Option<String> {
+    let header_token = extract_header_token(headers);
+    if is_websocket_request(headers, path) {
+        header_token.or_else(|| query.and_then(token_from_query))
+    } else {
+        header_token
+    }
 }
 
 fn token_from_query(query: &str) -> Option<String> {
@@ -194,7 +216,7 @@ pub async fn require_local_auth(
 ) -> Response {
     let path = request.uri().path().to_string();
     let query = request.uri().query().map(str::to_string);
-    let presented = extract_token(request.headers(), query.as_deref());
+    let presented = extract_request_token(request.headers(), query.as_deref(), &path);
     match authorize_request(&state.auth, &path, Some(addr), presented.as_deref()) {
         Ok(()) => next.run(request).await,
         Err(status) => (status, Json(crate::api_error::unauthorized_json())).into_response(),
@@ -247,18 +269,36 @@ mod tests {
     }
 
     #[test]
-    fn extracts_bearer_and_query_token() {
+    fn extracts_header_and_websocket_query_tokens() {
         let mut headers = axum::http::HeaderMap::new();
         headers.insert(header::AUTHORIZATION, "Bearer abc".parse().unwrap());
-        assert_eq!(extract_token(&headers, None).as_deref(), Some("abc"));
+        assert_eq!(extract_header_token(&headers).as_deref(), Some("abc"));
 
         headers.clear();
         headers.insert("x-evohime-token", "xyz".parse().unwrap());
-        assert_eq!(extract_token(&headers, None).as_deref(), Some("xyz"));
+        assert_eq!(extract_header_token(&headers).as_deref(), Some("xyz"));
 
         assert_eq!(
-            extract_token(&axum::http::HeaderMap::new(), Some("access_token=tok%2Ben")).as_deref(),
+            extract_request_token(
+                &axum::http::HeaderMap::new(),
+                Some("access_token=tok%2Ben"),
+                "/ws/session",
+            )
+            .as_deref(),
             Some("tok+en")
+        );
+    }
+
+    #[test]
+    fn http_does_not_accept_query_token() {
+        let headers = axum::http::HeaderMap::new();
+        assert_eq!(
+            extract_request_token(&headers, Some("access_token=secret"), "/api/sessions"),
+            None
+        );
+        assert_eq!(
+            extract_request_token(&headers, Some("access_token=secret"), "/ws/session"),
+            Some("secret".into())
         );
     }
 }

@@ -444,7 +444,7 @@
 | # | Задача | Size | Статус | Notes / evidence |
 | --- | --- | --- | --- | --- |
 | 7.92 | Prometheus `/metrics` exposition (или OTEL metrics) | M | ✅ | done in 7.24 (`GET /metrics`); OTLP traces already optional |
-| 7.93 | Per-request/request-id on HTTP (не только task correlation) | S | ⬜ | First implementation item; `tower-http` TraceLayer + `X-Request-Id` propagation |
+| 7.93 | Per-request/request-id on HTTP (не только task correlation) | S | ✅ | `X-Request-Id` генерируется/пропагируется для каждого HTTP-ответа; internal details остаются в logs; query token ограничен WS handshake |
 | 7.94 | Task timeline UI: correlation id copy + latency bars | M | ⬜ | Actions/Tasks panels; depends on 7.93 |
 | 7.95 | Log sampling / redaction of secrets in tracing | M | ⬜ | shell/env, model keys; pair with internal error redaction |
 | 7.96 | Health endpoint: deep checks (DB, worker, disk) | S | ⬜ | сейчас `{status:ok}` |
@@ -457,7 +457,7 @@
 | Фаза | Deliverable | Основные файлы/границы | Статус | Критерий готовности |
 | --- | --- | --- | --- | --- |
 | 1 | **Scheduler correctness**: атомарный claim due-задач, lease/idempotency, связь scheduled run с созданной task, корректный success/failure count | `crates/storage/src/scheduled.rs`, `crates/server/src/scheduler.rs`, `crates/server/src/scheduled_api.rs`, `migrations/0024_scheduled_task_runs.sql` | ✅ | два scheduler-процесса не выполняют один run дважды; manual trigger и cron не перетирают состояние; race/failure integration tests |
-| 2 | **Request context**: request-id, безопасные internal errors, header-only HTTP auth | `crates/server/src/auth.rs`, `api_error.rs`, новый middleware/observability module, `frontend/web/src/api/client.ts`, WS handshake | каждый HTTP ответ содержит request-id; подробности остаются в logs; HTTP не принимает token из query, WS продолжает работать |
+| 2 | **Request context**: request-id, безопасные internal errors, header-only HTTP auth | `crates/server/src/auth.rs`, `api_error.rs`, `crates/server/src/request_id.rs`, WS handshake | ✅ | `X-Request-Id` есть на каждом HTTP-ответе; подробности internal errors остаются в logs; HTTP не принимает token из query, WS продолжает работать |
 | 3 | **Feature and API contracts**: backend enforcement для Sites/Scheduled/OTLP и схемы DTO в OpenAPI/typed client | `crates/server/src/features.rs`, `routes.rs`, `sites_api.rs`, `scheduled_api.rs`, `scripts/generate-openapi.mjs`, `docs/openapi.json`, `frontend/web/src/api/generated.ts` | выключенный flag закрывает UI и прямой API; генератор описывает request/response schemas; drift check остаётся зелёным |
 | 4 | **Test and lifecycle foundation**: HTTP/WS integration harness, scheduler regression tests, graceful shutdown, bounded cleanup `session_buses` | `crates/server/tests/`, `crates/server/src/startup.rs`, `app.rs`, `ws.rs`, `scheduler.rs` | auth/CORS/features/errors/WS resume/scheduler races покрыты; фоновые loops завершаются по cancellation token; session buses не растут бесконечно |
 | 5 | **Security and performance**: API-key encryption, plugin pin/quarantine, CSP/secure headers, gitleaks, frontend code splitting | `crates/server/src/models_api.rs`, `plugins.rs`, `auth.rs`, static serving, `.github/workflows/rust.yml`, `frontend/web/src/app.tsx` и panel imports | секреты не хранятся plaintext и не попадают в prompt/logs; plugin trust boundary явный; CI сканирует секреты; JS initial chunk уменьшается |
@@ -470,7 +470,7 @@
 4. Нельзя скрывать Clippy/fmt проблемы через `#[allow]` или ослабление CI; исправления должны оставаться локальными и форматироваться workspace-правилом.
 5. После каждой фазы обязательны: `cargo test --workspace --all-features --all-targets`, `cargo clippy --workspace --all-features --all-targets -- -D warnings`, frontend typecheck/build и generated drift checks.
 
-**Фаза 1 выполнена:** scheduler correctness предотвращает повторное выполнение пользовательских задач, сохраняет run history и failure accounting. Следующий практический шаг — фаза 2: request-id, безопасные ошибки и header-only HTTP auth.
+**Фазы 1–2 выполнены:** scheduler correctness предотвращает повторное выполнение пользовательских задач, сохраняет run history и failure accounting; request context добавляет per-request id, скрывает internal details и оставляет query token только для WebSocket. Следующий практический шаг — фаза 3: backend feature enforcement и полные API-контракты.
 
 ### 7.K — Moonshots / Stage 8 candidates
 
@@ -492,13 +492,13 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-22:** `7.65` hardening ✅ — scheduler dispatch атомарен и имеет run/failure history; `7.91` ✅ — документация синхронизирована; следующий практический шаг — `7.93` request-id (при этом `7.92` уже покрыт `7.24`).
+**Актуальный статус 2026-07-22:** `7.65` hardening ✅ — scheduler dispatch атомарен и имеет run/failure history; `7.91` ✅ — документация синхронизирована; `7.93` ✅ — request context и header-only HTTP auth; следующий практический шаг — `7.94` timeline/latency (при этом `7.92` уже покрыт `7.24`).
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
 3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.51`, `7.52` ✅ → next product honesty `7.62`+
 4. **Wave D (product honesty):** 7.62–7.68, 7.72–7.73 ✅
-5. **Wave E (DX/CI):** `7.84`–`7.91` ✅, `7.56`, `7.69`–`7.71` ✅ → next `7.93`
+5. **Wave E (DX/CI):** `7.84`–`7.91` ✅, `7.56`, `7.69`–`7.71` ✅ → `7.93` ✅ → next `7.94`
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+
 
 ### Критерий готовности Stage 7 (минимум)

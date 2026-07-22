@@ -138,7 +138,13 @@ impl ApiError {
     }
 
     pub fn body(&self) -> ErrorBody {
-        let message = self.to_string();
+        let message = match self {
+            Self::Internal(detail) => {
+                tracing::error!(error = %detail, "internal API error");
+                "Internal server error".to_string()
+            }
+            _ => self.to_string(),
+        };
         let mut body = ErrorBody::new(self.code(), message, self.retryable());
         if let Self::ApprovalRequired { tool, approval_id } = self {
             body.tool = Some(tool.clone());
@@ -201,5 +207,15 @@ mod tests {
         assert_eq!(value["tool"], "shell.execute");
         assert_eq!(value["approval_id"], approval_id.to_string());
         assert_eq!(value["retryable"], false);
+    }
+
+    #[test]
+    fn internal_error_does_not_expose_details() {
+        let value = ApiError::Internal("database password=secret".into())
+            .body()
+            .to_json();
+        assert_eq!(value["code"], "internal");
+        assert_eq!(value["error"], "Internal server error");
+        assert!(!value.to_string().contains("password=secret"));
     }
 }
