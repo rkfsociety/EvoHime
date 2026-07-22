@@ -14,6 +14,7 @@ mod metrics_api;
 mod metrics_export;
 mod models_api;
 mod observability;
+mod operators_api;
 mod openapi;
 mod otel;
 mod permissions_api;

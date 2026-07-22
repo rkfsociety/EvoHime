@@ -35,6 +35,8 @@ pub enum ApiError {
     #[error("{0}")]
     Unauthorized(String),
     #[error("{0}")]
+    Forbidden(String),
+    #[error("{0}")]
     NotFound(String),
 }
 
@@ -54,6 +56,7 @@ pub enum ErrorCode {
     Internal,
     Unavailable,
     Unauthorized,
+    Forbidden,
     NotFound,
 }
 
@@ -67,6 +70,7 @@ impl ErrorCode {
             Self::Internal => "internal",
             Self::Unavailable => "unavailable",
             Self::Unauthorized => "unauthorized",
+            Self::Forbidden => "forbidden",
             Self::NotFound => "not_found",
         }
     }
@@ -114,6 +118,7 @@ impl ApiError {
             Self::Internal(_) => ErrorCode::Internal,
             Self::Unavailable(_) => ErrorCode::Unavailable,
             Self::Unauthorized(_) => ErrorCode::Unauthorized,
+            Self::Forbidden(_) => ErrorCode::Forbidden,
             Self::NotFound(_) => ErrorCode::NotFound,
         }
     }
@@ -133,6 +138,7 @@ impl ApiError {
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             Self::Unauthorized(_) => StatusCode::UNAUTHORIZED,
+            Self::Forbidden(_) => StatusCode::FORBIDDEN,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
         }
     }

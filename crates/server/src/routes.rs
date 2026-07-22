@@ -21,6 +21,18 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/health/deep", get(crate::health::deep_health))
         .route("/openapi.json", get(crate::openapi::document))
         .route("/api/auth/status", get(crate::health::auth_status))
+        .route(
+            "/api/operators",
+            get(crate::operators_api::list).post(crate::operators_api::create),
+        )
+        .route(
+            "/api/operators/:operator_id/rotate",
+            post(crate::operators_api::rotate),
+        )
+        .route(
+            "/api/operators/:operator_id/revoke",
+            post(crate::operators_api::revoke),
+        )
         .route("/api/features", get(crate::features::list))
         .route(
             "/api/models/config",

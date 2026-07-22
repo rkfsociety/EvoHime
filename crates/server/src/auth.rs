@@ -23,6 +23,8 @@ use std::{
 };
 
 use crate::app::AppState;
+use evohime_storage::{OperatorRole, OperatorRow, BOOTSTRAP_OWNER_ID};
+use uuid::Uuid;
 
 const PUBLIC_PATHS: &[&str] = &["/health", "/health/deep", "/api/auth/status"];
 
@@ -101,6 +103,54 @@ pub fn extract_header_token(headers: &axum::http::HeaderMap) -> Option<String> {
         return Some(value.to_string());
     }
     None
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthSource {
+    LegacyToken,
+    RegistryToken,
+    Loopback,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OperatorIdentity {
+    pub id: Uuid,
+    pub name: String,
+    pub role: OperatorRole,
+    pub source: AuthSource,
+}
+
+impl OperatorIdentity {
+    pub fn bootstrap(source: AuthSource) -> Self {
+        Self {
+            id: BOOTSTRAP_OWNER_ID,
+            name: "local-owner".into(),
+            role: OperatorRole::Owner,
+            source,
+        }
+    }
+
+    fn from_row(row: OperatorRow) -> Option<Self> {
+        Some(Self {
+            id: row.id,
+            name: row.name,
+            role: OperatorRole::parse(&row.role)?,
+            source: AuthSource::RegistryToken,
+        })
+    }
+
+    pub fn is_owner(&self) -> bool {
+        self.role == OperatorRole::Owner
+    }
+}
+
+pub fn require_owner(identity: &OperatorIdentity) -> Result<(), StatusCode> {
+    if identity.is_owner() {
+        Ok(())
+    } else {
+        Err(StatusCode::FORBIDDEN)
+    }
 }
 
 fn is_websocket_request(headers: &axum::http::HeaderMap, path: &str) -> bool {
@@ -211,15 +261,52 @@ fn tokens_equal(left: &str, right: &str) -> bool {
 pub async fn require_local_auth(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    request: Request<Body>,
+    mut request: Request<Body>,
     next: Next,
 ) -> Response {
     let path = request.uri().path().to_string();
     let query = request.uri().query().map(str::to_string);
     let presented = extract_request_token(request.headers(), query.as_deref(), &path);
-    match authorize_request(&state.auth, &path, Some(addr), presented.as_deref()) {
-        Ok(()) => next.run(request).await,
+    if PUBLIC_PATHS.iter().any(|public| *public == path) {
+        return next.run(request).await;
+    }
+    match resolve_identity(&state, Some(addr), presented.as_deref()).await {
+        Ok(identity) => {
+            request.extensions_mut().insert(identity);
+            next.run(request).await
+        }
         Err(status) => (status, Json(crate::api_error::unauthorized_json())).into_response(),
+    }
+}
+
+async fn resolve_identity(
+    state: &AppState,
+    peer: Option<SocketAddr>,
+    presented: Option<&str>,
+) -> Result<OperatorIdentity, StatusCode> {
+    if let Some(token) = presented {
+        if state
+            .auth
+            .api_token
+            .as_deref()
+            .is_some_and(|expected| tokens_equal(expected, token))
+        {
+            return Ok(OperatorIdentity::bootstrap(AuthSource::LegacyToken));
+        }
+        let hash = evohime_storage::hash_operator_token(token);
+        if let Ok(Some(row)) = evohime_storage::find_operator_by_token_hash(&state.pool, &hash).await
+        {
+            if let Some(identity) = OperatorIdentity::from_row(row) {
+                return Ok(identity);
+            }
+        }
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+
+    if authorize_request(&state.auth, "/api/sessions", peer, None).is_ok() {
+        Ok(OperatorIdentity::bootstrap(AuthSource::Loopback))
+    } else {
+        Err(StatusCode::UNAUTHORIZED)
     }
 }
 
@@ -301,5 +388,24 @@ mod tests {
             extract_request_token(&headers, Some("access_token=secret"), "/ws/session"),
             Some("secret".into())
         );
+    }
+
+    #[test]
+    fn legacy_identity_is_bootstrap_owner() {
+        let identity = OperatorIdentity::bootstrap(AuthSource::LegacyToken);
+        assert_eq!(identity.id, evohime_storage::BOOTSTRAP_OWNER_ID);
+        assert_eq!(identity.role, evohime_storage::OperatorRole::Owner);
+        assert!(identity.is_owner());
+    }
+
+    #[test]
+    fn members_cannot_manage_operators() {
+        let identity = OperatorIdentity {
+            id: uuid::Uuid::new_v4(),
+            name: "member".into(),
+            role: evohime_storage::OperatorRole::Member,
+            source: AuthSource::RegistryToken,
+        };
+        assert_eq!(require_owner(&identity), Err(StatusCode::FORBIDDEN));
     }
 }

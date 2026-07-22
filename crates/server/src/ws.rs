@@ -9,7 +9,7 @@ use crate::ApiError;
 use axum::{
     extract::{
         ws::{Message, WebSocket},
-        Path, Query, State, WebSocketUpgrade,
+        Extension, Path, Query, State, WebSocketUpgrade,
     },
     response::IntoResponse,
 };
@@ -31,13 +31,14 @@ pub(crate) struct WsConnectQuery {
 
 pub(crate) async fn ws_handler(
     State(state): State<Arc<AppState>>,
+    Extension(identity): Extension<crate::auth::OperatorIdentity>,
     Path(session_id): Path<Uuid>,
     Query(query): Query<WsConnectQuery>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
     let after_sequence = query.after_sequence.unwrap_or(0).max(0);
     ws.on_upgrade(move |socket| async move {
-        if let Err(error) = handle_socket(state, session_id, after_sequence, socket).await {
+        if let Err(error) = handle_socket(state, identity, session_id, after_sequence, socket).await {
             error!("websocket session failed: {error}");
         }
     })
@@ -45,6 +46,7 @@ pub(crate) async fn ws_handler(
 
 pub(crate) async fn handle_socket(
     state: Arc<AppState>,
+    _identity: crate::auth::OperatorIdentity,
     session_id: Uuid,
     after_sequence: i64,
     socket: WebSocket,
