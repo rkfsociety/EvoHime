@@ -1,4 +1,5 @@
 import type { ActionView } from "../types";
+import { CopyButton } from "../components/CopyButton";
 import { translateActionDetail, translateActionLabel } from "../lib/format";
 
 export function ActionsPanel({ actions }: { actions: ActionView[] }) {
@@ -34,7 +35,13 @@ export function ActionsPanel({ actions }: { actions: ActionView[] }) {
                 <strong>{translateActionLabel(action.action)}</strong>
                 <time dateTime={action.createdAt}>{action.createdAt}</time>
               </div>
-              <span className="actionTaskId">Задача: {action.taskId}</span>
+              <span className="actionTaskId">Задача: {action.taskId} <CopyButton value={action.correlationId} /></span>
+              {action.durationMs != null ? (
+                <div className="latencyMetric" aria-label={`Длительность ${action.durationMs} миллисекунд`}>
+                  <div className="latencyMetricHeader"><span>Latency</span><strong>{action.durationMs} ms</strong></div>
+                  <div className="latencyTrack"><span style={{ width: "100%" }} /></div>
+                </div>
+              ) : null}
               <p>{translateActionDetail(action.detail)}</p>
             </article>
           ))}

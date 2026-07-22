@@ -445,7 +445,7 @@
 | --- | --- | --- | --- | --- |
 | 7.92 | Prometheus `/metrics` exposition (или OTEL metrics) | M | ✅ | done in 7.24 (`GET /metrics`); OTLP traces already optional |
 | 7.93 | Per-request/request-id on HTTP (не только task correlation) | S | ✅ | `X-Request-Id` генерируется/пропагируется для каждого HTTP-ответа; internal details остаются в logs; query token ограничен WS handshake |
-| 7.94 | Task timeline UI: correlation id copy + latency bars | M | ⬜ | Actions/Tasks panels; depends on 7.93 |
+| 7.94 | Task timeline UI: correlation id copy + latency bars | M | ✅ | Tasks/Actions panels show server-provided task/action telemetry; correlation ids are copyable |
 | 7.95 | Log sampling / redaction of secrets in tracing | M | ⬜ | shell/env, model keys; pair with internal error redaction |
 | 7.96 | Health endpoint: deep checks (DB, worker, disk) | S | ⬜ | сейчас `{status:ok}` |
 | 7.97 | Backup/export: sessions+memory dump CLI | M | ⬜ | |
@@ -470,7 +470,7 @@
 4. Нельзя скрывать Clippy/fmt проблемы через `#[allow]` или ослабление CI; исправления должны оставаться локальными и форматироваться workspace-правилом.
 5. После каждой фазы обязательны: `cargo test --workspace --all-features --all-targets`, `cargo clippy --workspace --all-features --all-targets -- -D warnings`, frontend typecheck/build и generated drift checks.
 
-**Фазы 1–2 выполнены:** scheduler correctness предотвращает повторное выполнение пользовательских задач, сохраняет run history и failure accounting; request context добавляет per-request id, скрывает internal details и оставляет query token только для WebSocket. Следующий практический шаг — фаза 3: backend feature enforcement и полные API-контракты.
+**Фазы 1–2 и 7.94 выполнены:** scheduler correctness предотвращает повторное выполнение пользовательских задач, request context добавляет per-request id, а Tasks/Actions показывают correlation id и server-provided latency. Следующий практический шаг — фаза 3: backend feature enforcement и полные API-контракты.
 
 ### 7.K — Moonshots / Stage 8 candidates
 
@@ -492,13 +492,13 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-22:** `7.65` hardening ✅ — scheduler dispatch атомарен и имеет run/failure history; `7.91` ✅ — документация синхронизирована; `7.93` ✅ — request context и header-only HTTP auth; следующий практический шаг — `7.94` timeline/latency (при этом `7.92` уже покрыт `7.24`).
+**Актуальный статус 2026-07-22:** `7.65` hardening ✅ — scheduler dispatch атомарен и имеет run/failure history; `7.91` ✅ — документация синхронизирована; `7.93`–`7.94` ✅ — request context, header-only HTTP auth и task timeline telemetry; следующий практический шаг — `7.95` (при этом `7.92` уже покрыт `7.24`).
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
 3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.51`, `7.52` ✅ → next product honesty `7.62`+
 4. **Wave D (product honesty):** 7.62–7.68, 7.72–7.73 ✅
-5. **Wave E (DX/CI):** `7.84`–`7.91` ✅, `7.56`, `7.69`–`7.71` ✅ → `7.93` ✅ → next `7.94`
+5. **Wave E (DX/CI):** `7.84`–`7.94` ✅, `7.56`, `7.69`–`7.71` ✅ → next `7.95`
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+
 
 ### Критерий готовности Stage 7 (минимум)

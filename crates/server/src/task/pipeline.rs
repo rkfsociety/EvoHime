@@ -259,7 +259,10 @@ pub(crate) async fn run_task_pipeline(
                 return Err((task.id, ApiError::BadRequest("task cancelled".to_string())));
             }
             event = event_rx.recv() => match event {
-                Some(event) => {
+                Some(mut event) => {
+                    if let ServerEvent::TaskCompleted { duration_ms, .. } = &mut event {
+                        *duration_ms = state.metrics.open_task_duration_ms(task.id);
+                    }
                     match &event {
                         ServerEvent::ToolStarted { tool_name, .. } => {
                             state.metrics.tool_started(session_id, task.id, tool_name);
@@ -422,6 +425,8 @@ pub(crate) async fn run_task_pipeline(
                             scope
                         ),
                         created_at: chrono::Utc::now(),
+                        correlation_id: Some(task.id),
+                        duration_ms: None,
                     },
                 )
                 .await?;

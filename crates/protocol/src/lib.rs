@@ -59,9 +59,16 @@ pub enum ServerEvent {
         task_id: Uuid,
         final_message: String,
         completed_at: DateTime<Utc>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        duration_ms: Option<u64>,
     },
     #[serde(rename = "task.failed")]
-    TaskFailed { task_id: Uuid, error: String },
+    TaskFailed {
+        task_id: Uuid,
+        error: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        duration_ms: Option<u64>,
+    },
     #[serde(rename = "file.changed")]
     FileChanged {
         path: String,
@@ -89,6 +96,10 @@ pub enum ServerEvent {
         action: String,
         detail: String,
         created_at: DateTime<Utc>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        correlation_id: Option<Uuid>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        duration_ms: Option<u64>,
     },
     #[serde(rename = "approval.required")]
     ApprovalRequired {
@@ -216,11 +227,39 @@ mod tests {
             task_id: Uuid::nil(),
             final_message: "done".to_string(),
             completed_at: Utc::now(),
+            duration_ms: Some(1250),
         };
 
         let json = serde_json::to_value(&event).expect("event serializes");
         assert_eq!(json["type"], "task.completed");
         assert_eq!(json["final_message"], "done");
+        assert_eq!(json["duration_ms"], 1250);
+    }
+
+    #[test]
+    fn action_timeline_round_trips_optional_telemetry() {
+        let correlation_id = Uuid::new_v4();
+        let event = ServerEvent::ActionLogged {
+            task_id: Uuid::nil(),
+            action: "task.retry".into(),
+            detail: "retrying".into(),
+            created_at: Utc::now(),
+            correlation_id: Some(correlation_id),
+            duration_ms: Some(42),
+        };
+        let decoded: ServerEvent =
+            serde_json::from_value(serde_json::to_value(event).unwrap()).unwrap();
+        match decoded {
+            ServerEvent::ActionLogged {
+                correlation_id: decoded_id,
+                duration_ms,
+                ..
+            } => {
+                assert_eq!(decoded_id, Some(correlation_id));
+                assert_eq!(duration_ms, Some(42));
+            }
+            _ => panic!("unexpected event variant"),
+        }
     }
 
     #[test]

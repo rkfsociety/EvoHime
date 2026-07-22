@@ -154,6 +154,17 @@ impl PipelineMetrics {
         inner.seen_plan.insert(task_id, false);
     }
 
+    pub fn open_task_duration_ms(&self, task_id: Uuid) -> Option<u64> {
+        let inner = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        inner
+            .open_tasks
+            .get(&task_id)
+            .map(|timed| duration_ms(timed.started.elapsed()))
+    }
+
     /// Re-attach timing for a resumed/paused task without bumping `tasks_started`.
     pub fn task_resumed(&self, session_id: Uuid, task_id: Uuid) {
         let mut inner = self
@@ -557,6 +568,7 @@ mod tests {
         metrics.approval_requested(session, task, approval, "filesystem.write");
         thread::sleep(Duration::from_millis(5));
         metrics.approval_resolved(session, task, approval, true);
+        assert!(metrics.open_task_duration_ms(task).is_some());
         metrics.task_finished(session, task, true);
         metrics.task_retry(session, task);
 

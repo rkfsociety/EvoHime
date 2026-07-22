@@ -104,11 +104,13 @@ export interface TaskCompletedEvent {
   task_id: Uuid;
   final_message: string;
   completed_at: DateTime;
+  duration_ms?: number;
 }
 export interface TaskFailedEvent {
   type: "task.failed";
   task_id: Uuid;
   error: string;
+  duration_ms?: number;
 }
 export interface FileChangedEvent {
   type: "file.changed";
@@ -140,6 +142,8 @@ export interface ActionLoggedEvent {
   action: string;
   detail: string;
   created_at: DateTime;
+  correlation_id?: Uuid;
+  duration_ms?: number;
 }
 export interface ApprovalRequiredEvent {
   type: "approval.required";

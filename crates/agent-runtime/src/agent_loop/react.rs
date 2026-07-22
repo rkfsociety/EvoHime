@@ -292,6 +292,7 @@ pub(crate) async fn run_react_loop(
                 task_id: config.task_id,
                 final_message: final_message.clone(),
                 completed_at: Utc::now(),
+                duration_ms: None,
             },
         )?;
     }

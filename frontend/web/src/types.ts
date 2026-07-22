@@ -208,6 +208,8 @@ export type TaskView = {
   id: string;
   message: string;
   status: string;
+  startedAt: string;
+  durationMs?: number;
   steps: Record<string, TaskStepView>;
   retryCount: number;
   pauseReason: string | null;
@@ -222,6 +224,8 @@ export type ActionView = {
   action: string;
   detail: string;
   createdAt: string;
+  correlationId: string;
+  durationMs?: number;
 };
 
 export type ToolDefinition = {

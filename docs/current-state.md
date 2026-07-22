@@ -6,7 +6,7 @@ Last updated: 2026-07-22
 
 Normal tasks use native ReAct tool calling: the model selects a tool, receives its observation, and selects the next action until `assistant.reply`. Tool-level permission approvals remain enabled for protected operations.
 
-Stages 1–6 foundations are complete. Stage 7 hardening/product items through `7.93` are implemented; scheduler correctness and request context are hardened, and the next item is `7.94` timeline/latency.
+Stages 1–6 foundations are complete. Stage 7 hardening/product items through `7.94` are implemented; scheduler correctness, request context and task timeline telemetry are hardened, and the next item is `7.95`.
 
 ## Crates
 
@@ -124,7 +124,7 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-`7.65` hardening выполнен: scheduler dispatch атомарно создаёт один run/session/task, manual trigger не увеличивает счётчик повторно, а failure history сохраняет ошибки. `7.93` добавил request-id, безопасные internal errors и header-only HTTP auth. Следующий пункт — `7.94`.
+`7.65` hardening выполнен: scheduler dispatch атомарно создаёт один run/session/task, manual trigger не увеличивает счётчик повторно, а failure history сохраняет ошибки. `7.93` добавил request-id, безопасные internal errors и header-only HTTP auth; `7.94` добавил copyable correlation ids и server-provided latency bars. Следующий пункт — `7.95`.
 
 `7.56` выполнен: CI job `python-worker` на Python 3.12 запускает `python -m unittest discover -s workers/python -p "test_*.py"`; локально suite проходит: 25 тестов.
 
@@ -208,7 +208,7 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.51` реализован: Python worker и зеркальная Rust-валидация получили `text.classify`, `text.language` и `text.redact`; все три handler доступны также через `worker.run`.
 
-**Актуализация 2026-07-22:** `7.51`, product honesty для Sites/Scheduled, scheduler correctness и request context hardening выполнены; Wave E `7.84`–`7.91` также закрыта. `7.92` уже покрыт `7.24`; следующий пункт — `7.94`.
+**Актуализация 2026-07-22:** `7.51`, product honesty для Sites/Scheduled, scheduler correctness, request context и task timeline telemetry выполнены; Wave E `7.84`–`7.94` закрыта. `7.92` уже покрыт `7.24`; следующий пункт — `7.95`.
 
-1. **Stage 7** — Waves A–D ✅; Wave E `7.84`–`7.91` ✅; `7.93` ✅; next `7.94`
-2. Рекомендуемая следующая волна: audit hardening, начиная с timeline/latency для задач
+1. **Stage 7** — Waves A–D ✅; Wave E `7.84`–`7.94` ✅; next `7.95`
+2. Рекомендуемая следующая волна: audit hardening, начиная с log sampling/redaction

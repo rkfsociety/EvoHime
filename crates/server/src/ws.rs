@@ -128,6 +128,8 @@ pub(crate) async fn handle_socket(
                                         action: "rate.limited".to_string(),
                                         detail: error.message.clone(),
                                         created_at: chrono::Utc::now(),
+                                        correlation_id: None,
+                                        duration_ms: None,
                                     },
                                 )
                                 .await;
@@ -175,6 +177,7 @@ pub(crate) async fn handle_socket(
                                         ServerEvent::TaskFailed {
                                             task_id,
                                             error: error.to_string(),
+                                            duration_ms: None,
                                         },
                                     )
                                     .await;
@@ -214,6 +217,8 @@ pub(crate) async fn handle_socket(
                                     action: "task.cancel".to_string(),
                                     detail: "Task cancellation requested".to_string(),
                                     created_at: chrono::Utc::now(),
+                                    correlation_id: Some(task_id),
+                                    duration_ms: None,
                                 },
                             )
                             .await?;
@@ -243,6 +248,8 @@ pub(crate) async fn handle_socket(
                                         action: "plan.approval.invalid".to_string(),
                                         detail: "Plan approval ignored because the task is not awaiting approval".to_string(),
                                         created_at: chrono::Utc::now(),
+                                        correlation_id: Some(task_id),
+                                        duration_ms: None,
                                     },
                                 )
                                 .await?;
@@ -258,6 +265,8 @@ pub(crate) async fn handle_socket(
                                         action: "plan.approval.invalid".to_string(),
                                         detail: format!("Invalid plan: {error}"),
                                         created_at: chrono::Utc::now(),
+                                        correlation_id: Some(task_id),
+                                        duration_ms: None,
                                     },
                                 )
                                 .await?;
@@ -304,6 +313,8 @@ pub(crate) async fn handle_socket(
                                     action: "plan.approval.granted".to_string(),
                                     detail: "Approved plan scheduled for execution".to_string(),
                                     created_at: chrono::Utc::now(),
+                                    correlation_id: Some(task_id),
+                                    duration_ms: None,
                                 },
                             )
                             .await?;
@@ -325,6 +336,7 @@ pub(crate) async fn handle_socket(
                                         ServerEvent::TaskFailed {
                                             task_id,
                                             error: error.to_string(),
+                                            duration_ms: None,
                                         },
                                     )
                                     .await;
@@ -389,6 +401,8 @@ pub(crate) async fn handle_socket(
                                     action: "plan.approval.rejected".to_string(),
                                     detail: "Plan rejected by user; task cancelled".to_string(),
                                     created_at: chrono::Utc::now(),
+                                    correlation_id: Some(task_id),
+                                    duration_ms: None,
                                 },
                             )
                             .await?;
@@ -431,6 +445,8 @@ pub(crate) async fn handle_socket(
                                     action: "task.resume".to_string(),
                                     detail: "Task resumed from checkpoint".to_string(),
                                     created_at: chrono::Utc::now(),
+                                    correlation_id: Some(task_id),
+                                    duration_ms: None,
                                 },
                             )
                             .await?;
@@ -453,6 +469,7 @@ pub(crate) async fn handle_socket(
                                         ServerEvent::TaskFailed {
                                             task_id,
                                             error: error.to_string(),
+                                            duration_ms: None,
                                         },
                                     )
                                     .await;
@@ -494,6 +511,8 @@ pub(crate) async fn handle_socket(
                                     action: "task.retry".to_string(),
                                     detail: "Failed task scheduled for retry".to_string(),
                                     created_at: chrono::Utc::now(),
+                                    correlation_id: Some(task_id),
+                                    duration_ms: None,
                                 },
                             )
                             .await?;
@@ -516,6 +535,7 @@ pub(crate) async fn handle_socket(
                                         ServerEvent::TaskFailed {
                                             task_id,
                                             error: error.to_string(),
+                                            duration_ms: None,
                                         },
                                     )
                                     .await;
@@ -571,6 +591,8 @@ pub(crate) async fn handle_socket(
                                     action: "approval.granted".into(),
                                     detail: detail.into(),
                                     created_at: chrono::Utc::now(),
+                                    correlation_id: Some(task_id),
+                                    duration_ms: None,
                                 },
                             )
                             .await?;
@@ -603,6 +625,8 @@ pub(crate) async fn handle_socket(
                                     action: "approval.denied".into(),
                                     detail: detail.into(),
                                     created_at: chrono::Utc::now(),
+                                    correlation_id: Some(task_id),
+                                    duration_ms: None,
                                 },
                             )
                             .await?;

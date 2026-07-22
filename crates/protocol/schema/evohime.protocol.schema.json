@@ -178,7 +178,8 @@
         "type": { "const": "task.completed" },
         "task_id": { "$ref": "#/$defs/Uuid" },
         "final_message": { "type": "string" },
-        "completed_at": { "$ref": "#/$defs/DateTime" }
+        "completed_at": { "$ref": "#/$defs/DateTime" },
+        "duration_ms": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": false
     },
@@ -188,7 +189,8 @@
       "properties": {
         "type": { "const": "task.failed" },
         "task_id": { "$ref": "#/$defs/Uuid" },
-        "error": { "type": "string" }
+        "error": { "type": "string" },
+        "duration_ms": { "type": "integer", "minimum": 0 }
       },
       "additionalProperties": false
     },
@@ -270,7 +272,7 @@
     },
     "ActionLoggedEvent": {
       "type": "object", "required": ["type", "task_id", "action", "detail", "created_at"],
-      "properties": { "type": { "const": "action.logged" }, "task_id": { "$ref": "#/$defs/Uuid" }, "action": { "type": "string" }, "detail": { "type": "string" }, "created_at": { "$ref": "#/$defs/DateTime" } },
+      "properties": { "type": { "const": "action.logged" }, "task_id": { "$ref": "#/$defs/Uuid" }, "action": { "type": "string" }, "detail": { "type": "string" }, "created_at": { "$ref": "#/$defs/DateTime" }, "correlation_id": { "$ref": "#/$defs/Uuid" }, "duration_ms": { "type": "integer", "minimum": 0 } },
       "additionalProperties": false
     },
     "ApprovalRequiredEvent": {

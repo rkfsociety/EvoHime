@@ -4,6 +4,62 @@
   gap: 12px;
 }
 
+.taskCorrelationRow,
+.actionTaskId {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.copyCorrelationButton {
+  border: 1px solid var(--border-0);
+  border-radius: 7px;
+  padding: 3px 7px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.copyCorrelationButton:hover {
+  color: var(--text-0);
+  border-color: rgba(143, 180, 255, 0.5);
+}
+
+.latencyMetric {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.latencyMetricHeader {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.latencyMetricHeader strong {
+  color: var(--text-1);
+  font-weight: 600;
+}
+
+.latencyTrack {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.latencyTrack span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent-1));
+  transition: width 180ms ease;
+}
+
 .standaloneChatItem {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;

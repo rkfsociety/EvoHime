@@ -1,6 +1,7 @@
 import type { ChatSessionSummary, TaskView } from "../types";
 import type { PlanStep } from "../protocol";
 import { useEffect, useState } from "react";
+import { CopyButton } from "../components/CopyButton";
 import {
   formatSessionPreview,
   formatSessionTimestamp,
@@ -92,6 +93,7 @@ export function TasksPanel({
   onRejectPlan,
 }: TasksPanelProps) {
   const taskList = Object.values(tasks).reverse();
+  const maxDuration = Math.max(...taskList.map((task) => task.durationMs ?? 0), 1);
 
   return (
     <div className="standaloneChatsPanel tasksDeepPanel">
@@ -114,7 +116,7 @@ export function TasksPanel({
                   <div>
                     <span className={`taskStatus taskStatus-${task.status}`}>{statusLabel(task.status)}</span>
                     <h3>{task.message}</h3>
-                    <small>{task.id}</small>
+                    <small className="taskCorrelationRow">{task.id}<CopyButton value={task.id} /></small>
                   </div>
                   <div className="taskDetailMetrics">
                     <strong>{completed}/{steps.length}</strong>
@@ -122,6 +124,10 @@ export function TasksPanel({
                     <strong>{task.retryCount}</strong>
                     <span>retries</span>
                   </div>
+                </div>
+                <div className="latencyMetric" aria-label={task.durationMs == null ? "Длительность пока недоступна" : `Длительность ${task.durationMs} миллисекунд`}>
+                  <div className="latencyMetricHeader"><span>Latency</span><strong>{task.durationMs == null ? "—" : `${task.durationMs} ms`}</strong></div>
+                  <div className="latencyTrack"><span style={{ width: `${task.durationMs == null ? 0 : Math.max(4, (task.durationMs / maxDuration) * 100)}%` }} /></div>
                 </div>
 
                 {task.pauseReason ? (

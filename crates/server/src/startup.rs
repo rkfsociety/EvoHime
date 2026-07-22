@@ -263,6 +263,8 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
                         action: "task.recovery_deferred".to_string(),
                         detail: "Mutating task left paused after server restart; resume manually or set EVOHIME_AUTO_RESUME_ON_RESTART=1".to_string(),
                         created_at: chrono::Utc::now(),
+                        correlation_id: Some(task_id),
+                        duration_ms: None,
                     },
                 )
                 .await
@@ -295,6 +297,8 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
                         "Task restored after server restart".to_string()
                     },
                     created_at: chrono::Utc::now(),
+                    correlation_id: Some(task_id),
+                    duration_ms: None,
                 },
             )
             .await
@@ -317,6 +321,7 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
                         ServerEvent::TaskFailed {
                             task_id: failed_task_id,
                             error: error.to_string(),
+                            duration_ms: None,
                         },
                     )
                     .await;

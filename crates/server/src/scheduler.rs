@@ -158,6 +158,7 @@ async fn fire_scheduled_task(
                 ServerEvent::TaskFailed {
                     task_id: failed_id,
                     error: err.to_string(),
+                    duration_ms: None,
                 },
             )
             .await;

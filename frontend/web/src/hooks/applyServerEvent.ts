@@ -94,6 +94,7 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
           id: event.task_id,
           message: event.user_message,
           status: "running",
+          startedAt: event.created_at,
           steps: {},
           retryCount: 0,
           pauseReason: null,
@@ -245,7 +246,7 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
     case "task.completed":
       ctx.setTasks((current) =>
         current[event.task_id]
-          ? { ...current, [event.task_id]: { ...current[event.task_id], status: "completed" } }
+          ? { ...current, [event.task_id]: { ...current[event.task_id], status: "completed", durationMs: event.duration_ms } }
           : current,
       );
       ctx.setLines((current) => {
@@ -263,7 +264,7 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
     case "task.failed":
       ctx.setTasks((current) =>
         current[event.task_id]
-          ? { ...current, [event.task_id]: { ...current[event.task_id], status: "failed" } }
+          ? { ...current, [event.task_id]: { ...current[event.task_id], status: "failed", durationMs: event.duration_ms } }
           : current,
       );
       ctx.setLines((current) => [
@@ -319,6 +320,8 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
           action: actionEvent.action,
           detail: actionEvent.detail,
           createdAt: actionEvent.created_at,
+          correlationId: actionEvent.correlation_id ?? actionEvent.task_id,
+          durationMs: actionEvent.duration_ms,
         },
       ]);
       ctx.setTasks((current) => {
