@@ -71,9 +71,9 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Waves A–D ✅; Wave E `7.84`–`7.96` ✅; scheduler correctness, request context, timeline, log safety и deep health hardening ✅; next `7.97`
+- **Stage 7** Hardening + Product — Waves A–D ✅; Wave E `7.84`–`7.97` ✅; scheduler correctness, request context, timeline, log safety, deep health и backup/export hardening ✅; next `7.98`
 - Sites, Scheduled и OTLP имеют реальные backend/UI gates через `EVOHIME_FEATURE_*` и `/api/features`
-- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; `7.93` request context, `7.94` timeline, `7.95` log safety и `7.96` deep health ✅; следующий пункт — backup/export (`7.97`)
+- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; `7.93` request context, `7.94` timeline, `7.95` log safety, `7.96` deep health и `7.97` backup/export ✅; следующий пункт — `7.98`
 
 ## WebSocket events
 
@@ -166,6 +166,9 @@ docker compose -f .devcontainer/docker-compose.yml up -d
 cargo run -p evohime-server
 cargo test
 
+# Backup/export sessions and structured memory
+cargo run -p evohime-storage --bin evohime-export -- --output .evohime/backup.json
+
 # Frontend
 cd frontend/web && npm install && npm run dev
 
@@ -187,7 +190,7 @@ See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](d
 | 4 Editor + Git | ✅ Done |
 | 5 Task orchestration | ✅ Done |
 | 6 Advanced | ✅ Foundations complete |
-| 7 Hardening + Product | 🟡 In progress; `7.1`–`7.96` complete, next `7.97` |
+| 7 Hardening + Product | 🟡 In progress; `7.1`–`7.97` complete, next `7.98` |
 
 Memory design: [docs/superpowers/specs/2026-07-16-agent-memory-design.md](docs/superpowers/specs/2026-07-16-agent-memory-design.md)
 

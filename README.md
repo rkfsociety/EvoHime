@@ -102,6 +102,12 @@ cp .env.example .env
 cargo run -p evohime-server
 ```
 
+Create a portable JSON backup of all sessions and structured memory:
+
+```bash
+cargo run -p evohime-storage --bin evohime-export -- --output .evohime/backup.json
+```
+
 Generate protocol types:
 
 ```bash

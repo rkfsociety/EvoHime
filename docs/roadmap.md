@@ -448,7 +448,7 @@
 | 7.94 | Task timeline UI: correlation id copy + latency bars | M | ✅ | Tasks/Actions panels show server-provided task/action telemetry; correlation ids are copyable |
 | 7.95 | Log sampling / redaction of secrets in tracing | M | ✅ | shared redaction helper protects internal/worker/OTLP dynamic fields; identical worker health failures sampled at configurable interval |
 | 7.96 | Health endpoint: deep checks (DB, worker, disk) | S | ✅ | `GET /health/deep`; bounded parallel probes, safe component status, `503` on DB/disk failure |
-| 7.97 | Backup/export: sessions+memory dump CLI | M | ⬜ | |
+| 7.97 | Backup/export: sessions+memory dump CLI | M | ✅ | `evohime-export --output <path>` writes versioned JSON with sessions, tasks/messages/events and structured memory |
 
 ### First implementation wave — code audit hardening
 
@@ -492,13 +492,13 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-22:** `7.65` hardening ✅ — scheduler dispatch атомарен и имеет run/failure history; `7.91` ✅ — документация синхронизирована; `7.93`–`7.96` ✅ — request context, task timeline telemetry, log safety и deep health checks; следующий практический шаг — `7.97` (при этом `7.92` уже покрыт `7.24`).
+**Актуальный статус 2026-07-22:** `7.65` hardening ✅ — scheduler dispatch атомарен и имеет run/failure history; `7.91` ✅ — документация синхронизирована; `7.93`–`7.97` ✅ — request context, task timeline telemetry, log safety, deep health checks и backup/export; следующий практический шаг — `7.98` (при этом `7.92` уже покрыт `7.24`).
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
 3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.51`, `7.52` ✅ → next product honesty `7.62`+
 4. **Wave D (product honesty):** 7.62–7.68, 7.72–7.73 ✅
-5. **Wave E (DX/CI):** `7.84`–`7.96` ✅, `7.56`, `7.69`–`7.71` ✅ → next `7.97`
+5. **Wave E (DX/CI):** `7.84`–`7.97` ✅, `7.56`, `7.69`–`7.71` ✅ → next `7.98`
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+
 
 ### Критерий готовности Stage 7 (минимум)
