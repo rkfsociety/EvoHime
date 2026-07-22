@@ -293,7 +293,7 @@ pub async fn list_plugin_skills(
     let skills = tokio::task::spawn_blocking(move || list_plugin_skill_summaries(&workspace_root, &name))
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?
-        .map_err(|message| ApiError::BadRequest(message))?;
+        .map_err(ApiError::BadRequest)?;
     Ok(Json(skills))
 }
 

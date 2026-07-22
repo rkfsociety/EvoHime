@@ -70,25 +70,6 @@ pub async fn list_sites_filtered(
     .await?)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{site_search_pattern, SiteListFilter};
-
-    #[test]
-    fn site_search_pattern_trims_and_wraps() {
-        assert_eq!(site_search_pattern("  blog  "), Some("%blog%".into()));
-        assert_eq!(site_search_pattern("   "), None);
-        assert_eq!(site_search_pattern(""), None);
-    }
-
-    #[test]
-    fn site_list_filter_defaults_to_all() {
-        let filter = SiteListFilter::default();
-        assert!(filter.query.is_none());
-        assert!(filter.status.is_none());
-    }
-}
-
 pub async fn create_site(
     pool: &PgPool,
     workspace_path: &str,
@@ -158,4 +139,23 @@ pub async fn delete_site(
             .rows_affected()
             == 1,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{site_search_pattern, SiteListFilter};
+
+    #[test]
+    fn site_search_pattern_trims_and_wraps() {
+        assert_eq!(site_search_pattern("  blog  "), Some("%blog%".into()));
+        assert_eq!(site_search_pattern("   "), None);
+        assert_eq!(site_search_pattern(""), None);
+    }
+
+    #[test]
+    fn site_list_filter_defaults_to_all() {
+        let filter = SiteListFilter::default();
+        assert!(filter.query.is_none());
+        assert!(filter.status.is_none());
+    }
 }
