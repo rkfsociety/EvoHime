@@ -104,3 +104,24 @@ jobs:
         run: npm run typecheck
       - name: Production build
         run: npm run build
+
+  # Stage 7.86 — fail when generated protocol types drift from the schema.
+  protocol-drift:
+    name: Protocol Drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/web/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: frontend/web
+        run: npm ci
+      - name: Install protocol generator dependencies
+        run: npm ci
+      - name: Regenerate protocol types
+        run: npm run generate:protocol
+      - name: Check generated protocol types are committed
+        run: git diff --exit-code -- frontend/web/src/protocol.generated.ts

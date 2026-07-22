@@ -432,7 +432,7 @@
 | --- | --- | --- | --- | --- |
 | 7.84 | CI: PostgreSQL service + storage/memory integration tests | L | ✅ | `postgres:16` service; `DATABASE_URL` + `EVOHIME_REQUIRE_DB`; `connect_integration_pool` fails hard in CI |
 | 7.85 | CI: frontend `tsc` + build (+ optional playwright smoke) | M | ✅ | job `frontend` in CI: Node 22, `npm ci`, `typecheck`, `build`; Playwright deferred |
-| 7.86 | CI: protocol schema ↔ Rust ↔ generated TS drift check | M | ⬜ | manual sync today |
+| 7.86 | CI: protocol schema ↔ Rust ↔ generated TS drift check | M | ✅ | `protocol-drift` job regenerates TS and fails on diff |
 | 7.87 | CI: Clippy `-D warnings` already; add fmt/docs gates docs for stage 7 | S | ⬜ | keep current |
 | 7.88 | Devcontainer / cross-platform launcher (не только Windows tray) | L | ⬜ | `start-dev.ps1` WinForms |
 | 7.89 | OpenAPI / typed HTTP client gen из server routes | L | ⬜ | сейчас hand-written `api/*` |
@@ -470,13 +470,13 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-21:** `7.85` ✅ — CI гоняет frontend typecheck + build; следующий — `7.86` (protocol drift).
+**Актуальный статус 2026-07-22:** `7.86` ✅ — CI проверяет drift между schema и generated TS; следующий — `7.56` (worker unittest в CI).
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
 3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.51`, `7.52` ✅ → next product honesty `7.62`+
 4. **Wave D (product honesty):** 7.62–7.68, 7.72–7.73 ✅
-5. **Wave E (DX/CI):** `7.84`–`7.85` ✅ → next `7.86`, `7.56`, `7.69`–`7.71`  
+5. **Wave E (DX/CI):** `7.84`–`7.86` ✅ → next `7.56`, `7.69`–`7.71`
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+
 
 ### Критерий готовности Stage 7 (минимум)

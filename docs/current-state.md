@@ -1,6 +1,6 @@
 # EvoHime — Current State
 
-Last updated: 2026-07-18
+Last updated: 2026-07-22
 
 ## Stage: 7 planned (Stage 6 foundations done)
 
@@ -120,7 +120,9 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-`7.85` выполнен: CI job `frontend` — Node 22, `npm ci`, `npm run typecheck`, `npm run build` (Playwright smoke отложен). Следующий пункт — `7.86` (protocol schema ↔ Rust ↔ TS drift).
+`7.86` выполнен: CI job `protocol-drift` на Node 22 устанавливает frontend и корневые зависимости, запускает `npm run generate:protocol` и падает при diff в `frontend/web/src/protocol.generated.ts`. Следующий пункт — `7.56` (worker unittest в CI).
+
+`7.85` выполнен: CI job `frontend` — Node 22, `npm ci`, `npm run typecheck`, `npm run build` (Playwright smoke отложен).
 
 `7.84` выполнен: CI job `test` поднимает `postgres:16`, задаёт `DATABASE_URL`/`EVOHIME_REQUIRE_DB`, а `connect_integration_pool` в CI падает вместо тихого skip.
 
