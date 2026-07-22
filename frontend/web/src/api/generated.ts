@@ -8,6 +8,7 @@ export const openApiPaths = {
   "/health": ["get"] as const,
   "/openapi.json": ["get"] as const,
   "/api/auth/status": ["get"] as const,
+  "/api/features": ["get"] as const,
   "/api/models/config": ["get","put"] as const,
   "/api/models/available": ["get"] as const,
   "/api/sessions": ["get","post"] as const,

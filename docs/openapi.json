@@ -41,6 +41,16 @@
         }
       }
     },
+    "/api/features": {
+      "get": {
+        "operationId": "get_api_features",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/models/config": {
       "get": {
         "operationId": "get_api_models_config",
