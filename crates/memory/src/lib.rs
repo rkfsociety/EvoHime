@@ -41,9 +41,10 @@ pub use feedback::{
     HARMFUL_CONFIDENCE_DECAY, HELPFUL_CONFIDENCE_BUMP, IDLE_CONFIDENCE_DECAY,
 };
 pub use feedback_service::{
-    decay_unused_memory, record_memory_corrected, record_memory_harmful, record_memory_helpful,
-    record_memory_rejected, record_memory_used, FeedbackApplyResult, DEFAULT_IDLE_BATCH,
-    DEFAULT_IDLE_DAYS,
+    decay_unused_memory, record_memory_corrected, record_memory_corrected_for_operator,
+    record_memory_harmful, record_memory_helpful, record_memory_rejected,
+    record_memory_rejected_for_operator, record_memory_used, FeedbackApplyResult,
+    DEFAULT_IDLE_BATCH, DEFAULT_IDLE_DAYS,
 };
 pub use normalize::normalize_content;
 pub use redact::{redact_secrets, RedactionOutcome};
@@ -53,8 +54,9 @@ pub use retrieve::{
     RankedMemory, RetrieveRequest, SelectedMemory,
 };
 pub use service::{
-    accept_memory_item, admit_memory_item, gate_after_admit, promote_memory_item,
-    reject_memory_item, AdmitOutcome, ExistingMemory, MemoryError, MemoryService,
+    accept_memory_item, accept_memory_item_for_operator, admit_memory_item, gate_after_admit,
+    promote_memory_item, promote_memory_item_for_operator, reject_memory_item,
+    reject_memory_item_for_operator, AdmitOutcome, ExistingMemory, MemoryError, MemoryService,
     PreparedMemoryItem,
 };
 

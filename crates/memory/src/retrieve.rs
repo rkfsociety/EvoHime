@@ -3,8 +3,9 @@
 use crate::embed::{embed_text, needs_reembed, semantic_score};
 use crate::MemoryError;
 use evohime_storage::{
-    list_memory_items, update_memory_item_embedding, MemoryItemRow, MemoryKind, MemoryScope,
-    MemoryStatus, LOCAL_OPERATOR_SCOPE_KEY,
+    list_memory_items_for_operator, session_operator_id, update_memory_item_embedding_for_operator,
+    MemoryItemRow, MemoryKind, MemoryScope, MemoryStatus, BOOTSTRAP_OWNER_ID,
+    LOCAL_OPERATOR_SCOPE_KEY,
 };
 use sqlx::PgPool;
 use std::collections::HashSet;
@@ -387,11 +388,18 @@ async fn load_scoped_items(
 ) -> Result<Vec<MemoryItemRow>, MemoryError> {
     let mut items = Vec::new();
     let statuses = [MemoryStatus::Active, MemoryStatus::Candidate];
+    let operator_id = match request.session_id {
+        Some(session_id) => session_operator_id(pool, session_id)
+            .await?
+            .unwrap_or(BOOTSTRAP_OWNER_ID),
+        None => BOOTSTRAP_OWNER_ID,
+    };
 
     if let Some(session_id) = request.session_id {
         items.extend(
-            list_memory_items(
+            list_memory_items_for_operator(
                 pool,
+                operator_id,
                 MemoryScope::Session,
                 &session_id.to_string(),
                 &statuses,
@@ -404,16 +412,33 @@ async fn load_scoped_items(
     let workspace_key = request.workspace_key.trim();
     if !workspace_key.is_empty() {
         items.extend(
-            list_memory_items(pool, MemoryScope::Workspace, workspace_key, &statuses, 200).await?,
+            list_memory_items_for_operator(
+                pool,
+                operator_id,
+                MemoryScope::Workspace,
+                workspace_key,
+                &statuses,
+                200,
+            )
+            .await?,
         );
         items.extend(
-            list_memory_items(pool, MemoryScope::Project, workspace_key, &statuses, 200).await?,
+            list_memory_items_for_operator(
+                pool,
+                operator_id,
+                MemoryScope::Project,
+                workspace_key,
+                &statuses,
+                200,
+            )
+            .await?,
         );
     }
 
     items.extend(
-        list_memory_items(
+        list_memory_items_for_operator(
             pool,
+            operator_id,
             MemoryScope::Global,
             LOCAL_OPERATOR_SCOPE_KEY,
             &statuses,
@@ -422,8 +447,9 @@ async fn load_scoped_items(
         .await?,
     );
     items.extend(
-        list_memory_items(
+        list_memory_items_for_operator(
             pool,
+            operator_id,
             MemoryScope::Experience,
             LOCAL_OPERATOR_SCOPE_KEY,
             &statuses,
@@ -443,9 +469,14 @@ async fn load_scoped_items(
             if embedding.vector.is_empty() {
                 continue;
             }
-            if let Err(error) =
-                update_memory_item_embedding(pool, item.id, &embedding.vector, embedding.version)
-                    .await
+            if let Err(error) = update_memory_item_embedding_for_operator(
+                pool,
+                operator_id,
+                item.id,
+                &embedding.vector,
+                embedding.version,
+            )
+            .await
             {
                 tracing::warn!(%error, memory_id = %item.id, "memory embedding backfill failed");
             }
@@ -496,6 +527,7 @@ mod tests {
         pinned: bool,
     ) -> MemoryItemRow {
         MemoryItemRow {
+            operator_id: BOOTSTRAP_OWNER_ID,
             id,
             scope: "workspace".into(),
             scope_key: "repo".into(),

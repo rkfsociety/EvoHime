@@ -3,7 +3,7 @@
 use crate::{app::AppState, ApiError};
 use axum::{
     body::{Body, Bytes},
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::Response,
     Json,
@@ -13,9 +13,11 @@ use evohime_memory::{
     admit_memory_item, embed_text, normalize_content, redact_secrets, AdmitOutcome,
 };
 use evohime_storage::{
-    delete_memory_item, get_memory_item, list_all_memory_items, list_memory_items_overview_page,
-    resolve_memory_conflict as resolve_storage_conflict, update_memory_item_fields_with_embedding,
-    MemoryItemRow, MemoryKind, MemoryOverviewCursor, MemoryScope, MemoryStatus, NewMemoryItem,
+    delete_memory_item_for_operator, get_memory_item_for_operator,
+    list_all_memory_items_for_operator, list_memory_items_overview_page_for_operator,
+    resolve_memory_conflict_for_operator as resolve_storage_conflict,
+    update_memory_item_fields_with_embedding_for_operator, MemoryItemRow, MemoryKind,
+    MemoryOverviewCursor, MemoryScope, MemoryStatus, NewMemoryItem,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -240,9 +242,10 @@ fn parse_memory_pack(bytes: &[u8], is_zip: bool) -> Result<MemoryPack, ApiError>
 
 pub async fn export_memory(
     State(state): State<Arc<AppState>>,
+    Extension(identity): Extension<crate::auth::OperatorIdentity>,
     Query(query): Query<MemoryExportQuery>,
 ) -> Result<Response, ApiError> {
-    let rows = list_all_memory_items(&state.pool, 50_000)
+    let rows = list_all_memory_items_for_operator(&state.pool, identity.id, 50_000)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
     let pack = memory_pack_from_rows(rows);
@@ -287,6 +290,7 @@ pub async fn export_memory(
 
 pub async fn import_memory(
     State(state): State<Arc<AppState>>,
+    Extension(identity): Extension<crate::auth::OperatorIdentity>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<MemoryImportResponse>, ApiError> {
@@ -324,6 +328,7 @@ pub async fn import_memory(
         let outcome = admit_memory_item(
             &state.pool,
             NewMemoryItem {
+                operator_id: identity.id,
                 scope,
                 scope_key: item.scope_key.trim().to_string(),
                 kind,
@@ -383,6 +388,7 @@ fn parse_statuses(raw: Option<&str>) -> Result<Vec<MemoryStatus>, ApiError> {
 
 pub async fn list_memory(
     State(state): State<Arc<AppState>>,
+    Extension(identity): Extension<crate::auth::OperatorIdentity>,
     Query(query): Query<ListMemoryQuery>,
 ) -> Result<Json<MemoryListResponse>, ApiError> {
     let scope = match query
@@ -420,8 +426,9 @@ pub async fn list_memory(
         .map(decode_memory_cursor)
         .transpose()?;
     let limit = query.limit.unwrap_or(50).clamp(1, 150);
-    let mut items = list_memory_items_overview_page(
+    let mut items = list_memory_items_overview_page_for_operator(
         &state.pool,
+        identity.id,
         scope,
         query.scope_key.as_deref(),
         &statuses,
@@ -460,6 +467,7 @@ pub async fn list_memory(
 
 pub async fn create_memory(
     State(state): State<Arc<AppState>>,
+    Extension(identity): Extension<crate::auth::OperatorIdentity>,
     Json(body): Json<CreateMemoryRequest>,
 ) -> Result<(StatusCode, Json<CreateMemoryResponse>), ApiError> {
     let scope = body
@@ -476,6 +484,7 @@ pub async fn create_memory(
         return Err(ApiError::BadRequest("content must not be empty".into()));
     }
     let item = NewMemoryItem {
+        operator_id: identity.id,
         scope,
         scope_key: body
             .scope_key
@@ -537,9 +546,10 @@ pub async fn create_memory(
 
 pub async fn get_memory(
     State(state): State<Arc<AppState>>,
+    Extension(identity): Extension<crate::auth::OperatorIdentity>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<MemoryItemRow>, ApiError> {
-    get_memory_item(&state.pool, id)
+    get_memory_item_for_operator(&state.pool, identity.id, id)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?
         .map(Json)
@@ -548,6 +558,7 @@ pub async fn get_memory(
 
 pub async fn update_memory(
     State(state): State<Arc<AppState>>,
+    Extension(identity): Extension<crate::auth::OperatorIdentity>,
     Path(id): Path<Uuid>,
     Json(body): Json<UpdateMemoryRequest>,
 ) -> Result<Json<MemoryItemRow>, ApiError> {
@@ -585,11 +596,16 @@ pub async fn update_memory(
 
     // Feedback-aware paths for reject / content correction.
     if status == Some(MemoryStatus::Rejected) && content.is_none() && body.pinned.is_none() {
-        return evohime_memory::record_memory_rejected(&state.pool, id, None)
-            .await
-            .map_err(|error| ApiError::Internal(error.to_string()))?
-            .map(|result| Json(result.row))
-            .ok_or_else(|| ApiError::BadRequest("memory item not found".into()));
+        return evohime_memory::record_memory_rejected_for_operator(
+            &state.pool,
+            identity.id,
+            id,
+            None,
+        )
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?
+        .map(|result| Json(result.row))
+        .ok_or_else(|| ApiError::BadRequest("memory item not found".into()));
     }
 
     let (embedding, embedding_version) = if let Some(text) = content.as_deref() {
@@ -603,8 +619,9 @@ pub async fn update_memory(
         (None, None)
     };
 
-    let updated = update_memory_item_fields_with_embedding(
+    let updated = update_memory_item_fields_with_embedding_for_operator(
         &state.pool,
+        identity.id,
         id,
         content.as_deref(),
         status,
@@ -620,8 +637,14 @@ pub async fn update_memory(
     .ok_or_else(|| ApiError::BadRequest("memory item not found".into()))?;
 
     if content.is_some() {
-        let _ = evohime_memory::record_memory_corrected(&state.pool, id, None).await;
-        if let Some(row) = get_memory_item(&state.pool, id)
+        let _ = evohime_memory::record_memory_corrected_for_operator(
+            &state.pool,
+            identity.id,
+            id,
+            None,
+        )
+        .await;
+        if let Some(row) = get_memory_item_for_operator(&state.pool, identity.id, id)
             .await
             .map_err(|error| ApiError::Internal(error.to_string()))?
         {
@@ -634,10 +657,11 @@ pub async fn update_memory(
 
 pub async fn resolve_memory_conflict(
     State(state): State<Arc<AppState>>,
+    Extension(identity): Extension<crate::auth::OperatorIdentity>,
     Path(conflict_id): Path<Uuid>,
     Json(body): Json<ResolveMemoryConflictRequest>,
 ) -> Result<Json<ResolveMemoryConflictResponse>, ApiError> {
-    let conflict = get_memory_item(&state.pool, conflict_id)
+    let conflict = get_memory_item_for_operator(&state.pool, identity.id, conflict_id)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?
         .ok_or_else(|| ApiError::BadRequest("memory conflict not found".into()))?;
@@ -647,24 +671,28 @@ pub async fn resolve_memory_conflict(
     let related_id = conflict
         .supersedes
         .ok_or_else(|| ApiError::BadRequest("conflict has no related memory item".into()))?;
-    let (winner, loser) =
-        resolve_storage_conflict(&state.pool, conflict_id, related_id, body.winner_id)
-            .await
-            .map_err(|error| match error {
-                evohime_storage::StorageError::InvalidMemory(message) => {
-                    ApiError::BadRequest(message)
-                }
-                other => ApiError::Internal(other.to_string()),
-            })?
-            .ok_or_else(|| ApiError::BadRequest("conflict pair is stale or incompatible".into()))?;
+    let (winner, loser) = resolve_storage_conflict(
+        &state.pool,
+        identity.id,
+        conflict_id,
+        related_id,
+        body.winner_id,
+    )
+    .await
+    .map_err(|error| match error {
+        evohime_storage::StorageError::InvalidMemory(message) => ApiError::BadRequest(message),
+        other => ApiError::Internal(other.to_string()),
+    })?
+    .ok_or_else(|| ApiError::BadRequest("conflict pair is stale or incompatible".into()))?;
     Ok(Json(ResolveMemoryConflictResponse { winner, loser }))
 }
 
 pub async fn delete_memory(
     State(state): State<Arc<AppState>>,
+    Extension(identity): Extension<crate::auth::OperatorIdentity>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
-    let deleted = delete_memory_item(&state.pool, id)
+    let deleted = delete_memory_item_for_operator(&state.pool, identity.id, id)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
     if deleted {

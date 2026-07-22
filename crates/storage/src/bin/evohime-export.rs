@@ -17,7 +17,7 @@ async fn main() -> Result<(), String> {
     let pool = connect_pool(&database_url, &PoolConfig::from_env())
         .await
         .map_err(|error| format!("database connection failed: {error}"))?;
-    let dump = collect_backup(&pool)
+    let dump = collect_backup(&pool, evohime_storage::BOOTSTRAP_OWNER_ID)
         .await
         .map_err(|error| format!("backup collection failed: {error}"))?;
     let session_count = dump.sessions.len();

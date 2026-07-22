@@ -8,11 +8,12 @@ use uuid::Uuid;
 pub mod attachments;
 pub mod backup;
 pub mod memory;
-pub mod operators;
 pub mod metrics_snapshots;
+pub mod operators;
 pub mod permission_audit;
 pub mod pool;
 pub mod scheduled;
+pub mod scopes;
 pub mod sites;
 pub mod test_db;
 
@@ -22,27 +23,39 @@ pub use attachments::{
 };
 pub use backup::{collect_backup, BackupDump};
 pub use memory::{
-    apply_memory_item_feedback, delete_memory_item, delete_memory_items_by_scope_key,
-    get_memory_item, import_legacy_memory_notes, insert_memory_item, is_synthetic_test_scope_key,
-    list_all_memory_items, list_idle_memory_for_decay, list_memory_items,
-    list_memory_items_overview, list_memory_items_overview_page, purge_memory_junk,
-    resolve_memory_conflict, update_memory_item_embedding, update_memory_item_fields,
-    update_memory_item_fields_with_embedding, update_memory_item_status, MemoryItemRow, MemoryKind,
-    MemoryOverviewCursor, MemoryScope, MemoryStatus, NewMemoryItem, LOCAL_OPERATOR_SCOPE_KEY,
+    apply_memory_item_feedback, apply_memory_item_feedback_for_operator, delete_memory_item,
+    delete_memory_item_for_operator, delete_memory_items_by_scope_key, get_memory_item,
+    get_memory_item_for_operator, import_legacy_memory_notes, insert_memory_item,
+    is_synthetic_test_scope_key, list_all_memory_items, list_all_memory_items_for_operator,
+    list_idle_memory_for_decay, list_memory_items, list_memory_items_for_operator,
+    list_memory_items_overview, list_memory_items_overview_page,
+    list_memory_items_overview_page_for_operator, purge_memory_junk, resolve_memory_conflict,
+    resolve_memory_conflict_for_operator, update_memory_item_embedding,
+    update_memory_item_embedding_for_operator, update_memory_item_fields,
+    update_memory_item_fields_with_embedding,
+    update_memory_item_fields_with_embedding_for_operator, update_memory_item_status,
+    update_memory_item_status_for_operator, MemoryItemRow, MemoryKind, MemoryOverviewCursor,
+    MemoryScope, MemoryStatus, NewMemoryItem, LOCAL_OPERATOR_SCOPE_KEY,
+};
+pub use metrics_snapshots::{
+    insert_metrics_snapshot, latest_metrics_snapshot, list_metrics_snapshots,
+    prune_metrics_snapshots, MetricsSnapshotRow,
 };
 pub use operators::{
     active_owner_count, can_revoke_operator, create_operator, find_operator_by_token_hash,
     get_operator, hash_operator_token, hashes_equal, list_operators, revoke_operator,
     rotate_operator_token, OperatorRole, OperatorRow, BOOTSTRAP_OWNER_ID,
 };
-pub use metrics_snapshots::{
-    insert_metrics_snapshot, latest_metrics_snapshot, list_metrics_snapshots,
-    prune_metrics_snapshots, MetricsSnapshotRow,
-};
 pub use permission_audit::{
     insert_permission_audit, list_permission_audit, NewPermissionAudit, PermissionAuditRow,
 };
 pub use pool::{connect_pool, PoolConfig};
+pub use scopes::{
+    archive_session_for_operator, delete_session_for_operator, list_archived_sessions_for_operator,
+    list_session_events_after_for_operator, list_session_messages_for_operator,
+    list_sessions_for_operator, list_tasks_for_operator, load_task_for_operator,
+    unarchive_session_for_operator,
+};
 pub use test_db::{
     connect_integration_pool, integration_database_url, require_integration_database,
 };
@@ -64,12 +77,14 @@ pub enum StorageError {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct SessionRow {
     pub id: Uuid,
+    pub operator_id: Uuid,
     pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct SessionSummaryRow {
     pub id: Uuid,
+    pub operator_id: Uuid,
     pub created_at: DateTime<Utc>,
     pub title: Option<String>,
     pub workspace_path: Option<String>,
@@ -437,12 +452,20 @@ pub async fn save_setting(pool: &PgPool, key: &str, value: &Value) -> Result<(),
 }
 
 pub async fn create_session(pool: &PgPool) -> Result<SessionRow, StorageError> {
+    create_session_for_operator(pool, operators::BOOTSTRAP_OWNER_ID).await
+}
+
+pub async fn create_session_for_operator(
+    pool: &PgPool,
+    operator_id: Uuid,
+) -> Result<SessionRow, StorageError> {
     let row = sqlx::query_as::<_, SessionRow>(
         r#"
-        INSERT INTO sessions DEFAULT VALUES
-        RETURNING id, created_at
+        INSERT INTO sessions (operator_id) VALUES ($1)
+        RETURNING id, operator_id, created_at
         "#,
     )
+    .bind(operator_id)
     .fetch_one(pool)
     .await?;
 
@@ -465,6 +488,7 @@ pub async fn list_sessions(
         r#"
         SELECT
             s.id,
+            s.operator_id,
             s.created_at,
             s.title,
             s.workspace_path,
@@ -499,6 +523,7 @@ pub async fn list_archived_sessions(
         r#"
         SELECT
             s.id,
+            s.operator_id,
             s.created_at,
             s.title,
             s.workspace_path,
@@ -564,7 +589,7 @@ pub async fn load_session(
 ) -> Result<Option<SessionRow>, StorageError> {
     let row = sqlx::query_as::<_, SessionRow>(
         r#"
-        SELECT id, created_at
+        SELECT id, operator_id, created_at
         FROM sessions
         WHERE id = $1
         "#,
@@ -574,6 +599,32 @@ pub async fn load_session(
     .await?;
 
     Ok(row)
+}
+
+pub async fn load_session_for_operator(
+    pool: &PgPool,
+    operator_id: Uuid,
+    session_id: Uuid,
+) -> Result<Option<SessionRow>, StorageError> {
+    Ok(sqlx::query_as::<_, SessionRow>(
+        "SELECT id, operator_id, created_at FROM sessions WHERE id = $1 AND operator_id = $2",
+    )
+    .bind(session_id)
+    .bind(operator_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
+pub async fn session_operator_id(
+    pool: &PgPool,
+    session_id: Uuid,
+) -> Result<Option<Uuid>, StorageError> {
+    Ok(
+        sqlx::query_scalar("SELECT operator_id FROM sessions WHERE id = $1")
+            .bind(session_id)
+            .fetch_optional(pool)
+            .await?,
+    )
 }
 
 pub async fn list_session_events(

@@ -38,7 +38,8 @@ pub(crate) async fn ws_handler(
 ) -> impl IntoResponse {
     let after_sequence = query.after_sequence.unwrap_or(0).max(0);
     ws.on_upgrade(move |socket| async move {
-        if let Err(error) = handle_socket(state, identity, session_id, after_sequence, socket).await {
+        if let Err(error) = handle_socket(state, identity, session_id, after_sequence, socket).await
+        {
             error!("websocket session failed: {error}");
         }
     })
@@ -46,12 +47,12 @@ pub(crate) async fn ws_handler(
 
 pub(crate) async fn handle_socket(
     state: Arc<AppState>,
-    _identity: crate::auth::OperatorIdentity,
+    identity: crate::auth::OperatorIdentity,
     session_id: Uuid,
     after_sequence: i64,
     socket: WebSocket,
 ) -> Result<(), ApiError> {
-    if evohime_storage::load_session(&state.pool, session_id)
+    if evohime_storage::load_session_for_operator(&state.pool, identity.id, session_id)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?
         .is_none()
@@ -64,10 +65,14 @@ pub(crate) async fn handle_socket(
     let (mut sender, mut receiver) = socket.split();
 
     // Replay durable events first, then forward live bus items (client dedupes by sequence).
-    let backlog =
-        evohime_storage::list_session_events_after(&state.pool, session_id, after_sequence)
-            .await
-            .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let backlog = evohime_storage::list_session_events_after_for_operator(
+        &state.pool,
+        identity.id,
+        session_id,
+        after_sequence,
+    )
+    .await
+    .map_err(|error| ApiError::Internal(error.to_string()))?;
     for row in backlog {
         let event: ServerEvent = serde_json::from_value(row.event_json)
             .map_err(|error| ApiError::Internal(error.to_string()))?;

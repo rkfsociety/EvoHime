@@ -2,7 +2,7 @@
 use crate::app::AppState;
 use crate::ApiError;
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::StatusCode,
     Json,
 };
@@ -14,13 +14,14 @@ use uuid::Uuid;
 
 pub(crate) async fn create_session(
     State(state): State<Arc<AppState>>,
+    Extension(identity): Extension<crate::auth::OperatorIdentity>,
 ) -> Result<Json<SessionBootstrap>, ApiError> {
     state
         .rate_limiter
         .allow_session_create()
         .map_err(|error| ApiError::TooManyRequests(error.message))?;
 
-    let session = evohime_storage::create_session(&state.pool)
+    let session = evohime_storage::create_session_for_operator(&state.pool, identity.id)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
 
@@ -47,11 +48,13 @@ pub(crate) async fn create_session(
 
 pub(crate) async fn delete_session(
     State(state): State<Arc<AppState>>,
+    Extension(identity): Extension<crate::auth::OperatorIdentity>,
     Path(session_id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
-    let deleted = evohime_storage::delete_session(&state.pool, session_id)
-        .await
-        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let deleted =
+        evohime_storage::delete_session_for_operator(&state.pool, identity.id, session_id)
+            .await
+            .map_err(|error| ApiError::Internal(error.to_string()))?;
     if !deleted {
         return Err(ApiError::BadRequest("Чат не найден".to_string()));
     }
@@ -62,11 +65,13 @@ pub(crate) async fn delete_session(
 
 pub(crate) async fn archive_session(
     State(state): State<Arc<AppState>>,
+    Extension(identity): Extension<crate::auth::OperatorIdentity>,
     Path(session_id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
-    let archived = evohime_storage::archive_session(&state.pool, session_id)
-        .await
-        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let archived =
+        evohime_storage::archive_session_for_operator(&state.pool, identity.id, session_id)
+            .await
+            .map_err(|error| ApiError::Internal(error.to_string()))?;
     if !archived {
         return Err(ApiError::BadRequest(
             "Чат не найден или уже архивирован".to_string(),
@@ -77,11 +82,13 @@ pub(crate) async fn archive_session(
 
 pub(crate) async fn unarchive_session(
     State(state): State<Arc<AppState>>,
+    Extension(identity): Extension<crate::auth::OperatorIdentity>,
     Path(session_id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
-    let restored = evohime_storage::unarchive_session(&state.pool, session_id)
-        .await
-        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let restored =
+        evohime_storage::unarchive_session_for_operator(&state.pool, identity.id, session_id)
+            .await
+            .map_err(|error| ApiError::Internal(error.to_string()))?;
     if !restored {
         return Err(ApiError::BadRequest(
             "Чат не найден или не архивирован".to_string(),
@@ -140,8 +147,9 @@ pub(crate) fn summarize_session_title(message: &str) -> String {
 
 pub(crate) async fn list_sessions(
     State(state): State<Arc<AppState>>,
+    Extension(identity): Extension<crate::auth::OperatorIdentity>,
 ) -> Result<Json<Vec<SessionSummary>>, ApiError> {
-    let rows = evohime_storage::list_sessions(&state.pool, 20)
+    let rows = evohime_storage::list_sessions_for_operator(&state.pool, identity.id, 20)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
 
@@ -152,8 +160,9 @@ pub(crate) async fn list_sessions(
 
 pub(crate) async fn list_archived_sessions(
     State(state): State<Arc<AppState>>,
+    Extension(identity): Extension<crate::auth::OperatorIdentity>,
 ) -> Result<Json<Vec<SessionSummary>>, ApiError> {
-    let rows = evohime_storage::list_archived_sessions(&state.pool, 100)
+    let rows = evohime_storage::list_archived_sessions_for_operator(&state.pool, identity.id, 100)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
     Ok(Json(rows.into_iter().map(session_summary).collect()))
@@ -161,13 +170,19 @@ pub(crate) async fn list_archived_sessions(
 
 pub(crate) async fn session_history(
     State(state): State<Arc<AppState>>,
+    Extension(identity): Extension<crate::auth::OperatorIdentity>,
     Path(session_id): Path<Uuid>,
     Query(query): Query<HistoryQuery>,
 ) -> Result<Json<Vec<HistoryItem>>, ApiError> {
     let after = query.after.unwrap_or(0).max(0);
-    let rows = evohime_storage::list_session_events_after(&state.pool, session_id, after)
-        .await
-        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let rows = evohime_storage::list_session_events_after_for_operator(
+        &state.pool,
+        identity.id,
+        session_id,
+        after,
+    )
+    .await
+    .map_err(|error| ApiError::Internal(error.to_string()))?;
 
     let mut history = Vec::with_capacity(rows.len());
     for row in rows {

@@ -29,6 +29,7 @@ impl ExtractedCandidate {
         source_label: impl Into<String>,
     ) -> NewMemoryItem {
         NewMemoryItem {
+            operator_id: evohime_storage::BOOTSTRAP_OWNER_ID,
             scope: self.scope,
             scope_key: scope_key.into(),
             kind: self.kind,

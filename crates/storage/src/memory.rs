@@ -132,6 +132,7 @@ pub fn is_synthetic_test_scope_key(scope_key: &str) -> bool {
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct MemoryItemRow {
     pub id: Uuid,
+    pub operator_id: Uuid,
     pub scope: String,
     pub scope_key: String,
     pub kind: String,
@@ -159,6 +160,7 @@ pub struct MemoryItemRow {
 
 #[derive(Debug, Clone)]
 pub struct NewMemoryItem {
+    pub operator_id: Uuid,
     pub scope: MemoryScope,
     pub scope_key: String,
     pub kind: MemoryKind,
@@ -185,6 +187,7 @@ impl NewMemoryItem {
         content: impl Into<String>,
     ) -> Self {
         Self {
+            operator_id: crate::operators::BOOTSTRAP_OWNER_ID,
             scope,
             scope_key: scope_key.into(),
             kind: MemoryKind::Fact,
@@ -231,7 +234,7 @@ impl NewMemoryItem {
 }
 
 const MEMORY_ITEM_COLUMNS: &str = r#"
-    id, scope, scope_key, kind, status, content, content_json,
+    id, operator_id, scope, scope_key, kind, status, content, content_json,
     confidence, importance, pinned,
     source_session_id, source_task_id, source_label, supersedes,
     valid_until, validity_hint,
@@ -249,23 +252,24 @@ pub async fn insert_memory_item(
     let row = sqlx::query_as::<_, MemoryItemRow>(&format!(
         r#"
         INSERT INTO memory_items (
-            id, scope, scope_key, kind, status, content, content_json,
+            id, operator_id, scope, scope_key, kind, status, content, content_json,
             confidence, importance, pinned,
             source_session_id, source_task_id, source_label, supersedes,
             valid_until, validity_hint,
             embedding, embedding_version
         )
         VALUES (
-            $1, $2, $3, $4, $5, $6, $7,
-            $8, $9, $10,
-            $11, $12, $13, $14,
-            $15, $16,
-            $17, $18
+            $1, $2, $3, $4, $5, $6, $7, $8,
+            $9, $10, $11,
+            $12, $13, $14, $15,
+            $16, $17,
+            $18, $19
         )
         RETURNING {MEMORY_ITEM_COLUMNS}
         "#
     ))
     .bind(id)
+    .bind(item.operator_id)
     .bind(item.scope.as_str())
     .bind(item.scope_key.trim())
     .bind(item.kind.as_str())
@@ -303,6 +307,20 @@ pub async fn get_memory_item(
     .fetch_optional(pool)
     .await?;
     Ok(row)
+}
+
+pub async fn get_memory_item_for_operator(
+    pool: &PgPool,
+    operator_id: Uuid,
+    id: Uuid,
+) -> Result<Option<MemoryItemRow>, StorageError> {
+    Ok(sqlx::query_as::<_, MemoryItemRow>(&format!(
+        "SELECT {MEMORY_ITEM_COLUMNS} FROM memory_items WHERE id = $1 AND operator_id = $2"
+    ))
+    .bind(id)
+    .bind(operator_id)
+    .fetch_optional(pool)
+    .await?)
 }
 
 pub async fn list_memory_items(
@@ -344,6 +362,37 @@ pub async fn list_memory_items(
     Ok(rows)
 }
 
+pub async fn list_memory_items_for_operator(
+    pool: &PgPool,
+    operator_id: Uuid,
+    scope: MemoryScope,
+    scope_key: &str,
+    statuses: &[MemoryStatus],
+    limit: i64,
+) -> Result<Vec<MemoryItemRow>, StorageError> {
+    let status_filters: Vec<&str> = if statuses.is_empty() {
+        vec![
+            MemoryStatus::Candidate.as_str(),
+            MemoryStatus::Active.as_str(),
+            MemoryStatus::Conflict.as_str(),
+            MemoryStatus::Archived.as_str(),
+            MemoryStatus::Rejected.as_str(),
+        ]
+    } else {
+        statuses.iter().map(|s| s.as_str()).collect()
+    };
+    Ok(sqlx::query_as::<_, MemoryItemRow>(&format!(
+        "SELECT {MEMORY_ITEM_COLUMNS} FROM memory_items WHERE operator_id = $1 AND scope = $2 AND scope_key = $3 AND status = ANY($4) ORDER BY pinned DESC, importance DESC, updated_at DESC LIMIT $5"
+    ))
+    .bind(operator_id)
+    .bind(scope.as_str())
+    .bind(scope_key)
+    .bind(&status_filters)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?)
+}
+
 pub async fn list_all_memory_items(
     pool: &PgPool,
     limit: i64,
@@ -360,6 +409,20 @@ pub async fn list_all_memory_items(
     .fetch_all(pool)
     .await?;
     Ok(rows)
+}
+
+pub async fn list_all_memory_items_for_operator(
+    pool: &PgPool,
+    operator_id: Uuid,
+    limit: i64,
+) -> Result<Vec<MemoryItemRow>, StorageError> {
+    Ok(sqlx::query_as::<_, MemoryItemRow>(&format!(
+        "SELECT {MEMORY_ITEM_COLUMNS} FROM memory_items WHERE operator_id = $1 ORDER BY updated_at DESC, id DESC LIMIT $2"
+    ))
+    .bind(operator_id)
+    .bind(limit.clamp(1, 50_000))
+    .fetch_all(pool)
+    .await?)
 }
 
 pub async fn update_memory_item_status(
@@ -380,6 +443,22 @@ pub async fn update_memory_item_status(
     .fetch_optional(pool)
     .await?;
     Ok(row)
+}
+
+pub async fn update_memory_item_status_for_operator(
+    pool: &PgPool,
+    operator_id: Uuid,
+    id: Uuid,
+    status: MemoryStatus,
+) -> Result<Option<MemoryItemRow>, StorageError> {
+    Ok(sqlx::query_as::<_, MemoryItemRow>(&format!(
+        "UPDATE memory_items SET status = $3, updated_at = now() WHERE id = $1 AND operator_id = $2 RETURNING {MEMORY_ITEM_COLUMNS}"
+    ))
+    .bind(id)
+    .bind(operator_id)
+    .bind(status.as_str())
+    .fetch_optional(pool)
+    .await?)
 }
 
 /// Resolve two linked conflict records atomically.
@@ -437,6 +516,45 @@ pub async fn resolve_memory_conflict(
     .fetch_one(&mut *transaction)
     .await?;
     transaction.commit().await?;
+    Ok(Some((winner, loser)))
+}
+
+pub async fn resolve_memory_conflict_for_operator(
+    pool: &PgPool,
+    operator_id: Uuid,
+    conflict_id: Uuid,
+    related_id: Uuid,
+    winner_id: Uuid,
+) -> Result<Option<(MemoryItemRow, MemoryItemRow)>, StorageError> {
+    if winner_id != conflict_id && winner_id != related_id {
+        return Err(StorageError::InvalidMemory(
+            "winner must be one of the conflict records".into(),
+        ));
+    }
+    let mut tx = pool.begin().await?;
+    let ids = vec![conflict_id, related_id];
+    let rows = sqlx::query_as::<_, MemoryItemRow>(&format!("SELECT {MEMORY_ITEM_COLUMNS} FROM memory_items WHERE id=ANY($1) AND operator_id=$2 FOR UPDATE")).bind(&ids).bind(operator_id).fetch_all(&mut *tx).await?;
+    if rows.len() != 2
+        || rows
+            .iter()
+            .any(|row| row.status != MemoryStatus::Conflict.as_str())
+        || rows
+            .iter()
+            .map(|row| (&row.scope, &row.scope_key, &row.kind))
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+            != 1
+    {
+        return Ok(None);
+    }
+    let winner = sqlx::query_as::<_, MemoryItemRow>(&format!("UPDATE memory_items SET status=$2,updated_at=now() WHERE id=$1 AND operator_id=$3 RETURNING {MEMORY_ITEM_COLUMNS}")).bind(winner_id).bind(MemoryStatus::Active.as_str()).bind(operator_id).fetch_one(&mut *tx).await?;
+    let loser_id = if winner_id == conflict_id {
+        related_id
+    } else {
+        conflict_id
+    };
+    let loser = sqlx::query_as::<_, MemoryItemRow>(&format!("UPDATE memory_items SET status=$2,updated_at=now() WHERE id=$1 AND operator_id=$3 RETURNING {MEMORY_ITEM_COLUMNS}")).bind(loser_id).bind(MemoryStatus::Rejected.as_str()).bind(operator_id).fetch_one(&mut *tx).await?;
+    tx.commit().await?;
     Ok(Some((winner, loser)))
 }
 
@@ -516,6 +634,61 @@ pub async fn list_memory_items_overview_page(
     .fetch_all(pool)
     .await?;
     Ok(rows)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn list_memory_items_overview_page_for_operator(
+    pool: &PgPool,
+    operator_id: Uuid,
+    scope: Option<MemoryScope>,
+    scope_key: Option<&str>,
+    statuses: &[MemoryStatus],
+    query: Option<&str>,
+    cursor: Option<MemoryOverviewCursor>,
+    limit: i64,
+) -> Result<Vec<MemoryItemRow>, StorageError> {
+    let status_filters: Vec<&str> = if statuses.is_empty() {
+        vec!["candidate", "active", "conflict", "archived", "rejected"]
+    } else {
+        statuses.iter().map(|s| s.as_str()).collect()
+    };
+    let scope_filter = scope.map(|s| s.as_str());
+    let scope_key_filter = scope_key.map(str::trim).filter(|v| !v.is_empty());
+    let query_filter = query
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(|v| format!("%{v}%"));
+    Ok(sqlx::query_as::<_, MemoryItemRow>(&format!("SELECT {MEMORY_ITEM_COLUMNS} FROM memory_items WHERE operator_id=$1 AND ($2::text IS NULL OR scope=$2) AND ($3::text IS NULL OR scope_key=$3) AND status=ANY($4) AND ($5::text IS NULL OR content ILIKE $5) AND ($3::text IS NOT NULL OR scope_key !~ '^(test-ws-|overview-|mem-svc-)') AND ($7::boolean IS NULL OR pinned<$7 OR (pinned=$7 AND (importance<$8 OR (importance=$8 AND (updated_at<$9 OR (updated_at=$9 AND id<$10)))))) ORDER BY pinned DESC,importance DESC,updated_at DESC,id DESC LIMIT $6"))
+        .bind(operator_id).bind(scope_filter).bind(scope_key_filter).bind(&status_filters).bind(query_filter).bind(limit.clamp(1,500)).bind(cursor.as_ref().map(|v| v.pinned)).bind(cursor.as_ref().map(|v| v.importance)).bind(cursor.as_ref().map(|v| v.updated_at)).bind(cursor.as_ref().map(|v| v.id)).fetch_all(pool).await?)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn update_memory_item_fields_with_embedding_for_operator(
+    pool: &PgPool,
+    operator_id: Uuid,
+    id: Uuid,
+    content: Option<&str>,
+    status: Option<MemoryStatus>,
+    pinned: Option<bool>,
+    embedding: Option<&[f32]>,
+    embedding_version: Option<i32>,
+) -> Result<Option<MemoryItemRow>, StorageError> {
+    if content.is_none()
+        && status.is_none()
+        && pinned.is_none()
+        && embedding.is_none()
+        && embedding_version.is_none()
+    {
+        return get_memory_item_for_operator(pool, operator_id, id).await;
+    }
+    if content.is_some_and(|text| text.trim().is_empty()) {
+        return Err(StorageError::InvalidMemory(
+            "content must not be empty".into(),
+        ));
+    }
+    let embedding_owned = embedding.map(|v| v.to_vec());
+    Ok(sqlx::query_as::<_, MemoryItemRow>(&format!("UPDATE memory_items SET content=COALESCE($3,content),status=COALESCE($4,status),pinned=COALESCE($5,pinned),embedding=COALESCE($6,embedding),embedding_version=COALESCE($7,embedding_version),updated_at=now() WHERE id=$1 AND operator_id=$2 RETURNING {MEMORY_ITEM_COLUMNS}"))
+        .bind(id).bind(operator_id).bind(content.map(str::trim)).bind(status.map(|s| s.as_str())).bind(pinned).bind(&embedding_owned).bind(embedding_version).fetch_optional(pool).await?)
 }
 
 pub async fn update_memory_item_fields(
@@ -606,9 +779,41 @@ pub async fn update_memory_item_embedding(
     Ok(row)
 }
 
+pub async fn update_memory_item_embedding_for_operator(
+    pool: &PgPool,
+    operator_id: Uuid,
+    id: Uuid,
+    embedding: &[f32],
+    embedding_version: i32,
+) -> Result<Option<MemoryItemRow>, StorageError> {
+    let embedding = embedding.to_vec();
+    Ok(sqlx::query_as::<_, MemoryItemRow>(&format!(
+        "UPDATE memory_items SET embedding = $3, embedding_version = $4, updated_at = now() WHERE id = $1 AND operator_id = $2 RETURNING {MEMORY_ITEM_COLUMNS}"
+    ))
+    .bind(id)
+    .bind(operator_id)
+    .bind(&embedding)
+    .bind(embedding_version)
+    .fetch_optional(pool)
+    .await?)
+}
+
 pub async fn delete_memory_item(pool: &PgPool, id: Uuid) -> Result<bool, StorageError> {
     let result = sqlx::query("DELETE FROM memory_items WHERE id = $1")
         .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+pub async fn delete_memory_item_for_operator(
+    pool: &PgPool,
+    operator_id: Uuid,
+    id: Uuid,
+) -> Result<bool, StorageError> {
+    let result = sqlx::query("DELETE FROM memory_items WHERE id = $1 AND operator_id = $2")
+        .bind(id)
+        .bind(operator_id)
         .execute(pool)
         .await?;
     Ok(result.rows_affected() > 0)
@@ -712,6 +917,31 @@ pub async fn apply_memory_item_feedback(
         .await?;
     }
 
+    tx.commit().await?;
+    Ok(row)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn apply_memory_item_feedback_for_operator(
+    pool: &PgPool,
+    operator_id: Uuid,
+    id: Uuid,
+    signal: &str,
+    confidence: f64,
+    importance: f64,
+    status: Option<MemoryStatus>,
+    task_id: Option<Uuid>,
+    delta_confidence: f64,
+    mark_used: bool,
+    bump_helpful: bool,
+    bump_harmful: bool,
+) -> Result<Option<MemoryItemRow>, StorageError> {
+    let mut tx = pool.begin().await?;
+    let row = sqlx::query_as::<_, MemoryItemRow>(&format!("UPDATE memory_items SET confidence=$3,importance=$4,status=COALESCE($5,status),last_used_at=CASE WHEN $6 THEN now() ELSE last_used_at END,use_count=use_count+CASE WHEN $6 THEN 1 ELSE 0 END,helpful_count=helpful_count+CASE WHEN $7 THEN 1 ELSE 0 END,harmful_count=harmful_count+CASE WHEN $8 THEN 1 ELSE 0 END,updated_at=now() WHERE id=$1 AND operator_id=$2 RETURNING {MEMORY_ITEM_COLUMNS}"))
+        .bind(id).bind(operator_id).bind(confidence.clamp(0.0,1.0)).bind(importance.clamp(0.0,1.0)).bind(status.map(|s|s.as_str())).bind(mark_used).bind(bump_helpful).bind(bump_harmful).fetch_optional(&mut *tx).await?;
+    if row.is_some() {
+        sqlx::query("INSERT INTO memory_feedback_events (id,memory_id,task_id,signal,delta_confidence) VALUES ($1,$2,$3,$4,$5)").bind(Uuid::new_v4()).bind(id).bind(task_id).bind(signal).bind(delta_confidence).execute(&mut *tx).await?;
+    }
     tx.commit().await?;
     Ok(row)
 }

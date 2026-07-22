@@ -10,7 +10,10 @@ use crate::task::steps::{
     build_agent_resume_context, finalize_open_task_steps, update_task_step_status,
 };
 use crate::ApiError;
-use axum::{extract::State, Json};
+use axum::{
+    extract::{Extension, State},
+    Json,
+};
 use evohime_agent_runtime::{
     run_agent_loop, run_agent_loop_resumed, AgentConfig, AgentError, AgentResumeContext,
 };
@@ -490,8 +493,9 @@ pub(crate) async fn run_task_pipeline(
 
 pub(crate) async fn list_tasks(
     State(state): State<Arc<AppState>>,
+    Extension(identity): Extension<crate::auth::OperatorIdentity>,
 ) -> Result<Json<Vec<evohime_storage::TaskRow>>, ApiError> {
-    evohime_storage::list_tasks(&state.pool, None)
+    evohime_storage::list_tasks_for_operator(&state.pool, identity.id, None)
         .await
         .map(Json)
         .map_err(|error| ApiError::Internal(error.to_string()))

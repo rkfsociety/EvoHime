@@ -3,8 +3,8 @@
 use crate::feedback::{apply_feedback_signal, FeedbackAdjustment, FeedbackSignal};
 use crate::MemoryError;
 use evohime_storage::{
-    apply_memory_item_feedback, get_memory_item, list_idle_memory_for_decay, MemoryItemRow,
-    MemoryStatus,
+    apply_memory_item_feedback, apply_memory_item_feedback_for_operator, get_memory_item,
+    get_memory_item_for_operator, list_idle_memory_for_decay, MemoryItemRow, MemoryStatus,
 };
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -63,6 +63,56 @@ async fn apply_one(
         return Ok(None);
     };
 
+    Ok(Some(FeedbackApplyResult {
+        memory_id: id,
+        signal,
+        adjustment,
+        row,
+    }))
+}
+
+async fn apply_one_for_operator(
+    pool: &PgPool,
+    operator_id: Uuid,
+    id: Uuid,
+    signal: FeedbackSignal,
+    task_id: Option<Uuid>,
+) -> Result<Option<FeedbackApplyResult>, MemoryError> {
+    let Some(existing) = get_memory_item_for_operator(pool, operator_id, id).await? else {
+        return Ok(None);
+    };
+    let status = MemoryStatus::parse(&existing.status).unwrap_or(MemoryStatus::Candidate);
+    let adjustment = apply_feedback_signal(
+        existing.confidence,
+        existing.importance,
+        existing.pinned,
+        status,
+        signal,
+    );
+    let mark_used = matches!(
+        signal,
+        FeedbackSignal::Used | FeedbackSignal::Helpful | FeedbackSignal::Harmful
+    );
+    let bump_helpful = matches!(signal, FeedbackSignal::Helpful);
+    let bump_harmful = matches!(signal, FeedbackSignal::Harmful | FeedbackSignal::Rejected);
+    let Some(row) = apply_memory_item_feedback_for_operator(
+        pool,
+        operator_id,
+        id,
+        signal.as_str(),
+        adjustment.confidence,
+        adjustment.importance,
+        adjustment.next_status,
+        task_id,
+        adjustment.delta_confidence,
+        mark_used,
+        bump_helpful,
+        bump_harmful,
+    )
+    .await?
+    else {
+        return Ok(None);
+    };
     Ok(Some(FeedbackApplyResult {
         memory_id: id,
         signal,
@@ -130,6 +180,37 @@ pub async fn record_memory_corrected(
     task_id: Option<Uuid>,
 ) -> Result<Option<FeedbackApplyResult>, MemoryError> {
     apply_one(pool, memory_id, FeedbackSignal::Corrected, task_id).await
+}
+
+pub async fn record_memory_rejected_for_operator(
+    pool: &PgPool,
+    operator_id: Uuid,
+    memory_id: Uuid,
+    task_id: Option<Uuid>,
+) -> Result<Option<FeedbackApplyResult>, MemoryError> {
+    apply_one_for_operator(
+        pool,
+        operator_id,
+        memory_id,
+        FeedbackSignal::Rejected,
+        task_id,
+    )
+    .await
+}
+pub async fn record_memory_corrected_for_operator(
+    pool: &PgPool,
+    operator_id: Uuid,
+    memory_id: Uuid,
+    task_id: Option<Uuid>,
+) -> Result<Option<FeedbackApplyResult>, MemoryError> {
+    apply_one_for_operator(
+        pool,
+        operator_id,
+        memory_id,
+        FeedbackSignal::Corrected,
+        task_id,
+    )
+    .await
 }
 
 /// Decay a batch of prolonged unused low-confidence items toward archive.

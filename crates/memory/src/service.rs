@@ -4,8 +4,9 @@ use crate::dedupe::detect_duplicate_with_embedding;
 use crate::normalize::normalize_content;
 use crate::redact::redact_secrets;
 use evohime_storage::{
-    insert_memory_item, list_memory_items, update_memory_item_status, MemoryItemRow, MemoryKind,
-    MemoryScope, MemoryStatus, NewMemoryItem, StorageError,
+    insert_memory_item, list_memory_items_for_operator, update_memory_item_status,
+    update_memory_item_status_for_operator, MemoryItemRow, MemoryKind, MemoryScope, MemoryStatus,
+    NewMemoryItem, StorageError,
 };
 use sqlx::PgPool;
 use thiserror::Error;
@@ -132,11 +133,13 @@ fn row_to_existing(row: &MemoryItemRow) -> Option<ExistingMemory> {
 
 async fn load_existing(
     pool: &PgPool,
+    operator_id: Uuid,
     scope: MemoryScope,
     scope_key: &str,
 ) -> Result<Vec<ExistingMemory>, MemoryError> {
-    let rows = list_memory_items(
+    let rows = list_memory_items_for_operator(
         pool,
+        operator_id,
         scope,
         scope_key,
         &[
@@ -161,7 +164,13 @@ pub async fn admit_memory_item(
         Err(other) => return Err(other),
     };
 
-    let existing = load_existing(pool, prepared.item.scope, &prepared.item.scope_key).await?;
+    let existing = load_existing(
+        pool,
+        prepared.item.operator_id,
+        prepared.item.scope,
+        &prepared.item.scope_key,
+    )
+    .await?;
     match MemoryService::evaluate(&prepared, &existing)? {
         Evaluation::Duplicate { existing_id } => Ok(AdmitOutcome::Duplicate { existing_id }),
         Evaluation::Conflict {
@@ -172,7 +181,13 @@ pub async fn admit_memory_item(
             conflicted.status = MemoryStatus::Conflict;
             conflicted.supersedes = Some(existing_id);
             let inserted = insert_memory_item(pool, &conflicted).await?;
-            let _ = update_memory_item_status(pool, existing_id, MemoryStatus::Conflict).await?;
+            let _ = update_memory_item_status_for_operator(
+                pool,
+                prepared.item.operator_id,
+                existing_id,
+                MemoryStatus::Conflict,
+            )
+            .await?;
             Ok(AdmitOutcome::Conflict {
                 existing_id,
                 item: inserted,
@@ -265,6 +280,14 @@ pub async fn accept_memory_item(
     Ok(update_memory_item_status(pool, id, MemoryStatus::Active).await?)
 }
 
+pub async fn accept_memory_item_for_operator(
+    pool: &PgPool,
+    operator_id: Uuid,
+    id: Uuid,
+) -> Result<Option<MemoryItemRow>, MemoryError> {
+    Ok(update_memory_item_status_for_operator(pool, operator_id, id, MemoryStatus::Active).await?)
+}
+
 /// Reject a memory item so it is excluded from retrieval.
 pub async fn reject_memory_item(
     pool: &PgPool,
@@ -273,10 +296,29 @@ pub async fn reject_memory_item(
     Ok(update_memory_item_status(pool, id, MemoryStatus::Rejected).await?)
 }
 
+pub async fn reject_memory_item_for_operator(
+    pool: &PgPool,
+    operator_id: Uuid,
+    id: Uuid,
+) -> Result<Option<MemoryItemRow>, MemoryError> {
+    Ok(
+        update_memory_item_status_for_operator(pool, operator_id, id, MemoryStatus::Rejected)
+            .await?,
+    )
+}
+
 /// Apply an auto-promote decision: set status to `active`.
 pub async fn promote_memory_item(
     pool: &PgPool,
     id: Uuid,
 ) -> Result<Option<MemoryItemRow>, MemoryError> {
     accept_memory_item(pool, id).await
+}
+
+pub async fn promote_memory_item_for_operator(
+    pool: &PgPool,
+    operator_id: Uuid,
+    id: Uuid,
+) -> Result<Option<MemoryItemRow>, MemoryError> {
+    accept_memory_item_for_operator(pool, operator_id, id).await
 }

@@ -476,7 +476,7 @@
 
 | # | Задача | Size | Статус | Notes / evidence |
 | --- | --- | --- | --- | --- |
-| 7.98 | Team / multi-operator mode (authz scopes) | L | ⬜ | single-tenant today |
+| 7.98 | Team / multi-operator mode (authz scopes) | L | ✅ | local operator registry, opaque tokens, owner/member management API и scoped sessions/tasks/memory |
 | 7.99 | Cloud sync / remote workspace | L | ⬜ | |
 | 7.100 | Visual browser agent loop (CDP session reuse) | L | ⬜ | browser tools one-shot |
 | 7.101 | Eval harness (golden tasks, regression agents) | L | ⬜ | |
@@ -492,13 +492,13 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-22:** `7.65` hardening ✅ — scheduler dispatch атомарен и имеет run/failure history; `7.91` ✅ — документация синхронизирована; `7.93`–`7.97` ✅ — request context, task timeline telemetry, log safety, deep health checks и backup/export; следующий практический шаг — `7.98` (при этом `7.92` уже покрыт `7.24`).
+**Актуальный статус 2026-07-22:** `7.65` hardening ✅ — scheduler dispatch атомарен и имеет run/failure history; `7.91` ✅ — документация синхронизирована; `7.93`–`7.98` ✅ — request context, task timeline telemetry, log safety, deep health checks, backup/export и multi-operator authz; следующий практический шаг — `7.99` (при этом `7.92` уже покрыт `7.24`).
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
 3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.51`, `7.52` ✅ → next product honesty `7.62`+
 4. **Wave D (product honesty):** 7.62–7.68, 7.72–7.73 ✅
-5. **Wave E (DX/CI):** `7.84`–`7.97` ✅, `7.56`, `7.69`–`7.71` ✅ → next `7.98`
+5. **Wave E (DX/CI):** `7.84`–`7.98` ✅, `7.56`, `7.69`–`7.71` ✅ → next `7.99`
 6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+
 
 ### Критерий готовности Stage 7 (минимум)

@@ -4,8 +4,9 @@ use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
 use crate::{
-    list_all_memory_items, list_session_events, list_session_messages, list_task_steps, list_tasks,
-    MemoryItemRow, StorageError, TaskRow,
+    list_all_memory_items_for_operator, list_session_events_after_for_operator,
+    list_session_messages_for_operator, list_task_steps, list_tasks_for_operator, MemoryItemRow,
+    StorageError, TaskRow,
 };
 
 const BACKUP_FORMAT: &str = "evohime-backup";
@@ -75,20 +76,22 @@ impl BackupDump {
     }
 }
 
-pub async fn collect_backup(pool: &PgPool) -> Result<BackupDump, StorageError> {
+pub async fn collect_backup(pool: &PgPool, operator_id: Uuid) -> Result<BackupDump, StorageError> {
     let session_rows = sqlx::query_as::<_, BackupSessionRow>(
         r#"
         SELECT id, created_at, archived_at IS NOT NULL AS archived, title, workspace_path
         FROM sessions
+        WHERE operator_id = $1
         ORDER BY created_at DESC, id DESC
         "#,
     )
+    .bind(operator_id)
     .fetch_all(pool)
     .await?;
 
     let mut sessions = Vec::with_capacity(session_rows.len());
     for session in session_rows {
-        let messages = list_session_messages(pool, session.id)
+        let messages = list_session_messages_for_operator(pool, operator_id, session.id)
             .await?
             .into_iter()
             .map(|message| BackupMessage {
@@ -97,7 +100,7 @@ pub async fn collect_backup(pool: &PgPool) -> Result<BackupDump, StorageError> {
                 created_at: message.created_at,
             })
             .collect();
-        let events = list_session_events(pool, session.id)
+        let events = list_session_events_after_for_operator(pool, operator_id, session.id, 0)
             .await?
             .into_iter()
             .map(|event| BackupEvent {
@@ -107,7 +110,7 @@ pub async fn collect_backup(pool: &PgPool) -> Result<BackupDump, StorageError> {
             })
             .collect();
         let mut tasks = Vec::new();
-        for task in list_tasks(pool, Some(session.id)).await? {
+        for task in list_tasks_for_operator(pool, operator_id, Some(session.id)).await? {
             let steps = list_task_steps(pool, task.id).await?;
             tasks.push(BackupTask { task, steps });
         }
@@ -126,7 +129,8 @@ pub async fn collect_backup(pool: &PgPool) -> Result<BackupDump, StorageError> {
 
     Ok(BackupDump {
         sessions,
-        memory_items: list_all_memory_items(pool, MAX_MEMORY_ITEMS).await?,
+        memory_items: list_all_memory_items_for_operator(pool, operator_id, MAX_MEMORY_ITEMS)
+            .await?,
         ..BackupDump::empty()
     })
 }
