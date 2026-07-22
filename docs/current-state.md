@@ -6,7 +6,7 @@ Last updated: 2026-07-22
 
 Normal tasks use native ReAct tool calling: the model selects a tool, receives its observation, and selects the next action until `assistant.reply`. Tool-level permission approvals remain enabled for protected operations.
 
-Stages 1–6 foundations are complete. Stage 7 hardening/product items through `7.91` are implemented; the first audit phase is scheduler correctness, followed by `7.93` request-id on HTTP.
+Stages 1–6 foundations are complete. Stage 7 hardening/product items through `7.91` are implemented; scheduler correctness is now hardened, and the next item is `7.93` request-id on HTTP.
 
 ## Crates
 
@@ -124,7 +124,7 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-`7.91` выполнен: `AGENTS.md`, `docs/development-plan.md` и этот файл синхронизированы с фактическим Stage 7; первая implementation wave начинается с scheduler correctness, затем идёт `7.93`.
+`7.65` hardening выполнен: scheduler dispatch атомарно создаёт один run/session/task, manual trigger не увеличивает счётчик повторно, а failure history сохраняет ошибки. Следующий пункт — `7.93`.
 
 `7.56` выполнен: CI job `python-worker` на Python 3.12 запускает `python -m unittest discover -s workers/python -p "test_*.py"`; локально suite проходит: 25 тестов.
 
@@ -208,7 +208,7 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.51` реализован: Python worker и зеркальная Rust-валидация получили `text.classify`, `text.language` и `text.redact`; все три handler доступны также через `worker.run`.
 
-**Актуализация 2026-07-22:** `7.51` и product honesty для Sites/Scheduled выполнены; Wave E `7.84`–`7.91` также закрыта. `7.92` уже покрыт `7.24`; сначала scheduler correctness, затем `7.93`.
+**Актуализация 2026-07-22:** `7.51`, product honesty для Sites/Scheduled и scheduler correctness hardening выполнены; Wave E `7.84`–`7.91` также закрыта. `7.92` уже покрыт `7.24`; следующий пункт — `7.93`.
 
 1. **Stage 7** — Waves A–D ✅; Wave E `7.84`–`7.91` ✅; next `7.93`
-2. Рекомендуемая следующая волна: audit hardening, начиная с scheduler correctness, затем request-id на HTTP
+2. Рекомендуемая следующая волна: audit hardening, начиная с request-id на HTTP

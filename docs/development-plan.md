@@ -63,7 +63,7 @@ EvoHime Server — Rust
 
 ## Фактический статус на 2026-07-22
 
-Этапы 1–6 завершены на уровне foundations. Stage 7: hardening/product waves `7.1`–`7.91` выполнены; документация синхронизирована с текущим состоянием, первая implementation wave — scheduler correctness, затем `7.93`.
+Этапы 1–6 завершены на уровне foundations. Stage 7: hardening/product waves `7.1`–`7.91` выполнены; scheduler correctness hardening завершён, документация синхронизирована с текущим состоянием, следующий пункт — `7.93`.
 
 - tools: filesystem / shell / Git / browser / MCP в `tool-runtime`;
 - `agent-runtime`: native ReAct tool call → observation → next action; bounded limits; checkpoints; structured memory в prompt;
@@ -72,7 +72,7 @@ EvoHime Server — Rust
 - workers: health/stall + summarize/chunk/similarity/entities/diff/classify/language/redact handlers;
 - Stage 7: auth/permissions, recovery, memory quality, product honesty для Sites/Scheduled, CI gates, Dev Container/Compose, OpenAPI contract и experimental feature flags.
 
-**Текущий сквозной приоритет:** audit hardening Stage 7 — scheduler correctness, затем request-id (`7.93`), timeline/latency (`7.94`) и следующие пункты ([roadmap.md](roadmap.md) § Этап 7).
+**Текущий сквозной приоритет:** audit hardening Stage 7 — request-id (`7.93`), затем timeline/latency (`7.94`) и следующие пункты ([roadmap.md](roadmap.md) § Этап 7).
 
 ---
 
@@ -300,7 +300,7 @@ Task lifecycle реализован: start/complete/fail/cancel/resume/retry. St
 
 - Waves A–D закрыли trust/security, recovery, agent quality и product honesty для Sites/Scheduled;
 - Wave E `7.84`–`7.91` закрыла PostgreSQL/frontend/protocol/docs CI, Dev Container, OpenAPI и feature flags;
-- первая implementation wave — scheduler correctness; затем `7.93` request-id на HTTP; `7.92` уже реализован через `/metrics` в `7.24`.
+- scheduler correctness hardening завершён; следующий пункт — `7.93` request-id на HTTP; `7.92` уже реализован через `/metrics` в `7.24`.
 
 ---
 

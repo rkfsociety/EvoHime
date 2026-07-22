@@ -5,8 +5,9 @@ use axum::{
     Json,
 };
 use evohime_storage::scheduled::{
-    create_scheduled_task, delete_scheduled_task, get_scheduled_task, list_scheduled_tasks,
-    record_scheduled_task_run, set_scheduled_task_status, update_scheduled_task, ScheduledTaskRow,
+    create_scheduled_task, delete_scheduled_task, dispatch_scheduled_task, get_scheduled_task,
+    list_scheduled_tasks, resume_scheduled_task, set_scheduled_task_status, update_scheduled_task,
+    ScheduledTaskRow,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -35,6 +36,9 @@ pub struct ScheduledResponse {
     pub last_run_at: Option<String>,
     pub next_run_at: String,
     pub run_count: i64,
+    pub failure_count: i64,
+    pub last_run_status: Option<String>,
+    pub last_run_error: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -81,6 +85,9 @@ fn response(row: ScheduledTaskRow) -> ScheduledResponse {
         last_run_at: row.last_run_at.map(|t| t.to_rfc3339()),
         next_run_at: row.next_run_at.to_rfc3339(),
         run_count: row.run_count,
+        failure_count: row.failure_count,
+        last_run_status: row.last_run_status,
+        last_run_error: row.last_run_error,
         created_at: row.created_at.to_rfc3339(),
         updated_at: row.updated_at.to_rfc3339(),
     }
@@ -108,8 +115,8 @@ pub async fn create(
 ) -> Result<(StatusCode, Json<ScheduledResponse>), ApiError> {
     validate_input(&input)?;
     let workspace = scope(&state, query.workspace_path.as_deref())?;
-    let next_run_at = scheduler::next_run_after_now(&input.cron_expr)
-        .map_err(ApiError::BadRequest)?;
+    let next_run_at =
+        scheduler::next_run_after_now(&input.cron_expr).map_err(ApiError::BadRequest)?;
     let row = create_scheduled_task(
         &state.pool,
         &workspace,
@@ -144,8 +151,8 @@ pub async fn update(
 ) -> Result<Json<ScheduledResponse>, ApiError> {
     validate_input(&input)?;
     let workspace = scope(&state, query.workspace_path.as_deref())?;
-    let next_run_at = scheduler::next_run_after_now(&input.cron_expr)
-        .map_err(ApiError::BadRequest)?;
+    let next_run_at =
+        scheduler::next_run_after_now(&input.cron_expr).map_err(ApiError::BadRequest)?;
     let row = update_scheduled_task(
         &state.pool,
         id,
@@ -200,17 +207,12 @@ pub async fn resume(
         .await
         .map_err(|e| ApiError::Internal(e.to_string()))?
         .ok_or_else(|| ApiError::NotFound("scheduled task не найден".into()))?;
-    let next_run_at = scheduler::next_run_after_now(&row.cron_expr)
-        .map_err(ApiError::BadRequest)?;
-    let row = record_scheduled_task_run(&state.pool, id, next_run_at)
+    let next_run_at =
+        scheduler::next_run_after_now(&row.cron_expr).map_err(ApiError::BadRequest)?;
+    let row = resume_scheduled_task(&state.pool, id, &workspace, next_run_at)
         .await
         .map_err(|e| ApiError::Internal(e.to_string()))?
         .ok_or_else(|| ApiError::NotFound("scheduled task не найден".into()))?;
-    // record_scheduled_task_run updates next_run_at but doesn't change status; set active.
-    let row = set_scheduled_task_status(&state.pool, id, &workspace, "active")
-        .await
-        .map_err(|e| ApiError::Internal(e.to_string()))?
-        .unwrap_or(row);
     Ok(Json(response(row)))
 }
 
@@ -226,21 +228,29 @@ pub async fn trigger(
         .map_err(|e| ApiError::Internal(e.to_string()))?
         .ok_or_else(|| ApiError::NotFound("scheduled task не найден".into()))?;
 
-    let workspace2 = workspace.clone();
-    let prompt = row.prompt.clone();
+    let next_run_at =
+        scheduler::next_run_after_now(&row.cron_expr).map_err(ApiError::BadRequest)?;
+    let dispatch = dispatch_scheduled_task(
+        &state.pool,
+        id,
+        row.next_run_at,
+        next_run_at,
+        "manual",
+        false,
+    )
+    .await
+    .map_err(|e| ApiError::Internal(e.to_string()))?
+    .ok_or_else(|| ApiError::Conflict("расписание уже запускается или изменено".into()))?;
     let state2 = state.clone();
     tokio::spawn(async move {
-        if let Err(e) = crate::scheduler::fire_scheduled_task_pub(&state2, &workspace2, &prompt).await {
+        if let Err(e) = crate::scheduler::fire_scheduled_task_pub(&state2, dispatch).await {
             tracing::error!(id = %id, error = %e, "manual trigger failed");
         }
     });
-
-    let next_run_at = scheduler::next_run_after_now(&row.cron_expr)
-        .map_err(ApiError::BadRequest)?;
-    let updated = record_scheduled_task_run(&state.pool, id, next_run_at)
+    let updated = get_scheduled_task(&state.pool, id, &workspace)
         .await
         .map_err(|e| ApiError::Internal(e.to_string()))?
-        .unwrap_or(row);
+        .ok_or_else(|| ApiError::NotFound("scheduled task не найден".into()))?;
     Ok(Json(response(updated)))
 }
 

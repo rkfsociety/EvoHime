@@ -401,7 +401,7 @@
 | 7.62 | Sites: data model + `/api/sites` CRUD | L | ✅ | PostgreSQL + workspace-scoped API + real panel |
 | 7.63 | Sites: preview / publish / open-in-browser | L | ✅ | Workspace-scoped HTML preview, publish action, and browser launch |
 | 7.64 | Sites: search/filter wired to real data | S | ✅ | `GET /api/sites?q=&status=`; SitesPanel tabs + debounced search |
-| 7.65 | Scheduled: real cron/timer jobs (storage + runner) | L | ✅ | `scheduled_tasks` PG table + tokio cron loop + CRUD API; 6-field cron via `cron` v0.17; atomic claim/idempotency hardening planned in audit phase 1 |
+| 7.65 | Scheduled: real cron/timer jobs (storage + runner) | L | ✅ | `scheduled_tasks` PG table + tokio cron loop + CRUD API; 6-field cron via `cron` v0.17; atomic dispatch/idempotency and failure history implemented in migration `0024` |
 | 7.66 | Scheduled: honest copy (убрать fake mail/calendar claims) | S | ✅ | removed fake mail/calendar templates; cron-only UI |
 | 7.67 | Scheduled: list/pause/delete active schedules | M | ✅ | ScheduledPanel: list + tabs + create + pause/resume/trigger/delete |
 | 7.68 | Deep-link / router для панелей (`?panel=`, history) | M | ✅ | `lib/panel-route.ts`; `?panel=` + pushState/popstate |
@@ -454,9 +454,9 @@
 
 Эта волна — непосредственный план после `7.91`. Порядок фиксирован зависимостями: сначала устраняем дублирование/двойные запуски, затем делаем наблюдаемость и единый контур ошибок, после этого расширяем контракты и тестовую инфраструктуру.
 
-| Фаза | Deliverable | Основные файлы/границы | Критерий готовности |
-| --- | --- | --- | --- |
-| 1 | **Scheduler correctness**: атомарный claim due-задач, lease/idempotency, связь scheduled run с созданной task, корректный success/failure count | `crates/storage/src/scheduled.rs`, `crates/server/src/scheduler.rs`, `crates/server/src/scheduled_api.rs`, новая migration при необходимости | два scheduler-процесса не выполняют один run дважды; manual trigger и cron не перетирают состояние; есть race/integration tests |
+| Фаза | Deliverable | Основные файлы/границы | Статус | Критерий готовности |
+| --- | --- | --- | --- | --- |
+| 1 | **Scheduler correctness**: атомарный claim due-задач, lease/idempotency, связь scheduled run с созданной task, корректный success/failure count | `crates/storage/src/scheduled.rs`, `crates/server/src/scheduler.rs`, `crates/server/src/scheduled_api.rs`, `migrations/0024_scheduled_task_runs.sql` | ✅ | два scheduler-процесса не выполняют один run дважды; manual trigger и cron не перетирают состояние; race/failure integration tests |
 | 2 | **Request context**: request-id, безопасные internal errors, header-only HTTP auth | `crates/server/src/auth.rs`, `api_error.rs`, новый middleware/observability module, `frontend/web/src/api/client.ts`, WS handshake | каждый HTTP ответ содержит request-id; подробности остаются в logs; HTTP не принимает token из query, WS продолжает работать |
 | 3 | **Feature and API contracts**: backend enforcement для Sites/Scheduled/OTLP и схемы DTO в OpenAPI/typed client | `crates/server/src/features.rs`, `routes.rs`, `sites_api.rs`, `scheduled_api.rs`, `scripts/generate-openapi.mjs`, `docs/openapi.json`, `frontend/web/src/api/generated.ts` | выключенный flag закрывает UI и прямой API; генератор описывает request/response schemas; drift check остаётся зелёным |
 | 4 | **Test and lifecycle foundation**: HTTP/WS integration harness, scheduler regression tests, graceful shutdown, bounded cleanup `session_buses` | `crates/server/tests/`, `crates/server/src/startup.rs`, `app.rs`, `ws.rs`, `scheduler.rs` | auth/CORS/features/errors/WS resume/scheduler races покрыты; фоновые loops завершаются по cancellation token; session buses не растут бесконечно |
@@ -470,7 +470,7 @@
 4. Нельзя скрывать Clippy/fmt проблемы через `#[allow]` или ослабление CI; исправления должны оставаться локальными и форматироваться workspace-правилом.
 5. После каждой фазы обязательны: `cargo test --workspace --all-features --all-targets`, `cargo clippy --workspace --all-features --all-targets -- -D warnings`, frontend typecheck/build и generated drift checks.
 
-**Первый практический шаг:** фаза 1, Scheduler correctness. Она предотвращает повторное выполнение пользовательских задач и должна быть завершена до новых масштабных product/worker функций.
+**Фаза 1 выполнена:** scheduler correctness предотвращает повторное выполнение пользовательских задач, сохраняет run history и failure accounting. Следующий практический шаг — фаза 2: request-id, безопасные ошибки и header-only HTTP auth.
 
 ### 7.K — Moonshots / Stage 8 candidates
 
@@ -492,7 +492,7 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-22:** `7.91` ✅ — документация синхронизирована с текущим Stage 7; первая implementation wave начинается с фазы 1 Scheduler correctness, затем `7.93` request-id (при этом `7.92` уже покрыт `7.24`).
+**Актуальный статус 2026-07-22:** `7.65` hardening ✅ — scheduler dispatch атомарен и имеет run/failure history; `7.91` ✅ — документация синхронизирована; следующий практический шаг — `7.93` request-id (при этом `7.92` уже покрыт `7.24`).
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  

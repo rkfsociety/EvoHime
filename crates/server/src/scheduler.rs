@@ -6,7 +6,9 @@
 use crate::app::AppState;
 use chrono::Utc;
 use cron::Schedule;
-use evohime_storage::scheduled::{due_scheduled_tasks, record_scheduled_task_run};
+use evohime_storage::scheduled::{
+    dispatch_scheduled_task, due_scheduled_tasks, record_scheduled_task_failure, ScheduledDispatch,
+};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -50,69 +52,79 @@ async fn tick(state: &Arc<AppState>) -> anyhow::Result<()> {
             Ok(t) => t,
             Err(e) => {
                 warn!(id = %task.id, error = %e, "skipping task with bad cron; pausing it");
-                let _ =
-                    evohime_storage::scheduled::set_scheduled_task_status(&state.pool, task.id, &task.workspace_path, "paused").await;
+                let _ = evohime_storage::scheduled::set_scheduled_task_status(
+                    &state.pool,
+                    task.id,
+                    &task.workspace_path,
+                    "paused",
+                )
+                .await;
+                continue;
+            }
+        };
+
+        let dispatch = match dispatch_scheduled_task(
+            &state.pool,
+            task.id,
+            task.next_run_at,
+            next,
+            "cron",
+            true,
+        )
+        .await
+        {
+            Ok(Some(dispatch)) => dispatch,
+            Ok(None) => {
+                info!(id = %task.id, "scheduled task was claimed by another scheduler");
+                continue;
+            }
+            Err(e) => {
+                error!(id = %task.id, error = %e, "failed to atomically dispatch scheduled task");
+                let _ = record_scheduled_task_failure(
+                    &state.pool,
+                    task.id,
+                    task.next_run_at,
+                    next,
+                    "cron",
+                    &e.to_string(),
+                )
+                .await;
                 continue;
             }
         };
 
         info!(
             id = %task.id,
+            run_id = %dispatch.run_id,
+            task_id = %dispatch.task.id,
             title = %task.title,
             ?next,
             "firing scheduled task"
         );
 
-        // Create a session + task through the normal task pipeline.
-        let workspace_path = task.workspace_path.clone();
-        let prompt = task.prompt.clone();
-        let task_id = task.id;
+        let scheduled_id = task.id;
         let state2 = state.clone();
         tokio::spawn(async move {
-            if let Err(e) = fire_scheduled_task(&state2, &workspace_path, &prompt).await {
-                error!(id = %task_id, error = %e, "failed to fire scheduled task");
+            if let Err(e) = fire_scheduled_task(&state2, dispatch).await {
+                error!(id = %scheduled_id, error = %e, "failed to fire scheduled task");
             }
         });
-
-        if let Err(e) = record_scheduled_task_run(&state.pool, task.id, next).await {
-            error!(id = %task.id, error = %e, "failed to record scheduled task run");
-        }
     }
     Ok(())
 }
 
-pub(crate) async fn fire_scheduled_task_pub(
-    state: &Arc<AppState>,
-    workspace_path: &str,
-    prompt: &str,
-) -> anyhow::Result<()> {
-    fire_scheduled_task(state, workspace_path, prompt).await
-}
-
 async fn fire_scheduled_task(
     state: &Arc<AppState>,
-    workspace_path: &str,
-    prompt: &str,
+    dispatch: ScheduledDispatch,
 ) -> anyhow::Result<()> {
     use crate::task::{emit_event, process_user_message};
     use evohime_protocol::ServerEvent;
     use evohime_task_engine::fail_task;
 
-    let session = evohime_storage::create_session(&state.pool).await?;
-    let session_id = session.id;
-
-    let task_row = evohime_storage::create_task(
-        &state.pool,
-        session_id,
-        prompt,
-        None,
-        None,
-        Some(workspace_path),
-    )
-    .await?;
-
+    let task_row = dispatch.task;
+    let session_id = task_row.session_id;
     let ts = Utc::now();
-    let _ = emit_event(
+    emit_event(
         state,
         session_id,
         Some(task_row.id),
@@ -123,7 +135,8 @@ async fn fire_scheduled_task(
             created_at: ts,
         },
     )
-    .await;
+    .await
+    .map_err(|(_, error)| anyhow::anyhow!(error.to_string()))?;
 
     let token = tokio_util::sync::CancellationToken::new();
     state
@@ -150,10 +163,21 @@ async fn fire_scheduled_task(
             .await;
             let _ = fail_task(&state2.pool, failed_id).await;
         }
-        state2.task_cancellations.lock().await.remove(&registered_task_id);
+        state2
+            .task_cancellations
+            .lock()
+            .await
+            .remove(&registered_task_id);
     });
 
     Ok(())
+}
+
+pub(crate) async fn fire_scheduled_task_pub(
+    state: &Arc<AppState>,
+    dispatch: ScheduledDispatch,
+) -> anyhow::Result<()> {
+    fire_scheduled_task(state, dispatch).await
 }
 
 #[cfg(test)]

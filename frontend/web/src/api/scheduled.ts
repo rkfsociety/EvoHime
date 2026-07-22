@@ -10,6 +10,9 @@ export type ScheduledTask = {
   last_run_at: string | null;
   next_run_at: string;
   run_count: number;
+  failure_count: number;
+  last_run_status: "dispatched" | "failed" | null;
+  last_run_error: string | null;
   created_at: string;
   updated_at: string;
 };

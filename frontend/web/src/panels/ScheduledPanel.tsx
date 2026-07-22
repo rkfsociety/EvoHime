@@ -279,6 +279,11 @@ export function ScheduledPanel({ onPickPrompt, workspacePath }: ScheduledPanelPr
                   <span>
                     Запусков: <strong>{task.run_count}</strong>
                   </span>
+                  {task.failure_count > 0 ? (
+                    <span title={task.last_run_error ?? undefined}>
+                      Ошибок: <strong>{task.failure_count}</strong>
+                    </span>
+                  ) : null}
                   {task.last_run_at ? (
                     <span>
                       Последний: <strong>{formatRelativeAge(task.last_run_at)}</strong>
