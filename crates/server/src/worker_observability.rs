@@ -2,6 +2,8 @@
 //!
 //! Mutex poison is recovered via `into_inner` (Stage 7.20) so metrics never panic the server.
 
+use crate::log_safety::{health_sample_interval, redact_for_log, should_emit_health_failure};
+
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -28,6 +30,7 @@ struct WorkerMetricsInner {
     job_duration_samples: u64,
     open_jobs: HashMap<Uuid, Instant>,
     last_health: Option<WorkerHealthView>,
+    last_health_failure: Option<(Instant, String)>,
 }
 
 /// Last observed worker health (from `/health` poll).
@@ -96,7 +99,7 @@ impl WorkerMetrics {
         inner.open_jobs.insert(job_id, Instant::now());
         tracing::info!(
             job_id = %job_id,
-            task,
+            task = %redact_for_log(task),
             "worker.pipeline.job_submitted"
         );
     }
@@ -122,7 +125,7 @@ impl WorkerMetrics {
         }
         tracing::info!(
             job_id = %job_id,
-            task,
+            task = %redact_for_log(task),
             ok,
             duration_ms = elapsed.map(duration_ms).unwrap_or(0),
             "worker.pipeline.job_finished"
@@ -137,8 +140,8 @@ impl WorkerMetrics {
         inner.jobs_retried += 1;
         tracing::info!(
             job_id = %job_id,
-            task,
-            reason,
+            task = %redact_for_log(task),
+            reason = %redact_for_log(reason),
             "worker.pipeline.job_retried"
         );
     }
@@ -151,7 +154,7 @@ impl WorkerMetrics {
         inner.jobs_stalled += 1;
         tracing::warn!(
             job_id = %job_id,
-            task,
+            task = %redact_for_log(task),
             "worker.pipeline.job_stalled"
         );
     }
@@ -194,7 +197,18 @@ impl WorkerMetrics {
             active_jobs: None,
             checked_at_ms: now_ms(),
         });
-        tracing::warn!(error, "worker.pipeline.health_failed");
+        let safe_error = redact_for_log(error);
+        let now = Instant::now();
+        let should_emit = should_emit_health_failure(
+            inner.last_health_failure.clone(),
+            &safe_error,
+            now,
+            health_sample_interval(),
+        );
+        if should_emit {
+            inner.last_health_failure = Some((now, safe_error.clone()));
+            tracing::warn!(error = %safe_error, "worker.pipeline.health_failed");
+        }
     }
 
     pub fn recovery(&self, count: usize, reason: &str) {
@@ -203,7 +217,7 @@ impl WorkerMetrics {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         inner.recoveries += 1;
-        tracing::info!(count, reason, "worker.pipeline.recovery");
+        tracing::info!(count, reason = %redact_for_log(reason), "worker.pipeline.recovery");
     }
 }
 

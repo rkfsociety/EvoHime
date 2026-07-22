@@ -140,7 +140,8 @@ impl ApiError {
     pub fn body(&self) -> ErrorBody {
         let message = match self {
             Self::Internal(detail) => {
-                tracing::error!(error = %detail, "internal API error");
+                let safe_detail = crate::log_safety::redact_for_log(detail);
+                tracing::error!(error = %safe_detail, "internal API error");
                 "Internal server error".to_string()
             }
             _ => self.to_string(),

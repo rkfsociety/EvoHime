@@ -71,7 +71,7 @@ pub fn init_tracing() -> Result<OtelGuard> {
 
     let endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").unwrap_or_default();
     tracing::info!(
-        endpoint = %endpoint,
+        endpoint = %crate::log_safety::redact_for_log(&endpoint),
         "opentelemetry OTLP export enabled"
     );
 

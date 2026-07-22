@@ -71,9 +71,9 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Waves A–D ✅; Wave E `7.84`–`7.94` ✅; scheduler correctness, request context и timeline hardening ✅; next `7.95`
+- **Stage 7** Hardening + Product — Waves A–D ✅; Wave E `7.84`–`7.95` ✅; scheduler correctness, request context, timeline и log safety hardening ✅; next `7.96`
 - Sites, Scheduled и OTLP имеют реальные backend/UI gates через `EVOHIME_FEATURE_*` и `/api/features`
-- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; `7.93` request context и `7.94` timeline ✅; следующий пункт — log sampling/redaction (`7.95`)
+- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; `7.93` request context, `7.94` timeline и `7.95` log safety ✅; следующий пункт — deep health checks (`7.96`)
 
 ## WebSocket events
 
@@ -187,7 +187,7 @@ See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](d
 | 4 Editor + Git | ✅ Done |
 | 5 Task orchestration | ✅ Done |
 | 6 Advanced | ✅ Foundations complete |
-| 7 Hardening + Product | 🟡 In progress; `7.1`–`7.94` complete, next `7.95` |
+| 7 Hardening + Product | 🟡 In progress; `7.1`–`7.95` complete, next `7.96` |
 
 Memory design: [docs/superpowers/specs/2026-07-16-agent-memory-design.md](docs/superpowers/specs/2026-07-16-agent-memory-design.md)
 
