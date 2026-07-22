@@ -3,7 +3,6 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
   ClientCommand,
-  HistoryItem,
   ServerEvent,
   SessionBootstrap,
 } from "./protocol";
@@ -28,10 +27,10 @@ import { SettingsPanel } from "./panels/SettingsPanel";
 import { SitesPanel } from "./panels/SitesPanel";
 import { TasksPanel } from "./panels/TasksPanel";
 import { useServerEventHandler } from "./hooks/useServerEventHandler";
-import { initialPanelFromLocation, panelFromLocation, syncPanelToLocation } from "./lib/panel-route";
+import { useChat } from "./hooks/useChat";
+import { useWebSocket } from "./hooks/useWebSocket";
+import { useWorkspace } from "./hooks/useWorkspace";
 import {
-  filesApi,
-  gitApi,
   githubApi,
   mcpApi,
   modelsApi,
@@ -39,7 +38,6 @@ import {
   projectsApi,
   sessionsApi,
 } from "./api";
-import { websocketUrl } from "./api/client";
 import { createChatLine } from "./lib/chat-lines";
 import { appendBootNotice, formatBootError, type BootNotice } from "./lib/boot-notices";
 import { reconcileModelForBilling } from "./lib/modelBilling";
@@ -53,7 +51,6 @@ import {
   summarizeChatTitle,
   summarizeGitStatus,
   translateChatRole,
-  translateGitAction,
   translateModelConfigStatus,
   translatePermissionMode,
   translateSaveState,
@@ -65,26 +62,17 @@ import {
   formatFileSize,
   inferMonacoLanguage,
   normalizePath,
-  parentPath,
-  sortFileNodes,
 } from "./lib/paths";
 import {
   loadProjectComposerPreference,
   loadSelectedProject,
-  loadShowToolLines,
-  loadTraceOpen,
   projectPreferenceKey,
   saveProjectComposerPreference,
-  saveSelectedProject,
-  saveShowToolLines,
-  saveTraceOpen,
 } from "./lib/storage";
 import type {
   ActionView,
   ChatLine,
   ChatSessionSummary,
-  FileNode,
-  GitAction,
   GithubAuthInfo,
   McpServerConfig,
   ModelConfig,
@@ -104,44 +92,35 @@ import type {
 } from "./types";
 import { sidebarQuickLinks, sidebarWorkspaceLinks, workspacePanels } from "./types";
 
-const initialLines: ChatLine[] = [];
-
 export function App() {
-  const [session, setSession] = useState<SessionBootstrap | null>(null);
-  const [chatSessions, setChatSessions] = useState<ChatSessionSummary[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [socketState, setSocketState] = useState<
-    "idle" | "connecting" | "reconnecting" | "connected" | "failed"
-  >("idle");
-  const [input, setInput] = useState("");
-  const [lines, setLines] = useState<ChatLine[]>(initialLines);
-  const [stream, setStream] = useState("");
-  const [chatActionNotice, setChatActionNotice] = useState<string | null>(null);
-  const [composerNotice, setComposerNotice] = useState<string | null>(null);
+  const chat = useChat();
+  const {
+    session, setSession, chatSessions, setChatSessions, activeSessionId, setActiveSessionId,
+    input, setInput, lines, setLines, stream, setStream, chatActionNotice, setChatActionNotice,
+    composerNotice, setComposerNotice, attachments, setAttachments, deletingSessionId,
+    setDeletingSessionId, archivedChats, setArchivedChats, attachmentInputRef, sessionLoadRef,
+    chatLogRef, chatAutoScrollRef,
+  } = chat;
+  const reportWorkspaceError = useCallback((message: string) => {
+    setLines((current) => [...current, createChatLine({ role: "system", text: message })]);
+  }, [setLines]);
+  const workspaceState = useWorkspace({ sessionId: activeSessionId, reportError: reportWorkspaceError });
+  const {
+    activePanel, navigateToPanel, traceOpen, setTraceOpen, showToolLines, setShowToolLines,
+    selectedProject, setSelectedProject, projects, setProjects, projectPickerOpen,
+    setProjectPickerOpen, projectSearch, setProjectSearch, newProjectName, setNewProjectName,
+    projectCreating, setProjectCreating, projectCreateError, setProjectCreateError,
+    directoryCache, expandedDirectories, setExpandedDirectories, selectedFilePath, setSelectedFilePath,
+    selectedFileContent, setSelectedFileContent, selectedFileOriginal, setSelectedFileOriginal,
+    selectedFileLoading, selectedFileNotice, setSelectedFileNotice, saveState, setSaveState,
+    gitStatus, setGitStatus, gitDiff, setGitDiff, gitDiffPath, setGitDiffPath, gitDiffPathInput, setGitDiffPathInput,
+    newFilePath, setNewFilePath, newFileContent, setNewFileContent, gitCommitMessage, setGitCommitMessage,
+    gitRemote, setGitRemote, gitBranch, setGitBranch, gitAction, gitActionNotice,
+    refreshDirectory, toggleDirectory, refreshSelectedFile, refreshGitSnapshot, openFile,
+    saveFile, createFile, gitOperation,
+  } = workspaceState;
   const [bootNotices, setBootNotices] = useState<BootNotice[]>([]);
   const [bootNoticesDismissed, setBootNoticesDismissed] = useState(false);
-  const [activePanel, setActivePanel] = useState<WorkspacePanel>(initialPanelFromLocation);
-  const navigateToPanel = useCallback((panel: WorkspacePanel) => {
-    setActivePanel(panel);
-    syncPanelToLocation(panel);
-  }, []);
-
-  useEffect(() => {
-    const onPopState = () => {
-      setActivePanel(panelFromLocation() ?? "chat");
-    };
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, []);
-  const [traceOpen, setTraceOpen] = useState(loadTraceOpen);
-  const [showToolLines, setShowToolLines] = useState(loadShowToolLines);
-  const [selectedProject, setSelectedProject] = useState<ProjectSelection>(loadSelectedProject);
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
-  const [projectSearch, setProjectSearch] = useState("");
-  const [newProjectName, setNewProjectName] = useState("");
-  const [projectCreating, setProjectCreating] = useState(false);
-  const [projectCreateError, setProjectCreateError] = useState<string | null>(null);
   const [modelConfig, setModelConfig] = useState<ModelConfig | null>(null);
   const [modelConfigError, setModelConfigError] = useState<string | null>(null);
   const [selectedModelRoute, setSelectedModelRoute] = useState(() => loadProjectComposerPreference(loadSelectedProject().path).modelRoute ?? "");
@@ -149,27 +128,6 @@ export function App() {
   const [selectedComposerModel, setSelectedComposerModel] = useState(() => loadProjectComposerPreference(loadSelectedProject().path).model ?? "");
   const [composerModelsLoading, setComposerModelsLoading] = useState(false);
   const [composerModelsError, setComposerModelsError] = useState<string | null>(null);
-  const [directoryCache, setDirectoryCache] = useState<Record<string, FileNode[]>>({});
-  const [expandedDirectories, setExpandedDirectories] = useState<Record<string, boolean>>({
-    ".": true,
-  });
-  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
-  const [selectedFileContent, setSelectedFileContent] = useState("");
-  const [selectedFileOriginal, setSelectedFileOriginal] = useState("");
-  const [selectedFileLoading, setSelectedFileLoading] = useState(false);
-  const [selectedFileNotice, setSelectedFileNotice] = useState<string | null>(null);
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
-  const [gitStatus, setGitStatus] = useState("Загрузка статуса Гит...");
-  const [gitDiff, setGitDiff] = useState("Загрузка изменений Гит...");
-  const [gitDiffPath, setGitDiffPath] = useState<string | null>(null);
-  const [gitDiffPathInput, setGitDiffPathInput] = useState("");
-  const [newFilePath, setNewFilePath] = useState("");
-  const [newFileContent, setNewFileContent] = useState("");
-  const [gitCommitMessage, setGitCommitMessage] = useState("");
-  const [gitRemote, setGitRemote] = useState("origin");
-  const [gitBranch, setGitBranch] = useState("");
-  const [gitAction, setGitAction] = useState<GitAction | null>(null);
-  const [gitActionNotice, setGitActionNotice] = useState<string | null>(null);
   const [tasks, setTasks] = useState<Record<string, TaskView>>({});
   const [actions, setActions] = useState<ActionView[]>([]);
   const [approval, setApproval] = useState<ApprovalRequiredEvent | null>(null);
@@ -195,27 +153,18 @@ export function App() {
   const [permissionAudit, setPermissionAudit] = useState<PermissionAuditEntry[]>([]);
   const [permissionScopes, setPermissionScopes] = useState<PermissionScopes | null>(null);
   const [permissionModeSaving, setPermissionModeSaving] = useState(false);
-  const [attachments, setAttachments] = useState<File[]>([]);
   const [workModeOpen, setWorkModeOpen] = useState(false);
   const [composerRoutePickerOpen, setComposerRoutePickerOpen] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const restoredProjectPreferenceRef = useRef<string | null>(null);
-  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
-  const [archivedChats, setArchivedChats] = useState<ChatSessionSummary[]>([]);
   const [toolCatalog, setToolCatalog] = useState<ToolDefinition[]>([]);
   const [toolCatalogError, setToolCatalogError] = useState<string | null>(null);
   const [mcpServers, setMcpServers] = useState<McpServerConfig[]>([]);
   const [mcpServersError, setMcpServersError] = useState<string | null>(null);
   const [mcpServersSaving, setMcpServersSaving] = useState(false);
   const [mcpServersNotice, setMcpServersNotice] = useState<string | null>(null);
-  const socketRef = useRef<WebSocket | null>(null);
-  const lastSequenceRef = useRef(0);
-  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const applyEventRef = useRef<(event: ServerEvent) => void>(() => undefined);
   const saveFileRef = useRef<() => void>(() => undefined);
-  const sessionLoadRef = useRef(0);
-  const chatLogRef = useRef<HTMLDivElement | null>(null);
-  const chatAutoScrollRef = useRef(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -373,17 +322,6 @@ export function App() {
   }, [projectPickerOpen]);
 
   useEffect(() => {
-    saveSelectedProject(selectedProject);
-  }, [selectedProject]);
-
-  useEffect(() => {
-    saveTraceOpen(traceOpen);
-  }, [traceOpen]);
-  useEffect(() => {
-    saveShowToolLines(showToolLines);
-  }, [showToolLines]);
-
-  useEffect(() => {
     const closeFloatingMenus = (event: PointerEvent) => {
       const target = event.target as HTMLElement | null;
       if (!target?.closest(".composerMenu")) {
@@ -517,86 +455,6 @@ export function App() {
   }, [pullRequestScope]);
 
   useEffect(() => {
-    if (!session) {
-      return;
-    }
-
-    let cancelled = false;
-    let socket: WebSocket | null = null;
-    let reconnectTimer: number | undefined;
-    let attempt = 0;
-
-    const connect = () => {
-      if (cancelled) {
-        return;
-      }
-      setSocketState(attempt === 0 ? "connecting" : "reconnecting");
-      const after = lastSequenceRef.current;
-      const path =
-        after > 0
-          ? `/ws/${session.session_id}?after_sequence=${after}`
-          : `/ws/${session.session_id}`;
-      socket = new WebSocket(websocketUrl(path));
-      socketRef.current = socket;
-
-      socket.onopen = () => {
-        if (cancelled) {
-          return;
-        }
-        attempt = 0;
-        setSocketState("connected");
-      };
-
-      socket.onclose = () => {
-        if (cancelled) {
-          return;
-        }
-        setSocketState("reconnecting");
-        const delay = Math.min(10_000, 500 * 2 ** Math.min(attempt, 5));
-        attempt += 1;
-        reconnectTimer = window.setTimeout(connect, delay);
-      };
-
-      socket.onerror = () => {
-        // onclose handles reconnect
-      };
-
-      socket.onmessage = (messageEvent) => {
-        const raw = JSON.parse(messageEvent.data as string) as HistoryItem | ServerEvent;
-        if (
-          raw &&
-          typeof raw === "object" &&
-          "sequence" in raw &&
-          "event" in raw &&
-          typeof (raw as HistoryItem).sequence === "number"
-        ) {
-          const item = raw as HistoryItem;
-          if (item.sequence <= lastSequenceRef.current) {
-            return;
-          }
-          lastSequenceRef.current = item.sequence;
-          applyEventRef.current(item.event);
-          return;
-        }
-        applyEventRef.current(raw as ServerEvent);
-      };
-    };
-
-    connect();
-
-    return () => {
-      cancelled = true;
-      if (reconnectTimer !== undefined) {
-        window.clearTimeout(reconnectTimer);
-      }
-      socket?.close();
-      if (socketRef.current === socket) {
-        socketRef.current = null;
-      }
-    };
-  }, [session?.session_id]);
-
-  useEffect(() => {
     document.body.style.overflow = settingsOpen ? "hidden" : "";
     return () => {
       document.body.style.overflow = "";
@@ -612,22 +470,6 @@ export function App() {
     void refreshGitSnapshot().catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
-
-  const connectedLabel = useMemo(() => {
-    if (!session) {
-      return "Загрузка чатов...";
-    }
-    if (socketState === "connected") {
-      return "Подключено";
-    }
-    if (socketState === "failed") {
-      return "Ошибка подключения";
-    }
-    if (socketState === "reconnecting") {
-      return "Переподключение...";
-    }
-    return "Подключение...";
-  }, [session, socketState]);
 
   const currentPanelLabel = useMemo(
     () => workspacePanels.find((panel) => panel.id === activePanel)?.label ?? "Рабочее пространство",
@@ -787,10 +629,19 @@ export function App() {
     refreshDirectory,
     refreshSelectedFile,
   });
+  const { socketState, setSocketState, lastSequenceRef, send: sendSocket } = useWebSocket({
+    sessionId: session?.session_id ?? null,
+    onEvent: applyEvent,
+  });
+  const connectedLabel = useMemo(() => {
+    if (!session) return "Загрузка чатов...";
+    if (socketState === "connected") return "Подключено";
+    if (socketState === "failed") return "Ошибка подключения";
+    if (socketState === "reconnecting") return "Переподключение...";
+    return "Подключение...";
+  }, [session, socketState]);
   applyEventRef.current = applyEvent;
-  saveFileRef.current = () => {
-    void handleSave();
-  };
+  saveFileRef.current = () => void saveFile();
 
   function hydrateSession(summary: ChatSessionSummary, history: SessionBootstrap["events"]) {
     setActiveSessionId(summary.session_id);
@@ -803,7 +654,7 @@ export function App() {
       created_at: summary.created_at,
       events: history,
     });
-    setLines(initialLines);
+    setLines([]);
     setStream("");
     setTasks({});
     setActions([]);
@@ -951,51 +802,6 @@ export function App() {
     }
   }
 
-  async function refreshDirectory(path: string) {
-    const data = await filesApi.listFiles(normalizePath(path));
-    const key = normalizePath(data.path);
-    setDirectoryCache((current) => ({
-      ...current,
-      [key]: sortFileNodes(data.entries),
-    }));
-  }
-
-  async function toggleDirectory(path: string) {
-    const normalized = normalizePath(path);
-    setExpandedDirectories((current) => ({
-      ...current,
-      [normalized]: !current[normalized],
-    }));
-
-    if (!directoryCache[normalized]) {
-      await refreshDirectory(normalized);
-    }
-  }
-
-  async function refreshSelectedFile(path: string) {
-    setSelectedFileLoading(true);
-    setSelectedFileNotice(null);
-    try {
-      const data = await filesApi.readFile(normalizePath(path));
-      setSelectedFilePath(data.path);
-      setSelectedFileContent(data.content);
-      setSelectedFileOriginal(data.content);
-      setSaveState("idle");
-    } finally {
-      setSelectedFileLoading(false);
-    }
-  }
-
-  async function refreshGitSnapshot(path?: string | null) {
-    const diffPath = normalizePath(path ?? gitDiffPathInput ?? gitDiffPath ?? selectedFilePath ?? undefined);
-    const statusData = await gitApi.getGitStatus();
-    const diffData = await gitApi.getGitDiff(diffPath === "." ? null : diffPath);
-    setGitStatus(statusData.status);
-    setGitDiff(diffData.diff);
-    setGitDiffPath(diffPath === "." ? null : diffPath);
-    setGitDiffPathInput(diffPath === "." ? "" : diffPath);
-  }
-
   async function updatePermission(name: string, mode: PermissionMode) {
     await permissionsApi.putPermission(name, mode);
     setPermissionSettings((current) => ({ ...current, [name]: { mode } }));
@@ -1104,93 +910,10 @@ export function App() {
     setMcpServers((current) => current.filter((_, currentIndex) => currentIndex !== index));
   }
 
-  async function openFile(path: string) {
-    try {
-      navigateToPanel("editor");
-      setSelectedFileNotice(null);
-      await refreshSelectedFile(path);
-      await refreshGitSnapshot(path);
-    } catch (error) {
-      setLines((current) => [
-        ...current,
-        createChatLine({ role: "system", text: String(error) }),
-      ]);
-    }
-  }
-
-  async function handleSave() {
-    if (!session || !selectedFilePath) {
-      return;
-    }
-
-    setSaveState("saving");
-    try {
-      const data = await filesApi.saveFile(selectedFilePath, selectedFileContent, session.session_id);
-
-      setSelectedFileOriginal(selectedFileContent);
-      setSaveState("saved");
-      setSelectedFileNotice(data.change === "created" ? "Новый файл создан в рабочем пространстве." : "Изменения сохранены.");
-      await refreshDirectory(parentPath(data.path));
-      await refreshGitSnapshot(data.path);
-    } catch (error) {
-      setSaveState("idle");
-      setLines((current) => [
-        ...current,
-        createChatLine({ role: "system", text: String(error) }),
-      ]);
-    }
-  }
-
-  async function handleCreateFile() {
-    if (!session || !newFilePath.trim()) {
-      return;
-    }
-
-    const path = normalizePath(newFilePath.trim());
-    try {
-      await filesApi.createFile(path, newFileContent, session.session_id);
-      setNewFilePath("");
-      setNewFileContent("");
-      await refreshDirectory(parentPath(path));
-      await refreshDirectory(".");
-      await openFile(path);
-    } catch (error) {
-      setSelectedFileNotice(`Не удалось создать файл: ${String(error)}`);
-    }
-  }
-
-  async function handleGitAction(action: GitAction) {
-    if (!session || gitAction) {
-      return;
-    }
-
-    setGitAction(action);
-    setGitActionNotice(null);
-    try {
-      if (action === "commit") {
-        await gitApi.gitCommit(session.session_id, gitCommitMessage);
-      } else if (action === "pull") {
-        await gitApi.gitPull(session.session_id, gitRemote || undefined, gitBranch || undefined);
-      } else {
-        await gitApi.gitPush(session.session_id, gitRemote || undefined, gitBranch || undefined);
-      }
-      setGitActionNotice(`Операция Гит «${translateGitAction(action)}» завершена.`);
-      if (action === "commit") {
-        setGitCommitMessage("");
-      }
-      await refreshGitSnapshot(gitDiffPath);
-      await refreshDirectory(".");
-    } catch (error) {
-      setGitActionNotice(`Операция Гит «${translateGitAction(action)}»: ${String(error)}`);
-    } finally {
-      setGitAction(null);
-    }
-  }
-
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = input.trim();
-    if (!text || !socketRef.current || socketState !== "connected") {
+    if (!text || socketState !== "connected") {
       return;
     }
     if (!modelConfig?.configured) {
@@ -1226,7 +949,10 @@ export function App() {
     setChatSessions((current) => current.map((chat) => chat.session_id === activeSessionId
       ? { ...chat, workspace_path: selectedProject.path }
       : chat));
-    socketRef.current.send(JSON.stringify(payload));
+    if (!sendSocket(payload)) {
+      setComposerNotice("Соединение с сервером потеряно.");
+      return;
+    }
     setInput("");
     setAttachments([]);
     if (attachmentInputRef.current) {
@@ -1272,9 +998,7 @@ export function App() {
   }
 
   function sendTaskCommand(type: "task.cancel" | "task.resume" | "task.retry", taskId: string) {
-    if (socketRef.current?.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type, task_id: taskId }));
-    }
+    sendSocket({ type, task_id: taskId });
   }
 
   function stopCurrentTask() {
@@ -1284,21 +1008,17 @@ export function App() {
   }
 
   function resolveApproval(type: "approval.granted" | "approval.denied", rememberPath = false) {
-    if (approval && socketRef.current?.readyState === WebSocket.OPEN) {
+    if (approval) {
       const payload =
         type === "approval.granted"
           ? { type, approval_id: approval.approval_id, remember_path: rememberPath }
           : { type, approval_id: approval.approval_id };
-      socketRef.current.send(JSON.stringify(payload));
-      setApproval(null);
+      if (sendSocket(payload)) setApproval(null);
     }
   }
 
   function resolveMemoryAsk(type: "memory.accept" | "memory.reject") {
-    if (memoryAsk && socketRef.current?.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type, memory_id: memoryAsk.memory_id }));
-      setMemoryAsk(null);
-    }
+    if (memoryAsk && sendSocket({ type, memory_id: memoryAsk.memory_id })) setMemoryAsk(null);
   }
 
   function renderTree(path = ".", depth = 0) {
@@ -1417,7 +1137,7 @@ export function App() {
           onNewFilePathChange={setNewFilePath}
           onNewFileContentChange={setNewFileContent}
           onRefreshTree={() => void refreshDirectory(".")}
-          onCreateFile={() => void handleCreateFile()}
+            onCreateFile={() => void createFile()}
           fileTree={renderTree(".")}
         />
       );
@@ -1439,7 +1159,7 @@ export function App() {
             setSaveState("idle");
           }}
           onReload={() => void refreshSelectedFile(selectedFilePath ?? ".")}
-          onSave={() => void handleSave()}
+          onSave={() => void saveFile()}
         />
       );
     }
@@ -1469,7 +1189,7 @@ export function App() {
             setGitDiffPathInput(nextPath);
             void refreshGitSnapshot(nextPath || undefined);
           }}
-          onGitAction={(action) => void handleGitAction(action)}
+          onGitAction={(action) => void gitOperation(action)}
         />
       );
     }
@@ -1503,14 +1223,10 @@ export function App() {
             });
           }}
           onApprovePlan={(taskId, plan) => {
-            if (socketRef.current?.readyState === WebSocket.OPEN) {
-              socketRef.current.send(JSON.stringify({ type: "task.plan.approve", task_id: taskId, plan }));
-            }
+            sendSocket({ type: "task.plan.approve", task_id: taskId, plan });
           }}
           onRejectPlan={(taskId) => {
-            if (socketRef.current?.readyState === WebSocket.OPEN) {
-              socketRef.current.send(JSON.stringify({ type: "task.plan.reject", task_id: taskId }));
-            }
+            sendSocket({ type: "task.plan.reject", task_id: taskId });
           }}
         />
       );

@@ -122,6 +122,8 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.56` выполнен: CI job `python-worker` на Python 3.12 запускает `python -m unittest discover -s workers/python -p "test_*.py"`; локально suite проходит: 25 тестов.
 
+`7.69` выполнен: `useWebSocket` владеет reconnect/cursor/командами, `useChat` — chat/session state, `useWorkspace` — project/file/editor/Git state и операции. `app.tsx` уменьшен до 1968 строк.
+
 `7.86` выполнен: CI job `protocol-drift` на Node 22 устанавливает frontend и корневые зависимости, запускает `npm run generate:protocol` и падает при diff в `frontend/web/src/protocol.generated.ts`.
 
 `7.85` выполнен: CI job `frontend` — Node 22, `npm ci`, `npm run typecheck`, `npm run build` (Playwright smoke отложен).
