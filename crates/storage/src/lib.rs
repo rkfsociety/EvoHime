@@ -8,6 +8,7 @@ use uuid::Uuid;
 pub mod attachments;
 pub mod backup;
 pub mod memory;
+pub mod operators;
 pub mod metrics_snapshots;
 pub mod permission_audit;
 pub mod pool;
@@ -28,6 +29,11 @@ pub use memory::{
     resolve_memory_conflict, update_memory_item_embedding, update_memory_item_fields,
     update_memory_item_fields_with_embedding, update_memory_item_status, MemoryItemRow, MemoryKind,
     MemoryOverviewCursor, MemoryScope, MemoryStatus, NewMemoryItem, LOCAL_OPERATOR_SCOPE_KEY,
+};
+pub use operators::{
+    active_owner_count, can_revoke_operator, create_operator, find_operator_by_token_hash,
+    get_operator, hash_operator_token, hashes_equal, list_operators, revoke_operator,
+    rotate_operator_token, OperatorRole, OperatorRow, BOOTSTRAP_OWNER_ID,
 };
 pub use metrics_snapshots::{
     insert_metrics_snapshot, latest_metrics_snapshot, list_metrics_snapshots,
@@ -51,6 +57,8 @@ pub enum StorageError {
     Serialization(#[from] serde_json::Error),
     #[error("invalid memory item: {0}")]
     InvalidMemory(String),
+    #[error("invalid operator: {0}")]
+    InvalidOperator(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
