@@ -25,7 +25,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - name: Check formatting
+      # Stage 7.87 — formatting gate for the complete Rust workspace.
+      - name: Check Rust formatting
         run: cargo fmt --all -- --check
 
   clippy:
@@ -78,10 +79,13 @@ jobs:
   docs:
     name: Docs
     runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: "-D warnings"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build docs
+      # Stage 7.87 — rustdoc warnings are CI failures.
+      - name: Build Rust docs with warnings denied
         run: cargo doc --workspace --all-features --no-deps
 
   # Stage 7.85 — frontend typecheck + production build (Playwright smoke deferred).
