@@ -29,6 +29,18 @@ pub const CLICK_DESCRIPTION: &str =
 pub const CLICK_PERMISSIONS: &[Permission] = &[Permission::BrowserAccess];
 pub const CLICK_TIMEOUT: Duration = Duration::from_secs(30);
 
+pub const SCREENSHOT_NAME: &str = "browser.session.screenshot";
+pub const SCREENSHOT_DESCRIPTION: &str =
+    "Save a PNG screenshot of the task's browser tab into the workspace";
+pub const SCREENSHOT_PERMISSIONS: &[Permission] = &[Permission::BrowserAccess];
+pub const SCREENSHOT_TIMEOUT: Duration = Duration::from_secs(30);
+
+pub const TYPE_NAME: &str = "browser.session.type";
+pub const TYPE_DESCRIPTION: &str =
+    "Type text into a CSS selector in the task's browser tab (input/change dispatched)";
+pub const TYPE_PERMISSIONS: &[Permission] = &[Permission::BrowserAccess];
+pub const TYPE_TIMEOUT: Duration = Duration::from_secs(30);
+
 pub const CLOSE_NAME: &str = "browser.session.close";
 pub const CLOSE_DESCRIPTION: &str = "Close the task's persistent browser tab";
 pub const CLOSE_PERMISSIONS: &[Permission] = &[Permission::BrowserAccess];
@@ -41,6 +53,8 @@ const MAX_LOAD_WAIT_MS: u64 = 20_000;
 const DEFAULT_SETTLE_MS: u64 = 500;
 const MAX_SETTLE_MS: u64 = 5_000;
 const OPEN_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_SCREENSHOT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_TYPE_TEXT_CHARS: usize = 16 * 1024;
 
 #[derive(Debug, Deserialize)]
 struct NavigateInput {
@@ -204,6 +218,144 @@ pub async fn click(ctx: &ToolContext, value: Value) -> Result<ToolResult, ToolEr
     ))
 }
 
+#[derive(Debug, Deserialize)]
+struct ScreenshotInput {
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    full_page: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TypeInput {
+    selector: String,
+    text: String,
+    #[serde(default)]
+    max_chars: Option<usize>,
+    #[serde(default)]
+    settle_ms: Option<u64>,
+}
+
+pub async fn screenshot(ctx: &ToolContext, value: Value) -> Result<ToolResult, ToolError> {
+    let base = require_cdp(SCREENSHOT_NAME)?;
+    let input: ScreenshotInput = parse_input(SCREENSHOT_NAME, value)?;
+    let sandbox = ctx.sandbox()?;
+
+    let relative = match input.path {
+        Some(path) if !path.trim().is_empty() => {
+            let path = path.trim().to_string();
+            if path.to_ascii_lowercase().ends_with(".png") {
+                path
+            } else {
+                format!("{path}.png")
+            }
+        }
+        _ => format!(
+            ".evohime/screenshots/{}-{}.png",
+            ctx.task_id,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_millis())
+                .unwrap_or(0)
+        ),
+    };
+    let target = sandbox.resolve_for_write(&relative)?;
+
+    let session = cdp::session_for_task(ctx.task_id, &base, OPEN_TIMEOUT)
+        .await
+        .map_err(cdp_failure)?;
+    let mut session = session.lock().await;
+    let encoded = session
+        .capture_screenshot(input.full_page.unwrap_or(false))
+        .await
+        .map_err(cdp_failure)?;
+    session.last_used = std::time::Instant::now();
+    drop(session);
+
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(encoded.as_bytes())
+        .map_err(|error| cdp_failure(format!("screenshot decode failed: {error}")))?;
+    if bytes.len() > MAX_SCREENSHOT_BYTES {
+        return Err(ToolError::InvalidInput {
+            tool: SCREENSHOT_NAME.to_string(),
+            message: format!(
+                "screenshot exceeds {} MiB limit",
+                MAX_SCREENSHOT_BYTES / (1024 * 1024)
+            ),
+        });
+    }
+    if let Some(parent) = target.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|error| ToolError::Execution(format!("screenshot dir failed: {error}")))?;
+    }
+    tokio::fs::write(&target, &bytes)
+        .await
+        .map_err(|error| ToolError::Execution(format!("screenshot write failed: {error}")))?;
+
+    Ok(ToolResult {
+        output: format!("Screenshot saved to {relative} ({} bytes)", bytes.len()),
+        structured: json!({
+            "path": relative,
+            "bytes": bytes.len(),
+            "full_page": input.full_page.unwrap_or(false),
+        }),
+    })
+}
+
+pub async fn type_text(ctx: &ToolContext, value: Value) -> Result<ToolResult, ToolError> {
+    let base = require_cdp(TYPE_NAME)?;
+    let input: TypeInput = parse_input(TYPE_NAME, value)?;
+    if input.selector.trim().is_empty() {
+        return Err(ToolError::InvalidInput {
+            tool: TYPE_NAME.to_string(),
+            message: "selector must not be empty".into(),
+        });
+    }
+    if input.text.chars().count() > MAX_TYPE_TEXT_CHARS {
+        return Err(ToolError::InvalidInput {
+            tool: TYPE_NAME.to_string(),
+            message: format!("text exceeds {MAX_TYPE_TEXT_CHARS} character limit"),
+        });
+    }
+
+    let session = cdp::session_for_task(ctx.task_id, &base, OPEN_TIMEOUT)
+        .await
+        .map_err(cdp_failure)?;
+    let mut session = session.lock().await;
+    let typed = session
+        .type_text(&input.selector, &input.text)
+        .await
+        .map_err(cdp_failure)?;
+    if !typed {
+        return Err(ToolError::InvalidInput {
+            tool: TYPE_NAME.to_string(),
+            message: format!("selector matched no element: {}", input.selector),
+        });
+    }
+    let settle = Duration::from_millis(
+        input.settle_ms.unwrap_or(DEFAULT_SETTLE_MS).min(MAX_SETTLE_MS),
+    );
+    tokio::time::sleep(settle).await;
+    let snapshot = session
+        .page_snapshot(text_limit(input.max_chars))
+        .await
+        .map_err(cdp_failure)?;
+    session.last_used = std::time::Instant::now();
+
+    // The typed text is deliberately absent from structured output and logs:
+    // it may contain credentials the caller chose to enter.
+    Ok(snapshot_result(
+        snapshot,
+        json!({
+            "selector": input.selector,
+            "typed": true,
+            "text_length": input.text.chars().count(),
+        }),
+    ))
+}
+
 pub async fn close(ctx: &ToolContext, _value: Value) -> Result<ToolResult, ToolError> {
     require_cdp(CLOSE_NAME)?;
     let closed = match cdp::take_session(ctx.task_id).await {
@@ -262,6 +414,7 @@ mod tests {
                 tokio::spawn(async move {
                     let mut ws = tokio_tungstenite::accept_async(stream).await.expect("accept ws");
                     let mut clicks = 0u32;
+                    let mut typed = 0u32;
                     let mut current_url = "about:blank".to_string();
                     while let Some(Ok(Message::Text(text))) = ws.next().await {
                         let request: serde_json::Value =
@@ -278,10 +431,24 @@ mod tests {
                                     json!({ "method": "Page.loadEventFired", "params": {} });
                                 ws.send(Message::Text(event.to_string().into())).await.unwrap();
                             }
+                            "Page.captureScreenshot" => {
+                                use base64::Engine as _;
+                                let data = base64::engine::general_purpose::STANDARD
+                                    .encode(b"fake png bytes");
+                                let reply = json!({ "id": id, "result": { "data": data } });
+                                ws.send(Message::Text(reply.to_string().into())).await.unwrap();
+                            }
                             "Runtime.evaluate" => {
                                 let expression =
                                     request["params"]["expression"].as_str().unwrap_or("");
-                                let value = if expression.contains("querySelector") {
+                                let value = if expression.contains("el.focus()") {
+                                    if expression.contains("#missing") {
+                                        json!(false)
+                                    } else {
+                                        typed += 1;
+                                        json!(true)
+                                    }
+                                } else if expression.contains("querySelector") {
                                     if expression.contains("#missing") {
                                         json!(false)
                                     } else {
@@ -292,7 +459,7 @@ mod tests {
                                     json!(serde_json::to_string(&json!({
                                         "url": current_url,
                                         "title": "Mock Page",
-                                        "text": format!("clicks={clicks}"),
+                                        "text": format!("clicks={clicks} typed={typed}"),
                                     }))
                                     .unwrap())
                                 };
@@ -355,7 +522,7 @@ mod tests {
             .await
             .expect("navigate");
             assert_eq!(navigated.structured["url"], "https://example.com/start");
-            assert_eq!(navigated.structured["text"], "clicks=0");
+            assert_eq!(navigated.structured["text"], "clicks=0 typed=0");
 
             let error = click(&ctx, json!({ "selector": "#missing", "settle_ms": 1 }))
                 .await
@@ -366,12 +533,44 @@ mod tests {
                 .await
                 .expect("click");
             assert_eq!(clicked.structured["clicked"], true);
-            assert_eq!(clicked.structured["text"], "clicks=1");
+            assert_eq!(clicked.structured["text"], "clicks=1 typed=0");
 
             // Same tab, same state: read observes the click without navigation.
             let read_back = read(&ctx, json!({})).await.expect("read");
-            assert_eq!(read_back.structured["text"], "clicks=1");
+            assert_eq!(read_back.structured["text"], "clicks=1 typed=0");
             assert_eq!(read_back.structured["title"], "Mock Page");
+
+            // Wave 2: typing changes page state and never echoes the text back.
+            let typed = type_text(
+                &ctx,
+                json!({ "selector": "#name", "text": "secret value", "settle_ms": 1 }),
+            )
+            .await
+            .expect("type");
+            assert_eq!(typed.structured["typed"], true);
+            assert_eq!(typed.structured["text_length"], 12);
+            assert!(typed.structured.get("text").is_some());
+            assert_eq!(typed.structured["text"], "clicks=1 typed=1");
+            assert!(!serde_json::to_string(&typed.structured)
+                .unwrap()
+                .contains("secret value"));
+
+            let type_error = type_text(
+                &ctx,
+                json!({ "selector": "#missing", "text": "x", "settle_ms": 1 }),
+            )
+            .await
+            .expect_err("missing selector rejected");
+            assert!(matches!(type_error, ToolError::InvalidInput { .. }));
+
+            // Wave 2: screenshot lands inside the workspace sandbox.
+            let shot = screenshot(&ctx, json!({ "path": "shots/page" }))
+                .await
+                .expect("screenshot");
+            assert_eq!(shot.structured["path"], "shots/page.png");
+            let saved = std::fs::read(ctx.workspace_root.join("shots/page.png"))
+                .expect("screenshot file");
+            assert_eq!(saved, b"fake png bytes");
 
             let closed = close(&ctx, json!({})).await.expect("close");
             assert_eq!(closed.structured["closed"], true);
@@ -391,6 +590,21 @@ mod tests {
             .await
             .expect_err("unconfigured rejected");
         assert!(error.to_string().contains(cdp::CDP_URL_ENV));
+    }
+
+    #[tokio::test]
+    async fn type_rejects_oversized_text() {
+        let _env = ENV_LOCK.lock().await;
+        std::env::set_var(cdp::CDP_URL_ENV, "http://127.0.0.1:9222");
+        let (_dir, ctx) = ctx();
+        let error = type_text(
+            &ctx,
+            json!({ "selector": "#name", "text": "x".repeat(MAX_TYPE_TEXT_CHARS + 1) }),
+        )
+        .await
+        .expect_err("oversized text rejected");
+        assert!(matches!(error, ToolError::InvalidInput { .. }));
+        std::env::remove_var(cdp::CDP_URL_ENV);
     }
 
     #[tokio::test]

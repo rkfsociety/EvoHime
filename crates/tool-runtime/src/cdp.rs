@@ -220,6 +220,44 @@ impl CdpSession {
         Ok(self.eval(&expression).await?.as_bool().unwrap_or(false))
     }
 
+    /// PNG screenshot as base64; `full_page` captures beyond the viewport.
+    pub async fn capture_screenshot(&mut self, full_page: bool) -> Result<String, String> {
+        let result = self
+            .command(
+                "Page.captureScreenshot",
+                json!({ "format": "png", "captureBeyondViewport": full_page }),
+                COMMAND_TIMEOUT,
+            )
+            .await?;
+        result
+            .get("data")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .ok_or("cdp screenshot returned no data".into())
+    }
+
+    /// Focus `selector`, set its value (or textContent for contenteditable)
+    /// and dispatch input/change so framework-bound forms observe the change.
+    /// `Ok(false)` when the selector matches nothing. Both arguments are
+    /// embedded as JSON string literals — they cannot escape into script
+    /// context.
+    pub async fn type_text(&mut self, selector: &str, text: &str) -> Result<bool, String> {
+        let selector_literal = serde_json::to_string(selector)
+            .map_err(|error| format!("selector encode failed: {error}"))?;
+        let text_literal = serde_json::to_string(text)
+            .map_err(|error| format!("text encode failed: {error}"))?;
+        let expression = format!(
+            "(() => {{ const el = document.querySelector({selector_literal}); \
+             if (!el) return false; el.focus(); \
+             if (el.isContentEditable) {{ el.textContent = {text_literal}; }} \
+             else {{ el.value = {text_literal}; }} \
+             el.dispatchEvent(new Event('input', {{ bubbles: true }})); \
+             el.dispatchEvent(new Event('change', {{ bubbles: true }})); \
+             return true; }})()"
+        );
+        Ok(self.eval(&expression).await?.as_bool().unwrap_or(false))
+    }
+
     pub async fn close(mut self) {
         let _ = self.ws.close(None).await;
         if let Ok(client) = reqwest::Client::builder()

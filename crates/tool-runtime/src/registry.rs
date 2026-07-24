@@ -207,6 +207,18 @@ impl ToolRegistry {
             timeout: tools::browser_session::CLICK_TIMEOUT,
         });
         registry.register(ToolDefinition {
+            name: tools::browser_session::SCREENSHOT_NAME,
+            description: tools::browser_session::SCREENSHOT_DESCRIPTION,
+            permissions: tools::browser_session::SCREENSHOT_PERMISSIONS,
+            timeout: tools::browser_session::SCREENSHOT_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::browser_session::TYPE_NAME,
+            description: tools::browser_session::TYPE_DESCRIPTION,
+            permissions: tools::browser_session::TYPE_PERMISSIONS,
+            timeout: tools::browser_session::TYPE_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
             name: tools::browser_session::CLOSE_NAME,
             description: tools::browser_session::CLOSE_DESCRIPTION,
             permissions: tools::browser_session::CLOSE_PERMISSIONS,
@@ -327,6 +339,12 @@ impl ToolRegistry {
                 tools::browser_session::CLICK_NAME => {
                     tools::browser_session::click(ctx, input).await
                 }
+                tools::browser_session::SCREENSHOT_NAME => {
+                    tools::browser_session::screenshot(ctx, input).await
+                }
+                tools::browser_session::TYPE_NAME => {
+                    tools::browser_session::type_text(ctx, input).await
+                }
                 tools::browser_session::CLOSE_NAME => {
                     tools::browser_session::close(ctx, input).await
                 }
@@ -406,7 +424,7 @@ mod tests {
     fn bootstrap_registers_filesystem_read() {
         let registry = ToolRegistry::bootstrap();
         let tools = registry.list();
-        assert_eq!(tools.len(), 22);
+        assert_eq!(tools.len(), 24);
         assert_eq!(tools[0].name, "agent.run");
         assert_eq!(tools[1].name, "browser.extract");
         assert_eq!(tools[2].name, "browser.open");
@@ -414,21 +432,23 @@ mod tests {
         assert_eq!(tools[4].name, "browser.session.close");
         assert_eq!(tools[5].name, "browser.session.navigate");
         assert_eq!(tools[6].name, "browser.session.read");
-        assert_eq!(tools[7].name, "filesystem.list");
-        assert_eq!(tools[8].name, "filesystem.patch");
-        assert_eq!(tools[9].name, "filesystem.read");
-        assert_eq!(tools[10].name, "filesystem.search");
-        assert_eq!(tools[11].name, "filesystem.write");
-        assert_eq!(tools[12].name, "git.commit");
-        assert_eq!(tools[13].name, "git.diff");
-        assert_eq!(tools[14].name, "git.pull");
-        assert_eq!(tools[15].name, "git.push");
-        assert_eq!(tools[16].name, "git.status");
-        assert_eq!(tools[17].name, "http.fetch");
-        assert_eq!(tools[18].name, "mcp.call");
-        assert_eq!(tools[19].name, "memory.search");
-        assert_eq!(tools[20].name, "shell.execute");
-        assert_eq!(tools[21].name, "worker.run");
+        assert_eq!(tools[7].name, "browser.session.screenshot");
+        assert_eq!(tools[8].name, "browser.session.type");
+        assert_eq!(tools[9].name, "filesystem.list");
+        assert_eq!(tools[10].name, "filesystem.patch");
+        assert_eq!(tools[11].name, "filesystem.read");
+        assert_eq!(tools[12].name, "filesystem.search");
+        assert_eq!(tools[13].name, "filesystem.write");
+        assert_eq!(tools[14].name, "git.commit");
+        assert_eq!(tools[15].name, "git.diff");
+        assert_eq!(tools[16].name, "git.pull");
+        assert_eq!(tools[17].name, "git.push");
+        assert_eq!(tools[18].name, "git.status");
+        assert_eq!(tools[19].name, "http.fetch");
+        assert_eq!(tools[20].name, "mcp.call");
+        assert_eq!(tools[21].name, "memory.search");
+        assert_eq!(tools[22].name, "shell.execute");
+        assert_eq!(tools[23].name, "worker.run");
     }
 
     #[tokio::test]

@@ -1052,6 +1052,7 @@ dependencies = [
 name = "evohime-tool-runtime"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "evohime-permissions",
  "futures-util",
  "reqwest",
