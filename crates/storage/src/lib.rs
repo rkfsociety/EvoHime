@@ -14,6 +14,7 @@ pub mod permission_audit;
 pub mod pool;
 pub mod scheduled;
 pub mod scopes;
+pub mod restore;
 pub mod sites;
 pub mod sync;
 pub mod test_db;
@@ -43,7 +44,8 @@ pub use metrics_snapshots::{
     prune_metrics_snapshots, MetricsSnapshotRow,
 };
 pub use operators::{
-    active_owner_count, can_revoke_operator, create_operator, find_operator_by_token_hash,
+    active_owner_count, can_revoke_operator, create_operator, find_operator_by_name,
+    find_operator_by_token_hash,
     get_operator, hash_operator_token, hashes_equal, list_operators, revoke_operator,
     rotate_operator_token, OperatorRole, OperatorRow, BOOTSTRAP_OWNER_ID,
 };
@@ -57,6 +59,7 @@ pub use scopes::{
     list_sessions_for_operator, list_tasks_for_operator, load_task_for_operator,
     unarchive_session_for_operator,
 };
+pub use restore::{restore_backup, validate_backup_header, RestoreReport};
 pub use sync::{
     find_active_sync_run, finish_sync_run, is_terminal_sync_status, list_sync_runs,
     start_sync_run, SyncRunRow, SYNC_STATUS_FAILED, SYNC_STATUS_RUNNING, SYNC_STATUS_SUCCESS,

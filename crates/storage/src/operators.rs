@@ -121,6 +121,18 @@ pub async fn get_operator(
     .await?)
 }
 
+pub async fn find_operator_by_name(
+    pool: &PgPool,
+    name: &str,
+) -> Result<Option<OperatorRow>, StorageError> {
+    Ok(sqlx::query_as::<_, OperatorRow>(
+        "SELECT id, name, role, token_hash, active, created_at, updated_at, last_seen_at FROM operators WHERE name = $1",
+    )
+    .bind(name)
+    .fetch_optional(pool)
+    .await?)
+}
+
 pub async fn create_operator(
     pool: &PgPool,
     name: &str,
