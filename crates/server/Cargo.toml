@@ -44,3 +44,13 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 tempfile = "3"
+sqlx = { version = "0.8", features = [
+  "postgres",
+  "runtime-tokio-rustls",
+  "chrono",
+  "json",
+  "uuid",
+  "migrate",
+] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "cookies", "stream"] }
+tokio-tungstenite = "0.23"
