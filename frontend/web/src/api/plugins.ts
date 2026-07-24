@@ -51,6 +51,28 @@ export type PluginSkillSummary = {
   preview: string;
 };
 
+export type PluginIntegrityEntry = {
+  name: string;
+  status: "ok" | "modified" | "unlocked" | "missing";
+  locked_hash?: string;
+  current_hash?: string;
+  trust_level?: string;
+  installed_at?: string;
+};
+
+export type PluginIntegrityResponse = {
+  lock_corrupted: boolean;
+  plugins: PluginIntegrityEntry[];
+};
+
+export function getPluginIntegrity() {
+  return apiRequest<PluginIntegrityResponse>(
+    "/api/plugins/integrity",
+    { method: "GET" },
+    "Не удалось проверить целостность плагинов",
+  );
+}
+
 export function listPlugins() {
   return apiRequest<InstalledPlugin[]>(
     "/api/plugins",

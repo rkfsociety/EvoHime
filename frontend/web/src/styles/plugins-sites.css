@@ -506,6 +506,35 @@
   background: color-mix(in srgb, #c62828 22%, var(--surface-4));
 }
 
+.pluginIntegrityChip {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.2;
+  background: var(--surface-4);
+  color: var(--text-2);
+}
+
+.pluginIntegrity-ok {
+  background: color-mix(in srgb, #2e7d32 22%, var(--surface-4));
+}
+
+.pluginIntegrity-modified {
+  background: color-mix(in srgb, #c62828 26%, var(--surface-4));
+}
+
+.pluginIntegrity-missing {
+  background: color-mix(in srgb, #ef6c00 22%, var(--surface-4));
+}
+
+.pluginIntegrity-unlocked {
+  background: color-mix(in srgb, #616161 22%, var(--surface-4));
+}
+
 .pluginsFilterButton {
   width: 32px;
   height: 32px;

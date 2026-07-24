@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  getPluginIntegrity,
   installPlugin,
   listCatalog,
   listPluginSkills,
@@ -10,6 +11,7 @@ import {
   type CatalogPlugin,
   type InstalledPlugin,
   type PluginCatalogResponse,
+  type PluginIntegrityEntry,
   type PluginSkillSummary,
 } from "../api/plugins";
 
@@ -25,6 +27,20 @@ function trustLabel(level: string | undefined) {
       return "Сообщество";
     default:
       return "Не проверен";
+  }
+}
+
+function integrityLabel(status: string | undefined) {
+  switch (status) {
+    case "ok":
+      return "Целостность: ok";
+    case "modified":
+      return "Изменён после установки";
+    case "missing":
+      return "Каталог удалён";
+    case "unlocked":
+    default:
+      return "Без lock-записи";
   }
 }
 
@@ -51,6 +67,7 @@ export function PluginsPanel() {
   const [skillsByPlugin, setSkillsByPlugin] = useState<Record<string, PluginSkillSummary[]>>({});
   const [skillsLoadingId, setSkillsLoadingId] = useState<string | null>(null);
   const [skillsError, setSkillsError] = useState<string | null>(null);
+  const [integrity, setIntegrity] = useState<Record<string, PluginIntegrityEntry>>({});
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -59,6 +76,16 @@ export function PluginsPanel() {
       const [installed, remote] = await Promise.all([listPlugins(), listCatalog()]);
       setPlugins(installed);
       setCatalog(remote);
+      try {
+        const report = await getPluginIntegrity();
+        const byName: Record<string, PluginIntegrityEntry> = {};
+        for (const entry of report.plugins) {
+          byName[entry.name] = entry;
+        }
+        setIntegrity(byName);
+      } catch {
+        setIntegrity({});
+      }
       setActiveGroup((current) => {
         if (current === "all") {
           return current;
@@ -414,6 +441,12 @@ export function PluginsPanel() {
                         <small>
                           {plugin.skills_count} skills · {plugin.path}
                         </small>
+                        <span
+                          className={`pluginIntegrityChip pluginIntegrity-${integrity[plugin.id]?.status ?? "unlocked"}`}
+                          title={integrity[plugin.id]?.trust_level ? `Trust при установке: ${integrity[plugin.id]?.trust_level}` : undefined}
+                        >
+                          {integrityLabel(integrity[plugin.id]?.status)}
+                        </span>
                         {expandedSkillsPluginId === plugin.id ? (
                           <div className="pluginSkillBrowser" aria-label={`Skills плагина ${plugin.display_name || plugin.name}`}>
                             {skillsLoadingId === plugin.id ? (
