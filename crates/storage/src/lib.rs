@@ -7,12 +7,12 @@ use uuid::Uuid;
 
 pub mod attachments;
 pub mod backup;
+pub mod installed_plugins;
 pub mod memory;
 pub mod metrics_snapshots;
 pub mod operators;
 pub mod permission_audit;
 pub mod plugin_skills;
-pub mod installed_plugins;
 pub mod pool;
 pub mod restore;
 pub mod scheduled;
@@ -26,6 +26,10 @@ pub use attachments::{
     list_session_attachments, SessionAttachmentRow,
 };
 pub use backup::{collect_backup, BackupDump};
+pub use installed_plugins::{
+    delete_installed_plugin, get_installed_plugin, insert_installed_plugin, list_installed_plugins,
+    mark_plugin_uninstalled, update_plugin_pin, InstalledPluginRow, NewInstalledPlugin,
+};
 pub use memory::{
     apply_memory_item_feedback, apply_memory_item_feedback_for_operator, delete_memory_item,
     delete_memory_item_for_operator, delete_memory_items_by_scope_key, get_memory_item,
@@ -56,11 +60,6 @@ pub use permission_audit::{
 pub use plugin_skills::{
     ensure_plugin_skills_exist, get_disabled_skills, list_plugin_skills, toggle_skill_status,
     PluginSkillRow,
-};
-pub use installed_plugins::{
-    delete_installed_plugin, get_installed_plugin, insert_installed_plugin,
-    list_installed_plugins, mark_plugin_uninstalled, update_plugin_pin,
-    InstalledPluginRow, NewInstalledPlugin,
 };
 pub use pool::{connect_pool, PoolConfig};
 pub use restore::{restore_backup, validate_backup_header, RestoreReport};

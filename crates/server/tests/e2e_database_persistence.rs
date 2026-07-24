@@ -101,24 +101,18 @@ async fn test_task_and_steps_persist() {
         .expect("create session");
 
     // Create task
-    let task = evohime_storage::create_task(
-        &pool,
-        session.id,
-        "test task",
-        None,
-        None,
-        None,
-    )
-    .await
-    .expect("create task");
+    let task = evohime_storage::create_task(&pool, session.id, "test task", None, None, None)
+        .await
+        .expect("create task");
 
     let task_id = task.id;
 
     // Create task step
     let step_input = serde_json::json!({"path": "/test.txt"});
-    let step = evohime_storage::create_task_step(&pool, task_id, 0, "filesystem.read", &step_input, &[])
-        .await
-        .expect("create step");
+    let step =
+        evohime_storage::create_task_step(&pool, task_id, 0, "filesystem.read", &step_input, &[])
+            .await
+            .expect("create step");
 
     // Reload task and verify it still exists
     let reloaded_task = evohime_storage::load_task(&pool, task_id)
@@ -176,7 +170,10 @@ async fn test_checkpoint_stores_pause_state() {
 
     assert_eq!(checkpoint.next_step, 2);
     assert_eq!(
-        checkpoint.state_json.get("pause_reason").and_then(|v| v.as_str()),
+        checkpoint
+            .state_json
+            .get("pause_reason")
+            .and_then(|v| v.as_str()),
         Some("approval_wait")
     );
 }
@@ -222,7 +219,11 @@ async fn test_multiple_tasks_in_session() {
     // Verify all task ids are present (order may vary)
     let returned_ids: Vec<_> = tasks.iter().map(|t| t.id).collect();
     for task_id in task_ids {
-        assert!(returned_ids.contains(&task_id), "task {} should be in results", task_id);
+        assert!(
+            returned_ids.contains(&task_id),
+            "task {} should be in results",
+            task_id
+        );
     }
 }
 

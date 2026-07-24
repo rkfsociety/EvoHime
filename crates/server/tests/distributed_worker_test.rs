@@ -2,8 +2,8 @@
 // Tests that multiple workers can independently claim and complete jobs.
 
 use evohime_storage::{
-    claim_next_queued_worker_job, complete_worker_job_claimed, create_worker_job,
-    load_worker_job, update_worker_job_heartbeat,
+    claim_next_queued_worker_job, complete_worker_job_claimed, create_worker_job, load_worker_job,
+    update_worker_job_heartbeat,
 };
 use serde_json::json;
 
@@ -71,16 +71,10 @@ async fn distributed_workers_claim_and_complete_jobs() {
     assert_eq!(completed1.status, "completed");
 
     // Stale worker can't complete again
-    let stale_complete = complete_worker_job_claimed(
-        &pool,
-        job1.id,
-        token2,
-        "completed",
-        Some(&json!({})),
-        None,
-    )
-    .await
-    .expect("stale complete should not error");
+    let stale_complete =
+        complete_worker_job_claimed(&pool, job1.id, token2, "completed", Some(&json!({})), None)
+            .await
+            .expect("stale complete should not error");
     assert!(
         stale_complete.is_none(),
         "stale claim should not complete already-completed job"

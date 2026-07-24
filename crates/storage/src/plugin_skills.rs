@@ -57,7 +57,7 @@ pub async fn list_plugin_skills(
     plugin_id: &str,
 ) -> Result<Vec<PluginSkillRow>, sqlx::Error> {
     sqlx::query_as::<_, PluginSkillRow>(
-        "SELECT * FROM plugin_skills WHERE operator_id = $1 AND plugin_id = $2 ORDER BY skill_name"
+        "SELECT * FROM plugin_skills WHERE operator_id = $1 AND plugin_id = $2 ORDER BY skill_name",
     )
     .bind(operator_id)
     .bind(plugin_id)

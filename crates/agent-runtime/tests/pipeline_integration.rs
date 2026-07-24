@@ -120,6 +120,7 @@ fn agent_config(temp: &std::path::Path, demo_file: &std::path::Path) -> AgentCon
     AgentConfig {
         task_id: Uuid::new_v4(),
         session_id: Uuid::new_v4(),
+        operator_id: Uuid::new_v4(),
         user_message: "run pipeline".to_string(),
         created_at: chrono::Utc::now(),
         demo_file_path: demo_file.to_path_buf(),

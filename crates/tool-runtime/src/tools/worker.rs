@@ -44,7 +44,8 @@ fn load_schema() -> Result<Value, ToolError> {
         return Ok(schema.clone());
     }
 
-    let schema: Value = serde_json::from_str(SCHEMA_JSON).map_err(|e| ToolError::Execution(format!("failed to parse schema: {e}")))?;
+    let schema: Value = serde_json::from_str(SCHEMA_JSON)
+        .map_err(|e| ToolError::Execution(format!("failed to parse schema: {e}")))?;
     SCHEMA.set(schema.clone()).ok();
     Ok(schema)
 }
@@ -52,23 +53,29 @@ fn load_schema() -> Result<Value, ToolError> {
 fn validate_payload(task: &str, payload: &Value) -> Result<(), ToolError> {
     let schema = load_schema()?;
 
-    let definitions = schema.get("definitions").and_then(Value::as_object).ok_or_else(|| {
-        ToolError::Execution("schema missing definitions".into())
-    })?;
+    let definitions = schema
+        .get("definitions")
+        .and_then(Value::as_object)
+        .ok_or_else(|| ToolError::Execution("schema missing definitions".into()))?;
 
-    let task_schema = definitions.get(task).ok_or_else(|| ToolError::InvalidInput {
-        tool: NAME.to_string(),
-        message: format!("no schema definition for task: {task}"),
-    })?;
+    let task_schema = definitions
+        .get(task)
+        .ok_or_else(|| ToolError::InvalidInput {
+            tool: NAME.to_string(),
+            message: format!("no schema definition for task: {task}"),
+        })?;
 
-    let validator =
-        jsonschema::JSONSchema::compile(task_schema).map_err(|e| ToolError::Execution(format!("schema compilation error for {task}: {e}")))?;
+    let validator = jsonschema::JSONSchema::compile(task_schema)
+        .map_err(|e| ToolError::Execution(format!("schema compilation error for {task}: {e}")))?;
 
     validator.validate(payload).map_err(|errors| {
         let error_msgs: Vec<String> = errors.map(|e| e.to_string()).collect();
         ToolError::InvalidInput {
             tool: NAME.to_string(),
-            message: format!("payload validation failed for {task}: {}", error_msgs.join("; ")),
+            message: format!(
+                "payload validation failed for {task}: {}",
+                error_msgs.join("; ")
+            ),
         }
     })?;
 

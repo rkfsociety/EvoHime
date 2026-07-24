@@ -460,11 +460,7 @@ pub async fn pin_plugin(
     )
     .await
     .map_err(|error| ApiError::Internal(error.to_string()))?
-    .ok_or_else(|| {
-        ApiError::BadRequest(format!(
-            "плагин `{name}` не найден в установленных"
-        ))
-    })?;
+    .ok_or_else(|| ApiError::BadRequest(format!("плагин `{name}` не найден в установленных")))?;
     Ok(Json(serde_json::json!({
         "status": "pinned",
         "name": name,

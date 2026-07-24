@@ -615,7 +615,7 @@ pub async fn search_project(
         .filter(|s| !s.is_empty())
         .ok_or_else(|| ApiError::BadRequest("query parameter 'q' is required".to_string()))?;
 
-    let limit = query.limit.unwrap_or(10).max(1).min(50);
+    let limit = query.limit.unwrap_or(10).clamp(1, 50);
     let index = ProjectIndex::with_limits(&state.workspace_root, limit, 256 * 1024);
     let matches = index.search_with_limit(q, limit);
 

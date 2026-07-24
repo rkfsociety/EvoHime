@@ -2,14 +2,14 @@
 #[cfg(test)]
 mod plugin_lifecycle_tests {
     use evohime_storage::{
-        insert_installed_plugin, get_installed_plugin,
-        mark_plugin_uninstalled, list_installed_plugins, update_plugin_pin,
-        NewInstalledPlugin,
+        get_installed_plugin, insert_installed_plugin, list_installed_plugins,
+        mark_plugin_uninstalled, update_plugin_pin, NewInstalledPlugin,
     };
     use uuid::Uuid;
 
     async fn setup_pool() -> sqlx::PgPool {
-        let url = std::env::var("DATABASE_URL").expect("DATABASE_URL required for integration tests");
+        let url =
+            std::env::var("DATABASE_URL").expect("DATABASE_URL required for integration tests");
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(1)
             .connect(&url)
@@ -75,13 +75,20 @@ mod plugin_lifecycle_tests {
         let listed = list_installed_plugins(&pool, operator_id)
             .await
             .expect("list");
-        assert_eq!(listed.len(), 0, "uninstalled plugins should not appear in active list");
+        assert_eq!(
+            listed.len(),
+            0,
+            "uninstalled plugins should not appear in active list"
+        );
 
         let retrieved = get_installed_plugin(&pool, operator_id, "test-uninstall")
             .await
             .expect("get")
             .expect("found");
-        assert_eq!(retrieved.status, "uninstalled", "but DB record should still exist");
+        assert_eq!(
+            retrieved.status, "uninstalled",
+            "but DB record should still exist"
+        );
     }
 
     #[tokio::test]
@@ -121,7 +128,10 @@ mod plugin_lifecycle_tests {
         assert_eq!(pinned.status, "active");
         assert_eq!(pinned.pinned_commit, Some("abc123def456".to_string()));
         assert_eq!(pinned.pinned_version, Some("1.2.3".to_string()));
-        assert!(pinned.uninstalled_at.is_none(), "reactivation clears uninstalled_at");
+        assert!(
+            pinned.uninstalled_at.is_none(),
+            "reactivation clears uninstalled_at"
+        );
 
         // Verify it appears in active list
         let listed = list_installed_plugins(&pool, operator_id)
@@ -169,7 +179,11 @@ mod plugin_lifecycle_tests {
         let list2 = list_installed_plugins(&pool, operator2)
             .await
             .expect("list");
-        assert_eq!(list2[0].pinned_commit, Some("op2-commit".to_string()), "operator2 has pin");
+        assert_eq!(
+            list2[0].pinned_commit,
+            Some("op2-commit".to_string()),
+            "operator2 has pin"
+        );
 
         // Operator 1 uninstalls doesn't affect operator 2
         let _ = mark_plugin_uninstalled(&pool, operator1, "shared-plugin")

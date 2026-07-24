@@ -62,7 +62,7 @@ pub async fn get_installed_plugin(
 ) -> Result<Option<InstalledPluginRow>, StorageError> {
     let row = sqlx::query_as::<_, InstalledPluginRow>(
         "SELECT * FROM installed_plugins
-         WHERE operator_id = $1 AND name = $2"
+         WHERE operator_id = $1 AND name = $2",
     )
     .bind(operator_id)
     .bind(name)
@@ -79,7 +79,7 @@ pub async fn list_installed_plugins(
     let rows = sqlx::query_as::<_, InstalledPluginRow>(
         "SELECT * FROM installed_plugins
          WHERE operator_id = $1 AND status = 'active'
-         ORDER BY name"
+         ORDER BY name",
     )
     .bind(operator_id)
     .fetch_all(pool)
@@ -97,7 +97,7 @@ pub async fn mark_plugin_uninstalled(
         "UPDATE installed_plugins
          SET status = 'uninstalled', uninstalled_at = now(), updated_at = now()
          WHERE operator_id = $1 AND name = $2 AND status = 'active'
-         RETURNING *"
+         RETURNING *",
     )
     .bind(operator_id)
     .bind(name)
@@ -122,7 +122,7 @@ pub async fn update_plugin_pin(
              uninstalled_at = NULL,
              updated_at = now()
          WHERE operator_id = $1 AND name = $2
-         RETURNING *"
+         RETURNING *",
     )
     .bind(operator_id)
     .bind(name)
@@ -141,7 +141,7 @@ pub async fn delete_installed_plugin(
 ) -> Result<bool, StorageError> {
     let result = sqlx::query(
         "DELETE FROM installed_plugins
-         WHERE operator_id = $1 AND name = $2"
+         WHERE operator_id = $1 AND name = $2",
     )
     .bind(operator_id)
     .bind(name)

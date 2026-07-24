@@ -1,6 +1,6 @@
+use crate::ApiError;
 use axum::Json;
 use serde::Serialize;
-use crate::ApiError;
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct FeatureFlags {
@@ -37,13 +37,21 @@ pub fn check_feature(feature: &str) -> Result<(), ApiError> {
         "scheduled" => flags.scheduled,
         "otlp" => flags.otlp,
         "cloud_sync" => flags.cloud_sync,
-        _ => return Err(ApiError::BadRequest(format!("unknown feature: {}", feature))),
+        _ => {
+            return Err(ApiError::BadRequest(format!(
+                "unknown feature: {}",
+                feature
+            )))
+        }
     };
 
     if enabled {
         Ok(())
     } else {
-        Err(ApiError::Forbidden(format!("feature '{}' is not enabled", feature)))
+        Err(ApiError::Forbidden(format!(
+            "feature '{}' is not enabled",
+            feature
+        )))
     }
 }
 

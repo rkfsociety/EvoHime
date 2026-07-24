@@ -144,7 +144,8 @@ fn validate_push_policy(input: &RemoteInput) -> Result<(), ToolError> {
         if let Some(remote) = input.remote.as_deref() {
             let remote_trimmed = remote.trim();
             if !remote_trimmed.is_empty() {
-                let allowed_remotes: Vec<&str> = allowlist_str.split(',').map(|s| s.trim()).collect();
+                let allowed_remotes: Vec<&str> =
+                    allowlist_str.split(',').map(|s| s.trim()).collect();
                 if !allowed_remotes.contains(&remote_trimmed) {
                     return Err(ToolError::Execution(format!(
                         "push to remote '{}' is not allowed (allowlist: {})",
@@ -413,7 +414,10 @@ mod tests {
 
         std_fs::write(ctx.workspace_root.join("test.txt"), "content\n").expect("write");
         run(ctx.workspace_root.as_path(), &["git", "add", "."]);
-        run(ctx.workspace_root.as_path(), &["git", "commit", "-m", "test"]);
+        run(
+            ctx.workspace_root.as_path(),
+            &["git", "commit", "-m", "test"],
+        );
 
         let result = push(
             &ctx,

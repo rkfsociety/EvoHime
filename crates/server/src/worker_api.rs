@@ -524,12 +524,13 @@ pub(crate) async fn claim_worker_job_for_queue(
         .await
         .map_err(|e| ApiError::Internal(e.to_string()))?
     {
-        Some((job, claim_token)) => {
-            Ok((StatusCode::OK, Json(json!({
+        Some((job, claim_token)) => Ok((
+            StatusCode::OK,
+            Json(json!({
                 "job": job,
                 "claim_token": claim_token.to_string(),
-            }))))
-        }
+            })),
+        )),
         None => Ok((StatusCode::NO_CONTENT, Json(json!({})))),
     }
 }
@@ -540,6 +541,7 @@ pub(crate) async fn heartbeat_worker_job_queue(
     Path(job_id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
     #[derive(Debug, Deserialize)]
+    #[allow(dead_code)]
     struct HeartbeatRequest {
         claim_token: String,
     }
@@ -568,7 +570,11 @@ pub(crate) async fn complete_worker_job_queue(
         .parse()
         .map_err(|_| ApiError::BadRequest("invalid claim_token UUID".into()))?;
 
-    let status = if req.error.is_some() { "failed" } else { "completed" };
+    let status = if req.error.is_some() {
+        "failed"
+    } else {
+        "completed"
+    };
 
     let _updated = evohime_storage::complete_worker_job_claimed(
         &state.pool,

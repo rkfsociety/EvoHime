@@ -50,9 +50,10 @@ pub async fn toggle_plugin_skill(
     Extension(identity): Extension<OperatorIdentity>,
     Path((plugin_id, skill_name)): Path<(String, String)>,
 ) -> Result<Json<PluginSkillStatus>, ApiError> {
-    let enabled = evohime_storage::toggle_skill_status(&state.pool, identity.id, &plugin_id, &skill_name)
-        .await
-        .map_err(|e| ApiError::Internal(format!("Failed to toggle skill status: {}", e)))?;
+    let enabled =
+        evohime_storage::toggle_skill_status(&state.pool, identity.id, &plugin_id, &skill_name)
+            .await
+            .map_err(|e| ApiError::Internal(format!("Failed to toggle skill status: {}", e)))?;
 
     Ok(Json(PluginSkillStatus {
         plugin_id,
