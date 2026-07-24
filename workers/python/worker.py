@@ -4,6 +4,9 @@ The worker deliberately uses only the Python standard library so it can run in
 the local launcher and in a minimal container. Jobs are durable for the
 process lifetime only; PostgreSQL-backed persistence belongs to the Rust
 server, while this service owns execution and status reporting.
+
+Schema validation: uses JSON Schema from workers/schemas/worker-tasks.schema.json
+as the single source of truth for all task payload validation.
 """
 
 from __future__ import annotations
@@ -22,9 +25,26 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 
+try:
+    import jsonschema
+except ImportError:
+    jsonschema = None  # type: ignore
+
 LOGGER = logging.getLogger("evohime.worker")
+_SCHEMA_CACHE: dict[str, Any] | None = None
+_SCHEMA_LOADED = False
+MAX_TEXT_LENGTH = 1_000_000
+PROCESS_STARTED_AT = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+HEARTBEAT_INTERVAL_SECS = 1.0
+DEFAULT_MAX_SENTENCES = 3
+DEFAULT_CHUNK_SIZE = 500
+DEFAULT_CHUNK_OVERLAP = 50
+DEFAULT_DIFF_CONTEXT = 3
+DEFAULT_MAX_DIFF_LINES = 500
+REDACTION_REPLACEMENT = "[REDACTED]"
 SUPPORTED_TASKS = (
     "echo",
     "text.stats",
@@ -38,15 +58,6 @@ SUPPORTED_TASKS = (
     "text.language",
     "text.redact",
 )
-MAX_TEXT_LENGTH = 1_000_000
-PROCESS_STARTED_AT = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-HEARTBEAT_INTERVAL_SECS = 1.0
-DEFAULT_MAX_SENTENCES = 3
-DEFAULT_CHUNK_SIZE = 500
-DEFAULT_CHUNK_OVERLAP = 50
-DEFAULT_DIFF_CONTEXT = 3
-DEFAULT_MAX_DIFF_LINES = 500
-REDACTION_REPLACEMENT = "[REDACTED]"
 
 
 def health() -> dict[str, Any]:
@@ -60,13 +71,48 @@ def health() -> dict[str, Any]:
     }
 
 
-def _require_text(task: str, payload: dict[str, Any]) -> str:
-    text = payload.get("text")
-    if not isinstance(text, str):
-        raise ValueError(f"{task} requires a string payload.text")
-    if len(text) > MAX_TEXT_LENGTH:
-        raise ValueError(f"payload.text exceeds {MAX_TEXT_LENGTH} characters")
-    return text
+def _load_schema() -> dict[str, Any]:
+    """Load task schemas from worker-tasks.schema.json file."""
+    global _SCHEMA_CACHE, _SCHEMA_LOADED
+    if _SCHEMA_LOADED:
+        return _SCHEMA_CACHE or {}
+
+    schema_path = Path(__file__).parent.parent / "schemas" / "worker-tasks.schema.json"
+    if not schema_path.exists():
+        raise FileNotFoundError(f"schema file not found: {schema_path}")
+
+    with open(schema_path) as f:
+        _SCHEMA_CACHE = json.load(f)
+    _SCHEMA_LOADED = True
+    return _SCHEMA_CACHE
+
+
+def validate_task_payload(task: str, payload: dict[str, Any]) -> None:
+    """Reject malformed payloads using JSON Schema before a job enters the queue."""
+
+    if not isinstance(task, str) or not task:
+        raise ValueError("task must be a non-empty string")
+    if not isinstance(payload, dict):
+        raise ValueError("payload must be an object")
+    if task not in SUPPORTED_TASKS:
+        raise ValueError(f"unsupported task: {task}")
+
+    if jsonschema is None:
+        LOGGER.warning("jsonschema not installed; using fallback validation")
+        _validate_task_payload_fallback(task, payload)
+        return
+
+    schema_doc = _load_schema()
+    if "definitions" not in schema_doc or task not in schema_doc["definitions"]:
+        raise ValueError(f"no schema definition for task: {task}")
+
+    task_schema = schema_doc["definitions"][task]
+    try:
+        jsonschema.validate(payload, task_schema)
+    except jsonschema.ValidationError as exc:
+        raise ValueError(f"payload validation failed for {task}: {exc.message}") from exc
+    except jsonschema.SchemaError as exc:
+        raise ValueError(f"schema error for {task}: {exc.message}") from exc
 
 
 def _optional_int(
@@ -77,6 +123,7 @@ def _optional_int(
     minimum: int,
     maximum: int | None = None,
 ) -> int:
+    """Extract and validate an optional integer parameter."""
     if key not in payload or payload[key] is None:
         return default
     value = payload[key]
@@ -88,88 +135,70 @@ def _optional_int(
     return value
 
 
-def validate_task_payload(task: str, payload: dict[str, Any]) -> None:
-    """Reject malformed payloads before a job enters the queue."""
-
-    if not isinstance(task, str) or not task:
-        raise ValueError("task must be a non-empty string")
-    if not isinstance(payload, dict):
-        raise ValueError("payload must be an object")
-    if task not in SUPPORTED_TASKS:
-        raise ValueError(f"unsupported task: {task}")
-
+def _validate_task_payload_fallback(task: str, payload: dict[str, Any]) -> None:
+    """Fallback validation (no jsonschema library) for known tasks."""
     if task == "echo":
         return
 
     if task in {"text.stats", "text.keywords", "text.entities", "text.classify", "text.language", "text.redact"}:
-        _require_text(task, payload)
+        if not isinstance(payload.get("text"), str):
+            raise ValueError(f"{task} requires a string payload.text")
+        if len(payload["text"]) > MAX_TEXT_LENGTH:
+            raise ValueError(f"payload.text exceeds {MAX_TEXT_LENGTH} characters")
         return
 
     if task == "text.summarize":
-        _require_text(task, payload)
-        _optional_int(
-            payload,
-            "max_sentences",
-            default=DEFAULT_MAX_SENTENCES,
-            minimum=1,
-            maximum=20,
-        )
+        if not isinstance(payload.get("text"), str):
+            raise ValueError("text.summarize requires a string payload.text")
+        if len(payload["text"]) > MAX_TEXT_LENGTH:
+            raise ValueError("payload.text exceeds {MAX_TEXT_LENGTH} characters")
+        max_sentences = payload.get("max_sentences", DEFAULT_MAX_SENTENCES)
+        if isinstance(max_sentences, bool) or not isinstance(max_sentences, int) or not (1 <= max_sentences <= 20):
+            raise ValueError("payload.max_sentences must be an integer 1-20")
         return
 
     if task == "text.chunk":
-        _require_text(task, payload)
-        chunk_size = _optional_int(
-            payload,
-            "chunk_size",
-            default=DEFAULT_CHUNK_SIZE,
-            minimum=64,
-            maximum=8000,
-        )
-        overlap = _optional_int(
-            payload,
-            "overlap",
-            default=DEFAULT_CHUNK_OVERLAP,
-            minimum=0,
-            maximum=None,
-        )
+        if not isinstance(payload.get("text"), str):
+            raise ValueError("text.chunk requires a string payload.text")
+        if len(payload["text"]) > MAX_TEXT_LENGTH:
+            raise ValueError("payload.text exceeds {MAX_TEXT_LENGTH} characters")
+        chunk_size = payload.get("chunk_size", DEFAULT_CHUNK_SIZE)
+        if not isinstance(chunk_size, int) or not (64 <= chunk_size <= 8000):
+            raise ValueError("payload.chunk_size must be an integer 64-8000")
+        overlap = payload.get("overlap", DEFAULT_CHUNK_OVERLAP)
+        if not isinstance(overlap, int) or overlap < 0:
+            raise ValueError("payload.overlap must be a non-negative integer")
         if overlap >= chunk_size:
             raise ValueError("payload.overlap must be less than payload.chunk_size")
         return
 
     if task == "text.similarity":
-        _require_named_text(task, payload, "text_a")
-        _require_named_text(task, payload, "text_b")
+        if not isinstance(payload.get("text_a"), str):
+            raise ValueError("text.similarity requires a string payload.text_a")
+        if len(payload["text_a"]) > MAX_TEXT_LENGTH:
+            raise ValueError("payload.text_a exceeds {MAX_TEXT_LENGTH} characters")
+        if not isinstance(payload.get("text_b"), str):
+            raise ValueError("text.similarity requires a string payload.text_b")
+        if len(payload["text_b"]) > MAX_TEXT_LENGTH:
+            raise ValueError("payload.text_b exceeds {MAX_TEXT_LENGTH} characters")
         return
 
     if task == "text.diff":
-        _require_named_text(task, payload, "text_a")
-        _require_named_text(task, payload, "text_b")
-        _optional_int(
-            payload,
-            "context",
-            default=DEFAULT_DIFF_CONTEXT,
-            minimum=0,
-            maximum=20,
-        )
-        _optional_int(
-            payload,
-            "max_diff_lines",
-            default=DEFAULT_MAX_DIFF_LINES,
-            minimum=1,
-            maximum=2000,
-        )
+        if not isinstance(payload.get("text_a"), str):
+            raise ValueError("text.diff requires a string payload.text_a")
+        if len(payload["text_a"]) > MAX_TEXT_LENGTH:
+            raise ValueError("payload.text_a exceeds {MAX_TEXT_LENGTH} characters")
+        if not isinstance(payload.get("text_b"), str):
+            raise ValueError("text.diff requires a string payload.text_b")
+        if len(payload["text_b"]) > MAX_TEXT_LENGTH:
+            raise ValueError("payload.text_b exceeds {MAX_TEXT_LENGTH} characters")
+        context = payload.get("context", DEFAULT_DIFF_CONTEXT)
+        if not isinstance(context, int) or not (0 <= context <= 20):
+            raise ValueError("payload.context must be an integer 0-20")
+        max_diff_lines = payload.get("max_diff_lines", DEFAULT_MAX_DIFF_LINES)
+        if not isinstance(max_diff_lines, int) or not (1 <= max_diff_lines <= 2000):
+            raise ValueError("payload.max_diff_lines must be an integer 1-2000")
         return
-
-    raise ValueError(f"unsupported task: {task}")
-
-
-def _require_named_text(task: str, payload: dict[str, Any], key: str) -> str:
-    text = payload.get(key)
-    if not isinstance(text, str):
-        raise ValueError(f"{task} requires a string payload.{key}")
-    if len(text) > MAX_TEXT_LENGTH:
-        raise ValueError(f"payload.{key} exceeds {MAX_TEXT_LENGTH} characters")
-    return text
 
 
 def _utc_now_iso() -> str:

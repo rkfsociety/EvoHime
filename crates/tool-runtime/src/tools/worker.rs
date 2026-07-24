@@ -1,10 +1,11 @@
 //! Agent tool: submit a Python worker job and await completion (Stage 7.52).
+//! Validates task payloads using JSON Schema (7.55).
 
 use crate::{ToolContext, ToolError, ToolResult};
 use evohime_permissions::Permission;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::{env, time::Duration};
+use std::{env, sync::OnceLock, time::Duration};
 use tokio::time::{sleep, Instant};
 
 pub const NAME: &str = "worker.run";
@@ -26,6 +27,9 @@ const SUPPORTED_TASKS: &[&str] = &[
     "text.redact",
 ];
 
+static SCHEMA: OnceLock<Value> = OnceLock::new();
+static SCHEMA_JSON: &str = include_str!("../../../../workers/schemas/worker-tasks.schema.json");
+
 #[derive(Debug, Clone)]
 pub struct WorkerRunInput {
     pub task: String,
@@ -33,6 +37,42 @@ pub struct WorkerRunInput {
     pub timeout_ms: u64,
     pub poll_ms: u64,
     pub worker_url: String,
+}
+
+fn load_schema() -> Result<Value, ToolError> {
+    if let Some(schema) = SCHEMA.get() {
+        return Ok(schema.clone());
+    }
+
+    let schema: Value = serde_json::from_str(SCHEMA_JSON).map_err(|e| ToolError::Execution(format!("failed to parse schema: {e}")))?;
+    SCHEMA.set(schema.clone()).ok();
+    Ok(schema)
+}
+
+fn validate_payload(task: &str, payload: &Value) -> Result<(), ToolError> {
+    let schema = load_schema()?;
+
+    let definitions = schema.get("definitions").and_then(Value::as_object).ok_or_else(|| {
+        ToolError::Execution("schema missing definitions".into())
+    })?;
+
+    let task_schema = definitions.get(task).ok_or_else(|| ToolError::InvalidInput {
+        tool: NAME.to_string(),
+        message: format!("no schema definition for task: {task}"),
+    })?;
+
+    let validator =
+        jsonschema::JSONSchema::compile(task_schema).map_err(|e| ToolError::Execution(format!("schema compilation error for {task}: {e}")))?;
+
+    validator.validate(payload).map_err(|errors| {
+        let error_msgs: Vec<String> = errors.map(|e| e.to_string()).collect();
+        ToolError::InvalidInput {
+            tool: NAME.to_string(),
+            message: format!("payload validation failed for {task}: {}", error_msgs.join("; ")),
+        }
+    })?;
+
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -72,12 +112,9 @@ pub fn parse_input(input: &Value) -> Result<WorkerRunInput, ToolError> {
             message: "payload must be an object".into(),
         });
     }
-    if task != "echo" && payload.as_object().map(|o| o.is_empty()).unwrap_or(true) {
-        return Err(ToolError::InvalidInput {
-            tool: NAME.to_string(),
-            message: format!("{task} requires a non-empty payload object"),
-        });
-    }
+
+    validate_payload(&task, &payload)?;
+
     let timeout_ms = input
         .get("timeout_ms")
         .and_then(Value::as_u64)

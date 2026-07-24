@@ -76,6 +76,7 @@ async fn agent_loop_streams_model_tokens() {
         AgentConfig {
             task_id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
+            operator_id: Uuid::new_v4(),
             user_message: "Explain the file".to_string(),
             created_at: chrono::Utc::now(),
             demo_file_path: demo_file.clone(),
