@@ -57,3 +57,18 @@ export function retryWorkerJob(jobId: string) {
     method: "POST",
   });
 }
+
+export type SubmitWorkerJobRequest = {
+  task: string;
+  payload?: Record<string, unknown> | null;
+};
+
+export function submitWorkerJob(request: SubmitWorkerJobRequest) {
+  return apiRequest<WorkerJob>("/api/worker/jobs", {
+    method: "POST",
+    body: JSON.stringify({
+      task: request.task,
+      payload: request.payload ?? {},
+    }),
+  });
+}

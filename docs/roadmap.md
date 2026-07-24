@@ -380,7 +380,7 @@
 | --- | --- | --- | --- | --- |
 | 7.51 | Ещё handlers: `text.classify`, `text.language`, `text.redact` | M | ✅ | Python worker + mirrored Rust validation; deterministic intent/language heuristics and memory-aligned secret redaction; exposed through `worker.run` |
 | 7.52 | Agent tool `worker.run` (submit+await job) | M | ✅ | tool-runtime HTTP submit+poll; wiremock test |
-| 7.53 | Worker job UI: submit form + payload editor в Settings | M | ⬜ | сейчас status/list/retry |
+| 7.53 | Worker job UI: submit form + payload editor в Settings | M | ✅ | WorkerSettingsSection: handler dropdown (7 handlers), JSON payload editor, submit form; API `submitWorkerJob()` |
 | 7.54 | Horizontal worker scale (N processes / queue backend) | L | ⬜ | single in-proc Python queue |
 | 7.55 | Typed JSON Schema registry для worker tasks (shared) | M | ⬜ | duplicate validate Rust/Python |
 | 7.56 | CI job для `workers/python` unittest | S | ✅ | `python-worker` job на Python 3.12 |

@@ -3,6 +3,7 @@ import {
   fetchWorkerStatus,
   listWorkerJobs,
   retryWorkerJob,
+  submitWorkerJob,
   type WorkerJob,
   type WorkerStatusResponse,
 } from "../api/worker";
@@ -21,12 +22,26 @@ function formatCheckedAt(ms?: number) {
   }
 }
 
+const AVAILABLE_HANDLERS = [
+  "text.summarize",
+  "text.chunk",
+  "text.similarity",
+  "text.entities",
+  "text.classify",
+  "text.language",
+  "text.redact",
+];
+
 export function WorkerSettingsSection() {
   const [status, setStatus] = useState<WorkerStatusResponse | null>(null);
   const [jobs, setJobs] = useState<WorkerJob[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [submitHandler, setSubmitHandler] = useState(AVAILABLE_HANDLERS[0]);
+  const [payloadJson, setPayloadJson] = useState("{}");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -59,6 +74,34 @@ export function WorkerSettingsSection() {
       setError(String(err));
     } finally {
       setRetryingId(null);
+    }
+  };
+
+  const onSubmitJob = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    setSubmitSuccess(null);
+    try {
+      let payload: Record<string, unknown> | null = null;
+      if (payloadJson.trim()) {
+        try {
+          payload = JSON.parse(payloadJson);
+        } catch (err) {
+          throw new Error(`Invalid JSON: ${String(err)}`);
+        }
+      }
+      const job = await submitWorkerJob({
+        task: submitHandler,
+        payload,
+      });
+      setSubmitSuccess(`Job submitted: ${job.id.slice(0, 8)}`);
+      setPayloadJson("{}");
+      await refresh();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -159,6 +202,48 @@ export function WorkerSettingsSection() {
           ))
         )}
       </div>
+
+      <h4 className="workerSubheading">Submit job (7.53)</h4>
+      <form className="workerSubmitForm" onSubmit={onSubmitJob}>
+        <div className="workerFormRow">
+          <label>
+            <span>Handler</span>
+            <select
+              value={submitHandler}
+              onChange={(e) => setSubmitHandler(e.target.value)}
+              disabled={submitting}
+            >
+              {AVAILABLE_HANDLERS.map((h) => (
+                <option key={h} value={h}>
+                  {h}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="workerFormRow">
+          <label>
+            <span>Payload (JSON)</span>
+            <textarea
+              value={payloadJson}
+              onChange={(e) => setPayloadJson(e.target.value)}
+              disabled={submitting}
+              rows={6}
+              placeholder="{}"
+              className="payloadEditor"
+            />
+          </label>
+        </div>
+        {submitSuccess ? (
+          <p className="settingsSuccess">{submitSuccess}</p>
+        ) : null}
+        <button
+          type="submit"
+          disabled={submitting || !submitHandler}
+        >
+          {submitting ? "Submitting…" : "Submit job"}
+        </button>
+      </form>
 
       <h4 className="workerSubheading">Недавние jobs</h4>
       {jobs.length === 0 ? (
