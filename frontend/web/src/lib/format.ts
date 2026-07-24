@@ -104,6 +104,29 @@ export function translatePermissionMode(mode: PermissionMode) {
   }
 }
 
+export function translatePermissionName(name: string) {
+  switch (name) {
+    case "filesystem_read":
+      return "Чтение файлов";
+    case "filesystem_write":
+      return "Запись файлов";
+    case "shell_execute":
+      return "Выполнение shell";
+    case "git_read":
+      return "Чтение Git";
+    case "git_write":
+      return "Запись Git";
+    case "browser_access":
+      return "Доступ к браузеру";
+    case "mcp_call":
+      return "Вызовы MCP";
+    case "memory_search":
+      return "Поиск в памяти";
+    default:
+      return name;
+  }
+}
+
 export function translateSaveState(state: "idle" | "saving" | "saved") {
   switch (state) {
     case "idle":

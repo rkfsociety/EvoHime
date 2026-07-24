@@ -11,7 +11,7 @@ import type {
   SettingsTab,
   ToolDefinition,
 } from "../types";
-import { formatSessionPreview, formatSessionTitle } from "../lib/format";
+import { formatSessionPreview, formatSessionTitle, translatePermissionName } from "../lib/format";
 import { reconcileModelForBilling } from "../lib/modelBilling";
 import { LocalAuthSettingsSection } from "./LocalAuthSettingsSection";
 import { MetricsSettingsSection } from "./MetricsSettingsSection";
@@ -294,7 +294,7 @@ export function SettingsPanel({
             <div className="permissionList">
               {Object.entries(permissionSettings).map(([name, value]) => (
                 <label key={name}>
-                  <span>{name}</span>
+                  <span>{translatePermissionName(name)}</span>
                   <select
                     value={value.mode}
                     onChange={(event) => onUpdatePermission(name, event.target.value as PermissionMode)}
