@@ -1,4 +1,4 @@
-use crate::{app::AppState, ApiError};
+use crate::{app::AppState, features, ApiError};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -118,6 +118,7 @@ pub async fn list(
     State(state): State<Arc<AppState>>,
     Query(query): Query<SiteQuery>,
 ) -> Result<Json<Vec<SiteResponse>>, ApiError> {
+    features::check_feature("sites")?;
     let workspace = scope(&state, query.workspace_path.as_deref())?;
     let filter = SiteListFilter {
         query: query.q.clone(),
@@ -137,6 +138,7 @@ pub async fn create(
     Query(query): Query<SiteQuery>,
     Json(input): Json<SiteInput>,
 ) -> Result<(StatusCode, Json<SiteResponse>), ApiError> {
+    features::check_feature("sites")?;
     validate(&input)?;
     let workspace = scope(&state, query.workspace_path.as_deref())?;
     let row = create_site(
@@ -156,6 +158,7 @@ pub async fn update(
     Query(query): Query<SiteQuery>,
     Json(input): Json<SiteInput>,
 ) -> Result<Json<SiteResponse>, ApiError> {
+    features::check_feature("sites")?;
     validate(&input)?;
     let workspace = scope(&state, query.workspace_path.as_deref())?;
     let row = update_site(
@@ -177,6 +180,7 @@ pub async fn delete(
     Path(id): Path<Uuid>,
     Query(query): Query<SiteQuery>,
 ) -> Result<StatusCode, ApiError> {
+    features::check_feature("sites")?;
     let workspace = scope(&state, query.workspace_path.as_deref())?;
     if !delete_site(&state.pool, id, &workspace)
         .await
@@ -192,6 +196,7 @@ pub async fn publish(
     Path(id): Path<Uuid>,
     Query(query): Query<SiteQuery>,
 ) -> Result<Json<SiteResponse>, ApiError> {
+    features::check_feature("sites")?;
     let workspace = scope(&state, query.workspace_path.as_deref())?;
     let row = publish_site(&state.pool, id, &workspace)
         .await
@@ -205,6 +210,7 @@ pub async fn preview(
     Path(id): Path<Uuid>,
     Query(query): Query<SiteQuery>,
 ) -> Result<Html<String>, ApiError> {
+    features::check_feature("sites")?;
     let workspace = scope(&state, query.workspace_path.as_deref())?;
     let row = list_sites(&state.pool, &workspace)
         .await

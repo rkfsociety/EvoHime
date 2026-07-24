@@ -1,4 +1,4 @@
-use crate::{app::AppState, scheduler, ApiError};
+use crate::{app::AppState, features, scheduler, ApiError};
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -97,6 +97,7 @@ pub async fn list(
     State(state): State<Arc<AppState>>,
     Query(query): Query<ScheduledQuery>,
 ) -> Result<Json<Vec<ScheduledResponse>>, ApiError> {
+    features::check_feature("scheduled")?;
     let workspace = scope(&state, query.workspace_path.as_deref())?;
     Ok(Json(
         list_scheduled_tasks(&state.pool, &workspace)
@@ -113,6 +114,7 @@ pub async fn create(
     Query(query): Query<ScheduledQuery>,
     Json(input): Json<ScheduledInput>,
 ) -> Result<(StatusCode, Json<ScheduledResponse>), ApiError> {
+    features::check_feature("scheduled")?;
     validate_input(&input)?;
     let workspace = scope(&state, query.workspace_path.as_deref())?;
     let next_run_at =
@@ -135,6 +137,7 @@ pub async fn get(
     Path(id): Path<Uuid>,
     Query(query): Query<ScheduledQuery>,
 ) -> Result<Json<ScheduledResponse>, ApiError> {
+    features::check_feature("scheduled")?;
     let workspace = scope(&state, query.workspace_path.as_deref())?;
     let row = get_scheduled_task(&state.pool, id, &workspace)
         .await
@@ -149,6 +152,7 @@ pub async fn update(
     Query(query): Query<ScheduledQuery>,
     Json(input): Json<ScheduledInput>,
 ) -> Result<Json<ScheduledResponse>, ApiError> {
+    features::check_feature("scheduled")?;
     validate_input(&input)?;
     let workspace = scope(&state, query.workspace_path.as_deref())?;
     let next_run_at =
@@ -173,6 +177,7 @@ pub async fn delete(
     Path(id): Path<Uuid>,
     Query(query): Query<ScheduledQuery>,
 ) -> Result<StatusCode, ApiError> {
+    features::check_feature("scheduled")?;
     let workspace = scope(&state, query.workspace_path.as_deref())?;
     if !delete_scheduled_task(&state.pool, id, &workspace)
         .await
@@ -188,6 +193,7 @@ pub async fn pause(
     Path(id): Path<Uuid>,
     Query(query): Query<ScheduledQuery>,
 ) -> Result<Json<ScheduledResponse>, ApiError> {
+    features::check_feature("scheduled")?;
     let workspace = scope(&state, query.workspace_path.as_deref())?;
     let row = set_scheduled_task_status(&state.pool, id, &workspace, "paused")
         .await
@@ -201,6 +207,7 @@ pub async fn resume(
     Path(id): Path<Uuid>,
     Query(query): Query<ScheduledQuery>,
 ) -> Result<Json<ScheduledResponse>, ApiError> {
+    features::check_feature("scheduled")?;
     let workspace = scope(&state, query.workspace_path.as_deref())?;
     // Recompute next_run_at from the cron expression so the task fires at the right time.
     let row = get_scheduled_task(&state.pool, id, &workspace)
@@ -222,6 +229,7 @@ pub async fn trigger(
     Path(id): Path<Uuid>,
     Query(query): Query<ScheduledQuery>,
 ) -> Result<Json<ScheduledResponse>, ApiError> {
+    features::check_feature("scheduled")?;
     let workspace = scope(&state, query.workspace_path.as_deref())?;
     let row = get_scheduled_task(&state.pool, id, &workspace)
         .await
