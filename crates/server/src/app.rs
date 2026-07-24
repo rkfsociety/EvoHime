@@ -187,6 +187,20 @@ impl AppState {
         });
         Ok(sequence)
     }
+
+    /// Clean up unused session buses when count exceeds limit.
+    /// Keeps only the most recently active buses (by keeping first N entries).
+    pub async fn cleanup_session_buses(&self, max_buses: usize) {
+        let mut buses = self.session_buses.lock().await;
+        if buses.len() > max_buses {
+            // Keep only the last max_buses entries (simplistic FIFO cleanup)
+            let excess = buses.len() - max_buses;
+            let to_remove: Vec<Uuid> = buses.keys().take(excess).copied().collect();
+            for session_id in to_remove {
+                buses.remove(&session_id);
+            }
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

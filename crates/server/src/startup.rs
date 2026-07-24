@@ -38,9 +38,12 @@ pub struct StartupInfo {
     pub state: Arc<AppState>,
     pub default_model_name: String,
     pub default_provider_name: String,
+    pub shutdown_token: CancellationToken,
 }
 
 pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
+    let shutdown_token = CancellationToken::new();
+
     let pool_config = evohime_storage::PoolConfig::from_env();
     info!(
         max_connections = pool_config.max_connections,
@@ -143,12 +146,13 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
     {
         let sched_state = state.clone();
         let sched_interval = duration_secs_env_local("EVOHIME_SCHEDULER_INTERVAL_SECS", 30);
+        let sched_shutdown = shutdown_token.clone();
         info!(
             interval_secs = sched_interval.as_secs(),
             "starting cron scheduler"
         );
         tokio::spawn(async move {
-            scheduler::scheduler_loop(sched_state, sched_interval).await;
+            scheduler::scheduler_loop(sched_state, sched_interval, sched_shutdown).await;
         });
     }
 
@@ -178,6 +182,38 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
     } else {
         info!("metrics snapshot persistence disabled (EVOHIME_METRICS_PERSIST_INTERVAL_SECS=0)");
     }
+
+    // Spawn session bus cleanup loop
+    {
+        let cleanup_state = state.clone();
+        let cleanup_shutdown = shutdown_token.clone();
+        let max_session_buses = std::env::var("EVOHIME_MAX_SESSION_BUSES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|n: &usize| *n > 0)
+            .unwrap_or(500);
+        let cleanup_interval = duration_secs_env_local("EVOHIME_CLEANUP_INTERVAL_SECS", 300);
+        info!(
+            max_buses = max_session_buses,
+            interval_secs = cleanup_interval.as_secs(),
+            "starting session bus cleanup loop"
+        );
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(cleanup_interval);
+            loop {
+                tokio::select! {
+                    _ = cleanup_shutdown.cancelled() => {
+                        info!("cleanup loop received shutdown signal");
+                        break;
+                    }
+                    _ = ticker.tick() => {
+                        cleanup_state.cleanup_session_buses(max_session_buses).await;
+                    }
+                }
+            }
+        });
+    }
+
     match evohime_storage::import_legacy_memory_notes(&state.pool).await {
         Ok(imported) => {
             if imported > 0 {
@@ -355,5 +391,6 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
         state,
         default_model_name,
         default_provider_name,
+        shutdown_token,
     })
 }

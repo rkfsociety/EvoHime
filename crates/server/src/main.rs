@@ -53,6 +53,7 @@ async fn main() -> anyhow::Result<()> {
     let config = AppConfig::from_env()?;
     let prepared = prepare(&config).await?;
     let state = prepared.state;
+    let shutdown_token = prepared.shutdown_token;
 
     let app = routes::build_router(state.clone());
 
@@ -75,11 +76,20 @@ async fn main() -> anyhow::Result<()> {
         );
     }
     let listener = tokio::net::TcpListener::bind(addr).await?;
+
+    let shutdown = async move {
+        let _ = tokio::signal::ctrl_c().await;
+        info!("shutdown signal received");
+        shutdown_token.cancel();
+    };
+
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown)
     .await?;
 
+    info!("server shutdown complete");
     Ok(())
 }

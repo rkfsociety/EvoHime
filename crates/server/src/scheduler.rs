@@ -32,12 +32,24 @@ pub fn validate_cron(cron_expr: &str) -> Result<(), String> {
 }
 
 /// Background loop. Fires due tasks every `interval`.
-pub async fn scheduler_loop(state: Arc<AppState>, interval: Duration) {
+/// Respects cancellation token for graceful shutdown.
+pub async fn scheduler_loop(
+    state: Arc<AppState>,
+    interval: Duration,
+    shutdown_token: tokio_util::sync::CancellationToken,
+) {
     let mut ticker = tokio::time::interval(interval);
     loop {
-        ticker.tick().await;
-        if let Err(e) = tick(&state).await {
-            error!(error = %e, "scheduler tick error");
+        tokio::select! {
+            _ = shutdown_token.cancelled() => {
+                info!("scheduler loop received shutdown signal");
+                break;
+            }
+            _ = ticker.tick() => {
+                if let Err(e) = tick(&state).await {
+                    error!(error = %e, "scheduler tick error");
+                }
+            }
         }
     }
 }
