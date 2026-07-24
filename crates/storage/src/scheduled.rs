@@ -163,7 +163,7 @@ pub async fn dispatch_scheduled_task(
     };
 
     let session = sqlx::query_as::<_, crate::SessionRow>(
-        "INSERT INTO sessions DEFAULT VALUES RETURNING id, created_at",
+        "INSERT INTO sessions DEFAULT VALUES RETURNING id, operator_id, created_at",
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -307,6 +307,25 @@ mod tests {
             .expect("current dir")
             .to_string_lossy()
             .to_string();
+        sqlx::query("DELETE FROM scheduled_task_runs WHERE scheduled_task_id IN (SELECT id FROM scheduled_tasks WHERE title = $1 AND workspace_path = $2)")
+            .bind("Concurrent dispatch")
+            .bind(&workspace)
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM scheduled_tasks WHERE title = $1 AND workspace_path = $2")
+            .bind("Concurrent dispatch")
+            .bind(&workspace)
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM tasks WHERE user_message = $1 AND workspace_path = $2")
+            .bind("summarize the workspace")
+            .bind(&workspace)
+            .execute(&pool)
+            .await
+            .ok();
+
         let scheduled = create_scheduled_task(
             &pool,
             &workspace,
@@ -350,6 +369,21 @@ mod tests {
         .expect("task count");
         assert_eq!(task_count, 1);
 
+        sqlx::query("DELETE FROM scheduled_task_runs WHERE scheduled_task_id = $1")
+            .bind(scheduled.id)
+            .execute(&pool)
+            .await
+            .expect("cleanup runs");
+        sqlx::query("DELETE FROM tasks WHERE user_message = $1")
+            .bind("summarize the workspace")
+            .execute(&pool)
+            .await
+            .expect("cleanup tasks");
+        sqlx::query("DELETE FROM sessions WHERE id IN (SELECT session_id FROM scheduled_task_runs WHERE scheduled_task_id = $1)")
+            .bind(scheduled.id)
+            .execute(&pool)
+            .await
+            .ok();
         sqlx::query("DELETE FROM scheduled_tasks WHERE id = $1")
             .bind(scheduled.id)
             .execute(&pool)

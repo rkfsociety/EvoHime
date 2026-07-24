@@ -44,6 +44,11 @@ mod tests {
                 .is_none()
         );
 
+        sqlx::query("DELETE FROM sessions WHERE id = ANY($1)")
+            .bind(vec![session_a.id, session_b.id])
+            .execute(&pool)
+            .await
+            .expect("cleanup sessions");
         sqlx::query("DELETE FROM operators WHERE id = ANY($1)")
             .bind(vec![first.0.id, second.0.id])
             .execute(&pool)
