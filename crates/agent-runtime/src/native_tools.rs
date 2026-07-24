@@ -108,6 +108,10 @@ pub(crate) fn canonical_tool_name(name: &str) -> String {
         "git_push" => "git.push",
         "browser_open" => "browser.open",
         "browser_extract" => "browser.extract",
+        "browser_session_navigate" => "browser.session.navigate",
+        "browser_session_read" => "browser.session.read",
+        "browser_session_click" => "browser.session.click",
+        "browser_session_close" => "browser.session.close",
         "http_fetch" => "http.fetch",
         "mcp_call" => "mcp.call",
         "memory_search" => "memory.search",
@@ -198,6 +202,34 @@ fn tool_spec_for_name(name: &str, description: &str) -> Option<ToolSpec> {
                 "limit": { "type": "integer" }
             },
             "required": ["url", "selector"]
+        }),
+        "browser.session.navigate" => json!({
+            "type": "object",
+            "properties": {
+                "url": { "type": "string" },
+                "max_chars": { "type": "integer" },
+                "timeout_ms": { "type": "integer" }
+            },
+            "required": ["url"]
+        }),
+        "browser.session.read" => json!({
+            "type": "object",
+            "properties": {
+                "max_chars": { "type": "integer" }
+            }
+        }),
+        "browser.session.click" => json!({
+            "type": "object",
+            "properties": {
+                "selector": { "type": "string" },
+                "max_chars": { "type": "integer" },
+                "settle_ms": { "type": "integer" }
+            },
+            "required": ["selector"]
+        }),
+        "browser.session.close" => json!({
+            "type": "object",
+            "properties": {}
         }),
         "http.fetch" => json!({
             "type": "object",
