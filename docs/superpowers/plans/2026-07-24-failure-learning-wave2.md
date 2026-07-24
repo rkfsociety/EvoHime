@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- No new DB migration. No new column. Repeat count is derivable later from `memory_feedback_events` if ever needed.
+- No new DB migration for a repeat-count column — repeat count is derivable later from `memory_feedback_events` if ever needed. (Amended during Task 3 real-DB verification: the `memory_feedback_events.signal` column has a `CHECK` constraint, `memory_feedback_signal_check`, listing allowed values; `'repeated'` must be added to that list via a small migration, or every `FeedbackSignal::Repeated` write silently rolls back the whole transaction — see Task 3a.)
 - Confidence escalation must never be able to reach `FAILURE_CONFIDENCE_CAP` (0.6) or beyond in a way that unlocks auto-promote — hard-capped at exactly `FAILURE_CONFIDENCE_CAP`, reusing the existing `crates/memory/src/extract.rs` constant, not a new magic number.
 - Importance escalation has no upper cap beyond the standard `clamp01` (0..=1) — `decide_gate` never reads importance, so this is safe and is what drives retrieval priority.
 - Escalation only applies when the existing duplicate row's status is `Candidate`. `Active`/`Rejected`/`Conflict` rows are left untouched (respect the operator's prior decision).
@@ -453,6 +453,53 @@ Expected: PASS, no regressions in dedupe/conflict/admit/retrieve/extract tests.
 ```bash
 git add crates/memory/src/service.rs crates/memory/src/lib.rs
 git commit -m "feat(memory): escalate repeated failure-lesson duplicates"
+```
+
+---
+
+### Task 3a: Allow `'repeated'` in the feedback signal CHECK constraint
+
+**Discovered during Task 3 real-database verification:** the implementer's first pass reported tests passing, but they had silently skipped (no reachable integration DB in that run). Once a real local Postgres was verified and used, `record_memory_repeated` failed on every call: `memory_feedback_events` has `CONSTRAINT memory_feedback_signal_check CHECK (signal IN ('used', 'helpful', 'harmful', 'corrected', 'rejected', 'idle_decay'))` (`migrations/0016_memory_feedback.sql:26-28`) — `'repeated'` is not in that list. The failed `INSERT` rolls back the whole transaction in `apply_memory_item_feedback` (`crates/storage/src/memory.rs`), so the `UPDATE ... SET confidence=..., importance=...` on `memory_items` never commits either. Escalation silently no-ops in production exactly like it did in the unverified test run — this is not a test-only gap, it is a real correctness bug that had to be caught with an actual database.
+
+**Files:**
+- Create: `migrations/0028_memory_feedback_repeated_signal.sql`
+
+- [ ] **Step 1: Write the migration**
+
+```sql
+-- Allow the 'repeated' feedback signal (7.103 wave 2: failure-lesson escalation).
+
+ALTER TABLE memory_feedback_events
+    DROP CONSTRAINT IF EXISTS memory_feedback_signal_check;
+
+ALTER TABLE memory_feedback_events
+    ADD CONSTRAINT memory_feedback_signal_check CHECK (
+        signal IN ('used', 'helpful', 'harmful', 'corrected', 'rejected', 'idle_decay', 'repeated')
+    );
+```
+
+- [ ] **Step 2: Apply against a real local Postgres and re-run Task 3's integration tests**
+
+This step requires an actual reachable Postgres (`DATABASE_URL`, default `postgres://evohime:evohime@localhost:5432/evohime`) — not the soft-skip path. Set `EVOHIME_REQUIRE_DB=1` so a connection/migration failure panics instead of silently skipping (per `crates/storage/src/test_db.rs`'s documented behavior).
+
+Run: `DATABASE_URL="postgres://evohime:evohime@localhost:5432/evohime" EVOHIME_REQUIRE_DB=1 cargo test -p evohime-memory repeated_failure_duplicate_escalates -- --nocapture`
+Expected: PASS — `escalated.confidence > inserted.confidence`, `escalated.confidence <= FAILURE_CONFIDENCE_CAP`, `escalated.importance > inserted.importance` all hold now that the `INSERT` into `memory_feedback_events` succeeds and the transaction commits.
+
+Run: `DATABASE_URL="postgres://evohime:evohime@localhost:5432/evohime" EVOHIME_REQUIRE_DB=1 cargo test -p evohime-memory duplicate_of_already_accepted_failure_lesson_is_not_escalated -- --nocapture`
+Expected: PASS.
+
+If `EVOHIME_REQUIRE_DB=1` panics with a connection error (not a migration/constraint error), stop and report BLOCKED — that means no local Postgres is reachable in this environment and the two integration tests cannot be verified for real; do not report DONE with only the soft-skip path exercised.
+
+- [ ] **Step 3: Run the full memory crate suite against the real DB once more**
+
+Run: `DATABASE_URL="postgres://evohime:evohime@localhost:5432/evohime" EVOHIME_REQUIRE_DB=1 cargo test -p evohime-memory`
+Expected: PASS, no regressions — this also re-verifies the pre-existing `admit_inserts_and_dedupes_against_database` test actually exercises the DB path this time.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add migrations/0028_memory_feedback_repeated_signal.sql
+git commit -m "fix(memory): allow repeated signal in feedback CHECK constraint"
 ```
 
 ---
