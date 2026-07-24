@@ -965,6 +965,7 @@ dependencies = [
  "evohime-permissions",
  "evohime-project-index",
  "evohime-protocol",
+ "evohime-storage",
  "evohime-tool-runtime",
  "futures-util",
  "serde",

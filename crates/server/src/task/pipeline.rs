@@ -184,9 +184,20 @@ pub(crate) async fn run_task_pipeline(
             .map(|route| route.literouter.model.clone());
         (route_name, model)
     };
+    let session = evohime_storage::load_session(&state.pool, session_id)
+        .await
+        .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?
+        .ok_or_else(|| {
+            (
+                task.id,
+                ApiError::Internal(format!("Session {session_id} not found")),
+            )
+        })?;
+
     let agent_config = AgentConfig {
         task_id: task.id,
         session_id,
+        operator_id: session.operator_id,
         user_message: agent_user_message,
         created_at: task.created_at,
         demo_file_path: task

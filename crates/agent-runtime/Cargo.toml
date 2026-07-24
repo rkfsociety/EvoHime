@@ -10,6 +10,7 @@ evohime-model-gateway = { path = "../model-gateway" }
 evohime-permissions = { path = "../permissions" }
 evohime-protocol = { path = "../protocol" }
 evohime-project-index = { path = "../project-index" }
+evohime-storage = { path = "../storage" }
 evohime-tool-runtime = { path = "../tool-runtime" }
 futures-util = "0.3"
 serde_json = "1"

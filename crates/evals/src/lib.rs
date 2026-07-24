@@ -199,6 +199,7 @@ pub async fn run_golden_task_with_gateway(
         AgentConfig {
             task_id: Uuid::new_v4(),
             session_id: Uuid::new_v4(),
+            operator_id: Uuid::nil(),
             user_message: task.user_message.clone(),
             created_at: chrono::Utc::now(),
             demo_file_path: demo_file,

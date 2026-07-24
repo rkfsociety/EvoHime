@@ -124,6 +124,7 @@ async fn run_budgeted_subagent(
     let child = AgentConfig {
         task_id: parent.task_id,
         session_id: parent.session_id,
+        operator_id: parent.operator_id,
         user_message: input.prompt,
         created_at: chrono::Utc::now(),
         demo_file_path: parent.demo_file_path.clone(),

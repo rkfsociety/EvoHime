@@ -11,6 +11,7 @@ pub mod memory;
 pub mod metrics_snapshots;
 pub mod operators;
 pub mod permission_audit;
+pub mod plugin_skills;
 pub mod pool;
 pub mod restore;
 pub mod scheduled;
@@ -50,6 +51,10 @@ pub use operators::{
 };
 pub use permission_audit::{
     insert_permission_audit, list_permission_audit, NewPermissionAudit, PermissionAuditRow,
+};
+pub use plugin_skills::{
+    ensure_plugin_skills_exist, get_disabled_skills, list_plugin_skills, toggle_skill_status,
+    PluginSkillRow,
 };
 pub use pool::{connect_pool, PoolConfig};
 pub use restore::{restore_backup, validate_backup_header, RestoreReport};

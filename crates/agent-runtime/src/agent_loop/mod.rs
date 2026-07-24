@@ -26,7 +26,7 @@ use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
-use context::{build_memory_context, build_workspace_rules, relative_workspace_path};
+use context::{build_memory_context, build_workspace_rules_async, relative_workspace_path};
 use execute::{execute_plan_steps, requires_mutation};
 use parse::{format_plan, parse_model_tool_calls};
 use plan::{
@@ -42,6 +42,7 @@ use util::{
 pub struct AgentConfig {
     pub task_id: Uuid,
     pub session_id: Uuid,
+    pub operator_id: Uuid,
     pub user_message: String,
     pub created_at: DateTime<Utc>,
     pub demo_file_path: PathBuf,
@@ -260,7 +261,12 @@ async fn run_agent_loop_inner(
     let project_context =
         ProjectIndex::new(config.workspace_root.clone()).build_context(&config.user_message, 5);
     let memory_context = build_memory_context(&memory_notes);
-    let rules_context = build_workspace_rules(&config.workspace_root);
+    let rules_context = build_workspace_rules_async(
+        &config.workspace_root,
+        config.operator_id,
+        config.memory_pool.as_ref(),
+    )
+    .await;
 
     let mut planning_messages = Vec::with_capacity(history.len() + 4);
     planning_messages.push(ChatMessage::text(
@@ -984,6 +990,7 @@ mod tests {
             AgentConfig {
                 task_id: Uuid::new_v4(),
                 session_id: Uuid::new_v4(),
+                operator_id: Uuid::nil(),
                 user_message: "project index".to_string(),
                 created_at: chrono::Utc::now(),
                 demo_file_path: temp.path().join("docs/notes.md"),
@@ -1043,6 +1050,7 @@ mod tests {
             AgentConfig {
                 task_id: Uuid::new_v4(),
                 session_id: Uuid::new_v4(),
+                operator_id: Uuid::nil(),
                 user_message: "read answer.txt".to_string(),
                 created_at: chrono::Utc::now(),
                 demo_file_path: demo_file,
@@ -1183,6 +1191,7 @@ mod tests {
             AgentConfig {
                 task_id: Uuid::new_v4(),
                 session_id: Uuid::new_v4(),
+                operator_id: Uuid::nil(),
                 user_message: "Explain the file".to_string(),
                 created_at: chrono::Utc::now(),
                 demo_file_path: demo_file.clone(),
@@ -1246,6 +1255,7 @@ mod tests {
             AgentConfig {
                 task_id: Uuid::new_v4(),
                 session_id: Uuid::new_v4(),
+                operator_id: Uuid::nil(),
                 user_message: "Explain the file".to_string(),
                 created_at: chrono::Utc::now(),
                 demo_file_path: demo_file.clone(),
