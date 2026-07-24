@@ -11,5 +11,8 @@ members = [
   "crates/model-gateway",
   "crates/project-index",
   "crates/server",
+  "crates/launcher",
+  "crates/win-support",
+  "crates/installer",
 ]
 resolver = "2"

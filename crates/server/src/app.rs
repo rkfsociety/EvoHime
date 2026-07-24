@@ -28,6 +28,13 @@ pub struct AppConfig {
     pub worker_health_interval: Duration,
     pub worker_health_stale: Duration,
     pub worker_job_stall: Duration,
+    /// Секретный токен, сгенерированный Launcher'ом при старте и переданный
+    /// через переменную окружения `EVOHIME_LOCAL_TOKEN` (раздел IV/XV плана
+    /// Installer/Launcher/Update). Требуется для `POST /shutdown` — без
+    /// него никакой запрос на graceful shutdown не принимается, даже с
+    /// loopback-адреса. Отсутствие переменной (например, при запуске через
+    /// `start-dev.ps1` вне Launcher'а) полностью отключает эндпоинт.
+    pub local_shutdown_secret: Option<String>,
 }
 
 impl AppConfig {
@@ -58,6 +65,9 @@ impl AppConfig {
         let worker_health_interval = duration_secs_env("WORKER_HEALTH_INTERVAL_SECS", 5);
         let worker_health_stale = duration_secs_env("WORKER_HEALTH_STALE_SECS", 15);
         let worker_job_stall = duration_secs_env("WORKER_JOB_STALL_SECS", 30);
+        let local_shutdown_secret = env::var("EVOHIME_LOCAL_TOKEN")
+            .ok()
+            .filter(|token| !token.is_empty());
 
         Ok(Self {
             database_url,
@@ -72,6 +82,7 @@ impl AppConfig {
             worker_health_interval,
             worker_health_stale,
             worker_job_stall,
+            local_shutdown_secret,
         })
     }
 }
@@ -117,6 +128,12 @@ pub struct AppState {
     pub metrics: Arc<crate::observability::PipelineMetrics>,
     pub worker_metrics: Arc<crate::worker_observability::WorkerMetrics>,
     pub rate_limiter: Arc<crate::rate_limit::RateLimiter>,
+    /// Триггер graceful shutdown, разделяемый с `main.rs`'s Ctrl+C
+    /// обработчиком (раздел IV плана): `POST /shutdown` вызывает `.cancel()`
+    /// на этом же токене, поэтому оба пути завершения проходят одинаковый
+    /// штатный shutdown, а не отдельный ad-hoc код.
+    pub shutdown_token: tokio_util::sync::CancellationToken,
+    pub local_shutdown_secret: Option<String>,
 }
 
 impl AppState {

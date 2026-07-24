@@ -1,0 +1,25 @@
+//! Поддерживающая библиотека Launcher'а EvoHime (Фаза 2 плана Installer/Launcher/Update).
+//!
+//! Содержит логику, не зависящую от GUI/трея (те появятся в Фазе 4): применение
+//! миграций без `sqlx-cli`, автоматические бэкапы БД перед миграциями, генерацию
+//! пароля суперпользователя PostgreSQL и патч `pg_hba.conf`, а также построение
+//! DSN без хардкода имени пользователя.
+
+pub mod backup;
+pub mod dsn;
+pub mod migrations;
+pub mod pg_auth;
+pub mod process_manager;
+pub mod safe_mode;
+pub mod static_server;
+pub mod status_server;
+pub mod token;
+
+pub use backup::{create_backup, prune_backups, BackupError};
+pub use dsn::build_dsn;
+pub use migrations::{apply_migrations, MigrationError};
+pub use pg_auth::{generate_password, patch_pg_hba_trust_local, PgHbaError};
+pub use process_manager::ManagedProcess;
+pub use static_server::build_static_router;
+pub use status_server::{build_status_router, ComponentStatus, LauncherStatus, StatusServerState};
+pub use token::{generate_session_token, tokens_equal};

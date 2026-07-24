@@ -20,6 +20,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let router = Router::new()
         .route("/health", get(crate::health::health))
         .route("/health/deep", get(crate::health::deep_health))
+        .route("/shutdown", post(crate::shutdown_api::shutdown))
         .route("/openapi.json", get(crate::openapi::document))
         .route("/api/auth/status", get(crate::health::auth_status))
         .route(

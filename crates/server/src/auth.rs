@@ -26,7 +26,12 @@ use crate::app::AppState;
 use evohime_storage::{OperatorRole, OperatorRow, BOOTSTRAP_OWNER_ID};
 use uuid::Uuid;
 
-const PUBLIC_PATHS: &[&str] = &["/health", "/health/deep", "/api/auth/status"];
+// "/shutdown" не защищён общим `EVOHIME_API_TOKEN` — у него собственный,
+// независимый секрет (`EVOHIME_LOCAL_TOKEN`/`AppState::local_shutdown_secret`,
+// см. crate::shutdown_api), который Launcher генерирует заново на каждый
+// запуск и который по умолчанию полностью отключает эндпоинт (404), если
+// не задан. Раздел IV/XV плана Installer/Launcher/Update.
+const PUBLIC_PATHS: &[&str] = &["/health", "/health/deep", "/api/auth/status", "/shutdown"];
 
 #[derive(Debug, Clone, Default)]
 pub struct AuthConfig {
@@ -247,7 +252,7 @@ pub fn authorize_request(
     }
 }
 
-fn tokens_equal(left: &str, right: &str) -> bool {
+pub(crate) fn tokens_equal(left: &str, right: &str) -> bool {
     // Constant-time-ish compare for equal lengths; length leak is acceptable for local tokens.
     if left.len() != right.len() {
         return false;

@@ -1,0 +1,192 @@
+name: Build Release
+
+# Фаза 1 плана Installer/Launcher/Update: собирает самодостаточные артефакты
+# (server.exe, dist.zip, migrations.zip, worker.zip) и публикует GitHub Release
+# на каждый тег `v*`. Launcher скачивает эти артефакты напрямую — без Git,
+# без sqlx-cli, без Node.js/Python на машине пользователя.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  build-server:
+    name: Build server.exe (Windows)
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      short_sha: ${{ steps.version.outputs.short_sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute version
+        id: version
+        shell: bash
+        run: |
+          echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build evohime-server (release)
+        run: cargo build -p evohime-server --release
+
+      - name: Stage server artifact
+        shell: bash
+        run: |
+          mkdir -p artifact
+          cp target/release/evohime-server.exe artifact/server.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-exe
+          path: artifact/server.exe
+          retention-days: 1
+
+  build-frontend:
+    name: Build React static bundle
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/web/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Zip dist
+        run: |
+          cd dist
+          zip -r ../../../dist.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-zip
+          path: dist.zip
+          retention-days: 1
+
+  package-migrations:
+    name: Package migrations.zip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Zip migrations
+        run: |
+          cd migrations
+          zip -r ../migrations.zip . -i "*.sql"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: migrations-zip
+          path: migrations.zip
+          retention-days: 1
+
+  package-worker:
+    name: Package worker.zip (with Windows wheels)
+    runs-on: ubuntu-latest
+    # Раннер здесь Linux, но requirements.txt проекта содержит только чистый
+    # Python-пакет (jsonschema>=4.0.0, universal wheel) — поэтому явные
+    # платформенные флаги ниже безопасны. При добавлении зависимости с
+    # C-расширением сначала проверить на pypi.org наличие win_amd64 wheel;
+    # если его нет — перенести этот шаг на windows-latest без --only-binary,
+    # чтобы pip собрал пакет из исходников локальным тулчейном раннера.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Download Windows-compatible wheels
+        run: |
+          mkdir -p worker_pkg/wheels
+          pip download -r workers/python/requirements.txt -d worker_pkg/wheels \
+            --platform win_amd64 \
+            --python-version 312 \
+            --implementation cp \
+            --only-binary=:all:
+      - name: Stage worker files
+        run: |
+          cp workers/python/worker.py worker_pkg/
+          cp workers/python/requirements.txt worker_pkg/
+      - name: Zip worker package
+        run: |
+          cd worker_pkg
+          zip -r ../worker.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: worker-zip
+          path: worker.zip
+          retention-days: 1
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-server, build-frontend, package-migrations, package-worker]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git-cliff нужна полная история для сравнения тегов
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: downloaded
+
+      - name: Assemble release artifacts
+        run: |
+          mkdir -p release
+          cp downloaded/server-exe/server.exe release/
+          cp downloaded/dist-zip/dist.zip release/
+          cp downloaded/migrations-zip/migrations.zip release/
+          cp downloaded/worker-zip/worker.zip release/
+
+      - name: Write version.txt
+        run: |
+          echo "${{ needs.build-server.outputs.version }}+${{ needs.build-server.outputs.short_sha }}" > release/version.txt
+
+      - name: Generate changelog with git-cliff
+        uses: orhun/git-cliff-action@v4
+        id: git-cliff
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          GITHUB_REPO: ${{ github.repository }}
+
+      - name: Write changelog to file
+        run: printf '%s\n' "${{ steps.git-cliff.outputs.content }}" > release/changelog.md
+
+      - name: Compute SHA256 checksums
+        run: |
+          cd release
+          for f in server.exe dist.zip migrations.zip worker.zip; do
+            sha256sum "$f" | cut -d' ' -f1 > "$f.sha256"
+          done
+
+      # TODO (Фаза 3): после появления crates/installer добавить отдельный job,
+      # который собирает evohime-setup.exe и evohime-offline-setup.exe (~300 МБ,
+      # с потоковой упаковкой PostgreSQL/Python/релиза внутрь) и прикладывает их
+      # к этому же релизу.
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ needs.build-server.outputs.version }}
+          body_path: release/changelog.md
+          files: |
+            release/server.exe
+            release/server.exe.sha256
+            release/dist.zip
+            release/dist.zip.sha256
+            release/migrations.zip
+            release/migrations.zip.sha256
+            release/worker.zip
+            release/worker.zip.sha256
+            release/version.txt

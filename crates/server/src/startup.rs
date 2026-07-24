@@ -135,6 +135,8 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
         metrics: Arc::new(observability::PipelineMetrics::new()),
         worker_metrics: Arc::new(worker_observability::WorkerMetrics::new()),
         rate_limiter: Arc::new(rate_limit::RateLimiter::from_env()),
+        shutdown_token: shutdown_token.clone(),
+        local_shutdown_secret: config.local_shutdown_secret.clone(),
     });
 
     let retention_state = state.clone();

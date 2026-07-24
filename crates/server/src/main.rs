@@ -30,6 +30,7 @@ mod scheduler;
 mod secrets;
 mod secure_headers;
 mod sessions_api;
+mod shutdown_api;
 mod sites_api;
 mod startup;
 mod sync_api;
