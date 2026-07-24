@@ -184,9 +184,13 @@ pub struct WorkerJobRow {
     pub completed_at: Option<DateTime<Utc>>,
     /// Lease for the current poller / attempt (Stage 7.26).
     pub claim_token: Option<Uuid>,
+    /// When the job was claimed by a worker (Stage 7.54 distributed queue).
+    pub claimed_at: Option<DateTime<Utc>>,
+    /// Last heartbeat from worker (Stage 7.54 distributed queue).
+    pub heartbeat_at: Option<DateTime<Utc>>,
 }
 
-const WORKER_JOB_RETURNING: &str = "id, worker_job_id, task, payload_json, status, attempts, max_attempts, result_json, error, created_at, updated_at, completed_at, claim_token";
+const WORKER_JOB_RETURNING: &str = "id, worker_job_id, task, payload_json, status, attempts, max_attempts, result_json, error, created_at, updated_at, completed_at, claim_token, claimed_at, heartbeat_at";
 
 pub async fn run_migrations(pool: &PgPool) -> Result<(), StorageError> {
     sqlx::migrate!("../../migrations").run(pool).await?;
