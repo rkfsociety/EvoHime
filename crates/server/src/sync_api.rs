@@ -172,9 +172,13 @@ pub(crate) async fn push(
     let checksum = checksum_hex(&payload);
     let bytes_total = payload.len() as i64;
 
-    let run = evohime_storage::start_sync_run(&state.pool, identity.id)
-        .await
-        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let run = evohime_storage::start_sync_run(
+        &state.pool,
+        identity.id,
+        evohime_storage::SYNC_DIRECTION_PUSH,
+    )
+    .await
+    .map_err(|error| ApiError::Internal(error.to_string()))?;
 
     let outcome = send_backup(&config, payload, &checksum).await;
     let (status, error) = match &outcome {

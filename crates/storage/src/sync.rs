@@ -1,4 +1,4 @@
-//! Cloud sync push run history (Stage 7.99, wave 1).
+//! Cloud sync run history (Stage 7.99, waves 1 and 3).
 
 use crate::StorageError;
 use chrono::{DateTime, Duration, Utc};
@@ -8,6 +8,8 @@ use uuid::Uuid;
 pub const SYNC_STATUS_RUNNING: &str = "running";
 pub const SYNC_STATUS_SUCCESS: &str = "success";
 pub const SYNC_STATUS_FAILED: &str = "failed";
+pub const SYNC_DIRECTION_PUSH: &str = "push";
+pub const SYNC_DIRECTION_PULL: &str = "pull";
 
 #[derive(Debug, Clone, FromRow, serde::Serialize)]
 pub struct SyncRunRow {
@@ -16,23 +18,38 @@ pub struct SyncRunRow {
     pub started_at: DateTime<Utc>,
     pub finished_at: Option<DateTime<Utc>>,
     pub status: String,
+    pub direction: String,
     pub bytes_total: Option<i64>,
     pub checksum: Option<String>,
     pub error: Option<String>,
 }
 
 const COLUMNS: &str =
-    "id, operator_id, started_at, finished_at, status, bytes_total, checksum, error";
+    "id, operator_id, started_at, finished_at, status, direction, bytes_total, checksum, error";
 
 pub fn is_terminal_sync_status(status: &str) -> bool {
     matches!(status, SYNC_STATUS_SUCCESS | SYNC_STATUS_FAILED)
 }
 
-pub async fn start_sync_run(pool: &PgPool, operator_id: Uuid) -> Result<SyncRunRow, StorageError> {
+pub fn is_valid_sync_direction(direction: &str) -> bool {
+    matches!(direction, SYNC_DIRECTION_PUSH | SYNC_DIRECTION_PULL)
+}
+
+pub async fn start_sync_run(
+    pool: &PgPool,
+    operator_id: Uuid,
+    direction: &str,
+) -> Result<SyncRunRow, StorageError> {
+    if !is_valid_sync_direction(direction) {
+        return Err(StorageError::InvalidSync(format!(
+            "sync direction must be push or pull, got {direction}"
+        )));
+    }
     Ok(sqlx::query_as::<_, SyncRunRow>(&format!(
-        "INSERT INTO sync_runs (operator_id) VALUES ($1) RETURNING {COLUMNS}"
+        "INSERT INTO sync_runs (operator_id, direction) VALUES ($1, $2) RETURNING {COLUMNS}"
     ))
     .bind(operator_id)
+    .bind(direction)
     .fetch_one(pool)
     .await?)
 }
@@ -116,6 +133,13 @@ mod tests {
         assert!(!is_terminal_sync_status("done"));
     }
 
+    #[test]
+    fn directions_are_push_and_pull_only() {
+        assert!(is_valid_sync_direction(SYNC_DIRECTION_PUSH));
+        assert!(is_valid_sync_direction(SYNC_DIRECTION_PULL));
+        assert!(!is_valid_sync_direction("sync"));
+    }
+
     #[tokio::test]
     async fn sync_run_lifecycle_and_operator_isolation() {
         let Some(pool) = crate::connect_integration_pool().await else {
@@ -137,8 +161,12 @@ mod tests {
         .await
         .expect("second operator");
 
-        let run = start_sync_run(&pool, first.id).await.expect("start run");
+        assert!(start_sync_run(&pool, first.id, "sideways").await.is_err());
+        let run = start_sync_run(&pool, first.id, SYNC_DIRECTION_PULL)
+            .await
+            .expect("start run");
         assert_eq!(run.status, SYNC_STATUS_RUNNING);
+        assert_eq!(run.direction, SYNC_DIRECTION_PULL);
         assert!(run.finished_at.is_none());
 
         let active = find_active_sync_run(&pool, first.id, Duration::minutes(10))
@@ -196,7 +224,9 @@ mod tests {
         )
         .await
         .expect("operator");
-        let run = start_sync_run(&pool, operator.id).await.expect("start run");
+        let run = start_sync_run(&pool, operator.id, SYNC_DIRECTION_PUSH)
+            .await
+            .expect("start run");
         sqlx::query("UPDATE sync_runs SET started_at = now() - interval '1 hour' WHERE id = $1")
             .bind(run.id)
             .execute(&pool)

@@ -61,8 +61,9 @@ pub use scopes::{
 };
 pub use restore::{restore_backup, validate_backup_header, RestoreReport};
 pub use sync::{
-    find_active_sync_run, finish_sync_run, is_terminal_sync_status, list_sync_runs,
-    start_sync_run, SyncRunRow, SYNC_STATUS_FAILED, SYNC_STATUS_RUNNING, SYNC_STATUS_SUCCESS,
+    find_active_sync_run, finish_sync_run, is_terminal_sync_status, is_valid_sync_direction,
+    list_sync_runs, start_sync_run, SyncRunRow, SYNC_DIRECTION_PULL, SYNC_DIRECTION_PUSH,
+    SYNC_STATUS_FAILED, SYNC_STATUS_RUNNING, SYNC_STATUS_SUCCESS,
 };
 pub use test_db::{
     connect_integration_pool, integration_database_url, require_integration_database,
