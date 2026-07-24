@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, Fragment, UIEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, Fragment, Suspense, UIEvent, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
@@ -13,24 +13,25 @@ import { MemoryAskModal } from "./components/MemoryAskModal";
 import { AgentAvatar } from "./components/AgentAvatar";
 import { AgentBrand } from "./components/AgentBrand";
 import { AgentMark } from "./components/AgentMark";
-import { ActionsPanel } from "./panels/ActionsPanel";
-import { EditorPanel } from "./panels/EditorPanel";
-import { FilesPanel } from "./panels/FilesPanel";
-import { GitPanel } from "./panels/GitPanel";
-import { PluginsPanel } from "./panels/PluginsPanel";
-import { MemoryPanel } from "./panels/MemoryPanel";
-import { PullRequestsPanel } from "./panels/PullRequestsPanel";
-import { ScheduledPanel } from "./panels/ScheduledPanel";
 import { BootNoticeBanner } from "./components/BootNoticeBanner";
 import { PanelErrorBoundary } from "./components/PanelErrorBoundary";
 import { SettingsModal } from "./components/SettingsModal";
-import { SettingsPanel } from "./panels/SettingsPanel";
-import { SitesPanel } from "./panels/SitesPanel";
-import { TasksPanel } from "./panels/TasksPanel";
 import { useServerEventHandler } from "./hooks/useServerEventHandler";
 import { useChat } from "./hooks/useChat";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useWorkspace } from "./hooks/useWorkspace";
+// Phase 5.8: Lazy-loaded panels for code splitting
+const ActionsPanel = lazy(() => import("./panels/ActionsPanel").then(m => ({ default: m.ActionsPanel })));
+const EditorPanel = lazy(() => import("./panels/EditorPanel").then(m => ({ default: m.EditorPanel })));
+const FilesPanel = lazy(() => import("./panels/FilesPanel").then(m => ({ default: m.FilesPanel })));
+const GitPanel = lazy(() => import("./panels/GitPanel").then(m => ({ default: m.GitPanel })));
+const PluginsPanel = lazy(() => import("./panels/PluginsPanel").then(m => ({ default: m.PluginsPanel })));
+const MemoryPanel = lazy(() => import("./panels/MemoryPanel").then(m => ({ default: m.MemoryPanel })));
+const PullRequestsPanel = lazy(() => import("./panels/PullRequestsPanel").then(m => ({ default: m.PullRequestsPanel })));
+const ScheduledPanel = lazy(() => import("./panels/ScheduledPanel").then(m => ({ default: m.ScheduledPanel })));
+const SettingsPanel = lazy(() => import("./panels/SettingsPanel").then(m => ({ default: m.SettingsPanel })));
+const SitesPanel = lazy(() => import("./panels/SitesPanel").then(m => ({ default: m.SitesPanel })));
+const TasksPanel = lazy(() => import("./panels/TasksPanel").then(m => ({ default: m.TasksPanel })));
 import {
   githubApi,
   featuresApi,
@@ -1096,41 +1097,45 @@ export function App() {
     );
   }
 
+  const panelFallback = <div style={{ padding: "2rem", textAlign: "center", color: "var(--text-secondary)" }}>Загрузка…</div>;
+
   function settingsPanelElement() {
     return (
-      <SettingsPanel
-        settingsTab={settingsTab}
-        onSettingsTabChange={setSettingsTab}
-        modelConfig={modelConfig}
-        modelConfigError={modelConfigError}
-        modelSaving={modelSaving}
-        modelNotice={modelNotice}
-        activeModelRoute={activeModelRoute}
-        activeModelRouteIndex={activeModelRouteIndex}
-        orchestratorRoute={orchestratorRoute}
-        orchestratorRouteIndex={orchestratorRouteIndex}
-        orchestratorModels={orchestratorModels}
-        onUpdateModelDraft={updateModelDraft}
-        onSaveModelConfig={() => void saveModelConfig()}
-        permissionSettings={permissionSettings}
-        permissionAudit={permissionAudit}
-        permissionScopes={permissionScopes}
-        onUpdatePermission={(name, mode) => void updatePermission(name, mode)}
-        mcpServers={mcpServers}
-        mcpServersError={mcpServersError}
-        mcpServersNotice={mcpServersNotice}
-        mcpServersSaving={mcpServersSaving}
-        onAddMcpServer={addMcpServer}
-        onSaveMcpServers={() => void saveMcpServers()}
-        onUpdateMcpServer={updateMcpServer}
-        onRemoveMcpServer={removeMcpServer}
-        toolCatalog={toolCatalog}
-        toolCatalogError={toolCatalogError}
-        archivedChats={archivedChats}
-        deletingSessionId={deletingSessionId}
-        onRestoreSession={(chat) => void restoreArchivedChat(chat)}
-        onDeleteSession={(chat) => void deleteSession(chat)}
-      />
+      <Suspense fallback={panelFallback}>
+        <SettingsPanel
+          settingsTab={settingsTab}
+          onSettingsTabChange={setSettingsTab}
+          modelConfig={modelConfig}
+          modelConfigError={modelConfigError}
+          modelSaving={modelSaving}
+          modelNotice={modelNotice}
+          activeModelRoute={activeModelRoute}
+          activeModelRouteIndex={activeModelRouteIndex}
+          orchestratorRoute={orchestratorRoute}
+          orchestratorRouteIndex={orchestratorRouteIndex}
+          orchestratorModels={orchestratorModels}
+          onUpdateModelDraft={updateModelDraft}
+          onSaveModelConfig={() => void saveModelConfig()}
+          permissionSettings={permissionSettings}
+          permissionAudit={permissionAudit}
+          permissionScopes={permissionScopes}
+          onUpdatePermission={(name, mode) => void updatePermission(name, mode)}
+          mcpServers={mcpServers}
+          mcpServersError={mcpServersError}
+          mcpServersNotice={mcpServersNotice}
+          mcpServersSaving={mcpServersSaving}
+          onAddMcpServer={addMcpServer}
+          onSaveMcpServers={() => void saveMcpServers()}
+          onUpdateMcpServer={updateMcpServer}
+          onRemoveMcpServer={removeMcpServer}
+          toolCatalog={toolCatalog}
+          toolCatalogError={toolCatalogError}
+          archivedChats={archivedChats}
+          deletingSessionId={deletingSessionId}
+          onRestoreSession={(chat) => void restoreArchivedChat(chat)}
+          onDeleteSession={(chat) => void deleteSession(chat)}
+        />
+      </Suspense>
     );
   }
 
@@ -1140,86 +1145,102 @@ export function App() {
     }
 
     if (activePanel === "plugins") {
-      return <PluginsPanel />;
+      return (
+        <Suspense fallback={panelFallback}>
+          <PluginsPanel />
+        </Suspense>
+      );
     }
 
     if (activePanel === "memory") {
-      return <MemoryPanel />;
+      return (
+        <Suspense fallback={panelFallback}>
+          <MemoryPanel />
+        </Suspense>
+      );
     }
 
     if (activePanel === "sites") {
       return (
-        <SitesPanel
-          siteSearch={siteSearch}
-          onSiteSearchChange={setSiteSearch}
-          workspacePath={selectedProject.path ?? ""}
-        />
+        <Suspense fallback={panelFallback}>
+          <SitesPanel
+            siteSearch={siteSearch}
+            onSiteSearchChange={setSiteSearch}
+            workspacePath={selectedProject.path ?? ""}
+          />
+        </Suspense>
       );
     }
 
     if (activePanel === "files") {
       return (
-        <FilesPanel
-          rootEntryCount={(directoryCache["."] ?? []).length}
-          newFilePath={newFilePath}
-          newFileContent={newFileContent}
-          onNewFilePathChange={setNewFilePath}
-          onNewFileContentChange={setNewFileContent}
-          onRefreshTree={() => void refreshDirectory(".")}
-            onCreateFile={() => void createFile()}
-          fileTree={renderTree(".")}
-        />
+        <Suspense fallback={panelFallback}>
+          <FilesPanel
+            rootEntryCount={(directoryCache["."] ?? []).length}
+            newFilePath={newFilePath}
+            newFileContent={newFileContent}
+            onNewFilePathChange={setNewFilePath}
+            onNewFileContentChange={setNewFileContent}
+            onRefreshTree={() => void refreshDirectory(".")}
+              onCreateFile={() => void createFile()}
+            fileTree={renderTree(".")}
+          />
+        </Suspense>
       );
     }
 
     if (activePanel === "editor") {
       return (
-        <EditorPanel
-          selectedFilePath={selectedFilePath}
-          selectedFileContent={selectedFileContent}
-          selectedFileOriginal={selectedFileOriginal}
-          selectedFileLanguage={selectedFileLanguage}
-          selectedFileLoading={selectedFileLoading}
-          selectedFileNotice={selectedFileNotice}
-          saveState={saveState}
-          saveFileRef={saveFileRef}
-          onContentChange={(value) => {
-            setSelectedFileContent(value);
-            setSaveState("idle");
-          }}
-          onReload={() => void refreshSelectedFile(selectedFilePath ?? ".")}
-          onSave={() => void saveFile()}
-        />
+        <Suspense fallback={panelFallback}>
+          <EditorPanel
+            selectedFilePath={selectedFilePath}
+            selectedFileContent={selectedFileContent}
+            selectedFileOriginal={selectedFileOriginal}
+            selectedFileLanguage={selectedFileLanguage}
+            selectedFileLoading={selectedFileLoading}
+            selectedFileNotice={selectedFileNotice}
+            saveState={saveState}
+            saveFileRef={saveFileRef}
+            onContentChange={(value) => {
+              setSelectedFileContent(value);
+              setSaveState("idle");
+            }}
+            onReload={() => void refreshSelectedFile(selectedFilePath ?? ".")}
+            onSave={() => void saveFile()}
+          />
+        </Suspense>
       );
     }
 
     if (activePanel === "git") {
       return (
-        <GitPanel
-          branchLabel={gitSummary.branch}
-          changedCount={gitSummary.changed}
-          gitDiffPath={gitDiffPath}
-          gitDiffPathInput={gitDiffPathInput}
-          gitCommitMessage={gitCommitMessage}
-          gitRemote={gitRemote}
-          gitBranch={gitBranch}
-          gitAction={gitAction}
-          gitActionNotice={gitActionNotice}
-          gitStatus={gitStatus}
-          gitDiff={gitDiff}
-          selectedFilePath={selectedFilePath}
-          onDiffPathInputChange={setGitDiffPathInput}
-          onCommitMessageChange={setGitCommitMessage}
-          onRemoteChange={setGitRemote}
-          onBranchChange={setGitBranch}
-          onRefresh={(path) => void refreshGitSnapshot(path)}
-          onUseSelectedFile={() => {
-            const nextPath = selectedFilePath ?? "";
-            setGitDiffPathInput(nextPath);
-            void refreshGitSnapshot(nextPath || undefined);
-          }}
-          onGitAction={(action) => void gitOperation(action)}
-        />
+        <Suspense fallback={panelFallback}>
+          <GitPanel
+            branchLabel={gitSummary.branch}
+            changedCount={gitSummary.changed}
+            gitDiffPath={gitDiffPath}
+            gitDiffPathInput={gitDiffPathInput}
+            gitCommitMessage={gitCommitMessage}
+            gitRemote={gitRemote}
+            gitBranch={gitBranch}
+            gitAction={gitAction}
+            gitActionNotice={gitActionNotice}
+            gitStatus={gitStatus}
+            gitDiff={gitDiff}
+            selectedFilePath={selectedFilePath}
+            onDiffPathInputChange={setGitDiffPathInput}
+            onCommitMessageChange={setGitCommitMessage}
+            onRemoteChange={setGitRemote}
+            onBranchChange={setGitBranch}
+            onRefresh={(path) => void refreshGitSnapshot(path)}
+            onUseSelectedFile={() => {
+              const nextPath = selectedFilePath ?? "";
+              setGitDiffPathInput(nextPath);
+              void refreshGitSnapshot(nextPath || undefined);
+            }}
+            onGitAction={(action) => void gitOperation(action)}
+          />
+        </Suspense>
       );
     }
 
@@ -1227,56 +1248,66 @@ export function App() {
 
     if (activePanel === "scheduled") {
       return (
-        <ScheduledPanel
-          workspacePath={selectedProject?.path ?? ""}
-          onPickPrompt={(prompt) => {
-            setInput(prompt);
-            navigateToPanel("chat");
-          }}
-        />
+        <Suspense fallback={panelFallback}>
+          <ScheduledPanel
+            workspacePath={selectedProject?.path ?? ""}
+            onPickPrompt={(prompt) => {
+              setInput(prompt);
+              navigateToPanel("chat");
+            }}
+          />
+        </Suspense>
       );
     }
 
     if (activePanel === "tasks") {
       return (
-        <TasksPanel
-          tasks={tasks}
-          chatSessions={chatSessions}
-          activeSessionId={activeSessionId}
-          onNewChat={() => navigateToPanel("chat")}
-          onOpenSession={(chat) => {
-            navigateToPanel("chat");
-            void openSession(chat).catch((error) => {
-              setSocketState("failed");
-              setLines((current) => [...current, createChatLine({ role: "system", text: String(error) })]);
-            });
-          }}
-          onApprovePlan={(taskId, plan) => {
-            sendSocket({ type: "task.plan.approve", task_id: taskId, plan });
-          }}
-          onRejectPlan={(taskId) => {
-            sendSocket({ type: "task.plan.reject", task_id: taskId });
-          }}
-        />
+        <Suspense fallback={panelFallback}>
+          <TasksPanel
+            tasks={tasks}
+            chatSessions={chatSessions}
+            activeSessionId={activeSessionId}
+            onNewChat={() => navigateToPanel("chat")}
+            onOpenSession={(chat) => {
+              navigateToPanel("chat");
+              void openSession(chat).catch((error) => {
+                setSocketState("failed");
+                setLines((current) => [...current, createChatLine({ role: "system", text: String(error) })]);
+              });
+            }}
+            onApprovePlan={(taskId, plan) => {
+              sendSocket({ type: "task.plan.approve", task_id: taskId, plan });
+            }}
+            onRejectPlan={(taskId) => {
+              sendSocket({ type: "task.plan.reject", task_id: taskId });
+            }}
+          />
+        </Suspense>
       );
     }
 
     if (activePanel === "actions") {
-      return <ActionsPanel actions={actions} />;
+      return (
+        <Suspense fallback={panelFallback}>
+          <ActionsPanel actions={actions} />
+        </Suspense>
+      );
     }
 
     if (activePanel === "pull-requests") {
       return (
-        <PullRequestsPanel
-          githubLogin={githubAuth?.login ?? null}
-          pullRequestSearch={pullRequestSearch}
-          pullRequestScope={pullRequestScope}
-          pullRequestsLoading={pullRequestsLoading}
-          pullRequestsError={pullRequestsError}
-          visiblePullRequests={visiblePullRequests}
-          onSearchChange={setPullRequestSearch}
-          onScopeChange={setPullRequestScope}
-        />
+        <Suspense fallback={panelFallback}>
+          <PullRequestsPanel
+            githubLogin={githubAuth?.login ?? null}
+            pullRequestSearch={pullRequestSearch}
+            pullRequestScope={pullRequestScope}
+            pullRequestsLoading={pullRequestsLoading}
+            pullRequestsError={pullRequestsError}
+            visiblePullRequests={visiblePullRequests}
+            onSearchChange={setPullRequestSearch}
+            onScopeChange={setPullRequestScope}
+          />
+        </Suspense>
       );
     }
 
