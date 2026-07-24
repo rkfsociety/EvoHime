@@ -381,7 +381,7 @@
 | 7.51 | Ещё handlers: `text.classify`, `text.language`, `text.redact` | M | ✅ | Python worker + mirrored Rust validation; deterministic intent/language heuristics and memory-aligned secret redaction; exposed through `worker.run` |
 | 7.52 | Agent tool `worker.run` (submit+await job) | M | ✅ | tool-runtime HTTP submit+poll; wiremock test |
 | 7.53 | Worker job UI: submit form + payload editor в Settings | M | ✅ | WorkerSettingsSection: handler dropdown (7 handlers), JSON payload editor, submit form; API `submitWorkerJob()` |
-| 7.54 | Horizontal worker scale (N processes / queue backend) | L | ⬜ | single in-proc Python queue |
+| 7.54 | Horizontal worker scale (N processes / queue backend) | L | ✅ | distributed PostgreSQL queue via `/api/worker/queue/*` endpoints; `worker_distributed.py` polls and claims jobs atomically |
 | 7.55 | Typed JSON Schema registry для worker tasks (shared) | M | ⬜ | duplicate validate Rust/Python |
 | 7.56 | CI job для `workers/python` unittest | S | ✅ | `python-worker` job на Python 3.12 |
 
@@ -500,7 +500,7 @@
 3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.51`, `7.52` ✅ → next product honesty `7.62`+
 4. **Wave D (product honesty):** 7.62–7.68, 7.72–7.73 ✅
 5. **Wave E (DX/CI):** `7.84`–`7.98` ✅, `7.56`, `7.69`–`7.71` ✅ → next `7.99`
-6. **Wave F (scale/moonshots):** 7.54, 7.57–7.59, 7.98+
+6. **Wave F (scale/moonshots):** 7.54 ✅, 7.57–7.59, 7.98+
 
 ### Критерий готовности Stage 7 (минимум)
 
