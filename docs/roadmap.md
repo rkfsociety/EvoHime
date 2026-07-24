@@ -1,12 +1,12 @@
 # EvoHime — Дорожная карта
 
-> Обновлено: 2026-07-17
+> Обновлено: 2026-07-24
 
 ## Обзор
 
 ```text
-Этап 1 ✅ → 2 ✅ → 3 ✅ → 4 ✅ → 5 ✅ → 6 ✅ → Этап 7 🟡
-Фундамент   Модель   Tools   Editor   Tasks   Advanced   Hardening + Product
+Этап 1 ✅ → 2 ✅ → 3 ✅ → 4 ✅ → 5 ✅ → 6 ✅ → Этап 7 🟡 → Этап 8 📝
+Фундамент   Модель   Tools   Editor   Tasks   Advanced   Hardening + Product   Intelligence + DX
 ```
 
 | Этап | Название | Статус | Ключевой результат |
@@ -18,6 +18,7 @@
 | 5 | Оркестрация | ✅ Complete | Lifecycle, команды, storage и recovery готовы |
 | 6 | Advanced | ✅ Foundations done | Memory, PR, workers, observability, tool catalog |
 | 7 | Hardening + Product | 🟡 Plan | Security, reliability, Sites/Scheduled, agent 2.0, CI, DX |
+| 8 | Agent Intelligence + DX | 📝 Plan | Reasoning 2.0, experience/memory 3.0, subagent playbooks, plugin runtime 2.0, local reliability, UX/a11y |
 
 ---
 
@@ -511,6 +512,107 @@
 - Sites/Scheduled либо реализованы, либо убраны из «как будто работают»  
 - CI гоняет frontend + Postgres integration + Python worker tests  
   (`7.84` Postgres ✅; `7.85` frontend ✅; worker/`7.56` ещё в Wave E)  
+
+---
+
+## Этап 8 — Agent Intelligence, Plugin Runtime 2.0 & Local Excellence
+
+**Цель:** после закрытия Stage 7 (trust boundary, restarts, product surface) следующий слой — качество самого агента (reasoning, память, playbooks), более безопасная и удобная plugin-экосистема, и локальная надёжность/DX/UX без ухода в multi-tenant/enterprise/SaaS-территорию.
+
+**Явно вне скоупа и намеренно не включено из черновика:** SSO/SAML/AD, multi-tenant organization hierarchy, SOC2/GDPR compliance pack, Kubernetes autoscaling, service mesh/zero-trust, blue-green/canary deploy, billing, AR/VR/holographic/BCI/quantum-inspired UI — всё это противоречит принципу single-tenant локального инструмента (см. правила памяти в `6.16`–`6.25`) и добавлено бы просто как SaaS-балласт.
+
+### 8.A — Agent reasoning & planning 2.0
+
+**Зависимости:** native ReAct (`7.28`), subagent fan-out (`7.31`), experience memory (`6.21`, `7.48`)
+
+| # | Задача | Size | Статус | Notes / rationale |
+| --- | --- | --- | --- | --- |
+| 8.1 | Tree-of-Thoughts bounded planner (branch + prune перед выполнением) | L | ⬜ | расширяет native ReAct на случаи с несколькими правдоподобными путями |
+| 8.2 | Self-reflection loop: агент проверяет собственный шаг перед следующим и пересматривает план при ошибке | L | ⬜ | опирается на experience memory (`6.21`) как источник паттернов провала |
+| 8.3 | Явный граф зависимостей задач при декомпозиции (вместо линейного плана) | L | ⬜ | развитие legacy `6.11` план-исполнителя |
+| 8.4 | Meta-cognitive confidence сигнал в ask-gate (шире, чем текущий uncertainty-порог) | M | ⬜ | расширяет `6.20` ask-on-uncertainty |
+| 8.5 | Counterfactual dry-run для high-impact tool calls перед approval | M | ⬜ | работает поверх permission engine (`crates/permissions/`) |
+| 8.6 | Аналогичный retrieval: явное переиспользование шагов из похожих прошлых задач | M | ⬜ | расширяет playbook auto-suggest (`7.48`) |
+
+### 8.B — Experience & memory 3.0
+
+**Зависимости:** memory pipeline (`6.16`–`6.25`), feedback loop (`6.23`), eval harness (`7.101`)
+
+| # | Задача | Size | Статус | Notes / rationale |
+| --- | --- | --- | --- | --- |
+| 8.7 | Imitation-сигнал из ручных правок пользователя после ответа агента | M | ⬜ | новый источник experience, не требует fine-tune весов |
+| 8.8 | Автоподбор few-shot примеров под тип задачи из experience memory | M | ⬜ | |
+| 8.9 | Локальный A/B-харнесс для системных промптов поверх eval harness | M | ⬜ | использует `7.101`, без облачной телеметрии |
+| 8.10 | Active learning: подсветка memory-кандидатов с наименьшей уверенностью для ревью | S | ⬜ | расширяет MemoryPanel |
+| 8.11 | Auto-archive устаревшей памяти при длительном confidence decay | S | ⬜ | расширяет feedback decay (`6.23`) |
+| 8.12 | Опциональный cross-project experience (только по явному opt-in, выключено по умолчанию) | M | ⬜ | не должен нарушать изоляцию project/workspace памяти |
+
+### 8.C — Specialized subagent playbooks
+
+**Зависимости:** `agent.run` subagent fan-out (`7.31`), eval harness (`7.101`)
+
+| # | Задача | Size | Статус | Notes / rationale |
+| --- | --- | --- | --- | --- |
+| 8.13 | Playbook: безопасный refactor (rename/extract), верификация тестами до commit | M | ⬜ | |
+| 8.14 | Playbook: генерация unit/integration тестов из diff | M | ⬜ | |
+| 8.15 | Playbook: локальный security review (pattern-based, без облачной отправки кода) | M | ⬜ | |
+| 8.16 | Playbook: профилирование производительности (обёртка над flamegraph/hyperfine) | M | ⬜ | |
+| 8.17 | Playbook: генерация docs/changelog из diff | S | ⬜ | |
+| 8.18 | Playbook: апдейт зависимостей (semver-aware, тесты перед commit) | M | ⬜ | |
+
+### 8.D — Plugin runtime 2.0
+
+**Зависимости:** plugin install/pin/quarantine (`7.8`–`7.9`), marketplace trust scores (`7.102`)
+
+| # | Задача | Size | Статус | Notes / rationale |
+| --- | --- | --- | --- | --- |
+| 8.19 | WASM sandbox для выполнения плагинов вместо текущего shell-based пути | L | ⬜ | усиливает `7.9` quarantine |
+| 8.20 | Plugin SDK + scaffold CLI (`evohime plugin init`) | M | ⬜ | |
+| 8.21 | Hot-reload плагина при разработке (без рестарта сервера) | S | ⬜ | |
+| 8.22 | Versioned plugin API с deprecation warnings | M | ⬜ | |
+| 8.23 | Per-plugin permission sandboxing (filesystem/network/shell scopes) | M | ⬜ | расширяет `7.9` |
+
+### 8.E — Local reliability, perf & ops
+
+**Зависимости:** backup/export (`7.97`), retry/backoff (`7.16`), deep health (`7.96`), telemetry (`7.34`)
+
+| # | Задача | Size | Статус | Notes / rationale |
+| --- | --- | --- | --- | --- |
+| 8.24 | Point-in-time recovery через локальный WAL archiving PostgreSQL | M | ⬜ | расширяет `7.97` backup/export |
+| 8.25 | Периодическая автоматическая проверка бэкапа через restore-тест | S | ⬜ | |
+| 8.26 | Circuit breaker для LLM/MCP/`http.fetch` вызовов | M | ⬜ | расширяет `7.16` retry/backoff |
+| 8.27 | Graceful degradation при недоступности DB/worker/LLM | M | ⬜ | |
+| 8.28 | Dashboard здоровья зависимостей (LiteRouter, MCP servers, worker) | S | ⬜ | расширяет `7.96` deep health |
+| 8.29 | Локальный кэш для project-index / memory retrieval (in-process, без внешнего Redis) | M | ⬜ | |
+| 8.30 | Ревизия производительности запросов + index tuning pass | S | ⬜ | |
+| 8.31 | Cost/token usage аналитика по задаче и модели | S | ⬜ | расширяет `7.34` planner telemetry |
+| 8.32 | Anomaly detection по локальным метрикам (spend/latency spikes) | M | ⬜ | |
+
+### 8.F — UX, accessibility & DX surface
+
+**Зависимости:** frontend shell decomposition (`7.69`–`7.71`), multi-device sync (`7.99`)
+
+| # | Задача | Size | Статус | Notes / rationale |
+| --- | --- | --- | --- | --- |
+| 8.33 | Command palette (Ctrl+K) | M | ⬜ | |
+| 8.34 | Редактор keyboard shortcuts | M | ⬜ | |
+| 8.35 | Notification center с историей | S | ⬜ | |
+| 8.36 | Полный проход по screen reader / keyboard-only навигации | L | ⬜ | |
+| 8.37 | High-contrast режим, font scaling, reduced-motion настройка | S | ⬜ | |
+| 8.38 | Сохранение/восстановление кастомных раскладок панелей | M | ⬜ | опирается на `7.99` multi-device sync для переноса между устройствами |
+| 8.39 | VS Code extension (тонкий клиент поверх существующего HTTP/WS API) | L | ⬜ | |
+| 8.40 | `evohime-cli` для headless запуска задач в CI/CD | M | ⬜ | |
+| 8.41 | GitHub Actions integration (запуск EvoHime task из workflow) | M | ⬜ | опирается на существующий PR workflow (`6.14`) |
+| 8.42 | Интерактивный onboarding-тур внутри продукта | M | ⬜ | |
+| 8.43 | Cookbook типовых локальных сценариев | S | ⬜ | |
+
+### Критерий готовности Stage 8 (минимум)
+
+- Агент умеет самостоятельно распознавать и исправлять собственные ошибки в рамках задачи (self-reflection), не только полагаться на ask-gate.
+- Плагины выполняются в изолированном WASM sandbox с явными permission scopes, а не в общем shell-контексте.
+- Локальный бэкап проверяется автоматически, а не только создаётся.
+- Хотя бы один внешний DX-поверхностный канал (VS Code extension или `evohime-cli`) закрывает разрыв между веб-UI и повседневным workflow разработчика.
+- Ничего из explicitly-out-of-scope списка (SSO/multi-tenant/SOC2/AR-VR/quantum) не просочилось в реализацию как "заодно".
 
 ---
 
