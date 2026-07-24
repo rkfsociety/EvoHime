@@ -392,7 +392,7 @@
 | 7.57 | Persistent on-disk index + incremental invalidate | L | ⬜ | full walk each search |
 | 7.58 | Symbol / AST-aware chunks (tree-sitter optional) | L | ⬜ | path/symbol weights уже есть |
 | 7.59 | Embeddings for project chunks (reuse memory embed pipeline) | L | ⬜ | comment «future encoder» |
-| 7.60 | Sidebar global search (сейчас кнопка без handler) | M | ⬜ | `app.tsx` |
+| 7.60 | Sidebar global search (сейчас кнопка без handler) | M | ✅ | `/api/projects/search` endpoint + SearchModal UI + integration |
 | 7.61 | `@file` / `@symbol` mentions в composer | M | ⬜ | attachments сейчас имена-only |
 
 ### 7.G — Product UI: Sites & Scheduled
