@@ -928,6 +928,7 @@ dependencies = [
  "chrono",
  "evohime-agent-runtime",
  "evohime-model-gateway",
+ "evohime-permissions",
  "evohime-tool-runtime",
  "serde",
  "serde_json",

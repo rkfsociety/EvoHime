@@ -1,0 +1,14 @@
+{
+  "name": "write-file",
+  "user_message": "Создай hello.txt с приветствием",
+  "script": [
+    { "tool": "filesystem.write", "input": { "path": "hello.txt", "content": "hello from golden task" } },
+    { "reply": "Файл hello.txt создан" }
+  ],
+  "expect": {
+    "final_message_contains": ["hello.txt"],
+    "files": [
+      { "path": "hello.txt", "contains": "hello from golden task" }
+    ]
+  }
+}

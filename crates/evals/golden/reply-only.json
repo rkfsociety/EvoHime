@@ -1,0 +1,10 @@
+{
+  "name": "reply-only",
+  "user_message": "Поздоровайся",
+  "script": [
+    { "reply": "Привет! Чем помочь?" }
+  ],
+  "expect": {
+    "final_message_contains": ["Привет"]
+  }
+}

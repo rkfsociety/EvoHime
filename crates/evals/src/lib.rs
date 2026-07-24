@@ -157,7 +157,18 @@ pub async fn run_golden_task(task: &GoldenTask) -> EvalReport {
     let provider =
         MockProvider::with_tool_call_sequence("golden-mock", script_to_results(&task.script));
     let gateway = ModelGateway::from_provider(std::sync::Arc::new(provider));
-    let tools = evohime_tool_runtime::ToolRegistry::bootstrap();
+    // Golden tasks run in a throwaway temp workspace, so protected tools are
+    // allowed outright — there is no operator to answer an approval prompt.
+    let permissions = evohime_permissions::PermissionEngine::new();
+    for permission in [
+        evohime_permissions::Permission::FilesystemWrite,
+        evohime_permissions::Permission::ShellExecute,
+    ] {
+        permissions
+            .set_mode(permission, evohime_permissions::PermissionMode::Allow)
+            .await;
+    }
+    let tools = evohime_tool_runtime::ToolRegistry::bootstrap_with_permissions(permissions);
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
 
     let result = run_agent_loop(
