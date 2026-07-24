@@ -1,5 +1,6 @@
 //! Memory feedback loop: helpful/harmful/idle confidence updates (roadmap 6.23).
 
+use crate::extract::FAILURE_CONFIDENCE_CAP;
 use evohime_storage::MemoryStatus;
 
 /// Soft bump when a task succeeds after using the item.
@@ -19,6 +20,11 @@ pub const ARCHIVE_CONFIDENCE_THRESHOLD: f64 = 0.25;
 /// Tiny bump for mere retrieval attribution.
 pub const USED_CONFIDENCE_BUMP: f64 = 0.005;
 
+/// Bump applied when an experience failure-lesson (failure_pattern/verification_rule)
+/// repeats as an admit duplicate — a repeated mistake is stronger evidence than a guess.
+pub const FAILURE_REPEAT_CONFIDENCE_BUMP: f64 = 0.05;
+pub const FAILURE_REPEAT_IMPORTANCE_BUMP: f64 = 0.1;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeedbackSignal {
     Used,
@@ -27,6 +33,7 @@ pub enum FeedbackSignal {
     Corrected,
     Rejected,
     IdleDecay,
+    Repeated,
 }
 
 impl FeedbackSignal {
@@ -38,6 +45,7 @@ impl FeedbackSignal {
             Self::Corrected => "corrected",
             Self::Rejected => "rejected",
             Self::IdleDecay => "idle_decay",
+            Self::Repeated => "repeated",
         }
     }
 
@@ -49,6 +57,7 @@ impl FeedbackSignal {
             "corrected" => Some(Self::Corrected),
             "rejected" => Some(Self::Rejected),
             "idle_decay" => Some(Self::IdleDecay),
+            "repeated" => Some(Self::Repeated),
             _ => None,
         }
     }
@@ -115,6 +124,10 @@ pub fn apply_feedback_signal(
                 next_status = Some(MemoryStatus::Archived);
             }
             conf
+        }
+        FeedbackSignal::Repeated => {
+            next_importance = clamp01(next_importance + FAILURE_REPEAT_IMPORTANCE_BUMP);
+            clamp01(before + FAILURE_REPEAT_CONFIDENCE_BUMP).min(FAILURE_CONFIDENCE_CAP)
         }
     };
 
@@ -192,5 +205,58 @@ mod tests {
             FeedbackSignal::IdleDecay,
         );
         assert_eq!(adj.next_status, Some(MemoryStatus::Archived));
+    }
+
+    #[test]
+    fn repeated_bumps_confidence_and_importance_below_cap() {
+        let adj = apply_feedback_signal(
+            0.5,
+            0.5,
+            false,
+            MemoryStatus::Candidate,
+            FeedbackSignal::Repeated,
+        );
+        assert!((adj.confidence - 0.55).abs() < 1e-9);
+        assert!((adj.importance - 0.6).abs() < 1e-9);
+        assert!(adj.next_status.is_none());
+    }
+
+    #[test]
+    fn repeated_confidence_never_exceeds_failure_cap() {
+        let near_cap = apply_feedback_signal(
+            0.58,
+            0.5,
+            false,
+            MemoryStatus::Candidate,
+            FeedbackSignal::Repeated,
+        );
+        assert!((near_cap.confidence - FAILURE_CONFIDENCE_CAP).abs() < 1e-9);
+
+        let already_at_cap = apply_feedback_signal(
+            FAILURE_CONFIDENCE_CAP,
+            0.5,
+            false,
+            MemoryStatus::Candidate,
+            FeedbackSignal::Repeated,
+        );
+        assert!((already_at_cap.confidence - FAILURE_CONFIDENCE_CAP).abs() < 1e-9);
+    }
+
+    #[test]
+    fn repeated_importance_has_no_cap_besides_unit_clamp() {
+        let adj = apply_feedback_signal(
+            0.3,
+            0.95,
+            false,
+            MemoryStatus::Candidate,
+            FeedbackSignal::Repeated,
+        );
+        assert!((adj.importance - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn repeated_signal_parses_and_formats() {
+        assert_eq!(FeedbackSignal::Repeated.as_str(), "repeated");
+        assert_eq!(FeedbackSignal::parse("repeated"), Some(FeedbackSignal::Repeated));
     }
 }
