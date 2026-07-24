@@ -453,6 +453,81 @@ pub async fn prune_worker_jobs(
     Ok(result.rows_affected())
 }
 
+/// Atomically claim the next queued job for execution. Returns (job, claim_token) or None if no queued jobs.
+/// Uses FOR UPDATE to prevent race conditions with other workers.
+pub async fn claim_next_queued_worker_job(
+    pool: &PgPool,
+) -> Result<Option<(WorkerJobRow, Uuid)>, StorageError> {
+    let mut tx = pool.begin().await?;
+    let row = sqlx::query_as::<_, WorkerJobRow>(
+        &format!("SELECT {WORKER_JOB_RETURNING} FROM worker_jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED"),
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    if let Some(job) = row {
+        let new_claim = Uuid::new_v4();
+        sqlx::query(
+            r#"
+            UPDATE worker_jobs
+            SET claim_token = $1,
+                status = 'running',
+                claimed_at = now(),
+                heartbeat_at = now(),
+                attempts = attempts + 1,
+                updated_at = now()
+            WHERE id = $2
+            "#,
+        )
+        .bind(new_claim)
+        .bind(job.id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(Some((job, new_claim)))
+    } else {
+        tx.rollback().await?;
+        Ok(None)
+    }
+}
+
+/// Update heartbeat timestamp for a running job. Returns true if claim is still valid.
+pub async fn update_worker_job_heartbeat(
+    pool: &PgPool,
+    id: Uuid,
+    claim_token: Uuid,
+) -> Result<bool, StorageError> {
+    let result = sqlx::query(
+        r#"
+        UPDATE worker_jobs
+        SET heartbeat_at = now(),
+            updated_at = now()
+        WHERE id = $1
+          AND claim_token = $2
+          AND status = 'running'
+        "#,
+    )
+    .bind(id)
+    .bind(claim_token)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+/// List worker jobs with stale heartbeats for recovery (no heartbeat for > timeout_secs).
+pub async fn list_stale_worker_jobs(
+    pool: &PgPool,
+    timeout_secs: i32,
+) -> Result<Vec<WorkerJobRow>, StorageError> {
+    let sql = format!(
+        "SELECT {WORKER_JOB_RETURNING} FROM worker_jobs WHERE status = 'running' AND (heartbeat_at IS NULL OR heartbeat_at < now() - interval '1 second' * $1) ORDER BY claimed_at ASC"
+    );
+    Ok(sqlx::query_as::<_, WorkerJobRow>(&sql)
+        .bind(timeout_secs)
+        .fetch_all(pool)
+        .await?)
+}
+
 pub async fn load_setting(pool: &PgPool, key: &str) -> Result<Option<Value>, StorageError> {
     let row = sqlx::query_scalar::<_, Value>("SELECT value_json FROM app_settings WHERE key = $1")
         .bind(key)
