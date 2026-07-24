@@ -4,7 +4,9 @@ import {
   installPlugin,
   listCatalog,
   listPluginSkills,
+  listPluginSkillStatus,
   listPlugins,
+  togglePluginSkill,
   uninstallPlugin,
   updatePlugin,
   type CatalogGroup,
@@ -13,6 +15,7 @@ import {
   type PluginCatalogResponse,
   type PluginIntegrityEntry,
   type PluginSkillSummary,
+  type PluginSkillStatus,
 } from "../api/plugins";
 
 type PluginAction = "install" | "update" | "uninstall";
@@ -68,6 +71,10 @@ export function PluginsPanel() {
   const [skillsLoadingId, setSkillsLoadingId] = useState<string | null>(null);
   const [skillsError, setSkillsError] = useState<string | null>(null);
   const [integrity, setIntegrity] = useState<Record<string, PluginIntegrityEntry>>({});
+  const [skillStatusByPlugin, setSkillStatusByPlugin] = useState<Record<string, PluginSkillStatus[]>>({});
+  const [skillStatusLoadingId, setSkillStatusLoadingId] = useState<string | null>(null);
+  const [skillStatusError, setSkillStatusError] = useState<string | null>(null);
+  const [togglingSkill, setTogglingSkill] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -144,18 +151,61 @@ export function PluginsPanel() {
 
     setExpandedSkillsPluginId(plugin.id);
     setSkillsError(null);
+    setSkillStatusError(null);
     if (skillsByPlugin[plugin.id]) {
+      // Load skill status if not already loaded
+      if (!skillStatusByPlugin[plugin.id]) {
+        await loadSkillStatus(plugin.id);
+      }
       return;
     }
 
     setSkillsLoadingId(plugin.id);
     try {
-      const skills = await listPluginSkills(plugin.id);
+      const [skills, status] = await Promise.all([
+        listPluginSkills(plugin.id),
+        listPluginSkillStatus(plugin.id).catch(() => ({ plugin_id: plugin.id, skills: [] })),
+      ]);
       setSkillsByPlugin((current) => ({ ...current, [plugin.id]: skills }));
+      setSkillStatusByPlugin((current) => ({ ...current, [plugin.id]: status.skills }));
     } catch (err: unknown) {
       setSkillsError(err instanceof Error ? err.message : "Не удалось загрузить skills");
     } finally {
       setSkillsLoadingId(null);
+    }
+  }
+
+  async function loadSkillStatus(pluginId: string) {
+    setSkillStatusLoadingId(pluginId);
+    try {
+      const response = await listPluginSkillStatus(pluginId);
+      setSkillStatusByPlugin((current) => ({ ...current, [pluginId]: response.skills }));
+    } catch (err: unknown) {
+      setSkillStatusError(err instanceof Error ? err.message : "Не удалось загрузить статус skills");
+    } finally {
+      setSkillStatusLoadingId(null);
+    }
+  }
+
+  async function handleToggleSkill(pluginId: string, skillName: string) {
+    const key = `${pluginId}:${skillName}`;
+    setTogglingSkill(key);
+    try {
+      const updated = await togglePluginSkill(pluginId, skillName);
+      setSkillStatusByPlugin((current) => {
+        const pluginSkills = current[pluginId] ?? [];
+        const index = pluginSkills.findIndex((s) => s.skill_name === skillName);
+        if (index >= 0) {
+          const newSkills = [...pluginSkills];
+          newSkills[index] = updated;
+          return { ...current, [pluginId]: newSkills };
+        }
+        return { ...current, [pluginId]: [...pluginSkills, updated] };
+      });
+    } catch (err: unknown) {
+      setSkillStatusError(err instanceof Error ? err.message : "Не удалось переключить skill");
+    } finally {
+      setTogglingSkill(null);
     }
   }
 
@@ -456,14 +506,34 @@ export function PluginsPanel() {
                             ) : (skillsByPlugin[plugin.id] ?? []).length === 0 ? (
                               <p className="pluginSkillBrowserMeta">Skills не найдены.</p>
                             ) : (
-                              <ul className="pluginSkillList">
-                                {(skillsByPlugin[plugin.id] ?? []).map((skill) => (
-                                  <li key={skill.name} className="pluginSkillItem">
-                                    <strong>{skill.name}</strong>
-                                    {skill.preview ? <pre>{skill.preview}</pre> : <p className="pluginSkillBrowserMeta">SKILL.md пуст.</p>}
-                                  </li>
-                                ))}
-                              </ul>
+                              <>
+                                {skillStatusError ? <p className="pluginsInstallError">{skillStatusError}</p> : null}
+                                <ul className="pluginSkillList">
+                                  {(skillsByPlugin[plugin.id] ?? []).map((skill) => {
+                                    const statusList = skillStatusByPlugin[plugin.id] ?? [];
+                                    const status = statusList.find((s) => s.skill_name === skill.name);
+                                    const isToggling = togglingSkill === `${plugin.id}:${skill.name}`;
+                                    return (
+                                      <li key={skill.name} className="pluginSkillItem">
+                                        <div className="pluginSkillHeader">
+                                          <strong>{skill.name}</strong>
+                                          <button
+                                            type="button"
+                                            className={`pluginSkillToggle${status ? (status.enabled ? " enabled" : " disabled") : ""}`}
+                                            disabled={isToggling}
+                                            onClick={() => void handleToggleSkill(plugin.id, skill.name)}
+                                            title={status ? (status.enabled ? "Отключить skill" : "Включить skill") : "Загружаю статус…"}
+                                            aria-label={`Переключить ${skill.name} для ${plugin.display_name || plugin.name}`}
+                                          >
+                                            {isToggling ? "…" : status ? (status.enabled ? "✓ Включен" : "✗ Отключен") : "?"}
+                                          </button>
+                                        </div>
+                                        {skill.preview ? <pre>{skill.preview}</pre> : <p className="pluginSkillBrowserMeta">SKILL.md пуст.</p>}
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              </>
                             )}
                           </div>
                         ) : null}

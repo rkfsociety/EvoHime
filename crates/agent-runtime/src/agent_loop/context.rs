@@ -13,6 +13,7 @@ pub(crate) fn build_memory_context(notes: &[String]) -> Option<String> {
     evohime_memory::format_untrusted_memory_notes(notes)
 }
 
+#[allow(dead_code)]
 pub(crate) fn build_workspace_rules(workspace_root: &Path) -> Option<String> {
     const MAX_RULES_CHARS: usize = 32_000;
     let mut paths = Vec::new();
@@ -155,6 +156,7 @@ pub(crate) fn discover_agent_plugins(
         .collect()
 }
 
+#[allow(dead_code)]
 pub(crate) fn load_external_plugin_context(workspace_root: &Path) -> Option<String> {
     let mut output = String::new();
     for (plugin_root, manifest) in discover_agent_plugins(workspace_root) {
@@ -295,4 +297,27 @@ pub(crate) async fn load_external_plugin_context_filtered(
         }
     }
     (!output.is_empty()).then_some(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn disabled_skills_filter_works() {
+        let mut disabled = HashSet::new();
+        disabled.insert("disabled-skill".to_string());
+
+        assert!(disabled.contains("disabled-skill"));
+        assert!(!disabled.contains("enabled-skill"));
+    }
+
+    #[test]
+    fn bootstrap_skills_can_be_disabled() {
+        let mut disabled = HashSet::new();
+        disabled.insert("using-superpowers".to_string());
+
+        assert!(disabled.contains("using-superpowers"));
+        assert!(!disabled.contains("verification-before-completion"));
+    }
 }

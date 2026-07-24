@@ -26,7 +26,7 @@ use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
-use context::{build_memory_context, build_workspace_rules_async, relative_workspace_path};
+use context::{build_memory_context, build_workspace_rules, build_workspace_rules_async, relative_workspace_path};
 use execute::{execute_plan_steps, requires_mutation};
 use parse::{format_plan, parse_model_tool_calls};
 use plan::{

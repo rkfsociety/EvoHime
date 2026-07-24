@@ -132,3 +132,30 @@ export function listPluginSkills(name: string) {
     "Не удалось загрузить skills плагина",
   );
 }
+
+export type PluginSkillStatus = {
+  plugin_id: string;
+  skill_name: string;
+  enabled: boolean;
+};
+
+export type PluginSkillsResponse = {
+  plugin_id: string;
+  skills: PluginSkillStatus[];
+};
+
+export function listPluginSkillStatus(pluginId: string) {
+  return apiRequest<PluginSkillsResponse>(
+    `/api/plugins/${encodeURIComponent(pluginId)}/skills/status`,
+    { method: "GET" },
+    "Не удалось загрузить статус skills плагина",
+  );
+}
+
+export function togglePluginSkill(pluginId: string, skillName: string) {
+  return apiRequest<PluginSkillStatus>(
+    `/api/plugins/${encodeURIComponent(pluginId)}/skills/${encodeURIComponent(skillName)}/toggle`,
+    { method: "POST" },
+    "Не удалось переключить skill",
+  );
+}

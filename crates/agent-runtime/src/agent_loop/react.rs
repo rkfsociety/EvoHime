@@ -1,4 +1,4 @@
-use super::context::{build_memory_context, build_workspace_rules};
+use super::context::{build_memory_context, build_workspace_rules_async};
 use super::execute::{execute_single_plan_step, StepOutcome};
 use super::tool_budget::{truncate_tool_result, ToolResultBudget};
 use super::util::{emit, MODEL_REQUEST_COOLDOWN};
@@ -63,7 +63,12 @@ pub(crate) async fn run_react_loop(
     resume: AgentResumeContext,
 ) -> Result<AgentRunResult, AgentError> {
     let limits = ReActLimits::default();
-    let rules_context = build_workspace_rules(&config.workspace_root);
+    let rules_context = build_workspace_rules_async(
+        &config.workspace_root,
+        config.operator_id,
+        config.memory_pool.as_ref(),
+    )
+    .await;
     let project_context = evohime_project_index::ProjectIndex::new(config.workspace_root.clone())
         .build_context(&config.user_message, 5);
     let memory_context = build_memory_context(&memory_notes);

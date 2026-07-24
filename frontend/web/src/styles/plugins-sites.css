@@ -658,3 +658,96 @@
   cursor: pointer;
   white-space: nowrap;
 }
+
+.pluginSkillBrowser {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--surface-3);
+}
+
+.pluginSkillBrowserMeta {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.pluginSkillList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+
+.pluginSkillItem {
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.pluginSkillHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.pluginSkillHeader strong {
+  color: var(--text-0);
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pluginSkillToggle {
+  flex: 0 0 auto;
+  border: 1px solid var(--border-1);
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.pluginSkillToggle:hover:not(:disabled) {
+  background: var(--surface-4);
+  color: var(--text-0);
+}
+
+.pluginSkillToggle.enabled {
+  background: color-mix(in srgb, #2e7d32 20%, var(--surface-3));
+  color: color-mix(in srgb, #4caf50, var(--text-0));
+  border-color: color-mix(in srgb, #2e7d32, var(--border-1));
+}
+
+.pluginSkillToggle.disabled {
+  background: color-mix(in srgb, #c62828 15%, var(--surface-3));
+  color: color-mix(in srgb, #ef5350, var(--text-2));
+  border-color: color-mix(in srgb, #c62828, var(--border-1));
+}
+
+.pluginSkillToggle:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pluginSkillItem pre {
+  margin: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--surface-1);
+  color: var(--text-1);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
