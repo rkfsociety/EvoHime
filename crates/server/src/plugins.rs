@@ -42,6 +42,8 @@ pub struct InstalledPlugin {
     pub path: String,
     pub skills_count: usize,
     pub skills: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub risk_findings: Vec<crate::plugin_trust::RiskFinding>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -58,6 +60,7 @@ pub struct CatalogPlugin {
     pub r#ref: Option<String>,
     pub installable: bool,
     pub installed: bool,
+    pub trust: crate::plugin_trust::TrustScore,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub installed_version: Option<String>,
 }
@@ -140,6 +143,7 @@ struct ResolvedCatalogEntry {
     source_url: Option<String>,
     source_path: Option<String>,
     git_ref: Option<String>,
+    catalog_source: String,
 }
 
 #[derive(Debug, Clone)]
@@ -165,6 +169,9 @@ pub struct PluginSkillSummary {
 #[derive(Debug, Deserialize)]
 pub struct InstallPluginRequest {
     pub name: String,
+    /// Install despite risk findings (below-official trust). Deliberate override.
+    #[serde(default)]
+    pub force: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -234,6 +241,7 @@ pub async fn list_plugin_catalog(
                 installable: entry.source_url.is_some(),
                 installed: installed.is_some(),
                 installed_version: installed.map(|plugin| plugin.version.clone()),
+                trust: entry_trust(entry),
             }
         })
         .collect::<Vec<_>>();
@@ -249,11 +257,21 @@ pub async fn list_plugin_catalog(
     }))
 }
 
+fn entry_trust(entry: &ResolvedCatalogEntry) -> crate::plugin_trust::TrustScore {
+    crate::plugin_trust::assess_trust(
+        &entry.catalog_source,
+        entry.source_url.as_deref(),
+        entry.git_ref.as_deref(),
+        &entry.description,
+        &entry.version,
+    )
+}
+
 pub async fn install_plugin(
     State(state): State<Arc<AppState>>,
     Json(body): Json<InstallPluginRequest>,
 ) -> Result<Json<InstalledPlugin>, ApiError> {
-    let installed = install_plugin_internal(&state, &body.name, false).await?;
+    let installed = install_plugin_internal(&state, &body.name, false, body.force).await?;
     Ok(Json(installed))
 }
 
@@ -261,7 +279,7 @@ pub async fn update_plugin(
     State(state): State<Arc<AppState>>,
     Json(body): Json<InstallPluginRequest>,
 ) -> Result<Json<InstalledPlugin>, ApiError> {
-    let installed = install_plugin_internal(&state, &body.name, true).await?;
+    let installed = install_plugin_internal(&state, &body.name, true, body.force).await?;
     Ok(Json(installed))
 }
 
@@ -301,6 +319,7 @@ async fn install_plugin_internal(
     state: &AppState,
     raw_name: &str,
     replace_existing: bool,
+    force: bool,
 ) -> Result<InstalledPlugin, ApiError> {
     let name = sanitize_plugin_name(raw_name)
         .ok_or_else(|| ApiError::BadRequest("некорректное имя плагина".into()))?;
@@ -352,16 +371,44 @@ async fn install_plugin_internal(
         return Err(error);
     }
 
+    // Static risk scan before the install is considered final (7.102):
+    // findings on a below-official plugin abort the install unless forced.
+    let trust = entry_trust(&entry);
+    let scan_target = target.clone();
+    let findings =
+        tokio::task::spawn_blocking(move || crate::plugin_trust::scan_plugin_dir(&scan_target))
+            .await
+            .map_err(|error| ApiError::Internal(error.to_string()))?;
+    if !findings.is_empty()
+        && trust.level != crate::plugin_trust::TRUST_LEVEL_OFFICIAL
+        && !force
+    {
+        let _ = tokio::fs::remove_dir_all(&target).await;
+        let summary = findings
+            .iter()
+            .map(|finding| format!("{} [{}]: {}", finding.file, finding.pattern, finding.excerpt))
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(ApiError::BadRequest(format!(
+            "плагин `{name}` (trust: {}) содержит рискованные паттерны и не установлен: {summary}. \
+             Повторите с force, если доверяете источнику.",
+            trust.level
+        )));
+    }
+
     let workspace_root = state.workspace_root.clone();
-    tokio::task::spawn_blocking(move || load_installed_plugin(&workspace_root, &target))
-        .await
-        .map_err(|error| ApiError::Internal(error.to_string()))?
-        .ok_or_else(|| {
-            ApiError::Internal(
-                "плагин склонирован, но manifest (.codex-plugin/.cursor-plugin/.claude-plugin) не найден"
-                    .into(),
-            )
-        })
+    let mut installed =
+        tokio::task::spawn_blocking(move || load_installed_plugin(&workspace_root, &target))
+            .await
+            .map_err(|error| ApiError::Internal(error.to_string()))?
+            .ok_or_else(|| {
+                ApiError::Internal(
+                    "плагин склонирован, но manifest (.codex-plugin/.cursor-plugin/.claude-plugin) не найден"
+                        .into(),
+                )
+            })?;
+    installed.risk_findings = findings;
+    Ok(installed)
 }
 
 async fn load_catalog(state: &AppState) -> Result<CachedCatalog, ApiError> {
@@ -418,12 +465,13 @@ async fn load_catalog(state: &AppState) -> Result<CachedCatalog, ApiError> {
                 match parse_marketplace_json(&body, marketplace_git.as_deref()) {
                     Ok(parsed) => {
                         marketplace_names.push(parsed.marketplace);
-                        used_sources.push(source);
-                        for entry in parsed.entries {
+                        for mut entry in parsed.entries {
+                            entry.catalog_source = source.clone();
                             if seen_names.insert(entry.name.clone()) {
                                 entries.push(entry);
                             }
                         }
+                        used_sources.push(source);
                     }
                     Err(error) => errors.push(format!("{source}: {error}")),
                 }
@@ -535,6 +583,7 @@ fn parse_marketplace_json(
             source_url,
             source_path,
             git_ref,
+            catalog_source: String::new(),
         });
     }
     Ok(ParsedMarketplace {
@@ -1036,6 +1085,7 @@ fn load_installed_plugin(workspace_root: &Path, plugin_root: &Path) -> Option<In
         path: relative,
         skills_count: skills.len(),
         skills,
+        risk_findings: Vec::new(),
     })
 }
 

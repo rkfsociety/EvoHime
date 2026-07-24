@@ -44,10 +44,7 @@ pub fn assess_trust(
     if official_source {
         score += 50;
         reasons.push("официальный Anthropic marketplace".to_string());
-    } else if crate::plugins::DEFAULT_CATALOG_SOURCES
-        .iter()
-        .any(|default| *default == catalog_source)
-    {
+    } else if crate::plugins::DEFAULT_CATALOG_SOURCES.contains(&catalog_source) {
         score += 30;
         reasons.push("куратор из списка по умолчанию".to_string());
     } else {
