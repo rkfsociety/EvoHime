@@ -1,15 +1,15 @@
 # EvoHime — Current State
 
-Last updated: 2026-07-24
+Last updated: 2026-07-25
 
-## Stage: 7 active (Stages 1–6 foundations complete, 7.110 ✅ complete, 7.108 🟡 wave 1 backend)
+## Stage: 7 active (Stages 1–6 foundations complete, 7.110 ✅ complete, 7.108 ✅ complete wave 1+2)
 
 Normal tasks use native ReAct tool calling: the model selects a tool, receives its observation, and selects the next action until `assistant.reply`. Tool-level permission approvals remain enabled for protected operations.
 
-**Wave 1 Progress (2026-07-24):**
+**Wave Progress (2026-07-25):**
 - ✅ `7.110` Formal threat model doc: `docs/security/threat-model.md` + `SECURITY.md`
-- 🟡 `7.108` Cost limits backend: PostgreSQL schema (0031), storage module, API endpoints `/api/models/cost-limits` (GET/PUT)
-- ⬜ `7.108` Frontend: Spend tab pending (wave 2)
+- ✅ `7.108` Wave 1: Cost limits backend — PostgreSQL schema (0031), storage module, API endpoints `/api/models/cost-limits` (GET/PUT)
+- ✅ `7.108` Wave 2: Spend Panel frontend — Settings tab with cost limits, token tracking UI, edit/save flow, gauge visualization
 
 Stages 1–6 foundations are complete. Stage 7 hardening/product items through `7.98` are implemented; `7.99` (cloud sync) is complete: owner-only `/api/sync/status|push|pull` move the operator `BackupDump` to/from `EVOHIME_SYNC_URL` with direction-aware history in `sync_runs` (pull enforces a 64 MiB body limit and checksum verification), `restore_backup` + CLI `evohime-import` restore a dump idempotently, and `EVOHIME_SYNC_AUTO_MINUTES` enables a background auto-push loop for the bootstrap owner.
 

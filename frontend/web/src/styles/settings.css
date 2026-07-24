@@ -785,3 +785,125 @@
   color: var(--text-3);
   font-size: 13px;
 }
+
+.spendSettings {
+  display: grid;
+  gap: 20px;
+}
+
+.spendLimitsTable {
+  display: grid;
+  gap: 16px;
+}
+
+.spendLimitRow {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.spendModelInfo {
+  display: grid;
+  gap: 8px;
+}
+
+.spendModelInfo strong {
+  color: var(--text-0);
+  font-size: 14px;
+}
+
+.spendGauge {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.spendGaugeFill {
+  height: 100%;
+  background: linear-gradient(90deg, #7dffc4, #ffd67d, #ff9aa8);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.spendStatus {
+  font-size: 12px;
+  color: #a9b8d9;
+}
+
+.spendLimitEditor {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.spendLimitEditor label {
+  display: grid;
+  gap: 6px;
+}
+
+.spendLimitEditor span {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.spendLimitEditor input[type="number"],
+.spendLimitEditor input[type="checkbox"] {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: rgba(4, 8, 18, 0.8);
+  color: var(--text-0);
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.spendLimitEditor input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.checkboxLabel {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+
+.spendLimitEditor button {
+  padding: 8px 16px;
+  border: 1px solid rgba(143, 180, 255, 0.35);
+  border-radius: 8px;
+  background: rgba(91, 134, 255, 0.14);
+  color: var(--text-0);
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 13px;
+  transition: background 0.15s;
+}
+
+.spendLimitEditor button:hover:not(:disabled) {
+  background: rgba(91, 134, 255, 0.22);
+}
+
+.spendLimitEditor button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.spendSubheading {
+  margin: 0;
+  color: #e7eefc;
+  font-size: 14px;
+}
+
+.spendChartPlaceholder {
+  padding: 24px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.02);
+  text-align: center;
+}

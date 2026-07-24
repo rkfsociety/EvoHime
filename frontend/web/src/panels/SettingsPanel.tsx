@@ -16,6 +16,7 @@ import { reconcileModelForBilling } from "../lib/modelBilling";
 import { LocalAuthSettingsSection } from "./LocalAuthSettingsSection";
 import { MetricsSettingsSection } from "./MetricsSettingsSection";
 import { WorkerSettingsSection } from "./WorkerSettingsSection";
+import { SpendSettingsSection } from "./SpendSettingsSection";
 
 type SettingsPanelProps = {
   settingsTab: SettingsTab;
@@ -58,6 +59,7 @@ const SETTINGS_TABS: Array<[SettingsTab, string, string]> = [
   ["tools", "Инструменты", "Каталог и таймауты"],
   ["worker", "Worker", "Статус и jobs"],
   ["metrics", "Metrics", "Pipeline snapshot"],
+  ["spend", "Spend", "Лимиты и отслеживание"],
   ["archive", "Архив", "Скрытые чаты"],
 ];
 
@@ -436,6 +438,8 @@ export function SettingsPanel({
         {settingsTab === "worker" ? <WorkerSettingsSection /> : null}
 
         {settingsTab === "metrics" ? <MetricsSettingsSection /> : null}
+
+        {settingsTab === "spend" ? <SpendSettingsSection /> : null}
 
         {settingsTab === "archive" ? (
           <section className="settingsSection">
