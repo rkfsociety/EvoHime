@@ -1369,6 +1369,8 @@ mod tests {
                     content_hash,
                     trust_level: "curated".into(),
                     installed_at: Utc::now(),
+                    pinned_commit: None,
+                    pinned_version: None,
                 },
             )
             .expect("record");
