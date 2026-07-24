@@ -350,12 +350,16 @@ fn score_item(
         // Between active facts and weak candidates.
         score += 0.3;
         // Lessons that prevent a repeat mistake outrank generic playbooks/success
-        // patterns at equal relevance (7.103 wave 2).
+        // patterns at equal relevance (7.103 wave 2). Kept below 0.1 so this never
+        // crosses the active-fact-vs-candidate-experience status margin (0.5 vs
+        // 0.4) — a Candidate failure_pattern (nearly always Candidate, since
+        // auto-promote from failure is impossible by design) must not leapfrog
+        // an unrelated active Fact just because it's a lesson.
         if matches!(
             kind,
             Some(MemoryKind::FailurePattern | MemoryKind::VerificationRule)
         ) {
-            score += 0.2;
+            score += 0.05;
         }
     }
 
