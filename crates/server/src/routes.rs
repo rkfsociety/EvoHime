@@ -47,6 +47,14 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             get(crate::models_api::available_models),
         )
         .route(
+            "/api/models/cost-limits",
+            get(crate::models_api::list_cost_limits),
+        )
+        .route(
+            "/api/models/cost-limits/:model",
+            put(crate::models_api::update_cost_limit),
+        )
+        .route(
             "/api/sessions",
             get(crate::sessions_api::list_sessions).post(crate::sessions_api::create_session),
         )

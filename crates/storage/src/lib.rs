@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 pub mod attachments;
 pub mod backup;
+pub mod cost_limits;
 pub mod installed_plugins;
 pub mod memory;
 pub mod metrics_snapshots;
@@ -26,6 +27,11 @@ pub use attachments::{
     list_session_attachments, SessionAttachmentRow,
 };
 pub use backup::{collect_backup, BackupDump};
+pub use cost_limits::{
+    add_tokens_to_tracking, check_spending_cap, get_cost_limit, get_or_create_cost_limit,
+    get_today_consumption, list_cost_limits, update_cost_limit, CostLimitRow, CostLimitUpdate,
+    CostTrackingRow,
+};
 pub use installed_plugins::{
     delete_installed_plugin, get_installed_plugin, insert_installed_plugin, list_installed_plugins,
     mark_plugin_uninstalled, update_plugin_pin, InstalledPluginRow, NewInstalledPlugin,
