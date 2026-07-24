@@ -71,9 +71,9 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99` wave 1 (cloud sync push) ✅ — owner-only `/api/sync/status` + `/api/sync/push`, история в `sync_runs`, конфиг `EVOHIME_SYNC_URL`/`EVOHIME_SYNC_TOKEN`
+- **Stage 7** Hardening + Product — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99` waves 1–2 ✅ — cloud sync push (owner-only `/api/sync/status` + `/api/sync/push`, история в `sync_runs`, конфиг `EVOHIME_SYNC_URL`/`EVOHIME_SYNC_TOKEN`) и идемпотентный restore (`restore_backup` + CLI `evohime-import`)
 - Sites, Scheduled, OTLP и Cloud sync имеют gates через `EVOHIME_FEATURE_*` и `/api/features`
-- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; `7.93`–`7.98` ✅; `7.99` продолжается (pull/restore, авто-sync) либо следующий пункт `7.100`
+- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; `7.93`–`7.98` ✅; остаток `7.99` — авто-sync/remote pull, либо следующий пункт `7.100`
 
 ## WebSocket events
 
@@ -169,6 +169,9 @@ cargo test
 # Backup/export sessions and structured memory
 cargo run -p evohime-storage --bin evohime-export -- --output .evohime/backup.json
 
+# Restore a backup (idempotent; default operator local-owner)
+cargo run -p evohime-storage --bin evohime-import -- --input .evohime/backup.json --operator-name local-owner
+
 # Frontend
 cd frontend/web && npm install && npm run dev
 
@@ -190,7 +193,7 @@ See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](d
 | 4 Editor + Git | ✅ Done |
 | 5 Task orchestration | ✅ Done |
 | 6 Advanced | ✅ Foundations complete |
-| 7 Hardening + Product | 🟡 In progress; `7.1`–`7.98` complete, `7.99` wave 1 (push) done |
+| 7 Hardening + Product | 🟡 In progress; `7.1`–`7.98` complete, `7.99` waves 1–2 (push + restore) done |
 
 Memory design: [docs/superpowers/specs/2026-07-16-agent-memory-design.md](docs/superpowers/specs/2026-07-16-agent-memory-design.md)
 

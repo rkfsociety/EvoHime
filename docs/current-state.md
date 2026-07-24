@@ -6,7 +6,7 @@ Last updated: 2026-07-24
 
 Normal tasks use native ReAct tool calling: the model selects a tool, receives its observation, and selects the next action until `assistant.reply`. Tool-level permission approvals remain enabled for protected operations.
 
-Stages 1–6 foundations are complete. Stage 7 hardening/product items through `7.98` are implemented; `7.99` wave 1 (cloud sync push) is done: owner-only `/api/sync/status` + `/api/sync/push` send the operator `BackupDump` to `EVOHIME_SYNC_URL` and record history in `sync_runs`.
+Stages 1–6 foundations are complete. Stage 7 hardening/product items through `7.98` are implemented; `7.99` waves 1–2 (cloud sync push + restore) are done: owner-only `/api/sync/status` + `/api/sync/push` send the operator `BackupDump` to `EVOHIME_SYNC_URL` with history in `sync_runs`, and `restore_backup` + CLI `evohime-import` restore a dump idempotently under a target operator.
 
 ## Crates
 
@@ -124,7 +124,7 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-`7.65` hardening выполнен: scheduler dispatch атомарно создаёт один run/session/task, manual trigger не увеличивает счётчик повторно, а failure history сохраняет ошибки. `7.93` добавил request-id, безопасные internal errors и header-only HTTP auth; `7.94` добавил copyable correlation ids и server-provided latency bars; `7.95` добавил tracing redaction и bounded health sampling; `7.96` добавил `/health/deep` с проверками DB, worker и workspace; `7.97` добавил CLI `evohime-export` для JSON backup сессий и memory; `7.98` добавил multi-operator registry с opaque-токенами и scoped данными; `7.99` wave 1 добавил cloud sync push backup на remote endpoint с историей `sync_runs`. Дальше — pull/restore и авто-sync (`7.99`) или `7.100`.
+`7.65` hardening выполнен: scheduler dispatch атомарно создаёт один run/session/task, manual trigger не увеличивает счётчик повторно, а failure history сохраняет ошибки. `7.93` добавил request-id, безопасные internal errors и header-only HTTP auth; `7.94` добавил copyable correlation ids и server-provided latency bars; `7.95` добавил tracing redaction и bounded health sampling; `7.96` добавил `/health/deep` с проверками DB, worker и workspace; `7.97` добавил CLI `evohime-export` для JSON backup сессий и memory; `7.98` добавил multi-operator registry с opaque-токенами и scoped данными; `7.99` wave 1 добавил cloud sync push backup на remote endpoint с историей `sync_runs`; wave 2 добавила идемпотентный restore (`restore_backup`, CLI `evohime-import`). Дальше — авто-sync/remote pull (`7.99`) или `7.100`.
 
 `7.56` выполнен: CI job `python-worker` на Python 3.12 запускает `python -m unittest discover -s workers/python -p "test_*.py"`; локально suite проходит: 25 тестов.
 
@@ -208,7 +208,7 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.51` реализован: Python worker и зеркальная Rust-валидация получили `text.classify`, `text.language` и `text.redact`; все три handler доступны также через `worker.run`.
 
-**Актуализация 2026-07-22:** `7.51`, product honesty для Sites/Scheduled, scheduler correctness, request context, task timeline telemetry, log safety, deep health checks и backup/export выполнены; Wave E `7.84`–`7.98` закрыта. `7.92` уже покрыт `7.24`; `7.99` wave 1 (cloud sync push) выполнена.
+**Актуализация 2026-07-22:** `7.51`, product honesty для Sites/Scheduled, scheduler correctness, request context, task timeline telemetry, log safety, deep health checks и backup/export выполнены; Wave E `7.84`–`7.98` закрыта. `7.92` уже покрыт `7.24`; `7.99` waves 1–2 (cloud sync push + restore) выполнены.
 
-1. **Stage 7** — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99` wave 1 ✅
+1. **Stage 7** — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99` waves 1–2 ✅
 2. Рекомендуемая следующая волна: следующий пункт Stage 7 hardening/product
