@@ -29,6 +29,19 @@ Rules:
 - Never include secrets, tokens, passwords, or private keys.
 - Max 5 items. Empty array [] if nothing worth remembering."#;
 
+/// Failure-lane prompt (7.103): a broken run is not a source of world facts,
+/// so only reusable lessons are requested.
+pub(crate) const FAILURE_EXTRACT_PROMPT: &str = r#"Analyze this FAILED task and extract at most 2 reusable lessons.
+Return ONLY a JSON array (no markdown, no prose). Each object:
+{"scope":"experience","kind":"failure_pattern|verification_rule","content":"...","confidence":0.0-1.0,"importance":0.0-1.0}
+Rules:
+- failure_pattern: what concretely went wrong and why (symptom + likely cause), phrased so the same mistake is recognizable next time.
+- verification_rule: what should be checked BEFORE attempting a similar task.
+- Only scope=experience; never facts, preferences, playbooks or success patterns from a failed run.
+- Skip transient infrastructure noise (rate limits, provider 5xx, network timeouts) — those are not lessons.
+- Never include secrets, tokens, passwords, or private keys.
+- Empty array [] if the failure teaches nothing reusable."#;
+
 pub(crate) fn scope_key_for(
     scope: evohime_storage::MemoryScope,
     session_id: Uuid,
@@ -77,8 +90,13 @@ pub(crate) async fn llm_extract_memory_json(
     let user = format!(
         "Task status: {status}\nUser message:\n{user_message}\n\nAssistant reply:\n{final_message}"
     );
+    let system = if task_ok {
+        MEMORY_EXTRACT_PROMPT
+    } else {
+        FAILURE_EXTRACT_PROMPT
+    };
     let messages = [
-        ChatMessage::text(ChatRole::System, MEMORY_EXTRACT_PROMPT),
+        ChatMessage::text(ChatRole::System, system),
         ChatMessage::text(ChatRole::User, user),
     ];
     collect_gateway_text(gateway, &messages, std::time::Duration::from_secs(20)).await
@@ -150,19 +168,21 @@ pub(crate) async fn persist_structured_memory(
     final_message: &str,
     task_ok: bool,
 ) {
-    // Failed tasks: skip LLM extract entirely (no candidates, no memory.ask).
-    if !task_ok {
-        return;
-    }
-
     let llm_raw =
         llm_extract_memory_json(gateway, &task.user_message, final_message, task_ok).await;
-    let candidates = evohime_memory::extract_candidates(
-        llm_raw.as_deref(),
-        &task.user_message,
-        final_message,
-        task_ok,
-    );
+    // Failed tasks use the restricted lane (7.103): at most two experience
+    // lessons (failure_pattern / verification_rule), confidence capped below
+    // auto-promote, no heuristic fallback — every lesson goes through Ask.
+    let candidates = if task_ok {
+        evohime_memory::extract_candidates(
+            llm_raw.as_deref(),
+            &task.user_message,
+            final_message,
+            task_ok,
+        )
+    } else {
+        evohime_memory::extract_failure_candidates(llm_raw.as_deref())
+    };
 
     for (index, candidate) in candidates.into_iter().enumerate() {
         let scope = candidate.scope;
