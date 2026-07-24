@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close the remaining `7.103` scope: escalate confidence/importance when a `failure_pattern`/`verification_rule` repeats (duplicate at admit), and rank those lessons above other experience memories at retrieval time — no new migration, no protocol/frontend changes.
+**Goal:** Close the remaining `7.103` scope: escalate confidence/importance when a `failure_pattern`/`verification_rule` repeats (duplicate at admit), and rank those lessons above other experience memories at retrieval time — no new repeat-count column, no protocol/frontend changes. (One small migration turned out to be necessary after all — see Task 3a and the amended Global Constraints below.)
 
 **Architecture:** Add `FeedbackSignal::Repeated` to the existing feedback pipeline (`crates/memory/src/feedback.rs` + `feedback_service.rs`) and invoke it as a side effect inside `admit_memory_item` (`crates/memory/src/service.rs`) whenever a duplicate hits a `Candidate`-status `Experience`-scope `FailurePattern`/`VerificationRule` row. Separately, bump the experience-kind retrieval bonus in `crates/memory/src/retrieve.rs::score_item` for those two kinds.
 

@@ -17,7 +17,7 @@ Wave 1 сознательно не трогала повторы ("Реализ�
 
 ### 1. Эскалация повторов (`crates/memory`)
 
-Переиспользуем существующий feedback-пайплайн (`crates/memory/src/feedback.rs` + `feedback_service.rs`, тот же механизм, что уже применяется для `helpful`/`harmful`/`corrected`) — без новой миграции. Число повторов при необходимости в будущем можно восстановить из `memory_feedback_events` (уже пишется на каждый `apply_one`), отдельный счётчик-колонка не нужен.
+Переиспользуем существующий feedback-пайплайн (`crates/memory/src/feedback.rs` + `feedback_service.rs`, тот же механизм, что уже применяется для `helpful`/`harmful`/`corrected`) — без новой колонки-счётчика. Число повторов при необходимости в будущем можно восстановить из `memory_feedback_events` (уже пишется на каждый `apply_one`), отдельный счётчик-колонка не нужен. (При реализации потребовалась одна мини-миграция другого рода: CHECK-ограничение `memory_feedback_events.signal` пришлось расширить значением `'repeated'`, иначе запись эскалации тихо откатывалась целиком — см. `migrations/0028_memory_feedback_repeated_signal.sql`.)
 
 - `feedback.rs`: новый вариант `FeedbackSignal::Repeated` ("repeated"). `apply_feedback_signal`:
   - `next_importance = clamp01(importance + FAILURE_REPEAT_IMPORTANCE_BUMP)` (bump 0.1, без верхнего капа кроме стандартного clamp 0..1 — `decide_gate` importance не читает, рост безопасен и работает на retrieval-приоритет).
