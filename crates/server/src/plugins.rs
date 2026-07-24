@@ -408,10 +408,11 @@ pub async fn list_plugin_skills(
     let name = sanitize_plugin_name(&name)
         .ok_or_else(|| ApiError::BadRequest("некорректное имя плагина".into()))?;
     let workspace_root = state.workspace_root.clone();
-    let skills = tokio::task::spawn_blocking(move || list_plugin_skill_summaries(&workspace_root, &name))
-        .await
-        .map_err(|error| ApiError::Internal(error.to_string()))?
-        .map_err(ApiError::BadRequest)?;
+    let skills =
+        tokio::task::spawn_blocking(move || list_plugin_skill_summaries(&workspace_root, &name))
+            .await
+            .map_err(|error| ApiError::Internal(error.to_string()))?
+            .map_err(ApiError::BadRequest)?;
     Ok(Json(skills))
 }
 
@@ -479,14 +480,16 @@ async fn install_plugin_internal(
         tokio::task::spawn_blocking(move || crate::plugin_trust::scan_plugin_dir(&scan_target))
             .await
             .map_err(|error| ApiError::Internal(error.to_string()))?;
-    if !findings.is_empty()
-        && trust.level != crate::plugin_trust::TRUST_LEVEL_OFFICIAL
-        && !force
-    {
+    if !findings.is_empty() && trust.level != crate::plugin_trust::TRUST_LEVEL_OFFICIAL && !force {
         let _ = tokio::fs::remove_dir_all(&target).await;
         let summary = findings
             .iter()
-            .map(|finding| format!("{} [{}]: {}", finding.file, finding.pattern, finding.excerpt))
+            .map(|finding| {
+                format!(
+                    "{} [{}]: {}",
+                    finding.file, finding.pattern, finding.excerpt
+                )
+            })
             .collect::<Vec<_>>()
             .join("; ");
         return Err(ApiError::BadRequest(format!(
@@ -1034,8 +1037,8 @@ fn list_plugin_skill_summaries(
     if !target.is_dir() {
         return Err(format!("плагин `{plugin_id}` не установлен"));
     }
-    let manifest = read_plugin_manifest(&target)
-        .ok_or_else(|| "manifest плагина не найден".to_string())?;
+    let manifest =
+        read_plugin_manifest(&target).ok_or_else(|| "manifest плагина не найден".to_string())?;
     let skills_root = resolve_skills_root(&target, &manifest.skills)
         .ok_or_else(|| "каталог skills не найден".to_string())?;
     Ok(list_skill_summaries(&skills_root))

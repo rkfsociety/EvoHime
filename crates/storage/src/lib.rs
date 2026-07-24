@@ -12,9 +12,9 @@ pub mod metrics_snapshots;
 pub mod operators;
 pub mod permission_audit;
 pub mod pool;
+pub mod restore;
 pub mod scheduled;
 pub mod scopes;
-pub mod restore;
 pub mod sites;
 pub mod sync;
 pub mod test_db;
@@ -45,21 +45,20 @@ pub use metrics_snapshots::{
 };
 pub use operators::{
     active_owner_count, can_revoke_operator, create_operator, find_operator_by_name,
-    find_operator_by_token_hash,
-    get_operator, hash_operator_token, hashes_equal, list_operators, revoke_operator,
-    rotate_operator_token, OperatorRole, OperatorRow, BOOTSTRAP_OWNER_ID,
+    find_operator_by_token_hash, get_operator, hash_operator_token, hashes_equal, list_operators,
+    revoke_operator, rotate_operator_token, OperatorRole, OperatorRow, BOOTSTRAP_OWNER_ID,
 };
 pub use permission_audit::{
     insert_permission_audit, list_permission_audit, NewPermissionAudit, PermissionAuditRow,
 };
 pub use pool::{connect_pool, PoolConfig};
+pub use restore::{restore_backup, validate_backup_header, RestoreReport};
 pub use scopes::{
     archive_session_for_operator, delete_session_for_operator, list_archived_sessions_for_operator,
     list_session_events_after_for_operator, list_session_messages_for_operator,
     list_sessions_for_operator, list_tasks_for_operator, load_task_for_operator,
     unarchive_session_for_operator,
 };
-pub use restore::{restore_backup, validate_backup_header, RestoreReport};
 pub use sync::{
     find_active_sync_run, finish_sync_run, is_terminal_sync_status, is_valid_sync_direction,
     list_sync_runs, start_sync_run, SyncRunRow, SYNC_DIRECTION_PULL, SYNC_DIRECTION_PUSH,

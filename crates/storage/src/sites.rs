@@ -43,10 +43,7 @@ pub async fn list_sites_filtered(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let query_pattern = filter
-        .query
-        .as_deref()
-        .and_then(site_search_pattern);
+    let query_pattern = filter.query.as_deref().and_then(site_search_pattern);
 
     Ok(sqlx::query_as::<_, SiteRow>(
         r#"

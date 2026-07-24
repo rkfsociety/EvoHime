@@ -66,7 +66,10 @@ fn sanitize_name(name: &str) -> String {
     }
 }
 
-fn relative_stored_path(workspace_root: &StdPath, stored_path: &StdPath) -> Result<String, ApiError> {
+fn relative_stored_path(
+    workspace_root: &StdPath,
+    stored_path: &StdPath,
+) -> Result<String, ApiError> {
     let relative = stored_path
         .strip_prefix(workspace_root)
         .map_err(|_| ApiError::Internal("attachment path escaped workspace".into()))?;
@@ -165,7 +168,9 @@ pub async fn upload_attachments(
     }
 
     if uploaded.is_empty() {
-        return Err(ApiError::BadRequest("не переданы файлы в поле 'files'".into()));
+        return Err(ApiError::BadRequest(
+            "не переданы файлы в поле 'files'".into(),
+        ));
     }
 
     Ok(Json(uploaded))

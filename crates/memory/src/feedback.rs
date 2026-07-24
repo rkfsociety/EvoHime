@@ -257,6 +257,9 @@ mod tests {
     #[test]
     fn repeated_signal_parses_and_formats() {
         assert_eq!(FeedbackSignal::Repeated.as_str(), "repeated");
-        assert_eq!(FeedbackSignal::parse("repeated"), Some(FeedbackSignal::Repeated));
+        assert_eq!(
+            FeedbackSignal::parse("repeated"),
+            Some(FeedbackSignal::Repeated)
+        );
     }
 }

@@ -321,7 +321,9 @@ mod tests {
         assert_eq!(dump.memory_items.len(), 1);
 
         // First restore into the same database: ids collide, everything skipped.
-        let skipped = restore_backup(&pool, target.id, &dump).await.expect("skip restore");
+        let skipped = restore_backup(&pool, target.id, &dump)
+            .await
+            .expect("skip restore");
         assert_eq!(skipped.sessions_inserted, 0);
         assert_eq!(skipped.sessions_skipped, 1);
         assert_eq!(skipped.messages_inserted, 0);
@@ -336,7 +338,9 @@ mod tests {
             .await
             .expect("delete memory");
 
-        let restored = restore_backup(&pool, target.id, &dump).await.expect("restore");
+        let restored = restore_backup(&pool, target.id, &dump)
+            .await
+            .expect("restore");
         assert_eq!(restored.sessions_inserted, 1);
         assert_eq!(restored.messages_inserted, 1);
         assert_eq!(restored.memory_inserted, 1);
@@ -353,7 +357,9 @@ mod tests {
         assert_eq!(restored_item.source_session_id, Some(session.id));
 
         // Second run over restored data: fully idempotent.
-        let again = restore_backup(&pool, target.id, &dump).await.expect("restore again");
+        let again = restore_backup(&pool, target.id, &dump)
+            .await
+            .expect("restore again");
         assert_eq!(again.sessions_inserted, 0);
         assert_eq!(again.sessions_skipped, 1);
         assert_eq!(again.memory_inserted, 0);
@@ -404,7 +410,9 @@ mod tests {
             updated_at: chrono::Utc::now(),
         });
 
-        let report = restore_backup(&pool, target.id, &dump).await.expect("restore orphan");
+        let report = restore_backup(&pool, target.id, &dump)
+            .await
+            .expect("restore orphan");
         assert_eq!(report.memory_inserted, 1);
         let row = crate::get_memory_item_for_operator(&pool, target.id, orphan_id)
             .await

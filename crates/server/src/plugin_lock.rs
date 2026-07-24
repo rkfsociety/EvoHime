@@ -57,11 +57,12 @@ pub fn content_hash(root: &Path) -> Result<String, String> {
 }
 
 fn collect_files(root: &Path, dir: &Path, files: &mut Vec<String>) -> Result<(), String> {
-    let entries =
-        std::fs::read_dir(dir).map_err(|error| format!("hash walk failed: {error}"))?;
+    let entries = std::fs::read_dir(dir).map_err(|error| format!("hash walk failed: {error}"))?;
     for entry in entries.flatten() {
         let path = entry.path();
-        let Ok(metadata) = std::fs::symlink_metadata(&path) else { continue };
+        let Ok(metadata) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
         if metadata.file_type().is_symlink() {
             continue;
         }
@@ -101,8 +102,7 @@ pub fn save_lock(workspace_root: &Path, lock: &PluginLock) -> Result<(), String>
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
-    let serialized =
-        serde_json::to_vec_pretty(lock).map_err(|error| error.to_string())?;
+    let serialized = serde_json::to_vec_pretty(lock).map_err(|error| error.to_string())?;
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, serialized).map_err(|error| error.to_string())?;
     std::fs::rename(&tmp, &path).map_err(|error| error.to_string())?;

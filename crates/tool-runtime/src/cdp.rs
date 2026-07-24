@@ -12,9 +12,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
-use tokio_tungstenite::{
-    connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream,
-};
+use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
 use uuid::Uuid;
 
 pub const CDP_URL_ENV: &str = "EVOHIME_BROWSER_CDP_URL";
@@ -34,8 +32,14 @@ pub fn cdp_base_url() -> Option<String> {
 
 #[derive(Debug)]
 pub enum CdpFrame {
-    Response { id: u64, result: Value, error: Option<String> },
-    Event { method: String },
+    Response {
+        id: u64,
+        result: Value,
+        error: Option<String>,
+    },
+    Event {
+        method: String,
+    },
     Other,
 }
 
@@ -60,7 +64,9 @@ pub fn parse_frame(text: &str) -> CdpFrame {
         };
     }
     if let Some(method) = value.get("method").and_then(Value::as_str) {
-        return CdpFrame::Event { method: method.to_string() };
+        return CdpFrame::Event {
+            method: method.to_string(),
+        };
     }
     CdpFrame::Other
 }
@@ -112,7 +118,9 @@ impl CdpSession {
             load_fired: false,
             last_used: Instant::now(),
         };
-        session.command("Page.enable", json!({}), COMMAND_TIMEOUT).await?;
+        session
+            .command("Page.enable", json!({}), COMMAND_TIMEOUT)
+            .await?;
         Ok(session)
     }
 
@@ -141,7 +149,11 @@ impl CdpSession {
                 .map_err(|error| format!("cdp read failed: {error}"))?;
             let Message::Text(text) = frame else { continue };
             match parse_frame(&text) {
-                CdpFrame::Response { id: frame_id, result, error } if frame_id == id => {
+                CdpFrame::Response {
+                    id: frame_id,
+                    result,
+                    error,
+                } if frame_id == id => {
                     return match error {
                         Some(error) => Err(format!("cdp {method} failed: {error}")),
                         None => Ok(result),
@@ -244,8 +256,8 @@ impl CdpSession {
     pub async fn type_text(&mut self, selector: &str, text: &str) -> Result<bool, String> {
         let selector_literal = serde_json::to_string(selector)
             .map_err(|error| format!("selector encode failed: {error}"))?;
-        let text_literal = serde_json::to_string(text)
-            .map_err(|error| format!("text encode failed: {error}"))?;
+        let text_literal =
+            serde_json::to_string(text).map_err(|error| format!("text encode failed: {error}"))?;
         let expression = format!(
             "(() => {{ const el = document.querySelector({selector_literal}); \
              if (!el) return false; el.focus(); \

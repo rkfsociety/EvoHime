@@ -11,7 +11,11 @@ async fn all_golden_tasks_pass() {
     for task in &tasks {
         let report = run_golden_task(task).await;
         if !report.passed() {
-            failed.push(format!("{}:\n  - {}", report.name, report.failures.join("\n  - ")));
+            failed.push(format!(
+                "{}:\n  - {}",
+                report.name,
+                report.failures.join("\n  - ")
+            ));
         }
     }
     assert!(

@@ -19,8 +19,8 @@ async fn main() -> Result<(), String> {
     let raw = tokio::fs::read(&args.input)
         .await
         .map_err(|error| format!("backup read failed ({}): {error}", args.input.display()))?;
-    let dump: BackupDump = serde_json::from_slice(&raw)
-        .map_err(|error| format!("backup parse failed: {error}"))?;
+    let dump: BackupDump =
+        serde_json::from_slice(&raw).map_err(|error| format!("backup parse failed: {error}"))?;
     validate_backup_header(&dump).map_err(|error| error.to_string())?;
 
     let database_url = env::var("DATABASE_URL")
@@ -130,8 +130,7 @@ mod tests {
 
     #[test]
     fn operator_name_is_optional_and_trimmed() {
-        let args =
-            parse(&["--input", "b.json", "--operator-name", " alice "]).expect("parse");
+        let args = parse(&["--input", "b.json", "--operator-name", " alice "]).expect("parse");
         assert_eq!(args.operator_name, "alice");
         assert!(parse(&["--input", "b.json", "--operator-name", " "]).is_err());
     }

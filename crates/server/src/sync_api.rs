@@ -35,7 +35,9 @@ pub(crate) struct SyncConfig {
 
 impl SyncConfig {
     fn from_env() -> Result<Option<Self>, String> {
-        let Some(raw) = std::env::var(SYNC_URL_ENV).ok().filter(|v| !v.trim().is_empty())
+        let Some(raw) = std::env::var(SYNC_URL_ENV)
+            .ok()
+            .filter(|v| !v.trim().is_empty())
         else {
             return Ok(None);
         };
@@ -94,7 +96,9 @@ fn require_feature() -> Result<(), ApiError> {
     if feature_enabled() {
         Ok(())
     } else {
-        Err(ApiError::NotFound("cloud sync отключён feature flag".into()))
+        Err(ApiError::NotFound(
+            "cloud sync отключён feature flag".into(),
+        ))
     }
 }
 
@@ -356,24 +360,21 @@ pub(crate) async fn pull(
             None,
         ),
     };
-    let finished = evohime_storage::finish_sync_run(
-        &state.pool,
-        run.id,
-        status,
-        bytes_total,
-        checksum,
-        error,
-    )
-    .await
-    .map_err(|error| ApiError::Internal(error.to_string()))?
-    .unwrap_or(run);
+    let finished =
+        evohime_storage::finish_sync_run(&state.pool, run.id, status, bytes_total, checksum, error)
+            .await
+            .map_err(|error| ApiError::Internal(error.to_string()))?
+            .unwrap_or(run);
 
     tracing::info!(
         run_id = %finished.id,
         status = %finished.status,
         "cloud sync pull finished"
     );
-    Ok(Json(SyncPullResponse { run: finished, report }))
+    Ok(Json(SyncPullResponse {
+        run: finished,
+        report,
+    }))
 }
 
 async fn pull_and_restore(
@@ -395,7 +396,9 @@ async fn pull_and_restore(
 
 pub(crate) fn verify_remote_checksum(remote: Option<&str>, actual: &str) -> Result<(), String> {
     match remote {
-        Some(remote) if !remote.trim().is_empty() && !remote.trim().eq_ignore_ascii_case(actual) => {
+        Some(remote)
+            if !remote.trim().is_empty() && !remote.trim().eq_ignore_ascii_case(actual) =>
+        {
             Err("checksum remote-дампа не совпадает с телом ответа".into())
         }
         _ => Ok(()),
@@ -474,7 +477,9 @@ mod tests {
     fn checksum_is_lowercase_sha256_hex() {
         let checksum = checksum_hex(b"evohime");
         assert_eq!(checksum.len(), 64);
-        assert!(checksum.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert!(checksum
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
         assert_eq!(checksum, checksum_hex(b"evohime"));
         assert_ne!(checksum, checksum_hex(b"evohime2"));
     }
@@ -486,7 +491,10 @@ mod tests {
         assert_eq!(parse_auto_sync_minutes(Some("0")), None);
         assert_eq!(parse_auto_sync_minutes(Some("garbage")), None);
         assert_eq!(parse_auto_sync_minutes(Some("-5")), None);
-        assert_eq!(parse_auto_sync_minutes(Some("3")), Some(MIN_AUTO_SYNC_MINUTES));
+        assert_eq!(
+            parse_auto_sync_minutes(Some("3")),
+            Some(MIN_AUTO_SYNC_MINUTES)
+        );
         assert_eq!(parse_auto_sync_minutes(Some("5")), Some(5));
         assert_eq!(parse_auto_sync_minutes(Some("30")), Some(30));
     }
@@ -495,7 +503,9 @@ mod tests {
     fn pull_body_limit_is_enforced() {
         assert!(ensure_body_within_limit(1024, PULL_BODY_LIMIT_BYTES).is_ok());
         assert!(ensure_body_within_limit(PULL_BODY_LIMIT_BYTES, PULL_BODY_LIMIT_BYTES).is_ok());
-        assert!(ensure_body_within_limit(PULL_BODY_LIMIT_BYTES + 1, PULL_BODY_LIMIT_BYTES).is_err());
+        assert!(
+            ensure_body_within_limit(PULL_BODY_LIMIT_BYTES + 1, PULL_BODY_LIMIT_BYTES).is_err()
+        );
     }
 
     #[test]

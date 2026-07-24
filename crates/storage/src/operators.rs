@@ -166,9 +166,11 @@ pub async fn rotate_operator_token(
 }
 
 pub async fn active_owner_count(pool: &PgPool) -> Result<i64, StorageError> {
-    Ok(sqlx::query_scalar("SELECT COUNT(*)::bigint FROM operators WHERE role = 'owner' AND active = TRUE")
-        .fetch_one(pool)
-        .await?)
+    Ok(sqlx::query_scalar(
+        "SELECT COUNT(*)::bigint FROM operators WHERE role = 'owner' AND active = TRUE",
+    )
+    .fetch_one(pool)
+    .await?)
 }
 
 pub async fn revoke_operator(
@@ -190,9 +192,8 @@ pub async fn revoke_operator(
     )
     .fetch_one(&mut *transaction)
     .await?;
-    let role = OperatorRole::parse(&row.role).ok_or_else(|| {
-        StorageError::InvalidOperator("unknown operator role".into())
-    })?;
+    let role = OperatorRole::parse(&row.role)
+        .ok_or_else(|| StorageError::InvalidOperator("unknown operator role".into()))?;
     if !row.active || !can_revoke_operator(role, owners) {
         return Ok(None);
     }

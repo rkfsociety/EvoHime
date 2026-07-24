@@ -95,9 +95,10 @@ pub(crate) async fn claim_attachment_context(
     task_id: Uuid,
     workspace_root: &std::path::Path,
 ) -> Result<Option<String>, ApiError> {
-    let attachments = evohime_storage::claim_pending_session_attachments(&state.pool, session_id, task_id)
-        .await
-        .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let attachments =
+        evohime_storage::claim_pending_session_attachments(&state.pool, session_id, task_id)
+            .await
+            .map_err(|error| ApiError::Internal(error.to_string()))?;
     if attachments.is_empty() {
         return Ok(None);
     }
@@ -118,14 +119,17 @@ pub(crate) async fn claim_attachment_context(
             attachment.size_bytes
         );
 
-        let bytes = fs::read(&abs_path)
-            .await
-            .map_err(|error| ApiError::Internal(format!("не удалось прочитать вложение: {error}")))?;
+        let bytes = fs::read(&abs_path).await.map_err(|error| {
+            ApiError::Internal(format!("не удалось прочитать вложение: {error}"))
+        })?;
         match String::from_utf8(bytes) {
             Ok(text) => {
                 let trimmed = text.trim();
                 if !trimmed.is_empty() && remaining > 0 {
-                    let excerpt: String = trimmed.chars().take(MAX_FILE_CHARS.min(remaining)).collect();
+                    let excerpt: String = trimmed
+                        .chars()
+                        .take(MAX_FILE_CHARS.min(remaining))
+                        .collect();
                     section.push_str("  content: |\n");
                     for line in excerpt.lines() {
                         section.push_str("    ");
@@ -138,7 +142,9 @@ pub(crate) async fn claim_attachment_context(
                 }
             }
             Err(_) => {
-                section.push_str("  content: <binary or non-UTF8 file; inspect manually via filesystem.read>\n");
+                section.push_str(
+                    "  content: <binary or non-UTF8 file; inspect manually via filesystem.read>\n",
+                );
             }
         }
         sections.push(section);

@@ -30,8 +30,13 @@ pub struct GoldenTask {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum ScriptStep {
-    Tool { tool: String, input: serde_json::Value },
-    Reply { reply: String },
+    Tool {
+        tool: String,
+        input: serde_json::Value,
+    },
+    Reply {
+        reply: String,
+    },
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -124,10 +129,7 @@ pub fn check_expectations(
             Ok(content) => {
                 if let Some(needle) = &file.contains {
                     if !content.contains(needle) {
-                        failures.push(format!(
-                            "file `{}` does not contain `{needle}`",
-                            file.path
-                        ));
+                        failures.push(format!("file `{}` does not contain `{needle}`", file.path));
                     }
                 }
             }
@@ -247,7 +249,11 @@ pub async fn run_golden_task_with_gateway(
         }
     }
 
-    EvalReport { name: task.name.clone(), failures, judge: verdict }
+    EvalReport {
+        name: task.name.clone(),
+        failures,
+        judge: verdict,
+    }
 }
 
 pub fn judge_prompt(task: &GoldenTask, rubric: &str, final_answer: &str) -> String {
@@ -265,7 +271,9 @@ pub fn judge_prompt(task: &GoldenTask, rubric: &str, final_answer: &str) -> Stri
 /// Extract the first JSON object from judge output; refuses to guess —
 /// an unparsable verdict is an error, never a silent pass.
 pub fn parse_judge_verdict(raw: &str) -> Result<JudgeVerdict, String> {
-    let start = raw.find('{').ok_or("judge output contains no JSON object")?;
+    let start = raw
+        .find('{')
+        .ok_or("judge output contains no JSON object")?;
     let mut depth = 0usize;
     let mut end = None;
     for (offset, character) in raw[start..].char_indices() {
@@ -378,7 +386,9 @@ mod tests {
                 tool: "filesystem.read".into(),
                 input: serde_json::json!({ "path": "a.txt" }),
             },
-            ScriptStep::Reply { reply: "done".into() },
+            ScriptStep::Reply {
+                reply: "done".into(),
+            },
         ]);
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].tool_calls[0].name, "filesystem.read");
@@ -439,7 +449,10 @@ mod tests {
 
         let report = run_golden_task_with_gateway(&task, &gateway, true).await;
         assert!(!report.passed());
-        assert!(report.failures.iter().any(|failure| failure.contains("too vague")));
+        assert!(report
+            .failures
+            .iter()
+            .any(|failure| failure.contains("too vague")));
         let verdict = report.judge.expect("verdict recorded");
         assert!(!verdict.pass);
         assert_eq!(verdict.score, Some(2.0));
@@ -474,9 +487,18 @@ mod tests {
         let expect = Expectations {
             final_message_contains: vec!["present".into(), "absent".into()],
             files: vec![
-                FileExpectation { path: "ok.txt".into(), contains: Some("hello".into()) },
-                FileExpectation { path: "ok.txt".into(), contains: Some("nope".into()) },
-                FileExpectation { path: "missing.txt".into(), contains: None },
+                FileExpectation {
+                    path: "ok.txt".into(),
+                    contains: Some("hello".into()),
+                },
+                FileExpectation {
+                    path: "ok.txt".into(),
+                    contains: Some("nope".into()),
+                },
+                FileExpectation {
+                    path: "missing.txt".into(),
+                    contains: None,
+                },
             ],
         };
         let failures = check_expectations(&expect, "present here", dir.path());

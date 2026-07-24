@@ -173,14 +173,18 @@ mod tests {
             .await
             .expect("find active");
         assert_eq!(active.map(|row| row.id), Some(run.id));
-        assert!(find_active_sync_run(&pool, second.id, Duration::minutes(10))
-            .await
-            .expect("other operator active")
-            .is_none());
+        assert!(
+            find_active_sync_run(&pool, second.id, Duration::minutes(10))
+                .await
+                .expect("other operator active")
+                .is_none()
+        );
 
-        assert!(finish_sync_run(&pool, run.id, SYNC_STATUS_RUNNING, None, None, None)
-            .await
-            .is_err());
+        assert!(
+            finish_sync_run(&pool, run.id, SYNC_STATUS_RUNNING, None, None, None)
+                .await
+                .is_err()
+        );
         let finished = finish_sync_run(
             &pool,
             run.id,
@@ -197,12 +201,16 @@ mod tests {
         assert!(finished.finished_at.is_some());
 
         // Double-finish is a no-op: the run is no longer `running`.
-        assert!(finish_sync_run(&pool, run.id, SYNC_STATUS_FAILED, None, None, Some("late"))
-            .await
-            .expect("double finish")
-            .is_none());
+        assert!(
+            finish_sync_run(&pool, run.id, SYNC_STATUS_FAILED, None, None, Some("late"))
+                .await
+                .expect("double finish")
+                .is_none()
+        );
 
-        let runs = list_sync_runs(&pool, first.id, 10).await.expect("list runs");
+        let runs = list_sync_runs(&pool, first.id, 10)
+            .await
+            .expect("list runs");
         assert!(runs.iter().any(|row| row.id == run.id));
         assert!(list_sync_runs(&pool, second.id, 10)
             .await
@@ -233,9 +241,11 @@ mod tests {
             .await
             .expect("age run");
 
-        assert!(find_active_sync_run(&pool, operator.id, Duration::minutes(10))
-            .await
-            .expect("find active")
-            .is_none());
+        assert!(
+            find_active_sync_run(&pool, operator.id, Duration::minutes(10))
+                .await
+                .expect("find active")
+                .is_none()
+        );
     }
 }

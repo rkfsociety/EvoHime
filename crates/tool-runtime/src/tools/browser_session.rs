@@ -98,7 +98,9 @@ fn parse_input<T: serde::de::DeserializeOwned>(tool: &str, value: Value) -> Resu
 }
 
 fn text_limit(max_chars: Option<usize>) -> usize {
-    max_chars.unwrap_or(DEFAULT_TEXT_LIMIT).clamp(1, MAX_TEXT_LIMIT)
+    max_chars
+        .unwrap_or(DEFAULT_TEXT_LIMIT)
+        .clamp(1, MAX_TEXT_LIMIT)
 }
 
 fn cdp_failure(message: String) -> ToolError {
@@ -154,14 +156,20 @@ pub async fn navigate(ctx: &ToolContext, value: Value) -> Result<ToolResult, Too
         .await
         .map_err(cdp_failure)?;
     let mut session = session.lock().await;
-    session.navigate(url.as_str(), load_wait).await.map_err(cdp_failure)?;
+    session
+        .navigate(url.as_str(), load_wait)
+        .await
+        .map_err(cdp_failure)?;
     let snapshot = session
         .page_snapshot(text_limit(input.max_chars))
         .await
         .map_err(cdp_failure)?;
     session.last_used = std::time::Instant::now();
 
-    Ok(snapshot_result(snapshot, json!({ "requested_url": input.url })))
+    Ok(snapshot_result(
+        snapshot,
+        json!({ "requested_url": input.url }),
+    ))
 }
 
 pub async fn read(ctx: &ToolContext, value: Value) -> Result<ToolResult, ToolError> {
@@ -203,7 +211,10 @@ pub async fn click(ctx: &ToolContext, value: Value) -> Result<ToolResult, ToolEr
         });
     }
     let settle = Duration::from_millis(
-        input.settle_ms.unwrap_or(DEFAULT_SETTLE_MS).min(MAX_SETTLE_MS),
+        input
+            .settle_ms
+            .unwrap_or(DEFAULT_SETTLE_MS)
+            .min(MAX_SETTLE_MS),
     );
     tokio::time::sleep(settle).await;
     let snapshot = session
@@ -335,7 +346,10 @@ pub async fn type_text(ctx: &ToolContext, value: Value) -> Result<ToolResult, To
         });
     }
     let settle = Duration::from_millis(
-        input.settle_ms.unwrap_or(DEFAULT_SETTLE_MS).min(MAX_SETTLE_MS),
+        input
+            .settle_ms
+            .unwrap_or(DEFAULT_SETTLE_MS)
+            .min(MAX_SETTLE_MS),
     );
     tokio::time::sleep(settle).await;
     let snapshot = session
@@ -407,12 +421,16 @@ mod tests {
     /// Runtime.evaluate, emits loadEventFired, and counts clicks so a
     /// read-after-click observes changed state.
     async fn spawn_mock_ws() -> u16 {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
         let port = listener.local_addr().expect("addr").port();
         tokio::spawn(async move {
             while let Ok((stream, _)) = listener.accept().await {
                 tokio::spawn(async move {
-                    let mut ws = tokio_tungstenite::accept_async(stream).await.expect("accept ws");
+                    let mut ws = tokio_tungstenite::accept_async(stream)
+                        .await
+                        .expect("accept ws");
                     let mut clicks = 0u32;
                     let mut typed = 0u32;
                     let mut current_url = "about:blank".to_string();
@@ -426,17 +444,23 @@ mod tests {
                                 current_url =
                                     request["params"]["url"].as_str().unwrap_or("").to_string();
                                 let reply = json!({ "id": id, "result": { "frameId": "f" } });
-                                ws.send(Message::Text(reply.to_string().into())).await.unwrap();
+                                ws.send(Message::Text(reply.to_string().into()))
+                                    .await
+                                    .unwrap();
                                 let event =
                                     json!({ "method": "Page.loadEventFired", "params": {} });
-                                ws.send(Message::Text(event.to_string().into())).await.unwrap();
+                                ws.send(Message::Text(event.to_string().into()))
+                                    .await
+                                    .unwrap();
                             }
                             "Page.captureScreenshot" => {
                                 use base64::Engine as _;
                                 let data = base64::engine::general_purpose::STANDARD
                                     .encode(b"fake png bytes");
                                 let reply = json!({ "id": id, "result": { "data": data } });
-                                ws.send(Message::Text(reply.to_string().into())).await.unwrap();
+                                ws.send(Message::Text(reply.to_string().into()))
+                                    .await
+                                    .unwrap();
                             }
                             "Runtime.evaluate" => {
                                 let expression =
@@ -467,11 +491,15 @@ mod tests {
                                     "id": id,
                                     "result": { "result": { "value": value } },
                                 });
-                                ws.send(Message::Text(reply.to_string().into())).await.unwrap();
+                                ws.send(Message::Text(reply.to_string().into()))
+                                    .await
+                                    .unwrap();
                             }
                             _ => {
                                 let reply = json!({ "id": id, "result": {} });
-                                ws.send(Message::Text(reply.to_string().into())).await.unwrap();
+                                ws.send(Message::Text(reply.to_string().into()))
+                                    .await
+                                    .unwrap();
                             }
                         }
                     }
@@ -568,8 +596,8 @@ mod tests {
                 .await
                 .expect("screenshot");
             assert_eq!(shot.structured["path"], "shots/page.png");
-            let saved = std::fs::read(ctx.workspace_root.join("shots/page.png"))
-                .expect("screenshot file");
+            let saved =
+                std::fs::read(ctx.workspace_root.join("shots/page.png")).expect("screenshot file");
             assert_eq!(saved, b"fake png bytes");
 
             let closed = close(&ctx, json!({})).await.expect("close");

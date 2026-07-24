@@ -294,7 +294,8 @@ async fn resolve_identity(
             return Ok(OperatorIdentity::bootstrap(AuthSource::LegacyToken));
         }
         let hash = evohime_storage::hash_operator_token(token);
-        if let Ok(Some(row)) = evohime_storage::find_operator_by_token_hash(&state.pool, &hash).await
+        if let Ok(Some(row)) =
+            evohime_storage::find_operator_by_token_hash(&state.pool, &hash).await
         {
             if let Some(identity) = OperatorIdentity::from_row(row) {
                 return Ok(identity);

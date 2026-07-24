@@ -40,7 +40,12 @@ fn preserves_benign_log_values() {
 #[test]
 fn samples_only_identical_messages_inside_interval() {
     let now = Instant::now();
-    assert!(should_emit_health_failure(None, "connection refused", now, Duration::from_secs(30)));
+    assert!(should_emit_health_failure(
+        None,
+        "connection refused",
+        now,
+        Duration::from_secs(30)
+    ));
     assert!(!should_emit_health_failure(
         Some((now, "connection refused".into())),
         "connection refused",

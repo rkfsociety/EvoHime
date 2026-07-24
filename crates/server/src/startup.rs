@@ -1,19 +1,18 @@
 //! Server bootstrap: pool, AppState, settings restore, crash recovery, background loops.
 use crate::app::{AppConfig, AppState, McpServerConfig};
 use crate::metrics_api::metrics_persist_loop;
-use crate::scheduler;
 use crate::metrics_export;
 use crate::models_api::{build_model_config, ModelSettingsRequest};
 use crate::observability;
 use crate::permissions_api::{approval_audit_to_row, parse_permission_name};
 use crate::plugins;
 use crate::rate_limit;
+use crate::scheduler;
 use crate::task::{emit_event, resume_task_run};
 use crate::worker;
 use crate::worker_api::{recover_worker_jobs, worker_health_loop, worker_retention_loop};
 use crate::worker_observability;
 use anyhow::Context;
-use std::time::Duration;
 use evohime_model_gateway::ModelGateway;
 use evohime_permissions::{ApprovalAuditEntry, PermissionMode};
 use evohime_protocol::ServerEvent;
@@ -21,6 +20,7 @@ use evohime_task_engine::{fail_task, resume_task};
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -143,7 +143,10 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
     {
         let sched_state = state.clone();
         let sched_interval = duration_secs_env_local("EVOHIME_SCHEDULER_INTERVAL_SECS", 30);
-        info!(interval_secs = sched_interval.as_secs(), "starting cron scheduler");
+        info!(
+            interval_secs = sched_interval.as_secs(),
+            "starting cron scheduler"
+        );
         tokio::spawn(async move {
             scheduler::scheduler_loop(sched_state, sched_interval).await;
         });

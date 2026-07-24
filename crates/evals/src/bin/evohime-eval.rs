@@ -75,7 +75,12 @@ async fn main() -> std::process::ExitCode {
             }
         }
     }
-    println!("{} passed, {} failed, {} total", tasks.len() - failed, failed, tasks.len());
+    println!(
+        "{} passed, {} failed, {} total",
+        tasks.len() - failed,
+        failed,
+        tasks.len()
+    );
     if failed > 0 {
         std::process::ExitCode::FAILURE
     } else {
