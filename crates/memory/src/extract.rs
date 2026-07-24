@@ -352,6 +352,42 @@ pub fn heuristic_extract(
     Vec::new()
 }
 
+/// Failure-lane extraction cap: below `AUTO_PROMOTE_CONFIDENCE`, so a lesson
+/// from a broken run can never auto-promote — it always goes through Ask.
+pub const FAILURE_CONFIDENCE_CAP: f64 = 0.6;
+pub const FAILURE_IMPORTANCE_CAP: f64 = 0.7;
+pub const FAILURE_CANDIDATE_LIMIT: usize = 2;
+
+/// Restricted extraction lane for FAILED tasks (Stage 7.103, wave 1).
+///
+/// A broken run is not a source of truth about the world, so only
+/// experience-scope `failure_pattern` / `verification_rule` survive; facts,
+/// preferences and playbooks are dropped. Confidence is capped below the
+/// auto-promote threshold and there is no heuristic fallback — no LLM
+/// output means no candidates.
+pub fn extract_failure_candidates(llm_raw: Option<&str>) -> Vec<ExtractedCandidate> {
+    let Some(raw) = llm_raw else {
+        return Vec::new();
+    };
+    let mut out = parse_extraction_json(raw);
+    out.retain(|candidate| {
+        candidate.scope == MemoryScope::Experience
+            && matches!(
+                candidate.kind,
+                MemoryKind::FailurePattern | MemoryKind::VerificationRule
+            )
+            && !is_transient_infra_failure(&candidate.content)
+            && !is_ephemeral_task_dump(&candidate.content)
+    });
+    for candidate in &mut out {
+        candidate.confidence = candidate.confidence.min(FAILURE_CONFIDENCE_CAP);
+        candidate.importance = candidate.importance.min(FAILURE_IMPORTANCE_CAP);
+        candidate.pinned = false;
+    }
+    out.truncate(FAILURE_CANDIDATE_LIMIT);
+    out
+}
+
 /// Prefer parsed LLM candidates; supplement with heuristics only on successful tasks.
 pub fn extract_candidates(
     llm_raw: Option<&str>,
@@ -381,6 +417,56 @@ pub fn extract_candidates(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failure_lane_keeps_only_capped_experience_lessons() {
+        let raw = r#"[
+          {"scope":"experience","kind":"failure_pattern","content":"migration applied before backup existed","confidence":0.95,"importance":0.9},
+          {"scope":"experience","kind":"verification_rule","content":"check backup file exists before running migrations","confidence":0.8,"importance":0.6},
+          {"scope":"workspace","kind":"fact","content":"project uses postgres","confidence":0.9,"importance":0.5},
+          {"scope":"global","kind":"preference","content":"prefer typed apis","confidence":0.9,"importance":0.5},
+          {"scope":"experience","kind":"playbook","content":"deploy steps","confidence":0.9,"importance":0.5},
+          {"scope":"experience","kind":"failure_pattern","content":"third lesson beyond the limit","confidence":0.5,"importance":0.5}
+        ]"#;
+        let out = extract_failure_candidates(Some(raw));
+        assert_eq!(out.len(), FAILURE_CANDIDATE_LIMIT);
+        assert!(out.iter().all(|c| c.scope == MemoryScope::Experience));
+        assert!(out.iter().all(|c| matches!(
+            c.kind,
+            MemoryKind::FailurePattern | MemoryKind::VerificationRule
+        )));
+        assert!(out.iter().all(|c| c.confidence <= FAILURE_CONFIDENCE_CAP));
+        assert!(out.iter().all(|c| !c.pinned));
+    }
+
+    #[test]
+    fn failure_lane_capped_candidates_never_auto_promote() {
+        let raw = r#"[{"scope":"experience","kind":"failure_pattern","content":"shell command assumed bash on windows host","confidence":1.0,"importance":1.0}]"#;
+        let out = extract_failure_candidates(Some(raw));
+        assert_eq!(out.len(), 1);
+        assert!(out[0].confidence < crate::AUTO_PROMOTE_CONFIDENCE);
+        let decision = crate::decide_gate(&crate::GateInput {
+            scope: out[0].scope,
+            kind: out[0].kind,
+            status: evohime_storage::MemoryStatus::Candidate,
+            content: out[0].content.clone(),
+            confidence: out[0].confidence,
+            pinned: out[0].pinned,
+            had_conflict: false,
+            was_duplicate: false,
+            was_rejected: false,
+        });
+        assert!(matches!(decision, crate::GateDecision::Ask { .. }));
+    }
+
+    #[test]
+    fn failure_lane_drops_noise_and_survives_garbage() {
+        assert!(extract_failure_candidates(None).is_empty());
+        assert!(extract_failure_candidates(Some("")).is_empty());
+        assert!(extract_failure_candidates(Some("not json at all")).is_empty());
+        let transient = r#"[{"scope":"experience","kind":"failure_pattern","content":"model error: provider returned 503 during the run","confidence":0.5,"importance":0.5}]"#;
+        assert!(extract_failure_candidates(Some(transient)).is_empty());
+    }
 
     #[test]
     fn parses_valid_json_array() {
