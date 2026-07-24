@@ -175,6 +175,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/plugins/install", post(plugins::install_plugin))
         .route("/api/plugins/update", post(plugins::update_plugin))
         .route("/api/plugins/uninstall", post(plugins::uninstall_plugin))
+        .route("/api/plugins/pin", post(plugins::pin_plugin))
         .route("/api/plugins/integrity", get(plugins::plugin_integrity))
         .route(
             "/api/plugins/:name/skills",

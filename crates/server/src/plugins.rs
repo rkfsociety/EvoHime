@@ -175,6 +175,22 @@ pub struct InstallPluginRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct PinPluginRequest {
+    pub name: String,
+    /// Pin to a specific git commit (overrides catalog tag)
+    #[serde(default)]
+    pub commit: Option<String>,
+    /// Pin to a semantic version
+    #[serde(default)]
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UninstallPluginRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct PluginManifestFile {
     name: String,
     #[serde(default)]
@@ -269,23 +285,42 @@ fn entry_trust(entry: &ResolvedCatalogEntry) -> crate::plugin_trust::TrustScore 
 
 pub async fn install_plugin(
     State(state): State<Arc<AppState>>,
+    axum::extract::Extension(identity): axum::extract::Extension<crate::auth::OperatorIdentity>,
     Json(body): Json<InstallPluginRequest>,
 ) -> Result<Json<InstalledPlugin>, ApiError> {
     let installed = install_plugin_internal(&state, &body.name, false, body.force).await?;
+    // Record in DB for pin/signature tracking (7.8)
+    let db_entry = evohime_storage::NewInstalledPlugin {
+        name: body.name.clone(),
+        pinned_commit: None,
+        pinned_version: None,
+        signature_hash: None,
+    };
+    let _ = evohime_storage::insert_installed_plugin(&state.pool, identity.id, &db_entry).await;
     Ok(Json(installed))
 }
 
 pub async fn update_plugin(
     State(state): State<Arc<AppState>>,
+    axum::extract::Extension(identity): axum::extract::Extension<crate::auth::OperatorIdentity>,
     Json(body): Json<InstallPluginRequest>,
 ) -> Result<Json<InstalledPlugin>, ApiError> {
     let installed = install_plugin_internal(&state, &body.name, true, body.force).await?;
+    // Update DB status to active (re-activate if was uninstalled)
+    let db_entry = evohime_storage::NewInstalledPlugin {
+        name: body.name.clone(),
+        pinned_commit: None,
+        pinned_version: None,
+        signature_hash: None,
+    };
+    let _ = evohime_storage::insert_installed_plugin(&state.pool, identity.id, &db_entry).await;
     Ok(Json(installed))
 }
 
 pub async fn uninstall_plugin(
     State(state): State<Arc<AppState>>,
-    Json(body): Json<InstallPluginRequest>,
+    axum::extract::Extension(identity): axum::extract::Extension<crate::auth::OperatorIdentity>,
+    Json(body): Json<UninstallPluginRequest>,
 ) -> Result<StatusCode, ApiError> {
     let name = sanitize_plugin_name(&body.name)
         .ok_or_else(|| ApiError::BadRequest("некорректное имя плагина".into()))?;
@@ -298,6 +333,11 @@ pub async fn uninstall_plugin(
     tokio::fs::remove_dir_all(&target)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
+
+    // Mark as uninstalled in DB (soft-delete with uninstalled_at)
+    let _ = evohime_storage::mark_plugin_uninstalled(&state.pool, identity.id, &name).await;
+
+    // Remove from lock file
     let workspace_root = state.workspace_root.clone();
     let lock_name = name.clone();
     let _ = tokio::task::spawn_blocking(move || {
@@ -399,6 +439,38 @@ pub async fn plugin_integrity(
     .await
     .map_err(|error| ApiError::Internal(error.to_string()))?;
     Ok(Json(response))
+}
+
+/// Pin a plugin to a specific commit/version (Stage 7.8).
+pub async fn pin_plugin(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Extension(identity): axum::extract::Extension<crate::auth::OperatorIdentity>,
+    Json(body): Json<PinPluginRequest>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let name = sanitize_plugin_name(&body.name)
+        .ok_or_else(|| ApiError::BadRequest("некорректное имя плагина".into()))?;
+    let commit = body.commit.clone();
+    let version = body.version.clone();
+    evohime_storage::update_plugin_pin(
+        &state.pool,
+        identity.id,
+        &name,
+        commit.clone(),
+        version.clone(),
+    )
+    .await
+    .map_err(|error| ApiError::Internal(error.to_string()))?
+    .ok_or_else(|| {
+        ApiError::BadRequest(format!(
+            "плагин `{name}` не найден в установленных"
+        ))
+    })?;
+    Ok(Json(serde_json::json!({
+        "status": "pinned",
+        "name": name,
+        "commit": commit,
+        "version": version,
+    })))
 }
 
 pub async fn list_plugin_skills(
