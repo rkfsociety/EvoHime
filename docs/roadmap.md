@@ -382,7 +382,7 @@
 | 7.52 | Agent tool `worker.run` (submit+await job) | M | ✅ | tool-runtime HTTP submit+poll; wiremock test |
 | 7.53 | Worker job UI: submit form + payload editor в Settings | M | ✅ | WorkerSettingsSection: handler dropdown (7 handlers), JSON payload editor, submit form; API `submitWorkerJob()` |
 | 7.54 | Horizontal worker scale (N processes / queue backend) | L | ✅ | distributed PostgreSQL queue via `/api/worker/queue/*` endpoints; `worker_distributed.py` polls and claims jobs atomically |
-| 7.55 | Typed JSON Schema registry для worker tasks (shared) | M | ⬜ | duplicate validate Rust/Python |
+| 7.55 | Typed JSON Schema registry для worker tasks (shared) | M | ✅ | `workers/schemas/worker-tasks.schema.json` + Python jsonschema validation (with fallback) + Rust embedded schema + jsonschema crate validation; single source of truth for all task payloads |
 | 7.56 | CI job для `workers/python` unittest | S | ✅ | `python-worker` job на Python 3.12 |
 
 ### 7.F — Project index & context
