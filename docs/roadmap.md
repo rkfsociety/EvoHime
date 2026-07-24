@@ -478,7 +478,7 @@
 | --- | --- | --- | --- | --- |
 | 7.98 | Team / multi-operator mode (authz scopes) | L | ✅ | local operator registry, opaque tokens, owner/member management API и scoped sessions/tasks/memory |
 | 7.99 | Cloud sync / remote workspace | L | ✅ | push/pull `BackupDump` через owner-only `/api/sync/*` с историей `sync_runs` (direction, лимит 64 MiB, checksum); идемпотентный restore (`restore_backup` + CLI `evohime-import`); авто-push по `EVOHIME_SYNC_AUTO_MINUTES` |
-| 7.100 | Visual browser agent loop (CDP session reuse) | L | 🟡 | wave 1 ✅: `browser.session.navigate|read|click|close` — persistent CDP-вкладка на задачу через `EVOHIME_BROWSER_CDP_URL`, кап 4 сессии, mock-CDP тесты; остаток — скриншоты, ввод текста |
+| 7.100 | Visual browser agent loop (CDP session reuse) | L | ✅ | `browser.session.navigate|read|click|type|screenshot|close` — persistent CDP-вкладка на задачу (`EVOHIME_BROWSER_CDP_URL`), кап 4 сессии, скриншоты в sandbox, ввод без эха текста, mock-CDP тесты без Chrome |
 | 7.101 | Eval harness (golden tasks, regression agents) | L | ⬜ | |
 | 7.102 | Marketplace for playbooks / plugins with trust scores | L | ⬜ | memory design out-of-scope |
 | 7.103 | Online continual learning (still no weight fine-tune; stronger experience) | L | ⬜ | |
@@ -492,7 +492,7 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-24:** `7.93`–`7.98` ✅ — request context, task timeline telemetry, log safety, deep health checks, backup/export и multi-operator authz; `7.99` ✅ — cloud sync целиком: push/pull через owner-only `/api/sync/*` (`sync_runs` с direction, лимит 64 MiB, checksum-сверка), идемпотентный restore (`restore_backup` + CLI `evohime-import`) и авто-push по `EVOHIME_SYNC_AUTO_MINUTES`. `7.100` wave 1 ✅ — persistent browser session tools поверх CDP (`EVOHIME_BROWSER_CDP_URL`); остаток — скриншоты и ввод текста.
+**Актуальный статус 2026-07-24:** `7.93`–`7.98` ✅ — request context, task timeline telemetry, log safety, deep health checks, backup/export и multi-operator authz; `7.99` ✅ — cloud sync целиком: push/pull через owner-only `/api/sync/*` (`sync_runs` с direction, лимит 64 MiB, checksum-сверка), идемпотентный restore (`restore_backup` + CLI `evohime-import`) и авто-push по `EVOHIME_SYNC_AUTO_MINUTES`. `7.100` ✅ — visual browser agent loop целиком: persistent CDP-вкладка на задачу (`EVOHIME_BROWSER_CDP_URL`), navigate/read/click/type/screenshot/close; следующий пункт — `7.101` (eval harness).
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
@@ -560,6 +560,8 @@
 | `browser.session.read` | 7 | M6 | ✅ Persistent CDP tab (`7.100`) |
 | `browser.session.click` | 7 | M6 | ✅ Persistent CDP tab (`7.100`) |
 | `browser.session.close` | 7 | M6 | ✅ Persistent CDP tab (`7.100`) |
+| `browser.session.type` | 7 | M6 | ✅ Persistent CDP tab (`7.100`) |
+| `browser.session.screenshot` | 7 | M6 | ✅ PNG в workspace sandbox (`7.100`) |
 
 ---
 

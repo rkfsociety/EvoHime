@@ -73,7 +73,7 @@ User message
 
 - **Stage 7** Hardening + Product — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99` ✅ — cloud sync: push/pull (owner-only `/api/sync/status|push|pull`, история с direction в `sync_runs`, конфиг `EVOHIME_SYNC_URL`/`EVOHIME_SYNC_TOKEN`), идемпотентный restore (`restore_backup` + CLI `evohime-import`), авто-push (`EVOHIME_SYNC_AUTO_MINUTES`)
 - Sites, Scheduled, OTLP и Cloud sync имеют gates через `EVOHIME_FEATURE_*` и `/api/features`
-- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; `7.93`–`7.99` ✅; `7.100` wave 1 ✅ — `browser.session.*` tools с persistent CDP-вкладкой на задачу (`EVOHIME_BROWSER_CDP_URL`); остаток `7.100` — скриншоты и ввод текста
+- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; `7.93`–`7.99` ✅; `7.100` ✅ — `browser.session.*` tools с persistent CDP-вкладкой на задачу (`EVOHIME_BROWSER_CDP_URL`): navigate/read/click/type/screenshot/close; vision-вход изображений модели — за пределами пункта
 
 ## WebSocket events
 
@@ -103,7 +103,7 @@ Also: `file.changed`, `git.diff.changed`, task status/step events, action log ev
 
 ## Tools
 
-Implemented: `filesystem.read`, `filesystem.write`, `filesystem.patch`, `filesystem.search`, `shell.execute`, `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push`, `browser.open`, `browser.extract`, `browser.session.navigate|read|click|close` (persistent CDP tab per task; needs `EVOHIME_BROWSER_CDP_URL`), `mcp.call`, `memory.search`
+Implemented: `filesystem.read`, `filesystem.write`, `filesystem.patch`, `filesystem.search`, `shell.execute`, `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push`, `browser.open`, `browser.extract`, `browser.session.navigate|read|click|type|screenshot|close` (persistent CDP tab per task; needs `EVOHIME_BROWSER_CDP_URL`), `mcp.call`, `memory.search`
 
 Each tool must have: unique name, description, JSON Schema input, required permissions, timeout, cancellation, structured result, execution log.
 
@@ -193,7 +193,7 @@ See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](d
 | 4 Editor + Git | ✅ Done |
 | 5 Task orchestration | ✅ Done |
 | 6 Advanced | ✅ Foundations complete |
-| 7 Hardening + Product | 🟡 In progress; `7.1`–`7.99` complete, `7.100` wave 1 (browser session) done |
+| 7 Hardening + Product | 🟡 In progress; `7.1`–`7.100` complete, next `7.101` |
 
 Memory design: [docs/superpowers/specs/2026-07-16-agent-memory-design.md](docs/superpowers/specs/2026-07-16-agent-memory-design.md)
 
