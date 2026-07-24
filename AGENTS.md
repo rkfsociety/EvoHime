@@ -73,7 +73,7 @@ User message
 
 - **Stage 7** Hardening + Product — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99` ✅ — cloud sync: push/pull (owner-only `/api/sync/status|push|pull`, история с direction в `sync_runs`, конфиг `EVOHIME_SYNC_URL`/`EVOHIME_SYNC_TOKEN`), идемпотентный restore (`restore_backup` + CLI `evohime-import`), авто-push (`EVOHIME_SYNC_AUTO_MINUTES`)
 - Sites, Scheduled, OTLP и Cloud sync имеют gates через `EVOHIME_FEATURE_*` и `/api/features`
-- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; `7.93`–`7.99` ✅; `7.100` ✅ — `browser.session.*` tools с persistent CDP-вкладкой на задачу (`EVOHIME_BROWSER_CDP_URL`); `7.101` ✅ — eval harness `evohime-evals`: golden tasks против реального agent loop; CI — mock, `--live --judge` — реальный провайдер + LLM-вердикты; `7.102` ✅ — trust scores в каталоге плагинов, UI-бейджи, risk-scan гейт установки и `.evohime/plugins.lock.json` + `/api/plugins/integrity`; `7.103` wave 1 ✅ — обучение на провалах: `extract_failure_candidates` (≤2 урока `failure_pattern`/`verification_rule`, confidence cap 0.6 — только Ask, без auto-promote), `FAILURE_EXTRACT_PROMPT` в post-task extract
+- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; `7.93`–`7.99` ✅; `7.100` ✅ — `browser.session.*` tools с persistent CDP-вкладкой на задачу (`EVOHIME_BROWSER_CDP_URL`); `7.101` ✅ — eval harness `evohime-evals`: golden tasks против реального agent loop; CI — mock, `--live --judge` — реальный провайдер + LLM-вердикты; `7.102` ✅ — trust scores в каталоге плагинов, UI-бейджи, risk-scan гейт установки и `.evohime/plugins.lock.json` + `/api/plugins/integrity`; `7.103` wave 1 ✅ — обучение на провалах: `extract_failure_candidates` (≤2 урока `failure_pattern`/`verification_rule`, confidence cap 0.6 — только Ask, без auto-promote), `FAILURE_EXTRACT_PROMPT` в post-task extract; wave 2 ✅ — эскалация повторов: `FeedbackSignal::Repeated` поднимает confidence (жёсткий кап 0.6, auto-promote по-прежнему невозможен) и importance (без верхнего капа) существующей experience-записи при повторном admit-дубликате `failure_pattern`/`verification_rule` в статусе `Candidate`; retrieval даёт этим двум kind'ам дополнительный бонус ранжирования над `success_pattern`/`playbook`
 
 ## WebSocket events
 
@@ -198,7 +198,7 @@ See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](d
 | 4 Editor + Git | ✅ Done |
 | 5 Task orchestration | ✅ Done |
 | 6 Advanced | ✅ Foundations complete |
-| 7 Hardening + Product | 🟡 In progress; `7.1`–`7.102` complete, `7.103` wave 1 (failure learning) done |
+| 7 Hardening + Product | 🟡 In progress; `7.1`–`7.102` complete, `7.103` waves 1–2 done |
 
 Memory design: [docs/superpowers/specs/2026-07-16-agent-memory-design.md](docs/superpowers/specs/2026-07-16-agent-memory-design.md)
 
