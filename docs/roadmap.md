@@ -316,7 +316,7 @@
 | 7.6 | Shell: scrub / allowlist env (не наследовать API keys) | M | ✅ | `shell_env.rs`; allowlist + secret scrub; `EVOHIME_SHELL_*` |
 | 7.7 | Encrypt-at-rest для API keys в `app_settings` (или OS keychain) | M | ✅ | Phase 5.7: `crates/server/src/secrets.rs` AES-256-GCM; encrypt in `update_model_config`, decrypt in `startup.rs`; backward-compat fallback |
 | 7.8 | Plugin install: pin commit/tag, signature/hash, uninstall/update | L | ⬜ | `server/src/plugins.rs`; security phase 5 |
-| 7.9 | Plugin skills quarantine (не все skills → system prompt без opt-in) | L | ⬜ | `agent_loop` workspace rules; security phase 5 |
+| 7.9 | Plugin skills quarantine (не все skills → system prompt без opt-in) | L | ✅ | storage `plugin_skills` table + `get_disabled_skills()` / `toggle_skill_status()` / `list_plugin_skills()` CRUD; ReAct loop uses `build_workspace_rules_async()` with disabled skills filtering; UI toggle in PluginsPanel with enabled/disabled state indicators |
 | 7.10 | Permission для `memory.search` + audit | S | ✅ | `Permission::MemorySearch` in enum, permission check in `execute_memory_search`, UI translation in SettingsPanel |
 | 7.11 | Rate limiting / concurrency caps на sessions, tasks, worker jobs | M | ✅ | `rate_limit.rs`; 429 + WS `rate.limited`; `EVOHIME_RATE_LIMIT_*` |
 | 7.12 | Git push/pull network policy (remote allowlist, deny force) | M | ✅ | `crates/tool-runtime/src/tools/git.rs` force validation + `EVOHIME_GIT_ALLOWED_REMOTES` allowlist; 5 unit tests |
