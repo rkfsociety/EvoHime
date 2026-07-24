@@ -6,7 +6,7 @@ use std::time::Duration;
 pub const NAME: &str = "memory.search";
 pub const DESCRIPTION: &str =
     "Search structured agent memory (facts, constraints, experience, playbooks) by query. Input: { query, limit? }.";
-pub const PERMISSIONS: &[Permission] = &[];
+pub const PERMISSIONS: &[Permission] = &[Permission::MemorySearch];
 pub const TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Registry stub — real search runs in agent-runtime with DB access.

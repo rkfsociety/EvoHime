@@ -7,6 +7,7 @@ edition = "2021"
 chrono = { version = "0.4", features = ["serde"] }
 evohime-memory = { path = "../memory" }
 evohime-model-gateway = { path = "../model-gateway" }
+evohime-permissions = { path = "../permissions" }
 evohime-protocol = { path = "../protocol" }
 evohime-project-index = { path = "../project-index" }
 evohime-tool-runtime = { path = "../tool-runtime" }

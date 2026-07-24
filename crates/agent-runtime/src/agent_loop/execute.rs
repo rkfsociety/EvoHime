@@ -228,7 +228,7 @@ pub(crate) async fn execute_single_plan_step(
         progress_tx: Some(progress_tx),
     };
     let tool_result = if effective_tool_name == "memory.search" {
-        execute_memory_search(config, &input).await
+        execute_memory_search(config, tools, &input).await
     } else if effective_tool_name == "agent.run" {
         execute_agent_run(config, gateway, tools, event_tx, input).await
     } else {
@@ -449,9 +449,48 @@ pub(crate) fn structured_json_input(tool_name: &str, description: &str) -> Optio
 
 pub(crate) async fn execute_memory_search(
     config: &AgentConfig,
+    tools: &ToolRegistry,
     input: &Value,
 ) -> Result<evohime_tool_runtime::ToolResult, ToolError> {
+    use evohime_permissions::{Permission, PermissionCheck, PermissionDecision};
+
     let (query, limit) = evohime_tool_runtime::memory::parse_input(input)?;
+
+    let permissions = tools.permissions();
+    match permissions
+        .check_scoped(
+            Permission::MemorySearch,
+            &PermissionCheck {
+                session_id: Some(config.session_id),
+                path: Some("workspace"),
+            },
+        )
+        .await
+    {
+        PermissionDecision::Allowed => {}
+        PermissionDecision::Denied => {
+            return Err(ToolError::PermissionDenied(Permission::MemorySearch));
+        }
+        PermissionDecision::NeedsApproval => {
+            let approval = permissions
+                .create_approval_scoped(
+                    config.task_id,
+                    Some(config.session_id),
+                    "memory.search",
+                    Permission::MemorySearch,
+                    "workspace",
+                )
+                .await;
+            return Err(ToolError::NeedsApproval {
+                tool: "memory.search".to_string(),
+                permission: Permission::MemorySearch,
+                scope: "workspace".to_string(),
+                approval_id: approval.id,
+                input: input.clone(),
+            });
+        }
+    }
+
     let Some(pool) = &config.memory_pool else {
         return Ok(evohime_tool_runtime::ToolResult {
             output: "memory.search: memory backend not configured".into(),

@@ -391,6 +391,10 @@ impl ToolRegistry {
         });
         futures_util::future::join_all(futures).await
     }
+
+    pub fn permissions(&self) -> &PermissionEngine {
+        &self.permissions
+    }
 }
 
 impl Default for ToolRegistry {

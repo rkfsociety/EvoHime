@@ -22,6 +22,7 @@ pub enum Permission {
     GitWrite,
     BrowserAccess,
     McpCall,
+    MemorySearch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -157,6 +158,7 @@ impl PermissionEngine {
         modes.insert(Permission::GitWrite, PermissionMode::Ask);
         modes.insert(Permission::BrowserAccess, PermissionMode::Ask);
         modes.insert(Permission::McpCall, PermissionMode::Ask);
+        modes.insert(Permission::MemorySearch, PermissionMode::Ask);
         Self {
             modes: Arc::new(RwLock::new(modes)),
             session_modes: Arc::new(RwLock::new(HashMap::new())),

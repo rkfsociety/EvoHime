@@ -20,6 +20,7 @@ pub(crate) async fn list_permissions(State(state): State<Arc<AppState>>) -> Json
         ("git_write", Permission::GitWrite),
         ("browser_access", Permission::BrowserAccess),
         ("mcp_call", Permission::McpCall),
+        ("memory_search", Permission::MemorySearch),
     ];
     let mut result = serde_json::Map::new();
     for (name, permission) in names {
@@ -161,6 +162,7 @@ pub(crate) async fn update_permission(
         "git_write" => Permission::GitWrite,
         "browser_access" => Permission::BrowserAccess,
         "mcp_call" => Permission::McpCall,
+        "memory_search" => Permission::MemorySearch,
         _ => return Err(ApiError::BadRequest("unknown permission".into())),
     };
     let mode: PermissionMode = serde_json::from_value(
@@ -188,6 +190,7 @@ pub(crate) fn permission_name(permission: Permission) -> &'static str {
         Permission::GitWrite => "git_write",
         Permission::BrowserAccess => "browser_access",
         Permission::McpCall => "mcp_call",
+        Permission::MemorySearch => "memory_search",
     }
 }
 
@@ -200,6 +203,7 @@ pub(crate) fn parse_permission_name(name: &str) -> Option<Permission> {
         "git_write" => Some(Permission::GitWrite),
         "browser_access" => Some(Permission::BrowserAccess),
         "mcp_call" => Some(Permission::McpCall),
+        "memory_search" => Some(Permission::MemorySearch),
         _ => None,
     }
 }
@@ -214,6 +218,7 @@ pub(crate) async fn permission_settings_value(state: &AppState) -> Value {
         Permission::GitWrite,
         Permission::BrowserAccess,
         Permission::McpCall,
+        Permission::MemorySearch,
     ] {
         settings.insert(
             permission_name(permission).to_string(),
