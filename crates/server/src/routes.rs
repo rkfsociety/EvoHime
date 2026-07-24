@@ -11,7 +11,7 @@ use crate::sites_api;
 use crate::workspace;
 use axum::{
     middleware,
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post, put},
     Router,
 };
 use std::sync::Arc;
@@ -134,6 +134,18 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             post(crate::worker_api::retry_worker_job),
         )
         .route("/api/worker/status", get(crate::worker_api::worker_status))
+        .route(
+            "/api/worker/queue/claim",
+            post(crate::worker_api::claim_worker_job_for_queue),
+        )
+        .route(
+            "/api/worker/queue/:job_id/heartbeat",
+            patch(crate::worker_api::heartbeat_worker_job_queue),
+        )
+        .route(
+            "/api/worker/queue/:job_id/complete",
+            patch(crate::worker_api::complete_worker_job_queue),
+        )
         .route(
             "/api/permissions",
             get(crate::permissions_api::list_permissions),
