@@ -124,7 +124,7 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 ## Next recommended step
 
-`7.65` hardening выполнен: scheduler dispatch атомарно создаёт один run/session/task, manual trigger не увеличивает счётчик повторно, а failure history сохраняет ошибки. `7.93` добавил request-id, безопасные internal errors и header-only HTTP auth; `7.94` добавил copyable correlation ids и server-provided latency bars; `7.95` добавил tracing redaction и bounded health sampling; `7.96` добавил `/health/deep` с проверками DB, worker и workspace; `7.97` добавил CLI `evohime-export` для JSON backup сессий и memory; `7.98` добавил multi-operator registry с opaque-токенами и scoped данными; `7.99` wave 1 добавил cloud sync push backup на remote endpoint с историей `sync_runs`; wave 2 добавила идемпотентный restore (`restore_backup`, CLI `evohime-import`); wave 3 добавила `/api/sync/pull` с direction в `sync_runs`; wave 4 добавила фоновый авто-push (`EVOHIME_SYNC_AUTO_MINUTES`, min 5 минут, первый тик пропускается). `7.99` закрыт; следующий пункт — `7.100`.
+`7.65` hardening выполнен: scheduler dispatch атомарно создаёт один run/session/task, manual trigger не увеличивает счётчик повторно, а failure history сохраняет ошибки. `7.93` добавил request-id, безопасные internal errors и header-only HTTP auth; `7.94` добавил copyable correlation ids и server-provided latency bars; `7.95` добавил tracing redaction и bounded health sampling; `7.96` добавил `/health/deep` с проверками DB, worker и workspace; `7.97` добавил CLI `evohime-export` для JSON backup сессий и memory; `7.98` добавил multi-operator registry с opaque-токенами и scoped данными; `7.99` wave 1 добавил cloud sync push backup на remote endpoint с историей `sync_runs`; wave 2 добавила идемпотентный restore (`restore_backup`, CLI `evohime-import`); wave 3 добавила `/api/sync/pull` с direction в `sync_runs`; wave 4 добавила фоновый авто-push (`EVOHIME_SYNC_AUTO_MINUTES`, min 5 минут, первый тик пропускается). `7.99` закрыт. `7.100` wave 1 добавила `browser.session.navigate|read|click|close` — persistent CDP-вкладку на задачу через `EVOHIME_BROWSER_CDP_URL` (кап 4 сессии, idle 10 минут, SSRF-валидация навигации, mock-CDP тесты без Chrome); остаток `7.100` — скриншоты и ввод текста.
 
 `7.56` выполнен: CI job `python-worker` на Python 3.12 запускает `python -m unittest discover -s workers/python -p "test_*.py"`; локально suite проходит: 25 тестов.
 
@@ -210,5 +210,5 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 **Актуализация 2026-07-22:** `7.51`, product honesty для Sites/Scheduled, scheduler correctness, request context, task timeline telemetry, log safety, deep health checks и backup/export выполнены; Wave E `7.84`–`7.98` закрыта. `7.92` уже покрыт `7.24`; `7.99` (cloud sync) выполнен целиком.
 
-1. **Stage 7** — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99` ✅; next `7.100`
+1. **Stage 7** — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99` ✅; `7.100` wave 1 ✅
 2. Рекомендуемая следующая волна: следующий пункт Stage 7 hardening/product
