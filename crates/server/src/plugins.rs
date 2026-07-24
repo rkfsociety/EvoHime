@@ -604,6 +604,8 @@ async fn install_plugin_internal(
                 content_hash,
                 trust_level,
                 installed_at: Utc::now(),
+                pinned_commit: None,
+                pinned_version: None,
             },
         )
     })

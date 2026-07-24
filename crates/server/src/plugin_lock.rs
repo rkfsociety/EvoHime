@@ -22,6 +22,12 @@ pub struct PluginLockEntry {
     pub content_hash: String,
     pub trust_level: String,
     pub installed_at: DateTime<Utc>,
+    /// Pin to specific commit (7.8): overrides git_ref for restore
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned_commit: Option<String>,
+    /// Pin to specific version (7.8): override for semantic versioning
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned_version: Option<String>,
 }
 
 pub type PluginLock = BTreeMap<String, PluginLockEntry>;
@@ -185,6 +191,8 @@ mod tests {
             content_hash: "abc".into(),
             trust_level: "curated".into(),
             installed_at: Utc::now(),
+            pinned_commit: None,
+            pinned_version: None,
         };
         record_install(workspace.path(), entry.clone()).expect("record");
         let (lock, corrupted) = load_lock(workspace.path());
