@@ -21,6 +21,16 @@
         }
       }
     },
+    "/health/deep": {
+      "get": {
+        "operationId": "get_health_deep",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/openapi.json": {
       "get": {
         "operationId": "get_openapi_json",
@@ -41,9 +51,67 @@
         }
       }
     },
+    "/api/operators": {
+      "get": {
+        "operationId": "get_api_operators",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_operators",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/operators/:operator_id/rotate": {
+      "post": {
+        "operationId": "post_api_operators_operator_id_rotate",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/operators/:operator_id/revoke": {
+      "post": {
+        "operationId": "post_api_operators_operator_id_revoke",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/features": {
       "get": {
         "operationId": "get_api_features",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/sync/status": {
+      "get": {
+        "operationId": "get_api_sync_status",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/sync/push": {
+      "post": {
+        "operationId": "post_api_sync_push",
         "responses": {
           "200": {
             "description": "Successful response"

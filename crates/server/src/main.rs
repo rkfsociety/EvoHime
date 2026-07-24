@@ -27,6 +27,7 @@ mod scheduler;
 mod sessions_api;
 mod sites_api;
 mod startup;
+mod sync_api;
 mod task;
 mod worker;
 mod worker_api;
