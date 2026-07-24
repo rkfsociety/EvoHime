@@ -336,7 +336,7 @@ fn score_item(
 
     let kind = MemoryKind::parse(&item.kind);
     let scope = MemoryScope::parse(&item.scope);
-    if scope == Some(MemoryScope::Experience)
+    let is_experience = scope == Some(MemoryScope::Experience)
         || matches!(
             kind,
             Some(
@@ -345,10 +345,18 @@ fn score_item(
                     | MemoryKind::VerificationRule
                     | MemoryKind::Playbook
             )
-        )
-    {
+        );
+    if is_experience {
         // Between active facts and weak candidates.
         score += 0.3;
+        // Lessons that prevent a repeat mistake outrank generic playbooks/success
+        // patterns at equal relevance (7.103 wave 2).
+        if matches!(
+            kind,
+            Some(MemoryKind::FailurePattern | MemoryKind::VerificationRule)
+        ) {
+            score += 0.2;
+        }
     }
 
     let query_tokens = tokenize(query);
@@ -708,6 +716,34 @@ mod tests {
         experience.kind = MemoryKind::FailurePattern.as_str().into();
         let ranked = search_memory("deploy timeout", &[experience.clone(), fact.clone()], 5).await;
         assert_eq!(ranked[0].item.id, fact.id);
+        assert!(ranked[0].score > ranked[1].score);
+    }
+
+    #[tokio::test]
+    async fn failure_lessons_outrank_success_patterns_at_equal_relevance() {
+        let mut failure = sample_item(
+            Uuid::new_v4(),
+            "timeout when deploying: retry without backoff",
+            "candidate",
+            0.5,
+            false,
+        );
+        failure.scope = "experience".into();
+        failure.kind = MemoryKind::FailurePattern.as_str().into();
+
+        let mut success = sample_item(
+            Uuid::new_v4(),
+            "timeout when deploying: retry without backoff",
+            "candidate",
+            0.5,
+            false,
+        );
+        success.scope = "experience".into();
+        success.kind = MemoryKind::SuccessPattern.as_str().into();
+
+        let failure_id = failure.id;
+        let ranked = search_memory("timeout deploying", &[success, failure], 5).await;
+        assert_eq!(ranked[0].item.id, failure_id);
         assert!(ranked[0].score > ranked[1].score);
     }
 }
