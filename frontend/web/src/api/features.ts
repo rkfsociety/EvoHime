@@ -4,6 +4,7 @@ export type FeatureFlags = {
   sites: boolean;
   scheduled: boolean;
   otlp: boolean;
+  cloud_sync: boolean;
 };
 
 export function getFeatures() {

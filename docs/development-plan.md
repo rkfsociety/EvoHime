@@ -61,9 +61,9 @@ EvoHime Server — Rust
 13. Параллельное выполнение независимых инструментов
 14. Восстановление задач после перезапуска сервера
 
-## Фактический статус на 2026-07-22
+## Фактический статус на 2026-07-24
 
-Этапы 1–6 завершены на уровне foundations. Stage 7: hardening/product waves `7.1`–`7.93` выполнены; scheduler correctness и request context hardening завершены, документация синхронизирована с текущим состоянием, следующий пункт — `7.94`.
+Этапы 1–6 завершены на уровне foundations. Stage 7: hardening/product waves `7.1`–`7.98` выполнены; `7.99` (cloud sync) начат — wave 1 push операторского backup на remote endpoint завершена, дальше pull/restore и авто-sync.
 
 - tools: filesystem / shell / Git / browser / MCP в `tool-runtime`;
 - `agent-runtime`: native ReAct tool call → observation → next action; bounded limits; checkpoints; structured memory в prompt;

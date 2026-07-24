@@ -71,9 +71,9 @@ User message
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; scheduler correctness, request context, timeline, log safety, deep health, backup/export и multi-operator authz ✅; next `7.99`
-- Sites, Scheduled и OTLP имеют реальные backend/UI gates через `EVOHIME_FEATURE_*` и `/api/features`
-- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; `7.93` request context, `7.94` timeline, `7.95` log safety, `7.96` deep health, `7.97` backup/export и `7.98` multi-operator authz ✅; следующий пункт — `7.99`
+- **Stage 7** Hardening + Product — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99` wave 1 (cloud sync push) ✅ — owner-only `/api/sync/status` + `/api/sync/push`, история в `sync_runs`, конфиг `EVOHIME_SYNC_URL`/`EVOHIME_SYNC_TOKEN`
+- Sites, Scheduled, OTLP и Cloud sync имеют gates через `EVOHIME_FEATURE_*` и `/api/features`
+- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; `7.93`–`7.98` ✅; `7.99` продолжается (pull/restore, авто-sync) либо следующий пункт `7.100`
 
 ## WebSocket events
 
@@ -190,7 +190,7 @@ See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](d
 | 4 Editor + Git | ✅ Done |
 | 5 Task orchestration | ✅ Done |
 | 6 Advanced | ✅ Foundations complete |
-| 7 Hardening + Product | 🟡 In progress; `7.1`–`7.98` complete, next `7.99` |
+| 7 Hardening + Product | 🟡 In progress; `7.1`–`7.98` complete, `7.99` wave 1 (push) done |
 
 Memory design: [docs/superpowers/specs/2026-07-16-agent-memory-design.md](docs/superpowers/specs/2026-07-16-agent-memory-design.md)
 
