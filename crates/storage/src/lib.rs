@@ -15,6 +15,7 @@ pub mod pool;
 pub mod scheduled;
 pub mod scopes;
 pub mod sites;
+pub mod sync;
 pub mod test_db;
 
 pub use attachments::{
@@ -56,6 +57,10 @@ pub use scopes::{
     list_sessions_for_operator, list_tasks_for_operator, load_task_for_operator,
     unarchive_session_for_operator,
 };
+pub use sync::{
+    find_active_sync_run, finish_sync_run, is_terminal_sync_status, list_sync_runs,
+    start_sync_run, SyncRunRow, SYNC_STATUS_FAILED, SYNC_STATUS_RUNNING, SYNC_STATUS_SUCCESS,
+};
 pub use test_db::{
     connect_integration_pool, integration_database_url, require_integration_database,
 };
@@ -72,6 +77,8 @@ pub enum StorageError {
     InvalidMemory(String),
     #[error("invalid operator: {0}")]
     InvalidOperator(String),
+    #[error("invalid sync run: {0}")]
+    InvalidSync(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
