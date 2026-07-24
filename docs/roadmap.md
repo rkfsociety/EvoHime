@@ -315,7 +315,7 @@
 | 7.5 | SSRF guard для `mcp.call` + optional allowlist hosts | M | ✅ | `ssrf` + redirect/final; `EVOHIME_MCP_ALLOWED_HOSTS` |
 | 7.6 | Shell: scrub / allowlist env (не наследовать API keys) | M | ✅ | `shell_env.rs`; allowlist + secret scrub; `EVOHIME_SHELL_*` |
 | 7.7 | Encrypt-at-rest для API keys в `app_settings` (или OS keychain) | M | ✅ | Phase 5.7: `crates/server/src/secrets.rs` AES-256-GCM; encrypt in `update_model_config`, decrypt in `startup.rs`; backward-compat fallback |
-| 7.8 | Plugin install: pin commit/tag, signature/hash, uninstall/update | L | ⬜ | `server/src/plugins.rs`; security phase 5 |
+| 7.8 | Plugin install: pin commit/tag, signature/hash, uninstall/update | L | ✅ | `crates/storage/src/installed_plugins.rs` CRUD; `crates/server/src/plugins.rs` API; DB soft-delete with uninstalled_at; lock-file pin fields (backward compatible); integration tests |
 | 7.9 | Plugin skills quarantine (не все skills → system prompt без opt-in) | L | ✅ | storage `plugin_skills` table + `get_disabled_skills()` / `toggle_skill_status()` / `list_plugin_skills()` CRUD; ReAct loop uses `build_workspace_rules_async()` with disabled skills filtering; UI toggle in PluginsPanel with enabled/disabled state indicators |
 | 7.10 | Permission для `memory.search` + audit | S | ✅ | `Permission::MemorySearch` in enum, permission check in `execute_memory_search`, UI translation in SettingsPanel |
 | 7.11 | Rate limiting / concurrency caps на sessions, tasks, worker jobs | M | ✅ | `rate_limit.rs`; 429 + WS `rate.limited`; `EVOHIME_RATE_LIMIT_*` |
