@@ -213,6 +213,17 @@ pub async fn record_memory_corrected_for_operator(
     .await
 }
 
+/// Escalate a repeated failure-lesson duplicate (7.103 wave 2): confidence/importance
+/// rise, but confidence is hard-capped by `apply_feedback_signal`'s `Repeated` arm — this
+/// never unlocks auto-promote for a failure-derived lesson.
+pub async fn record_memory_repeated(
+    pool: &PgPool,
+    memory_id: Uuid,
+    task_id: Option<Uuid>,
+) -> Result<Option<FeedbackApplyResult>, MemoryError> {
+    apply_one(pool, memory_id, FeedbackSignal::Repeated, task_id).await
+}
+
 /// Decay a batch of prolonged unused low-confidence items toward archive.
 pub async fn decay_unused_memory(
     pool: &PgPool,

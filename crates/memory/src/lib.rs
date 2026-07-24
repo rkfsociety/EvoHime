@@ -44,8 +44,8 @@ pub use feedback::{
 pub use feedback_service::{
     decay_unused_memory, record_memory_corrected, record_memory_corrected_for_operator,
     record_memory_harmful, record_memory_helpful, record_memory_rejected,
-    record_memory_rejected_for_operator, record_memory_used, FeedbackApplyResult,
-    DEFAULT_IDLE_BATCH, DEFAULT_IDLE_DAYS,
+    record_memory_rejected_for_operator, record_memory_repeated, record_memory_used,
+    FeedbackApplyResult, DEFAULT_IDLE_BATCH, DEFAULT_IDLE_DAYS,
 };
 pub use normalize::normalize_content;
 pub use redact::{redact_secrets, RedactionOutcome};
