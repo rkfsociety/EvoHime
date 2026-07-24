@@ -73,7 +73,7 @@ User message
 
 - **Stage 7** Hardening + Product — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99` ✅ — cloud sync: push/pull (owner-only `/api/sync/status|push|pull`, история с direction в `sync_runs`, конфиг `EVOHIME_SYNC_URL`/`EVOHIME_SYNC_TOKEN`), идемпотентный restore (`restore_backup` + CLI `evohime-import`), авто-push (`EVOHIME_SYNC_AUTO_MINUTES`)
 - Sites, Scheduled, OTLP и Cloud sync имеют gates через `EVOHIME_FEATURE_*` и `/api/features`
-- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; `7.93`–`7.99` ✅; `7.100` ✅ — `browser.session.*` tools с persistent CDP-вкладкой на задачу (`EVOHIME_BROWSER_CDP_URL`); `7.101` ✅ — eval harness `evohime-evals`: golden tasks против реального agent loop; CI — mock, `--live --judge` — реальный провайдер + LLM-вердикты; `7.102` wave 1 ✅ — trust scores (official/curated/community/unverified) в каталоге плагинов, UI-бейджи и install-гейт со статическим risk scan (отказ ниже-official с findings без `force`)
+- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; `7.93`–`7.99` ✅; `7.100` ✅ — `browser.session.*` tools с persistent CDP-вкладкой на задачу (`EVOHIME_BROWSER_CDP_URL`); `7.101` ✅ — eval harness `evohime-evals`: golden tasks против реального agent loop; CI — mock, `--live --judge` — реальный провайдер + LLM-вердикты; `7.102` ✅ — trust scores (official/curated/community/unverified) в каталоге плагинов, UI-бейджи, install-гейт со статическим risk scan (отказ ниже-official с findings без `force`) и `.evohime/plugins.lock.json` с content-hash + `/api/plugins/integrity` (ok/modified/unlocked/missing)
 
 ## WebSocket events
 
@@ -198,7 +198,7 @@ See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](d
 | 4 Editor + Git | ✅ Done |
 | 5 Task orchestration | ✅ Done |
 | 6 Advanced | ✅ Foundations complete |
-| 7 Hardening + Product | 🟡 In progress; `7.1`–`7.101` complete, `7.102` wave 1 (plugin trust) done |
+| 7 Hardening + Product | 🟡 In progress; `7.1`–`7.102` complete, next `7.103` |
 
 Memory design: [docs/superpowers/specs/2026-07-16-agent-memory-design.md](docs/superpowers/specs/2026-07-16-agent-memory-design.md)
 
