@@ -3,9 +3,6 @@
 
 #![cfg(test)]
 
-use std::sync::Arc;
-use std::time::Duration;
-
 /// Test: HTTP auth with bearer token works when EVOHIME_API_TOKEN is set
 #[tokio::test]
 async fn test_http_auth_bearer_token() {
