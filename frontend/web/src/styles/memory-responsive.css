@@ -100,7 +100,7 @@
   color: #f2a3a3;
 }
 .terminalPanel { flex: 1; min-height: 0; padding: 16px; }
-.approvalBackdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: rgba(0, 0, 0, .62); }
+.approvalBackdrop { position: fixed; inset: 0; z-index: 28; display: grid; place-items: center; background: rgba(0, 0, 0, .62); }
 .approvalModal { width: min(460px, calc(100vw - 32px)); padding: 24px; border: 1px solid rgba(159, 192, 255, .4); border-radius: 18px; background: #0a1021; box-shadow: 0 24px 80px rgba(0,0,0,.5); }
 .approvalModal h3 { margin: 0 0 18px; }
 .approvalScope { overflow-wrap: anywhere; }
