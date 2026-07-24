@@ -1069,6 +1069,7 @@ dependencies = [
  "evohime-memory",
  "evohime-model-gateway",
  "evohime-permissions",
+ "evohime-project-index",
  "evohime-protocol",
  "evohime-storage",
  "evohime-task-engine",

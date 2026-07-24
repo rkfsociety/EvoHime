@@ -87,6 +87,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             "/api/projects",
             get(workspace::list_projects).post(workspace::create_project),
         )
+        .route("/api/projects/search", get(workspace::search_project))
         .route(
             "/api/files/content",
             get(workspace::read_file)

@@ -4,6 +4,7 @@ use axum::{
     Json,
 };
 use chrono::Utc;
+use evohime_project_index::ProjectIndex;
 use evohime_protocol::ServerEvent;
 use evohime_tool_runtime::ToolError;
 use serde::{Deserialize, Serialize};
@@ -48,6 +49,21 @@ pub struct ProjectSummary {
 #[derive(Debug, Deserialize)]
 pub struct CreateProjectRequest {
     pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SearchQuery {
+    pub q: Option<String>,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SearchResult {
+    pub path: String,
+    pub line: usize,
+    pub end_line: usize,
+    pub snippet: String,
+    pub score: u32,
 }
 
 pub async fn list_projects(
@@ -586,6 +602,35 @@ async fn read_directory(directory: &Path, root: &Path) -> Result<Vec<FileNode>, 
     }
 
     Ok(result)
+}
+
+pub async fn search_project(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<SearchQuery>,
+) -> Result<Json<Vec<SearchResult>>, ApiError> {
+    let q = query
+        .q
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| ApiError::BadRequest("query parameter 'q' is required".to_string()))?;
+
+    let limit = query.limit.unwrap_or(10).max(1).min(50);
+    let index = ProjectIndex::with_limits(&state.workspace_root, limit, 256 * 1024);
+    let matches = index.search_with_limit(q, limit);
+
+    let results = matches
+        .into_iter()
+        .map(|m| SearchResult {
+            path: m.path.to_string_lossy().to_string(),
+            line: m.line,
+            end_line: m.end_line,
+            snippet: m.snippet,
+            score: m.score,
+        })
+        .collect();
+
+    Ok(Json(results))
 }
 
 #[cfg(test)]

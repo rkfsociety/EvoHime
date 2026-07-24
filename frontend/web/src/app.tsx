@@ -10,6 +10,7 @@ import type { ApprovalRequiredEvent, MemoryAskEvent } from "./protocol";
 import { TerminalPanel, TerminalEntry } from "./components/TerminalPanel";
 import { ApprovalModal } from "./components/ApprovalModal";
 import { MemoryAskModal } from "./components/MemoryAskModal";
+import { SearchModal, type SearchResult } from "./components/SearchModal";
 import { AgentAvatar } from "./components/AgentAvatar";
 import { AgentBrand } from "./components/AgentBrand";
 import { AgentMark } from "./components/AgentMark";
@@ -140,6 +141,7 @@ export function App() {
   const [githubAuth, setGithubAuth] = useState<GithubAuthInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   useEffect(() => {
     if (!sidebarOpen && !traceOpen) {
       return;
@@ -1698,7 +1700,12 @@ export function App() {
           }}
         >
           <div className="sidebarTop">
-            <button type="button" className="sidebarSearchButton" aria-label="Поиск">
+            <button
+              type="button"
+              className="sidebarSearchButton"
+              aria-label="Поиск"
+              onClick={() => setSearchOpen(true)}
+            >
               ⌕
             </button>
           </div>
@@ -1943,6 +1950,14 @@ export function App() {
           onReject={() => resolveMemoryAsk("memory.reject")}
         />
       ) : null}
+      <SearchModal
+        isOpen={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onSelectResult={(result: SearchResult) => {
+          openFile(result.path);
+          navigateToPanel("editor");
+        }}
+      />
     </main>
   );
 }

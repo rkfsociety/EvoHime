@@ -14,6 +14,7 @@ evohime-agent-runtime = { path = "../agent-runtime" }
 evohime-memory = { path = "../memory" }
 evohime-model-gateway = { path = "../model-gateway" }
 evohime-permissions = { path = "../permissions" }
+evohime-project-index = { path = "../project-index" }
 evohime-protocol = { path = "../protocol" }
 evohime-storage = { path = "../storage" }
 evohime-task-engine = { path = "../task-engine" }
