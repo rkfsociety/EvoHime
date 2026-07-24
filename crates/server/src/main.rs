@@ -24,6 +24,7 @@ mod plugins;
 mod rate_limit;
 mod request_id;
 mod secrets;
+mod secure_headers;
 mod routes;
 mod scheduled_api;
 mod scheduler;

@@ -16,7 +16,7 @@ use axum::{
 use std::sync::Arc;
 
 pub fn build_router(state: Arc<AppState>) -> Router {
-    Router::new()
+    let router = Router::new()
         .route("/health", get(crate::health::health))
         .route("/health/deep", get(crate::health::deep_health))
         .route("/openapi.json", get(crate::openapi::document))
@@ -190,5 +190,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         ))
         .layer(cors::cors_layer_from_env())
         .layer(middleware::from_fn(crate::request_id::request_id))
-        .with_state(state)
+        .with_state(state);
+
+    // Apply secure headers to all responses (Phase 5.6)
+    crate::secure_headers::with_secure_headers(router)
 }
