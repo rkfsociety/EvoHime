@@ -487,9 +487,9 @@
 | 7.105 | Voice input / TTS optional | M | ⬜ | |
 | 7.106 | Diff review UI for agent patches before apply | L | ⬜ | approvals coarse today |
 | 7.107 | Worktree-aware multi-checkout agent (parallel tasks isolated) | L | ⬜ | |
-| 7.108 | Cost budgets & spend caps per day/model | M | ⬜ | LiteRouter free/paid |
+| 7.108 | Cost budgets & spend caps per day/model | M | 🟡 | Backend: `cost_limits` table, `/api/models/cost-limits` CRUD; Frontend: Spend tab в Settings; Wave 2 разработки |
 | 7.109 | Self-update channel for launcher | M | ⬜ | |
-| 7.110 | Formal threat model doc + abuse cases | M | ⬜ | |
+| 7.110 | Formal threat model doc + abuse cases | M | ✅ | `docs/security/threat-model.md` + `SECURITY.md`; all 7.A–7.E пункты documented |
 
 ### Suggested Stage 7 delivery waves
 
