@@ -1,3 +1,4 @@
+mod cdp;
 mod registry;
 mod sandbox;
 mod shell_env;
