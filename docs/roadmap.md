@@ -483,7 +483,7 @@
 | 7.101 | Eval harness (golden tasks, regression agents) | L | ✅ | крейт `evohime-evals`: golden tasks против реального agent loop + tools; CI — детерминированный mock, CLI `evohime-eval --live --judge` — реальный провайдер + LLM-вердикты по `rubric` |
 | 7.102 | Marketplace for playbooks / plugins with trust scores | L | ✅ | trust score из проверяемых сигналов + UI-бейджи; install-гейт со статическим risk scan (отказ ниже-official без `force`); lock-файл с content-hash и `/api/plugins/integrity` (ok/modified/unlocked/missing) + integrity-chip. Криптоподписи/репутация авторов — вне пункта: внешней PKI у OSS-каталогов нет |
 | 7.103 | Online continual learning (still no weight fine-tune; stronger experience) | L | ✅ | wave 1 ✅: обучение на провалах — ограниченная полоса extract (≤2 кандидата `failure_pattern`/`verification_rule`, scope experience, confidence cap 0.6 → только Ask-гейт, без auto-promote); harmful-фидбек использованной памяти уже был; wave 2 ✅: эскалация confidence/importance при повторе через `FeedbackSignal::Repeated` (confidence кап 0.6 не снимается) и retrieval-бонус для failure_pattern/verification_rule над success_pattern/playbook |
-| 7.104 | Mobile-responsive shell (browser-only, no native app) | M | ⬜ | web-first rule |
+| 7.104 | Mobile-responsive shell (browser-only, no native app) | M | ✅ | off-canvas sidebar/trace-panel drawers через CSS media query `≤768px` (гамбургер, общий backdrop, закрытие по Escape/клику вне/выбору пункта), touch-таргеты ≥44px; десктопная раскладка не тронута |
 | 7.105 | Voice input / TTS optional | M | ⬜ | |
 | 7.106 | Diff review UI for agent patches before apply | L | ⬜ | approvals coarse today |
 | 7.107 | Worktree-aware multi-checkout agent (parallel tasks isolated) | L | ⬜ | |
