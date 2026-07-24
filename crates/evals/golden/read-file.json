@@ -10,5 +10,6 @@
   ],
   "expect": {
     "final_message_contains": ["golden answer 42"]
-  }
+  },
+  "rubric": "Ответ должен точно передавать содержимое notes.txt, включая фразу 'golden answer 42', без выдуманных деталей."
 }
