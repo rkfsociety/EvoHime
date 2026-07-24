@@ -149,6 +149,18 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
         });
     }
 
+    match crate::sync_api::auto_sync_minutes() {
+        Some(minutes) => {
+            info!(interval_minutes = minutes, "cloud sync auto push enabled");
+            let sync_state = state.clone();
+            let interval = std::time::Duration::from_secs(minutes * 60);
+            tokio::spawn(async move {
+                crate::sync_api::auto_sync_loop(sync_state, interval).await;
+            });
+        }
+        None => info!("cloud sync auto push disabled (EVOHIME_SYNC_AUTO_MINUTES=0)"),
+    }
+
     let metrics_persist = metrics_export::MetricsPersistConfig::from_env();
     if metrics_persist.enabled() {
         info!(

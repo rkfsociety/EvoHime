@@ -17,6 +17,8 @@ use uuid::Uuid;
 
 const SYNC_URL_ENV: &str = "EVOHIME_SYNC_URL";
 const SYNC_TOKEN_ENV: &str = "EVOHIME_SYNC_TOKEN";
+const SYNC_AUTO_MINUTES_ENV: &str = "EVOHIME_SYNC_AUTO_MINUTES";
+const MIN_AUTO_SYNC_MINUTES: u64 = 5;
 const CHECKSUM_HEADER: &str = "x-evohime-backup-checksum";
 const PUSH_TIMEOUT_SECS: u64 = 30;
 const PULL_TIMEOUT_SECS: u64 = 60;
@@ -108,6 +110,7 @@ pub(crate) struct SyncStatusResponse {
     pub remote_host: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub config_error: Option<String>,
+    pub auto_minutes: Option<u64>,
     pub runs: Vec<evohime_storage::SyncRunRow>,
 }
 
@@ -130,6 +133,7 @@ pub(crate) async fn status(
         configured,
         remote_host,
         config_error,
+        auto_minutes: auto_sync_minutes(),
         runs,
     }))
 }
@@ -174,8 +178,16 @@ pub(crate) async fn push(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<SyncPushResponse>, ApiError> {
     let config = guarded_sync_config(&state, &identity).await?;
+    let finished = perform_push(&state, identity.id, &config).await?;
+    Ok(Json(SyncPushResponse { run: finished }))
+}
 
-    let dump = evohime_storage::collect_backup(&state.pool, identity.id)
+pub(crate) async fn perform_push(
+    state: &AppState,
+    operator_id: Uuid,
+    config: &SyncConfig,
+) -> Result<evohime_storage::SyncRunRow, ApiError> {
+    let dump = evohime_storage::collect_backup(&state.pool, operator_id)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
     let payload =
@@ -185,13 +197,13 @@ pub(crate) async fn push(
 
     let run = evohime_storage::start_sync_run(
         &state.pool,
-        identity.id,
+        operator_id,
         evohime_storage::SYNC_DIRECTION_PUSH,
     )
     .await
     .map_err(|error| ApiError::Internal(error.to_string()))?;
 
-    let outcome = send_backup(&config, payload, &checksum).await;
+    let outcome = send_backup(config, payload, &checksum).await;
     let (status, error) = match &outcome {
         Ok(()) => (evohime_storage::SYNC_STATUS_SUCCESS, None),
         Err(message) => (evohime_storage::SYNC_STATUS_FAILED, Some(message.as_str())),
@@ -214,7 +226,68 @@ pub(crate) async fn push(
         bytes_total,
         "cloud sync push finished"
     );
-    Ok(Json(SyncPushResponse { run: finished }))
+    Ok(finished)
+}
+
+/// Auto-sync period from `EVOHIME_SYNC_AUTO_MINUTES`; `None` disables the loop.
+/// Values below 5 minutes are raised to 5 so a config typo cannot hammer the receiver.
+pub(crate) fn auto_sync_minutes() -> Option<u64> {
+    parse_auto_sync_minutes(std::env::var(SYNC_AUTO_MINUTES_ENV).ok().as_deref())
+}
+
+pub(crate) fn parse_auto_sync_minutes(raw: Option<&str>) -> Option<u64> {
+    match raw?.trim().parse::<u64>() {
+        Ok(0) | Err(_) => None,
+        Ok(minutes) => Some(minutes.max(MIN_AUTO_SYNC_MINUTES)),
+    }
+}
+
+/// Background loop: pushes the bootstrap owner's backup every `interval`.
+/// The first tick is skipped so restart loops cannot stampede the receiver.
+pub(crate) async fn auto_sync_loop(state: Arc<AppState>, interval: std::time::Duration) {
+    let mut ticker = tokio::time::interval(interval);
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    ticker.tick().await;
+    loop {
+        ticker.tick().await;
+        if !feature_enabled() {
+            continue;
+        }
+        let config = match SyncConfig::from_env() {
+            Ok(Some(config)) => config,
+            Ok(None) => continue,
+            Err(error) => {
+                tracing::warn!(%error, "auto sync skipped: invalid sync config");
+                continue;
+            }
+        };
+        let operator_id = evohime_storage::BOOTSTRAP_OWNER_ID;
+        match evohime_storage::find_active_sync_run(
+            &state.pool,
+            operator_id,
+            Duration::minutes(ACTIVE_RUN_STALE_MINUTES),
+        )
+        .await
+        {
+            Ok(Some(active)) => {
+                tracing::info!(run_id = %active.id, "auto sync skipped: run already active");
+                continue;
+            }
+            Ok(None) => {}
+            Err(error) => {
+                tracing::warn!(%error, "auto sync skipped: active run check failed");
+                continue;
+            }
+        }
+        match perform_push(&state, operator_id, &config).await {
+            Ok(run) => {
+                tracing::info!(run_id = %run.id, status = %run.status, "auto sync push recorded");
+            }
+            Err(error) => {
+                tracing::warn!(%error, "auto sync push failed");
+            }
+        }
+    }
 }
 
 async fn send_backup(config: &SyncConfig, payload: Vec<u8>, checksum: &str) -> Result<(), String> {
@@ -404,6 +477,18 @@ mod tests {
         assert!(checksum.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
         assert_eq!(checksum, checksum_hex(b"evohime"));
         assert_ne!(checksum, checksum_hex(b"evohime2"));
+    }
+
+    #[test]
+    fn auto_sync_minutes_parses_and_clamps() {
+        assert_eq!(parse_auto_sync_minutes(None), None);
+        assert_eq!(parse_auto_sync_minutes(Some("")), None);
+        assert_eq!(parse_auto_sync_minutes(Some("0")), None);
+        assert_eq!(parse_auto_sync_minutes(Some("garbage")), None);
+        assert_eq!(parse_auto_sync_minutes(Some("-5")), None);
+        assert_eq!(parse_auto_sync_minutes(Some("3")), Some(MIN_AUTO_SYNC_MINUTES));
+        assert_eq!(parse_auto_sync_minutes(Some("5")), Some(5));
+        assert_eq!(parse_auto_sync_minutes(Some("30")), Some(30));
     }
 
     #[test]
