@@ -23,6 +23,13 @@ export type CatalogPlugin = {
   installable: boolean;
   installed: boolean;
   installed_version?: string | null;
+  trust: PluginTrust;
+};
+
+export type PluginTrust = {
+  score: number;
+  level: "official" | "curated" | "community" | "unverified";
+  reasons: string[];
 };
 
 export type CatalogGroup = {

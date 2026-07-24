@@ -478,6 +478,34 @@
   line-height: 1.2;
 }
 
+.pluginTrustChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.2;
+  background: var(--surface-4);
+  color: var(--text-2);
+  cursor: help;
+}
+
+.pluginTrust-official {
+  background: color-mix(in srgb, #2e7d32 22%, var(--surface-4));
+}
+
+.pluginTrust-curated {
+  background: color-mix(in srgb, #1565c0 22%, var(--surface-4));
+}
+
+.pluginTrust-community {
+  background: color-mix(in srgb, #ef6c00 22%, var(--surface-4));
+}
+
+.pluginTrust-unverified {
+  background: color-mix(in srgb, #c62828 22%, var(--surface-4));
+}
+
 .pluginsFilterButton {
   width: 32px;
   height: 32px;

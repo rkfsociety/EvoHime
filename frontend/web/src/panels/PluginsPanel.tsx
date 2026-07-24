@@ -15,6 +15,19 @@ import {
 
 type PluginAction = "install" | "update" | "uninstall";
 
+function trustLabel(level: string | undefined) {
+  switch (level) {
+    case "official":
+      return "Официальный";
+    case "curated":
+      return "Кураторский";
+    case "community":
+      return "Сообщество";
+    default:
+      return "Не проверен";
+  }
+}
+
 function pluginNeedsUpdate(plugin: CatalogPlugin) {
   if (!plugin.installed || !plugin.installable) {
     return false;
@@ -345,6 +358,12 @@ export function PluginsPanel() {
                           <p>{plugin.description || "Без описания."}</p>
                           <div className="pluginMetaRow">
                             <span className="pluginCategoryChip">{plugin.category || plugin.group}</span>
+                            <span
+                              className={`pluginTrustChip pluginTrust-${plugin.trust?.level ?? "unverified"}`}
+                              title={plugin.trust?.reasons?.join("; ") ?? ""}
+                            >
+                              {trustLabel(plugin.trust?.level)} · {plugin.trust?.score ?? 0}
+                            </span>
                             <small>
                               {plugin.installed
                                 ? `Установлен${plugin.installed_version ? ` · v${plugin.installed_version}` : ""}`
