@@ -1,0 +1,15 @@
+[package]
+name = "evohime-evals"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+evohime-agent-runtime = { path = "../agent-runtime" }
+evohime-model-gateway = { path = "../model-gateway" }
+evohime-tool-runtime = { path = "../tool-runtime" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
+uuid = { version = "1", features = ["v4"] }

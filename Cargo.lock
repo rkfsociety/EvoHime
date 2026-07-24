@@ -922,6 +922,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "evohime-evals"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "evohime-agent-runtime",
+ "evohime-model-gateway",
+ "evohime-tool-runtime",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "evohime-memory"
 version = "0.1.0"
 dependencies = [

@@ -6,6 +6,7 @@ members = [
   "crates/memory",
   "crates/tool-runtime",
   "crates/agent-runtime",
+  "crates/evals",
   "crates/task-engine",
   "crates/model-gateway",
   "crates/project-index",
