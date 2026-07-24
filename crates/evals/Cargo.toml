@@ -9,6 +9,7 @@ evohime-agent-runtime = { path = "../agent-runtime" }
 evohime-model-gateway = { path = "../model-gateway" }
 evohime-permissions = { version = "0.1.0", path = "../permissions" }
 evohime-tool-runtime = { path = "../tool-runtime" }
+futures-util = "0.3.33"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"

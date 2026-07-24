@@ -22,6 +22,9 @@ pub struct GoldenTask {
     pub workspace_files: BTreeMap<String, String>,
     pub script: Vec<ScriptStep>,
     pub expect: Expectations,
+    /// Grading criteria for LLM-as-judge in live mode; ignored in mock mode.
+    #[serde(default)]
+    pub rubric: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -50,12 +53,22 @@ pub struct FileExpectation {
 pub struct EvalReport {
     pub name: String,
     pub failures: Vec<String>,
+    pub judge: Option<JudgeVerdict>,
 }
 
 impl EvalReport {
     pub fn passed(&self) -> bool {
         self.failures.is_empty()
     }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct JudgeVerdict {
+    pub pass: bool,
+    #[serde(default)]
+    pub score: Option<f64>,
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 pub fn parse_golden_task(raw: &str) -> Result<GoldenTask, String> {
@@ -124,39 +137,48 @@ pub fn check_expectations(
     failures
 }
 
+/// Deterministic mock run: the model is scripted from `task.script`.
 pub async fn run_golden_task(task: &GoldenTask) -> EvalReport {
+    let provider =
+        MockProvider::with_tool_call_sequence("golden-mock", script_to_results(&task.script));
+    let gateway = ModelGateway::from_provider(std::sync::Arc::new(provider));
+    run_golden_task_with_gateway(task, &gateway, false).await
+}
+
+fn failed_report(task: &GoldenTask, failure: String) -> EvalReport {
+    EvalReport {
+        name: task.name.clone(),
+        failures: vec![failure],
+        judge: None,
+    }
+}
+
+/// Run a golden task against any gateway (scripted mock or a live provider).
+/// With `judge` set, tasks that carry a `rubric` get an LLM verdict from the
+/// same gateway; a failed or unparsable verdict fails the task.
+pub async fn run_golden_task_with_gateway(
+    task: &GoldenTask,
+    gateway: &ModelGateway,
+    judge: bool,
+) -> EvalReport {
     let workspace = match tempfile::tempdir() {
         Ok(dir) => dir,
-        Err(error) => {
-            return EvalReport {
-                name: task.name.clone(),
-                failures: vec![format!("temp workspace failed: {error}")],
-            }
-        }
+        Err(error) => return failed_report(task, format!("temp workspace failed: {error}")),
     };
     for (relative, content) in &task.workspace_files {
         let path = workspace.path().join(relative);
         if let Some(parent) = path.parent() {
             if let Err(error) = std::fs::create_dir_all(parent) {
-                return EvalReport {
-                    name: task.name.clone(),
-                    failures: vec![format!("seed dir `{relative}` failed: {error}")],
-                };
+                return failed_report(task, format!("seed dir `{relative}` failed: {error}"));
             }
         }
         if let Err(error) = std::fs::write(&path, content) {
-            return EvalReport {
-                name: task.name.clone(),
-                failures: vec![format!("seed file `{relative}` failed: {error}")],
-            };
+            return failed_report(task, format!("seed file `{relative}` failed: {error}"));
         }
     }
     let demo_file = workspace.path().join(".evohime-eval-context.md");
     let _ = std::fs::write(&demo_file, "# Eval context");
 
-    let provider =
-        MockProvider::with_tool_call_sequence("golden-mock", script_to_results(&task.script));
-    let gateway = ModelGateway::from_provider(std::sync::Arc::new(provider));
     // Golden tasks run in a throwaway temp workspace, so protected tools are
     // allowed outright — there is no operator to answer an approval prompt.
     let permissions = evohime_permissions::PermissionEngine::new();
@@ -191,7 +213,7 @@ pub async fn run_golden_task(task: &GoldenTask) -> EvalReport {
             subagent_max_steps: None,
             telemetry: None,
         },
-        &gateway,
+        gateway,
         &tools,
         Vec::new(),
         Vec::new(),
@@ -199,11 +221,92 @@ pub async fn run_golden_task(task: &GoldenTask) -> EvalReport {
     )
     .await;
 
-    let failures = match result {
-        Ok(run) => check_expectations(&task.expect, &run.final_message, workspace.path()),
-        Err(error) => vec![format!("agent loop failed: {error}")],
+    let (mut failures, final_message) = match result {
+        Ok(run) => (
+            check_expectations(&task.expect, &run.final_message, workspace.path()),
+            Some(run.final_message),
+        ),
+        Err(error) => (vec![format!("agent loop failed: {error}")], None),
     };
-    EvalReport { name: task.name.clone(), failures }
+
+    let mut verdict = None;
+    if judge {
+        if let (Some(rubric), Some(final_message)) = (&task.rubric, &final_message) {
+            match judge_final_answer(gateway, task, rubric, final_message).await {
+                Ok(judged) => {
+                    if !judged.pass {
+                        failures.push(format!(
+                            "judge verdict: fail ({})",
+                            judged.reason.as_deref().unwrap_or("no reason given")
+                        ));
+                    }
+                    verdict = Some(judged);
+                }
+                Err(error) => failures.push(format!("judge failed: {error}")),
+            }
+        }
+    }
+
+    EvalReport { name: task.name.clone(), failures, judge: verdict }
+}
+
+pub fn judge_prompt(task: &GoldenTask, rubric: &str, final_answer: &str) -> String {
+    format!(
+        "You are a strict evaluator of an AI agent's answer.\n\
+         Task given to the agent:\n{}\n\n\
+         Agent's final answer:\n{}\n\n\
+         Grading rubric:\n{}\n\n\
+         Respond with ONLY a JSON object: \
+         {{\"pass\": true|false, \"score\": 0-10, \"reason\": \"short explanation\"}}",
+        task.user_message, final_answer, rubric
+    )
+}
+
+/// Extract the first JSON object from judge output; refuses to guess —
+/// an unparsable verdict is an error, never a silent pass.
+pub fn parse_judge_verdict(raw: &str) -> Result<JudgeVerdict, String> {
+    let start = raw.find('{').ok_or("judge output contains no JSON object")?;
+    let mut depth = 0usize;
+    let mut end = None;
+    for (offset, character) in raw[start..].char_indices() {
+        match character {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = Some(start + offset + 1);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let end = end.ok_or("judge output has an unterminated JSON object")?;
+    serde_json::from_str(&raw[start..end])
+        .map_err(|error| format!("judge verdict parse failed: {error}"))
+}
+
+async fn judge_final_answer(
+    gateway: &ModelGateway,
+    task: &GoldenTask,
+    rubric: &str,
+    final_answer: &str,
+) -> Result<JudgeVerdict, String> {
+    use evohime_model_gateway::providers::{ChatMessage, ChatRole};
+    use evohime_model_gateway::ChatStreamItem;
+    use futures_util::StreamExt;
+
+    let prompt = judge_prompt(task, rubric, final_answer);
+    let mut stream = gateway.stream_chat(&[ChatMessage::text(ChatRole::User, prompt)]);
+    let mut output = String::new();
+    while let Some(item) = stream.next().await {
+        match item {
+            Ok(ChatStreamItem::Delta(delta)) => output.push_str(&delta),
+            Ok(ChatStreamItem::Usage(_)) => {}
+            Err(error) => return Err(format!("judge model call failed: {error}")),
+        }
+    }
+    parse_judge_verdict(&output)
 }
 
 /// Load every golden task from a directory; parse errors are failures with
@@ -282,6 +385,85 @@ mod tests {
         assert_eq!(results[0].tool_calls[0].id, "golden-0");
         assert!(results[1].tool_calls.is_empty());
         assert_eq!(results[1].content, "done");
+    }
+
+    #[test]
+    fn judge_verdict_parses_plain_and_wrapped_json() {
+        let verdict = parse_judge_verdict(r#"{"pass": true, "score": 9, "reason": "solid"}"#)
+            .expect("plain json");
+        assert!(verdict.pass);
+        assert_eq!(verdict.score, Some(9.0));
+
+        let wrapped = parse_judge_verdict(
+            "Here is my verdict:\n```json\n{\"pass\": false, \"score\": 3, \"reason\": \"missed {braces}\"}\n``` done",
+        )
+        .expect("wrapped json");
+        assert!(!wrapped.pass);
+        assert_eq!(wrapped.reason.as_deref(), Some("missed {braces}"));
+
+        assert!(parse_judge_verdict("no json here").is_err());
+        assert!(parse_judge_verdict("{\"score\": 5}").is_err());
+        assert!(parse_judge_verdict("{ unterminated").is_err());
+    }
+
+    #[test]
+    fn judge_prompt_includes_task_answer_and_rubric() {
+        let task = parse_golden_task(
+            r#"{ "name": "j", "user_message": "solve it", "script": [{ "reply": "x" }], "expect": {} }"#,
+        )
+        .expect("task");
+        let prompt = judge_prompt(&task, "must mention 42", "the answer is 42");
+        assert!(prompt.contains("solve it"));
+        assert!(prompt.contains("the answer is 42"));
+        assert!(prompt.contains("must mention 42"));
+        assert!(prompt.contains("\"pass\""));
+    }
+
+    #[tokio::test]
+    async fn failing_judge_verdict_fails_the_task() {
+        // MockProvider chunks feed both the agent's fallback reply and the
+        // judge stream, so a single provider drives the whole path.
+        let verdict_json = r#"{"pass": false, "score": 2, "reason": "too vague"}"#;
+        let provider = MockProvider::new("judge-mock", vec![verdict_json.to_string()]);
+        let gateway = ModelGateway::from_provider(std::sync::Arc::new(provider));
+        let task = parse_golden_task(
+            r#"{
+                "name": "judged",
+                "user_message": "answer well",
+                "script": [{ "reply": "ignored in gateway mode" }],
+                "expect": {},
+                "rubric": "answer must be specific"
+            }"#,
+        )
+        .expect("task");
+
+        let report = run_golden_task_with_gateway(&task, &gateway, true).await;
+        assert!(!report.passed());
+        assert!(report.failures.iter().any(|failure| failure.contains("too vague")));
+        let verdict = report.judge.expect("verdict recorded");
+        assert!(!verdict.pass);
+        assert_eq!(verdict.score, Some(2.0));
+    }
+
+    #[tokio::test]
+    async fn passing_judge_verdict_keeps_task_green() {
+        let verdict_json = r#"{"pass": true, "score": 8, "reason": "good"}"#;
+        let provider = MockProvider::new("judge-mock", vec![verdict_json.to_string()]);
+        let gateway = ModelGateway::from_provider(std::sync::Arc::new(provider));
+        let task = parse_golden_task(
+            r#"{
+                "name": "judged-pass",
+                "user_message": "answer well",
+                "script": [{ "reply": "ignored" }],
+                "expect": {},
+                "rubric": "anything"
+            }"#,
+        )
+        .expect("task");
+
+        let report = run_golden_task_with_gateway(&task, &gateway, true).await;
+        assert!(report.passed(), "failures: {:?}", report.failures);
+        assert!(report.judge.expect("verdict").pass);
     }
 
     #[test]
