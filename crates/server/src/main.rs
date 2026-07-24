@@ -19,6 +19,7 @@ mod operators_api;
 mod otel;
 mod permissions_api;
 mod plugin_lock;
+mod plugin_skills_api;
 mod plugin_trust;
 mod plugins;
 mod rate_limit;

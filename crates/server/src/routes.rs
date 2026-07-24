@@ -4,6 +4,7 @@ use crate::attachments_api;
 use crate::auth;
 use crate::cors;
 use crate::memory_api;
+use crate::plugin_skills_api;
 use crate::plugins;
 use crate::scheduled_api;
 use crate::sites_api;
@@ -178,6 +179,14 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/api/plugins/:name/skills",
             get(plugins::list_plugin_skills),
+        )
+        .route(
+            "/api/plugins/:plugin_id/skills/status",
+            get(plugin_skills_api::list_plugin_skills),
+        )
+        .route(
+            "/api/plugins/:plugin_id/skills/:skill_name/toggle",
+            post(plugin_skills_api::toggle_plugin_skill),
         )
         .route(
             "/api/mcp/servers",
