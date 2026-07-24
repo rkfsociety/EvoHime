@@ -1182,6 +1182,16 @@ mod tests {
             return;
         };
 
+        sqlx::query("DELETE FROM memory_items WHERE source_label LIKE $1")
+            .bind("legacy:%")
+            .execute(&pool)
+            .await
+            .ok();
+        sqlx::query("DELETE FROM session_memory")
+            .execute(&pool)
+            .await
+            .ok();
+
         let session = crate::create_session(&pool).await.expect("session");
         let note = format!("durable-pref-{}", Uuid::new_v4());
         crate::insert_session_memory(&pool, session.id, None, &note)
