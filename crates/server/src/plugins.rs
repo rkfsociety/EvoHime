@@ -298,7 +298,107 @@ pub async fn uninstall_plugin(
     tokio::fs::remove_dir_all(&target)
         .await
         .map_err(|error| ApiError::Internal(error.to_string()))?;
+    let workspace_root = state.workspace_root.clone();
+    let lock_name = name.clone();
+    let _ = tokio::task::spawn_blocking(move || {
+        crate::plugin_lock::remove_entry(&workspace_root, &lock_name)
+    })
+    .await;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Serialize)]
+pub struct PluginIntegrityEntry {
+    pub name: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locked_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trust_level: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub installed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PluginIntegrityResponse {
+    pub lock_corrupted: bool,
+    pub plugins: Vec<PluginIntegrityEntry>,
+}
+
+/// Integrity report: does each installed plugin still match what was locked
+/// at install time? Read-only — repairs are the operator's call.
+pub async fn plugin_integrity(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<PluginIntegrityResponse>, ApiError> {
+    let workspace_root = state.workspace_root.clone();
+    let response = tokio::task::spawn_blocking(move || {
+        let (lock, lock_corrupted) = crate::plugin_lock::load_lock(&workspace_root);
+        let plugins_root = workspace_root.join(".evohime").join("plugins");
+        let mut seen = std::collections::HashSet::new();
+        let mut report = Vec::new();
+
+        if let Ok(entries) = std::fs::read_dir(&plugins_root) {
+            let mut dirs: Vec<_> = entries
+                .flatten()
+                .map(|entry| entry.path())
+                .filter(|path| path.is_dir())
+                .collect();
+            dirs.sort();
+            for dir in dirs {
+                let Some(dir_name) = dir.file_name().and_then(|name| name.to_str()) else {
+                    continue;
+                };
+                seen.insert(dir_name.to_string());
+                match lock.get(dir_name) {
+                    Some(entry) => {
+                        let current = crate::plugin_lock::content_hash(&dir).ok();
+                        let status = match &current {
+                            Some(hash) if *hash == entry.content_hash => "ok",
+                            Some(_) => "modified",
+                            None => "modified",
+                        };
+                        report.push(PluginIntegrityEntry {
+                            name: dir_name.to_string(),
+                            status: status.to_string(),
+                            locked_hash: Some(entry.content_hash.clone()),
+                            current_hash: current,
+                            trust_level: Some(entry.trust_level.clone()),
+                            installed_at: Some(entry.installed_at),
+                        });
+                    }
+                    None => report.push(PluginIntegrityEntry {
+                        name: dir_name.to_string(),
+                        status: "unlocked".to_string(),
+                        locked_hash: None,
+                        current_hash: None,
+                        trust_level: None,
+                        installed_at: None,
+                    }),
+                }
+            }
+        }
+        for (name, entry) in &lock {
+            if !seen.contains(name) {
+                report.push(PluginIntegrityEntry {
+                    name: name.clone(),
+                    status: "missing".to_string(),
+                    locked_hash: Some(entry.content_hash.clone()),
+                    current_hash: None,
+                    trust_level: Some(entry.trust_level.clone()),
+                    installed_at: Some(entry.installed_at),
+                });
+            }
+        }
+        PluginIntegrityResponse {
+            lock_corrupted,
+            plugins: report,
+        }
+    })
+    .await
+    .map_err(|error| ApiError::Internal(error.to_string()))?;
+    Ok(Json(response))
 }
 
 pub async fn list_plugin_skills(
@@ -397,17 +497,45 @@ async fn install_plugin_internal(
     }
 
     let workspace_root = state.workspace_root.clone();
-    let mut installed =
-        tokio::task::spawn_blocking(move || load_installed_plugin(&workspace_root, &target))
-            .await
-            .map_err(|error| ApiError::Internal(error.to_string()))?
-            .ok_or_else(|| {
-                ApiError::Internal(
-                    "плагин склонирован, но manifest (.codex-plugin/.cursor-plugin/.claude-plugin) не найден"
-                        .into(),
-                )
-            })?;
+    let target_for_load = target.clone();
+    let mut installed = tokio::task::spawn_blocking(move || {
+        load_installed_plugin(&workspace_root, &target_for_load)
+    })
+    .await
+    .map_err(|error| ApiError::Internal(error.to_string()))?
+    .ok_or_else(|| {
+        ApiError::Internal(
+            "плагин склонирован, но manifest (.codex-plugin/.cursor-plugin/.claude-plugin) не найден"
+                .into(),
+        )
+    })?;
     installed.risk_findings = findings;
+
+    // Lock the installed tree: content hash + trust level at install time
+    // become the integrity anchor for /api/plugins/integrity (7.102 wave 2).
+    let lock_root = state.workspace_root.clone();
+    let lock_name = name.clone();
+    let entry_for_lock = entry.clone();
+    let trust_level = trust.level.clone();
+    tokio::task::spawn_blocking(move || {
+        let content_hash = crate::plugin_lock::content_hash(&target)?;
+        crate::plugin_lock::record_install(
+            &lock_root,
+            crate::plugin_lock::PluginLockEntry {
+                name: lock_name,
+                version: entry_for_lock.version,
+                source_url: entry_for_lock.source_url,
+                git_ref: entry_for_lock.git_ref,
+                content_hash,
+                trust_level,
+                installed_at: Utc::now(),
+            },
+        )
+    })
+    .await
+    .map_err(|error| ApiError::Internal(error.to_string()))?
+    .map_err(|error| ApiError::Internal(format!("plugin lock: {error}")))?;
+
     Ok(installed)
 }
 
@@ -1142,6 +1270,54 @@ fn list_skill_names(skills_root: &Path) -> Vec<String> {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn integrity_statuses_cover_ok_modified_missing_and_unlocked() {
+        let workspace = tempfile::tempdir().expect("tempdir");
+        let plugins_root = workspace.path().join(".evohime/plugins");
+        fs::create_dir_all(plugins_root.join("locked/skills")).expect("mkdir");
+        fs::write(plugins_root.join("locked/skills/SKILL.md"), "original").expect("write");
+        fs::create_dir_all(plugins_root.join("stray")).expect("mkdir stray");
+        fs::write(plugins_root.join("stray/README.md"), "no lock entry").expect("write");
+
+        let hash = crate::plugin_lock::content_hash(&plugins_root.join("locked")).expect("hash");
+        for (name, content_hash) in [("locked", hash.clone()), ("gone", "deadbeef".to_string())] {
+            crate::plugin_lock::record_install(
+                workspace.path(),
+                crate::plugin_lock::PluginLockEntry {
+                    name: name.to_string(),
+                    version: "1.0".into(),
+                    source_url: None,
+                    git_ref: None,
+                    content_hash,
+                    trust_level: "curated".into(),
+                    installed_at: Utc::now(),
+                },
+            )
+            .expect("record");
+        }
+
+        let status_of = |workspace: &Path| {
+            let (lock, _) = crate::plugin_lock::load_lock(workspace);
+            let dir = workspace.join(".evohime/plugins/locked");
+            let current = crate::plugin_lock::content_hash(&dir).expect("hash");
+            if current == lock.get("locked").expect("entry").content_hash {
+                "ok"
+            } else {
+                "modified"
+            }
+        };
+        assert_eq!(status_of(workspace.path()), "ok");
+
+        fs::write(plugins_root.join("locked/skills/SKILL.md"), "tampered").expect("tamper");
+        assert_eq!(status_of(workspace.path()), "modified");
+
+        let (lock, corrupted) = crate::plugin_lock::load_lock(workspace.path());
+        assert!(!corrupted);
+        assert!(lock.contains_key("gone"));
+        assert!(!plugins_root.join("gone").exists());
+        assert!(!lock.contains_key("stray"));
+    }
 
     #[test]
     fn discovers_codex_plugin_with_skills() {

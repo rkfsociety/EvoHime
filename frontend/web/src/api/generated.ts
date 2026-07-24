@@ -67,6 +67,7 @@ export const openApiPaths = {
   "/api/plugins/install": ["post"] as const,
   "/api/plugins/update": ["post"] as const,
   "/api/plugins/uninstall": ["post"] as const,
+  "/api/plugins/integrity": ["get"] as const,
   "/api/plugins/:name/skills": ["get"] as const,
   "/api/mcp/servers": ["get","put"] as const,
   "/ws/:session_id": ["get"] as const,

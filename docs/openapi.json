@@ -775,6 +775,16 @@
         }
       }
     },
+    "/api/plugins/integrity": {
+      "get": {
+        "operationId": "get_api_plugins_integrity",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/plugins/:name/skills": {
       "get": {
         "operationId": "get_api_plugins_name_skills",
