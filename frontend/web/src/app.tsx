@@ -138,6 +138,20 @@ export function App() {
   const [memoryAsk, setMemoryAsk] = useState<MemoryAskEvent | null>(null);
   const [githubAuth, setGithubAuth] = useState<GithubAuthInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  useEffect(() => {
+    if (!sidebarOpen && !traceOpen) {
+      return;
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setSidebarOpen(false);
+        setTraceOpen(false);
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [sidebarOpen, traceOpen, setTraceOpen]);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("model");
   const [modelDefaultRoute, setModelDefaultRoute] = useState("default");
   const [modelDrafts, setModelDrafts] = useState<ModelRouteDraft[]>([]);
@@ -1596,6 +1610,16 @@ export function App() {
         <AgentBrand />
         <button
           type="button"
+          className="hamburgerButton"
+          onClick={() => setSidebarOpen((open) => !open)}
+          aria-expanded={sidebarOpen}
+          aria-controls="workspace-sidebar"
+          aria-label="Показать или скрыть боковое меню"
+        >
+          <span aria-hidden="true">☰</span>
+        </button>
+        <button
+          type="button"
           className={traceOpen ? "traceToggle active" : "traceToggle"}
           onClick={() => setTraceOpen((open) => !open)}
           aria-expanded={traceOpen}
@@ -1621,8 +1645,27 @@ export function App() {
         />
       ) : null}
 
+      {(sidebarOpen || traceOpen) ? (
+        <div
+          className="drawerBackdrop"
+          onClick={() => {
+            setSidebarOpen(false);
+            setTraceOpen(false);
+          }}
+          aria-hidden="true"
+        />
+      ) : null}
+
       <section className={traceOpen ? "workspace traceOpen" : "workspace"}>
-        <nav className="sidebar">
+        <nav
+          className={sidebarOpen ? "sidebar sidebarOpen" : "sidebar"}
+          id="workspace-sidebar"
+          onClick={(event) => {
+            if (sidebarOpen && (event.target as HTMLElement).closest("button")) {
+              setSidebarOpen(false);
+            }
+          }}
+        >
           <div className="sidebarTop">
             <button type="button" className="sidebarSearchButton" aria-label="Поиск">
               ⌕
