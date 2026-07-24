@@ -189,6 +189,30 @@ impl ToolRegistry {
             timeout: tools::browser::EXTRACT_TIMEOUT,
         });
         registry.register(ToolDefinition {
+            name: tools::browser_session::NAVIGATE_NAME,
+            description: tools::browser_session::NAVIGATE_DESCRIPTION,
+            permissions: tools::browser_session::NAVIGATE_PERMISSIONS,
+            timeout: tools::browser_session::NAVIGATE_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::browser_session::READ_NAME,
+            description: tools::browser_session::READ_DESCRIPTION,
+            permissions: tools::browser_session::READ_PERMISSIONS,
+            timeout: tools::browser_session::READ_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::browser_session::CLICK_NAME,
+            description: tools::browser_session::CLICK_DESCRIPTION,
+            permissions: tools::browser_session::CLICK_PERMISSIONS,
+            timeout: tools::browser_session::CLICK_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::browser_session::CLOSE_NAME,
+            description: tools::browser_session::CLOSE_DESCRIPTION,
+            permissions: tools::browser_session::CLOSE_PERMISSIONS,
+            timeout: tools::browser_session::CLOSE_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
             name: tools::http::NAME,
             description: tools::http::DESCRIPTION,
             permissions: tools::http::PERMISSIONS,
@@ -296,6 +320,16 @@ impl ToolRegistry {
                 tools::agent::NAME => tools::agent::execute(ctx, input).await,
                 tools::browser::OPEN_NAME => tools::browser::open(ctx, input).await,
                 tools::browser::EXTRACT_NAME => tools::browser::extract(ctx, input).await,
+                tools::browser_session::NAVIGATE_NAME => {
+                    tools::browser_session::navigate(ctx, input).await
+                }
+                tools::browser_session::READ_NAME => tools::browser_session::read(ctx, input).await,
+                tools::browser_session::CLICK_NAME => {
+                    tools::browser_session::click(ctx, input).await
+                }
+                tools::browser_session::CLOSE_NAME => {
+                    tools::browser_session::close(ctx, input).await
+                }
                 tools::http::NAME => tools::http::fetch(ctx, input).await,
                 _ => Err(ToolError::UnknownTool(name.to_string())),
             }
@@ -372,25 +406,29 @@ mod tests {
     fn bootstrap_registers_filesystem_read() {
         let registry = ToolRegistry::bootstrap();
         let tools = registry.list();
-        assert_eq!(tools.len(), 18);
+        assert_eq!(tools.len(), 22);
         assert_eq!(tools[0].name, "agent.run");
         assert_eq!(tools[1].name, "browser.extract");
         assert_eq!(tools[2].name, "browser.open");
-        assert_eq!(tools[3].name, "filesystem.list");
-        assert_eq!(tools[4].name, "filesystem.patch");
-        assert_eq!(tools[5].name, "filesystem.read");
-        assert_eq!(tools[6].name, "filesystem.search");
-        assert_eq!(tools[7].name, "filesystem.write");
-        assert_eq!(tools[8].name, "git.commit");
-        assert_eq!(tools[9].name, "git.diff");
-        assert_eq!(tools[10].name, "git.pull");
-        assert_eq!(tools[11].name, "git.push");
-        assert_eq!(tools[12].name, "git.status");
-        assert_eq!(tools[13].name, "http.fetch");
-        assert_eq!(tools[14].name, "mcp.call");
-        assert_eq!(tools[15].name, "memory.search");
-        assert_eq!(tools[16].name, "shell.execute");
-        assert_eq!(tools[17].name, "worker.run");
+        assert_eq!(tools[3].name, "browser.session.click");
+        assert_eq!(tools[4].name, "browser.session.close");
+        assert_eq!(tools[5].name, "browser.session.navigate");
+        assert_eq!(tools[6].name, "browser.session.read");
+        assert_eq!(tools[7].name, "filesystem.list");
+        assert_eq!(tools[8].name, "filesystem.patch");
+        assert_eq!(tools[9].name, "filesystem.read");
+        assert_eq!(tools[10].name, "filesystem.search");
+        assert_eq!(tools[11].name, "filesystem.write");
+        assert_eq!(tools[12].name, "git.commit");
+        assert_eq!(tools[13].name, "git.diff");
+        assert_eq!(tools[14].name, "git.pull");
+        assert_eq!(tools[15].name, "git.push");
+        assert_eq!(tools[16].name, "git.status");
+        assert_eq!(tools[17].name, "http.fetch");
+        assert_eq!(tools[18].name, "mcp.call");
+        assert_eq!(tools[19].name, "memory.search");
+        assert_eq!(tools[20].name, "shell.execute");
+        assert_eq!(tools[21].name, "worker.run");
     }
 
     #[tokio::test]

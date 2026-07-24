@@ -1,5 +1,6 @@
 pub mod agent;
 pub mod browser;
+pub mod browser_session;
 pub mod filesystem;
 pub mod git;
 pub mod http;
