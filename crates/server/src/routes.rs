@@ -36,6 +36,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/features", get(crate::features::list))
         .route("/api/sync/status", get(crate::sync_api::status))
         .route("/api/sync/push", post(crate::sync_api::push))
+        .route("/api/sync/pull", post(crate::sync_api::pull))
         .route(
             "/api/models/config",
             get(crate::models_api::model_config).put(crate::models_api::update_model_config),

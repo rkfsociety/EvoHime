@@ -119,6 +119,16 @@
         }
       }
     },
+    "/api/sync/pull": {
+      "post": {
+        "operationId": "post_api_sync_pull",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/models/config": {
       "get": {
         "operationId": "get_api_models_config",

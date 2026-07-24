@@ -15,6 +15,7 @@ export const openApiPaths = {
   "/api/features": ["get"] as const,
   "/api/sync/status": ["get"] as const,
   "/api/sync/push": ["post"] as const,
+  "/api/sync/pull": ["post"] as const,
   "/api/models/config": ["get","put"] as const,
   "/api/models/available": ["get"] as const,
   "/api/sessions": ["get","post"] as const,
