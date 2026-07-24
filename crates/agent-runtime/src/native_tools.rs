@@ -111,6 +111,8 @@ pub(crate) fn canonical_tool_name(name: &str) -> String {
         "browser_session_navigate" => "browser.session.navigate",
         "browser_session_read" => "browser.session.read",
         "browser_session_click" => "browser.session.click",
+        "browser_session_screenshot" => "browser.session.screenshot",
+        "browser_session_type" => "browser.session.type",
         "browser_session_close" => "browser.session.close",
         "http_fetch" => "http.fetch",
         "mcp_call" => "mcp.call",
@@ -226,6 +228,23 @@ fn tool_spec_for_name(name: &str, description: &str) -> Option<ToolSpec> {
                 "settle_ms": { "type": "integer" }
             },
             "required": ["selector"]
+        }),
+        "browser.session.screenshot" => json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "Workspace-relative PNG path" },
+                "full_page": { "type": "boolean" }
+            }
+        }),
+        "browser.session.type" => json!({
+            "type": "object",
+            "properties": {
+                "selector": { "type": "string" },
+                "text": { "type": "string" },
+                "max_chars": { "type": "integer" },
+                "settle_ms": { "type": "integer" }
+            },
+            "required": ["selector", "text"]
         }),
         "browser.session.close" => json!({
             "type": "object",

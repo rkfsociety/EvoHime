@@ -79,6 +79,8 @@ pub(crate) const REGISTERED_TOOLS: &[&str] = &[
     "browser.session.navigate",
     "browser.session.read",
     "browser.session.click",
+    "browser.session.screenshot",
+    "browser.session.type",
     "browser.session.close",
     "http.fetch",
     "mcp.call",
