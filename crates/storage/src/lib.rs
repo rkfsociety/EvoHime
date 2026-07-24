@@ -12,6 +12,7 @@ pub mod metrics_snapshots;
 pub mod operators;
 pub mod permission_audit;
 pub mod plugin_skills;
+pub mod installed_plugins;
 pub mod pool;
 pub mod restore;
 pub mod scheduled;
@@ -55,6 +56,11 @@ pub use permission_audit::{
 pub use plugin_skills::{
     ensure_plugin_skills_exist, get_disabled_skills, list_plugin_skills, toggle_skill_status,
     PluginSkillRow,
+};
+pub use installed_plugins::{
+    delete_installed_plugin, get_installed_plugin, insert_installed_plugin,
+    list_installed_plugins, mark_plugin_uninstalled, update_plugin_pin,
+    InstalledPluginRow, NewInstalledPlugin,
 };
 pub use pool::{connect_pool, PoolConfig};
 pub use restore::{restore_backup, validate_backup_header, RestoreReport};
