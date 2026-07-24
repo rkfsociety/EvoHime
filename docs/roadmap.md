@@ -317,7 +317,7 @@
 | 7.7 | Encrypt-at-rest для API keys в `app_settings` (или OS keychain) | M | ⬜ | model config в PG plaintext; security phase 5 |
 | 7.8 | Plugin install: pin commit/tag, signature/hash, uninstall/update | L | ⬜ | `server/src/plugins.rs`; security phase 5 |
 | 7.9 | Plugin skills quarantine (не все skills → system prompt без opt-in) | L | ⬜ | `agent_loop` workspace rules; security phase 5 |
-| 7.10 | Permission для `memory.search` + audit | S | ⬜ | сейчас `PERMISSIONS: &[]` |
+| 7.10 | Permission для `memory.search` + audit | S | ✅ | `Permission::MemorySearch` in enum, permission check in `execute_memory_search`, UI translation in SettingsPanel |
 | 7.11 | Rate limiting / concurrency caps на sessions, tasks, worker jobs | M | ✅ | `rate_limit.rs`; 429 + WS `rate.limited`; `EVOHIME_RATE_LIMIT_*` |
 | 7.12 | Git push/pull network policy (remote allowlist, deny force) | M | ⬜ | `tools/git.rs` |
 | 7.13 | Content-Security-Policy / secure headers для static web | S | ⬜ | Vite/static serve path; security phase 5 |
