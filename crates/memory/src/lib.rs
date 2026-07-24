@@ -245,4 +245,91 @@ mod tests {
             .await
             .expect("cleanup");
     }
+
+    #[tokio::test]
+    async fn repeated_failure_duplicate_escalates_importance_and_confidence() {
+        let Some(pool) = evohime_storage::connect_integration_pool().await else {
+            eprintln!("skipping escalation integration test: database unavailable");
+            return;
+        };
+
+        let mut item = NewMemoryItem::candidate_fact(
+            MemoryScope::Experience,
+            LOCAL_OPERATOR_SCOPE_KEY,
+            "deploy times out: retry without exponential backoff",
+        );
+        item.kind = MemoryKind::FailurePattern;
+        item.confidence = 0.5;
+        item.importance = 0.5;
+
+        let first = admit_memory_item(&pool, item.clone())
+            .await
+            .expect("admit 1");
+        let AdmitOutcome::Inserted(inserted) = first else {
+            panic!("expected first admit to insert a new row");
+        };
+
+        let second = admit_memory_item(&pool, item).await.expect("admit 2");
+        assert!(matches!(
+            second,
+            AdmitOutcome::Duplicate { existing_id } if existing_id == inserted.id
+        ));
+
+        let escalated = evohime_storage::get_memory_item(&pool, inserted.id)
+            .await
+            .expect("load escalated row")
+            .expect("row still exists");
+        assert!(escalated.confidence > inserted.confidence);
+        assert!(escalated.confidence <= FAILURE_CONFIDENCE_CAP);
+        assert!(escalated.importance > inserted.importance);
+
+        let _ = evohime_storage::delete_memory_item(&pool, inserted.id).await;
+    }
+
+    #[tokio::test]
+    async fn duplicate_of_already_accepted_failure_lesson_is_not_escalated() {
+        // `load_existing` only loads Candidate/Active/Conflict rows (a Rejected row is
+        // invisible to dedup matching, so a duplicate of a Rejected lesson would insert
+        // fresh rather than hit `Duplicate` at all). Active is the reachable "operator
+        // already decided, don't silently touch it" case worth guarding here.
+        let Some(pool) = evohime_storage::connect_integration_pool().await else {
+            eprintln!("skipping escalation integration test: database unavailable");
+            return;
+        };
+
+        let mut item = NewMemoryItem::candidate_fact(
+            MemoryScope::Experience,
+            LOCAL_OPERATOR_SCOPE_KEY,
+            "migration fails when backup file is missing",
+        );
+        item.kind = MemoryKind::VerificationRule;
+        item.confidence = 0.5;
+        item.importance = 0.5;
+
+        let first = admit_memory_item(&pool, item.clone())
+            .await
+            .expect("admit 1");
+        let AdmitOutcome::Inserted(inserted) = first else {
+            panic!("expected first admit to insert a new row");
+        };
+        accept_memory_item(&pool, inserted.id)
+            .await
+            .expect("accept")
+            .expect("row existed");
+
+        let second = admit_memory_item(&pool, item).await.expect("admit 2");
+        assert!(matches!(
+            second,
+            AdmitOutcome::Duplicate { existing_id } if existing_id == inserted.id
+        ));
+
+        let untouched = evohime_storage::get_memory_item(&pool, inserted.id)
+            .await
+            .expect("load")
+            .expect("row still exists");
+        assert_eq!(untouched.confidence, inserted.confidence);
+        assert_eq!(untouched.importance, inserted.importance);
+
+        let _ = evohime_storage::delete_memory_item(&pool, inserted.id).await;
+    }
 }

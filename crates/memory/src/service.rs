@@ -12,6 +12,8 @@ use sqlx::PgPool;
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::feedback_service::record_memory_repeated;
+
 #[derive(Debug, Clone)]
 pub struct ExistingMemory {
     pub id: Uuid,
@@ -119,6 +121,39 @@ pub enum Evaluation {
     Conflict { existing_id: Uuid, reason: String },
 }
 
+/// Escalate a duplicate of an experience failure-lesson (7.103 wave 2): a repeated
+/// failure_pattern/verification_rule is stronger evidence than a first guess. Only
+/// touches rows still awaiting an operator decision (`Candidate`) — an already
+/// accepted/rejected/conflicted row keeps the operator's call. Confidence is capped
+/// by `FeedbackSignal::Repeated` itself, so this can never unlock auto-promote.
+async fn escalate_repeated_failure_lesson(
+    pool: &PgPool,
+    prepared: &PreparedMemoryItem,
+    existing: &[ExistingMemory],
+    existing_id: Uuid,
+) {
+    if prepared.item.scope != MemoryScope::Experience {
+        return;
+    }
+    let Some(hit) = existing.iter().find(|item| item.id == existing_id) else {
+        return;
+    };
+    if hit.status != MemoryStatus::Candidate {
+        return;
+    }
+    if !matches!(
+        hit.kind,
+        MemoryKind::FailurePattern | MemoryKind::VerificationRule
+    ) {
+        return;
+    }
+    if let Err(error) =
+        record_memory_repeated(pool, existing_id, prepared.item.source_task_id).await
+    {
+        tracing::warn!(%existing_id, %error, "failure-lesson repeat escalation failed");
+    }
+}
+
 fn row_to_existing(row: &MemoryItemRow) -> Option<ExistingMemory> {
     Some(ExistingMemory {
         id: row.id,
@@ -172,7 +207,10 @@ pub async fn admit_memory_item(
     )
     .await?;
     match MemoryService::evaluate(&prepared, &existing)? {
-        Evaluation::Duplicate { existing_id } => Ok(AdmitOutcome::Duplicate { existing_id }),
+        Evaluation::Duplicate { existing_id } => {
+            escalate_repeated_failure_lesson(pool, &prepared, &existing, existing_id).await;
+            Ok(AdmitOutcome::Duplicate { existing_id })
+        }
         Evaluation::Conflict {
             existing_id,
             reason,
