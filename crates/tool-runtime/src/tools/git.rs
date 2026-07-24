@@ -44,6 +44,8 @@ struct CommitInput {
 struct RemoteInput {
     remote: Option<String>,
     branch: Option<String>,
+    #[serde(default)]
+    force: bool,
 }
 
 pub async fn status(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
@@ -98,6 +100,10 @@ pub async fn pull(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
 
 pub async fn push(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let input = parse_optional_input::<RemoteInput>(&input, PUSH_NAME)?;
+
+    // Validate network policy (7.12)
+    validate_push_policy(&input)?;
+
     let mut args = vec!["push"];
     if let Some(remote) = input.remote.as_deref() {
         args.push(remote);
@@ -106,6 +112,51 @@ pub async fn push(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
         args.push(branch);
     }
     run_git(ctx, &args).await
+}
+
+/// Validate git push network policy: block force push and enforce remote/branch restrictions (7.12)
+fn validate_push_policy(input: &RemoteInput) -> Result<(), ToolError> {
+    // Reject explicit force flag
+    if input.force {
+        return Err(ToolError::Execution(
+            "force push (--force, --force-with-lease) is not allowed; use normal push".to_string(),
+        ));
+    }
+
+    // Check for force-like patterns in branch/remote strings (defense-in-depth)
+    for value in [input.remote.as_deref(), input.branch.as_deref()]
+        .iter()
+        .flatten()
+    {
+        let lower = value.to_lowercase();
+        if lower.contains("--force")
+            || lower.contains("--force-with-lease")
+            || lower.contains("--no-verify")
+        {
+            return Err(ToolError::Execution(
+                "unsafe git operations are not allowed".to_string(),
+            ));
+        }
+    }
+
+    // Validate remote against allowlist (optional, from env EVOHIME_GIT_ALLOWED_REMOTES)
+    if let Ok(allowlist_str) = std::env::var("EVOHIME_GIT_ALLOWED_REMOTES") {
+        if let Some(remote) = input.remote.as_deref() {
+            let remote_trimmed = remote.trim();
+            if !remote_trimmed.is_empty() {
+                let allowed_remotes: Vec<&str> = allowlist_str.split(',').map(|s| s.trim()).collect();
+                if !allowed_remotes.contains(&remote_trimmed) {
+                    return Err(ToolError::Execution(format!(
+                        "push to remote '{}' is not allowed (allowlist: {})",
+                        remote_trimmed,
+                        allowed_remotes.join(", ")
+                    )));
+                }
+            }
+        }
+    }
+
+    Ok(())
 }
 
 async fn run_git(ctx: &ToolContext, args: &[&str]) -> Result<ToolResult, ToolError> {
@@ -324,5 +375,90 @@ mod tests {
         .await
         .expect("pull succeeds");
         assert!(!pull_result.output.is_empty());
+    }
+
+    #[tokio::test]
+    async fn push_rejects_force_flag() {
+        let (_dir, ctx, _) = init_repo();
+        let result = push(
+            &ctx,
+            json!({
+                "remote": "origin",
+                "branch": "main",
+                "force": true
+            }),
+        )
+        .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().to_lowercase().contains("force"));
+    }
+
+    #[tokio::test]
+    async fn push_normal_succeeds_without_force() {
+        let remote = tempdir().expect("remote");
+        run(remote.path(), &["git", "init", "--bare"]);
+
+        let (_dir, ctx, branch) = init_repo();
+        run(
+            ctx.workspace_root.as_path(),
+            &[
+                "git",
+                "remote",
+                "add",
+                "origin",
+                remote.path().to_str().expect("remote path"),
+            ],
+        );
+
+        std_fs::write(ctx.workspace_root.join("test.txt"), "content\n").expect("write");
+        run(ctx.workspace_root.as_path(), &["git", "add", "."]);
+        run(ctx.workspace_root.as_path(), &["git", "commit", "-m", "test"]);
+
+        let result = push(
+            &ctx,
+            json!({
+                "remote": "origin",
+                "branch": branch,
+                "force": false
+            }),
+        )
+        .await;
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn validate_push_policy_allows_safe_remotes() {
+        std::env::set_var("EVOHIME_GIT_ALLOWED_REMOTES", "origin,upstream");
+        let input = RemoteInput {
+            remote: Some("origin".to_string()),
+            branch: Some("main".to_string()),
+            force: false,
+        };
+        assert!(validate_push_policy(&input).is_ok());
+        std::env::remove_var("EVOHIME_GIT_ALLOWED_REMOTES");
+    }
+
+    #[test]
+    fn validate_push_policy_blocks_disallowed_remotes() {
+        std::env::set_var("EVOHIME_GIT_ALLOWED_REMOTES", "origin,upstream");
+        let input = RemoteInput {
+            remote: Some("evil-mirror".to_string()),
+            branch: Some("main".to_string()),
+            force: false,
+        };
+        assert!(validate_push_policy(&input).is_err());
+        std::env::remove_var("EVOHIME_GIT_ALLOWED_REMOTES");
+    }
+
+    #[test]
+    fn validate_push_policy_no_allowlist_allows_all() {
+        std::env::remove_var("EVOHIME_GIT_ALLOWED_REMOTES");
+        let input = RemoteInput {
+            remote: Some("any-remote".to_string()),
+            branch: Some("main".to_string()),
+            force: false,
+        };
+        assert!(validate_push_policy(&input).is_ok());
     }
 }

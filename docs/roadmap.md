@@ -319,7 +319,7 @@
 | 7.9 | Plugin skills quarantine (не все skills → system prompt без opt-in) | L | ⬜ | `agent_loop` workspace rules; security phase 5 |
 | 7.10 | Permission для `memory.search` + audit | S | ✅ | `Permission::MemorySearch` in enum, permission check in `execute_memory_search`, UI translation in SettingsPanel |
 | 7.11 | Rate limiting / concurrency caps на sessions, tasks, worker jobs | M | ✅ | `rate_limit.rs`; 429 + WS `rate.limited`; `EVOHIME_RATE_LIMIT_*` |
-| 7.12 | Git push/pull network policy (remote allowlist, deny force) | M | ⬜ | `tools/git.rs` |
+| 7.12 | Git push/pull network policy (remote allowlist, deny force) | M | ✅ | `crates/tool-runtime/src/tools/git.rs` force validation + `EVOHIME_GIT_ALLOWED_REMOTES` allowlist; 5 unit tests |
 | 7.13 | Content-Security-Policy / secure headers для static web | S | ✅ | `crates/server/src/secure_headers.rs`; Phase 5.6: CSP + X-Frame-Options + X-Content-Type-Options middleware |
 | 7.14 | Secrets scan в CI (gitleaks / similar) | S | ✅ | Phase 5.5: `.github/workflows/rust.yml` gitleaks action |
 
