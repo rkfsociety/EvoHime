@@ -73,7 +73,7 @@ User message
 
 - **Stage 7** Hardening + Product — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99` ✅ — cloud sync: push/pull (owner-only `/api/sync/status|push|pull`, история с direction в `sync_runs`, конфиг `EVOHIME_SYNC_URL`/`EVOHIME_SYNC_TOKEN`), идемпотентный restore (`restore_backup` + CLI `evohime-import`), авто-push (`EVOHIME_SYNC_AUTO_MINUTES`)
 - Sites, Scheduled, OTLP и Cloud sync имеют gates через `EVOHIME_FEATURE_*` и `/api/features`
-- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; `7.93`–`7.99` ✅; `7.100` ✅ — `browser.session.*` tools с persistent CDP-вкладкой на задачу (`EVOHIME_BROWSER_CDP_URL`); `7.101` wave 1 ✅ — eval harness `evohime-evals`: golden tasks (JSON) против реального agent loop с mock-моделью, раннер в CI и CLI `evohime-eval`; остаток `7.101` — LLM-as-judge и live-provider сравнение
+- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; `7.93`–`7.99` ✅; `7.100` ✅ — `browser.session.*` tools с persistent CDP-вкладкой на задачу (`EVOHIME_BROWSER_CDP_URL`); `7.101` ✅ — eval harness `evohime-evals`: golden tasks (JSON) против реального agent loop; CI-режим детерминированный (mock), `--live` гоняет против настроенного провайдера, `--judge` добавляет LLM-вердикты по `rubric`
 
 ## WebSocket events
 
@@ -174,6 +174,8 @@ cargo run -p evohime-storage --bin evohime-import -- --input .evohime/backup.jso
 
 # Golden-task eval report (regression harness, no network/LLM)
 cargo run -p evohime-evals --bin evohime-eval
+# Against the real provider, with LLM-as-judge for rubric tasks
+cargo run -p evohime-evals --bin evohime-eval -- --live --judge
 
 # Frontend
 cd frontend/web && npm install && npm run dev
@@ -196,7 +198,7 @@ See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](d
 | 4 Editor + Git | ✅ Done |
 | 5 Task orchestration | ✅ Done |
 | 6 Advanced | ✅ Foundations complete |
-| 7 Hardening + Product | 🟡 In progress; `7.1`–`7.100` complete, `7.101` wave 1 (eval harness) done |
+| 7 Hardening + Product | 🟡 In progress; `7.1`–`7.101` complete, next `7.102` |
 
 Memory design: [docs/superpowers/specs/2026-07-16-agent-memory-design.md](docs/superpowers/specs/2026-07-16-agent-memory-design.md)
 
