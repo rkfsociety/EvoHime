@@ -1,5 +1,6 @@
 //! Model config / available models HTTP API.
 use crate::app::AppState;
+use crate::secrets;
 use crate::ApiError;
 use axum::{
     extract::{Query, State},
@@ -147,6 +148,7 @@ pub(crate) async fn update_model_config(
         None
     };
     let mut persisted_request = request;
+    let workspace_root = state.workspace_root.to_string_lossy().to_string();
     for route in &mut persisted_request.routes {
         if route
             .api_key
@@ -160,6 +162,10 @@ pub(crate) async fn update_model_config(
                 .map(|item| item.literouter.api_key.clone())
                 .filter(|key| !key.trim().is_empty());
         }
+        // Encrypt API keys before persisting (Phase 5.7)
+        if let Some(api_key) = &route.api_key {
+            route.api_key = Some(secrets::encrypt_api_key(api_key, &workspace_root));
+        }
     }
     let persisted_value = serde_json::to_value(persisted_request)
         .map_err(|error| ApiError::Internal(error.to_string()))?;
@@ -170,6 +176,24 @@ pub(crate) async fn update_model_config(
     *state.model_gateway.write().await = gateway;
 
     Ok(Json(state.model_config_response().await))
+}
+
+/// Decrypt API keys in a ModelSettingsRequest (Phase 5.7).
+/// Called when loading saved config from database.
+pub(crate) fn decrypt_model_config(
+    mut request: ModelSettingsRequest,
+    workspace_root: &str,
+) -> ModelSettingsRequest {
+    for route in &mut request.routes {
+        if let Some(api_key) = &route.api_key {
+            // Try to decrypt; if it fails, key is still plaintext (backward compat)
+            let decrypted = secrets::decrypt_api_key(api_key, workspace_root);
+            if !decrypted.is_empty() {
+                route.api_key = Some(decrypted);
+            }
+        }
+    }
+    request
 }
 
 pub(crate) fn build_model_config(

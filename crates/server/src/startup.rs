@@ -63,10 +63,15 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
 
     let active_model_config = match evohime_storage::load_setting(&pool, "model_config").await? {
         Some(value) => match serde_json::from_value::<ModelSettingsRequest>(value) {
-            Ok(request) => build_model_config(request, &config.model_config).unwrap_or_else(|error| {
-                warn!(error = %error, "stored model settings are invalid; using environment defaults");
-                config.model_config.clone()
-            }),
+            Ok(request) => {
+                // Decrypt API keys when loading from database (Phase 5.7)
+                let workspace_root = config.workspace_root.to_string_lossy().to_string();
+                let decrypted_request = crate::models_api::decrypt_model_config(request, &workspace_root);
+                build_model_config(decrypted_request, &config.model_config).unwrap_or_else(|error| {
+                    warn!(error = %error, "stored model settings are invalid; using environment defaults");
+                    config.model_config.clone()
+                })
+            },
             Err(error) => {
                 warn!(error = %error, "stored model settings could not be read; using environment defaults");
                 config.model_config.clone()
