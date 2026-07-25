@@ -83,7 +83,10 @@ pub async fn list_cost_limits(pool: &PgPool) -> Result<Vec<CostLimitRow>, sqlx::
 }
 
 /// Get cost limit for a specific model
-pub async fn get_cost_limit(pool: &PgPool, model: &str) -> Result<Option<CostLimitRow>, sqlx::Error> {
+pub async fn get_cost_limit(
+    pool: &PgPool,
+    model: &str,
+) -> Result<Option<CostLimitRow>, sqlx::Error> {
     sqlx::query_as::<_, CostLimitRow>(
         r#"
         SELECT id, model, daily_cap_tokens, reset_hour, enabled
@@ -165,7 +168,9 @@ mod tests {
     #[sqlx::test]
     async fn test_cost_limit_crud(pool: PgPool) {
         // Create
-        let limit = get_or_create_cost_limit(&pool, "test-model", 1_000_000).await.unwrap();
+        let limit = get_or_create_cost_limit(&pool, "test-model", 1_000_000)
+            .await
+            .unwrap();
         assert_eq!(limit.model, "test-model");
         assert_eq!(limit.daily_cap_tokens, 1_000_000);
         assert!(limit.enabled);
@@ -176,7 +181,9 @@ mod tests {
             reset_hour: 12,
             enabled: false,
         };
-        let updated = update_cost_limit(&pool, "test-model", &update).await.unwrap();
+        let updated = update_cost_limit(&pool, "test-model", &update)
+            .await
+            .unwrap();
         assert_eq!(updated.daily_cap_tokens, 500_000);
         assert_eq!(updated.reset_hour, 12);
         assert!(!updated.enabled);
@@ -189,21 +196,29 @@ mod tests {
     #[sqlx::test]
     async fn test_spending_tracking(pool: PgPool) {
         // Set limit
-        let _limit = get_or_create_cost_limit(&pool, "test-model2", 100_000).await.unwrap();
+        let _limit = get_or_create_cost_limit(&pool, "test-model2", 100_000)
+            .await
+            .unwrap();
 
         // Add tokens
-        let _tracking = add_tokens_to_tracking(&pool, "test-model2", 50_000).await.unwrap();
+        let _tracking = add_tokens_to_tracking(&pool, "test-model2", 50_000)
+            .await
+            .unwrap();
 
         // Check consumption
         let consumed = get_today_consumption(&pool, "test-model2").await.unwrap();
         assert_eq!(consumed, 50_000);
 
         // Check cap not exceeded
-        let exceeded = check_spending_cap(&pool, "test-model2", 40_000).await.unwrap();
+        let exceeded = check_spending_cap(&pool, "test-model2", 40_000)
+            .await
+            .unwrap();
         assert!(!exceeded); // 50k + 40k = 90k < 100k
 
         // Check cap exceeded
-        let exceeded = check_spending_cap(&pool, "test-model2", 60_000).await.unwrap();
+        let exceeded = check_spending_cap(&pool, "test-model2", 60_000)
+            .await
+            .unwrap();
         assert!(exceeded); // 50k + 60k = 110k > 100k
     }
 }

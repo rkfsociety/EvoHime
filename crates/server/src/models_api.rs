@@ -337,7 +337,8 @@ pub(crate) struct CostLimitResponse {
 pub(crate) async fn list_cost_limits(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<CostLimitsListResponse>, ApiError> {
-    let limits = evohime_storage::list_cost_limits(&state.pool).await
+    let limits = evohime_storage::list_cost_limits(&state.pool)
+        .await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
     Ok(Json(CostLimitsListResponse {
         limits: limits
@@ -362,7 +363,8 @@ pub(crate) async fn update_cost_limit(
         reset_hour: req.reset_hour,
         enabled: req.enabled,
     };
-    let result = evohime_storage::update_cost_limit(&state.pool, &model, &update).await
+    let result = evohime_storage::update_cost_limit(&state.pool, &model, &update)
+        .await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
     Ok(Json(CostLimitResponse {
         model: result.model,
