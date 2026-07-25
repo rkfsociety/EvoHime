@@ -5,7 +5,7 @@ name: Build Release
 # Commits с последнего тега — если только chore:/docs: и т.п., бампа нет и
 # ничего не публикуется), создаёт и пушит тег, затем собирает
 # самодостаточные артефакты (evohime-setup.exe, server.zip, launcher.zip,
-# dist.zip, migrations.zip, worker.zip) и публикует GitHub Release с
+# dist.zip, migrations.zip, postgres.zip, worker.zip) и публикует GitHub Release с
 # автосгенерированным описанием изменений. Единственный exe-файл в релизе —
 # evohime-setup.exe (устанавливает всё остальное сам); server.exe/launcher.exe/
 # updater.exe упакованы в zip, чтобы на странице релиза не было нескольких exe
@@ -265,6 +265,39 @@ jobs:
           path: migrations.zip
           retention-days: 1
 
+  # Портативный PostgreSQL для Windows — упаковывается из готовой сборки
+  # zonky embedded-postgres-binaries (Maven Central), той же используемой
+  # разработчиками для встраивания Postgres в тесты/десктоп-приложения без
+  # системной установки. Архив содержит только postgres.exe/initdb.exe/
+  # pg_ctl.exe (без createdb/psql/pg_dump) — Installer создаёт базу данных
+  # через SQL напрямую (см. crates/launcher/src/postgres.rs), а не через
+  # createdb.exe. Не версионируется вместе с остальным релизом (как и
+  # launcher.zip) — скачивается Installer'ом один раз при установке.
+  package-postgres:
+    name: Package postgres.zip
+    needs: determine-version
+    if: needs.determine-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    env:
+      PG_VERSION: 16.14.0
+    steps:
+      - name: Download portable PostgreSQL (Windows binaries)
+        run: |
+          JAR_URL="https://repo1.maven.org/maven2/io/zonky/test/postgres/embedded-postgres-binaries-windows-amd64/${PG_VERSION}/embedded-postgres-binaries-windows-amd64-${PG_VERSION}.jar"
+          curl -fsSL -o pg-binaries.jar "$JAR_URL"
+          unzip -q pg-binaries.jar -d pg-jar
+          mkdir -p pg-extracted
+          tar -xJf pg-jar/postgres-windows-x86_64.txz -C pg-extracted
+      - name: Zip postgres (bin/lib/share only)
+        run: |
+          cd pg-extracted
+          zip -r ../postgres.zip bin lib share
+      - uses: actions/upload-artifact@v4
+        with:
+          name: postgres-zip
+          path: postgres.zip
+          retention-days: 1
+
   package-worker:
     name: Package worker.zip (with Windows wheels)
     needs: determine-version
@@ -315,6 +348,7 @@ jobs:
         build-installer,
         build-frontend,
         package-migrations,
+        package-postgres,
         package-worker,
       ]
     if: needs.determine-version.outputs.should_release == 'true'
@@ -337,6 +371,7 @@ jobs:
           cp downloaded/installer-exe/evohime-setup.exe release/
           cp downloaded/dist-zip/dist.zip release/
           cp downloaded/migrations-zip/migrations.zip release/
+          cp downloaded/postgres-zip/postgres.zip release/
           cp downloaded/worker-zip/worker.zip release/
 
       - name: Write version.txt
@@ -358,15 +393,9 @@ jobs:
       - name: Compute SHA256 checksums
         run: |
           cd release
-          for f in server.zip launcher.zip evohime-setup.exe dist.zip migrations.zip worker.zip; do
+          for f in server.zip launcher.zip evohime-setup.exe dist.zip migrations.zip postgres.zip worker.zip; do
             sha256sum "$f" | cut -d' ' -f1 > "$f.sha256"
           done
-
-      # TODO (Фаза 3, продолжение): evohime-offline-setup.exe (~300 МБ, с
-      # потоковой упаковкой PostgreSQL/Python внутрь для полностью офлайновой
-      # установки) — отдельная задача, требует реализации initdb/pg_ctl в
-      # crates/installer (см. комментарий в src/main.rs) и тестирования на
-      # чистых VM.
 
       # Держим на странице релизов только самый свежий релиз — старые
       # удаляются (только сам Release, git-теги остаются нетронутыми: они
@@ -399,6 +428,8 @@ jobs:
             release/dist.zip.sha256
             release/migrations.zip
             release/migrations.zip.sha256
+            release/postgres.zip
+            release/postgres.zip.sha256
             release/worker.zip
             release/worker.zip.sha256
             release/version.txt

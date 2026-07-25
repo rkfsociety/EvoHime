@@ -6,11 +6,13 @@
 //! DSN без хардкода имени пользователя.
 
 pub mod backup;
+pub mod config;
 pub mod dsn;
 pub mod github_api;
 pub mod history;
 pub mod migrations;
 pub mod pg_auth;
+pub mod postgres;
 pub mod process_manager;
 pub mod safe_mode;
 pub mod self_update;
@@ -21,6 +23,7 @@ pub mod update_apply;
 pub mod update_check;
 
 pub use backup::{create_backup, prune_backups, BackupError};
+pub use config::DbConfig;
 pub use dsn::build_dsn;
 pub use github_api::fetch_latest_release;
 pub use history::{

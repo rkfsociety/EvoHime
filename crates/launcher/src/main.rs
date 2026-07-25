@@ -9,6 +9,7 @@
 //! откатом при неудачном health-check.
 
 use eframe::egui;
+use evohime_launcher::config::{self, DbConfig};
 use evohime_launcher::history::{append_and_save, UpdateHistoryEntry, UpdateOutcome};
 use evohime_launcher::status_server::{ComponentStatus, LauncherStatus, StatusServerState};
 use evohime_launcher::update_apply::{
@@ -19,8 +20,8 @@ use evohime_launcher::update_check::{
     is_update_available, latest_version_from_atom, releases_atom_url,
 };
 use evohime_launcher::{
-    build_static_router, build_status_router, fetch_latest_release, generate_session_token,
-    safe_mode, ManagedProcess,
+    build_dsn, build_static_router, build_status_router, fetch_latest_release,
+    generate_session_token, postgres, safe_mode, ManagedProcess,
 };
 use evohime_win_support::SingleInstanceLock;
 use std::path::{Path, PathBuf};
@@ -65,10 +66,20 @@ fn main() -> eframe::Result<()> {
 
     let session_token = generate_session_token();
     let install_dir = install_dir();
+    let db_config = config::load(&install_dir);
+    if db_config.is_none() {
+        tracing::warn!(
+            "launcher-data/config.json не найден — DATABASE_URL не будет передан server.exe"
+        );
+    }
 
     let runtime = tokio::runtime::Runtime::new().expect("failed to start Tokio runtime");
     let shared_status = Arc::new(Mutex::new(LauncherStatus {
         components: vec![
+            ComponentStatus {
+                name: "db".to_string(),
+                online: false,
+            },
             ComponentStatus {
                 name: "server".to_string(),
                 online: false,
@@ -91,6 +102,7 @@ fn main() -> eframe::Result<()> {
         runtime.spawn(run_supervisor(
             install_dir,
             session_token,
+            db_config,
             shared_status.clone(),
             update_state.clone(),
             command_rx,
@@ -139,13 +151,34 @@ fn main() -> eframe::Result<()> {
 async fn run_supervisor(
     install_dir: PathBuf,
     token: String,
+    db_config: Option<DbConfig>,
     status: Arc<Mutex<LauncherStatus>>,
     update_state: Arc<Mutex<UpdateState>>,
     mut commands: tokio::sync::mpsc::UnboundedReceiver<LauncherCommand>,
 ) {
     let client = reqwest::Client::new();
     let mut current_version = read_current_version(&install_dir);
-    let mut server_process = start_server_process(&install_dir, &current_version, &token).await;
+
+    let (pg_bin_dir, pg_data_dir) = pg_paths(&install_dir);
+    let dsn = db_config.as_ref().map(|cfg| {
+        build_dsn(
+            &cfg.user,
+            &cfg.password,
+            "127.0.0.1",
+            cfg.port,
+            &cfg.db_name,
+        )
+    });
+
+    if let Some(cfg) = &db_config {
+        match postgres::ensure_started(&pg_bin_dir, &pg_data_dir, cfg.port).await {
+            Ok(()) => update_component_status(&status, "db", true),
+            Err(err) => tracing::error!(%err, "failed to start bundled PostgreSQL"),
+        }
+    }
+
+    let mut server_process =
+        start_server_process(&install_dir, &current_version, &token, dsn.as_deref()).await;
 
     let mut health_tick = tokio::time::interval(HEALTH_CHECK_INTERVAL);
     let mut update_tick = tokio::time::interval(UPDATE_CHECK_INTERVAL);
@@ -174,11 +207,19 @@ async fn run_supervisor(
                             process.graceful_shutdown(&client, &token, Duration::from_secs(10)).await;
                         }
                         update_component_status(&status, "server", false);
+
+                        if db_config.is_some() {
+                            if let Err(err) = postgres::stop(&pg_bin_dir, &pg_data_dir).await {
+                                tracing::error!(%err, "failed to stop bundled PostgreSQL");
+                            }
+                        }
+                        update_component_status(&status, "db", false);
                     }
                     Some(LauncherCommand::ApplyUpdate) => {
                         run_update_cycle(
                             &install_dir,
                             &token,
+                            dsn.as_deref(),
                             &client,
                             &mut current_version,
                             &mut server_process,
@@ -194,10 +235,28 @@ async fn run_supervisor(
     }
 }
 
+fn pg_paths(install_dir: &Path) -> (PathBuf, PathBuf) {
+    let pg_dir = install_dir.join("pg16");
+    (pg_dir.join("bin"), pg_dir.join("data"))
+}
+
+/// Переменные окружения, с которыми запускается `server.exe` — токен
+/// сессии для локального shutdown-эндпоинта и (если БД уже развёрнута)
+/// строка подключения, без которой сервер падает на несуществующий
+/// дефолт (`crates/server/src/app.rs`).
+fn server_env(token: &str, dsn: Option<&str>) -> Vec<(String, String)> {
+    let mut env = vec![("EVOHIME_LOCAL_TOKEN".to_string(), token.to_string())];
+    if let Some(dsn) = dsn {
+        env.push(("DATABASE_URL".to_string(), dsn.to_string()));
+    }
+    env
+}
+
 async fn start_server_process(
     install_dir: &Path,
     version: &Option<String>,
     token: &str,
+    dsn: Option<&str>,
 ) -> Option<ManagedProcess> {
     let version = version.clone().unwrap_or_else(|| "current".to_string());
     let dir = install_dir.join("versions").join(version);
@@ -214,10 +273,7 @@ async fn start_server_process(
         "http://127.0.0.1:3000/health",
         Some("http://127.0.0.1:3000/shutdown".to_string()),
     );
-    if let Err(err) = process
-        .start(&[("EVOHIME_LOCAL_TOKEN".to_string(), token.to_string())])
-        .await
-    {
+    if let Err(err) = process.start(&server_env(token, dsn)).await {
         tracing::error!(%err, "failed to start server.exe");
         return None;
     }
@@ -270,6 +326,7 @@ async fn check_for_updates(
 async fn run_update_cycle(
     install_dir: &Path,
     token: &str,
+    dsn: Option<&str>,
     client: &reqwest::Client,
     current_version: &mut Option<String>,
     server_process: &mut Option<ManagedProcess>,
@@ -297,7 +354,7 @@ async fn run_update_cycle(
         install_dir: install_dir.to_path_buf(),
         new_version: new_version.clone(),
         assets,
-        dsn: None, // TODO Фаза 5 продолжение: подставлять реальный DSN из config.json
+        dsn: dsn.map(|s| s.to_string()),
     };
     let download_dir = install_dir.join("launcher-data").join("download_tmp");
     let progress = |msg: &str| set_in_progress(update_state, true, msg);
@@ -358,10 +415,7 @@ async fn run_update_cycle(
         "http://127.0.0.1:3000/health",
         Some("http://127.0.0.1:3000/shutdown".to_string()),
     );
-    let start_ok = new_process
-        .start(&[("EVOHIME_LOCAL_TOKEN".to_string(), token.to_string())])
-        .await
-        .is_ok();
+    let start_ok = new_process.start(&server_env(token, dsn)).await.is_ok();
 
     let healthy = start_ok
         && wait_for_health(
@@ -384,7 +438,7 @@ async fn run_update_cycle(
             "Health-check после обновления не прошёл",
         )
         .await;
-        *server_process = start_server_process(install_dir, &saved_version, token).await;
+        *server_process = start_server_process(install_dir, &saved_version, token, dsn).await;
         update_component_status(status, "server", server_process.is_some());
         return;
     }

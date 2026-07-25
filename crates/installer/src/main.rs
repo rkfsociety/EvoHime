@@ -4,26 +4,23 @@
 //! раздел I плана). Вся установка выполняется на фоновом Tokio-рантайме;
 //! прогресс приходит в UI-поток через mpsc-канал, чтобы не блокировать
 //! отрисовку окна во время сетевых операций/распаковки.
-//!
-//! ВАЖНО: реальная загрузка/инициализация portable PostgreSQL и Python
-//! (initdb/pg_ctl/createdb) здесь ещё не реализована — точка расширения
-//! зафиксирована явно в шаге 6 ниже (раздел X плана: "Фаза 8 — тестирование
-//! на чистых VM" — там же проверяется весь цикл живьём, включая настоящие
-//! сетевые загрузки многосотмегабайтных архивов, что невозможно достоверно
-//! прогнать в рамках автоматической сборки этой сессии).
 
 use eframe::egui;
 use evohime_artifacts::{download_with_resume, extract_zip, verify_sha256};
 use evohime_installer::{
     create_shortcut, is_installation_dirty, mark_setup_complete, restrict_to_current_user,
 };
-use evohime_launcher::{apply_migrations, build_dsn, generate_password, patch_pg_hba_trust_local};
+use evohime_launcher::config::{self, DbConfig};
+use evohime_launcher::{
+    apply_migrations, build_dsn, generate_password, patch_pg_hba_trust_local, postgres,
+};
 use evohime_win_support::{free_bytes_available, SingleInstanceLock};
 use std::path::PathBuf;
 use std::sync::mpsc;
 
 const GITHUB_REPO: &str = "rkfsociety/EvoHime";
 const MIN_FREE_BYTES: u64 = 1_500_000_000; // ~1.5 ГБ, раздел VI плана
+const DB_NAME: &str = "evohime";
 
 /// Один шаг прогресса, отправляемый из фоновой установки в UI-поток.
 #[derive(Debug, Clone)]
@@ -33,22 +30,60 @@ enum ProgressEvent {
     Done,
 }
 
+// Приблизительное число шагов установки (см. run_installation_fallible) —
+// используется только для длины прогресс-бара, не для точного подсчёта:
+// часть шагов условны (напр. очистка "грязной" установки), так что бар
+// иногда не дойдёт до 100% ровно на предпоследнем шаге — это нормально,
+// на Done прогресс принудительно выставляется в 1.0.
+const APPROX_TOTAL_STEPS: usize = 20;
+
+const ACCENT: egui::Color32 = egui::Color32::from_rgb(122, 162, 255);
+const ERROR_COLOR: egui::Color32 = egui::Color32::from_rgb(255, 120, 120);
+const SUCCESS_COLOR: egui::Color32 = egui::Color32::from_rgb(120, 220, 150);
+const DIM_TEXT: egui::Color32 = egui::Color32::from_gray(150);
+
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([420.0, 260.0]),
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([480.0, 360.0])
+            .with_min_inner_size([420.0, 320.0]),
         ..Default::default()
     };
 
     eframe::run_native(
         "EvoHime Setup",
         options,
-        Box::new(|_cc| Ok(Box::new(InstallerApp::new()))),
+        Box::new(|cc| {
+            apply_style(&cc.egui_ctx);
+            Ok(Box::new(InstallerApp::new()))
+        }),
     )
+}
+
+fn apply_style(ctx: &egui::Context) {
+    let mut visuals = egui::Visuals::dark();
+    visuals.window_corner_radius = egui::CornerRadius::same(10);
+    visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(6);
+    visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(6);
+    visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(6);
+    visuals.widgets.active.corner_radius = egui::CornerRadius::same(6);
+    visuals.selection.bg_fill = ACCENT;
+    visuals.hyperlink_color = ACCENT;
+    visuals.panel_fill = egui::Color32::from_rgb(24, 24, 28);
+    visuals.window_fill = egui::Color32::from_rgb(24, 24, 28);
+    ctx.set_visuals(visuals);
+
+    let mut style = (*ctx.style_of(egui::Theme::Dark)).clone();
+    style.spacing.item_spacing = egui::vec2(8.0, 10.0);
+    style.spacing.button_padding = egui::vec2(16.0, 8.0);
+    ctx.set_style_of(egui::Theme::Dark, style);
 }
 
 struct InstallerApp {
     rx: Option<mpsc::Receiver<ProgressEvent>>,
+    current_stage: String,
     log: Vec<String>,
+    steps_done: usize,
     finished: bool,
     failed: bool,
     started: bool,
@@ -58,7 +93,9 @@ impl InstallerApp {
     fn new() -> Self {
         Self {
             rx: None,
-            log: vec!["Нажмите «Установить», чтобы начать.".to_string()],
+            current_stage: "Готов к установке.".to_string(),
+            log: Vec::new(),
+            steps_done: 0,
             finished: false,
             failed: false,
             started: false,
@@ -74,6 +111,14 @@ impl InstallerApp {
             runtime.block_on(run_installation(tx));
         });
     }
+
+    fn progress_fraction(&self) -> f32 {
+        if self.finished {
+            1.0
+        } else {
+            (self.steps_done as f32 / APPROX_TOTAL_STEPS as f32).clamp(0.0, 0.97)
+        }
+    }
 }
 
 impl eframe::App for InstallerApp {
@@ -81,43 +126,94 @@ impl eframe::App for InstallerApp {
         if let Some(rx) = &self.rx {
             while let Ok(event) = rx.try_recv() {
                 match event {
-                    ProgressEvent::Stage(msg) => self.log.push(msg),
+                    ProgressEvent::Stage(msg) => {
+                        self.steps_done += 1;
+                        self.current_stage = msg.clone();
+                        self.log.push(msg);
+                    }
                     ProgressEvent::Error(msg) => {
+                        self.current_stage = "Установка прервана из-за ошибки.".to_string();
                         self.log.push(format!("Ошибка: {msg}"));
                         self.failed = true;
                     }
                     ProgressEvent::Done => {
-                        self.log
-                            .push("Готово! Запустите ярлык «EvoHime Launcher».".to_string());
+                        self.current_stage = "Готово!".to_string();
                         self.finished = true;
                     }
                 }
             }
         }
 
-        ui.heading("EvoHime — установка");
-        ui.separator();
-
-        egui::ScrollArea::vertical()
-            .max_height(160.0)
-            .show(ui, |ui| {
-                for line in &self.log {
-                    ui.label(line);
-                }
-            });
-
-        ui.separator();
+        ui.add_space(8.0);
+        ui.vertical_centered(|ui| {
+            ui.heading(egui::RichText::new("EvoHime").size(28.0).color(ACCENT));
+            ui.label(egui::RichText::new("Установка").color(DIM_TEXT));
+        });
+        ui.add_space(16.0);
 
         if !self.started {
-            if ui.button("Установить").clicked() {
-                self.start_installation();
-            }
-        } else if self.finished {
-            ui.label("Установка завершена.");
-        } else if self.failed {
-            ui.label("Установка прервана из-за ошибки выше.");
+            ui.vertical_centered(|ui| {
+                ui.label("Нажмите «Установить», чтобы начать.");
+                ui.add_space(12.0);
+                if ui
+                    .add(egui::Button::new(
+                        egui::RichText::new("Установить").size(16.0),
+                    ))
+                    .clicked()
+                {
+                    self.start_installation();
+                }
+            });
         } else {
-            ui.spinner();
+            let (bar_color, status_text, status_color) = if self.failed {
+                (ERROR_COLOR, "Установка не завершена", ERROR_COLOR)
+            } else if self.finished {
+                (SUCCESS_COLOR, "Установка завершена", SUCCESS_COLOR)
+            } else {
+                (ACCENT, "Устанавливаю...", DIM_TEXT)
+            };
+
+            ui.vertical_centered(|ui| {
+                ui.label(
+                    egui::RichText::new(status_text)
+                        .size(15.0)
+                        .color(status_color),
+                );
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(&self.current_stage)
+                        .color(DIM_TEXT)
+                        .size(13.0),
+                );
+            });
+
+            ui.add_space(10.0);
+            ui.add(
+                egui::ProgressBar::new(self.progress_fraction())
+                    .desired_height(10.0)
+                    .fill(bar_color)
+                    .corner_radius(5.0),
+            );
+            ui.add_space(12.0);
+
+            egui::CollapsingHeader::new("Подробности")
+                .default_open(self.failed)
+                .show(ui, |ui| {
+                    egui::ScrollArea::vertical()
+                        .max_height(120.0)
+                        .show(ui, |ui| {
+                            for line in &self.log {
+                                ui.label(egui::RichText::new(line).size(12.0).color(DIM_TEXT));
+                            }
+                        });
+                });
+
+            if self.finished {
+                ui.add_space(6.0);
+                ui.vertical_centered(|ui| {
+                    ui.label("Запустите ярлык «EvoHime Launcher» на рабочем столе.");
+                });
+            }
         }
 
         ui.ctx()
@@ -201,10 +297,31 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
         }
     }
 
+    // 4b. PostgreSQL не версионируется вместе с остальным релизом (как и
+    //     launcher.zip) — скачивается один раз при установке, а не при
+    //     каждом автообновлении.
+    let pg_dir = install_dir.join("pg16");
+    tokio::fs::create_dir_all(&pg_dir).await?;
+    let pg_zip_path = pg_dir.join("postgres.zip");
+    {
+        let url = format!("https://github.com/{GITHUB_REPO}/releases/latest/download/postgres.zip");
+        let sha_url = format!("{url}.sha256");
+
+        stage("Скачивание PostgreSQL...");
+        download_with_resume(&client, &url, &pg_zip_path).await?;
+
+        let expected_sha = client.get(&sha_url).send().await?.text().await?;
+        let ok = verify_sha256(&pg_zip_path, expected_sha.trim()).await?;
+        if !ok {
+            anyhow::bail!("SHA256 не совпадает для postgres.zip — прерываю установку");
+        }
+    }
+
     // 5. Распаковка компонентов: server.zip — прямо в корень версии (даёт
     //    <version>/server.exe), launcher.zip — вне versions_dir, в
-    //    install_dir/launcher (общий для всех версий), остальные — в свои
-    //    подпапки внутри версии.
+    //    install_dir/launcher (общий для всех версий), postgres.zip — в
+    //    install_dir/pg16 (даёт pg16/bin, pg16/lib, pg16/share), остальные —
+    //    в свои подпапки внутри версии.
     stage("Распаковка компонентов...");
     for (zip_name, dest) in [
         ("server.zip", versions_dir.clone()),
@@ -216,42 +333,67 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
         let zip_path = versions_dir.join(zip_name);
         tokio::task::spawn_blocking(move || extract_zip(&zip_path, &dest)).await??;
     }
+    {
+        let dest = pg_dir.clone();
+        tokio::task::spawn_blocking(move || extract_zip(&pg_zip_path, &dest)).await??;
+    }
 
     // 6. Инициализация PostgreSQL: фикс прав через icacls (раздел III/VI
-    //    плана), генерация пароля, patch pg_hba.conf.
-    stage("Настройка прав доступа к данным PostgreSQL...");
-    let pg_data_dir = install_dir.join("pg16").join("data");
+    //    плана) на пустой data-каталог (initdb требует отсутствия
+    //    наследуемых прав), initdb под текущим Windows-пользователем,
+    //    trust-аутентификация для локальных подключений (нет
+    //    многопользовательской экспозиции, которую нужно защищать —
+    //    см. pg_auth.rs), запуск кластера и создание базы.
+    let pg_bin_dir = pg_dir.join("bin");
+    let pg_data_dir = pg_dir.join("data");
     tokio::fs::create_dir_all(&pg_data_dir).await?;
     restrict_to_current_user(&pg_data_dir).await?;
 
     stage("Генерация пароля базы данных...");
     let db_password = generate_password(24);
     let db_user = std::env::var("USERNAME").unwrap_or_else(|_| "evohime".to_string());
-    let dsn = build_dsn(&db_user, &db_password, "127.0.0.1", 5432, "evohime");
 
-    // Примечание: реальный вызов initdb/pg_ctl/createdb здесь опущен —
-    // требует portable-архива PostgreSQL, который скачивается отдельным
-    // шагом (POSTGRES_ARCHIVE_URL) и живо проверяется только на реальной
-    // машине в Фазе 8. Точка расширения зафиксирована явно, а не спрятана.
+    stage("Инициализация базы данных (initdb)...");
+    postgres::initdb(&pg_bin_dir, &pg_data_dir, &db_user, &db_password).await?;
+
     let pg_hba_path = pg_data_dir.join("pg_hba.conf");
-    if pg_hba_path.exists() {
-        stage("Настройка аутентификации PostgreSQL...");
-        patch_pg_hba_trust_local(&pg_hba_path).await?;
-    }
+    stage("Настройка аутентификации PostgreSQL...");
+    patch_pg_hba_trust_local(&pg_hba_path).await?;
+
+    stage("Запуск PostgreSQL...");
+    postgres::start(&pg_bin_dir, &pg_data_dir, postgres::PG_PORT).await?;
+
+    stage("Создание базы данных...");
+    postgres::create_database_if_missing(&db_user, &db_password, postgres::PG_PORT, DB_NAME)
+        .await?;
+
+    config::save(
+        &install_dir,
+        &DbConfig {
+            user: db_user.clone(),
+            password: db_password.clone(),
+            port: postgres::PG_PORT,
+            db_name: DB_NAME.to_string(),
+        },
+    )
+    .await?;
 
     // 7. Применение миграций программно (раздел III плана, без sqlx-cli).
     stage("Применение миграций базы данных...");
+    let dsn = build_dsn(
+        &db_user,
+        &db_password,
+        "127.0.0.1",
+        postgres::PG_PORT,
+        DB_NAME,
+    );
     let migrations_dir = versions_dir.join("migrations");
     if migrations_dir.exists() {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(2)
             .connect(&dsn)
-            .await;
-        if let Ok(pool) = pool {
-            apply_migrations(&pool, &migrations_dir).await?;
-        } else {
-            stage("PostgreSQL пока не поднят — миграции будут применены при первом запуске Launcher'а.");
-        }
+            .await?;
+        apply_migrations(&pool, &migrations_dir).await?;
     }
 
     // 8. Ярлык на рабочем столе (раздел VI плана).
