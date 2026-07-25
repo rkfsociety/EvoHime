@@ -58,8 +58,10 @@ jobs:
         with:
           config: cliff.toml
           args: --bumped-version
-        env:
-          GITHUB_REPO: ${{ github.repository }}
+        # Без GITHUB_REPO/GITHUB_TOKEN: cliff.toml не использует GitHub-
+        # метаданные (PR/контрибьюторы) в шаблоне, а git-cliff-action при
+        # их наличии всё равно пытается получить их через GitHub API — и
+        # падает с 403 (см. коммит-сообщение). Просто не даём повод.
 
       - name: Decide whether to release and tag
         id: decide
@@ -306,8 +308,8 @@ jobs:
         with:
           config: cliff.toml
           args: --latest --strip header
-        env:
-          GITHUB_REPO: ${{ github.repository }}
+        # Без GITHUB_REPO/GITHUB_TOKEN: см. пояснение у первого вызова
+        # git-cliff-action в job determine-version — та же причина.
 
       - name: Write changelog to file
         run: printf '%s\n' "${{ steps.git-cliff.outputs.content }}" > release/changelog.md
