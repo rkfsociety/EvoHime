@@ -13,9 +13,9 @@
 //! невозможно достоверно прогнать в рамках автоматической сборки этой сессии).
 
 use eframe::egui;
+use evohime_artifacts::{download_with_resume, extract_zip, verify_sha256};
 use evohime_installer::{
-    create_shortcut, download_with_resume, extract_zip, is_installation_dirty, mark_setup_complete,
-    restrict_to_current_user, verify_sha256,
+    create_shortcut, is_installation_dirty, mark_setup_complete, restrict_to_current_user,
 };
 use evohime_launcher::{apply_migrations, build_dsn, generate_password, patch_pg_hba_trust_local};
 use evohime_win_support::{free_bytes_available, SingleInstanceLock};

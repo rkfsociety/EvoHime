@@ -1,15 +1,29 @@
-//! EvoHime Launcher (evohime-launcher.exe) — Фаза 4 плана.
+//! EvoHime Launcher (evohime-launcher.exe) — Фазы 4-5 плана.
 //!
 //! Живёт в системном трее; запускает и мониторит `server.exe`/`worker.py`,
 //! раздаёт React-статику (5173) и REST-статус (3001) на встроенных
 //! axum-серверах, останавливает компоненты через `POST /shutdown` с
-//! токеном сессии (раздел IV/XV плана). Полный механизм обновлений —
-//! Фаза 5; здесь — базовый жизненный цикл: старт, мониторинг, остановка.
+//! токеном сессии (раздел IV/XV плана). Проверяет обновления через
+//! Atom-фид (не REST API — раздел V плана), применяет их только по клику
+//! пользователя "Обновить сейчас", с атомарным переключением версии и
+//! откатом при неудачном health-check.
+//!
+//! ВАЖНО: `GITHUB_REPO` — заполнитель, требует реального значения перед
+//! поставкой (см. также аналогичную оговорку в `crates/installer/src/main.rs`).
 
 use eframe::egui;
+use evohime_launcher::history::{append_and_save, UpdateHistoryEntry, UpdateOutcome};
 use evohime_launcher::status_server::{ComponentStatus, LauncherStatus, StatusServerState};
+use evohime_launcher::update_apply::{
+    download_and_verify_assets, read_current_version, stage_and_switch, write_current_version,
+    UpdatePlan,
+};
+use evohime_launcher::update_check::{
+    is_update_available, latest_version_from_atom, releases_atom_url,
+};
 use evohime_launcher::{
-    build_static_router, build_status_router, generate_session_token, safe_mode, ManagedProcess,
+    build_static_router, build_status_router, fetch_latest_release, generate_session_token,
+    safe_mode, ManagedProcess,
 };
 use evohime_win_support::SingleInstanceLock;
 use std::path::{Path, PathBuf};
@@ -19,9 +33,26 @@ use std::time::Duration;
 const STATIC_SERVER_PORT: u16 = 5173;
 const STATUS_SERVER_PORT: u16 = 3001;
 const HEALTH_CHECK_INTERVAL: Duration = Duration::from_secs(10);
+const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(30 * 60);
+const POST_UPDATE_HEALTH_TIMEOUT: Duration = Duration::from_secs(60);
+const POST_UPDATE_HEALTH_ATTEMPTS: u32 = 5;
+const GITHUB_REPO: &str = "your-org/EvoHime"; // TODO: заполнить перед релизом
+
+#[derive(Default, Clone)]
+struct UpdateState {
+    available: bool,
+    remote_version: Option<String>,
+    in_progress: bool,
+    last_message: String,
+}
+
+enum LauncherCommand {
+    CheckUpdatesNow,
+    ApplyUpdate,
+    Stop,
+}
 
 fn main() -> eframe::Result<()> {
-    // 1. Предотвратить параллельный запуск (раздел IX плана).
     let _instance_lock = match SingleInstanceLock::acquire("EvoHimeLauncherMutex") {
         Ok(lock) => lock,
         Err(err) => {
@@ -30,9 +61,6 @@ fn main() -> eframe::Result<()> {
         }
     };
 
-    // 2. Safe Mode (раздел VII плана): при зажатом Shift пропускаем
-    // проверку обновлений (сама проверка появится в Фазе 5) — здесь флаг
-    // только считывается и логируется.
     let safe_mode = safe_mode::is_shift_held();
     if safe_mode {
         tracing::warn!("Safe Mode: запуск без проверки обновлений");
@@ -40,7 +68,6 @@ fn main() -> eframe::Result<()> {
 
     let session_token = generate_session_token();
     let install_dir = install_dir();
-    let current_dir = current_version_dir(&install_dir);
 
     let runtime = tokio::runtime::Runtime::new().expect("failed to start Tokio runtime");
     let shared_status = Arc::new(Mutex::new(LauncherStatus {
@@ -56,14 +83,23 @@ fn main() -> eframe::Result<()> {
         ],
         update_available: false,
     }));
+    let update_state = Arc::new(Mutex::new(UpdateState::default()));
 
+    let current_dir = current_version_dir(&install_dir);
     spawn_static_server(&runtime, current_dir.join("dist"), session_token.clone());
     spawn_status_server(&runtime, session_token.clone(), shared_status.clone());
-    spawn_process_supervisor(&runtime, current_dir, session_token, shared_status.clone());
 
-    // Трей-иконка создаётся на этом же (главном) потоке — до входа в
-    // eframe::run_native, который на Windows забирает его под свой message
-    // loop (валидировано в src/bin/spike_tray.rs, Фаза 2.5).
+    let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
+    if !safe_mode {
+        runtime.spawn(run_supervisor(
+            install_dir,
+            session_token,
+            shared_status.clone(),
+            update_state.clone(),
+            command_rx,
+        ));
+    }
+
     let tray_menu = build_tray_menu();
     let tray_icon = tray_icon::TrayIconBuilder::new()
         .with_tooltip("EvoHime Launcher")
@@ -73,7 +109,7 @@ fn main() -> eframe::Result<()> {
         .expect("failed to build tray icon");
 
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([360.0, 220.0]),
+        viewport: egui::ViewportBuilder::default().with_inner_size([380.0, 260.0]),
         ..Default::default()
     };
 
@@ -87,67 +123,352 @@ fn main() -> eframe::Result<()> {
                 _tray_icon: tray_icon,
                 tray_ids: tray_menu.ids,
                 status: shared_status,
+                update_state,
+                command_tx,
                 safe_mode,
+                show_confirm_dialog: false,
             }))
         }),
     )
 }
 
-struct TrayMenu {
-    menu: tray_icon::menu::Menu,
-    ids: TrayMenuIds,
-}
+/// Единая супервизор-задача: запускает `server.exe`, периодически
+/// проверяет здоровье, периодически (Atom-фид) проверяет обновления,
+/// обрабатывает команды из окна/трея ("Обновить сейчас", "Stop").
+/// Полный atomic-update цикл (раздел V плана) с откатом при неудачном
+/// health-check выполняется здесь же — управление процессом и логика
+/// обновления должны быть в одном месте, иначе легко рассинхронизировать
+/// "что сейчас реально запущено" при откате.
+async fn run_supervisor(
+    install_dir: PathBuf,
+    token: String,
+    status: Arc<Mutex<LauncherStatus>>,
+    update_state: Arc<Mutex<UpdateState>>,
+    mut commands: tokio::sync::mpsc::UnboundedReceiver<LauncherCommand>,
+) {
+    let client = reqwest::Client::new();
+    let mut current_version = read_current_version(&install_dir);
+    let mut server_process = start_server_process(&install_dir, &current_version, &token).await;
 
-struct TrayMenuIds {
-    open_dashboard: tray_icon::menu::MenuId,
-    exit: tray_icon::menu::MenuId,
-}
+    let mut health_tick = tokio::time::interval(HEALTH_CHECK_INTERVAL);
+    let mut update_tick = tokio::time::interval(UPDATE_CHECK_INTERVAL);
 
-fn build_tray_menu() -> TrayMenu {
-    let menu = tray_icon::menu::Menu::new();
-
-    let open_dashboard = tray_icon::menu::MenuItem::new("Open Dashboard", true, None);
-    let check_updates = tray_icon::menu::MenuItem::new("Check Updates", true, None);
-    let stop = tray_icon::menu::MenuItem::new("Stop", true, None);
-    let settings = tray_icon::menu::MenuItem::new("Settings", true, None);
-    let exit = tray_icon::menu::MenuItem::new("Exit", true, None);
-
-    let ids = TrayMenuIds {
-        open_dashboard: open_dashboard.id().clone(),
-        exit: exit.id().clone(),
-    };
-
-    // Check Updates/Stop/Settings полноценно заработают в Фазе 5/7 —
-    // здесь они присутствуют в меню (раздел VII плана), но пока без
-    // обработчиков.
-    menu.append_items(&[
-        &open_dashboard,
-        &check_updates,
-        &stop,
-        &settings,
-        &tray_icon::menu::PredefinedMenuItem::separator(),
-        &exit,
-    ])
-    .expect("failed to append tray menu items");
-
-    TrayMenu { menu, ids }
-}
-
-/// Простая цветная иконка 16x16 в памяти: зелёная — всё работает, красная —
-/// проблема. Полноценный ассет (не сплошной цвет) — предмет полировки UX,
-/// не блокирует функциональность.
-fn status_icon(healthy: bool) -> tray_icon::Icon {
-    let size = 16u32;
-    let color = if healthy {
-        [0, 200, 0, 255]
-    } else {
-        [200, 0, 0, 255]
-    };
-    let mut rgba = Vec::with_capacity((size * size * 4) as usize);
-    for _ in 0..(size * size) {
-        rgba.extend_from_slice(&color);
+    loop {
+        tokio::select! {
+            _ = health_tick.tick() => {
+                let online = server_process
+                    .as_ref()
+                    .map(|p| p.health_check(&client, Duration::from_secs(3)))
+                    .into_iter()
+                    .next();
+                let online = if let Some(fut) = online { fut.await } else { false };
+                update_component_status(&status, "server", online);
+            }
+            _ = update_tick.tick() => {
+                check_for_updates(&client, &current_version, &update_state, &status).await;
+            }
+            cmd = commands.recv() => {
+                match cmd {
+                    Some(LauncherCommand::CheckUpdatesNow) => {
+                        check_for_updates(&client, &current_version, &update_state, &status).await;
+                    }
+                    Some(LauncherCommand::Stop) => {
+                        if let Some(process) = &mut server_process {
+                            process.graceful_shutdown(&client, &token, Duration::from_secs(10)).await;
+                        }
+                        update_component_status(&status, "server", false);
+                    }
+                    Some(LauncherCommand::ApplyUpdate) => {
+                        run_update_cycle(
+                            &install_dir,
+                            &token,
+                            &client,
+                            &mut current_version,
+                            &mut server_process,
+                            &update_state,
+                            &status,
+                        )
+                        .await;
+                    }
+                    None => break,
+                }
+            }
+        }
     }
-    tray_icon::Icon::from_rgba(rgba, size, size).expect("failed to build in-memory tray icon")
+}
+
+async fn start_server_process(
+    install_dir: &Path,
+    version: &Option<String>,
+    token: &str,
+) -> Option<ManagedProcess> {
+    let version = version.clone().unwrap_or_else(|| "current".to_string());
+    let dir = install_dir.join("versions").join(version);
+    let server_exe = dir.join("server.exe");
+    if !server_exe.exists() {
+        tracing::warn!(path = %server_exe.display(), "server.exe not found — nothing to supervise yet");
+        return None;
+    }
+
+    let mut process = ManagedProcess::new(
+        "server",
+        server_exe,
+        vec![],
+        "http://127.0.0.1:3000/health",
+        Some("http://127.0.0.1:3000/shutdown".to_string()),
+    );
+    if let Err(err) = process
+        .start(&[("EVOHIME_LOCAL_TOKEN".to_string(), token.to_string())])
+        .await
+    {
+        tracing::error!(%err, "failed to start server.exe");
+        return None;
+    }
+    Some(process)
+}
+
+fn update_component_status(status: &Arc<Mutex<LauncherStatus>>, name: &str, online: bool) {
+    if let Ok(mut guard) = status.lock() {
+        if let Some(component) = guard.components.iter_mut().find(|c| c.name == name) {
+            component.online = online;
+        }
+    }
+}
+
+async fn check_for_updates(
+    client: &reqwest::Client,
+    current_version: &Option<String>,
+    update_state: &Arc<Mutex<UpdateState>>,
+    status: &Arc<Mutex<LauncherStatus>>,
+) {
+    let feed_url = releases_atom_url(GITHUB_REPO);
+    let Ok(response) = client.get(&feed_url).send().await else {
+        tracing::warn!("failed to reach releases.atom — skipping this check");
+        return;
+    };
+    let Ok(body) = response.text().await else {
+        return;
+    };
+    let Ok(remote_version) = latest_version_from_atom(&body) else {
+        return;
+    };
+
+    let local = current_version.clone().unwrap_or_default();
+    let available = is_update_available(&local, &remote_version);
+
+    if let Ok(mut state) = update_state.lock() {
+        state.available = available;
+        state.remote_version = Some(remote_version);
+    }
+    if let Ok(mut guard) = status.lock() {
+        guard.update_available = available;
+    }
+}
+
+/// Полный atomic-update цикл (раздел V плана): REST API (только здесь) →
+/// скачивание+SHA256 → распаковка во `_tmp` → миграции → атомарный rename
+/// → graceful shutdown старого процесса → запуск нового → health-check с
+/// адаптивным таймаутом → откат на предыдущую версию при неудаче.
+#[allow(clippy::too_many_arguments)]
+async fn run_update_cycle(
+    install_dir: &Path,
+    token: &str,
+    client: &reqwest::Client,
+    current_version: &mut Option<String>,
+    server_process: &mut Option<ManagedProcess>,
+    update_state: &Arc<Mutex<UpdateState>>,
+    status: &Arc<Mutex<LauncherStatus>>,
+) {
+    set_in_progress(update_state, true, "Получение списка ассетов релиза...");
+
+    let saved_version = current_version.clone();
+
+    let (new_version, assets) = match fetch_latest_release(client, GITHUB_REPO).await {
+        Ok(result) => result,
+        Err(err) => {
+            finish_update(
+                update_state,
+                status,
+                false,
+                format!("Не удалось получить релиз: {err}"),
+            );
+            return;
+        }
+    };
+
+    let plan = UpdatePlan {
+        install_dir: install_dir.to_path_buf(),
+        new_version: new_version.clone(),
+        assets,
+        dsn: None, // TODO Фаза 5 продолжение: подставлять реальный DSN из config.json
+    };
+    let download_dir = install_dir.join("launcher-data").join("download_tmp");
+    let progress = |msg: &str| set_in_progress(update_state, true, msg);
+
+    if let Err(err) = download_and_verify_assets(&plan, client, &download_dir, &progress).await {
+        rollback_and_record(
+            update_state,
+            status,
+            install_dir,
+            saved_version.as_deref(),
+            &format!("Обновление отменено: {err}"),
+        )
+        .await;
+        return;
+    }
+
+    let final_dir = match stage_and_switch(&plan, &download_dir, &progress).await {
+        Ok(dir) => dir,
+        Err(err) => {
+            rollback_and_record(
+                update_state,
+                status,
+                install_dir,
+                saved_version.as_deref(),
+                &format!("Обновление отменено: {err}"),
+            )
+            .await;
+            return;
+        }
+    };
+
+    if let Err(err) = write_current_version(install_dir, &new_version).await {
+        rollback_and_record(
+            update_state,
+            status,
+            install_dir,
+            saved_version.as_deref(),
+            &format!("Не удалось переключить версию: {err}"),
+        )
+        .await;
+        return;
+    }
+
+    progress("Остановка предыдущей версии...");
+    if let Some(process) = server_process.take() {
+        let mut process = process;
+        process
+            .graceful_shutdown(client, token, Duration::from_secs(10))
+            .await;
+    }
+
+    progress("Запуск новой версии...");
+    let new_server_exe = final_dir.join("server.exe");
+    let mut new_process = ManagedProcess::new(
+        "server",
+        new_server_exe,
+        vec![],
+        "http://127.0.0.1:3000/health",
+        Some("http://127.0.0.1:3000/shutdown".to_string()),
+    );
+    let start_ok = new_process
+        .start(&[("EVOHIME_LOCAL_TOKEN".to_string(), token.to_string())])
+        .await
+        .is_ok();
+
+    let healthy = start_ok
+        && wait_for_health(
+            &new_process,
+            client,
+            POST_UPDATE_HEALTH_TIMEOUT,
+            POST_UPDATE_HEALTH_ATTEMPTS,
+        )
+        .await;
+
+    if !healthy {
+        new_process
+            .graceful_shutdown(client, token, Duration::from_secs(5))
+            .await;
+        rollback_and_record(
+            update_state,
+            status,
+            install_dir,
+            saved_version.as_deref(),
+            "Health-check после обновления не прошёл",
+        )
+        .await;
+        *server_process = start_server_process(install_dir, &saved_version, token).await;
+        update_component_status(status, "server", server_process.is_some());
+        return;
+    }
+
+    *server_process = Some(new_process);
+    *current_version = Some(new_version.clone());
+    update_component_status(status, "server", true);
+
+    let entry = UpdateHistoryEntry {
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        from_version: saved_version.clone().unwrap_or_default(),
+        to_version: new_version,
+        outcome: UpdateOutcome::Success,
+        message: String::new(),
+    };
+    let history_path = install_dir.join("launcher-data").join("history.json");
+    let _ = append_and_save(&history_path, entry).await;
+
+    finish_update(update_state, status, true, "Готово!".to_string());
+}
+
+async fn wait_for_health(
+    process: &ManagedProcess,
+    client: &reqwest::Client,
+    total_timeout: Duration,
+    attempts: u32,
+) -> bool {
+    let per_attempt = total_timeout / attempts.max(1);
+    for _ in 0..attempts {
+        if process.health_check(client, per_attempt).await {
+            return true;
+        }
+        tokio::time::sleep(per_attempt).await;
+    }
+    false
+}
+
+async fn rollback_and_record(
+    update_state: &Arc<Mutex<UpdateState>>,
+    status: &Arc<Mutex<LauncherStatus>>,
+    install_dir: &Path,
+    saved_version: Option<&str>,
+    message: &str,
+) {
+    if let Some(version) = saved_version {
+        let _ = write_current_version(install_dir, version).await;
+    }
+    let entry = UpdateHistoryEntry {
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        from_version: saved_version.unwrap_or_default().to_string(),
+        to_version: saved_version.unwrap_or_default().to_string(),
+        outcome: UpdateOutcome::RolledBack,
+        message: message.to_string(),
+    };
+    let history_path = install_dir.join("launcher-data").join("history.json");
+    let _ = append_and_save(&history_path, entry).await;
+
+    finish_update(update_state, status, false, message.to_string());
+}
+
+fn set_in_progress(update_state: &Arc<Mutex<UpdateState>>, in_progress: bool, message: &str) {
+    if let Ok(mut state) = update_state.lock() {
+        state.in_progress = in_progress;
+        state.last_message = message.to_string();
+    }
+}
+
+fn finish_update(
+    update_state: &Arc<Mutex<UpdateState>>,
+    status: &Arc<Mutex<LauncherStatus>>,
+    success: bool,
+    message: String,
+) {
+    if let Ok(mut state) = update_state.lock() {
+        state.in_progress = false;
+        state.available = !success; // при неудаче обновление всё ещё "доступно"
+        state.last_message = message;
+    }
+    if let Ok(mut guard) = status.lock() {
+        guard.update_available = !success;
+    }
 }
 
 fn install_dir() -> PathBuf {
@@ -155,17 +476,8 @@ fn install_dir() -> PathBuf {
     PathBuf::from(local_app_data).join("EvoHime")
 }
 
-/// Читает `current.txt`, чтобы определить активную версию. Если файл
-/// отсутствует/битый — используем подпапку `versions/current` как есть
-/// (раздел VII плана: полноценный fallback "искать последнюю по mtime"
-/// реализуется в Фазе 5 вместе с остальным механизмом обновлений).
 fn current_version_dir(install_dir: &Path) -> PathBuf {
-    let current_txt = install_dir.join("current.txt");
-    let version = std::fs::read_to_string(&current_txt)
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "current".to_string());
+    let version = read_current_version(install_dir).unwrap_or_else(|| "current".to_string());
     install_dir.join("versions").join(version)
 }
 
@@ -209,53 +521,61 @@ fn spawn_status_server(
     });
 }
 
-/// Запускает `server.exe`/`worker.py` (если найдены в текущей версии) и
-/// периодически проверяет их здоровье, обновляя `shared_status` для
-/// REST-эндпоинта. Полный перезапуск при падении и graceful shutdown при
-/// выходе — упрощённая версия; полное соответствие разделу VII (учёт
-/// "свой/чужой процесс" на занятых портах, restart backoff) — по мере
-/// развития Фазы 5.
-fn spawn_process_supervisor(
-    runtime: &tokio::runtime::Runtime,
-    current_dir: PathBuf,
-    token: String,
-    status: Arc<Mutex<LauncherStatus>>,
-) {
-    runtime.spawn(async move {
-        let client = reqwest::Client::new();
-        let server_exe = current_dir.join("server.exe");
+struct TrayMenu {
+    menu: tray_icon::menu::Menu,
+    ids: TrayMenuIds,
+}
 
-        let mut server_process = ManagedProcess::new(
-            "server",
-            server_exe.clone(),
-            vec![],
-            "http://127.0.0.1:3000/health",
-            Some("http://127.0.0.1:3000/shutdown".to_string()),
-        );
+struct TrayMenuIds {
+    open_dashboard: tray_icon::menu::MenuId,
+    check_updates: tray_icon::menu::MenuId,
+    stop: tray_icon::menu::MenuId,
+    exit: tray_icon::menu::MenuId,
+}
 
-        if server_exe.exists() {
-            if let Err(err) = server_process
-                .start(&[("EVOHIME_LOCAL_TOKEN".to_string(), token.clone())])
-                .await
-            {
-                tracing::error!(%err, "failed to start server.exe");
-            }
-        } else {
-            tracing::warn!(path = %server_exe.display(), "server.exe not found — nothing to supervise yet");
-        }
+fn build_tray_menu() -> TrayMenu {
+    let menu = tray_icon::menu::Menu::new();
 
-        loop {
-            tokio::time::sleep(HEALTH_CHECK_INTERVAL).await;
-            let server_online = server_exe.exists()
-                && server_process.health_check(&client, Duration::from_secs(3)).await;
+    let open_dashboard = tray_icon::menu::MenuItem::new("Open Dashboard", true, None);
+    let check_updates = tray_icon::menu::MenuItem::new("Check Updates", true, None);
+    let stop = tray_icon::menu::MenuItem::new("Stop", true, None);
+    let settings = tray_icon::menu::MenuItem::new("Settings", true, None);
+    let exit = tray_icon::menu::MenuItem::new("Exit", true, None);
 
-            if let Ok(mut guard) = status.lock() {
-                if let Some(component) = guard.components.iter_mut().find(|c| c.name == "server") {
-                    component.online = server_online;
-                }
-            }
-        }
-    });
+    let ids = TrayMenuIds {
+        open_dashboard: open_dashboard.id().clone(),
+        check_updates: check_updates.id().clone(),
+        stop: stop.id().clone(),
+        exit: exit.id().clone(),
+    };
+
+    // Settings полноценно заработает в Фазе 7 (веб-панель/окно настроек) —
+    // здесь присутствует в меню (раздел VII плана), но пока без обработчика.
+    menu.append_items(&[
+        &open_dashboard,
+        &check_updates,
+        &stop,
+        &settings,
+        &tray_icon::menu::PredefinedMenuItem::separator(),
+        &exit,
+    ])
+    .expect("failed to append tray menu items");
+
+    TrayMenu { menu, ids }
+}
+
+fn status_icon(healthy: bool) -> tray_icon::Icon {
+    let size = 16u32;
+    let color = if healthy {
+        [0, 200, 0, 255]
+    } else {
+        [200, 0, 0, 255]
+    };
+    let mut rgba = Vec::with_capacity((size * size * 4) as usize);
+    for _ in 0..(size * size) {
+        rgba.extend_from_slice(&color);
+    }
+    tray_icon::Icon::from_rgba(rgba, size, size).expect("failed to build in-memory tray icon")
 }
 
 struct LauncherApp {
@@ -264,18 +584,23 @@ struct LauncherApp {
     _tray_icon: tray_icon::TrayIcon,
     tray_ids: TrayMenuIds,
     status: Arc<Mutex<LauncherStatus>>,
+    update_state: Arc<Mutex<UpdateState>>,
+    command_tx: tokio::sync::mpsc::UnboundedSender<LauncherCommand>,
     safe_mode: bool,
+    show_confirm_dialog: bool,
 }
 
 impl eframe::App for LauncherApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        // Клик по иконке в трее (открыть окно) — сейчас окно и так видно;
-        // полноценное сворачивание в трей без закрытия окна — Фаза 5/7.
         while tray_icon::TrayIconEvent::receiver().try_recv().is_ok() {}
 
         while let Ok(event) = tray_icon::menu::MenuEvent::receiver().try_recv() {
             if event.id == self.tray_ids.open_dashboard {
                 let _ = webbrowser_open("http://localhost:5173");
+            } else if event.id == self.tray_ids.check_updates {
+                let _ = self.command_tx.send(LauncherCommand::CheckUpdatesNow);
+            } else if event.id == self.tray_ids.stop {
+                let _ = self.command_tx.send(LauncherCommand::Stop);
             } else if event.id == self.tray_ids.exit {
                 std::process::exit(0);
             }
@@ -304,6 +629,61 @@ impl eframe::App for LauncherApp {
             .clicked()
         {
             let _ = webbrowser_open("http://localhost:5173");
+        }
+        if ui.button("Проверить обновления").clicked() {
+            let _ = self.command_tx.send(LauncherCommand::CheckUpdatesNow);
+        }
+
+        let (available, in_progress, remote_version, message) = self
+            .update_state
+            .lock()
+            .map(|s| {
+                (
+                    s.available,
+                    s.in_progress,
+                    s.remote_version.clone(),
+                    s.last_message.clone(),
+                )
+            })
+            .unwrap_or((false, false, None, String::new()));
+
+        if in_progress {
+            ui.separator();
+            ui.spinner();
+            ui.label(&message);
+        } else if available {
+            ui.separator();
+            ui.colored_label(
+                egui::Color32::YELLOW,
+                format!(
+                    "🔴 Доступно обновление: {}",
+                    remote_version.unwrap_or_default()
+                ),
+            );
+            if ui.button("Обновить сейчас").clicked() {
+                self.show_confirm_dialog = true;
+            }
+        } else if !message.is_empty() {
+            ui.separator();
+            ui.label(&message);
+        }
+
+        if self.show_confirm_dialog {
+            egui::Window::new("Подтвердите обновление")
+                .collapsible(false)
+                .resizable(false)
+                .show(ui.ctx(), |ui| {
+                    ui.label("Приложение будет перезапущено. Текущие сессии прервутся.");
+                    ui.horizontal(|ui| {
+                        if ui.button("Обновить сейчас").clicked() {
+                            let _ = self.command_tx.send(LauncherCommand::ApplyUpdate);
+                            self.show_confirm_dialog = false;
+                        }
+                        if ui.button("Отмена").clicked() {
+                            self.show_confirm_dialog = false;
+                        }
+                    });
+                });
         }
 
         ui.ctx().request_repaint_after(Duration::from_millis(500));

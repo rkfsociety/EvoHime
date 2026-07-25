@@ -14,5 +14,6 @@ members = [
   "crates/launcher",
   "crates/win-support",
   "crates/installer",
+  "crates/artifacts",
 ]
 resolver = "2"

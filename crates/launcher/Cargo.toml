@@ -11,8 +11,10 @@ path = "src/lib.rs"
 anyhow = "1"
 axum = { version = "0.7", features = ["json"] }
 chrono = { version = "0.4", features = ["serde"] }
+evohime-artifacts = { path = "../artifacts" }
 evohime-win-support = { path = "../win-support" }
 rand = "0.8"
+quick-xml = "0.41"
 reqwest = { version = "0.12", default-features = false, features = [
   "json",
   "rustls-tls",
@@ -52,4 +54,6 @@ tray-icon = "0.24"
 windows = { version = "0.62", features = ["Win32_UI_Input_KeyboardAndMouse"] }
 
 [dev-dependencies]
+sha2 = "0.10"
 tempfile = "3"
+zip = { version = "2", default-features = false, features = ["deflate"] }

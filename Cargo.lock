@@ -1491,6 +1491,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "evohime-artifacts"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "futures-util",
+ "reqwest",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tower-http",
+ "zip",
+]
+
+[[package]]
 name = "evohime-evals"
 version = "0.1.0"
 dependencies = [
@@ -1512,20 +1527,16 @@ name = "evohime-installer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "axum",
  "eframe",
+ "evohime-artifacts",
  "evohime-launcher",
  "evohime-win-support",
- "futures-util",
  "reqwest",
- "sha2",
  "sqlx",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
- "tower-http",
  "tracing",
- "zip",
 ]
 
 [[package]]
@@ -1536,11 +1547,14 @@ dependencies = [
  "axum",
  "chrono",
  "eframe",
+ "evohime-artifacts",
  "evohime-win-support",
+ "quick-xml",
  "rand 0.8.7",
  "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "sqlx",
  "tempfile",
  "thiserror 2.0.18",
@@ -1550,6 +1564,7 @@ dependencies = [
  "tray-icon",
  "uuid",
  "windows",
+ "zip",
 ]
 
 [[package]]

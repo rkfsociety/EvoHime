@@ -13,18 +13,15 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"
+evohime-artifacts = { path = "../artifacts" }
 evohime-launcher = { path = "../launcher" }
 evohime-win-support = { path = "../win-support" }
-futures-util = "0.3"
 reqwest = { version = "0.12", default-features = false, features = [
   "json",
   "rustls-tls",
-  "stream",
 ] }
-sha2 = "0.10"
 sqlx = { version = "0.8", features = ["postgres", "runtime-tokio-rustls"] }
 thiserror = "2"
-zip = { version = "2", default-features = false, features = ["deflate"] }
 tokio = { version = "1", features = [
   "fs",
   "process",
@@ -43,6 +40,4 @@ eframe = { version = "0.35", default-features = false, features = [
 ] }
 
 [dev-dependencies]
-axum = "0.7"
 tempfile = "3"
-tower-http = { version = "0.6", features = ["fs"] }
