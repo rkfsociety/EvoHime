@@ -6,11 +6,12 @@
 
 use crate::token::tokens_equal;
 use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::routing::get;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tower_http::cors::CorsLayer;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ComponentStatus {
@@ -34,10 +35,21 @@ pub struct StatusServerState {
     pub status_provider: StatusProvider,
 }
 
+/// React-панель раздаётся static file server'ом Launcher'а на порту 5173
+/// (раздел II плана), а этот статус-эндпоинт слушает 3001 — с точки
+/// зрения браузера это разные origin, поэтому без явного CORS-заголовка
+/// запрос был бы молча заблокирован, даже с правильным токеном в
+/// `Authorization`. Разрешаем только этот конкретный origin, а не `*`.
 pub fn build_status_router(state: StatusServerState) -> Router {
+    let cors = CorsLayer::new()
+        .allow_origin("http://localhost:5173".parse::<HeaderValue>().unwrap())
+        .allow_methods([Method::GET])
+        .allow_headers([axum::http::header::AUTHORIZATION]);
+
     Router::new()
         .route("/status", get(get_status))
         .with_state(state)
+        .layer(cors)
 }
 
 async fn get_status(
@@ -124,5 +136,54 @@ mod tests {
         assert_eq!(body.components[0].name, "server");
         assert!(body.components[0].online);
         assert!(!body.update_available);
+    }
+
+    #[tokio::test]
+    async fn allows_cors_for_the_launcher_static_server_origin() {
+        let base_url = spawn_router(fixed_status_router("secret")).await;
+        let client = reqwest::Client::new();
+        let response = client
+            .get(format!("{base_url}/status"))
+            .bearer_auth("secret")
+            .header(axum::http::header::ORIGIN, "http://localhost:5173")
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get("access-control-allow-origin")
+                .and_then(|v| v.to_str().ok()),
+            Some("http://localhost:5173"),
+            "browser would silently block the response without this header"
+        );
+    }
+
+    #[tokio::test]
+    async fn does_not_reflect_arbitrary_origins() {
+        let base_url = spawn_router(fixed_status_router("secret")).await;
+        let client = reqwest::Client::new();
+        let response = client
+            .get(format!("{base_url}/status"))
+            .bearer_auth("secret")
+            .header(axum::http::header::ORIGIN, "http://evil.example.com")
+            .send()
+            .await
+            .unwrap();
+
+        // The request itself still succeeds server-side (CORS is enforced
+        // by the browser, not the server), but the response must NOT carry
+        // an Allow-Origin header matching the attacker's origin — that is
+        // what actually stops the browser from exposing the body to
+        // attacker-controlled JavaScript.
+        assert_ne!(
+            response
+                .headers()
+                .get("access-control-allow-origin")
+                .and_then(|v| v.to_str().ok()),
+            Some("http://evil.example.com")
+        );
     }
 }

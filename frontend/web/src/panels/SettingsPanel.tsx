@@ -17,6 +17,7 @@ import { LocalAuthSettingsSection } from "./LocalAuthSettingsSection";
 import { MetricsSettingsSection } from "./MetricsSettingsSection";
 import { WorkerSettingsSection } from "./WorkerSettingsSection";
 import { SpendSettingsSection } from "./SpendSettingsSection";
+import { LauncherStatusSection } from "./LauncherStatus";
 
 type SettingsPanelProps = {
   settingsTab: SettingsTab;
@@ -60,6 +61,7 @@ const SETTINGS_TABS: Array<[SettingsTab, string, string]> = [
   ["worker", "Worker", "Статус и jobs"],
   ["metrics", "Metrics", "Pipeline snapshot"],
   ["spend", "Spend", "Лимиты и отслеживание"],
+  ["launcher", "Launcher", "Статус и обновления"],
   ["archive", "Архив", "Скрытые чаты"],
 ];
 
@@ -440,6 +442,8 @@ export function SettingsPanel({
         {settingsTab === "metrics" ? <MetricsSettingsSection /> : null}
 
         {settingsTab === "spend" ? <SpendSettingsSection /> : null}
+
+        {settingsTab === "launcher" ? <LauncherStatusSection /> : null}
 
         {settingsTab === "archive" ? (
           <section className="settingsSection">

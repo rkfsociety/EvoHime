@@ -178,6 +178,7 @@ export type SettingsTab =
   | "worker"
   | "metrics"
   | "spend"
+  | "launcher"
   | "archive";
 
 export type GitSnapshot = {

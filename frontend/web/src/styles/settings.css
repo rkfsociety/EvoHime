@@ -900,6 +900,52 @@
   font-size: 14px;
 }
 
+.launcherComponentList {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.launcherComponentRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 13px;
+}
+
+.launcherStatusDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.launcherStatusDot.online {
+  background: #7dffc4;
+  box-shadow: 0 0 6px rgba(125, 255, 196, 0.6);
+}
+
+.launcherStatusDot.offline {
+  background: #ff9aa8;
+  box-shadow: 0 0 6px rgba(255, 154, 168, 0.6);
+}
+
+.launcherUpdateBanner {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border: 1px solid rgba(255, 214, 125, 0.35);
+  border-radius: 12px;
+  background: rgba(255, 214, 125, 0.08);
+  color: #ffd67d;
+  font-size: 13px;
+}
+
 .spendChartPlaceholder {
   padding: 24px;
   border: 1px dashed rgba(255, 255, 255, 0.12);
