@@ -4,15 +4,21 @@ name: Build Release
 # нужен ли новый релиз (git-cliff считает следующую версию по Conventional
 # Commits с последнего тега — если только chore:/docs: и т.п., бампа нет и
 # ничего не публикуется), создаёт и пушит тег, затем собирает
-# самодостаточные артефакты (server.exe, launcher.exe, updater.exe,
+# самодостаточные артефакты (evohime-setup.exe, server.zip, launcher.zip,
 # dist.zip, migrations.zip, worker.zip) и публикует GitHub Release с
-# автосгенерированным описанием изменений. Launcher скачивает эти
-# артефакты напрямую — без Git, без sqlx-cli, без Node.js/Python на
-# машине пользователя.
+# автосгенерированным описанием изменений. Единственный exe-файл в релизе —
+# evohime-setup.exe (устанавливает всё остальное сам); server.exe/launcher.exe/
+# updater.exe упакованы в zip, чтобы на странице релиза не было нескольких exe
+# на выбор. Launcher скачивает эти артефакты напрямую — без Git, без
+# sqlx-cli, без Node.js/Python на машине пользователя.
 #
 # Ручной пуш тега `v*` по-прежнему работает как раньше (например, чтобы
 # переопределить автоматически посчитанную версию) — job determine-version
 # в этом случае просто использует тег как есть, ничего не пересчитывая.
+#
+# Публикуется всегда только один релиз: перед созданием нового publish-release
+# удаляет все существующие GitHub Releases (но не git-теги — они нужны
+# git-cliff для расчёта следующей версии).
 
 on:
   push:
@@ -111,7 +117,7 @@ jobs:
           git push origin "${{ steps.decide.outputs.version }}"
 
   build-server:
-    name: Build server.exe (Windows)
+    name: Build server.zip (Windows)
     needs: determine-version
     if: needs.determine-version.outputs.should_release == 'true'
     runs-on: windows-latest
@@ -125,20 +131,24 @@ jobs:
       - name: Build evohime-server (release)
         run: cargo build -p evohime-server --release
 
-      - name: Stage server artifact
-        shell: bash
+      # Упаковано в zip (не голый .exe), чтобы на странице релиза был
+      # только один exe-файл — evohime-setup.exe.
+      - name: Stage and zip server artifact
+        shell: pwsh
         run: |
-          mkdir -p artifact
-          cp target/release/evohime-server.exe artifact/server.exe
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Copy-Item target/release/evohime-server.exe artifact/server.exe
+          Compress-Archive -Path artifact/server.exe -DestinationPath artifact/server.zip -Force
+          Remove-Item artifact/server.exe
 
       - uses: actions/upload-artifact@v4
         with:
-          name: server-exe
-          path: artifact/server.exe
+          name: server-zip
+          path: artifact/server.zip
           retention-days: 1
 
   build-launcher:
-    name: Build launcher.exe + updater.exe (Windows)
+    name: Build launcher.zip (Windows)
     needs: determine-version
     if: needs.determine-version.outputs.should_release == 'true'
     runs-on: windows-latest
@@ -162,19 +172,49 @@ jobs:
           RUSTFLAGS: "-C target-feature=+crt-static"
         run: cargo build -p evohime-updater --bin updater --release --target x86_64-pc-windows-msvc
 
-      - name: Stage launcher artifacts
-        shell: bash
+      # Оба exe упакованы в один launcher.zip (не голые .exe), чтобы на
+      # странице релиза был только один exe-файл — evohime-setup.exe.
+      # Имена внутри архива — evohime-launcher.exe/updater.exe, как их
+      # ожидает Installer при распаковке в install_dir/launcher.
+      - name: Stage and zip launcher artifacts
+        shell: pwsh
         run: |
-          mkdir -p artifact
-          cp target/release/evohime-launcher.exe artifact/launcher.exe
-          cp target/x86_64-pc-windows-msvc/release/updater.exe artifact/updater.exe
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Copy-Item target/release/evohime-launcher.exe artifact/evohime-launcher.exe
+          Copy-Item target/x86_64-pc-windows-msvc/release/updater.exe artifact/updater.exe
+          Compress-Archive -Path artifact/evohime-launcher.exe,artifact/updater.exe -DestinationPath artifact/launcher.zip -Force
+          Remove-Item artifact/evohime-launcher.exe, artifact/updater.exe
 
       - uses: actions/upload-artifact@v4
         with:
-          name: launcher-exe
-          path: |
-            artifact/launcher.exe
-            artifact/updater.exe
+          name: launcher-zip
+          path: artifact/launcher.zip
+          retention-days: 1
+
+  build-installer:
+    name: Build evohime-setup.exe (Windows)
+    needs: determine-version
+    if: needs.determine-version.outputs.should_release == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.determine-version.outputs.version }}
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build evohime-setup (release)
+        run: cargo build -p evohime-installer --bin evohime-setup --release
+
+      - name: Stage installer artifact
+        shell: bash
+        run: |
+          mkdir -p artifact
+          cp target/release/evohime-setup.exe artifact/evohime-setup.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-exe
+          path: artifact/evohime-setup.exe
           retention-days: 1
 
   build-frontend:
@@ -272,6 +312,7 @@ jobs:
         determine-version,
         build-server,
         build-launcher,
+        build-installer,
         build-frontend,
         package-migrations,
         package-worker,
@@ -291,9 +332,9 @@ jobs:
       - name: Assemble release artifacts
         run: |
           mkdir -p release
-          cp downloaded/server-exe/server.exe release/
-          cp downloaded/launcher-exe/launcher.exe release/
-          cp downloaded/launcher-exe/updater.exe release/
+          cp downloaded/server-zip/server.zip release/
+          cp downloaded/launcher-zip/launcher.zip release/
+          cp downloaded/installer-exe/evohime-setup.exe release/
           cp downloaded/dist-zip/dist.zip release/
           cp downloaded/migrations-zip/migrations.zip release/
           cp downloaded/worker-zip/worker.zip release/
@@ -317,14 +358,29 @@ jobs:
       - name: Compute SHA256 checksums
         run: |
           cd release
-          for f in server.exe launcher.exe updater.exe dist.zip migrations.zip worker.zip; do
+          for f in server.zip launcher.zip evohime-setup.exe dist.zip migrations.zip worker.zip; do
             sha256sum "$f" | cut -d' ' -f1 > "$f.sha256"
           done
 
-      # TODO (Фаза 3, продолжение): добавить отдельный job, который собирает
-      # evohime-setup.exe и evohime-offline-setup.exe (~300 МБ, с потоковой
-      # упаковкой PostgreSQL/Python/релиза внутрь) и прикладывает их к этому
-      # же релизу.
+      # TODO (Фаза 3, продолжение): evohime-offline-setup.exe (~300 МБ, с
+      # потоковой упаковкой PostgreSQL/Python внутрь для полностью офлайновой
+      # установки) — отдельная задача, требует реализации initdb/pg_ctl в
+      # crates/installer (см. комментарий в src/main.rs) и тестирования на
+      # чистых VM.
+
+      # Держим на странице релизов только самый свежий релиз — старые
+      # удаляются (только сам Release, git-теги остаются нетронутыми: они
+      # нужны git-cliff, чтобы верно посчитать следующую версию).
+      - name: Delete old releases (keep only the new one)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for tag in $(gh release list --limit 100 --json tagName --jq '.[].tagName'); do
+            if [ "$tag" != "${{ needs.determine-version.outputs.version }}" ]; then
+              echo "deleting old release $tag"
+              gh release delete "$tag" --yes
+            fi
+          done
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -333,12 +389,12 @@ jobs:
           name: ${{ needs.determine-version.outputs.version }}
           body_path: release/changelog.md
           files: |
-            release/server.exe
-            release/server.exe.sha256
-            release/launcher.exe
-            release/launcher.exe.sha256
-            release/updater.exe
-            release/updater.exe.sha256
+            release/evohime-setup.exe
+            release/evohime-setup.exe.sha256
+            release/server.zip
+            release/server.zip.sha256
+            release/launcher.zip
+            release/launcher.zip.sha256
             release/dist.zip
             release/dist.zip.sha256
             release/migrations.zip

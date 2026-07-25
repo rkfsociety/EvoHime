@@ -5,12 +5,12 @@
 //! прогресс приходит в UI-поток через mpsc-канал, чтобы не блокировать
 //! отрисовку окна во время сетевых операций/распаковки.
 //!
-//! ВАЖНО: константы `POSTGRES_ARCHIVE_URL`/`PYTHON_STANDALONE_URL` и адрес
-//! GitHub-репозитория ниже — заполнители. Перед реальной поставкой их нужно
-//! сверить/закрепить на актуальные версии (раздел X плана: "Фаза 8 —
-//! тестирование на чистых VM" — там же проверяется весь цикл живьём,
-//! включая настоящие сетевые загрузки многосотмегабайтных архивов, что
-//! невозможно достоверно прогнать в рамках автоматической сборки этой сессии).
+//! ВАЖНО: реальная загрузка/инициализация portable PostgreSQL и Python
+//! (initdb/pg_ctl/createdb) здесь ещё не реализована — точка расширения
+//! зафиксирована явно в шаге 6 ниже (раздел X плана: "Фаза 8 — тестирование
+//! на чистых VM" — там же проверяется весь цикл живьём, включая настоящие
+//! сетевые загрузки многосотмегабайтных архивов, что невозможно достоверно
+//! прогнать в рамках автоматической сборки этой сессии).
 
 use eframe::egui;
 use evohime_artifacts::{download_with_resume, extract_zip, verify_sha256};
@@ -22,7 +22,7 @@ use evohime_win_support::{free_bytes_available, SingleInstanceLock};
 use std::path::PathBuf;
 use std::sync::mpsc;
 
-const GITHUB_REPO: &str = "your-org/EvoHime"; // TODO: заполнить перед релизом
+const GITHUB_REPO: &str = "rkfsociety/EvoHime";
 const MIN_FREE_BYTES: u64 = 1_500_000_000; // ~1.5 ГБ, раздел VI плана
 
 /// Один шаг прогресса, отправляемый из фоновой установки в UI-поток.
@@ -171,21 +171,25 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
 
     let client = reqwest::Client::new();
 
-    // 4. Скачивание релиза (server.exe, dist.zip, migrations.zip,
-    //    worker.zip) + проверка SHA256 (раздел IV/VI плана).
+    // 4. Скачивание релиза (server.zip, launcher.zip, dist.zip,
+    //    migrations.zip, worker.zip) + проверка SHA256 (раздел IV/VI плана).
+    //    Единственный exe-файл, который пользователь скачивает и запускает
+    //    сам, — это evohime-setup.exe; все остальные компоненты — архивы,
+    //    которые Installer распаковывает сам.
     stage("Загрузка последнего релиза...");
     let versions_dir = install_dir.join("versions").join("current");
     tokio::fs::create_dir_all(&versions_dir).await?;
 
-    for (asset_name, dest_subpath) in [
-        ("server.exe", "server.exe"),
-        ("dist.zip", "dist.zip"),
-        ("migrations.zip", "migrations.zip"),
-        ("worker.zip", "worker.zip"),
+    for asset_name in [
+        "server.zip",
+        "launcher.zip",
+        "dist.zip",
+        "migrations.zip",
+        "worker.zip",
     ] {
         let url = format!("https://github.com/{GITHUB_REPO}/releases/latest/download/{asset_name}");
         let sha_url = format!("{url}.sha256");
-        let dest = versions_dir.join(dest_subpath);
+        let dest = versions_dir.join(asset_name);
 
         stage(&format!("Скачивание {asset_name}..."));
         download_with_resume(&client, &url, &dest).await?;
@@ -197,15 +201,19 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
         }
     }
 
-    // 5. Распаковка dist.zip/migrations.zip/worker.zip.
+    // 5. Распаковка компонентов: server.zip — прямо в корень версии (даёт
+    //    <version>/server.exe), launcher.zip — вне versions_dir, в
+    //    install_dir/launcher (общий для всех версий), остальные — в свои
+    //    подпапки внутри версии.
     stage("Распаковка компонентов...");
-    for (zip_name, subdir) in [
-        ("dist.zip", "dist"),
-        ("migrations.zip", "migrations"),
-        ("worker.zip", "worker"),
+    for (zip_name, dest) in [
+        ("server.zip", versions_dir.clone()),
+        ("dist.zip", versions_dir.join("dist")),
+        ("migrations.zip", versions_dir.join("migrations")),
+        ("worker.zip", versions_dir.join("worker")),
+        ("launcher.zip", install_dir.join("launcher")),
     ] {
         let zip_path = versions_dir.join(zip_name);
-        let dest = versions_dir.join(subdir);
         tokio::task::spawn_blocking(move || extract_zip(&zip_path, &dest)).await??;
     }
 

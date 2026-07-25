@@ -96,20 +96,19 @@ pub async fn stage_and_switch(
 
     progress("Распаковка компонентов...");
     for (zip_name, subdir) in [
-        ("dist.zip", "dist"),
-        ("migrations.zip", "migrations"),
-        ("worker.zip", "worker"),
+        ("server.zip", None),
+        ("dist.zip", Some("dist")),
+        ("migrations.zip", Some("migrations")),
+        ("worker.zip", Some("worker")),
     ] {
         let zip_path = download_dir.join(zip_name);
         if zip_path.exists() {
-            let dest = tmp_dir.join(subdir);
+            let dest = match subdir {
+                Some(s) => tmp_dir.join(s),
+                None => tmp_dir.clone(),
+            };
             tokio::task::spawn_blocking(move || extract_zip(&zip_path, &dest)).await??;
         }
-    }
-
-    let server_exe_src = download_dir.join("server.exe");
-    if server_exe_src.exists() {
-        tokio::fs::copy(&server_exe_src, tmp_dir.join("server.exe")).await?;
     }
 
     if let Some(dsn) = &plan.dsn {

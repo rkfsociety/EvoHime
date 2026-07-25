@@ -7,9 +7,6 @@
 //! Atom-фид (не REST API — раздел V плана), применяет их только по клику
 //! пользователя "Обновить сейчас", с атомарным переключением версии и
 //! откатом при неудачном health-check.
-//!
-//! ВАЖНО: `GITHUB_REPO` — заполнитель, требует реального значения перед
-//! поставкой (см. также аналогичную оговорку в `crates/installer/src/main.rs`).
 
 use eframe::egui;
 use evohime_launcher::history::{append_and_save, UpdateHistoryEntry, UpdateOutcome};
@@ -36,7 +33,7 @@ const HEALTH_CHECK_INTERVAL: Duration = Duration::from_secs(10);
 const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(30 * 60);
 const POST_UPDATE_HEALTH_TIMEOUT: Duration = Duration::from_secs(60);
 const POST_UPDATE_HEALTH_ATTEMPTS: u32 = 5;
-const GITHUB_REPO: &str = "your-org/EvoHime"; // TODO: заполнить перед релизом
+const GITHUB_REPO: &str = "rkfsociety/EvoHime";
 
 #[derive(Default, Clone)]
 struct UpdateState {

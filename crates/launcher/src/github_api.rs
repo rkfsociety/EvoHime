@@ -27,7 +27,7 @@ struct ReleaseAssetResponse {
     browser_download_url: String,
 }
 
-const REQUIRED_ASSETS: &[&str] = &["server.exe", "dist.zip", "migrations.zip", "worker.zip"];
+const REQUIRED_ASSETS: &[&str] = &["server.zip", "dist.zip", "migrations.zip", "worker.zip"];
 
 /// Возвращает тег последнего релиза и список найденных ассетов (только те
 /// из `REQUIRED_ASSETS`, для которых реально нашёлся и сам файл, и его
@@ -85,15 +85,15 @@ mod tests {
     #[test]
     fn collects_only_assets_with_matching_sha256_present() {
         let assets = vec![
-            asset("server.exe", "https://example.com/server.exe"),
-            asset("server.exe.sha256", "https://example.com/server.exe.sha256"),
+            asset("server.zip", "https://example.com/server.zip"),
+            asset("server.zip.sha256", "https://example.com/server.zip.sha256"),
             asset("dist.zip", "https://example.com/dist.zip"),
             // dist.zip.sha256 deliberately missing
         ];
 
         let collected = collect_required_assets(&assets);
         assert_eq!(collected.len(), 1);
-        assert_eq!(collected[0].file_name, "server.exe");
+        assert_eq!(collected[0].file_name, "server.zip");
     }
 
     #[test]
