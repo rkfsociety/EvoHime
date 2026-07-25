@@ -13,6 +13,7 @@ pub mod migrations;
 pub mod pg_auth;
 pub mod process_manager;
 pub mod safe_mode;
+pub mod self_update;
 pub mod static_server;
 pub mod status_server;
 pub mod token;
@@ -28,6 +29,9 @@ pub use history::{
 pub use migrations::{apply_migrations, MigrationError};
 pub use pg_auth::{generate_password, patch_pg_hba_trust_local, PgHbaError};
 pub use process_manager::ManagedProcess;
+pub use self_update::{
+    build_updater_args, download_new_launcher, spawn_updater, SelfUpdateError, UpdaterArgs,
+};
 pub use static_server::build_static_router;
 pub use status_server::{build_status_router, ComponentStatus, LauncherStatus, StatusServerState};
 pub use token::{generate_session_token, tokens_equal};

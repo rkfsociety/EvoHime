@@ -114,12 +114,20 @@ mod tests {
         format!("http://{addr}")
     }
 
+    /// Использует `ping` (не `timeout`) как долгоживущий процесс-заглушку:
+    /// в некоторых окружениях `PATH` перед системным
+    /// `C:\Windows\System32\timeout.exe` оказывается версия `timeout` из
+    /// Git for Windows (coreutils) с другим синтаксисом аргументов — она
+    /// немедленно завершается с ошибкой вместо ожидания, что незаметно
+    /// делает тест "проходящим" по неверной причине (процесс уже мёртв
+    /// до истечения таймаута graceful_shutdown, а не после). `ping` не
+    /// имеет такого неоднозначного тёзки.
     fn windows_sleep_process(seconds: u32) -> (PathBuf, Vec<String>) {
         (
             PathBuf::from("cmd"),
             vec![
                 "/c".to_string(),
-                format!("timeout /t {seconds} /nobreak >nul"),
+                format!("ping 127.0.0.1 -n {} > nul", seconds + 1),
             ],
         )
     }

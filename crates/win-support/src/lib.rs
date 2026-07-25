@@ -6,11 +6,15 @@
 pub mod disk_space;
 pub mod named_mutex;
 pub mod port_owner;
+pub mod process_liveness;
 pub mod process_owner;
+pub mod process_time;
 pub mod replace_file;
 
 pub use disk_space::{free_bytes_available, DiskSpaceError};
 pub use named_mutex::{MutexError, SingleInstanceLock};
 pub use port_owner::find_pid_listening_on_port;
+pub use process_liveness::{is_process_alive, terminate_process};
 pub use process_owner::resolve_process_exe_path;
+pub use process_time::process_start_time;
 pub use replace_file::{atomic_replace_or_create, ReplaceFileError};

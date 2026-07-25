@@ -50,6 +50,42 @@ jobs:
           path: artifact/server.exe
           retention-days: 1
 
+  build-launcher:
+    name: Build launcher.exe + updater.exe (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build evohime-launcher (release)
+        run: cargo build -p evohime-launcher --bin evohime-launcher --release
+
+      # updater.exe — раздел VIII плана: единственный компонент, который
+      # никогда не должен требовать обновления сам. Статически слинкован
+      # (+crt-static) отдельно от остальных бинарников, чтобы не зависеть
+      # от системных VC++ Runtime DLL — RUSTFLAGS здесь ограничен только
+      # этим шагом и не влияет на server.exe/launcher.exe выше.
+      - name: Build evohime-updater (release, statically linked)
+        shell: bash
+        env:
+          RUSTFLAGS: "-C target-feature=+crt-static"
+        run: cargo build -p evohime-updater --bin updater --release --target x86_64-pc-windows-msvc
+
+      - name: Stage launcher artifacts
+        shell: bash
+        run: |
+          mkdir -p artifact
+          cp target/release/evohime-launcher.exe artifact/launcher.exe
+          cp target/x86_64-pc-windows-msvc/release/updater.exe artifact/updater.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-exe
+          path: |
+            artifact/launcher.exe
+            artifact/updater.exe
+          retention-days: 1
+
   build-frontend:
     name: Build React static bundle
     runs-on: ubuntu-latest
@@ -128,7 +164,7 @@ jobs:
 
   publish-release:
     name: Publish GitHub Release
-    needs: [build-server, build-frontend, package-migrations, package-worker]
+    needs: [build-server, build-launcher, build-frontend, package-migrations, package-worker]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -143,6 +179,8 @@ jobs:
         run: |
           mkdir -p release
           cp downloaded/server-exe/server.exe release/
+          cp downloaded/launcher-exe/launcher.exe release/
+          cp downloaded/launcher-exe/updater.exe release/
           cp downloaded/dist-zip/dist.zip release/
           cp downloaded/migrations-zip/migrations.zip release/
           cp downloaded/worker-zip/worker.zip release/
@@ -166,7 +204,7 @@ jobs:
       - name: Compute SHA256 checksums
         run: |
           cd release
-          for f in server.exe dist.zip migrations.zip worker.zip; do
+          for f in server.exe launcher.exe updater.exe dist.zip migrations.zip worker.zip; do
             sha256sum "$f" | cut -d' ' -f1 > "$f.sha256"
           done
 
@@ -183,6 +221,10 @@ jobs:
           files: |
             release/server.exe
             release/server.exe.sha256
+            release/launcher.exe
+            release/launcher.exe.sha256
+            release/updater.exe
+            release/updater.exe.sha256
             release/dist.zip
             release/dist.zip.sha256
             release/migrations.zip
