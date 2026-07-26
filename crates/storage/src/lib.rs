@@ -21,6 +21,7 @@ pub mod scopes;
 pub mod sites;
 pub mod sync;
 pub mod test_db;
+pub mod thinking;
 
 pub use attachments::{
     claim_pending_session_attachments, create_session_attachment, list_pending_session_attachments,
@@ -31,6 +32,10 @@ pub use cost_limits::{
     add_tokens_to_tracking, check_spending_cap, get_cost_limit, get_or_create_cost_limit,
     get_today_consumption, list_cost_limits, update_cost_limit, CostLimitRow, CostLimitUpdate,
     CostTrackingRow,
+};
+pub use thinking::{
+    get_monthly_thinking_cost, get_or_create_thinking_settings, record_thinking_usage,
+    update_thinking_settings, ThinkingSettings, ThinkingUsage,
 };
 pub use installed_plugins::{
     delete_installed_plugin, get_installed_plugin, insert_installed_plugin, list_installed_plugins,

@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = { version = "1", features = ["serde"] }
 sha2 = "0.10"
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
@@ -16,6 +17,7 @@ sqlx = { version = "0.8", features = [
   "json",
   "uuid",
   "migrate",
+  "rust_decimal",
 ] }
 subtle = "2"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "rt-multi-thread"] }
