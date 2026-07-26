@@ -72,6 +72,10 @@ pub(crate) async fn collect_gateway_text(
         while let Some(chunk) = stream.next().await {
             match chunk.ok()? {
                 ChatStreamItem::Delta(text) => output.push_str(&text),
+                ChatStreamItem::Thinking(_thinking) => {
+                    // TODO: Phase 3 will handle thinking events properly
+                    // For now, simply skip thinking chunks during streaming
+                }
                 ChatStreamItem::Usage(_) => {}
             }
         }

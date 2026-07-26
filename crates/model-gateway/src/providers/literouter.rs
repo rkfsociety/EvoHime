@@ -351,6 +351,9 @@ impl ApiUsage {
             prompt_tokens: self.prompt_tokens,
             completion_tokens: self.completion_tokens,
             total_tokens: self.total_tokens,
+            cache_creation_input_tokens: None,
+            cache_read_input_tokens: None,
+            thinking_tokens: None,
         };
         if usage.total_tokens == 0 {
             usage.total_tokens = usage.prompt_tokens.saturating_add(usage.completion_tokens);
@@ -393,6 +396,7 @@ impl CompletionResponse {
             .collect();
         ChatResult {
             content: message.content.unwrap_or_default(),
+            thinking: None,
             tool_calls,
             usage,
         }

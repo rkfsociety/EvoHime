@@ -513,6 +513,10 @@ async fn run_agent_loop_inner(
                             },
                         )?;
                     }
+                    evohime_model_gateway::ChatStreamItem::Thinking(_thinking) => {
+                        // TODO: Phase 3 will handle thinking events properly
+                        // For now, simply skip thinking chunks during streaming
+                    }
                     evohime_model_gateway::ChatStreamItem::Usage(usage) => {
                         response_usage = Some(usage);
                     }

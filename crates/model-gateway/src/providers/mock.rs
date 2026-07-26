@@ -86,6 +86,7 @@ impl ModelProvider for MockProvider {
         Box::pin(async move {
             Ok(ChatResult {
                 content,
+                thinking: None,
                 tool_calls,
                 usage: None,
             })

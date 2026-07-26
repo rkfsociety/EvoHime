@@ -93,6 +93,7 @@ pub fn script_to_results(script: &[ScriptStep]) -> Vec<ChatResult> {
         .map(|(index, step)| match step {
             ScriptStep::Tool { tool, input } => ChatResult {
                 content: String::new(),
+                thinking: None,
                 tool_calls: vec![NativeToolCall {
                     id: format!("golden-{index}"),
                     name: tool.clone(),
@@ -102,6 +103,7 @@ pub fn script_to_results(script: &[ScriptStep]) -> Vec<ChatResult> {
             },
             ScriptStep::Reply { reply } => ChatResult {
                 content: reply.clone(),
+                thinking: None,
                 tool_calls: vec![],
                 usage: None,
             },
@@ -311,6 +313,10 @@ async fn judge_final_answer(
     while let Some(item) = stream.next().await {
         match item {
             Ok(ChatStreamItem::Delta(delta)) => output.push_str(&delta),
+            Ok(ChatStreamItem::Thinking(_thinking)) => {
+                // TODO: Phase 3 will handle thinking events properly
+                // For now, simply skip thinking chunks during streaming
+            }
             Ok(ChatStreamItem::Usage(_)) => {}
             Err(error) => return Err(format!("judge model call failed: {error}")),
         }
