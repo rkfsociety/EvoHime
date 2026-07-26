@@ -63,6 +63,7 @@ fn main() {
 #[cfg(not(windows))]
 fn main() {}
 
+#[cfg_attr(not(windows), allow(dead_code))]
 struct Args {
     old_exe: PathBuf,
     new_exe: PathBuf,
@@ -70,6 +71,7 @@ struct Args {
     started_at: SystemTime,
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 fn parse_args(mut iter: impl Iterator<Item = String>) -> Result<Args, String> {
     let mut old_exe = None;
     let mut new_exe = None;
