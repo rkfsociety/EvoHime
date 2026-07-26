@@ -7,7 +7,7 @@ import type {
   SessionBootstrap,
 } from "./protocol";
 import type { ApprovalRequiredEvent, MemoryAskEvent } from "./protocol";
-import { TerminalPanel, TerminalEntry } from "./components/TerminalPanel";
+import type { TerminalEntry } from "./components/TerminalPanel";
 import { ApprovalModal } from "./components/ApprovalModal";
 import { MemoryAskModal } from "./components/MemoryAskModal";
 import { SearchModal, type SearchResult } from "./components/SearchModal";
@@ -22,6 +22,7 @@ import { useChat } from "./hooks/useChat";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useWorkspace } from "./hooks/useWorkspace";
 // Phase 5.8: Lazy-loaded panels for code splitting
+const TerminalPanel = lazy(() => import("./components/TerminalPanel").then(m => ({ default: m.TerminalPanel })));
 const ActionsPanel = lazy(() => import("./panels/ActionsPanel").then(m => ({ default: m.ActionsPanel })));
 const EditorPanel = lazy(() => import("./panels/EditorPanel").then(m => ({ default: m.EditorPanel })));
 const FilesPanel = lazy(() => import("./panels/FilesPanel").then(m => ({ default: m.FilesPanel })));
@@ -1255,7 +1256,13 @@ export function App() {
       );
     }
 
-    if (activePanel === "terminal") return <TerminalPanel entries={terminalEntries} />;
+    if (activePanel === "terminal") {
+      return (
+        <Suspense fallback={panelFallback}>
+          <TerminalPanel entries={terminalEntries} />
+        </Suspense>
+      );
+    }
 
     if (activePanel === "scheduled") {
       return (
