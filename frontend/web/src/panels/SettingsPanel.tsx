@@ -15,6 +15,7 @@ import { formatSessionPreview, formatSessionTitle, translatePermissionName } fro
 import { reconcileModelForBilling } from "../lib/modelBilling";
 import { LocalAuthSettingsSection } from "./LocalAuthSettingsSection";
 import { MetricsSettingsSection } from "./MetricsSettingsSection";
+import { ThinkingSettingsSection } from "./ThinkingSettingsSection";
 import { WorkerSettingsSection } from "./WorkerSettingsSection";
 import { SpendSettingsSection } from "./SpendSettingsSection";
 import { LauncherStatusSection } from "./LauncherStatus";
@@ -60,6 +61,7 @@ const SETTINGS_TABS: Array<[SettingsTab, string, string]> = [
   ["tools", "Инструменты", "Каталог и таймауты"],
   ["worker", "Worker", "Статус и jobs"],
   ["metrics", "Metrics", "Pipeline snapshot"],
+  ["thinking", "Мышление", "Бюджет и настройки расширенного мышления"],
   ["spend", "Spend", "Лимиты и отслеживание"],
   ["launcher", "Launcher", "Статус и обновления"],
   ["archive", "Архив", "Скрытые чаты"],
@@ -440,6 +442,8 @@ export function SettingsPanel({
         {settingsTab === "worker" ? <WorkerSettingsSection /> : null}
 
         {settingsTab === "metrics" ? <MetricsSettingsSection /> : null}
+
+        {settingsTab === "thinking" ? <ThinkingSettingsSection /> : null}
 
         {settingsTab === "spend" ? <SpendSettingsSection /> : null}
 
