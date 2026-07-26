@@ -257,6 +257,74 @@ pub struct CacheStats {
     pub approx_memory_bytes: usize,
 }
 
+/// Symbol type for ranking adjustment in Phase 3.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SymbolType {
+    Function,
+    Struct,
+    Enum,
+    Trait,
+    Module,
+    Variable,
+    Constant,
+    Comment,
+    Other,
+}
+
+impl SymbolType {
+    /// Weight multiplier for relevance ranking (Phase 3).
+    /// Functions are most relevant, comments least.
+    pub fn weight_multiplier(self) -> f32 {
+        match self {
+            SymbolType::Function => 1.5,
+            SymbolType::Trait => 1.4,
+            SymbolType::Struct => 1.3,
+            SymbolType::Enum => 1.3,
+            SymbolType::Module => 1.2,
+            SymbolType::Constant => 1.1,
+            SymbolType::Variable => 1.0,
+            SymbolType::Comment => 0.5,
+            SymbolType::Other => 0.8,
+        }
+    }
+
+    /// Detect symbol type from code chunk.
+    /// Prioritizes code symbols over comments.
+    pub fn detect(chunk_text: &str) -> Self {
+        let lower = chunk_text.to_lowercase();
+
+        // Check for code symbols first
+        if lower.contains("fn ") || lower.contains("async fn ") {
+            return SymbolType::Function;
+        }
+        if lower.contains("struct ") || lower.contains("class ") {
+            return SymbolType::Struct;
+        }
+        if lower.contains("enum ") {
+            return SymbolType::Enum;
+        }
+        if lower.contains("trait ") || lower.contains("interface ") {
+            return SymbolType::Trait;
+        }
+        if lower.contains("mod ") || lower.contains("module ") {
+            return SymbolType::Module;
+        }
+        if lower.contains("const ") {
+            return SymbolType::Constant;
+        }
+        if lower.contains("let ") || lower.contains("var ") {
+            return SymbolType::Variable;
+        }
+
+        // Fall back to comment check if no code symbol found
+        if chunk_text.contains("//") || chunk_text.contains("/*") {
+            SymbolType::Comment
+        } else {
+            SymbolType::Other
+        }
+    }
+}
+
 /// Semantic search result combining lexical and semantic scores.
 #[derive(Debug, Clone)]
 pub struct SemanticMatch {
@@ -267,6 +335,8 @@ pub struct SemanticMatch {
     pub lexical_score: u32,
     pub semantic_score: f32,  // cosine similarity 0.0-1.0
     pub combined_score: f32,  // weighted combination
+    pub symbol_type: SymbolType,  // Phase 3: for ranking adjustment
+    pub path_weight: f32,  // Phase 3: hierarchy-based weight (default 1.0)
 }
 
 impl SemanticMatch {
@@ -286,6 +356,7 @@ impl SemanticMatch {
         semantic_score: f32,
     ) -> Self {
         let combined_score = Self::combine_scores(lexical_score, semantic_score);
+        let symbol_type = SymbolType::detect(&snippet);
         Self {
             file_path,
             line,
@@ -294,7 +365,23 @@ impl SemanticMatch {
             lexical_score,
             semantic_score,
             combined_score,
+            symbol_type,
+            path_weight: 1.0,
         }
+    }
+
+    /// Compute adjusted score with Phase 3 optimizations.
+    /// Applies symbol-type weight and path hierarchy boost.
+    pub fn adjusted_score(&self) -> f32 {
+        let symbol_adjustment = self.symbol_type.weight_multiplier();
+        self.combined_score * symbol_adjustment * self.path_weight
+    }
+
+    /// Set path weight based on file hierarchy (Phase 3).
+    /// Boost adjacent files in same directory.
+    pub fn with_path_weight(mut self, weight: f32) -> Self {
+        self.path_weight = weight.max(0.5).min(2.0); // Clamp to reasonable range
+        self
     }
 }
 
@@ -409,5 +496,77 @@ mod tests {
         assert!((m.semantic_score - 0.9).abs() < 0.01);
         // 0.4 * (75/100) + 0.6 * 0.9 = 0.3 + 0.54 = 0.84
         assert!((m.combined_score - 0.84).abs() < 0.01);
+    }
+
+    #[test]
+    fn symbol_type_detect_function() {
+        assert_eq!(SymbolType::detect("fn calculate() {}"), SymbolType::Function);
+        assert_eq!(SymbolType::detect("async fn fetch() {}"), SymbolType::Function);
+    }
+
+    #[test]
+    fn symbol_type_detect_struct() {
+        assert_eq!(SymbolType::detect("struct Point { x: i32 }"), SymbolType::Struct);
+    }
+
+    #[test]
+    fn symbol_type_detect_enum() {
+        assert_eq!(SymbolType::detect("enum Result<T> {}"), SymbolType::Enum);
+    }
+
+    #[test]
+    fn symbol_type_detect_comment() {
+        assert_eq!(SymbolType::detect("// This is a comment"), SymbolType::Comment);
+        assert_eq!(SymbolType::detect("/* block comment */"), SymbolType::Comment);
+    }
+
+    #[test]
+    fn symbol_type_weight_multiplier() {
+        assert_eq!(SymbolType::Function.weight_multiplier(), 1.5);
+        assert_eq!(SymbolType::Struct.weight_multiplier(), 1.3);
+        assert_eq!(SymbolType::Comment.weight_multiplier(), 0.5);
+        assert_eq!(SymbolType::Variable.weight_multiplier(), 1.0);
+    }
+
+    #[test]
+    fn semantic_match_adjusted_score() {
+        let path = PathBuf::from("src/utils.rs");
+        let m = SemanticMatch::with_combined(
+            path.clone(),
+            5,
+            10,
+            "fn helper() { /* code */ }".to_string(),
+            50,
+            0.8,
+        );
+
+        // Base score: 0.4 * 0.5 + 0.6 * 0.8 = 0.68
+        // With function weight 1.5: 0.68 * 1.5 * 1.0 = 1.02
+        let adjusted = m.adjusted_score();
+        assert!(adjusted > 1.0);
+        assert!((adjusted - 1.02).abs() < 0.05);
+    }
+
+    #[test]
+    fn semantic_match_path_weight() {
+        let path = PathBuf::from("src/file.rs");
+        let m = SemanticMatch::with_combined(
+            path.clone(),
+            1,
+            5,
+            "let x = 42;".to_string(),
+            30,
+            0.6,
+        );
+
+        let weighted = m.clone().with_path_weight(1.5);
+        assert!((weighted.path_weight - 1.5).abs() < 0.01);
+
+        // Weights should be clamped to [0.5, 2.0]
+        let over_max = m.clone().with_path_weight(3.0);
+        assert!((over_max.path_weight - 2.0).abs() < 0.01);
+
+        let under_min = m.clone().with_path_weight(0.1);
+        assert!((under_min.path_weight - 0.5).abs() < 0.01);
     }
 }

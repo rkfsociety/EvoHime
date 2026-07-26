@@ -222,6 +222,7 @@ impl ProjectIndex {
         let mut semantic_matches = Vec::new();
         let limit = limit.max(1);
 
+        // Collect all matches first to compute path hierarchy weights (Phase 3)
         for entry in WalkDir::new(&self.workspace_root)
             .follow_links(false)
             .into_iter()
@@ -301,16 +302,55 @@ impl ProjectIndex {
             }
         }
 
-        // Sort by combined score (descending), then by line number
+        // Apply path hierarchy weights (Phase 3)
+        Self::apply_path_hierarchy_weights(&mut semantic_matches);
+
+        // Sort by adjusted score (with symbol-type and path weights), then by line number
         semantic_matches.sort_by(|a, b| {
-            b.combined_score
-                .partial_cmp(&a.combined_score)
+            b.adjusted_score()
+                .partial_cmp(&a.adjusted_score())
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| a.line.cmp(&b.line))
         });
 
         semantic_matches.truncate(limit);
         semantic_matches
+    }
+
+    /// Apply path hierarchy weighting to boost adjacent files (Phase 3).
+    /// Files in similar directories get higher weights.
+    fn apply_path_hierarchy_weights(matches: &mut [SemanticMatch]) {
+        if matches.is_empty() {
+            return;
+        }
+
+        // For each match, compute its path proximity to the top-scored match
+        let top_path = matches[0].file_path.clone();
+        let top_parent = top_path.parent();
+
+        for m in matches.iter_mut() {
+            let weight = if let Some(parent) = top_parent {
+                if m.file_path.parent() == Some(parent) {
+                    1.3 // Same directory: big boost
+                } else if Self::path_distance(&m.file_path, &top_path) <= 2 {
+                    1.15 // Nearby: smaller boost
+                } else {
+                    1.0 // Different directory: no boost
+                }
+            } else {
+                1.0
+            };
+            *m = m.clone().with_path_weight(weight);
+        }
+    }
+
+    /// Compute directory depth distance between two paths.
+    fn path_distance(path1: &PathBuf, path2: &PathBuf) -> usize {
+        let p1: Vec<_> = path1.components().collect();
+        let p2: Vec<_> = path2.components().collect();
+
+        let common = p1.iter().zip(&p2).take_while(|(a, b)| a == b).count();
+        (p1.len() - common) + (p2.len() - common)
     }
 }
 
