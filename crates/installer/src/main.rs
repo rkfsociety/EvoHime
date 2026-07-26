@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 //! EvoHime Installer (evohime-setup.exe) — Фаза 3 плана.
 //!
 //! Единственный экран прогресса на egui (единый GUI-стек с Launcher'ом,
@@ -38,15 +40,18 @@ enum ProgressEvent {
 const APPROX_TOTAL_STEPS: usize = 20;
 
 const ACCENT: egui::Color32 = egui::Color32::from_rgb(122, 162, 255);
+const ACCENT_DARK: egui::Color32 = egui::Color32::from_rgb(44, 60, 104);
 const ERROR_COLOR: egui::Color32 = egui::Color32::from_rgb(255, 120, 120);
 const SUCCESS_COLOR: egui::Color32 = egui::Color32::from_rgb(120, 220, 150);
 const DIM_TEXT: egui::Color32 = egui::Color32::from_gray(150);
+const SURFACE: egui::Color32 = egui::Color32::from_rgb(28, 29, 36);
+const SURFACE_ALT: egui::Color32 = egui::Color32::from_rgb(35, 36, 45);
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([480.0, 360.0])
-            .with_min_inner_size([420.0, 320.0]),
+            .with_inner_size([520.0, 420.0])
+            .with_min_inner_size([460.0, 360.0]),
         ..Default::default()
     };
 
@@ -69,13 +74,20 @@ fn apply_style(ctx: &egui::Context) {
     visuals.widgets.active.corner_radius = egui::CornerRadius::same(6);
     visuals.selection.bg_fill = ACCENT;
     visuals.hyperlink_color = ACCENT;
-    visuals.panel_fill = egui::Color32::from_rgb(24, 24, 28);
-    visuals.window_fill = egui::Color32::from_rgb(24, 24, 28);
+    visuals.panel_fill = SURFACE;
+    visuals.window_fill = SURFACE;
+    visuals.faint_bg_color = SURFACE_ALT;
+    visuals.extreme_bg_color = egui::Color32::from_rgb(18, 18, 23);
+    visuals.widgets.noninteractive.bg_fill = SURFACE_ALT;
+    visuals.widgets.inactive.bg_fill = SURFACE_ALT;
+    visuals.widgets.hovered.bg_fill = ACCENT_DARK;
+    visuals.widgets.active.bg_fill = ACCENT;
     ctx.set_visuals(visuals);
 
     let mut style = (*ctx.style_of(egui::Theme::Dark)).clone();
-    style.spacing.item_spacing = egui::vec2(8.0, 10.0);
-    style.spacing.button_padding = egui::vec2(16.0, 8.0);
+    style.spacing.item_spacing = egui::vec2(8.0, 12.0);
+    style.spacing.button_padding = egui::vec2(18.0, 10.0);
+    style.visuals.override_text_color = Some(egui::Color32::from_rgb(232, 233, 240));
     ctx.set_style_of(egui::Theme::Dark, style);
 }
 
@@ -144,77 +156,90 @@ impl eframe::App for InstallerApp {
             }
         }
 
-        ui.add_space(8.0);
-        ui.vertical_centered(|ui| {
-            ui.heading(egui::RichText::new("EvoHime").size(28.0).color(ACCENT));
-            ui.label(egui::RichText::new("Установка").color(DIM_TEXT));
-        });
-        ui.add_space(16.0);
+        egui::Frame::new()
+            .fill(egui::Color32::from_rgb(22, 23, 29))
+            .corner_radius(egui::CornerRadius::same(14))
+            .inner_margin(egui::Margin::symmetric(22, 20))
+            .show(ui, |ui| {
+                ui.add_space(8.0);
+                ui.vertical_centered(|ui| {
+                    ui.heading(egui::RichText::new("EvoHime").size(30.0).color(ACCENT));
+                    ui.label(
+                        egui::RichText::new("Автоматическая установка компонентов")
+                            .size(11.0)
+                            .color(DIM_TEXT),
+                    );
+                    ui.label(egui::RichText::new("Установка").color(DIM_TEXT));
+                });
+                ui.add_space(16.0);
 
-        if !self.started {
-            ui.vertical_centered(|ui| {
-                ui.label("Нажмите «Установить», чтобы начать.");
-                ui.add_space(12.0);
-                if ui
-                    .add(egui::Button::new(
-                        egui::RichText::new("Установить").size(16.0),
-                    ))
-                    .clicked()
-                {
-                    self.start_installation();
+                if !self.started {
+                    ui.vertical_centered(|ui| {
+                        ui.label("Нажмите «Установить», чтобы начать.");
+                        ui.add_space(12.0);
+                        if ui
+                            .add(egui::Button::new(
+                                egui::RichText::new("Установить").size(16.0),
+                            ))
+                            .clicked()
+                        {
+                            self.start_installation();
+                        }
+                    });
+                } else {
+                    let (bar_color, status_text, status_color) = if self.failed {
+                        (ERROR_COLOR, "Установка не завершена", ERROR_COLOR)
+                    } else if self.finished {
+                        (SUCCESS_COLOR, "Установка завершена", SUCCESS_COLOR)
+                    } else {
+                        (ACCENT, "Устанавливаю...", DIM_TEXT)
+                    };
+
+                    ui.vertical_centered(|ui| {
+                        ui.label(
+                            egui::RichText::new(status_text)
+                                .size(15.0)
+                                .color(status_color),
+                        );
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new(&self.current_stage)
+                                .color(DIM_TEXT)
+                                .size(13.0),
+                        );
+                    });
+
+                    ui.add_space(10.0);
+                    ui.add(
+                        egui::ProgressBar::new(self.progress_fraction())
+                            .desired_height(10.0)
+                            .fill(bar_color)
+                            .corner_radius(5.0),
+                    );
+                    ui.add_space(12.0);
+
+                    egui::CollapsingHeader::new("Подробности")
+                        .default_open(self.failed)
+                        .show(ui, |ui| {
+                            egui::ScrollArea::vertical()
+                                .max_height(120.0)
+                                .show(ui, |ui| {
+                                    for line in &self.log {
+                                        ui.label(
+                                            egui::RichText::new(line).size(12.0).color(DIM_TEXT),
+                                        );
+                                    }
+                                });
+                        });
+
+                    if self.finished {
+                        ui.add_space(6.0);
+                        ui.vertical_centered(|ui| {
+                            ui.label("Запустите ярлык «EvoHime Launcher» на рабочем столе.");
+                        });
+                    }
                 }
             });
-        } else {
-            let (bar_color, status_text, status_color) = if self.failed {
-                (ERROR_COLOR, "Установка не завершена", ERROR_COLOR)
-            } else if self.finished {
-                (SUCCESS_COLOR, "Установка завершена", SUCCESS_COLOR)
-            } else {
-                (ACCENT, "Устанавливаю...", DIM_TEXT)
-            };
-
-            ui.vertical_centered(|ui| {
-                ui.label(
-                    egui::RichText::new(status_text)
-                        .size(15.0)
-                        .color(status_color),
-                );
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new(&self.current_stage)
-                        .color(DIM_TEXT)
-                        .size(13.0),
-                );
-            });
-
-            ui.add_space(10.0);
-            ui.add(
-                egui::ProgressBar::new(self.progress_fraction())
-                    .desired_height(10.0)
-                    .fill(bar_color)
-                    .corner_radius(5.0),
-            );
-            ui.add_space(12.0);
-
-            egui::CollapsingHeader::new("Подробности")
-                .default_open(self.failed)
-                .show(ui, |ui| {
-                    egui::ScrollArea::vertical()
-                        .max_height(120.0)
-                        .show(ui, |ui| {
-                            for line in &self.log {
-                                ui.label(egui::RichText::new(line).size(12.0).color(DIM_TEXT));
-                            }
-                        });
-                });
-
-            if self.finished {
-                ui.add_space(6.0);
-                ui.vertical_centered(|ui| {
-                    ui.label("Запустите ярлык «EvoHime Launcher» на рабочем столе.");
-                });
-            }
-        }
 
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(150));
