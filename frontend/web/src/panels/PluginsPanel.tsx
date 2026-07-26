@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  getPluginAudit,
   getPluginIntegrity,
   installPlugin,
   listCatalog,
@@ -12,6 +13,7 @@ import {
   type CatalogGroup,
   type CatalogPlugin,
   type InstalledPlugin,
+  type PluginAuditEntry,
   type PluginCatalogResponse,
   type PluginIntegrityEntry,
   type PluginSkillSummary,
@@ -30,6 +32,23 @@ function trustLabel(level: string | undefined) {
       return "Сообщество";
     default:
       return "Не проверен";
+  }
+}
+
+function auditActionLabel(action: PluginAuditEntry["action"]) {
+  switch (action) {
+    case "install":
+      return "Установка";
+    case "update":
+      return "Обновление";
+    case "uninstall":
+      return "Удаление";
+    case "pin":
+      return "Закрепление версии";
+    case "force_override":
+      return "Установка с обходом предупреждения";
+    default:
+      return action;
   }
 }
 
@@ -75,6 +94,10 @@ export function PluginsPanel() {
   const [skillStatusLoadingId, setSkillStatusLoadingId] = useState<string | null>(null);
   const [skillStatusError, setSkillStatusError] = useState<string | null>(null);
   const [togglingSkill, setTogglingSkill] = useState<string | null>(null);
+  const [showAudit, setShowAudit] = useState(false);
+  const [auditEntries, setAuditEntries] = useState<PluginAuditEntry[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -206,6 +229,24 @@ export function PluginsPanel() {
       setSkillStatusError(err instanceof Error ? err.message : "Не удалось переключить skill");
     } finally {
       setTogglingSkill(null);
+    }
+  }
+
+  async function toggleAudit() {
+    if (showAudit) {
+      setShowAudit(false);
+      return;
+    }
+    setShowAudit(true);
+    setAuditLoading(true);
+    setAuditError(null);
+    try {
+      const entries = await getPluginAudit(undefined, 100);
+      setAuditEntries(entries);
+    } catch (err: unknown) {
+      setAuditError(err instanceof Error ? err.message : "Не удалось загрузить историю действий");
+    } finally {
+      setAuditLoading(false);
     }
   }
 
@@ -355,7 +396,46 @@ export function PluginsPanel() {
           <p>{heroText}</p>
           {actionError ? <p className="pluginsInstallError">{actionError}</p> : null}
         </div>
+        <div className="pluginsActions">
+          <button type="button" className="pluginsAuditToggle" onClick={() => void toggleAudit()}>
+            {showAudit ? "Скрыть историю" : "История действий"}
+          </button>
+        </div>
       </section>
+
+      {showAudit ? (
+        <section className="pluginsAuditSection">
+          <div className="pluginsSectionHeader">
+            <h4>История действий с плагинами</h4>
+          </div>
+          {auditLoading ? (
+            <p className="pluginsInstalledEmpty">Загружаю историю…</p>
+          ) : auditError ? (
+            <p className="pluginsInstallError">{auditError}</p>
+          ) : auditEntries.length === 0 ? (
+            <p className="pluginsInstalledEmpty">Событий пока нет.</p>
+          ) : (
+            <ul className="pluginsAuditList">
+              {auditEntries.map((entry) => (
+                <li key={entry.id} className="pluginsAuditItem">
+                  <span className={`pluginsAuditAction pluginsAuditAction-${entry.action}`}>
+                    {auditActionLabel(entry.action)}
+                  </span>
+                  <strong>{entry.plugin_name}</strong>
+                  {entry.force_used ? <span className="pluginsAuditForce">force</span> : null}
+                  {entry.risk_findings_count > 0 ? (
+                    <span className="pluginsAuditRisk">риск: {entry.risk_findings_count}</span>
+                  ) : null}
+                  <time dateTime={entry.created_at}>
+                    {new Date(entry.created_at).toLocaleString("ru-RU")}
+                  </time>
+                  {entry.details ? <p className="pluginsAuditDetails">{entry.details}</p> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       <div className="pluginsBody">
         <section className={catalogPlugins.length ? "pluginsCatalog" : "pluginsCatalog pluginsCatalogEmpty"}>

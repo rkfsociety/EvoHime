@@ -297,6 +297,21 @@ pub async fn install_plugin(
         signature_hash: None,
     };
     let _ = evohime_storage::insert_installed_plugin(&state.pool, identity.id, &db_entry).await;
+    let action = if body.force && !installed.risk_findings.is_empty() {
+        evohime_storage::ACTION_FORCE_OVERRIDE
+    } else {
+        evohime_storage::ACTION_INSTALL
+    };
+    record_plugin_audit(
+        &state,
+        identity.id,
+        &body.name,
+        action,
+        &installed.risk_findings,
+        body.force,
+        None,
+    )
+    .await;
     Ok(Json(installed))
 }
 
@@ -314,6 +329,21 @@ pub async fn update_plugin(
         signature_hash: None,
     };
     let _ = evohime_storage::insert_installed_plugin(&state.pool, identity.id, &db_entry).await;
+    let action = if body.force && !installed.risk_findings.is_empty() {
+        evohime_storage::ACTION_FORCE_OVERRIDE
+    } else {
+        evohime_storage::ACTION_UPDATE
+    };
+    record_plugin_audit(
+        &state,
+        identity.id,
+        &body.name,
+        action,
+        &installed.risk_findings,
+        body.force,
+        None,
+    )
+    .await;
     Ok(Json(installed))
 }
 
@@ -344,7 +374,53 @@ pub async fn uninstall_plugin(
         crate::plugin_lock::remove_entry(&workspace_root, &lock_name)
     })
     .await;
+    record_plugin_audit(
+        &state,
+        identity.id,
+        &name,
+        evohime_storage::ACTION_UNINSTALL,
+        &[],
+        false,
+        None,
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Best-effort plugin audit write (Stage 7.113). Never fails the caller's
+/// request — an audit-log outage must not block plugin management.
+async fn record_plugin_audit(
+    state: &AppState,
+    operator_id: uuid::Uuid,
+    plugin_name: &str,
+    action: &str,
+    risk_findings: &[crate::plugin_trust::RiskFinding],
+    force_used: bool,
+    details: Option<String>,
+) {
+    let entry = evohime_storage::NewPluginAudit {
+        operator_id,
+        plugin_name: plugin_name.to_string(),
+        action: action.to_string(),
+        trust_level: None,
+        risk_findings_count: risk_findings.len() as i32,
+        force_used,
+        details: details.or_else(|| {
+            if risk_findings.is_empty() {
+                None
+            } else {
+                Some(
+                    risk_findings
+                        .iter()
+                        .map(|finding| format!("{} [{}]", finding.file, finding.pattern))
+                        .collect::<Vec<_>>()
+                        .join("; "),
+                )
+            }
+        }),
+        at_ms: Utc::now().timestamp_millis(),
+    };
+    let _ = evohime_storage::insert_plugin_audit(&state.pool, &entry).await;
 }
 
 #[derive(Debug, Serialize)]
@@ -461,12 +537,51 @@ pub async fn pin_plugin(
     .await
     .map_err(|error| ApiError::Internal(error.to_string()))?
     .ok_or_else(|| ApiError::BadRequest(format!("плагин `{name}` не найден в установленных")))?;
+    let pin_details = format!(
+        "commit={} version={}",
+        commit.as_deref().unwrap_or("-"),
+        version.as_deref().unwrap_or("-")
+    );
+    record_plugin_audit(
+        &state,
+        identity.id,
+        &name,
+        evohime_storage::ACTION_PIN,
+        &[],
+        false,
+        Some(pin_details),
+    )
+    .await;
     Ok(Json(serde_json::json!({
         "status": "pinned",
         "name": name,
         "commit": commit,
         "version": version,
     })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PluginAuditQuery {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub limit: Option<i64>,
+}
+
+/// Plugin marketplace audit trail (Stage 7.113, Wave 4B): install/update/
+/// uninstall/pin/force-override history, newest first.
+pub async fn plugin_audit_trail(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(query): axum::extract::Query<PluginAuditQuery>,
+) -> Result<Json<Vec<evohime_storage::PluginAuditRow>>, ApiError> {
+    let rows = evohime_storage::list_plugin_audit(
+        &state.pool,
+        query.name.as_deref(),
+        query.limit.unwrap_or(100),
+    )
+    .await
+    .map_err(|error| ApiError::Internal(error.to_string()))?;
+    Ok(Json(rows))
 }
 
 pub async fn list_plugin_skills(

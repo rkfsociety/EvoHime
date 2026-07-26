@@ -203,6 +203,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/plugins/uninstall", post(plugins::uninstall_plugin))
         .route("/api/plugins/pin", post(plugins::pin_plugin))
         .route("/api/plugins/integrity", get(plugins::plugin_integrity))
+        .route("/api/plugins/audit", get(plugins::plugin_audit_trail))
         .route(
             "/api/plugins/:name/skills",
             get(plugins::list_plugin_skills),

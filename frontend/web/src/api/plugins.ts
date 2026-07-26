@@ -73,6 +73,31 @@ export function getPluginIntegrity() {
   );
 }
 
+export type PluginAuditEntry = {
+  id: number;
+  operator_id: string;
+  plugin_name: string;
+  action: "install" | "update" | "uninstall" | "pin" | "force_override";
+  trust_level: string | null;
+  risk_findings_count: number;
+  force_used: boolean;
+  details: string | null;
+  at_ms: number;
+  created_at: string;
+};
+
+export function getPluginAudit(name?: string, limit?: number) {
+  const params = new URLSearchParams();
+  if (name) params.set("name", name);
+  if (limit) params.set("limit", String(limit));
+  const query = params.toString();
+  return apiRequest<PluginAuditEntry[]>(
+    `/api/plugins/audit${query ? `?${query}` : ""}`,
+    { method: "GET" },
+    "Не удалось загрузить историю действий с плагинами",
+  );
+}
+
 export function listPlugins() {
   return apiRequest<InstalledPlugin[]>(
     "/api/plugins",

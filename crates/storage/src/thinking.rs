@@ -140,8 +140,7 @@ mod tests {
     #[test]
     fn thinking_settings_serde() {
         let settings = ThinkingSettings {
-            id: Uuid::new_v4(),
-            operator_id: Uuid::new_v4(),
+            id: 1,
             enabled: true,
             budget_tokens: Some(10000),
             max_budget_tokens: Some(32000),

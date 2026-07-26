@@ -535,6 +535,115 @@
   background: color-mix(in srgb, #616161 22%, var(--surface-4));
 }
 
+.pluginsAuditToggle {
+  border: 1px solid var(--border-0);
+  border-radius: 10px;
+  background: var(--surface-3);
+  color: var(--text-1);
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.pluginsAuditToggle:hover {
+  background: var(--surface-4);
+}
+
+.pluginsAuditSection {
+  display: grid;
+  gap: 12px;
+  padding: 0 20px 20px;
+}
+
+.pluginsAuditList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.pluginsAuditItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-0);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.pluginsAuditItem time {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.pluginsAuditItem strong {
+  color: var(--text-0);
+}
+
+.pluginsAuditDetails {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.pluginsAuditAction {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.2;
+  background: var(--surface-4);
+  color: var(--text-2);
+}
+
+.pluginsAuditAction-install {
+  background: color-mix(in srgb, #2e7d32 22%, var(--surface-4));
+}
+
+.pluginsAuditAction-update {
+  background: color-mix(in srgb, #1565c0 22%, var(--surface-4));
+}
+
+.pluginsAuditAction-uninstall {
+  background: color-mix(in srgb, #616161 22%, var(--surface-4));
+}
+
+.pluginsAuditAction-pin {
+  background: color-mix(in srgb, #ef6c00 22%, var(--surface-4));
+}
+
+.pluginsAuditAction-force_override {
+  background: color-mix(in srgb, #c62828 26%, var(--surface-4));
+}
+
+.pluginsAuditForce {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  background: color-mix(in srgb, #c62828 30%, var(--surface-4));
+  color: var(--text-1);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pluginsAuditRisk {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  background: color-mix(in srgb, #ef6c00 26%, var(--surface-4));
+  color: var(--text-1);
+}
+
 .pluginsFilterButton {
   width: 32px;
   height: 32px;
