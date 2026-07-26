@@ -375,6 +375,8 @@ struct StreamChoice {
 struct StreamDelta {
     #[serde(default)]
     content: Option<String>,
+    #[serde(default)]
+    thinking: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -395,6 +397,8 @@ struct CompletionChoice {
 struct CompletionMessage {
     #[serde(default)]
     content: Option<String>,
+    #[serde(default)]
+    thinking: Option<String>,
     #[serde(default)]
     tool_calls: Vec<ApiToolCall>,
 }
@@ -476,7 +480,7 @@ impl CompletionResponse {
             .collect();
         ChatResult {
             content: message.content.unwrap_or_default(),
-            thinking: None,
+            thinking: message.thinking,
             tool_calls,
             usage,
         }
@@ -514,17 +518,23 @@ fn parse_sse_line(line: &str) -> Option<Result<ChatStreamItem, ProviderError>> {
         }
     }
 
-    let content = chunk
-        .choices
-        .first()
-        .and_then(|choice| choice.delta.content.clone())
-        .unwrap_or_default();
+    if let Some(choice) = chunk.choices.first() {
+        // Handle thinking chunks (Wave 3B: extended reasoning)
+        if let Some(thinking) = choice.delta.thinking.clone() {
+            if !thinking.is_empty() {
+                return Some(Ok(ChatStreamItem::Thinking(thinking)));
+            }
+        }
 
-    if content.is_empty() {
-        return None;
+        // Handle content chunks
+        if let Some(content) = choice.delta.content.clone() {
+            if !content.is_empty() {
+                return Some(Ok(ChatStreamItem::Delta(content)));
+            }
+        }
     }
 
-    Some(Ok(ChatStreamItem::Delta(content)))
+    None
 }
 
 #[cfg(test)]
