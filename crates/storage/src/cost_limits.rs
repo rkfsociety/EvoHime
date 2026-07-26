@@ -111,7 +111,8 @@ pub async fn add_tokens_to_tracking(
         INSERT INTO cost_tracking (model, date, tokens_consumed)
         VALUES ($1, $2, $3)
         ON CONFLICT (model, date) DO UPDATE
-        SET tokens_consumed = tokens_consumed + $3, updated_at = NOW()
+        SET tokens_consumed = cost_tracking.tokens_consumed + EXCLUDED.tokens_consumed,
+            updated_at = NOW()
         RETURNING id, model, date, tokens_consumed
         "#,
     )
