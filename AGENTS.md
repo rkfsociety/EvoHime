@@ -123,6 +123,8 @@ Each tool must have: unique name, description, JSON Schema input, required permi
 12. **Keep CI current** — when changing Rust workspace members, dependencies, lint rules, or test expectations, update `.github/workflows/rust.yml` in the same change and keep the workflow aligned with the codebase.
 13. **Fix missing tools first** — if a required tool or command is not available in `PATH`, install or configure it before claiming a backend/frontend check passed.
 
+14. **Clean build artifacts** - after a build or verification, remove the workspace `target/` directory and any temporary Rust target/toolchain installed for that check when they are no longer needed for the next step; do not delete artifacts still required by an active process or subsequent verification.
+
 ## Environment
 
 Если обязательный инструмент разработки отсутствует в `PATH`, агент должен сначала установить или настроить его, а затем продолжить работу. Нельзя считать проверку выполненной, пока нужный инструмент не был реально запущен. Для Rust это включает установку/настройку toolchain, если `cargo` или `rustc` отсутствуют.
