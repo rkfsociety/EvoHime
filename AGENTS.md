@@ -120,10 +120,11 @@ Each tool must have: unique name, description, JSON Schema input, required permi
 9. **Resource limits** — timeouts on tools
 10. **Security** — sandbox filesystem and shell operations
 11. **Commit continuously** — after finishing any coding task, completed change, or other finished work, make a git commit immediately without waiting to be asked. **Push only on explicit user request** — never push unless the user asks.
-12. **Keep CI current** — when changing Rust workspace members, dependencies, lint rules, or test expectations, update `.github/workflows/rust.yml` in the same change and keep the workflow aligned with the codebase.
-13. **Fix missing tools first** — if a required tool or command is not available in `PATH`, install or configure it before claiming a backend/frontend check passed.
+12. **Рабочая ветка** — разработка в этом репозитории всегда выполняется прямо в текущей `main`; отдельные ветки и worktree не создавать.
+13. **Keep CI current** — when changing Rust workspace members, dependencies, lint rules, or test expectations, update `.github/workflows/rust.yml` in the same change and keep the workflow aligned with the codebase.
+14. **Fix missing tools first** — if a required tool or command is not available in `PATH`, install or configure it before claiming a backend/frontend check passed.
 
-14. **Clean build artifacts** - after a build or verification, remove the workspace `target/` directory and any temporary Rust target/toolchain installed for that check when they are no longer needed for the next step; do not delete artifacts still required by an active process or subsequent verification.
+15. **Clean build artifacts** - after a build or verification, remove the workspace `target/` directory and any temporary Rust target/toolchain installed for that check when they are no longer needed for the next step; do not delete artifacts still required by an active process or subsequent verification.
 
 ## Environment
 
