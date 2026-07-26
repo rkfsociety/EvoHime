@@ -7,10 +7,14 @@
 //! никакого парсинга — вся эта работа уже сделана самим Launcher'ом до
 //! того, как он передал управление сюда.
 
+#[cfg(windows)]
 use evohime_win_support::{
     is_process_alive, process_start_time, resolve_process_exe_path, terminate_process,
 };
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(windows)]
+use std::path::PathBuf;
+#[cfg(windows)]
 use std::time::{Duration, Instant, SystemTime};
 
 #[derive(Debug, thiserror::Error)]
@@ -28,12 +32,14 @@ pub enum UpdaterError {
 /// совершенно другого процесса за время ожидания, updater решит, что
 /// "исходный процесс всё ещё жив", хотя на самом деле это уже кто-то
 /// другой.
+#[cfg(windows)]
 pub struct TargetProcess {
     pub pid: u32,
     pub expected_exe_path: PathBuf,
     pub expected_start_time: SystemTime,
 }
 
+#[cfg(windows)]
 impl TargetProcess {
     /// `true`, если PID прямо сейчас принадлежит именно тому процессу, за
     /// которым мы следим.
@@ -54,6 +60,7 @@ impl TargetProcess {
 /// `GetProcessTimes`/сохранённое значение могут отличаться на доли
 /// секунды из-за округления при передаче через аргументы командной строки
 /// — точное равенство было бы излишне хрупким.
+#[cfg(windows)]
 fn times_close_enough(a: SystemTime, b: SystemTime) -> bool {
     let diff = a
         .duration_since(b)
@@ -66,6 +73,7 @@ fn times_close_enough(a: SystemTime, b: SystemTime) -> bool {
 /// ему соответствовать (что тоже означает "исходного процесса больше
 /// нет"). Возвращает `true`, если дождались за `timeout`; `false` — если
 /// нужен принудительный force kill (раздел VIII плана: таймаут 30 сек).
+#[cfg(windows)]
 pub fn wait_for_exit(target: &TargetProcess, timeout: Duration, poll_interval: Duration) -> bool {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
@@ -79,6 +87,7 @@ pub fn wait_for_exit(target: &TargetProcess, timeout: Duration, poll_interval: D
 
 /// Принудительно завершает исходный процесс, если он всё ещё жив —
 /// fallback после истечения таймаута `wait_for_exit`.
+#[cfg(windows)]
 pub fn force_kill(target: &TargetProcess) -> bool {
     if !target.still_is_original_process() {
         return true;

@@ -13,15 +13,19 @@
 //! `updater.exe`, поэтому здесь нечему ломаться при следующем изменении
 //! формата релизов.
 
+#[cfg(windows)]
 use evohime_updater::{
     force_kill, replace_and_relaunch, schedule_self_delete, wait_for_exit, TargetProcess,
 };
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
+#[cfg(windows)]
 const WAIT_TIMEOUT: Duration = Duration::from_secs(30);
+#[cfg(windows)]
 const POLL_INTERVAL: Duration = Duration::from_millis(200);
 
+#[cfg(windows)]
 fn main() {
     let args = match parse_args(std::env::args().skip(1)) {
         Ok(args) => args,
@@ -55,6 +59,9 @@ fn main() {
         }
     }
 }
+
+#[cfg(not(windows))]
+fn main() {}
 
 struct Args {
     old_exe: PathBuf,
