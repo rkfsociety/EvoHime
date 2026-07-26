@@ -16,7 +16,7 @@ use std::cmp::Reverse;
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
-use embeddings::{EmbeddingCache, SemanticMatch};
+use embeddings::{EmbeddingCache, SemanticMatch, Embedding, EmbeddingGenerator};
 
 const DEFAULT_MAX_RESULTS: usize = 5;
 const DEFAULT_MAX_FILE_BYTES: u64 = 256 * 1024;
@@ -202,6 +202,116 @@ impl ProjectIndex {
 
         Some(output.trim_end().to_string())
     }
+
+    /// Wave 4: Semantic search combining lexical and embedding-based scoring.
+    /// Returns hybrid results ranked by combined score (0.4 lexical + 0.6 semantic).
+    pub fn search_semantic(&mut self, query: &str) -> Vec<SemanticMatch> {
+        self.search_semantic_with_limit(query, self.max_results)
+    }
+
+    /// Semantic search with custom limit.
+    pub fn search_semantic_with_limit(&mut self, query: &str, limit: usize) -> Vec<SemanticMatch> {
+        let query_normalized = normalize_query(query);
+        if query_normalized.is_empty() || !self.workspace_root.exists() {
+            return Vec::new();
+        }
+
+        let query_text = query_normalized.join(" ");
+        let query_embedding = EmbeddingGenerator::generate_embedding(&query_text);
+
+        let mut semantic_matches = Vec::new();
+        let limit = limit.max(1);
+
+        for entry in WalkDir::new(&self.workspace_root)
+            .follow_links(false)
+            .into_iter()
+            .filter_entry(|entry| !should_skip_directory(entry.path()))
+            .filter_map(Result::ok)
+        {
+            let path = entry.path();
+            if entry.file_type().is_dir() {
+                continue;
+            }
+
+            if should_skip_path(path) || is_noisy_file(path) {
+                continue;
+            }
+
+            let metadata = match fs::metadata(path) {
+                Ok(metadata) => metadata,
+                Err(_) => continue,
+            };
+            if metadata.len() > self.max_file_bytes {
+                continue;
+            }
+
+            let Ok(bytes) = fs::read(path) else {
+                continue;
+            };
+            if is_probably_binary(&bytes) {
+                continue;
+            }
+            let Ok(content) = String::from_utf8(bytes) else {
+                continue;
+            };
+
+            let relative = relative_to_root(&self.workspace_root, path);
+
+            // Score chunks semantically
+            let chunks = split_into_chunks(&content);
+            for (chunk_text, line_start, line_end) in chunks {
+                let chunk_hash = Embedding::hash_chunk(&chunk_text);
+
+                // Check cache first
+                let embedding = if let Some(cached) = self.embeddings_cache.get(&chunk_hash) {
+                    cached.vector.clone()
+                } else {
+                    // Generate and cache embedding
+                    let emb = Embedding::new(
+                        relative.clone(),
+                        line_start,
+                        line_end,
+                        chunk_text.clone(),
+                    );
+                    let vec = emb.vector.clone();
+                    self.embeddings_cache.insert(emb);
+                    vec
+                };
+
+                // Compute lexical score
+                let line_hits = collect_line_hits(&query_normalized, &chunk_text, &relative);
+                let lexical_score = line_hits.iter().map(|h| h.score).sum::<u32>().min(100);
+
+                // Compute semantic score (cosine similarity)
+                let semantic_score = EmbeddingGenerator::cosine_similarity(&query_embedding, &embedding);
+
+                // Combine scores
+                let combined_score = SemanticMatch::combine_scores(lexical_score, semantic_score);
+
+                if combined_score > 0.1 {
+                    semantic_matches.push(SemanticMatch::with_combined(
+                        relative.clone(),
+                        line_start,
+                        line_end,
+                        chunk_text,
+                        lexical_score,
+                        semantic_score,
+                    ));
+                }
+            }
+        }
+
+        // Sort by combined score (descending), then by line number
+        semantic_matches.sort_by(|a, b| {
+            b.combined_score
+                .partial_cmp(&a.combined_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.line.cmp(&b.line))
+        });
+
+        semantic_matches.truncate(limit);
+        semantic_matches
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -218,6 +328,30 @@ fn normalize_query(query: &str) -> Vec<String> {
         .filter(|token| token.len() > 1)
         .map(|token| token.to_lowercase())
         .collect()
+}
+
+/// Split content into logical chunks for embedding.
+/// Each chunk is bounded by CHUNK_MAX_LINES and includes line numbers.
+fn split_into_chunks(content: &str) -> Vec<(String, usize, usize)> {
+    let lines: Vec<&str> = content.lines().collect();
+    let mut chunks = Vec::new();
+    let mut i = 0;
+
+    while i < lines.len() {
+        let start_line = i + 1; // 1-based
+        let chunk_end = (i + CHUNK_MAX_LINES).min(lines.len());
+        let chunk_lines: Vec<&str> = lines[i..chunk_end].to_vec();
+        let chunk_text = chunk_lines.join("\n");
+        let end_line = chunk_end; // 1-based inclusive
+
+        if !chunk_text.trim().is_empty() {
+            chunks.push((chunk_text, start_line, end_line));
+        }
+
+        i = chunk_end;
+    }
+
+    chunks
 }
 
 fn collect_line_hits(query: &[String], content: &str, relative_path: &Path) -> Vec<LineHit> {
