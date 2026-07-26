@@ -1027,7 +1027,7 @@ pub async fn import_legacy_memory_notes(pool: &PgPool) -> Result<u64, StorageErr
             WHERE mi.source_label = 'legacy:session_memory:' || sm.id::text
         )
           AND NOT {session_junk}
-        ON CONFLICT (source_label) DO NOTHING
+        ON CONFLICT (source_label) WHERE source_label IS NOT NULL DO NOTHING
         "#
     ))
     .execute(pool)
@@ -1063,7 +1063,7 @@ pub async fn import_legacy_memory_notes(pool: &PgPool) -> Result<u64, StorageErr
             WHERE mi.source_label = 'legacy:global_memory:' || gm.id::text
         )
           AND NOT {global_junk}
-        ON CONFLICT (source_label) DO NOTHING
+        ON CONFLICT (source_label) WHERE source_label IS NOT NULL DO NOTHING
         "#
     ))
     .execute(pool)
