@@ -2,11 +2,7 @@
 
 use crate::app::AppState;
 use crate::ApiError;
-use axum::{
-    extract::State,
-    http::StatusCode,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, Json};
 use evohime_storage::{
     get_monthly_thinking_cost, get_or_create_thinking_settings, update_thinking_settings,
     ThinkingSettings,
@@ -34,7 +30,8 @@ impl From<ThinkingSettings> for ThinkingSettingsResponse {
             max_budget_tokens: settings.max_budget_tokens,
             show_thinking: settings.show_thinking,
             thinking_verbosity: settings.thinking_verbosity,
-            monthly_cost_limit_usd: settings.monthly_thinking_cost_limit
+            monthly_cost_limit_usd: settings
+                .monthly_thinking_cost_limit
                 .as_ref()
                 .map(|d| d.to_string().parse::<f64>().unwrap_or(0.0)),
             warning_threshold_percent: settings.warning_threshold_percent,
@@ -77,7 +74,7 @@ pub(crate) async fn put_thinking_settings(
 ) -> Result<(StatusCode, Json<ThinkingSettingsResponse>), ApiError> {
     // Validate budget tokens if provided
     if let Some(budget) = req.budget_tokens {
-        if budget < 1000 || budget > 32000 {
+        if !(1000..=32000).contains(&budget) {
             return Err(ApiError::BadRequest(
                 "budget_tokens must be between 1000 and 32000".to_string(),
             ));

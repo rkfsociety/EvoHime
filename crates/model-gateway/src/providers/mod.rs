@@ -109,7 +109,7 @@ pub type ChatFuture = Pin<Box<dyn Future<Output = Result<ChatResult, ProviderErr
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThinkingConfig {
     #[serde(rename = "type")]
-    pub kind: String,  // "enabled"
+    pub kind: String, // "enabled"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub budget_tokens: Option<u32>,
 }

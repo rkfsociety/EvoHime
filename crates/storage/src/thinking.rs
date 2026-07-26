@@ -33,9 +33,7 @@ pub struct ThinkingUsage {
 }
 
 /// Get or create global thinking settings (defaults to disabled, 5000 tokens budget)
-pub async fn get_or_create_thinking_settings(
-    pool: &PgPool,
-) -> sqlx::Result<ThinkingSettings> {
+pub async fn get_or_create_thinking_settings(pool: &PgPool) -> sqlx::Result<ThinkingSettings> {
     sqlx::query_as::<_, ThinkingSettings>(
         r#"
         INSERT INTO thinking_settings (enabled, budget_tokens)
@@ -153,7 +151,6 @@ mod tests {
         };
 
         let json = serde_json::to_string(&settings).expect("serialize");
-        let _deserialized: ThinkingSettings =
-            serde_json::from_str(&json).expect("deserialize");
+        let _deserialized: ThinkingSettings = serde_json::from_str(&json).expect("deserialize");
     }
 }

@@ -1,6 +1,7 @@
 use crate::config::LiteRouterConfig;
 use crate::providers::{
-    ChatFuture, ChatMessage, ModelProvider, ProviderError, ProviderKind, ThinkingConfig, TokenStream,
+    ChatFuture, ChatMessage, ModelProvider, ProviderError, ProviderKind, ThinkingConfig,
+    TokenStream,
 };
 use crate::retry::{compute_backoff, is_retryable_status, parse_retry_after_seconds, RetryPolicy};
 use crate::tools::{ChatResult, ChatStreamItem, LlmUsage, NativeToolCall, ToolSpec};
@@ -62,7 +63,8 @@ impl LiteRouterProvider {
         tools: Option<&[ToolSpec]>,
         stream: bool,
     ) -> Result<reqwest::Response, ProviderError> {
-        self.send_chat_request_internal(model, messages, tools, stream, None).await
+        self.send_chat_request_internal(model, messages, tools, stream, None)
+            .await
     }
 
     async fn send_chat_request_with_thinking(
@@ -72,7 +74,8 @@ impl LiteRouterProvider {
         tools: Option<&[ToolSpec]>,
         thinking: Option<ThinkingConfig>,
     ) -> Result<reqwest::Response, ProviderError> {
-        self.send_chat_request_internal(model, messages, tools, true, thinking).await
+        self.send_chat_request_internal(model, messages, tools, true, thinking)
+            .await
     }
 
     async fn send_chat_request_internal(
@@ -216,7 +219,6 @@ impl ModelProvider for LiteRouterProvider {
             retry: self.retry.clone(),
         };
         let request_messages = messages.to_vec();
-        let thinking = thinking;
         let tools = tools.map(|t| t.to_vec());
 
         Box::pin(stream! {
@@ -624,6 +626,7 @@ mod tests {
                 prompt_tokens: 12,
                 completion_tokens: 34,
                 total_tokens: 46,
+                ..Default::default()
             })
         );
     }
@@ -639,6 +642,7 @@ mod tests {
             choices: vec![CompletionChoice {
                 message: CompletionMessage {
                     content: Some(String::new()),
+                    thinking: None,
                     tool_calls: vec![ApiToolCall {
                         id: Some("call_1".into()),
                         function: Some(ApiFunctionCall {
@@ -665,6 +669,7 @@ mod tests {
                 prompt_tokens: 100,
                 completion_tokens: 20,
                 total_tokens: 120,
+                ..Default::default()
             })
         );
     }

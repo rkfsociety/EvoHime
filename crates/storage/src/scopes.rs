@@ -77,7 +77,7 @@ mod tests {
         for i in 1..=10 {
             let event_json = serde_json::json!({ "test": i });
             sqlx::query(
-                "INSERT INTO session_events (session_id, sequence, event_json) VALUES ($1, $2, $3)"
+                "INSERT INTO session_events (session_id, sequence, event_json) VALUES ($1, $2, $3)",
             )
             .bind(session.id)
             .bind(i)
@@ -233,15 +233,20 @@ pub async fn list_session_events_paginated_for_operator(
 ) -> Result<crate::PaginatedEventsPage, crate::StorageError> {
     use base64::{engine::general_purpose::STANDARD, Engine};
 
-    let limit = limit.max(1).min(500);
+    let limit = limit.clamp(1, 500);
     let is_desc = order == "desc";
 
     // Decode cursor if provided
     let cursor_obj = if let Some(cursor_str) = cursor {
-        let decoded = STANDARD
-            .decode(cursor_str)
-            .map_err(|e| crate::StorageError::Serialization(serde_json::Error::io(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))))?;
-        Some(serde_json::from_slice::<crate::PaginatedEventsCursor>(&decoded)?)
+        let decoded = STANDARD.decode(cursor_str).map_err(|e| {
+            crate::StorageError::Serialization(serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                e.to_string(),
+            )))
+        })?;
+        Some(serde_json::from_slice::<crate::PaginatedEventsCursor>(
+            &decoded,
+        )?)
     } else {
         None
     };
@@ -267,7 +272,7 @@ pub async fn list_session_events_paginated_for_operator(
                 AND (e.sequence, e.created_at) < ($3, $4)
                 ORDER BY e.sequence DESC, e.created_at DESC
                 LIMIT $5
-                "#
+                "#,
             )
             .bind(session_id)
             .bind(operator_id)
@@ -286,7 +291,7 @@ pub async fn list_session_events_paginated_for_operator(
                 AND (e.sequence, e.created_at) > ($3, $4)
                 ORDER BY e.sequence ASC, e.created_at ASC
                 LIMIT $5
-                "#
+                "#,
             )
             .bind(session_id)
             .bind(operator_id)
@@ -306,7 +311,7 @@ pub async fn list_session_events_paginated_for_operator(
                 WHERE e.session_id = $1 AND s.operator_id = $2
                 ORDER BY e.sequence DESC, e.created_at DESC
                 LIMIT $3
-                "#
+                "#,
             )
             .bind(session_id)
             .bind(operator_id)
@@ -322,7 +327,7 @@ pub async fn list_session_events_paginated_for_operator(
                 WHERE e.session_id = $1 AND s.operator_id = $2
                 ORDER BY e.sequence ASC, e.created_at ASC
                 LIMIT $3
-                "#
+                "#,
             )
             .bind(session_id)
             .bind(operator_id)

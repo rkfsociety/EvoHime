@@ -187,6 +187,24 @@
         }
       }
     },
+    "/api/settings/thinking": {
+      "get": {
+        "operationId": "get_api_settings_thinking",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_settings_thinking",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/sessions": {
       "get": {
         "operationId": "get_api_sessions",
@@ -858,6 +876,16 @@
     "/api/plugins/integrity": {
       "get": {
         "operationId": "get_api_plugins_integrity",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/plugins/audit": {
+      "get": {
+        "operationId": "get_api_plugins_audit",
         "responses": {
           "200": {
             "description": "Successful response"

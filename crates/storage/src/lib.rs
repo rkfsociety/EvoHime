@@ -34,10 +34,6 @@ pub use cost_limits::{
     get_today_consumption, list_cost_limits, update_cost_limit, CostLimitRow, CostLimitUpdate,
     CostTrackingRow,
 };
-pub use thinking::{
-    get_monthly_thinking_cost, get_or_create_thinking_settings, record_thinking_usage,
-    update_thinking_settings, ThinkingSettings, ThinkingUsage,
-};
 pub use installed_plugins::{
     delete_installed_plugin, get_installed_plugin, insert_installed_plugin, list_installed_plugins,
     mark_plugin_uninstalled, update_plugin_pin, InstalledPluginRow, NewInstalledPlugin,
@@ -92,6 +88,10 @@ pub use sync::{
 };
 pub use test_db::{
     connect_integration_pool, integration_database_url, require_integration_database,
+};
+pub use thinking::{
+    get_monthly_thinking_cost, get_or_create_thinking_settings, record_thinking_usage,
+    update_thinking_settings, ThinkingSettings, ThinkingUsage,
 };
 
 #[derive(Debug, Error)]

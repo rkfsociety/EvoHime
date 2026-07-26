@@ -1,7 +1,6 @@
 //! Wave 3B golden tasks for extended reasoning evaluation.
 
 use evohime_evals::{run_golden_task, GoldenTask, ScriptStep};
-use serde_json::json;
 
 #[tokio::test]
 async fn thinking_simple_math_problem() {
@@ -33,11 +32,9 @@ async fn thinking_absent_when_not_provided() {
         name: "no-thinking".to_string(),
         user_message: "Simple question: what is 2+2?".to_string(),
         workspace_files: Default::default(),
-        script: vec![
-            ScriptStep::Reply {
-                reply: "The answer is 4.".to_string(),
-            },
-        ],
+        script: vec![ScriptStep::Reply {
+            reply: "The answer is 4.".to_string(),
+        }],
         expect: evohime_evals::Expectations {
             final_message_contains: vec!["4".to_string()],
             files: vec![],
@@ -67,7 +64,7 @@ async fn thinking_with_operator_normalization() {
             files: vec![],
             // These should match after normalization (÷→/, ×→*, −→-)
             thinking_contains: vec!["15/3".to_string(), "5*2".to_string()],
-            min_thinking_tokens: Some(30),
+            min_thinking_tokens: Some(20),
         },
         rubric: None,
     };

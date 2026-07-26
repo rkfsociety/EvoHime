@@ -12,11 +12,11 @@
 
 pub mod embeddings;
 
+use embeddings::{Embedding, EmbeddingCache, EmbeddingGenerator, SemanticMatch};
 use std::cmp::Reverse;
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
-use embeddings::{EmbeddingCache, SemanticMatch, Embedding, EmbeddingGenerator};
 
 const DEFAULT_MAX_RESULTS: usize = 5;
 const DEFAULT_MAX_FILE_BYTES: u64 = 256 * 1024;
@@ -268,12 +268,8 @@ impl ProjectIndex {
                     cached.vector.clone()
                 } else {
                     // Generate and cache embedding
-                    let emb = Embedding::new(
-                        relative.clone(),
-                        line_start,
-                        line_end,
-                        chunk_text.clone(),
-                    );
+                    let emb =
+                        Embedding::new(relative.clone(), line_start, line_end, chunk_text.clone());
                     let vec = emb.vector.clone();
                     self.embeddings_cache.insert(emb);
                     vec
@@ -284,7 +280,8 @@ impl ProjectIndex {
                 let lexical_score = line_hits.iter().map(|h| h.score).sum::<u32>().min(100);
 
                 // Compute semantic score (cosine similarity)
-                let semantic_score = EmbeddingGenerator::cosine_similarity(&query_embedding, &embedding);
+                let semantic_score =
+                    EmbeddingGenerator::cosine_similarity(&query_embedding, &embedding);
 
                 // Combine scores
                 let combined_score = SemanticMatch::combine_scores(lexical_score, semantic_score);
@@ -345,7 +342,7 @@ impl ProjectIndex {
     }
 
     /// Compute directory depth distance between two paths.
-    fn path_distance(path1: &PathBuf, path2: &PathBuf) -> usize {
+    fn path_distance(path1: &Path, path2: &Path) -> usize {
         let p1: Vec<_> = path1.components().collect();
         let p2: Vec<_> = path2.components().collect();
 

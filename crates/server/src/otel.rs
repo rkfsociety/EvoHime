@@ -156,7 +156,11 @@ pub fn register_pipeline_metrics(pipeline: Arc<PipelineMetrics>, worker: Arc<Wor
         "Tasks completed",
         tasks_completed
     );
-    counter!("evohime.pipeline.tasks_failed", "Tasks failed", tasks_failed);
+    counter!(
+        "evohime.pipeline.tasks_failed",
+        "Tasks failed",
+        tasks_failed
+    );
     counter!(
         "evohime.pipeline.tools_started",
         "Tool invocations started",
@@ -167,7 +171,11 @@ pub fn register_pipeline_metrics(pipeline: Arc<PipelineMetrics>, worker: Arc<Wor
         "Tools completed",
         tools_completed
     );
-    counter!("evohime.pipeline.tools_failed", "Tools failed", tools_failed);
+    counter!(
+        "evohime.pipeline.tools_failed",
+        "Tools failed",
+        tools_failed
+    );
     counter!(
         "evohime.pipeline.approvals_requested",
         "Approvals requested",
@@ -193,7 +201,11 @@ pub fn register_pipeline_metrics(pipeline: Arc<PipelineMetrics>, worker: Arc<Wor
         "Plan updates / replans",
         plan_updates
     );
-    counter!("evohime.pipeline.llm_calls", "LLM chat completions", llm_calls);
+    counter!(
+        "evohime.pipeline.llm_calls",
+        "LLM chat completions",
+        llm_calls
+    );
     counter!(
         "evohime.pipeline.llm_calls_failed",
         "Failed LLM chat completions",
@@ -260,7 +272,11 @@ pub fn register_pipeline_metrics(pipeline: Arc<PipelineMetrics>, worker: Arc<Wor
         "Worker jobs completed",
         jobs_completed
     );
-    worker_counter!("evohime.worker.jobs_failed", "Worker jobs failed", jobs_failed);
+    worker_counter!(
+        "evohime.worker.jobs_failed",
+        "Worker jobs failed",
+        jobs_failed
+    );
     worker_counter!(
         "evohime.worker.jobs_retried",
         "Worker jobs retried",

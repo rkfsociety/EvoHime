@@ -170,6 +170,20 @@ pub(crate) async fn run_react_loop(
         })??;
 
         if result.tool_calls.is_empty() {
+            if let Some(thinking) = result.thinking {
+                if !thinking.is_empty() {
+                    emit(
+                        &event_tx,
+                        ServerEvent::AgentThinking {
+                            task_id: config.task_id,
+                            thinking,
+                            created_at: Utc::now(),
+                            correlation_id: None,
+                            llm_request_id: format!("{}", uuid::Uuid::new_v4()),
+                        },
+                    )?;
+                }
+            }
             final_message = result.content;
             break;
         }

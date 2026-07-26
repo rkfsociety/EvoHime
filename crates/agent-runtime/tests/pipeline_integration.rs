@@ -109,6 +109,7 @@ impl ModelProvider for ScriptedProvider {
         Box::pin(async move {
             Ok(ChatResult {
                 content: String::new(),
+                thinking: None,
                 tool_calls,
                 usage: None,
             })

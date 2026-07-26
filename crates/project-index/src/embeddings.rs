@@ -5,8 +5,8 @@
 //! - Hash-based deduplication
 //! - Hybrid BM25 + semantic scoring
 
-use sha2::{Sha256, Digest};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -41,7 +41,10 @@ impl EmbeddingGenerator {
         let snake_case = text.matches('_').count() as f32;
         let camel_case = text.chars().filter(|c| c.is_uppercase()).count() as f32;
         let numbers = text.chars().filter(|c| c.is_numeric()).count() as f32;
-        let symbols = text.chars().filter(|c| !c.is_alphanumeric() && !c.is_whitespace()).count() as f32;
+        let symbols = text
+            .chars()
+            .filter(|c| !c.is_alphanumeric() && !c.is_whitespace())
+            .count() as f32;
 
         embedding[256] = (snake_case / (text.len().max(1) as f32)).min(1.0);
         embedding[257] = (camel_case / (text.len().max(1) as f32)).min(1.0);
@@ -49,16 +52,20 @@ impl EmbeddingGenerator {
         embedding[259] = (symbols / (text.len().max(1) as f32)).min(1.0);
 
         // Fill remaining token pattern dims
-        for i in 260..306 {
-            embedding[i] = Self::pattern_hash_component(text, i - 260) as f32;
+        for (i, slot) in embedding.iter_mut().enumerate().take(306).skip(260) {
+            *slot = Self::pattern_hash_component(text, i - 260);
         }
 
         // 3. Structural features (40 dim)
         let lines = text.lines().count() as f32;
         let avg_line_len = text.lines().map(|l| l.len()).sum::<usize>() as f32 / lines.max(1.0);
-        let has_fn = (text.contains("fn ") || text.contains("def ") || text.contains("function")) as i32 as f32;
-        let has_class = (text.contains("class ") || text.contains("struct ") || text.contains("impl ")) as i32 as f32;
-        let has_comment = (text.contains("//") || text.contains("/*") || text.contains("#")) as i32 as f32;
+        let has_fn = (text.contains("fn ") || text.contains("def ") || text.contains("function"))
+            as i32 as f32;
+        let has_class = (text.contains("class ")
+            || text.contains("struct ")
+            || text.contains("impl ")) as i32 as f32;
+        let has_comment =
+            (text.contains("//") || text.contains("/*") || text.contains("#")) as i32 as f32;
 
         embedding[306] = (lines / (text.len().max(1) as f32)).min(1.0);
         embedding[307] = (avg_line_len / 100.0).min(1.0);
@@ -67,8 +74,8 @@ impl EmbeddingGenerator {
         embedding[310] = has_comment;
 
         // Fill remaining structural dims
-        for i in 311..346 {
-            embedding[i] = Self::structure_hash_component(text, i - 311) as f32;
+        for (i, slot) in embedding.iter_mut().enumerate().take(346).skip(311) {
+            *slot = Self::structure_hash_component(text, i - 311);
         }
 
         // 4. Semantic patterns (38 dim)
@@ -92,8 +99,8 @@ impl EmbeddingGenerator {
         }
 
         // Fill remaining semantic dims
-        for i in 358..384 {
-            embedding[i] = Self::semantic_hash_component(text, i - 358) as f32;
+        for (i, slot) in embedding.iter_mut().enumerate().take(384).skip(358) {
+            *slot = Self::semantic_hash_component(text, i - 358);
         }
 
         // Normalize to unit vector for cosine similarity
@@ -102,7 +109,7 @@ impl EmbeddingGenerator {
     }
 
     /// Normalize vector to unit length for cosine similarity.
-    fn normalize_vector(vec: &mut Vec<f32>) {
+    fn normalize_vector(vec: &mut [f32]) {
         let magnitude = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
         if magnitude > 0.0 {
             for x in vec.iter_mut() {
@@ -176,12 +183,7 @@ impl Embedding {
     }
 
     /// Create embedding with generated vector (Phase 2)
-    pub fn new(
-        file_path: PathBuf,
-        line: usize,
-        end_line: usize,
-        chunk_text: String,
-    ) -> Self {
+    pub fn new(file_path: PathBuf, line: usize, end_line: usize, chunk_text: String) -> Self {
         let vector = EmbeddingGenerator::generate_embedding(&chunk_text);
         Self {
             chunk_hash: Self::hash_chunk(&chunk_text),
@@ -333,10 +335,10 @@ pub struct SemanticMatch {
     pub end_line: usize,
     pub snippet: String,
     pub lexical_score: u32,
-    pub semantic_score: f32,  // cosine similarity 0.0-1.0
-    pub combined_score: f32,  // weighted combination
-    pub symbol_type: SymbolType,  // Phase 3: for ranking adjustment
-    pub path_weight: f32,  // Phase 3: hierarchy-based weight (default 1.0)
+    pub semantic_score: f32,     // cosine similarity 0.0-1.0
+    pub combined_score: f32,     // weighted combination
+    pub symbol_type: SymbolType, // Phase 3: for ranking adjustment
+    pub path_weight: f32,        // Phase 3: hierarchy-based weight (default 1.0)
 }
 
 impl SemanticMatch {
@@ -344,7 +346,7 @@ impl SemanticMatch {
     /// Formula: 0.4 * lexical_norm + 0.6 * semantic_score
     pub fn combine_scores(lexical_score: u32, semantic_score: f32) -> f32 {
         let lexical_norm = (lexical_score as f32) / 100.0; // normalize to 0-1 range
-        0.4 * lexical_norm.min(1.0) + 0.6 * semantic_score.max(0.0).min(1.0)
+        0.4 * lexical_norm.min(1.0) + 0.6 * semantic_score.clamp(0.0, 1.0)
     }
 
     pub fn with_combined(
@@ -380,7 +382,7 @@ impl SemanticMatch {
     /// Set path weight based on file hierarchy (Phase 3).
     /// Boost adjacent files in same directory.
     pub fn with_path_weight(mut self, weight: f32) -> Self {
-        self.path_weight = weight.max(0.5).min(2.0); // Clamp to reasonable range
+        self.path_weight = weight.clamp(0.5, 2.0);
         self
     }
 }
@@ -401,21 +403,14 @@ mod tests {
     fn chunk_hash_unique() {
         let text1 = "fn hello() {}";
         let text2 = "fn world() {}";
-        assert_ne!(
-            Embedding::hash_chunk(text1),
-            Embedding::hash_chunk(text2)
-        );
+        assert_ne!(Embedding::hash_chunk(text1), Embedding::hash_chunk(text2));
     }
 
     #[test]
     fn embedding_cache_dedup() {
         let mut cache = EmbeddingCache::new();
-        let embedding = Embedding::placeholder(
-            PathBuf::from("test.rs"),
-            1,
-            5,
-            "fn test() {}".to_string(),
-        );
+        let embedding =
+            Embedding::placeholder(PathBuf::from("test.rs"), 1, 5, "fn test() {}".to_string());
         let hash = embedding.chunk_hash.clone();
 
         cache.insert(embedding);
@@ -461,7 +456,11 @@ mod tests {
         let text = "async fn fetch_data() {}";
         let emb = EmbeddingGenerator::generate_embedding(text);
         let similarity = EmbeddingGenerator::cosine_similarity(&emb, &emb);
-        assert!((similarity - 1.0).abs() < 0.01, "Same text similarity: {}", similarity);
+        assert!(
+            (similarity - 1.0).abs() < 0.01,
+            "Same text similarity: {}",
+            similarity
+        );
     }
 
     #[test]
@@ -480,14 +479,8 @@ mod tests {
     #[test]
     fn semantic_match_with_combined() {
         let path = PathBuf::from("test.rs");
-        let m = SemanticMatch::with_combined(
-            path.clone(),
-            10,
-            15,
-            "code snippet".to_string(),
-            75,
-            0.9,
-        );
+        let m =
+            SemanticMatch::with_combined(path.clone(), 10, 15, "code snippet".to_string(), 75, 0.9);
 
         assert_eq!(m.file_path, path);
         assert_eq!(m.line, 10);
@@ -500,13 +493,22 @@ mod tests {
 
     #[test]
     fn symbol_type_detect_function() {
-        assert_eq!(SymbolType::detect("fn calculate() {}"), SymbolType::Function);
-        assert_eq!(SymbolType::detect("async fn fetch() {}"), SymbolType::Function);
+        assert_eq!(
+            SymbolType::detect("fn calculate() {}"),
+            SymbolType::Function
+        );
+        assert_eq!(
+            SymbolType::detect("async fn fetch() {}"),
+            SymbolType::Function
+        );
     }
 
     #[test]
     fn symbol_type_detect_struct() {
-        assert_eq!(SymbolType::detect("struct Point { x: i32 }"), SymbolType::Struct);
+        assert_eq!(
+            SymbolType::detect("struct Point { x: i32 }"),
+            SymbolType::Struct
+        );
     }
 
     #[test]
@@ -516,8 +518,14 @@ mod tests {
 
     #[test]
     fn symbol_type_detect_comment() {
-        assert_eq!(SymbolType::detect("// This is a comment"), SymbolType::Comment);
-        assert_eq!(SymbolType::detect("/* block comment */"), SymbolType::Comment);
+        assert_eq!(
+            SymbolType::detect("// This is a comment"),
+            SymbolType::Comment
+        );
+        assert_eq!(
+            SymbolType::detect("/* block comment */"),
+            SymbolType::Comment
+        );
     }
 
     #[test]
@@ -550,14 +558,8 @@ mod tests {
     #[test]
     fn semantic_match_path_weight() {
         let path = PathBuf::from("src/file.rs");
-        let m = SemanticMatch::with_combined(
-            path.clone(),
-            1,
-            5,
-            "let x = 42;".to_string(),
-            30,
-            0.6,
-        );
+        let m =
+            SemanticMatch::with_combined(path.clone(), 1, 5, "let x = 42;".to_string(), 30, 0.6);
 
         let weighted = m.clone().with_path_weight(1.5);
         assert!((weighted.path_weight - 1.5).abs() < 0.01);

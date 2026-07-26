@@ -48,9 +48,18 @@ fn provider_kind_as_str() {
 
 #[test]
 fn provider_kind_parse() {
-    assert_eq!(ProviderKind::parse("literouter"), Some(ProviderKind::LiteRouter));
-    assert_eq!(ProviderKind::parse("lite-router"), Some(ProviderKind::LiteRouter));
-    assert_eq!(ProviderKind::parse("openai"), Some(ProviderKind::OpenAICompatible));
+    assert_eq!(
+        ProviderKind::parse("literouter"),
+        Some(ProviderKind::LiteRouter)
+    );
+    assert_eq!(
+        ProviderKind::parse("lite-router"),
+        Some(ProviderKind::LiteRouter)
+    );
+    assert_eq!(
+        ProviderKind::parse("openai"),
+        Some(ProviderKind::OpenAICompatible)
+    );
     assert_eq!(ProviderKind::parse("mock"), Some(ProviderKind::Mock));
     assert_eq!(ProviderKind::parse("unknown"), None);
 }

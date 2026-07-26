@@ -1473,6 +1473,7 @@ impl evohime_model_gateway::providers::ModelProvider for RecordingProvider {
                 } else {
                     String::new()
                 },
+                thinking: None,
                 tool_calls,
                 usage: None,
             })

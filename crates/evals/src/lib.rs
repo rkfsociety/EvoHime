@@ -107,14 +107,41 @@ pub fn script_to_results(script: &[ScriptStep]) -> Vec<ChatResult> {
                 }],
                 usage: None,
             },
-            ScriptStep::Reply { reply } => ChatResult {
-                content: reply.clone(),
-                thinking: None,
-                tool_calls: vec![],
-                usage: None,
-            },
+            ScriptStep::Reply { reply } => {
+                let (content, thinking) = extract_thinking(reply);
+                ChatResult {
+                    content,
+                    thinking,
+                    tool_calls: vec![],
+                    usage: None,
+                }
+            }
         })
         .collect()
+}
+
+/// Split a scripted reply's inline `*thinking: ...*` block (Wave 3B golden-task
+/// DSL) out of the visible message, mimicking a provider that returns thinking
+/// as a separate field rather than mixed into the message.
+fn extract_thinking(reply: &str) -> (String, Option<String>) {
+    const MARKER: &str = "*thinking:";
+    let Some(start) = reply.find(MARKER) else {
+        return (reply.to_string(), None);
+    };
+    let after_marker = start + MARKER.len();
+    let Some(rel_end) = reply[after_marker..].rfind('*') else {
+        return (reply.to_string(), None);
+    };
+    let end = after_marker + rel_end;
+    let thinking = reply[after_marker..end].trim().to_string();
+    let content = format!(
+        "{}\n\n{}",
+        reply[..start].trim_end(),
+        reply[end + 1..].trim_start()
+    )
+    .trim()
+    .to_string();
+    (content, Some(thinking))
 }
 
 pub fn check_expectations(
@@ -287,16 +314,28 @@ pub async fn run_golden_task_with_gateway(
     // Collect thinking from events (Wave 3B)
     let mut thinking = String::new();
     while let Ok(event) = rx.try_recv() {
-        if let evohime_protocol::ServerEvent::AgentThinking { thinking: chunk, .. } = event {
+        if let evohime_protocol::ServerEvent::AgentThinking {
+            thinking: chunk, ..
+        } = event
+        {
             thinking.push_str(&chunk);
         }
     }
 
     let (mut failures, final_message) = match result {
         Ok(mut run) => {
-            run.thinking = if thinking.is_empty() { None } else { Some(thinking) };
+            run.thinking = if thinking.is_empty() {
+                None
+            } else {
+                Some(thinking)
+            };
             (
-                check_expectations(&task.expect, &run.final_message, workspace.path(), run.thinking.as_deref()),
+                check_expectations(
+                    &task.expect,
+                    &run.final_message,
+                    workspace.path(),
+                    run.thinking.as_deref(),
+                ),
                 Some(run.final_message),
             )
         }
@@ -576,6 +615,8 @@ mod tests {
                     contains: None,
                 },
             ],
+            thinking_contains: vec![],
+            min_thinking_tokens: None,
         };
         let failures = check_expectations(&expect, "present here", dir.path(), None);
         assert_eq!(failures.len(), 3);
