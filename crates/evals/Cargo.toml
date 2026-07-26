@@ -8,6 +8,7 @@ chrono = { version = "0.4", features = ["serde"] }
 evohime-agent-runtime = { path = "../agent-runtime" }
 evohime-model-gateway = { path = "../model-gateway" }
 evohime-permissions = { version = "0.1.0", path = "../permissions" }
+evohime-protocol = { path = "../protocol" }
 evohime-tool-runtime = { path = "../tool-runtime" }
 futures-util = "0.3.33"
 serde = { version = "1", features = ["derive"] }

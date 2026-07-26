@@ -305,6 +305,7 @@ pub(crate) async fn run_react_loop(
         final_message,
         steps_run: tool_calls,
         truncated: false,
+        thinking: None,
     })
 }
 

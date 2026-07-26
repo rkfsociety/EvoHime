@@ -70,11 +70,14 @@ pub struct AgentConfig {
     pub telemetry: Option<std::sync::Arc<dyn crate::llm_telemetry::LlmTelemetry>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AgentRunResult {
     pub final_message: String,
     pub steps_run: usize,
     pub truncated: bool,
+    /// Wave 3B: accumulated thinking content (if any)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -671,6 +674,7 @@ async fn run_agent_loop_inner(
         final_message,
         steps_run,
         truncated,
+        thinking: None,
     })
 }
 

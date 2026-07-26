@@ -155,6 +155,7 @@ async fn run_budgeted_subagent(
             final_message,
             steps_run,
             truncated,
+            ..
         })) => Ok(format_result(
             &final_message,
             steps_run,
