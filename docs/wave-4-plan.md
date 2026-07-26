@@ -4,17 +4,16 @@
 
 **Timeline**: ~1 week (3 phases)
 
-## Current State
+## Current State (after Wave 4)
 - Lexical search via ripgrep (fast, precise for keywords)
-- Chunk-based results with line ranges
-- Path/symbol/content weighting
-- Max 5 results, 256KB per file limit
+- Deterministic 384-dimensional embeddings for project chunks
+- Hybrid lexical + semantic scoring with symbol/path weighting
+- Chunk results with line ranges, bounded by the existing project-index limits
 
-## Limitations
-- No semantic understanding (can't find conceptually similar code)
-- Simple weighting schema (not learned)
-- No embeddings caching/dedupe
-- Chunking breaks long symbol definitions
+## Remaining limitations
+- Ranking is deterministic and heuristic, not learned
+- ONNX/remote neural embedding providers remain optional extensions
+- Persistent on-disk project-index caching is not implemented; see roadmap `7.57`–`7.59`
 
 ## Proposed Architecture
 
@@ -44,10 +43,10 @@
 - Fallback: lexical if GPU unavailable
 
 ### Caching Strategy
-- SQLite for persistence
+- In-process `HashMap` cache owned by `ProjectIndex`
 - Hash-based dedup (`SHA256(chunk_text)`)
-- Lazy loading on search
-- Versioned with model hash
+- Lazy generation on search
+- Versioned embeddings (`v2-deterministic-384d`); no SQLite dependency
 
 ### Scoring Formula
 ```
@@ -113,8 +112,8 @@ rerank_multiplier = path_weight * symbol_type_weight
 - Clamped path weights [0.5, 2.0]
 
 ### Next Steps
-- Integration with server API (Wave 4B+)
-- Real embedding model swap (ONNX runtime optional)
+- Integration and product hardening around the completed project-index API
+- Optional real embedding model swap (ONNX runtime)
 - Performance benchmarking at scale
 - User feedback on relevance ranking
 

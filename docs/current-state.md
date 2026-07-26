@@ -1,17 +1,24 @@
 # EvoHime — Current State
 
-Last updated: 2026-07-25
+Last updated: 2026-07-26
 
-## Stage: 7 active (Stages 1–6 foundations complete, 7.110 ✅ complete, 7.108 ✅ complete wave 1+2)
+## Stage: 7 active (Stages 1–6 foundations complete, `7.108`–`7.116` complete; `7.105`–`7.107` remain)
 
 Normal tasks use native ReAct tool calling: the model selects a tool, receives its observation, and selects the next action until `assistant.reply`. Tool-level permission approvals remain enabled for protected operations.
 
-**Wave Progress (2026-07-25):**
+**Wave Progress (2026-07-26):**
 - ✅ `7.110` Formal threat model doc: `docs/security/threat-model.md` + `SECURITY.md`
 - ✅ `7.108` Wave 1: Cost limits backend — PostgreSQL schema (0031), storage module, API endpoints `/api/models/cost-limits` (GET/PUT)
 - ✅ `7.108` Wave 2: Spend Panel frontend — Settings tab with cost limits, token tracking UI, edit/save flow, gauge visualization
+- ✅ `7.109` Self-update channel for launcher — checksum-verified staged launcher update via `evohime-updater`
+- ✅ `7.111` Extended reasoning — thinking settings, streaming events, usage tracking and eval assertions
+- ✅ `7.112` Project Context 2.0 — deterministic embeddings and hybrid semantic/lexical project search
+- ✅ `7.113` Plugin marketplace audit trail — durable install/update/uninstall/pin history and UI
+- ✅ `7.114` OTLP metrics export and `/api/metrics/history` frontend trends
+- ✅ `7.115` Frontend performance — sourcemaps, error traces, lazy panels and Lighthouse pass
+- ✅ `7.116` Session recovery — keyset history pagination, reconnect backoff and paginated replay
 
-Stages 1–6 foundations are complete. Stage 7 hardening/product items through `7.98` are implemented; `7.99` (cloud sync) is complete: owner-only `/api/sync/status|push|pull` move the operator `BackupDump` to/from `EVOHIME_SYNC_URL` with direction-aware history in `sync_runs` (pull enforces a 64 MiB body limit and checksum verification), `restore_backup` + CLI `evohime-import` restore a dump idempotently, and `EVOHIME_SYNC_AUTO_MINUTES` enables a background auto-push loop for the bootstrap owner.
+Stages 1–6 foundations are complete. Stage 7 hardening/product items through `7.116` are implemented except `7.105`–`7.107`; `7.99` (cloud sync) is complete: owner-only `/api/sync/status|push|pull` move the operator `BackupDump` to/from `EVOHIME_SYNC_URL` with direction-aware history in `sync_runs` (pull enforces a 64 MiB body limit and checksum verification), `restore_backup` + CLI `evohime-import` restore a dump idempotently, and `EVOHIME_SYNC_AUTO_MINUTES` enables a background auto-push loop for the bootstrap owner.
 
 ## Crates
 
@@ -127,7 +134,7 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 - `crates/storage` — memory_items CRUD + overview/update/delete + legacy import
 - `crates/model-gateway`, `protocol`, `tool-runtime`, `permissions`, `server`
 
-## Next recommended step
+## Completed hardening evidence (selected)
 
 `7.65` hardening выполнен: scheduler dispatch атомарно создаёт один run/session/task, manual trigger не увеличивает счётчик повторно, а failure history сохраняет ошибки. `7.93` добавил request-id, безопасные internal errors и header-only HTTP auth; `7.94` добавил copyable correlation ids и server-provided latency bars; `7.95` добавил tracing redaction и bounded health sampling; `7.96` добавил `/health/deep` с проверками DB, worker и workspace; `7.97` добавил CLI `evohime-export` для JSON backup сессий и memory; `7.98` добавил multi-operator registry с opaque-токенами и scoped данными; `7.99` wave 1 добавил cloud sync push backup на remote endpoint с историей `sync_runs`; wave 2 добавила идемпотентный restore (`restore_backup`, CLI `evohime-import`); wave 3 добавила `/api/sync/pull` с direction в `sync_runs`; wave 4 добавила фоновый авто-push (`EVOHIME_SYNC_AUTO_MINUTES`, min 5 минут, первый тик пропускается). `7.99` закрыт. `7.100` закрыт: `browser.session.navigate|read|click|type|screenshot|close` — persistent CDP-вкладка на задачу через `EVOHIME_BROWSER_CDP_URL` (кап 4 сессии, idle 10 минут, SSRF-валидация навигации, скриншоты в workspace sandbox с лимитом 16 MiB, ввод текста без эха в structured/логи, mock-CDP тесты без Chrome). `7.101` wave 1 добавила eval harness: крейт `evohime-evals` с golden tasks (JSON) против реального `run_agent_loop` + `ToolRegistry` и scripted mock-моделью; раннер живёт в `cargo test --workspace` (CI) и CLI `evohime-eval`. Wave 2 закрыла пункт: `run_golden_task_with_gateway` принимает любой gateway, `evohime-eval --live` гоняет задачи против настроенного провайдера, `--judge` судит задачи с `rubric` строгим JSON-вердиктом (непарсибельный вердикт — провал, не тихий pass). `7.102` wave 1 добавила trust scores для marketplace плагинов: оценка из проверяемых сигналов (ярус источника каталога, commit-pin, https, метаданные) с уровнями official/curated/community/unverified в `/api/plugins/catalog` и бейджами в PluginsPanel; установка прогоняет статический risk scan (curl|sh-пайпы, PowerShell-обфускация, обращения к секретам, бинарники) и отклоняет находки у ниже-official плагинов без явного `force`. Wave 2 закрыла пункт: `.evohime/plugins.lock.json` фиксирует content-hash (SHA-256 по дереву без `.git`/симлинков), версию и trust-уровень каждого установленного плагина; `GET /api/plugins/integrity` возвращает ok/modified/unlocked/missing, PluginsPanel показывает integrity-chip. Криптоподписи и репутация авторов зафиксированы как вне пункта — у OSS-каталогов нет внешней PKI. `7.103` wave 1 добавила обучение на проваленных задачах: вместо полного пропуска (`if !task_ok return`) работает ограниченная полоса — `FAILURE_EXTRACT_PROMPT` + `extract_failure_candidates` дают максимум 2 урока (`failure_pattern`/`verification_rule`, scope experience) с confidence cap 0.6, что by construction исключает auto-promote: каждый урок из провала идёт через Ask-гейт к оператору. Транзиентный инфраструктурный шум отфильтровывается. Остаток `7.103` — эскалация повторяющихся паттернов и retrieval-приоритизация уроков. Wave 2 закрыла остаток: `FeedbackSignal::Repeated` эскалирует confidence (кап 0.6, auto-promote из провала по-прежнему невозможен) и importance существующей experience-записи при повторном admit-дубликате failure_pattern/verification_rule в статусе Candidate; `score_item` даёт этим двум kind'ам дополнительный ранжирующий бонус над success_pattern/playbook. `7.103` закрыт. `7.104` закрыт: mobile-responsive shell через CSS media query `≤768px` с off-canvas sidebar/trace-panel и touch-таргетами ≥44px. `7.110` закрыт: `docs/security/threat-model.md` с формальным анализом всех угроз (7.A–7.E миграции) и мер защиты; `SECURITY.md` с кратким резюме и рекомендациями для deployment.
 
@@ -143,7 +150,7 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.88` выполнен: `.devcontainer/` поднимает переносимый workspace-контейнер, PostgreSQL 16 и Python worker через Compose; API/Web/worker ports и container env задокументированы в README.
 
-`7.89` выполнен: `scripts/generate-openapi.mjs` извлекает 75 операций из `crates/server/src/routes.rs`, генерирует `docs/openapi.json` и `frontend/web/src/api/generated.ts`, а сервер отдаёт контракт через `/openapi.json`. Сейчас это route-level контракт; DTO-схемы остаются в domain API modules.
+`7.89` выполнен: `scripts/generate-openapi.mjs` извлекает 98 операций из `crates/server/src/routes.rs`, генерирует `docs/openapi.json` и `frontend/web/src/api/generated.ts`, а сервер отдаёт контракт через `/openapi.json`. Сейчас это route-level контракт; DTO-схемы остаются в domain API modules.
 
 `7.90` выполнен: `/api/features` публикует Sites/Scheduled/OTLP flags; `EVOHIME_FEATURE_SITES` и `EVOHIME_FEATURE_SCHEDULED` скрывают панели и возвращают deep-link в чат, а `EVOHIME_FEATURE_OTLP=0` отключает экспорт OTLP.
 
@@ -213,7 +220,7 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.51` реализован: Python worker и зеркальная Rust-валидация получили `text.classify`, `text.language` и `text.redact`; все три handler доступны также через `worker.run`.
 
-**Актуализация 2026-07-22:** `7.51`, product honesty для Sites/Scheduled, scheduler correctness, request context, task timeline telemetry, log safety, deep health checks и backup/export выполнены; Wave E `7.84`–`7.98` закрыта. `7.92` уже покрыт `7.24`; `7.99` (cloud sync) выполнен целиком.
+**Актуализация 2026-07-26:** `7.51`, product honesty для Sites/Scheduled, scheduler correctness, request context, task timeline telemetry, log safety, deep health checks, backup/export, cloud sync, browser sessions, eval harness, plugin trust/integrity, failure learning, mobile shell, threat model, cost limits, self-update, extended reasoning, semantic project search, plugin audit, OTLP trends, frontend performance и session recovery выполнены. Реально незакрыты только `7.105`–`7.107`.
 
-1. **Stage 7** — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99`–`7.102` ✅; `7.103` ✅
-2. Рекомендуемая следующая волна: следующий пункт Stage 7 hardening/product
+1. **Stage 7** — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99`–`7.104` ✅; `7.108`–`7.116` ✅.
+2. **Ближайшая незавершённая задача:** `7.105` Voice input / TTS optional; затем `7.106` Diff review UI и `7.107` Worktree-aware multi-checkout agent.

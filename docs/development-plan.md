@@ -61,9 +61,9 @@ EvoHime Server — Rust
 13. Параллельное выполнение независимых инструментов
 14. Восстановление задач после перезапуска сервера
 
-## Фактический статус на 2026-07-24
+## Фактический статус на 2026-07-26
 
-Этапы 1–6 завершены на уровне foundations. Stage 7: hardening/product waves `7.1`–`7.98` выполнены; `7.99` (cloud sync) начат — wave 1 push операторского backup на remote endpoint завершена, дальше pull/restore и авто-sync.
+Этапы 1–6 завершены на уровне foundations. Stage 7: hardening/product waves `7.1`–`7.104` и `7.108`–`7.116` выполнены; остаются `7.105` Voice input / TTS, `7.106` Diff review UI и `7.107` Worktree-aware multi-checkout agent.
 
 - tools: filesystem / shell / Git / browser / MCP в `tool-runtime`;
 - `agent-runtime`: native ReAct tool call → observation → next action; bounded limits; checkpoints; structured memory в prompt;
@@ -72,7 +72,7 @@ EvoHime Server — Rust
 - workers: health/stall + summarize/chunk/similarity/entities/diff/classify/language/redact handlers;
 - Stage 7: auth/permissions, recovery, memory quality, product honesty для Sites/Scheduled, CI gates, Dev Container/Compose, OpenAPI contract и experimental feature flags.
 
-**Текущий сквозной приоритет:** audit hardening Stage 7 — timeline/latency (`7.94`) и следующие пункты ([roadmap.md](roadmap.md) § Этап 7).
+**Текущий сквозной приоритет:** завершение оставшихся Stage 7 пунктов — `7.105`–`7.107` ([roadmap.md](roadmap.md) § Этап 7).
 
 ---
 
@@ -118,11 +118,7 @@ task.step.changed
 action.logged
 ```
 
-### События (зарезервированы для будущих расширений)
-
-```text
-approval.required
-```
+Событие `approval.required` реализовано и используется для паузы защищённых операций; события thinking и `tool.output.delta` также поддерживаются актуальным протоколом.
 
 ### Команды клиента
 
@@ -299,8 +295,8 @@ Task lifecycle реализован: start/complete/fail/cancel/resume/retry. St
 ### Этап 7 — Hardening + Product 🟡
 
 - Waves A–D закрыли trust/security, recovery, agent quality и product honesty для Sites/Scheduled;
-- Wave E `7.84`–`7.91` закрыла PostgreSQL/frontend/protocol/docs CI, Dev Container, OpenAPI и feature flags;
-- scheduler correctness и request context hardening завершены; следующий пункт — `7.94` timeline/latency; `7.92` уже реализован через `/metrics` в `7.24`.
+- Wave E `7.84`–`7.98` закрыла PostgreSQL/frontend/protocol/docs CI, Dev Container, OpenAPI и feature flags;
+- `7.99`–`7.104` и `7.108`–`7.116` завершены; остаются `7.105`–`7.107`.
 
 ---
 

@@ -1,7 +1,7 @@
-# Wave 3A: Session Recovery (7.109) — Design Specification
+# Wave 3A: Session Recovery (7.116) — Design Specification
 
 **Date:** 2026-07-26  
-**Status:** In Development  
+**Status:** ✅ Implemented (`7.116`)
 **Effort:** 3 weeks  
 **Dependencies:** None (parallel with Wave 3B)
 
@@ -245,4 +245,3 @@ Enhance session history retrieval with pagination, improve WebSocket reconnect l
 
 - Exponential backoff with jitter prevents thundering herd during mass disconnect
 - localStorage chosen for replay cursor (survives tab close); sessionStorage for retry context (tab-scoped)
-

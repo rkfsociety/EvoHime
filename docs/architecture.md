@@ -67,7 +67,8 @@ host.
 | 3 | Filesystem/shell tools, terminal, permissions | ✅ Complete |
 | 4 | Monaco editor, file tree, Git diff | ✅ Complete |
 | 5 | Task planning, parallel tools, cancel/resume | ✅ Complete |
-| 6 | Project index, MCP, multi-model, Python workers | 🟡 In progress |
+| 6 | Project index, MCP, multi-model, Python workers | ✅ Foundations complete |
+| 7 | Hardening, product, reliability and security | 🟡 In progress; `7.105`–`7.107` remain |
 
 - [development-plan.md](development-plan.md) — полный план
 - [roadmap.md](roadmap.md) — дорожная карта с milestones
