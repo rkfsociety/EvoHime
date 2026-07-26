@@ -2,6 +2,7 @@
 //! Installer'у перед распаковкой PostgreSQL/Python/релиза и Launcher'у перед
 //! каждым обновлением (раздел X плана: предупреждение при <1 ГБ свободно).
 
+#[cfg(windows)]
 use std::path::Path;
 
 #[derive(Debug, thiserror::Error)]

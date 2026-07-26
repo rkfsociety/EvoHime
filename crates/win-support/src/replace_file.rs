@@ -3,6 +3,7 @@
 //! паттерн `tmp` → `rename` (раздел IX плана): `config.json`, `current.txt`
 //! и `history.json` пишутся именно так.
 
+#[cfg(windows)]
 use std::path::Path;
 use thiserror::Error;
 
