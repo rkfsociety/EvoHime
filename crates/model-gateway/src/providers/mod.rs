@@ -36,6 +36,11 @@ impl ProviderKind {
             Self::Mock => "mock",
         }
     }
+
+    /// Wave 3B: Check if provider supports extended thinking
+    pub fn supports_thinking(self) -> bool {
+        matches!(self, Self::LiteRouter | Self::Mock)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
