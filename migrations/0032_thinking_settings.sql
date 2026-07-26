@@ -1,8 +1,7 @@
 -- Wave 3B: Extended Reasoning settings (thinking budget, enabled/disabled, model preferences)
 
 CREATE TABLE IF NOT EXISTS thinking_settings (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    operator_id UUID NOT NULL REFERENCES operators(id) ON DELETE CASCADE,
+    id SERIAL PRIMARY KEY,
 
     -- Thinking configuration
     enabled BOOLEAN NOT NULL DEFAULT false,
@@ -18,12 +17,8 @@ CREATE TABLE IF NOT EXISTS thinking_settings (
     warning_threshold_percent INT DEFAULT 80,  -- Alert at 80% of budget
 
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    UNIQUE(operator_id)
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
-CREATE INDEX idx_thinking_settings_operator_id ON thinking_settings(operator_id);
 
 -- Track thinking usage per session for cost estimation
 CREATE TABLE IF NOT EXISTS thinking_usage (

@@ -7,8 +7,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct ThinkingSettings {
-    pub id: Uuid,
-    pub operator_id: Uuid,
+    pub id: i32,
     pub enabled: bool,
     pub budget_tokens: Option<i32>,
     pub max_budget_tokens: Option<i32>,
@@ -33,28 +32,26 @@ pub struct ThinkingUsage {
     pub created_at: DateTime<Utc>,
 }
 
-/// Get or create thinking settings for operator (defaults to disabled, 5000 tokens budget)
+/// Get or create global thinking settings (defaults to disabled, 5000 tokens budget)
 pub async fn get_or_create_thinking_settings(
     pool: &PgPool,
-    operator_id: Uuid,
 ) -> sqlx::Result<ThinkingSettings> {
     sqlx::query_as::<_, ThinkingSettings>(
         r#"
-        INSERT INTO thinking_settings (operator_id, enabled, budget_tokens)
-        VALUES ($1, false, 5000)
-        ON CONFLICT (operator_id) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
-        RETURNING *
+        INSERT INTO thinking_settings (enabled, budget_tokens)
+        VALUES (false, 5000)
+        ON CONFLICT DO NOTHING;
+
+        SELECT * FROM thinking_settings LIMIT 1
         "#,
     )
-    .bind(operator_id)
     .fetch_one(pool)
     .await
 }
 
-/// Update thinking settings
+/// Update global thinking settings
 pub async fn update_thinking_settings(
     pool: &PgPool,
-    operator_id: Uuid,
     enabled: bool,
     budget_tokens: Option<i32>,
     show_thinking: bool,
@@ -63,16 +60,15 @@ pub async fn update_thinking_settings(
     sqlx::query_as::<_, ThinkingSettings>(
         r#"
         UPDATE thinking_settings
-        SET enabled = $2,
-            budget_tokens = COALESCE($3, budget_tokens),
-            show_thinking = $4,
-            thinking_verbosity = COALESCE($5, thinking_verbosity),
+        SET enabled = $1,
+            budget_tokens = COALESCE($2, budget_tokens),
+            show_thinking = $3,
+            thinking_verbosity = COALESCE($4, thinking_verbosity),
             updated_at = CURRENT_TIMESTAMP
-        WHERE operator_id = $1
+        WHERE id = (SELECT id FROM thinking_settings LIMIT 1)
         RETURNING *
         "#,
     )
-    .bind(operator_id)
     .bind(enabled)
     .bind(budget_tokens)
     .bind(show_thinking)
@@ -115,10 +111,9 @@ pub async fn record_thinking_usage(
     .await
 }
 
-/// Get monthly thinking usage cost for operator
+/// Get total monthly thinking usage cost across all sessions
 pub async fn get_monthly_thinking_cost(
     pool: &PgPool,
-    operator_id: Uuid,
 ) -> sqlx::Result<Option<rust_decimal::Decimal>> {
     #[derive(sqlx::FromRow)]
     struct CostRow {
@@ -129,11 +124,9 @@ pub async fn get_monthly_thinking_cost(
         r#"
         SELECT COALESCE(SUM(estimated_cost_usd), 0) as total_cost
         FROM thinking_usage
-        WHERE operator_id = $1
-          AND created_at >= date_trunc('month', CURRENT_TIMESTAMP)
+        WHERE created_at >= date_trunc('month', CURRENT_TIMESTAMP)
         "#,
     )
-    .bind(operator_id)
     .fetch_one(pool)
     .await?;
 

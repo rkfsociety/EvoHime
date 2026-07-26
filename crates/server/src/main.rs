@@ -35,6 +35,7 @@ mod sites_api;
 mod startup;
 mod sync_api;
 mod task;
+mod thinking_api;
 mod worker;
 mod worker_api;
 mod worker_observability;

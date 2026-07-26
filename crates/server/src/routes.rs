@@ -8,6 +8,7 @@ use crate::plugin_skills_api;
 use crate::plugins;
 use crate::scheduled_api;
 use crate::sites_api;
+use crate::thinking_api;
 use crate::workspace;
 use axum::{
     middleware,
@@ -54,6 +55,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/api/models/cost-limits/:model",
             put(crate::models_api::update_cost_limit),
+        )
+        .route(
+            "/api/settings/thinking",
+            get(thinking_api::get_thinking_settings).put(thinking_api::put_thinking_settings),
         )
         .route(
             "/api/sessions",
