@@ -1,153 +1,48 @@
 # EvoHime
 
-Web-first AI-agent monorepo. Browser-only: no Electron, desktop, or mobile clients.
+Браузерная платформа для AI-агентов. Интерфейс работает в браузере, сервер — на Rust, данные хранятся в PostgreSQL.
 
-## Stack
+## Быстрый запуск на Windows
 
-- Frontend: React + TypeScript + Vite
-- Backend: Rust (Axum)
-- Database: PostgreSQL
-- Real-time: WebSocket
-- Deploy: native Windows launcher
-
-## Repository layout
-
-```text
-evohime/
-├── frontend/web/          # React workspace UI
-├── crates/
-│   ├── server/            # HTTP + WebSocket entrypoint
-│   ├── agent-runtime/     # Agent orchestration
-│   ├── task-engine/       # Task lifecycle
-│   ├── tool-runtime/      # Tool registry + execution
-│   ├── permissions/       # Permission types
-│   ├── protocol/          # Shared event schema
-│   └── storage/           # PostgreSQL access
-├── workers/python/        # HTTP job workers for heavier processing
-├── migrations/            # SQL migrations
-└── docs/                  # Architecture, roadmap, and status
-```
-
-## Current state
-
-```text
-Browser workspace
-  → session/task lifecycle
-  → streamed LiteRouter response
-  → filesystem/shell/git tools
-  → approval flow
-  → chat, settings, events, tasks, actions, terminal, files, editor, git panels
-  → history stored in PostgreSQL
-```
-
-Stages 1–5 are complete. LiteRouter is the active model provider. Stage 6 already includes project index, MCP, persistent memory, task-scoped model routing, browser tools, and MCP management. Agent model routes are configured and persisted from the web panel; env values are only bootstrap defaults. The Python worker now exposes a bounded HTTP job queue with health, submit, poll, and structured failure states; the remaining work is expanding real ML task handlers.
-
-## Local development
-
-The supported path runs Rust, Vite, and a portable PostgreSQL 16 process directly on the host.
-
-First setup:
+Первичная настройка:
 
 ```powershell
 .\scripts\setup-local.ps1 -InstallPostgres -ApplyMigrations
 ```
 
-Start the tray launcher:
+Запуск локального стека:
 
 ```powershell
 .\start-dev.ps1
 ```
 
-The launcher starts PostgreSQL, the Rust backend, and the Vite frontend. The backend can read the host GitHub CLI login:
+После запуска:
+
+- веб-интерфейс: http://localhost:5173;
+- проверка API: http://localhost:3000/health.
+
+## Разработка
 
 ```powershell
-gh auth status
-Invoke-RestMethod http://localhost:3000/api/auth/github
-```
-
-The convenience files `start-dev.bat` and `start-dev.vbs` start the same local launcher.
-
-### Devcontainer / cross-platform development
-
-On Docker Desktop, Podman, or any VS Code Dev Containers-compatible host, open
-the repository in the devcontainer defined in `.devcontainer/`. PostgreSQL and
-the Python worker start through Compose; the workspace container provides Rust,
-Node.js, Python, and ripgrep.
-
-Inside the container, start the API and web processes in separate terminals:
-
-```bash
-cargo run -p evohime-server
-cd frontend/web && npm run dev -- --host 0.0.0.0
-```
-
-The browser UI is available at http://localhost:5173 and the API health check
-at http://localhost:3000/health. The Windows tray launcher remains the
-recommended native path on Windows.
-
-## Manual local development
-
-Frontend:
-
-```bash
-cd frontend/web
+# фронтенд
+Set-Location frontend/web
 npm install
 npm run dev
-```
 
-Backend (Rust + PostgreSQL):
-
-```bash
-cp .env.example .env
+# сервер
 cargo run -p evohime-server
 ```
 
-Create a portable JSON backup of all sessions and structured memory:
+Переменные окружения находятся в `.env.example`. Для работы модели LiteRouter укажите `LITEROUTER_API_KEY` и, при необходимости, `LITEROUTER_MODEL`.
 
-```bash
-cargo run -p evohime-storage --bin evohime-export -- --output .evohime/backup.json
-```
+## Документация
 
-Generate protocol types:
+Подробная документация, архитектура, настройка, roadmap и инструкции для разработчиков находятся в [Wiki проекта](https://github.com/rkfsociety/EvoHime/wiki).
 
-```bash
-npm install
-npm run generate:protocol
-```
+Исходные документы в репозитории:
 
-Generate the OpenAPI route contract and frontend typed path union:
-
-```bash
-npm run generate:openapi
-```
-
-The generated route-level contract is available at `docs/openapi.json` and
-from the server at `/openapi.json`. Request/response DTOs remain in the
-domain-specific typed API modules until their schemas are promoted to the
-shared contract.
-
-- Web: http://localhost:5173
-- API: http://localhost:3000/health
-
-## Environment
-
-See `.env.example`:
-
-- `DATABASE_URL`
-- `BIND_ADDR` — default `127.0.0.1:3000` (use `0.0.0.0:3000` + `EVOHIME_API_TOKEN` for LAN)
-- `EVOHIME_API_TOKEN` — optional bearer auth for HTTP/WS
-- `WORKSPACE_ROOT`
-- `DEMO_FILE_PATH`
-- `LITEROUTER_API_KEY` — LiteRouter API key
-- `LITEROUTER_MODEL` — default `deepseek:free`
-
-## Documentation
-
-- [docs/development-plan.md](docs/development-plan.md) — полный план разработки
-- [docs/providers/literouter.md](docs/providers/literouter.md) — первый LLM-провайдер (LiteRouter)
-- [docs/roadmap.md](docs/roadmap.md) — дорожная карта с milestones
-- [docs/current-state.md](docs/current-state.md) — текущий статус
-- [docs/architecture.md](docs/architecture.md) — архитектура
-- [AGENTS.md](AGENTS.md) — гайд для AI-агентов
-
-The implementation status is tracked in [docs/current-state.md](docs/current-state.md). The roadmap separates backend foundations from end-to-end browser milestones.
+- [текущий статус](docs/current-state.md);
+- [план разработки](docs/development-plan.md);
+- [roadmap](docs/roadmap.md);
+- [архитектура](docs/architecture.md);
+- [инструкции для AI-агентов](AGENTS.md).
