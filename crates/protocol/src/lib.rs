@@ -28,6 +28,15 @@ pub enum ServerEvent {
     },
     #[serde(rename = "agent.message.delta")]
     AgentMessageDelta { task_id: Uuid, delta: String },
+    #[serde(rename = "agent.thinking")]
+    AgentThinking {
+        task_id: Uuid,
+        thinking: String,
+        created_at: DateTime<Utc>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        correlation_id: Option<String>,
+        llm_request_id: String,
+    },
     #[serde(rename = "agent.status")]
     AgentStatus { task_id: Uuid, phase: String },
     #[serde(rename = "agent.plan.updated")]
