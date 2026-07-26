@@ -60,6 +60,8 @@ async fn main() -> anyhow::Result<()> {
     let state = prepared.state;
     let shutdown_token = prepared.shutdown_token;
 
+    otel::register_pipeline_metrics(state.metrics.clone(), state.worker_metrics.clone());
+
     let app = routes::build_router(state.clone());
 
     let addr: SocketAddr = config.bind_addr.parse().context("parse bind address")?;
