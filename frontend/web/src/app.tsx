@@ -664,6 +664,15 @@ export function App() {
   const { socketState, setSocketState, lastSequenceRef, send: sendSocket } = useWebSocket({
     sessionId: session?.session_id ?? null,
     onEvent: applyEvent,
+    onReconnect: (state) => {
+      if (state === "started") {
+        console.debug("WebSocket reconnect started");
+      } else if (state === "succeeded") {
+        console.debug("WebSocket reconnect succeeded");
+      } else if (state === "failed") {
+        console.error("WebSocket reconnect failed after max attempts");
+      }
+    },
   });
   const connectedLabel = useMemo(() => {
     if (!session) return "Загрузка чатов...";

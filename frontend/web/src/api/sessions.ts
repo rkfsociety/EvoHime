@@ -31,6 +31,34 @@ export function getSessionHistory(sessionId: string, afterSequence = 0) {
   );
 }
 
+export interface PaginatedHistoryResponse {
+  items: HistoryItem[];
+  next_cursor?: string;
+  prev_cursor?: string;
+  has_more: boolean;
+  total_available: number;
+}
+
+export function getSessionHistoryPaginated(
+  sessionId: string,
+  limit = 50,
+  cursor?: string,
+  order: "asc" | "desc" = "asc",
+) {
+  const params = new URLSearchParams({
+    limit: Math.max(1, Math.min(500, limit)).toString(),
+    order,
+  });
+  if (cursor) {
+    params.set("cursor", cursor);
+  }
+  return apiRequest<PaginatedHistoryResponse>(
+    `/api/sessions/${sessionId}/history?${params.toString()}`,
+    undefined,
+    "Не удалось загрузить историю",
+  );
+}
+
 export function archiveSession(sessionId: string) {
   return apiRequestVoid(
     `/api/sessions/${sessionId}/archive`,
