@@ -5,12 +5,18 @@
 //! - separate path / symbol / content weights
 //! - binary + noisy-file filtering
 //!
-//! Chunk text is stable enough to feed a future embedding encoder.
+//! Wave 4: Semantic search with embeddings:
+//! - Chunk embeddings cached locally
+//! - Hash-based deduplication
+//! - Hybrid BM25 + cosine similarity scoring
+
+pub mod embeddings;
 
 use std::cmp::Reverse;
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
+use embeddings::{EmbeddingCache, SemanticMatch};
 
 const DEFAULT_MAX_RESULTS: usize = 5;
 const DEFAULT_MAX_FILE_BYTES: u64 = 256 * 1024;
@@ -73,6 +79,8 @@ pub struct ProjectIndex {
     workspace_root: PathBuf,
     max_results: usize,
     max_file_bytes: u64,
+    /// Wave 4: Embedding cache for semantic search
+    embeddings_cache: EmbeddingCache,
 }
 
 impl ProjectIndex {
@@ -81,6 +89,7 @@ impl ProjectIndex {
             workspace_root: workspace_root.into(),
             max_results: DEFAULT_MAX_RESULTS,
             max_file_bytes: DEFAULT_MAX_FILE_BYTES,
+            embeddings_cache: EmbeddingCache::new(),
         }
     }
 
@@ -93,7 +102,13 @@ impl ProjectIndex {
             workspace_root: workspace_root.into(),
             max_results: max_results.max(1),
             max_file_bytes: max_file_bytes.max(1),
+            embeddings_cache: EmbeddingCache::new(),
         }
+    }
+
+    /// Wave 4: Get embedding cache (for testing & stats)
+    pub fn embeddings_cache(&self) -> &EmbeddingCache {
+        &self.embeddings_cache
     }
 
     pub fn search(&self, query: &str) -> Vec<ProjectIndexMatch> {
