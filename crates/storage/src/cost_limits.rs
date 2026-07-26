@@ -165,7 +165,7 @@ pub async fn check_spending_cap(
 mod tests {
     use super::*;
 
-    #[sqlx::test]
+    #[sqlx::test(migrations = "../../migrations")]
     async fn test_cost_limit_crud(pool: PgPool) {
         // Create
         let limit = get_or_create_cost_limit(&pool, "test-model", 1_000_000)
@@ -193,7 +193,7 @@ mod tests {
         assert!(fetched.is_some());
     }
 
-    #[sqlx::test]
+    #[sqlx::test(migrations = "../../migrations")]
     async fn test_spending_tracking(pool: PgPool) {
         // Set limit
         let _limit = get_or_create_cost_limit(&pool, "test-model2", 100_000)
