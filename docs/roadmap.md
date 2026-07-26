@@ -1,6 +1,6 @@
 # EvoHime — Дорожная карта
 
-> Обновлено: 2026-07-24
+> Обновлено: 2026-07-26 (реконциляция Stage 7 с фактическим кодом и ad-hoc wave-трекингом)
 
 ## Обзор
 
@@ -329,7 +329,7 @@
 | --- | --- | --- | --- | --- |
 | 7.15 | Поднять Python worker из `start-dev.ps1` (+ tray icon) | M | ✅ | `-Worker`, tray, health wait `:8090`, auto-restart |
 | 7.16 | LLM provider retry / backoff / retry-after | M | ✅ | `retry.rs` + literouter initial-request retries; `EVOHIME_LLM_*` |
-| 7.17 | WebSocket reconnect + event resume (cursor / last event id) | M | ✅ | `HistoryItem` WS envelope; `after_sequence` / history `?after=`; frontend auto-reconnect |
+| 7.17 | WebSocket reconnect + event resume (cursor / last event id) | M | ✅ | `HistoryItem` WS envelope; `after_sequence` / history `?after=`; frontend auto-reconnect; расширено в `7.116` (keyset pagination + exponential backoff) |
 | 7.18 | Safe restart policy: не auto-resume mutating tasks без флага | M | ✅ | recover RETURNING only; mutating defer; `EVOHIME_AUTO_RESUME_ON_RESTART` |
 | 7.19 | PgPool tuning (max_connections, timeouts, idle) | S | ✅ | `storage/pool.rs`; `EVOHIME_PG_*` env knobs |
 | 7.20 | Observability locks без `.expect()` panic | S | ✅ | `observability` / `worker_observability`: poison → `into_inner` |
@@ -487,20 +487,28 @@
 | 7.105 | Voice input / TTS optional | M | ⬜ | |
 | 7.106 | Diff review UI for agent patches before apply | L | ⬜ | approvals coarse today |
 | 7.107 | Worktree-aware multi-checkout agent (parallel tasks isolated) | L | ⬜ | |
-| 7.108 | Cost budgets & spend caps per day/model | M | 🟡 | Backend: `cost_limits` table, `/api/models/cost-limits` CRUD; Frontend: Spend tab в Settings; Wave 2 разработки |
-| 7.109 | Self-update channel for launcher | M | ⬜ | |
+| 7.108 | Cost budgets & spend caps per day/model | M | ✅ | Backend (Wave 1): `cost_limits` table (`crates/storage/src/cost_limits.rs`), `/api/models/cost-limits` CRUD; Frontend (Wave 2): `SpendSettingsSection.tsx` в Settings, gauge визуализация, edit/save flow; коммит `2f3257e` |
+| 7.109 | Self-update channel for launcher | M | ✅ | `crates/launcher/src/self_update.rs` — скачивание нового `launcher.exe` во временный путь с проверкой SHA256, эстафета отдельному `updater.exe` процессу (файл лаунчера заблокирован пока сам работает); `crates/updater`; `LauncherStatus.tsx` панель статуса в Settings; коммиты `b9329b6`, `73bf411` |
 | 7.110 | Formal threat model doc + abuse cases | M | ✅ | `docs/security/threat-model.md` + `SECURITY.md`; all 7.A–7.E пункты documented |
+| 7.111 | Extended reasoning: Claude thinking (streaming, budget, cost-tracking) | L | ✅ | Model gateway (`ChatStreamItem::Thinking`, SSE parser), `thinking_settings`/`thinking_usage` таблицы, `GET/PUT /api/settings/thinking`, `ThinkingSettingsSection.tsx`, event batching в agent runtime (`ServerEvent::AgentThinking`), eval harness `thinking_contains`/`min_thinking_tokens`, provider `supports_thinking` detection; см. `docs/wave-3b-extended-reasoning.md`; 11 коммитов от `e78ab74` до `8680eba` |
+| 7.112 | Project Context 2.0: semantic search via embeddings | M | ✅ | `crates/project-index`: детерминированные 384-dim embeddings, hybrid lexical+semantic scoring (BM25 + cosine), symbol-aware weighting, path hierarchy boost; 16 unit-тестов; см. `docs/wave-4-plan.md`; коммиты `b06e3ae`, `1d1d980`, `ef27380` |
+| 7.113 | Plugin marketplace: audit trail для install/update/uninstall/pin | M | ✅ | Дополняет `7.102`: таблица `plugin_audit` (`migrations/0033`), DAO `crates/storage/src/plugin_audit.rs`, событие `force_override` при обходе risk-scan, `GET /api/plugins/audit`, секция "История действий" в `PluginsPanel.tsx`; коммит `cf44374`. Вне скоупа: Ed25519-подписи авторов, community reputation |
+| 7.114 | OTLP metrics export + `/metrics/history` frontend trends | S | ✅ | Дополняет `7.92`/`7.24`: `crates/server/src/otel.rs` — `MetricExporter`/`SdkMeterProvider`, `register_pipeline_metrics()` зеркалит Prometheus-метрики через OTLP (no-op если выключено); sparkline-графики в `MetricsSettingsSection.tsx` для существующего `/api/metrics/history`; коммит `e4aea1c` |
+| 7.115 | Frontend performance: sourcemaps, error traces, Lighthouse pass | S | ✅ | `build.sourcemap: true`; `PanelErrorBoundary.tsx` показывает stack+componentStack с копированием; `globalErrorHandlers.ts` (`window.onerror`/`unhandledrejection`); `TerminalPanel` переведён на `React.lazy()`; кастомный vite-plugin `deferNonCriticalCss` устранил render-blocking `vendor-monaco.css`; meta description + robots.txt; Lighthouse 95/100/96/100; коммит `6f28e01` |
+| 7.116 | Session recovery: keyset pagination + WS reconnect resiliency | M | ✅ | Расширяет `7.17`: cursor-based keyset pagination для `GET /api/sessions/:id/history` (`PaginatedEventsCursor`, forward/backward `order`, backward-compatible с `after`); `useWebSocket` — exponential backoff+jitter, max 5 попыток, state machine idle→connecting/reconnecting→connected/failed, `sessionStorage` контекст переподключения (30 мин); `useSessionReplay` для paginated backfill истории; коммиты `7b0d0ca`, `c37f912`, `5ee8939` |
 
 ### Suggested Stage 7 delivery waves
 
 **Актуальный статус 2026-07-24:** `7.93`–`7.98` ✅ — request context, task timeline telemetry, log safety, deep health checks, backup/export и multi-operator authz; `7.99` ✅ — cloud sync целиком: push/pull через owner-only `/api/sync/*` (`sync_runs` с direction, лимит 64 MiB, checksum-сверка), идемпотентный restore (`restore_backup` + CLI `evohime-import`) и авто-push по `EVOHIME_SYNC_AUTO_MINUTES`. `7.100` ✅ — visual browser agent loop целиком: persistent CDP-вкладка на задачу (`EVOHIME_BROWSER_CDP_URL`), navigate/read/click/type/screenshot/close. `7.101` ✅ — eval harness целиком: golden tasks в CI (mock), `evohime-eval --live --judge` против реального провайдера с LLM-вердиктами. `7.102` ✅ — trust scores в каталоге, risk-scan гейт установки и content-hash lock с integrity-проверкой установленных плагинов. `7.103` ✅ — обучение на проваленных задачах через ограниченную полосу extract (только experience-уроки, только Ask-гейт); wave 2 добавила эскалацию confidence/importance при повторе (`FeedbackSignal::Repeated`, кап 0.6 не снимается) и retrieval-приоритизацию failure_pattern/verification_rule.
+
+**Актуальный статус 2026-07-26:** `7.108` ✅ (было ошибочно 🟡 — backend+frontend полностью готовы) и `7.109` ✅ (было ошибочно ⬜ — self-update уже реализован) исправлены по факту кода. Добавлены пункты `7.111`–`7.116`, ранее отслеживавшиеся только в сессионной памяти (`wave_progress.md`) и per-wave доках под теми же номерами не по этой таблице (а `7.109` там ошибочно переиспользовался для другой задачи — session recovery, из-за чего и исправлена нумерация): `7.111` extended reasoning (Claude thinking) ✅, `7.112` project context 2.0 (semantic search) ✅, `7.113` plugin audit trail (доп. к `7.102`) ✅, `7.114` OTLP metrics export (доп. к `7.92`/`7.24`) ✅, `7.115` frontend performance/Lighthouse ✅, `7.116` session recovery — keyset pagination + WS reconnect resiliency (доп. к `7.17`) ✅. Единственные реальные незакрытые Stage 7 пункты теперь: `7.105` (voice/TTS), `7.106` (diff review UI), `7.107` (worktree-aware multi-checkout agent) — все три `⬜`, без кода в репозитории.
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
 3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.51`, `7.52` ✅ → next product honesty `7.62`+
 4. **Wave D (product honesty):** 7.62–7.68, 7.72–7.73 ✅
 5. **Wave E (DX/CI):** `7.84`–`7.98` ✅, `7.56`, `7.69`–`7.71` ✅ → next `7.99`
-6. **Wave F (scale/moonshots):** 7.54 ✅, 7.57–7.59, 7.98+
+6. **Wave F (scale/moonshots):** 7.54 ✅, 7.57–7.59, `7.98`–`7.104` ✅, `7.108`–`7.116` ✅ → осталось `7.105`–`7.107`
 
 ### Критерий готовности Stage 7 (минимум)
 
