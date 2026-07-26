@@ -71,9 +71,9 @@ pub use pool::{connect_pool, PoolConfig};
 pub use restore::{restore_backup, validate_backup_header, RestoreReport};
 pub use scopes::{
     archive_session_for_operator, delete_session_for_operator, list_archived_sessions_for_operator,
-    list_session_events_after_for_operator, list_session_messages_for_operator,
-    list_sessions_for_operator, list_tasks_for_operator, load_task_for_operator,
-    unarchive_session_for_operator,
+    list_session_events_after_for_operator, list_session_events_paginated_for_operator,
+    list_session_messages_for_operator, list_sessions_for_operator, list_tasks_for_operator,
+    load_task_for_operator, unarchive_session_for_operator,
 };
 pub use sync::{
     find_active_sync_run, finish_sync_run, is_terminal_sync_status, is_valid_sync_direction,
@@ -153,11 +153,26 @@ pub struct TaskCheckpointRow {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, Serialize, FromRow)]
 pub struct EventRow {
     pub sequence: i64,
     pub created_at: DateTime<Utc>,
     pub event_json: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaginatedEventsCursor {
+    pub seq: i64,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PaginatedEventsPage {
+    pub items: Vec<EventRow>,
+    pub next_cursor: Option<String>,
+    pub prev_cursor: Option<String>,
+    pub has_more: bool,
+    pub total_available: i64,
 }
 
 #[derive(Debug, Clone, FromRow)]

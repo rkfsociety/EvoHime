@@ -55,6 +55,81 @@ mod tests {
             .await
             .expect("cleanup operators");
     }
+
+    #[tokio::test]
+    async fn pagination_works_with_cursor() {
+        let Some(pool) = crate::connect_integration_pool().await else {
+            eprintln!("skipping pagination test: database unavailable");
+            return;
+        };
+        let operator = crate::create_operator(
+            &pool,
+            &format!("pagination-test-{}", Uuid::new_v4()),
+            crate::OperatorRole::Member,
+        )
+        .await
+        .expect("create operator");
+        let session = crate::create_session_for_operator(&pool, operator.0.id)
+            .await
+            .expect("create session");
+
+        // Insert test events
+        for i in 1..=10 {
+            let event_json = serde_json::json!({ "test": i });
+            sqlx::query(
+                "INSERT INTO session_events (session_id, sequence, event_json) VALUES ($1, $2, $3)"
+            )
+            .bind(session.id)
+            .bind(i)
+            .bind(event_json)
+            .execute(&pool)
+            .await
+            .expect("insert event");
+        }
+
+        // Test forward pagination
+        let page1 = crate::list_session_events_paginated_for_operator(
+            &pool,
+            operator.0.id,
+            session.id,
+            3,
+            None,
+            "asc",
+        )
+        .await
+        .expect("page 1");
+        assert_eq!(page1.items.len(), 3);
+        assert_eq!(page1.items[0].sequence, 1);
+        assert!(page1.has_more);
+        assert!(page1.next_cursor.is_some());
+
+        // Use cursor to get next page
+        let page2 = crate::list_session_events_paginated_for_operator(
+            &pool,
+            operator.0.id,
+            session.id,
+            3,
+            page1.next_cursor.as_deref(),
+            "asc",
+        )
+        .await
+        .expect("page 2");
+        assert_eq!(page2.items.len(), 3);
+        assert_eq!(page2.items[0].sequence, 4);
+        assert!(page2.has_more);
+
+        // Cleanup
+        sqlx::query("DELETE FROM sessions WHERE id = $1")
+            .bind(session.id)
+            .execute(&pool)
+            .await
+            .expect("cleanup session");
+        sqlx::query("DELETE FROM operators WHERE id = $1")
+            .bind(operator.0.id)
+            .execute(&pool)
+            .await
+            .expect("cleanup operator");
+    }
 }
 use crate::{EventRow, MessageRow, SessionSummaryRow, StorageError, TaskRow};
 use sqlx::PgPool;
@@ -146,4 +221,148 @@ pub async fn list_session_messages_for_operator(
     session_id: Uuid,
 ) -> Result<Vec<MessageRow>, StorageError> {
     Ok(sqlx::query_as::<_, MessageRow>("SELECT m.role,m.content,m.created_at FROM session_messages m JOIN sessions s ON s.id=m.session_id WHERE m.session_id=$1 AND s.operator_id=$2 ORDER BY m.created_at ASC").bind(session_id).bind(operator_id).fetch_all(pool).await?)
+}
+
+pub async fn list_session_events_paginated_for_operator(
+    pool: &PgPool,
+    operator_id: Uuid,
+    session_id: Uuid,
+    limit: i64,
+    cursor: Option<&str>,
+    order: &str,
+) -> Result<crate::PaginatedEventsPage, crate::StorageError> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+
+    let limit = limit.max(1).min(500);
+    let is_desc = order == "desc";
+
+    // Decode cursor if provided
+    let cursor_obj = if let Some(cursor_str) = cursor {
+        let decoded = STANDARD
+            .decode(cursor_str)
+            .map_err(|e| crate::StorageError::Serialization(serde_json::Error::io(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))))?;
+        Some(serde_json::from_slice::<crate::PaginatedEventsCursor>(&decoded)?)
+    } else {
+        None
+    };
+
+    // Get total count
+    let total_row = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM session_events e JOIN sessions s ON s.id=e.session_id WHERE e.session_id=$1 AND s.operator_id=$2"
+    )
+    .bind(session_id)
+    .bind(operator_id)
+    .fetch_one(pool)
+    .await?;
+
+    // Build query based on order and cursor
+    let rows = if let Some(ref cursor) = cursor_obj {
+        if is_desc {
+            sqlx::query_as::<_, crate::EventRow>(
+                r#"
+                SELECT e.sequence, e.created_at, e.event_json
+                FROM session_events e
+                JOIN sessions s ON s.id = e.session_id
+                WHERE e.session_id = $1 AND s.operator_id = $2
+                AND (e.sequence, e.created_at) < ($3, $4)
+                ORDER BY e.sequence DESC, e.created_at DESC
+                LIMIT $5
+                "#
+            )
+            .bind(session_id)
+            .bind(operator_id)
+            .bind(cursor.seq)
+            .bind(cursor.created_at)
+            .bind(limit + 1)
+            .fetch_all(pool)
+            .await?
+        } else {
+            sqlx::query_as::<_, crate::EventRow>(
+                r#"
+                SELECT e.sequence, e.created_at, e.event_json
+                FROM session_events e
+                JOIN sessions s ON s.id = e.session_id
+                WHERE e.session_id = $1 AND s.operator_id = $2
+                AND (e.sequence, e.created_at) > ($3, $4)
+                ORDER BY e.sequence ASC, e.created_at ASC
+                LIMIT $5
+                "#
+            )
+            .bind(session_id)
+            .bind(operator_id)
+            .bind(cursor.seq)
+            .bind(cursor.created_at)
+            .bind(limit + 1)
+            .fetch_all(pool)
+            .await?
+        }
+    } else {
+        if is_desc {
+            sqlx::query_as::<_, crate::EventRow>(
+                r#"
+                SELECT e.sequence, e.created_at, e.event_json
+                FROM session_events e
+                JOIN sessions s ON s.id = e.session_id
+                WHERE e.session_id = $1 AND s.operator_id = $2
+                ORDER BY e.sequence DESC, e.created_at DESC
+                LIMIT $3
+                "#
+            )
+            .bind(session_id)
+            .bind(operator_id)
+            .bind(limit + 1)
+            .fetch_all(pool)
+            .await?
+        } else {
+            sqlx::query_as::<_, crate::EventRow>(
+                r#"
+                SELECT e.sequence, e.created_at, e.event_json
+                FROM session_events e
+                JOIN sessions s ON s.id = e.session_id
+                WHERE e.session_id = $1 AND s.operator_id = $2
+                ORDER BY e.sequence ASC, e.created_at ASC
+                LIMIT $3
+                "#
+            )
+            .bind(session_id)
+            .bind(operator_id)
+            .bind(limit + 1)
+            .fetch_all(pool)
+            .await?
+        }
+    };
+
+    let has_more = rows.len() > limit as usize;
+    let items: Vec<_> = rows.into_iter().take(limit as usize).collect();
+
+    // Generate cursors
+    let next_cursor = if has_more && !items.is_empty() {
+        let last_item = &items[items.len() - 1];
+        let cursor = crate::PaginatedEventsCursor {
+            seq: last_item.sequence,
+            created_at: last_item.created_at,
+        };
+        Some(STANDARD.encode(serde_json::to_vec(&cursor)?))
+    } else {
+        None
+    };
+
+    let prev_cursor = if cursor_obj.is_some() && !items.is_empty() {
+        let first_item = &items[0];
+        let cursor = crate::PaginatedEventsCursor {
+            seq: first_item.sequence,
+            created_at: first_item.created_at,
+        };
+        Some(STANDARD.encode(serde_json::to_vec(&cursor)?))
+    } else {
+        None
+    };
+
+    Ok(crate::PaginatedEventsPage {
+        items,
+        next_cursor,
+        prev_cursor,
+        has_more,
+        total_available: total_row,
+    })
 }
