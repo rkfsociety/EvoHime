@@ -102,7 +102,7 @@ git commit -m "fix(installer): inherit PostgreSQL data ACLs"
 
 **Interfaces:**
 - Consumes: существующая `run_pg_tool(pg_bin_dir: &Path, tool: &str, args: &[&str]) -> Result<(), PgError>`.
-- Produces: приватная функция `build_pg_command(exe: &Path, args: &[&str]) -> std::process::Command`, которая задаёт `LC_ALL=C`; `run_pg_tool` передаёт её в `tokio::process::Command::from_std`.
+- Produces: приватная функция `build_pg_command(exe: &Path, args: &[&str]) -> std::process::Command`, которая задаёт `LC_ALL=C`; `run_pg_tool` передаёт её в `tokio::process::Command::from`.
 
 - [ ] **Step 1: Написать падающий тест конфигурации окружения**
 
@@ -128,7 +128,7 @@ fn pg_tool_command_sets_c_locale_without_changing_parent_environment() {
 
 - [ ] **Step 2: Запустить тест и убедиться, что он падает до реализации**
 
-Run: `cargo test -p evohime-launcher pg_tool_command_sets_c_locale_without_changing_parent_environment -- --exact --nocapture`
+Run: `cargo test -p evohime-launcher pg_tool_command_sets_c_locale_without_changing_parent_environment -- --nocapture`
 
 Expected: RED state because `build_pg_command` ещё не определена; после добавления
 минимального builder-а тест должен перейти к обычной проверке assertion.
@@ -144,7 +144,7 @@ fn build_pg_command(exe: &Path, args: &[&str]) -> std::process::Command {
     command
 }
 
-let output = Command::from_std(build_pg_command(&exe, args))
+let output = Command::from(build_pg_command(&exe, args))
     .output()
     .await?;
 ```
@@ -153,7 +153,7 @@ let output = Command::from_std(build_pg_command(&exe, args))
 
 - [ ] **Step 4: Запустить locale-тест повторно**
 
-Run: `cargo test -p evohime-launcher pg_tool_command_sets_c_locale_without_changing_parent_environment -- --exact --nocapture`
+Run: `cargo test -p evohime-launcher pg_tool_command_sets_c_locale_without_changing_parent_environment -- --nocapture`
 
 Expected: PASS; найдено значение `LC_ALL=C`.
 
