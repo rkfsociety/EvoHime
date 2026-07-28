@@ -11,7 +11,7 @@ use eframe::egui;
 use evohime_artifacts::{download_fresh_and_verify, extract_zip};
 use evohime_installer::ui::{append_log_entry, copy_log_to_clipboard, show_details};
 use evohime_installer::{
-    clear_dirty_installation, create_shortcut, is_installation_dirty, mark_setup_complete,
+    clear_dirty_installation_safely, create_shortcut, is_installation_dirty, mark_setup_complete,
     restrict_to_current_user,
 };
 use evohime_launcher::config::{self, DbConfig};
@@ -268,8 +268,8 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
     // 2. Защита от прерванной установки (раздел VI плана): "грязная" папка
     //    от прошлой неудачной попытки удаляется полностью.
     if is_installation_dirty(&install_dir) {
-        stage("Обнаружена незавершённая установка, очищаю...");
-        clear_dirty_installation(&install_dir)
+        stage("Обнаружена незавершённая установка, останавливаю встроенную базу и очищаю...");
+        clear_dirty_installation_safely(&install_dir)
             .await
             .map_err(|err| {
                 anyhow::anyhow!(

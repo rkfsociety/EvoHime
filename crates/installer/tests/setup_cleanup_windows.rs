@@ -33,6 +33,7 @@ fn main() {
             assert!(Instant::now() < deadline, "postgres stub did not stop");
             thread::sleep(Duration::from_millis(25));
         }
+        thread::sleep(Duration::from_millis(250));
         return;
     }
 
