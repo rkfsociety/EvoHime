@@ -70,6 +70,27 @@ pub async fn download_with_resume(
     Ok(())
 }
 
+/// Скачивает файл с поддержкой докачки и проверяет опубликованный SHA256.
+///
+/// Если докачанный файл не проходит проверку, он мог состоять из начала
+/// старого релиза и хвоста нового. В таком случае файл удаляется и ровно
+/// один раз скачивается целиком без `Range`.
+pub async fn download_with_resume_and_verify(
+    client: &reqwest::Client,
+    url: &str,
+    dest: &Path,
+    expected_sha256: &str,
+) -> Result<bool, DownloadError> {
+    download_with_resume(client, url, dest).await?;
+    if crate::sha256::verify_sha256(dest, expected_sha256).await? {
+        return Ok(true);
+    }
+
+    tokio::fs::remove_file(dest).await?;
+    download_with_resume(client, url, dest).await?;
+    Ok(crate::sha256::verify_sha256(dest, expected_sha256).await?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

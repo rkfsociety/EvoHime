@@ -7,7 +7,7 @@
 //! показывает уведомление.
 
 use crate::migrations::apply_migrations;
-use evohime_artifacts::{download_with_resume, extract_zip, verify_sha256};
+use evohime_artifacts::{download_with_resume_and_verify, extract_zip};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, thiserror::Error)]
@@ -56,7 +56,6 @@ pub async fn download_and_verify_assets(
     for asset in &plan.assets {
         progress(&format!("Скачивание {}...", asset.file_name));
         let dest = download_dir.join(&asset.file_name);
-        download_with_resume(client, &asset.download_url, &dest).await?;
 
         let expected_sha = client
             .get(&asset.sha256_url)
@@ -67,7 +66,9 @@ pub async fn download_and_verify_assets(
             .await
             .map_err(evohime_artifacts::DownloadError::from)?;
 
-        if !verify_sha256(&dest, expected_sha.trim()).await? {
+        if !download_with_resume_and_verify(client, &asset.download_url, &dest, expected_sha.trim())
+            .await?
+        {
             return Err(UpdateError::ChecksumMismatch(asset.file_name.clone()));
         }
     }
@@ -306,6 +307,47 @@ mod tests {
         assert!(
             !install_dir.path().join("versions").join("v0.2.0").exists(),
             "final version dir must never be created when checksum verification fails"
+        );
+    }
+
+    #[tokio::test]
+    async fn stale_partial_from_previous_release_is_replaced_and_verified() {
+        let assets_dir = tempfile::tempdir().unwrap();
+        prepare_fake_release(assets_dir.path()).await;
+        let expected = tokio::fs::read(assets_dir.path().join("dist.zip"))
+            .await
+            .unwrap();
+        let base_url = spawn_release_server(assets_dir.path()).await;
+
+        let install_dir = tempfile::tempdir().unwrap();
+        let plan = UpdatePlan {
+            install_dir: install_dir.path().to_path_buf(),
+            new_version: "v0.2.0".to_string(),
+            assets: vec![ReleaseAsset {
+                file_name: "dist.zip".to_string(),
+                download_url: format!("{base_url}/dist.zip"),
+                sha256_url: format!("{base_url}/dist.zip.sha256"),
+            }],
+            dsn: None,
+        };
+
+        let client = reqwest::Client::new();
+        let download_dir = install_dir.path().join("download_tmp");
+        tokio::fs::create_dir_all(&download_dir).await.unwrap();
+        tokio::fs::write(download_dir.join("dist.zip"), b"stale")
+            .await
+            .unwrap();
+
+        let progress = |_msg: &str| {};
+        download_and_verify_assets(&plan, &client, &download_dir, &progress)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            tokio::fs::read(download_dir.join("dist.zip"))
+                .await
+                .unwrap(),
+            expected
         );
     }
 

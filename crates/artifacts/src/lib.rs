@@ -9,6 +9,6 @@ pub mod downloader;
 pub mod extract;
 pub mod sha256;
 
-pub use downloader::{download_with_resume, DownloadError};
+pub use downloader::{download_with_resume, download_with_resume_and_verify, DownloadError};
 pub use extract::{extract_zip, ExtractError};
 pub use sha256::{compute_sha256, verify_sha256};

@@ -8,7 +8,7 @@
 //! отрисовку окна во время сетевых операций/распаковки.
 
 use eframe::egui;
-use evohime_artifacts::{download_with_resume, extract_zip, verify_sha256};
+use evohime_artifacts::{download_with_resume_and_verify, extract_zip};
 use evohime_installer::ui::{append_log_entry, copy_log_to_clipboard, show_details};
 use evohime_installer::{
     create_shortcut, is_installation_dirty, mark_setup_complete, restrict_to_current_user,
@@ -307,10 +307,8 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
         let dest = versions_dir.join(asset_name);
 
         stage(&format!("Скачивание {asset_name}..."));
-        download_with_resume(&client, &url, &dest).await?;
-
         let expected_sha = client.get(&sha_url).send().await?.text().await?;
-        let ok = verify_sha256(&dest, expected_sha.trim()).await?;
+        let ok = download_with_resume_and_verify(&client, &url, &dest, expected_sha.trim()).await?;
         if !ok {
             anyhow::bail!("SHA256 не совпадает для {asset_name} — прерываю установку");
         }
@@ -327,10 +325,9 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
         let sha_url = format!("{url}.sha256");
 
         stage("Скачивание PostgreSQL...");
-        download_with_resume(&client, &url, &pg_zip_path).await?;
-
         let expected_sha = client.get(&sha_url).send().await?.text().await?;
-        let ok = verify_sha256(&pg_zip_path, expected_sha.trim()).await?;
+        let ok = download_with_resume_and_verify(&client, &url, &pg_zip_path, expected_sha.trim())
+            .await?;
         if !ok {
             anyhow::bail!("SHA256 не совпадает для postgres.zip — прерываю установку");
         }

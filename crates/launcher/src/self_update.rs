@@ -27,8 +27,6 @@ pub async fn download_new_launcher(
     sha256_url: &str,
     dest: &Path,
 ) -> Result<(), SelfUpdateError> {
-    evohime_artifacts::download_with_resume(client, download_url, dest).await?;
-
     let expected_sha = client
         .get(sha256_url)
         .send()
@@ -38,7 +36,14 @@ pub async fn download_new_launcher(
         .await
         .map_err(evohime_artifacts::DownloadError::from)?;
 
-    if !evohime_artifacts::verify_sha256(dest, expected_sha.trim()).await? {
+    if !evohime_artifacts::download_with_resume_and_verify(
+        client,
+        download_url,
+        dest,
+        expected_sha.trim(),
+    )
+    .await?
+    {
         let _ = tokio::fs::remove_file(dest).await;
         return Err(SelfUpdateError::ChecksumMismatch);
     }
