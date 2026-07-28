@@ -187,9 +187,7 @@ fn pg16_root(pg_bin_dir: &Path) -> std::path::PathBuf {
 
 async fn run_pg_tool(pg_bin_dir: &Path, tool: &str, args: &[&str]) -> Result<(), PgError> {
     let exe = pg_bin_dir.join(format!("{tool}.exe"));
-    let output = Command::from(build_pg_command(&exe, args))
-        .output()
-        .await?;
+    let output = Command::from(build_pg_command(&exe, args)).output().await?;
 
     if !output.status.success() {
         return Err(PgError::CommandFailed {

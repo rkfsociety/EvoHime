@@ -46,4 +46,3 @@ async fn run_icacls(dir: &Path, extra_args: &[&str]) -> Result<(), IcaclsError> 
     }
     Ok(())
 }
-
