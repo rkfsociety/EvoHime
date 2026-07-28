@@ -23,14 +23,14 @@
 Добавляется изолированный frontend-хук для голосовых возможностей, который:
 
 1. определяет поддержку API без обращения к `window` во время SSR/build;
-2. управляет состояниями `idle`, `listening`, `unsupported`, `error`;
+2. управляет состояниями `idle`, `listening`, `unsupported`, `insecure-context`, `error`;
 3. прокидывает interim/final transcript вызывающему composer, сохраняя базовый снимок ручного текста и отдельный диктуемый хвост;
 4. очищает recognition и speech synthesis при размонтировании;
 5. гарантирует, что одновременно активен только один recognition и один speech utterance.
 
 SpeechRecognition создаётся один раз в `ref` и переиспользуется между запусками. Хук обрабатывает `onend` и ошибки `no-speech` / `aborted` без очистки уже подтверждённого текста: обрыв записи завершает текущую диктовку, но не удаляет результат из composer. Повторный старт сбрасывает только interim и начинает новую сессию поверх текущего текста. При размонтировании cleanup снимает `onresult`, `onend` и `onerror`, останавливает recognition и освобождает экземпляр.
 
-Безопасный контекст проверяется явно через `window.isSecureContext`. При `false` или отсутствии свойства распознавание сразу переходит в `unsupported`, не пытаясь вызвать `start()`.
+Безопасный контекст проверяется явно через `window.isSecureContext`. При `false` или отсутствии свойства хук переходит в отдельное состояние `insecure-context` и не пытается вызвать `start()`.
 
 Контракт STT-хука:
 
@@ -40,27 +40,28 @@ useVoiceInput(): {
   isListening: boolean;
   error: string | null;
   start: (baseText: string) => void;
-  stop: () => Promise<void>;
+  stop: () => Promise<{ transcript: string }>;
   transcript: string;
   interim: string;
   resetTranscript: () => void;
 }
 ```
 
-`stop()` завершает recognition и резолвится только после `onend`, включая последний финальный результат, который уже доступен через `transcript`. Это является обязательной синхронизацией для отправки сообщения во время записи.
+`stop()` завершает recognition и резолвится только после `onend`, возвращая итоговый transcript с учётом последнего события `onresult`. Возвращаемое значение используется при отправке сообщения во время записи и не зависит от асинхронного обновления React state.
 
-Контракт TTS-хука:
+Контракт единого TTS-хука на уровне списка сообщений:
 
 ```ts
-useSpeechSynthesis(messageId: string): {
-  speak: (text: string) => void;
+useSpeechSynthesis(): {
+  speak: (messageId: string, text: string) => void;
   stop: () => void;
-  isSpeaking: boolean;
+  speakingMessageId: string | null;
   isSupported: boolean;
+  error: string | null;
 }
 ```
 
-Реализация TTS использует общий менеджер `speechSynthesis`, поэтому запуск другого сообщения вызывает `cancel()` для предыдущего utterance. `SpeechSynthesisUtterance` обрабатывает `end` и `error`, чтобы сбросить `isSpeaking` и показать безопасное состояние ошибки. Если сообщение удалено из дерева React во время озвучивания, cleanup немедленно вызывает `speechSynthesis.cancel()`.
+Один экземпляр хука централизованно управляет общим менеджером `speechSynthesis`. Запуск другого сообщения вызывает `cancel()` для предыдущего utterance и обновляет `speakingMessageId`; компонент сообщения вычисляет `isSpeaking` сравнением своего `messageId` с этим значением. `SpeechSynthesisUtterance` обрабатывает `end` и `error`, чтобы сбросить состояние и показать безопасную ошибку. При unmount списка cleanup вызывает `speechSynthesis.cancel()`.
 
 `app.tsx` использует хук для кнопки микрофона и передаёт действие озвучивания компоненту сообщения. Существующая отправка сообщения, потоковые события и копирование текста не меняются.
 
@@ -72,20 +73,21 @@ useSpeechSynthesis(messageId: string): {
 - Interim-хвост отображается отдельным стилем: пониженная непрозрачность, курсив и пунктирное подчёркивание.
 - Повторное нажатие активной кнопки микрофона эквивалентно вызову `stop()` и завершает текущую диктовку.
 - Нажатие `Esc` во время записи принудительно останавливает распознавание и сохраняет уже распознанный текст в composer.
-- Отправка через Enter или кнопку во время записи сначала вызывает `await stop()`, ждёт `onend` и последний финальный результат, затем отправляет накопленный текст обычным путём.
+- Отправка через Enter или кнопку во время записи сначала вызывает `const { transcript } = await stop()`, ждёт `onend` и последний финальный результат, затем отправляет этот transcript обычным путём.
 - `aria-label` и `title` различают состояния «Начать голосовой ввод», «Остановить голосовой ввод» и «Голосовой ввод недоступен».
 - Ошибки разрешения микрофона, отсутствия речи и отказа браузера показываются через существующий `composerNotice` без исключения из React-цикла.
+- Для состояния `insecure-context` показывается отдельное сообщение: «Голосовой ввод доступен только через HTTPS или localhost».
 - При `not-allowed` показывается инструкция разрешить микрофон в настройках сайта/через значок замка и перезагрузить страницу; кнопка не маскирует отказ молча.
 - Ошибки `audio-capture`, `network`, `service-not-allowed` и `language-not-supported`, а также остальные ошибки SpeechRecognition переводят хук в `error`, показываются через `composerNotice` и завершают текущую сессию без удаления уже подтверждённого текста.
 - Кнопка озвучивания имеет `aria-label`, отражающий действие: «Озвучить сообщение» или «Остановить озвучивание».
-- Нажатие озвучивания другого сообщения останавливает предыдущую речь.
+- Нажатие озвучивания другого сообщения останавливает предыдущую речь; только сообщение с `messageId === speakingMessageId` получает состояние «Остановить озвучивание».
 - На мобильном layout новые touch-targets имеют размер не менее 44px.
 
 ## Совместимость и ограничения
 
-- Если распознавание речи не поддерживается, кнопка микрофона disabled и объясняет причину через tooltip/accessible label.
+- Если конструктор SpeechRecognition отсутствует, кнопка микрофона disabled и объясняет причину через tooltip/accessible label.
 - SpeechRecognition требует безопасного контекста: HTTPS или `localhost`; на HTTP-тестовом стенде микрофон считается недоступным.
-- Поддержка SpeechRecognition в Safari, особенно на iOS, ограничена и не гарантируется. При отсутствии поддержки или невозможности запуска кнопка микрофона остаётся disabled, а обычный ручной ввод продолжает работать.
+- Поддержка SpeechRecognition различается между браузерами и может быть частичной, особенно в Safari/iOS. Если API присутствует, но запуск завершается ошибкой, текущая сессия переходит в `error`, пользователю показывается `composerNotice`, а ручной ввод продолжает работать.
 - Если `speechSynthesis` не поддерживается, действие озвучивания не показывается или disabled с тем же принципом fallback.
 - Никаких новых npm-зависимостей и серверных переменных не требуется.
 - Язык распознавания фиксирован как `ru-RU`; автоматическое определение языка и переключение языка через настройки в этот MVP не входят.
@@ -94,7 +96,7 @@ useSpeechSynthesis(messageId: string): {
 
 ## Тестирование
 
-- Unit-тесты хука/адаптеров с mock-объектами обоих Web Speech API: `window.SpeechRecognition` / `webkitSpeechRecognition` и `window.speechSynthesis` с `SpeechSynthesisUtterance`. Проверяются unsupported, `isSecureContext`, start/stop, interim/final transcript, `onend`, `no-speech`, `aborted`, `not-allowed`, `audio-capture`, `network`, `service-not-allowed`, `language-not-supported`, cleanup/reuse recognition, TTS `speak` / `cancel`, `end` и `error`.
+- Unit-тесты хука/адаптеров с mock-объектами обоих Web Speech API: `window.SpeechRecognition` / `webkitSpeechRecognition` и `window.speechSynthesis` с `SpeechSynthesisUtterance`. Проверяются unsupported, `insecure-context`, runtime failure запуска, start/stop, interim/final transcript, `onend`, `no-speech`, `aborted`, `not-allowed`, `audio-capture`, `network`, `service-not-allowed`, `language-not-supported`, cleanup/reuse recognition, TTS `speak` / `cancel`, `end` и `error`.
 - Проверка `npm run typecheck` и `npm run build`.
 - Ручная проверка в поддерживаемом Chromium-браузере через HTTPS или `localhost`: разрешение микрофона, пауза речи с `onend`, ошибки `no-speech` / `aborted`, отмена записи через Esc, отправка во время записи, редактирование расшифровки, запуск/остановка TTS и переключение между сообщениями.
 - Отдельно проверить, что кнопка TTS disabled во время стриминга и что на HTTP-стенде голосовой ввод корректно объясняется как недоступный.
