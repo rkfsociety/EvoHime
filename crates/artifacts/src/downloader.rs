@@ -5,7 +5,7 @@
 
 use futures_util::StreamExt;
 use reqwest::StatusCode;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::fs::{File, OpenOptions};
 use tokio::io::AsyncWriteExt;
 
@@ -91,12 +91,95 @@ pub async fn download_with_resume_and_verify(
     Ok(crate::sha256::verify_sha256(dest, expected_sha256).await?)
 }
 
+fn part_path(dest: &Path) -> PathBuf {
+    let mut value = dest.as_os_str().to_os_string();
+    value.push(".part");
+    PathBuf::from(value)
+}
+
+async fn remove_file_if_exists(path: &Path) -> std::io::Result<()> {
+    match tokio::fs::remove_file(path).await {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err),
+    }
+}
+
+/// Всегда скачивает свежий файл целиком без HTTP Range, проверяет его во
+/// временном `<dest>.part` и публикует под окончательным именем только после
+/// совпадения с заново загруженным SHA256.
+pub async fn download_fresh_and_verify(
+    client: &reqwest::Client,
+    url: &str,
+    sha256_url: &str,
+    dest: &Path,
+) -> Result<bool, DownloadError> {
+    let part = part_path(dest);
+    remove_file_if_exists(dest).await?;
+    remove_file_if_exists(&part).await?;
+
+    let expected_sha256 = client
+        .get(sha256_url)
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+
+    let download_result = async {
+        let response = client.get(url).send().await?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(DownloadError::HttpStatus(status.as_u16()));
+        }
+
+        let mut file = File::create(&part).await?;
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            file.write_all(&chunk?).await?;
+        }
+        file.flush().await?;
+        Ok::<(), DownloadError>(())
+    }
+    .await;
+
+    if let Err(err) = download_result {
+        let _ = remove_file_if_exists(&part).await;
+        return Err(err);
+    }
+
+    let verified = match crate::sha256::verify_sha256(&part, expected_sha256.trim()).await {
+        Ok(value) => value,
+        Err(err) => {
+            let _ = remove_file_if_exists(&part).await;
+            return Err(err.into());
+        }
+    };
+    if !verified {
+        remove_file_if_exists(&part).await?;
+        return Ok(false);
+    }
+
+    tokio::fs::rename(&part, dest).await?;
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::Router;
+    use axum::{
+        body::Bytes,
+        http::{header::RANGE, HeaderMap},
+        response::IntoResponse,
+        routing::get,
+        Router,
+    };
     use std::net::SocketAddr;
     use tower_http::services::ServeDir;
+
+    const FRESH_CONTENT: &[u8] = b"fresh artifact";
+    const FRESH_SHA256: &str =
+        "fba70a783cecd8de271f147d7afabee99f3ee796d97a080293f0adc2fbfff0af";
 
     /// Spins up a real local HTTP server (axum + tower-http's `ServeDir`,
     /// which natively supports Range requests) serving `dir`, returning its
@@ -110,6 +193,106 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
         format!("http://{addr}")
+    }
+
+    async fn spawn_fresh_download_server(checksum: &'static str) -> String {
+        let app = Router::new()
+            .route(
+                "/artifact.bin",
+                get(|headers: HeaderMap| async move {
+                    if headers.contains_key(RANGE) {
+                        return StatusCode::BAD_REQUEST.into_response();
+                    }
+                    (StatusCode::OK, Bytes::from_static(FRESH_CONTENT)).into_response()
+                }),
+            )
+            .route(
+                "/artifact.bin.sha256",
+                get(move || async move { (StatusCode::OK, checksum) }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        format!("http://{addr}")
+    }
+
+    #[tokio::test]
+    async fn fresh_download_replaces_old_files_without_range() {
+        let base_url = spawn_fresh_download_server(FRESH_SHA256).await;
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("artifact.bin");
+        let part = dir.path().join("artifact.bin.part");
+        tokio::fs::write(&dest, b"old release").await.unwrap();
+        tokio::fs::write(&part, b"interrupted old release")
+            .await
+            .unwrap();
+
+        let ok = download_fresh_and_verify(
+            &reqwest::Client::new(),
+            &format!("{base_url}/artifact.bin"),
+            &format!("{base_url}/artifact.bin.sha256"),
+            &dest,
+        )
+        .await
+        .unwrap();
+
+        assert!(ok);
+        assert_eq!(tokio::fs::read(&dest).await.unwrap(), FRESH_CONTENT);
+        assert!(!part.exists());
+    }
+
+    #[tokio::test]
+    async fn fresh_download_removes_part_when_checksum_is_wrong() {
+        let bad_sha = "0000000000000000000000000000000000000000000000000000000000000000";
+        let base_url = spawn_fresh_download_server(bad_sha).await;
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("artifact.bin");
+        let part = dir.path().join("artifact.bin.part");
+        tokio::fs::write(&dest, b"old release").await.unwrap();
+
+        let ok = download_fresh_and_verify(
+            &reqwest::Client::new(),
+            &format!("{base_url}/artifact.bin"),
+            &format!("{base_url}/artifact.bin.sha256"),
+            &dest,
+        )
+        .await
+        .unwrap();
+
+        assert!(!ok);
+        assert!(!dest.exists());
+        assert!(!part.exists());
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn fresh_download_propagates_failure_to_remove_old_file() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let base_url = spawn_fresh_download_server(FRESH_SHA256).await;
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("artifact.bin");
+        let locked = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .share_mode(0)
+            .open(&dest)
+            .unwrap();
+
+        let result = download_fresh_and_verify(
+            &reqwest::Client::new(),
+            &format!("{base_url}/artifact.bin"),
+            &format!("{base_url}/artifact.bin.sha256"),
+            &dest,
+        )
+        .await;
+
+        assert!(matches!(result, Err(DownloadError::Io(_))));
+        drop(locked);
     }
 
     #[tokio::test]
