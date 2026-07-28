@@ -9,6 +9,7 @@
 
 use eframe::egui;
 use evohime_artifacts::{download_with_resume, extract_zip, verify_sha256};
+use evohime_installer::ui::append_log_entry;
 use evohime_installer::{
     create_shortcut, is_installation_dirty, mark_setup_complete, restrict_to_current_user,
 };
@@ -94,7 +95,7 @@ fn apply_style(ctx: &egui::Context) {
 struct InstallerApp {
     rx: Option<mpsc::Receiver<ProgressEvent>>,
     current_stage: String,
-    log: Vec<String>,
+    log: String,
     steps_done: usize,
     finished: bool,
     failed: bool,
@@ -106,7 +107,7 @@ impl InstallerApp {
         Self {
             rx: None,
             current_stage: "Готов к установке.".to_string(),
-            log: Vec::new(),
+            log: String::new(),
             steps_done: 0,
             finished: false,
             failed: false,
@@ -141,11 +142,11 @@ impl eframe::App for InstallerApp {
                     ProgressEvent::Stage(msg) => {
                         self.steps_done += 1;
                         self.current_stage = msg.clone();
-                        self.log.push(msg);
+                        append_log_entry(&mut self.log, &msg);
                     }
                     ProgressEvent::Error(msg) => {
                         self.current_stage = "Установка прервана из-за ошибки.".to_string();
-                        self.log.push(format!("Ошибка: {msg}"));
+                        append_log_entry(&mut self.log, &format!("Ошибка: {msg}"));
                         self.failed = true;
                     }
                     ProgressEvent::Done => {
@@ -224,7 +225,7 @@ impl eframe::App for InstallerApp {
                             egui::ScrollArea::vertical()
                                 .max_height(120.0)
                                 .show(ui, |ui| {
-                                    for line in &self.log {
+                                    for line in self.log.lines() {
                                         ui.label(
                                             egui::RichText::new(line).size(12.0).color(DIM_TEXT),
                                         );

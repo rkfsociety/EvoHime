@@ -12,6 +12,7 @@
 pub mod icacls;
 pub mod setup_marker;
 pub mod shortcut;
+pub mod ui;
 
 pub use icacls::{restrict_to_current_user, IcaclsError};
 pub use setup_marker::{is_installation_dirty, mark_setup_complete};

@@ -29,8 +29,10 @@
 ### Задача 1: Канонический буфер журнала и граница clipboard API
 
 **Файлы:**
-- Изменить: `crates/installer/src/main.rs:94-154`
-- Тестировать: встроенный модуль `#[cfg(test)]` в `crates/installer/src/main.rs`
+- Изменить: `crates/installer/src/main.rs:10-154`
+- Изменить: `crates/installer/src/lib.rs`
+- Создать: `crates/installer/src/ui.rs`
+- Создать: `crates/installer/tests/ui.rs`
 
 **Интерфейсы:**
 - Создаёт: `fn append_log_entry(log: &mut String, entry: &str)`
@@ -39,86 +41,89 @@
 - Создаёт: `InstallerApp::log: String`
 - Использует: существующие `ProgressEvent::Stage(String)` и `ProgressEvent::Error(String)`
 
-- [ ] **Шаг 1: Написать падающие тесты точного инкрементального текста и clipboard output**
+- [x] **Шаг 1: Написать падающие тесты точного инкрементального текста и clipboard output**
 
-Добавить этот тестовый модуль в конец `crates/installer/src/main.rs`:
+Добавить эти integration tests в `crates/installer/tests/ui.rs`. Нейтральное
+имя test target обязательно на Windows: unit-test harness с именем
+`evohime-setup` или `evohime-installer` останавливается до запуска тестов с
+`os error 740`.
 
 ```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
+use evohime_installer::ui::{
+    append_log_entry, can_copy_log, copy_log_to_clipboard,
+};
 
-    fn copied_text(output: &egui::FullOutput) -> Option<&str> {
-        output
-            .platform_output
-            .commands
-            .iter()
-            .find_map(|command| match command {
-                egui::OutputCommand::CopyText(text) => Some(text.as_str()),
-                _ => None,
-            })
-    }
+fn copied_text(output: &eframe::egui::FullOutput) -> Option<&str> {
+    output
+        .platform_output
+        .commands
+        .iter()
+        .find_map(|command| match command {
+            eframe::egui::OutputCommand::CopyText(text) => Some(text.as_str()),
+            _ => None,
+        })
+}
 
-    #[test]
-    fn appends_progress_entries_without_changing_their_text() {
-        let mut log = String::new();
+#[test]
+fn appends_progress_entries_without_changing_their_text() {
+    let mut log = String::new();
 
-        append_log_entry(&mut log, "Проверка свободного места на диске...");
-        append_log_entry(&mut log, "Скачивание server.zip...");
-        append_log_entry(&mut log, "Ошибка: unexpected HTTP status 416");
+    append_log_entry(&mut log, "Проверка свободного места на диске...");
+    append_log_entry(&mut log, "Скачивание server.zip...");
+    append_log_entry(&mut log, "Ошибка: unexpected HTTP status 416");
 
-        assert_eq!(
-            log,
-            "Проверка свободного места на диске...\n\
-             Скачивание server.zip...\n\
-             Ошибка: unexpected HTTP status 416"
-        );
-    }
+    assert_eq!(
+        log,
+        "Проверка свободного места на диске...\n\
+         Скачивание server.zip...\n\
+         Ошибка: unexpected HTTP status 416"
+    );
+}
 
-    #[test]
-    fn copy_action_emits_the_exact_canonical_log_text() {
-        let log = "Первая строка\nОшибка: вторая строка";
-        let ctx = egui::Context::default();
+#[test]
+fn copy_action_emits_the_exact_canonical_log_text() {
+    let log = "Первая строка\nОшибка: вторая строка";
+    let ctx = eframe::egui::Context::default();
 
-        let output = ctx.run(egui::RawInput::default(), |ctx| {
-            copy_log_to_clipboard(ctx, log);
-        });
+    let output = ctx.run_ui(eframe::egui::RawInput::default(), |ui| {
+        copy_log_to_clipboard(ui.ctx(), log);
+    });
 
-        assert_eq!(copied_text(&output), Some(log));
-        assert!(can_copy_log(log));
-        assert!(!can_copy_log(""));
-    }
+    assert_eq!(copied_text(&output), Some(log));
+    assert!(can_copy_log(log));
+    assert!(!can_copy_log(""));
 }
 ```
 
-- [ ] **Шаг 2: Запустить тесты и подтвердить состояние RED**
+- [x] **Шаг 2: Запустить тесты и подтвердить состояние RED**
 
 Выполнить:
 
 ```powershell
-cargo test -p evohime-installer --bin evohime-setup appends_progress_entries_without_changing_their_text
-cargo test -p evohime-installer --bin evohime-setup copy_action_emits_the_exact_canonical_log_text
+cargo test -p evohime-installer --test ui appends_progress_entries_without_changing_their_text
+cargo test -p evohime-installer --test ui copy_action_emits_the_exact_canonical_log_text
 ```
 
 Ожидается: компиляция падает из-за отсутствующих `append_log_entry`, `copy_log_to_clipboard` и `can_copy_log`. Причиной должны быть отсутствующие production-функции, а не синтаксис теста или зависимости.
 
-- [ ] **Шаг 3: Реализовать минимальные helper-функции канонического буфера**
+- [x] **Шаг 3: Реализовать минимальные helper-функции канонического буфера**
 
-Добавить эти функции перед `InstallerApp`:
+Объявить `pub mod ui;` в `crates/installer/src/lib.rs` и добавить эти
+функции в `crates/installer/src/ui.rs`:
 
 ```rust
-fn append_log_entry(log: &mut String, entry: &str) {
+pub fn append_log_entry(log: &mut String, entry: &str) {
     if !log.is_empty() {
         log.push('\n');
     }
     log.push_str(entry);
 }
 
-fn can_copy_log(log: &str) -> bool {
+pub fn can_copy_log(log: &str) -> bool {
     !log.is_empty()
 }
 
-fn copy_log_to_clipboard(ctx: &egui::Context, log: &str) {
+pub fn copy_log_to_clipboard(ctx: &egui::Context, log: &str) {
     if can_copy_log(log) {
         ctx.copy_text(log.to_owned());
     }
@@ -158,22 +163,25 @@ ProgressEvent::Error(msg) => {
 }
 ```
 
-- [ ] **Шаг 4: Запустить точечные и полные тесты crate и подтвердить GREEN**
+- [x] **Шаг 4: Запустить точечные и полные тесты crate и подтвердить GREEN**
 
 Выполнить:
 
 ```powershell
-cargo test -p evohime-installer --bin evohime-setup appends_progress_entries_without_changing_their_text
-cargo test -p evohime-installer --bin evohime-setup copy_action_emits_the_exact_canonical_log_text
-cargo test -p evohime-installer
+cargo test -p evohime-installer --test ui
+cargo test -p evohime-installer --test icacls_windows
+cargo check -p evohime-installer
 ```
 
-Ожидается: оба точечных теста проходят; полный тест crate установщика сообщает ноль падений.
+Ожидается: оба UI-теста и оба существующих ACL-теста проходят, а весь crate
+успешно компилируется. Полный `cargo test -p evohime-installer` не
+использовать: Windows требует elevation для автоматически названных unit-test
+harness установщика до запуска тестов.
 
-- [ ] **Шаг 5: Закоммитить каноническое поведение журнала**
+- [x] **Шаг 5: Закоммитить каноническое поведение журнала**
 
 ```powershell
-git add -- crates/installer/src/main.rs
+git add -- crates/installer/src/main.rs crates/installer/src/lib.rs crates/installer/src/ui.rs crates/installer/tests/ui.rs docs/superpowers/plans/2026-07-28-installer-details-layout.md
 git commit -m "feat(installer): keep canonical copyable log text"
 ```
 
@@ -183,7 +191,8 @@ git commit -m "feat(installer): keep canonical copyable log text"
 
 **Файлы:**
 - Изменить: `crates/installer/src/main.rs:50-245`
-- Тестировать: встроенный модуль `#[cfg(test)]` в `crates/installer/src/main.rs`
+- Изменить: `crates/installer/src/ui.rs`
+- Тестировать: `crates/installer/tests/ui.rs`
 
 **Интерфейсы:**
 - Использует: `InstallerApp::log: String`
@@ -194,7 +203,7 @@ git commit -m "feat(installer): keep canonical copyable log text"
 
 - [ ] **Шаг 1: Написать падающий layout-тест заполнения области и переноса строк**
 
-Добавить этот тест в существующий встроенный тестовый модуль:
+Добавить этот тест в `crates/installer/tests/ui.rs`:
 
 ```rust
 #[test]
@@ -226,17 +235,18 @@ fn log_field_fills_available_space_and_wraps_long_lines() {
 Выполнить:
 
 ```powershell
-cargo test -p evohime-installer --bin evohime-setup log_field_fills_available_space_and_wraps_long_lines
+cargo test -p evohime-installer --test ui log_field_fills_available_space_and_wraps_long_lines
 ```
 
 Ожидается: компиляция падает, потому что `show_log_field` ещё не существует.
 
 - [ ] **Шаг 3: Реализовать адаптивное поле журнала только для чтения**
 
-Добавить компонент перед реализацией `eframe::App`:
+Добавить публичные компоненты в `crates/installer/src/ui.rs`, затем
+импортировать их в `crates/installer/src/main.rs`:
 
 ```rust
-fn show_log_field(
+pub fn show_log_field(
     ui: &mut egui::Ui,
     log: &str,
 ) -> egui::text_edit::TextEditOutput {
@@ -268,7 +278,7 @@ fn show_log_field(
         .inner
 }
 
-fn show_details(ui: &mut egui::Ui, log: &str) -> bool {
+pub fn show_details(ui: &mut egui::Ui, log: &str) -> bool {
     let copy_clicked = ui
         .horizontal(|ui| {
             ui.label(egui::RichText::new("Подробности").strong());
@@ -328,8 +338,10 @@ if show_details(ui, &self.log) {
 Выполнить:
 
 ```powershell
-cargo test -p evohime-installer --bin evohime-setup log_field_fills_available_space_and_wraps_long_lines
-cargo test -p evohime-installer
+cargo test -p evohime-installer --test ui log_field_fills_available_space_and_wraps_long_lines
+cargo test -p evohime-installer --test ui
+cargo test -p evohime-installer --test icacls_windows
+cargo check -p evohime-installer
 ```
 
 Ожидается: layout-тест наблюдает минимум `610×450` логических points и больше одной строки galley; все тесты установщика проходят.
@@ -337,7 +349,7 @@ cargo test -p evohime-installer
 - [ ] **Шаг 6: Закоммитить адаптивный интерфейс**
 
 ```powershell
-git add -- crates/installer/src/main.rs
+git add -- crates/installer/src/main.rs crates/installer/src/ui.rs crates/installer/tests/ui.rs docs/superpowers/plans/2026-07-28-installer-details-layout.md
 git commit -m "fix(installer): expand and copy setup details"
 ```
 
@@ -360,7 +372,8 @@ git commit -m "fix(installer): expand and copy setup details"
 
 ```powershell
 cargo fmt --check
-cargo test -p evohime-installer
+cargo test -p evohime-installer --test ui
+cargo test -p evohime-installer --test icacls_windows
 cargo check -p evohime-installer
 cargo build --release -p evohime-installer --bin evohime-setup
 ```
@@ -408,9 +421,9 @@ $setupProcess = Start-Process -FilePath (Resolve-Path 'target\release\evohime-se
 Повторно запустить тесты канонического буфера, границы clipboard API, размеров и переноса:
 
 ```powershell
-cargo test -p evohime-installer --bin evohime-setup appends_progress_entries_without_changing_their_text
-cargo test -p evohime-installer --bin evohime-setup copy_action_emits_the_exact_canonical_log_text
-cargo test -p evohime-installer --bin evohime-setup log_field_fills_available_space_and_wraps_long_lines
+cargo test -p evohime-installer --test ui appends_progress_entries_without_changing_their_text
+cargo test -p evohime-installer --test ui copy_action_emits_the_exact_canonical_log_text
+cargo test -p evohime-installer --test ui log_field_fills_available_space_and_wraps_long_lines
 ```
 
 Ожидается: все три теста проходят. Проверить код и убедиться, что постоянный вызов `show_details` остаётся после сообщения завершённого состояния, поэтому завершённый и ошибочный журналы видимы до закрытия окна.
