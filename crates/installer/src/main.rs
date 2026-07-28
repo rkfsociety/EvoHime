@@ -11,7 +11,8 @@ use eframe::egui;
 use evohime_artifacts::{download_with_resume_and_verify, extract_zip};
 use evohime_installer::ui::{append_log_entry, copy_log_to_clipboard, show_details};
 use evohime_installer::{
-    create_shortcut, is_installation_dirty, mark_setup_complete, restrict_to_current_user,
+    clear_dirty_installation, create_shortcut, is_installation_dirty, mark_setup_complete,
+    restrict_to_current_user,
 };
 use evohime_launcher::config::{self, DbConfig};
 use evohime_launcher::{
@@ -268,7 +269,12 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
     //    от прошлой неудачной попытки удаляется полностью.
     if is_installation_dirty(&install_dir) {
         stage("Обнаружена незавершённая установка, очищаю...");
-        tokio::fs::remove_dir_all(&install_dir).await.ok();
+        clear_dirty_installation(&install_dir).await.map_err(|err| {
+            anyhow::anyhow!(
+                "не удалось очистить незавершённую установку {}: {err}",
+                install_dir.display()
+            )
+        })?;
     }
     tokio::fs::create_dir_all(&install_dir).await?;
 

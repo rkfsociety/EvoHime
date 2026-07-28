@@ -18,6 +18,16 @@ pub fn is_installation_dirty(install_dir: &Path) -> bool {
     install_dir.exists() && !marker_path(install_dir).exists()
 }
 
+/// Полностью удаляет незавершённую установку. Ошибка удаления возвращается
+/// вызывающему коду: продолжать поверх частично очищенного каталога нельзя.
+pub async fn clear_dirty_installation(install_dir: &Path) -> std::io::Result<bool> {
+    if !is_installation_dirty(install_dir) {
+        return Ok(false);
+    }
+    tokio::fs::remove_dir_all(install_dir).await?;
+    Ok(true)
+}
+
 /// Помечает установку как успешно завершённую. Должен вызываться строго
 /// последним шагом — после ярлыка, миграций и всего остального.
 pub async fn mark_setup_complete(install_dir: &Path) -> std::io::Result<()> {
