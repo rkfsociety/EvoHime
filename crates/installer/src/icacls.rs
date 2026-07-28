@@ -16,7 +16,6 @@ pub enum IcaclsError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
-
 /// Отключает наследование прав для `dir` и выдаёт текущему пользователю
 /// наследуемый полный доступ к файлам и каталогам (`icacls dir /inheritance:r`
 /// затем `icacls dir /grant:r "%USERNAME%":(OI)(CI)F`).
