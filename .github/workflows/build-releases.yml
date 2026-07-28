@@ -1,0 +1,435 @@
+name: Build Release
+
+# Фаза 1 плана Installer/Launcher/Update: на каждый пуш в main сам решает,
+# нужен ли новый релиз (git-cliff считает следующую версию по Conventional
+# Commits с последнего тега — если только chore:/docs: и т.п., бампа нет и
+# ничего не публикуется), создаёт и пушит тег, затем собирает
+# самодостаточные артефакты (evohime-setup.exe, server.zip, launcher.zip,
+# dist.zip, migrations.zip, postgres.zip, worker.zip) и публикует GitHub Release с
+# автосгенерированным описанием изменений. Единственный exe-файл в релизе —
+# evohime-setup.exe (устанавливает всё остальное сам); server.exe/launcher.exe/
+# updater.exe упакованы в zip, чтобы на странице релиза не было нескольких exe
+# на выбор. Launcher скачивает эти артефакты напрямую — без Git, без
+# sqlx-cli, без Node.js/Python на машине пользователя.
+#
+# Ручной пуш тега `v*` по-прежнему работает как раньше (например, чтобы
+# переопределить автоматически посчитанную версию) — job determine-version
+# в этом случае просто использует тег как есть, ничего не пересчитывая.
+#
+# Публикуется всегда только один релиз: перед созданием нового publish-release
+# удаляет все существующие GitHub Releases (но не git-теги — они нужны
+# git-cliff для расчёта следующей версии).
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  determine-version:
+    name: Determine next version
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.decide.outputs.should_release }}
+      version: ${{ steps.decide.outputs.version }}
+      short_sha: ${{ steps.decide.outputs.short_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git-cliff нужна полная история, чтобы найти последний тег
+
+      # Ручной пуш тега — версия уже известна, ничего считать не нужно.
+      - name: Use pushed tag as version
+        if: startsWith(github.ref, 'refs/tags/')
+        id: from_tag
+        run: |
+          echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute next version via git-cliff
+        if: github.ref == 'refs/heads/main'
+        id: cliff
+        # continue-on-error: git-cliff может завершиться с ошибкой, если в
+        # репозитории ещё нет ни одного тега (нечего "бампать") — этот
+        # случай обрабатывается в шаге ниже как bootstrap на v0.1.0, а не
+        # как падение всего workflow.
+        continue-on-error: true
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --bumped-version
+        # Без GITHUB_REPO/GITHUB_TOKEN: cliff.toml не использует GitHub-
+        # метаданные (PR/контрибьюторы) в шаблоне, а git-cliff-action при
+        # их наличии всё равно пытается получить их через GitHub API — и
+        # падает с 403 (см. коммит-сообщение). Просто не даём повод.
+
+      - name: Decide whether to release and tag
+        id: decide
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+          if [ -n "${{ steps.from_tag.outputs.version }}" ]; then
+            # Пуш тега вручную — релиз всегда происходит для этого тега.
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "version=${{ steps.from_tag.outputs.version }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          NEXT_VERSION="${{ steps.cliff.outputs.content }}"
+          CURRENT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+
+          if [ -z "$NEXT_VERSION" ] && [ -z "$CURRENT_TAG" ]; then
+            # Самый первый запуск: в репозитории ещё нет ни одного тега, и
+            # git-cliff не смог вычислить бамп относительно "ничего" —
+            # стартуем с v0.1.0.
+            echo "no existing tags — bootstrapping at v0.1.0"
+            NEXT_VERSION="v0.1.0"
+          elif [ -z "$NEXT_VERSION" ]; then
+            echo "git-cliff did not produce a version — skipping release"
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$NEXT_VERSION" = "$CURRENT_TAG" ]; then
+            echo "no version bump needed (only non-releasable commits since ${CURRENT_TAG:-the beginning})"
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "bumping $CURRENT_TAG -> $NEXT_VERSION"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "version=$NEXT_VERSION" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Тег создаём только для автоматического пути (push в main) — при
+      # ручном пуше тега он уже существует.
+      - name: Create and push tag
+        if: github.ref == 'refs/heads/main' && steps.decide.outputs.should_release == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.decide.outputs.version }}"
+          git push origin "${{ steps.decide.outputs.version }}"
+
+  build-server:
+    name: Build server.zip (Windows)
+    needs: determine-version
+    if: needs.determine-version.outputs.should_release == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.determine-version.outputs.version }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build evohime-server (release)
+        run: cargo build -p evohime-server --release
+
+      # Упаковано в zip (не голый .exe), чтобы на странице релиза был
+      # только один exe-файл — evohime-setup.exe.
+      - name: Stage and zip server artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Copy-Item target/release/evohime-server.exe artifact/server.exe
+          Compress-Archive -Path artifact/server.exe -DestinationPath artifact/server.zip -Force
+          Remove-Item artifact/server.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-zip
+          path: artifact/server.zip
+          retention-days: 1
+
+  build-launcher:
+    name: Build launcher.zip (Windows)
+    needs: determine-version
+    if: needs.determine-version.outputs.should_release == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.determine-version.outputs.version }}
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build evohime-launcher (release)
+        run: cargo build -p evohime-launcher --bin evohime-launcher --release
+
+      # updater.exe — раздел VIII плана: единственный компонент, который
+      # никогда не должен требовать обновления сам. Статически слинкован
+      # (+crt-static) отдельно от остальных бинарников, чтобы не зависеть
+      # от системных VC++ Runtime DLL — RUSTFLAGS здесь ограничен только
+      # этим шагом и не влияет на server.exe/launcher.exe выше.
+      - name: Build evohime-updater (release, statically linked)
+        shell: bash
+        env:
+          RUSTFLAGS: "-C target-feature=+crt-static"
+        run: cargo build -p evohime-updater --bin updater --release --target x86_64-pc-windows-msvc
+
+      # Оба exe упакованы в один launcher.zip (не голые .exe), чтобы на
+      # странице релиза был только один exe-файл — evohime-setup.exe.
+      # Имена внутри архива — evohime-launcher.exe/updater.exe, как их
+      # ожидает Installer при распаковке в install_dir/launcher.
+      - name: Stage and zip launcher artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Copy-Item target/release/evohime-launcher.exe artifact/evohime-launcher.exe
+          Copy-Item target/x86_64-pc-windows-msvc/release/updater.exe artifact/updater.exe
+          Compress-Archive -Path artifact/evohime-launcher.exe,artifact/updater.exe -DestinationPath artifact/launcher.zip -Force
+          Remove-Item artifact/evohime-launcher.exe, artifact/updater.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-zip
+          path: artifact/launcher.zip
+          retention-days: 1
+
+  build-installer:
+    name: Build evohime-setup.exe (Windows)
+    needs: determine-version
+    if: needs.determine-version.outputs.should_release == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.determine-version.outputs.version }}
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build evohime-setup (release)
+        run: cargo build -p evohime-installer --bin evohime-setup --release
+
+      - name: Stage installer artifact
+        shell: bash
+        run: |
+          mkdir -p artifact
+          cp target/release/evohime-setup.exe artifact/evohime-setup.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-exe
+          path: artifact/evohime-setup.exe
+          retention-days: 1
+
+  build-frontend:
+    name: Build React static bundle
+    needs: determine-version
+    if: needs.determine-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/web
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.determine-version.outputs.version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/web/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - name: Zip dist
+        run: |
+          cd dist
+          zip -r ../../../dist.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-zip
+          path: dist.zip
+          retention-days: 1
+
+  package-migrations:
+    name: Package migrations.zip
+    needs: determine-version
+    if: needs.determine-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.determine-version.outputs.version }}
+      - name: Zip migrations
+        run: |
+          cd migrations
+          zip -r ../migrations.zip . -i "*.sql"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: migrations-zip
+          path: migrations.zip
+          retention-days: 1
+
+  # Портативный PostgreSQL для Windows — упаковывается из готовой сборки
+  # zonky embedded-postgres-binaries (Maven Central), той же используемой
+  # разработчиками для встраивания Postgres в тесты/десктоп-приложения без
+  # системной установки. Архив содержит только postgres.exe/initdb.exe/
+  # pg_ctl.exe (без createdb/psql/pg_dump) — Installer создаёт базу данных
+  # через SQL напрямую (см. crates/launcher/src/postgres.rs), а не через
+  # createdb.exe. Не версионируется вместе с остальным релизом (как и
+  # launcher.zip) — скачивается Installer'ом один раз при установке.
+  package-postgres:
+    name: Package postgres.zip
+    needs: determine-version
+    if: needs.determine-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    env:
+      PG_VERSION: 16.14.0
+    steps:
+      - name: Download portable PostgreSQL (Windows binaries)
+        run: |
+          JAR_URL="https://repo1.maven.org/maven2/io/zonky/test/postgres/embedded-postgres-binaries-windows-amd64/${PG_VERSION}/embedded-postgres-binaries-windows-amd64-${PG_VERSION}.jar"
+          curl -fsSL -o pg-binaries.jar "$JAR_URL"
+          unzip -q pg-binaries.jar -d pg-jar
+          mkdir -p pg-extracted
+          tar -xJf pg-jar/postgres-windows-x86_64.txz -C pg-extracted
+      - name: Zip postgres (bin/lib/share only)
+        run: |
+          cd pg-extracted
+          zip -r ../postgres.zip bin lib share
+      - uses: actions/upload-artifact@v4
+        with:
+          name: postgres-zip
+          path: postgres.zip
+          retention-days: 1
+
+  package-worker:
+    name: Package worker.zip (with Windows wheels)
+    needs: determine-version
+    if: needs.determine-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    # Раннер здесь Linux, но requirements.txt проекта содержит только чистый
+    # Python-пакет (jsonschema>=4.0.0, universal wheel) — поэтому явные
+    # платформенные флаги ниже безопасны. При добавлении зависимости с
+    # C-расширением сначала проверить на pypi.org наличие win_amd64 wheel;
+    # если его нет — перенести этот шаг на windows-latest без --only-binary,
+    # чтобы pip собрал пакет из исходников локальным тулчейном раннера.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.determine-version.outputs.version }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Download Windows-compatible wheels
+        run: |
+          mkdir -p worker_pkg/wheels
+          pip download -r workers/python/requirements.txt -d worker_pkg/wheels \
+            --platform win_amd64 \
+            --python-version 312 \
+            --implementation cp \
+            --only-binary=:all:
+      - name: Stage worker files
+        run: |
+          cp workers/python/worker.py worker_pkg/
+          cp workers/python/requirements.txt worker_pkg/
+      - name: Zip worker package
+        run: |
+          cd worker_pkg
+          zip -r ../worker.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: worker-zip
+          path: worker.zip
+          retention-days: 1
+
+  publish-release:
+    name: Publish GitHub Release
+    needs:
+      [
+        determine-version,
+        build-server,
+        build-launcher,
+        build-installer,
+        build-frontend,
+        package-migrations,
+        package-postgres,
+        package-worker,
+      ]
+    if: needs.determine-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.determine-version.outputs.version }}
+          fetch-depth: 0 # git-cliff нужна полная история для сравнения тегов
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: downloaded
+
+      - name: Assemble release artifacts
+        run: |
+          mkdir -p release
+          cp downloaded/server-zip/server.zip release/
+          cp downloaded/launcher-zip/launcher.zip release/
+          cp downloaded/installer-exe/evohime-setup.exe release/
+          cp downloaded/dist-zip/dist.zip release/
+          cp downloaded/migrations-zip/migrations.zip release/
+          cp downloaded/postgres-zip/postgres.zip release/
+          cp downloaded/worker-zip/worker.zip release/
+
+      - name: Write version.txt
+        run: |
+          echo "${{ needs.determine-version.outputs.version }}+${{ needs.determine-version.outputs.short_sha }}" > release/version.txt
+
+      - name: Generate changelog with git-cliff
+        uses: orhun/git-cliff-action@v4
+        id: git-cliff
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        # Без GITHUB_REPO/GITHUB_TOKEN: см. пояснение у первого вызова
+        # git-cliff-action в job determine-version — та же причина.
+
+      - name: Write changelog to file
+        run: printf '%s\n' "${{ steps.git-cliff.outputs.content }}" > release/changelog.md
+
+      - name: Compute SHA256 checksums
+        run: |
+          cd release
+          for f in server.zip launcher.zip evohime-setup.exe dist.zip migrations.zip postgres.zip worker.zip; do
+            sha256sum "$f" | cut -d' ' -f1 > "$f.sha256"
+          done
+
+      # Держим на странице релизов только самый свежий релиз — старые
+      # удаляются (только сам Release, git-теги остаются нетронутыми: они
+      # нужны git-cliff, чтобы верно посчитать следующую версию).
+      - name: Delete old releases (keep only the new one)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for tag in $(gh release list --limit 100 --json tagName --jq '.[].tagName'); do
+            if [ "$tag" != "${{ needs.determine-version.outputs.version }}" ]; then
+              echo "deleting old release $tag"
+              gh release delete "$tag" --yes
+            fi
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.determine-version.outputs.version }}
+          name: ${{ needs.determine-version.outputs.version }}
+          body_path: release/changelog.md
+          files: |
+            release/evohime-setup.exe
+            release/evohime-setup.exe.sha256
+            release/server.zip
+            release/server.zip.sha256
+            release/launcher.zip
+            release/launcher.zip.sha256
+            release/dist.zip
+            release/dist.zip.sha256
+            release/migrations.zip
+            release/migrations.zip.sha256
+            release/postgres.zip
+            release/postgres.zip.sha256
+            release/worker.zip
+            release/worker.zip.sha256
+            release/version.txt

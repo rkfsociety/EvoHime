@@ -45,6 +45,12 @@ pub struct Expectations {
     pub final_message_contains: Vec<String>,
     #[serde(default)]
     pub files: Vec<FileExpectation>,
+    /// Wave 3B: thinking quality expectations
+    #[serde(default)]
+    pub thinking_contains: Vec<String>,
+    /// Minimum expected thinking tokens (for reasoning-heavy tasks)
+    #[serde(default)]
+    pub min_thinking_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -93,6 +99,7 @@ pub fn script_to_results(script: &[ScriptStep]) -> Vec<ChatResult> {
         .map(|(index, step)| match step {
             ScriptStep::Tool { tool, input } => ChatResult {
                 content: String::new(),
+                thinking: None,
                 tool_calls: vec![NativeToolCall {
                     id: format!("golden-{index}"),
                     name: tool.clone(),
@@ -100,21 +107,52 @@ pub fn script_to_results(script: &[ScriptStep]) -> Vec<ChatResult> {
                 }],
                 usage: None,
             },
-            ScriptStep::Reply { reply } => ChatResult {
-                content: reply.clone(),
-                tool_calls: vec![],
-                usage: None,
-            },
+            ScriptStep::Reply { reply } => {
+                let (content, thinking) = extract_thinking(reply);
+                ChatResult {
+                    content,
+                    thinking,
+                    tool_calls: vec![],
+                    usage: None,
+                }
+            }
         })
         .collect()
+}
+
+/// Split a scripted reply's inline `*thinking: ...*` block (Wave 3B golden-task
+/// DSL) out of the visible message, mimicking a provider that returns thinking
+/// as a separate field rather than mixed into the message.
+fn extract_thinking(reply: &str) -> (String, Option<String>) {
+    const MARKER: &str = "*thinking:";
+    let Some(start) = reply.find(MARKER) else {
+        return (reply.to_string(), None);
+    };
+    let after_marker = start + MARKER.len();
+    let Some(rel_end) = reply[after_marker..].rfind('*') else {
+        return (reply.to_string(), None);
+    };
+    let end = after_marker + rel_end;
+    let thinking = reply[after_marker..end].trim().to_string();
+    let content = format!(
+        "{}\n\n{}",
+        reply[..start].trim_end(),
+        reply[end + 1..].trim_start()
+    )
+    .trim()
+    .to_string();
+    (content, Some(thinking))
 }
 
 pub fn check_expectations(
     expect: &Expectations,
     final_message: &str,
     workspace: &Path,
+    thinking: Option<&str>,
 ) -> Vec<String> {
     let mut failures = Vec::new();
+
+    // Check final message content
     for needle in &expect.final_message_contains {
         if !final_message.contains(needle) {
             failures.push(format!(
@@ -123,6 +161,55 @@ pub fn check_expectations(
             ));
         }
     }
+
+    // Check thinking content (Wave 3B)
+    if !expect.thinking_contains.is_empty() {
+        match thinking {
+            Some(content) => {
+                for needle in &expect.thinking_contains {
+                    // Normalize for robust matching (remove spaces, convert operators)
+                    let normalized_needle = needle
+                        .replace("×", "*")
+                        .replace("·", "*")
+                        .replace("÷", "/")
+                        .replace("−", "-")
+                        .replace(" ", "")
+                        .to_lowercase();
+                    let normalized_content = content
+                        .replace("×", "*")
+                        .replace("·", "*")
+                        .replace("÷", "/")
+                        .replace("−", "-")
+                        .replace(" ", "")
+                        .to_lowercase();
+
+                    if !normalized_content.contains(&normalized_needle) {
+                        failures.push(format!(
+                            "thinking does not contain `{needle}` (got: `{}`)",
+                            content.chars().take(200).collect::<String>()
+                        ));
+                    }
+                }
+            }
+            None => {
+                if !expect.thinking_contains.is_empty() {
+                    failures.push("thinking content expected but not available".to_string());
+                }
+            }
+        }
+    }
+
+    // Check minimum thinking tokens
+    if let Some(min_tokens) = expect.min_thinking_tokens {
+        let actual_tokens = thinking.map(|t| (t.len() / 4) as u32).unwrap_or(0);
+        if actual_tokens < min_tokens {
+            failures.push(format!(
+                "thinking tokens: {actual_tokens} < {min_tokens} (expected)"
+            ));
+        }
+    }
+
+    // Check files
     for file in &expect.files {
         let path = workspace.join(&file.path);
         match std::fs::read_to_string(&path) {
@@ -193,7 +280,7 @@ pub async fn run_golden_task_with_gateway(
             .await;
     }
     let tools = evohime_tool_runtime::ToolRegistry::bootstrap_with_permissions(permissions);
-    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
     let result = run_agent_loop(
         AgentConfig {
@@ -224,11 +311,34 @@ pub async fn run_golden_task_with_gateway(
     )
     .await;
 
+    // Collect thinking from events (Wave 3B)
+    let mut thinking = String::new();
+    while let Ok(event) = rx.try_recv() {
+        if let evohime_protocol::ServerEvent::AgentThinking {
+            thinking: chunk, ..
+        } = event
+        {
+            thinking.push_str(&chunk);
+        }
+    }
+
     let (mut failures, final_message) = match result {
-        Ok(run) => (
-            check_expectations(&task.expect, &run.final_message, workspace.path()),
-            Some(run.final_message),
-        ),
+        Ok(mut run) => {
+            run.thinking = if thinking.is_empty() {
+                None
+            } else {
+                Some(thinking)
+            };
+            (
+                check_expectations(
+                    &task.expect,
+                    &run.final_message,
+                    workspace.path(),
+                    run.thinking.as_deref(),
+                ),
+                Some(run.final_message),
+            )
+        }
         Err(error) => (vec![format!("agent loop failed: {error}")], None),
     };
 
@@ -311,6 +421,10 @@ async fn judge_final_answer(
     while let Some(item) = stream.next().await {
         match item {
             Ok(ChatStreamItem::Delta(delta)) => output.push_str(&delta),
+            Ok(ChatStreamItem::Thinking(_thinking)) => {
+                // TODO: Phase 3 will handle thinking events properly
+                // For now, simply skip thinking chunks during streaming
+            }
             Ok(ChatStreamItem::Usage(_)) => {}
             Err(error) => return Err(format!("judge model call failed: {error}")),
         }
@@ -501,8 +615,10 @@ mod tests {
                     contains: None,
                 },
             ],
+            thinking_contains: vec![],
+            min_thinking_tokens: None,
         };
-        let failures = check_expectations(&expect, "present here", dir.path());
+        let failures = check_expectations(&expect, "present here", dir.path(), None);
         assert_eq!(failures.len(), 3);
         assert!(failures[0].contains("absent"));
         assert!(failures[1].contains("nope"));

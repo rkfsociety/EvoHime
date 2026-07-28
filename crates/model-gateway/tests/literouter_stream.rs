@@ -82,6 +82,7 @@ async fn literouter_streams_usage_chunk() {
     while let Some(chunk) = stream.next().await {
         match chunk.expect("chunk") {
             ChatStreamItem::Delta(text) => output.push_str(&text),
+            ChatStreamItem::Thinking(_) => {}
             ChatStreamItem::Usage(value) => usage = Some(value),
         }
     }
@@ -93,6 +94,7 @@ async fn literouter_streams_usage_chunk() {
             prompt_tokens: 3,
             completion_tokens: 1,
             total_tokens: 4,
+            ..Default::default()
         })
     );
 }

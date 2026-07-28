@@ -37,8 +37,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      # evohime-launcher/evohime-installer — Windows-only GUI-стек (eframe/winit
+      # без x11/wayland фич), на Linux-раннере не собираются в принципе.
       - name: Run clippy
-        run: cargo clippy --workspace --all-features --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-features --all-targets --exclude evohime-launcher --exclude evohime-installer -- -D warnings
 
   # Phase 5.5 — gitleaks scans for leaked secrets in git history.
   gitleaks:
@@ -85,8 +87,10 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
       - name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install -y ripgrep
+      # evohime-launcher/evohime-installer — Windows-only GUI-стек (eframe/winit
+      # без x11/wayland фич), на Linux-раннере не собираются в принципе.
       - name: Run tests
-        run: cargo test --workspace --all-features --all-targets
+        run: cargo test --workspace --all-features --all-targets --exclude evohime-launcher --exclude evohime-installer
 
   docs:
     name: Docs
@@ -97,8 +101,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       # Stage 7.87 — rustdoc warnings are CI failures.
+      # evohime-launcher/evohime-installer — Windows-only GUI-стек (eframe/winit
+      # без x11/wayland фич), на Linux-раннере не собираются в принципе.
       - name: Build Rust docs with warnings denied
-        run: cargo doc --workspace --all-features --no-deps
+        run: cargo doc --workspace --all-features --no-deps --exclude evohime-launcher --exclude evohime-installer
 
   # Stage 7.85 — frontend typecheck + production build (Playwright smoke deferred).
   frontend:

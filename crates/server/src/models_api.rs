@@ -304,6 +304,76 @@ pub(crate) fn build_model_config(
     })
 }
 
+// 7.108: Cost limits / spend caps endpoints
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct CostLimitsListResponse {
+    limits: Vec<CostLimitInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct CostLimitInfo {
+    model: String,
+    daily_cap_tokens: i64,
+    reset_hour: i32,
+    enabled: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct CostLimitUpdateRequest {
+    daily_cap_tokens: i64,
+    reset_hour: i32,
+    enabled: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct CostLimitResponse {
+    model: String,
+    daily_cap_tokens: i64,
+    reset_hour: i32,
+    enabled: bool,
+}
+
+pub(crate) async fn list_cost_limits(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<CostLimitsListResponse>, ApiError> {
+    let limits = evohime_storage::list_cost_limits(&state.pool)
+        .await
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+    Ok(Json(CostLimitsListResponse {
+        limits: limits
+            .into_iter()
+            .map(|l| CostLimitInfo {
+                model: l.model,
+                daily_cap_tokens: l.daily_cap_tokens,
+                reset_hour: l.reset_hour,
+                enabled: l.enabled,
+            })
+            .collect(),
+    }))
+}
+
+pub(crate) async fn update_cost_limit(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(model): axum::extract::Path<String>,
+    Json(req): Json<CostLimitUpdateRequest>,
+) -> Result<Json<CostLimitResponse>, ApiError> {
+    let update = evohime_storage::CostLimitUpdate {
+        daily_cap_tokens: req.daily_cap_tokens,
+        reset_hour: req.reset_hour,
+        enabled: req.enabled,
+    };
+    let result = evohime_storage::update_cost_limit(&state.pool, &model, &update)
+        .await
+        .map_err(|e| ApiError::Internal(e.to_string()))?;
+    Ok(Json(CostLimitResponse {
+        model: result.model,
+        daily_cap_tokens: result.daily_cap_tokens,
+        reset_hour: result.reset_hour,
+        enabled: result.enabled,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

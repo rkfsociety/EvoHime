@@ -43,6 +43,8 @@ pub struct ModelRouteResponse {
     pub configured: bool,
     pub available_models: Vec<String>,
     pub billing_mode: String,
+    /// Wave 3B: Provider supports extended thinking
+    pub supports_thinking: bool,
 }
 
 impl ModelGateway {
@@ -113,6 +115,7 @@ impl ModelGateway {
                 } else {
                     "paid".to_string()
                 },
+                supports_thinking: route.supports_thinking,
             })
             .collect();
         routes.sort_by(|left, right| left.name.cmp(&right.name));

@@ -48,6 +48,12 @@ pub struct LlmUsage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub total_tokens: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_creation_input_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_read_input_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_tokens: Option<u32>,
 }
 
 impl LlmUsage {
@@ -56,6 +62,9 @@ impl LlmUsage {
             prompt_tokens,
             completion_tokens,
             total_tokens: prompt_tokens.saturating_add(completion_tokens),
+            cache_creation_input_tokens: None,
+            cache_read_input_tokens: None,
+            thinking_tokens: None,
         }
     }
 
@@ -67,6 +76,7 @@ impl LlmUsage {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ChatResult {
     pub content: String,
+    pub thinking: Option<String>,
     pub tool_calls: Vec<NativeToolCall>,
     pub usage: Option<LlmUsage>,
 }
@@ -77,9 +87,10 @@ impl ChatResult {
     }
 }
 
-/// Streaming chat item: text delta or final usage (when `stream_options.include_usage`).
+/// Streaming chat item: text delta, thinking content, or final usage (when `stream_options.include_usage`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatStreamItem {
     Delta(String),
+    Thinking(String),
     Usage(LlmUsage),
 }

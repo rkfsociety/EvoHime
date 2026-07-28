@@ -36,6 +36,11 @@ impl ProviderKind {
             Self::Mock => "mock",
         }
     }
+
+    /// Wave 3B: Check if provider supports extended thinking
+    pub fn supports_thinking(self) -> bool {
+        matches!(self, Self::LiteRouter | Self::Mock)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,6 +106,14 @@ impl ChatMessage {
 pub type TokenStream = Pin<Box<dyn Stream<Item = Result<ChatStreamItem, ProviderError>> + Send>>;
 pub type ChatFuture = Pin<Box<dyn Future<Output = Result<ChatResult, ProviderError>> + Send>>;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThinkingConfig {
+    #[serde(rename = "type")]
+    pub kind: String, // "enabled"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub budget_tokens: Option<u32>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
     #[error("configuration error: {0}")]
@@ -122,6 +135,20 @@ pub trait ModelProvider: Send + Sync {
 
     fn stream_chat_with_model(&self, model: &str, messages: &[ChatMessage]) -> TokenStream {
         let _ = model;
+        self.stream_chat(messages)
+    }
+
+    /// Stream with optional extended thinking support (Wave 3B).
+    /// Default implementation ignores thinking config (for providers that don't support it).
+    /// Providers that support thinking should override this method.
+    fn stream_with_thinking(
+        &self,
+        messages: &[ChatMessage],
+        thinking: Option<ThinkingConfig>,
+        tools: Option<&[ToolSpec]>,
+    ) -> TokenStream {
+        let _ = thinking;
+        let _ = tools;
         self.stream_chat(messages)
     }
 

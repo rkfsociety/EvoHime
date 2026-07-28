@@ -31,6 +31,16 @@
         }
       }
     },
+    "/shutdown": {
+      "post": {
+        "operationId": "post_shutdown",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/openapi.json": {
       "get": {
         "operationId": "get_openapi_json",
@@ -150,6 +160,44 @@
     "/api/models/available": {
       "get": {
         "operationId": "get_api_models_available",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/models/cost-limits": {
+      "get": {
+        "operationId": "get_api_models_cost_limits",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/models/cost-limits/:model": {
+      "put": {
+        "operationId": "put_api_models_cost_limits_model",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/settings/thinking": {
+      "get": {
+        "operationId": "get_api_settings_thinking",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      },
+      "put": {
+        "operationId": "put_api_settings_thinking",
         "responses": {
           "200": {
             "description": "Successful response"
@@ -302,6 +350,16 @@
       },
       "post": {
         "operationId": "post_api_projects",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/projects/search": {
+      "get": {
+        "operationId": "get_api_projects_search",
         "responses": {
           "200": {
             "description": "Successful response"
@@ -573,6 +631,36 @@
         }
       }
     },
+    "/api/worker/queue/claim": {
+      "post": {
+        "operationId": "post_api_worker_queue_claim",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/worker/queue/:job_id/heartbeat": {
+      "patch": {
+        "operationId": "patch_api_worker_queue_job_id_heartbeat",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/worker/queue/:job_id/complete": {
+      "patch": {
+        "operationId": "patch_api_worker_queue_job_id_complete",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/permissions": {
       "get": {
         "operationId": "get_api_permissions",
@@ -775,6 +863,16 @@
         }
       }
     },
+    "/api/plugins/pin": {
+      "post": {
+        "operationId": "post_api_plugins_pin",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/plugins/integrity": {
       "get": {
         "operationId": "get_api_plugins_integrity",
@@ -785,9 +883,39 @@
         }
       }
     },
+    "/api/plugins/audit": {
+      "get": {
+        "operationId": "get_api_plugins_audit",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
     "/api/plugins/:name/skills": {
       "get": {
         "operationId": "get_api_plugins_name_skills",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/plugins/:plugin_id/skills/status": {
+      "get": {
+        "operationId": "get_api_plugins_plugin_id_skills_status",
+        "responses": {
+          "200": {
+            "description": "Successful response"
+          }
+        }
+      }
+    },
+    "/api/plugins/:plugin_id/skills/:skill_name/toggle": {
+      "post": {
+        "operationId": "post_api_plugins_plugin_id_skills_skill_name_toggle",
         "responses": {
           "200": {
             "description": "Successful response"

@@ -7,7 +7,7 @@ import type {
   SessionBootstrap,
 } from "./protocol";
 import type { ApprovalRequiredEvent, MemoryAskEvent } from "./protocol";
-import { TerminalPanel, TerminalEntry } from "./components/TerminalPanel";
+import type { TerminalEntry } from "./components/TerminalPanel";
 import { ApprovalModal } from "./components/ApprovalModal";
 import { MemoryAskModal } from "./components/MemoryAskModal";
 import { SearchModal, type SearchResult } from "./components/SearchModal";
@@ -24,6 +24,7 @@ import { useWorkspace } from "./hooks/useWorkspace";
 import { useVoiceInput } from "./hooks/useVoiceInput";
 import { useSpeechSynthesis } from "./hooks/useSpeechSynthesis";
 // Phase 5.8: Lazy-loaded panels for code splitting
+const TerminalPanel = lazy(() => import("./components/TerminalPanel").then(m => ({ default: m.TerminalPanel })));
 const ActionsPanel = lazy(() => import("./panels/ActionsPanel").then(m => ({ default: m.ActionsPanel })));
 const EditorPanel = lazy(() => import("./panels/EditorPanel").then(m => ({ default: m.EditorPanel })));
 const FilesPanel = lazy(() => import("./panels/FilesPanel").then(m => ({ default: m.FilesPanel })));
@@ -703,6 +704,15 @@ export function App() {
   const { socketState, setSocketState, lastSequenceRef, send: sendSocket } = useWebSocket({
     sessionId: session?.session_id ?? null,
     onEvent: applyEvent,
+    onReconnect: (state) => {
+      if (state === "started") {
+        console.debug("WebSocket reconnect started");
+      } else if (state === "succeeded") {
+        console.debug("WebSocket reconnect succeeded");
+      } else if (state === "failed") {
+        console.error("WebSocket reconnect failed after max attempts");
+      }
+    },
   });
   const connectedLabel = useMemo(() => {
     if (!session) return "Загрузка чатов...";
@@ -1299,7 +1309,13 @@ export function App() {
       );
     }
 
-    if (activePanel === "terminal") return <TerminalPanel entries={terminalEntries} />;
+    if (activePanel === "terminal") {
+      return (
+        <Suspense fallback={panelFallback}>
+          <TerminalPanel entries={terminalEntries} />
+        </Suspense>
+      );
+    }
 
     if (activePanel === "scheduled") {
       return (

@@ -7,11 +7,13 @@ use uuid::Uuid;
 
 pub mod attachments;
 pub mod backup;
+pub mod cost_limits;
 pub mod installed_plugins;
 pub mod memory;
 pub mod metrics_snapshots;
 pub mod operators;
 pub mod permission_audit;
+pub mod plugin_audit;
 pub mod plugin_skills;
 pub mod pool;
 pub mod restore;
@@ -20,12 +22,18 @@ pub mod scopes;
 pub mod sites;
 pub mod sync;
 pub mod test_db;
+pub mod thinking;
 
 pub use attachments::{
     claim_pending_session_attachments, create_session_attachment, list_pending_session_attachments,
     list_session_attachments, SessionAttachmentRow,
 };
 pub use backup::{collect_backup, BackupDump};
+pub use cost_limits::{
+    add_tokens_to_tracking, check_spending_cap, get_cost_limit, get_or_create_cost_limit,
+    get_today_consumption, list_cost_limits, update_cost_limit, CostLimitRow, CostLimitUpdate,
+    CostTrackingRow,
+};
 pub use installed_plugins::{
     delete_installed_plugin, get_installed_plugin, insert_installed_plugin, list_installed_plugins,
     mark_plugin_uninstalled, update_plugin_pin, InstalledPluginRow, NewInstalledPlugin,
@@ -57,6 +65,10 @@ pub use operators::{
 pub use permission_audit::{
     insert_permission_audit, list_permission_audit, NewPermissionAudit, PermissionAuditRow,
 };
+pub use plugin_audit::{
+    insert_plugin_audit, list_plugin_audit, NewPluginAudit, PluginAuditRow, ACTION_FORCE_OVERRIDE,
+    ACTION_INSTALL, ACTION_PIN, ACTION_UNINSTALL, ACTION_UPDATE,
+};
 pub use plugin_skills::{
     ensure_plugin_skills_exist, get_disabled_skills, list_plugin_skills, toggle_skill_status,
     PluginSkillRow,
@@ -65,9 +77,9 @@ pub use pool::{connect_pool, PoolConfig};
 pub use restore::{restore_backup, validate_backup_header, RestoreReport};
 pub use scopes::{
     archive_session_for_operator, delete_session_for_operator, list_archived_sessions_for_operator,
-    list_session_events_after_for_operator, list_session_messages_for_operator,
-    list_sessions_for_operator, list_tasks_for_operator, load_task_for_operator,
-    unarchive_session_for_operator,
+    list_session_events_after_for_operator, list_session_events_paginated_for_operator,
+    list_session_messages_for_operator, list_sessions_for_operator, list_tasks_for_operator,
+    load_task_for_operator, unarchive_session_for_operator,
 };
 pub use sync::{
     find_active_sync_run, finish_sync_run, is_terminal_sync_status, is_valid_sync_direction,
@@ -76,6 +88,10 @@ pub use sync::{
 };
 pub use test_db::{
     connect_integration_pool, integration_database_url, require_integration_database,
+};
+pub use thinking::{
+    get_monthly_thinking_cost, get_or_create_thinking_settings, record_thinking_usage,
+    update_thinking_settings, ThinkingSettings, ThinkingUsage,
 };
 
 #[derive(Debug, Error)]
@@ -147,11 +163,26 @@ pub struct TaskCheckpointRow {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, FromRow)]
+#[derive(Debug, Clone, Serialize, FromRow)]
 pub struct EventRow {
     pub sequence: i64,
     pub created_at: DateTime<Utc>,
     pub event_json: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaginatedEventsCursor {
+    pub seq: i64,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PaginatedEventsPage {
+    pub items: Vec<EventRow>,
+    pub next_cursor: Option<String>,
+    pub prev_cursor: Option<String>,
+    pub has_more: bool,
+    pub total_available: i64,
 }
 
 #[derive(Debug, Clone, FromRow)]

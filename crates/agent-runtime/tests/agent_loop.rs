@@ -49,6 +49,7 @@ impl ModelProvider for TwoPhaseProvider {
         Box::pin(async {
             Ok(ChatResult {
                 content: String::new(),
+                thinking: None,
                 tool_calls: vec![NativeToolCall {
                     id: "reply-1".into(),
                     name: "assistant_reply".into(),

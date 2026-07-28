@@ -5,8 +5,14 @@
 //! - separate path / symbol / content weights
 //! - binary + noisy-file filtering
 //!
-//! Chunk text is stable enough to feed a future embedding encoder.
+//! Wave 4: Semantic search with embeddings:
+//! - Chunk embeddings cached locally
+//! - Hash-based deduplication
+//! - Hybrid BM25 + cosine similarity scoring
 
+pub mod embeddings;
+
+use embeddings::{Embedding, EmbeddingCache, EmbeddingGenerator, SemanticMatch};
 use std::cmp::Reverse;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -73,6 +79,8 @@ pub struct ProjectIndex {
     workspace_root: PathBuf,
     max_results: usize,
     max_file_bytes: u64,
+    /// Wave 4: Embedding cache for semantic search
+    embeddings_cache: EmbeddingCache,
 }
 
 impl ProjectIndex {
@@ -81,6 +89,7 @@ impl ProjectIndex {
             workspace_root: workspace_root.into(),
             max_results: DEFAULT_MAX_RESULTS,
             max_file_bytes: DEFAULT_MAX_FILE_BYTES,
+            embeddings_cache: EmbeddingCache::new(),
         }
     }
 
@@ -93,7 +102,13 @@ impl ProjectIndex {
             workspace_root: workspace_root.into(),
             max_results: max_results.max(1),
             max_file_bytes: max_file_bytes.max(1),
+            embeddings_cache: EmbeddingCache::new(),
         }
+    }
+
+    /// Wave 4: Get embedding cache (for testing & stats)
+    pub fn embeddings_cache(&self) -> &EmbeddingCache {
+        &self.embeddings_cache
     }
 
     pub fn search(&self, query: &str) -> Vec<ProjectIndexMatch> {
@@ -187,6 +202,153 @@ impl ProjectIndex {
 
         Some(output.trim_end().to_string())
     }
+
+    /// Wave 4: Semantic search combining lexical and embedding-based scoring.
+    /// Returns hybrid results ranked by combined score (0.4 lexical + 0.6 semantic).
+    pub fn search_semantic(&mut self, query: &str) -> Vec<SemanticMatch> {
+        self.search_semantic_with_limit(query, self.max_results)
+    }
+
+    /// Semantic search with custom limit.
+    pub fn search_semantic_with_limit(&mut self, query: &str, limit: usize) -> Vec<SemanticMatch> {
+        let query_normalized = normalize_query(query);
+        if query_normalized.is_empty() || !self.workspace_root.exists() {
+            return Vec::new();
+        }
+
+        let query_text = query_normalized.join(" ");
+        let query_embedding = EmbeddingGenerator::generate_embedding(&query_text);
+
+        let mut semantic_matches = Vec::new();
+        let limit = limit.max(1);
+
+        // Collect all matches first to compute path hierarchy weights (Phase 3)
+        for entry in WalkDir::new(&self.workspace_root)
+            .follow_links(false)
+            .into_iter()
+            .filter_entry(|entry| !should_skip_directory(entry.path()))
+            .filter_map(Result::ok)
+        {
+            let path = entry.path();
+            if entry.file_type().is_dir() {
+                continue;
+            }
+
+            if should_skip_path(path) || is_noisy_file(path) {
+                continue;
+            }
+
+            let metadata = match fs::metadata(path) {
+                Ok(metadata) => metadata,
+                Err(_) => continue,
+            };
+            if metadata.len() > self.max_file_bytes {
+                continue;
+            }
+
+            let Ok(bytes) = fs::read(path) else {
+                continue;
+            };
+            if is_probably_binary(&bytes) {
+                continue;
+            }
+            let Ok(content) = String::from_utf8(bytes) else {
+                continue;
+            };
+
+            let relative = relative_to_root(&self.workspace_root, path);
+
+            // Score chunks semantically
+            let chunks = split_into_chunks(&content);
+            for (chunk_text, line_start, line_end) in chunks {
+                let chunk_hash = Embedding::hash_chunk(&chunk_text);
+
+                // Check cache first
+                let embedding = if let Some(cached) = self.embeddings_cache.get(&chunk_hash) {
+                    cached.vector.clone()
+                } else {
+                    // Generate and cache embedding
+                    let emb =
+                        Embedding::new(relative.clone(), line_start, line_end, chunk_text.clone());
+                    let vec = emb.vector.clone();
+                    self.embeddings_cache.insert(emb);
+                    vec
+                };
+
+                // Compute lexical score
+                let line_hits = collect_line_hits(&query_normalized, &chunk_text, &relative);
+                let lexical_score = line_hits.iter().map(|h| h.score).sum::<u32>().min(100);
+
+                // Compute semantic score (cosine similarity)
+                let semantic_score =
+                    EmbeddingGenerator::cosine_similarity(&query_embedding, &embedding);
+
+                // Combine scores
+                let combined_score = SemanticMatch::combine_scores(lexical_score, semantic_score);
+
+                if combined_score > 0.1 {
+                    semantic_matches.push(SemanticMatch::with_combined(
+                        relative.clone(),
+                        line_start,
+                        line_end,
+                        chunk_text,
+                        lexical_score,
+                        semantic_score,
+                    ));
+                }
+            }
+        }
+
+        // Apply path hierarchy weights (Phase 3)
+        Self::apply_path_hierarchy_weights(&mut semantic_matches);
+
+        // Sort by adjusted score (with symbol-type and path weights), then by line number
+        semantic_matches.sort_by(|a, b| {
+            b.adjusted_score()
+                .partial_cmp(&a.adjusted_score())
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.line.cmp(&b.line))
+        });
+
+        semantic_matches.truncate(limit);
+        semantic_matches
+    }
+
+    /// Apply path hierarchy weighting to boost adjacent files (Phase 3).
+    /// Files in similar directories get higher weights.
+    fn apply_path_hierarchy_weights(matches: &mut [SemanticMatch]) {
+        if matches.is_empty() {
+            return;
+        }
+
+        // For each match, compute its path proximity to the top-scored match
+        let top_path = matches[0].file_path.clone();
+        let top_parent = top_path.parent();
+
+        for m in matches.iter_mut() {
+            let weight = if let Some(parent) = top_parent {
+                if m.file_path.parent() == Some(parent) {
+                    1.3 // Same directory: big boost
+                } else if Self::path_distance(&m.file_path, &top_path) <= 2 {
+                    1.15 // Nearby: smaller boost
+                } else {
+                    1.0 // Different directory: no boost
+                }
+            } else {
+                1.0
+            };
+            *m = m.clone().with_path_weight(weight);
+        }
+    }
+
+    /// Compute directory depth distance between two paths.
+    fn path_distance(path1: &Path, path2: &Path) -> usize {
+        let p1: Vec<_> = path1.components().collect();
+        let p2: Vec<_> = path2.components().collect();
+
+        let common = p1.iter().zip(&p2).take_while(|(a, b)| a == b).count();
+        (p1.len() - common) + (p2.len() - common)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -203,6 +365,30 @@ fn normalize_query(query: &str) -> Vec<String> {
         .filter(|token| token.len() > 1)
         .map(|token| token.to_lowercase())
         .collect()
+}
+
+/// Split content into logical chunks for embedding.
+/// Each chunk is bounded by CHUNK_MAX_LINES and includes line numbers.
+fn split_into_chunks(content: &str) -> Vec<(String, usize, usize)> {
+    let lines: Vec<&str> = content.lines().collect();
+    let mut chunks = Vec::new();
+    let mut i = 0;
+
+    while i < lines.len() {
+        let start_line = i + 1; // 1-based
+        let chunk_end = (i + CHUNK_MAX_LINES).min(lines.len());
+        let chunk_lines: Vec<&str> = lines[i..chunk_end].to_vec();
+        let chunk_text = chunk_lines.join("\n");
+        let end_line = chunk_end; // 1-based inclusive
+
+        if !chunk_text.trim().is_empty() {
+            chunks.push((chunk_text, start_line, end_line));
+        }
+
+        i = chunk_end;
+    }
+
+    chunks
 }
 
 fn collect_line_hits(query: &[String], content: &str, relative_path: &Path) -> Vec<LineHit> {

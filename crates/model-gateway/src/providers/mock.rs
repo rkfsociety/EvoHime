@@ -86,6 +86,7 @@ impl ModelProvider for MockProvider {
         Box::pin(async move {
             Ok(ChatResult {
                 content,
+                thinking: None,
                 tool_calls,
                 usage: None,
             })
@@ -134,6 +135,7 @@ mod tests {
             vec![
                 ChatResult {
                     content: String::new(),
+                    thinking: None,
                     tool_calls: vec![NativeToolCall {
                         id: "c1".into(),
                         name: "filesystem.read".into(),
@@ -143,6 +145,7 @@ mod tests {
                 },
                 ChatResult {
                     content: "done".into(),
+                    thinking: None,
                     tool_calls: vec![],
                     usage: None,
                 },

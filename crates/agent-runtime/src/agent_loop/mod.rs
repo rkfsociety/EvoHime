@@ -24,6 +24,7 @@ use serde_json::json;
 use std::{collections::HashSet, path::PathBuf};
 use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::time::{interval, MissedTickBehavior};
 use uuid::Uuid;
 
 #[cfg(test)]
@@ -69,11 +70,14 @@ pub struct AgentConfig {
     pub telemetry: Option<std::sync::Arc<dyn crate::llm_telemetry::LlmTelemetry>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AgentRunResult {
     pub final_message: String,
     pub steps_run: usize,
     pub truncated: bool,
+    /// Wave 3B: accumulated thinking content (if any)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -501,24 +505,99 @@ async fn run_agent_loop_inner(
     let stream_result = {
         let _guard = llm_span.enter();
         tokio::time::timeout(RESPONSE_TIMEOUT, async {
-            while let Some(chunk) = stream.next().await {
-                match chunk? {
-                    evohime_model_gateway::ChatStreamItem::Delta(delta) => {
-                        final_message.push_str(&delta);
-                        emit(
-                            &event_tx,
-                            ServerEvent::AgentMessageDelta {
-                                task_id: config.task_id,
-                                delta,
-                            },
-                        )?;
+            let mut thinking_buffer = String::new();
+            let mut flush_interval = interval(std::time::Duration::from_millis(500));
+            flush_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+            let request_id = format!("{}", Uuid::new_v4());
+            let correlation_id = format!("{}", Uuid::new_v4());
+
+            loop {
+                tokio::select! {
+                    item = stream.next() => {
+                        match item {
+                            Some(Ok(evohime_model_gateway::ChatStreamItem::Thinking(chunk))) => {
+                                thinking_buffer.push_str(&chunk);
+
+                                // Emit batch when buffer exceeds 2KB
+                                if thinking_buffer.len() > 2048 {
+                                    let _ = emit(
+                                        &event_tx,
+                                        ServerEvent::AgentThinking {
+                                            task_id: config.task_id,
+                                            thinking: thinking_buffer.clone(),
+                                            created_at: Utc::now(),
+                                            correlation_id: Some(correlation_id.clone()),
+                                            llm_request_id: request_id.clone(),
+                                        },
+                                    );
+                                    thinking_buffer.clear();
+                                }
+                            }
+                            Some(Ok(evohime_model_gateway::ChatStreamItem::Delta(delta))) => {
+                                // Flush any remaining thinking before final message
+                                if !thinking_buffer.is_empty() {
+                                    let _ = emit(
+                                        &event_tx,
+                                        ServerEvent::AgentThinking {
+                                            task_id: config.task_id,
+                                            thinking: thinking_buffer.clone(),
+                                            created_at: Utc::now(),
+                                            correlation_id: Some(correlation_id.clone()),
+                                            llm_request_id: request_id.clone(),
+                                        },
+                                    );
+                                    thinking_buffer.clear();
+                                }
+                                final_message.push_str(&delta);
+                                let _ = emit(
+                                    &event_tx,
+                                    ServerEvent::AgentMessageDelta {
+                                        task_id: config.task_id,
+                                        delta,
+                                    },
+                                );
+                            }
+                            Some(Ok(evohime_model_gateway::ChatStreamItem::Usage(usage))) => {
+                                response_usage = Some(usage);
+                            }
+                            Some(Err(err)) => return Err(err),
+                            None => {
+                                // Stream ended - flush any remaining thinking
+                                if !thinking_buffer.is_empty() {
+                                    let _ = emit(
+                                        &event_tx,
+                                        ServerEvent::AgentThinking {
+                                            task_id: config.task_id,
+                                            thinking: thinking_buffer,
+                                            created_at: Utc::now(),
+                                            correlation_id: Some(correlation_id),
+                                            llm_request_id: request_id,
+                                        },
+                                    );
+                                }
+                                break;
+                            }
+                        }
                     }
-                    evohime_model_gateway::ChatStreamItem::Usage(usage) => {
-                        response_usage = Some(usage);
+                    // Periodic flush every 500ms if buffer not empty
+                    _ = flush_interval.tick() => {
+                        if !thinking_buffer.is_empty() {
+                            let _ = emit(
+                                &event_tx,
+                                ServerEvent::AgentThinking {
+                                    task_id: config.task_id,
+                                    thinking: thinking_buffer.clone(),
+                                    created_at: Utc::now(),
+                                    correlation_id: Some(correlation_id.clone()),
+                                    llm_request_id: request_id.clone(),
+                                },
+                            );
+                            thinking_buffer.clear();
+                        }
                     }
                 }
             }
-            Ok::<(), AgentError>(())
+            Ok::<(), evohime_model_gateway::providers::ProviderError>(())
         })
         .await
     };
@@ -595,6 +674,7 @@ async fn run_agent_loop_inner(
         final_message,
         steps_run,
         truncated,
+        thinking: None,
     })
 }
 
@@ -1393,6 +1473,7 @@ impl evohime_model_gateway::providers::ModelProvider for RecordingProvider {
                 } else {
                     String::new()
                 },
+                thinking: None,
                 tool_calls,
                 usage: None,
             })

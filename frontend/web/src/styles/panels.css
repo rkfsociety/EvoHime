@@ -885,3 +885,26 @@
   color: var(--text-0);
   cursor: pointer;
 }
+
+.panelErrorDetails {
+  width: 100%;
+}
+
+.panelErrorDetails summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.panelErrorDetails pre {
+  margin: 8px 0;
+  padding: 10px;
+  max-height: 240px;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.4;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

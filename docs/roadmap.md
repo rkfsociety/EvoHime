@@ -1,6 +1,6 @@
 # EvoHime — Дорожная карта
 
-> Обновлено: 2026-07-24
+> Обновлено: 2026-07-26 (реконциляция Stage 7 с фактическим кодом и ad-hoc wave-трекингом)
 
 ## Обзор
 
@@ -17,7 +17,7 @@
 | 4 | Editor + Git | ✅ Done | Browser file tree, Monaco editor, Git status/diff/actions, and synchronization events |
 | 5 | Оркестрация | ✅ Complete | Lifecycle, команды, storage и recovery готовы |
 | 6 | Advanced | ✅ Foundations done | Memory, PR, workers, observability, tool catalog |
-| 7 | Hardening + Product | 🟡 Plan | Security, reliability, Sites/Scheduled, agent 2.0, CI, DX |
+| 7 | Hardening + Product | 🟡 In progress | Security, reliability, Sites/Scheduled, agent 2.0, CI, DX; `7.105`–`7.107` remain |
 | 8 | Agent Intelligence + DX | 📝 Plan | Reasoning 2.0, experience/memory 3.0, subagent playbooks, plugin runtime 2.0, local reliability, UX/a11y |
 
 ---
@@ -329,7 +329,7 @@
 | --- | --- | --- | --- | --- |
 | 7.15 | Поднять Python worker из `start-dev.ps1` (+ tray icon) | M | ✅ | `-Worker`, tray, health wait `:8090`, auto-restart |
 | 7.16 | LLM provider retry / backoff / retry-after | M | ✅ | `retry.rs` + literouter initial-request retries; `EVOHIME_LLM_*` |
-| 7.17 | WebSocket reconnect + event resume (cursor / last event id) | M | ✅ | `HistoryItem` WS envelope; `after_sequence` / history `?after=`; frontend auto-reconnect |
+| 7.17 | WebSocket reconnect + event resume (cursor / last event id) | M | ✅ | `HistoryItem` WS envelope; `after_sequence` / history `?after=`; frontend auto-reconnect; расширено в `7.116` (keyset pagination + exponential backoff) |
 | 7.18 | Safe restart policy: не auto-resume mutating tasks без флага | M | ✅ | recover RETURNING only; mutating defer; `EVOHIME_AUTO_RESUME_ON_RESTART` |
 | 7.19 | PgPool tuning (max_connections, timeouts, idle) | S | ✅ | `storage/pool.rs`; `EVOHIME_PG_*` env knobs |
 | 7.20 | Observability locks без `.expect()` panic | S | ✅ | `observability` / `worker_observability`: poison → `into_inner` |
@@ -432,12 +432,12 @@
 | # | Задача | Size | Статус | Notes / evidence |
 | --- | --- | --- | --- | --- |
 | 7.84 | CI: PostgreSQL service + storage/memory integration tests | L | ✅ | `postgres:16` service; `DATABASE_URL` + `EVOHIME_REQUIRE_DB`; `connect_integration_pool` fails hard in CI |
-| 7.85 | CI: frontend `tsc` + build (+ optional playwright smoke) | M | ✅ | job `frontend` in CI: Node 22, `npm ci`, `typecheck`, `build`; Playwright deferred; server HTTP/WS integration harness planned in audit phase 4 |
+| 7.85 | CI: frontend `tsc` + build (+ optional playwright smoke) | M | ✅ | job `frontend` in CI: Node 22, `npm ci`, `typecheck`, `build`; Playwright deferred; server HTTP/WS integration harness закрыт в audit phase 4 |
 | 7.86 | CI: protocol schema ↔ Rust ↔ generated TS drift check | M | ✅ | `protocol-drift` job regenerates TS and fails on diff |
 | 7.87 | CI: Clippy `-D warnings` already; add fmt/docs gates docs for stage 7 | S | ✅ | fmt check is explicit; rustdoc runs with `RUSTDOCFLAGS=-D warnings` |
 | 7.88 | Devcontainer / cross-platform launcher (не только Windows tray) | L | ✅ | `.devcontainer` Compose: workspace + PostgreSQL + Python worker |
-| 7.89 | OpenAPI / typed HTTP client gen из server routes | L | ✅ | `generate:openapi` → `/openapi.json` + typed `OpenApiPath`/method union; full DTO/operation schemas planned in audit phase 3 |
-| 7.90 | Feature flags (`EVOHIME_FEATURE_*`) для experimental surfaces | M | ✅ | `/api/features`; Sites/Scheduled UI gates; OTLP export gate; server-side route gates planned in audit phase 3 |
+| 7.89 | OpenAPI / typed HTTP client gen из server routes | L | ✅ | `generate:openapi` → `/openapi.json` с 98 route-level operations + typed `OpenApiPath`/method union; DTO-схемы остаются в domain API modules |
+| 7.90 | Feature flags (`EVOHIME_FEATURE_*`) для experimental surfaces | M | ✅ | `/api/features`; Sites/Scheduled UI gates; OTLP export gate; server-side route gates закрыты в audit phase 3 |
 | 7.91 | Docs sync: `development-plan.md` / `AGENTS.md` / `current-state` под Stage 7 | S | ✅ | синхронизированы с текущим Stage 7 |
 
 ### 7.J — Observability & ops
@@ -453,13 +453,13 @@
 
 ### First implementation wave — code audit hardening
 
-Эта волна — непосредственный план после `7.91`. Порядок фиксирован зависимостями: сначала устраняем дублирование/двойные запуски, затем делаем наблюдаемость и единый контур ошибок, после этого расширяем контракты и тестовую инфраструктуру.
+Эта волна была планом после `7.91` и полностью завершена. Порядок был фиксирован зависимостями: сначала устранение дублирования/двойных запусков, затем наблюдаемость и единый контур ошибок, после этого контракты и тестовая инфраструктура.
 
 | Фаза | Deliverable | Основные файлы/границы | Статус | Критерий готовности |
 | --- | --- | --- | --- | --- |
 | 1 | **Scheduler correctness**: атомарный claim due-задач, lease/idempotency, связь scheduled run с созданной task, корректный success/failure count | `crates/storage/src/scheduled.rs`, `crates/server/src/scheduler.rs`, `crates/server/src/scheduled_api.rs`, `migrations/0024_scheduled_task_runs.sql` | ✅ | два scheduler-процесса не выполняют один run дважды; manual trigger и cron не перетирают состояние; race/failure integration tests |
 | 2 | **Request context**: request-id, безопасные internal errors, header-only HTTP auth | `crates/server/src/auth.rs`, `api_error.rs`, `crates/server/src/request_id.rs`, WS handshake | ✅ | `X-Request-Id` есть на каждом HTTP-ответе; подробности internal errors остаются в logs; HTTP не принимает token из query, WS продолжает работать |
-| 3 | **Feature and API contracts**: backend enforcement для Sites/Scheduled/OTLP и схемы DTO в OpenAPI/typed client | `crates/server/src/features.rs`, `routes.rs`, `sites_api.rs` (all handlers with `check_feature`), `scheduled_api.rs` (all handlers with `check_feature`), `otel.rs` (`otel_enabled()` checks OTLP flag), `scripts/generate-openapi.mjs`, `docs/openapi.json`, `.github/workflows/rust.yml` (`openapi-drift` job), `frontend/web/src/api/generated.ts` | ✅ backend enforcement (Forbidden 403 on all disabled features), OpenAPI generation (85 operations), CI drift check; test `test_feature_flags_403_on_disabled` documents requirements |
+| 3 | **Feature and API contracts**: backend enforcement для Sites/Scheduled/OTLP и route-level OpenAPI/typed client | `crates/server/src/features.rs`, `routes.rs`, `sites_api.rs`, `scheduled_api.rs`, `otel.rs`, `scripts/generate-openapi.mjs`, `docs/openapi.json`, `.github/workflows/rust.yml`, `frontend/web/src/api/generated.ts` | ✅ backend enforcement (Forbidden 403 on all disabled features), OpenAPI generation (98 operations), CI drift check; DTO-схемы остаются в domain API modules |
 | 4 | **Test and lifecycle foundation**: HTTP/WS integration harness, scheduler regression tests, graceful shutdown, bounded cleanup `session_buses` | `crates/server/tests/`, `crates/server/src/startup.rs`, `app.rs`, `ws.rs`, `scheduler.rs` | ✅ graceful shutdown ✅, session bus cleanup ✅, integration harness docs ✅, scheduler regression docs ✅, E2E database persistence tests ✅ (7 tests: session/task/event lifecycle, checkpoint pause/resume, operator scoping) |
 | 5 | **Security and performance**: API-key encryption ✅, plugin pin/quarantine ✅, CSP/secure headers ✅, gitleaks ✅, frontend code splitting ✅ | `crates/server/src/models_api.rs`, `plugins.rs`, `auth.rs`, static serving, `.github/workflows/rust.yml`, `frontend/web/src/app.tsx` и panel imports, `vite.config.ts` | ✅ API keys encrypted (AES-256-GCM via `secrets.rs`), CI gitleaks action, secure headers (CSP/X-Frame-Options), plugin trust scoring + risk-scan gate + integrity lock, frontend lazy-loaded panels with React.lazy() + Suspense (initial bundle 62.65 kB, per-panel chunks 1–23 kB each) |
 
@@ -471,7 +471,7 @@
 4. Нельзя скрывать Clippy/fmt проблемы через `#[allow]` или ослабление CI; исправления должны оставаться локальными и форматироваться workspace-правилом.
 5. После каждой фазы обязательны: `cargo test --workspace --all-features --all-targets`, `cargo clippy --workspace --all-features --all-targets -- -D warnings`, frontend typecheck/build и generated drift checks.
 
-**Фазы 1–2 и 7.94–7.96 выполнены:** scheduler correctness предотвращает повторное выполнение пользовательских задач, request context добавляет per-request id, Tasks/Actions показывают correlation id и server-provided latency, tracing redacts secrets и sample’ит повторяющийся worker шум, а `/health/deep` проверяет DB, worker и workspace bounded-параллельно. Следующий практический шаг — фаза 3: backend feature enforcement и полные API-контракты.
+**Фазы 1–5 выполнены:** scheduler correctness предотвращает повторное выполнение пользовательских задач, request context добавляет per-request id, Tasks/Actions показывают correlation id и server-provided latency, tracing redacts secrets и sample’ит повторяющийся worker шум, `/health/deep` проверяет DB, worker и workspace bounded-параллельно, feature gates enforced на backend, route-level OpenAPI генерируется из 98 операций, а CI проверяет drift, lifecycle, security и performance.
 
 ### 7.K — Moonshots / Stage 8 candidates
 
@@ -487,20 +487,28 @@
 | 7.105 | Voice input / TTS optional | M | ⬜ | |
 | 7.106 | Diff review UI for agent patches before apply | L | ⬜ | approvals coarse today |
 | 7.107 | Worktree-aware multi-checkout agent (parallel tasks isolated) | L | ⬜ | |
-| 7.108 | Cost budgets & spend caps per day/model | M | ⬜ | LiteRouter free/paid |
-| 7.109 | Self-update channel for launcher | M | ⬜ | |
-| 7.110 | Formal threat model doc + abuse cases | M | ⬜ | |
+| 7.108 | Cost budgets & spend caps per day/model | M | ✅ | Backend (Wave 1): `cost_limits` table (`crates/storage/src/cost_limits.rs`), `/api/models/cost-limits` CRUD; Frontend (Wave 2): `SpendSettingsSection.tsx` в Settings, gauge визуализация, edit/save flow; коммит `2f3257e` |
+| 7.109 | Self-update channel for launcher | M | ✅ | `crates/launcher/src/self_update.rs` — скачивание нового `launcher.exe` во временный путь с проверкой SHA256, эстафета отдельному `updater.exe` процессу (файл лаунчера заблокирован пока сам работает); `crates/updater`; `LauncherStatus.tsx` панель статуса в Settings; коммиты `b9329b6`, `73bf411` |
+| 7.110 | Formal threat model doc + abuse cases | M | ✅ | `docs/security/threat-model.md` + `SECURITY.md`; all 7.A–7.E пункты documented |
+| 7.111 | Extended reasoning: Claude thinking (streaming, budget, cost-tracking) | L | ✅ | Model gateway (`ChatStreamItem::Thinking`, SSE parser), `thinking_settings`/`thinking_usage` таблицы, `GET/PUT /api/settings/thinking`, `ThinkingSettingsSection.tsx`, event batching в agent runtime (`ServerEvent::AgentThinking`), eval harness `thinking_contains`/`min_thinking_tokens`, provider `supports_thinking` detection; см. `docs/wave-3b-extended-reasoning.md`; 11 коммитов от `e78ab74` до `8680eba` |
+| 7.112 | Project Context 2.0: semantic search via embeddings | M | ✅ | `crates/project-index`: детерминированные 384-dim embeddings, hybrid lexical+semantic scoring (BM25 + cosine), symbol-aware weighting, path hierarchy boost; 16 unit-тестов; см. `docs/wave-4-plan.md`; коммиты `b06e3ae`, `1d1d980`, `ef27380` |
+| 7.113 | Plugin marketplace: audit trail для install/update/uninstall/pin | M | ✅ | Дополняет `7.102`: таблица `plugin_audit` (`migrations/0033`), DAO `crates/storage/src/plugin_audit.rs`, событие `force_override` при обходе risk-scan, `GET /api/plugins/audit`, секция "История действий" в `PluginsPanel.tsx`; коммит `cf44374`. Вне скоупа: Ed25519-подписи авторов, community reputation |
+| 7.114 | OTLP metrics export + `/metrics/history` frontend trends | S | ✅ | Дополняет `7.92`/`7.24`: `crates/server/src/otel.rs` — `MetricExporter`/`SdkMeterProvider`, `register_pipeline_metrics()` зеркалит Prometheus-метрики через OTLP (no-op если выключено); sparkline-графики в `MetricsSettingsSection.tsx` для существующего `/api/metrics/history`; коммит `e4aea1c` |
+| 7.115 | Frontend performance: sourcemaps, error traces, Lighthouse pass | S | ✅ | `build.sourcemap: true`; `PanelErrorBoundary.tsx` показывает stack+componentStack с копированием; `globalErrorHandlers.ts` (`window.onerror`/`unhandledrejection`); `TerminalPanel` переведён на `React.lazy()`; кастомный vite-plugin `deferNonCriticalCss` устранил render-blocking `vendor-monaco.css`; meta description + robots.txt; Lighthouse 95/100/96/100; коммит `6f28e01` |
+| 7.116 | Session recovery: keyset pagination + WS reconnect resiliency | M | ✅ | Расширяет `7.17`: cursor-based keyset pagination для `GET /api/sessions/:id/history` (`PaginatedEventsCursor`, forward/backward `order`, backward-compatible с `after`); `useWebSocket` — exponential backoff+jitter, max 5 попыток, state machine idle→connecting/reconnecting→connected/failed, `sessionStorage` контекст переподключения (30 мин); `useSessionReplay` для paginated backfill истории; коммиты `7b0d0ca`, `c37f912`, `5ee8939` |
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-24:** `7.93`–`7.98` ✅ — request context, task timeline telemetry, log safety, deep health checks, backup/export и multi-operator authz; `7.99` ✅ — cloud sync целиком: push/pull через owner-only `/api/sync/*` (`sync_runs` с direction, лимит 64 MiB, checksum-сверка), идемпотентный restore (`restore_backup` + CLI `evohime-import`) и авто-push по `EVOHIME_SYNC_AUTO_MINUTES`. `7.100` ✅ — visual browser agent loop целиком: persistent CDP-вкладка на задачу (`EVOHIME_BROWSER_CDP_URL`), navigate/read/click/type/screenshot/close. `7.101` ✅ — eval harness целиком: golden tasks в CI (mock), `evohime-eval --live --judge` против реального провайдера с LLM-вердиктами. `7.102` ✅ — trust scores в каталоге, risk-scan гейт установки и content-hash lock с integrity-проверкой установленных плагинов. `7.103` ✅ — обучение на проваленных задачах через ограниченную полосу extract (только experience-уроки, только Ask-гейт); wave 2 добавила эскалацию confidence/importance при повторе (`FeedbackSignal::Repeated`, кап 0.6 не снимается) и retrieval-приоритизацию failure_pattern/verification_rule.
+**Актуальный статус 2026-07-26:** `7.93`–`7.104` ✅ — request context, task timeline telemetry, log safety, deep health checks, backup/export, multi-operator authz, cloud sync, browser sessions, eval harness, plugin trust/integrity, failure learning и mobile shell; `7.108`–`7.116` ✅ — cost limits, self-update, extended reasoning, semantic project search, plugin audit trail, OTLP trends, frontend performance и session recovery.
 
-1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅ → Wave B next  
-2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅ → Wave C next  
-3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.51`, `7.52` ✅ → next product honesty `7.62`+
+**Актуальный статус 2026-07-26:** `7.108`–`7.116` подтверждены кодом и тестами; OpenAPI-контракт содержит 98 операций. Session recovery отслеживается как `7.116`, а `7.109` — как self-update launcher. Единственные реальные незакрытые Stage 7 пункты: `7.105` (voice/TTS), `7.106` (diff review UI), `7.107` (worktree-aware multi-checkout agent) — все три `⬜`, без кода в репозитории.
+
+1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅
+2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅
+3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.51`, `7.52` ✅
 4. **Wave D (product honesty):** 7.62–7.68, 7.72–7.73 ✅
-5. **Wave E (DX/CI):** `7.84`–`7.98` ✅, `7.56`, `7.69`–`7.71` ✅ → next `7.99`
-6. **Wave F (scale/moonshots):** 7.54 ✅, 7.57–7.59, 7.98+
+5. **Wave E (DX/CI):** `7.56`, `7.69`–`7.71`, `7.84`–`7.98` ✅
+6. **Wave F (scale/moonshots):** 7.54 ✅, `7.57`–`7.59` ⬜, `7.98`–`7.104` ✅, `7.108`–`7.116` ✅ → осталось `7.105`–`7.107`
 
 ### Критерий готовности Stage 7 (минимум)
 
@@ -511,7 +519,7 @@
 - Legacy memory dual-write выключен или явно deprecated  
 - Sites/Scheduled либо реализованы, либо убраны из «как будто работают»  
 - CI гоняет frontend + Postgres integration + Python worker tests  
-  (`7.84` Postgres ✅; `7.85` frontend ✅; worker/`7.56` ещё в Wave E)  
+  (`7.84` Postgres ✅; `7.85` frontend ✅; worker/`7.56` ✅)
 
 ---
 

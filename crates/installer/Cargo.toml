@@ -1,0 +1,43 @@
+[package]
+name = "evohime-installer"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "evohime_installer"
+path = "src/lib.rs"
+
+[[bin]]
+name = "evohime-setup"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+evohime-artifacts = { path = "../artifacts" }
+evohime-launcher = { path = "../launcher" }
+evohime-win-support = { path = "../win-support" }
+reqwest = { version = "0.12", default-features = false, features = [
+  "json",
+  "rustls-tls",
+] }
+sqlx = { version = "0.8", features = ["postgres", "runtime-tokio-rustls"] }
+thiserror = "2"
+tokio = { version = "1", features = [
+  "fs",
+  "process",
+  "macros",
+  "rt-multi-thread",
+  "io-util",
+  "net",
+] }
+tracing = "0.1"
+
+# Единый GUI-стек с Launcher'ом (раздел I плана) — egui через eframe, без
+# Tauri/WebView2.
+eframe = { version = "0.35", default-features = false, features = [
+  "glow",
+  "default_fonts",
+] }
+
+[dev-dependencies]
+tempfile = "3"

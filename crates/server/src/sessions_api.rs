@@ -173,32 +173,96 @@ pub(crate) async fn session_history(
     Extension(identity): Extension<crate::auth::OperatorIdentity>,
     Path(session_id): Path<Uuid>,
     Query(query): Query<HistoryQuery>,
-) -> Result<Json<Vec<HistoryItem>>, ApiError> {
-    let after = query.after.unwrap_or(0).max(0);
-    let rows = evohime_storage::list_session_events_after_for_operator(
+) -> Result<Json<PaginatedHistoryResponse>, ApiError> {
+    // Prefer keyset pagination if no 'after' parameter
+    if query.after.is_some() {
+        // Legacy behavior: use after_sequence
+        let after = query.after.unwrap_or(0).max(0);
+        let rows = evohime_storage::list_session_events_after_for_operator(
+            &state.pool,
+            identity.id,
+            session_id,
+            after,
+        )
+        .await
+        .map_err(|error| ApiError::Internal(error.to_string()))?;
+
+        let mut history = Vec::with_capacity(rows.len());
+        for row in rows {
+            let event: ServerEvent = serde_json::from_value(row.event_json)
+                .map_err(|error| ApiError::Internal(error.to_string()))?;
+            history.push(HistoryItem {
+                sequence: row.sequence,
+                created_at: row.created_at,
+                event,
+            });
+        }
+
+        return Ok(Json(PaginatedHistoryResponse::legacy(history)));
+    }
+
+    // New keyset pagination
+    let limit = query.limit.unwrap_or(50);
+    let order = query.order.as_deref().unwrap_or("asc");
+    let cursor = query.cursor.as_deref();
+
+    let page = evohime_storage::list_session_events_paginated_for_operator(
         &state.pool,
         identity.id,
         session_id,
-        after,
+        limit,
+        cursor,
+        order,
     )
     .await
     .map_err(|error| ApiError::Internal(error.to_string()))?;
 
-    let mut history = Vec::with_capacity(rows.len());
-    for row in rows {
+    let mut items = Vec::with_capacity(page.items.len());
+    for row in page.items {
         let event: ServerEvent = serde_json::from_value(row.event_json)
             .map_err(|error| ApiError::Internal(error.to_string()))?;
-        history.push(HistoryItem {
+        items.push(HistoryItem {
             sequence: row.sequence,
             created_at: row.created_at,
             event,
         });
     }
 
-    Ok(Json(history))
+    Ok(Json(PaginatedHistoryResponse {
+        items,
+        next_cursor: page.next_cursor,
+        prev_cursor: page.prev_cursor,
+        has_more: page.has_more,
+        total_available: page.total_available,
+    }))
+}
+
+#[derive(Debug, serde::Serialize)]
+pub(crate) struct PaginatedHistoryResponse {
+    pub items: Vec<HistoryItem>,
+    pub next_cursor: Option<String>,
+    pub prev_cursor: Option<String>,
+    pub has_more: bool,
+    pub total_available: i64,
+}
+
+impl PaginatedHistoryResponse {
+    fn legacy(items: Vec<HistoryItem>) -> Self {
+        let total_available = items.len() as i64;
+        Self {
+            items,
+            next_cursor: None,
+            prev_cursor: None,
+            has_more: false,
+            total_available,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct HistoryQuery {
     after: Option<i64>,
+    limit: Option<i64>,
+    cursor: Option<String>,
+    order: Option<String>,
 }

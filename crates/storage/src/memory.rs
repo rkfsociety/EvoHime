@@ -1027,6 +1027,7 @@ pub async fn import_legacy_memory_notes(pool: &PgPool) -> Result<u64, StorageErr
             WHERE mi.source_label = 'legacy:session_memory:' || sm.id::text
         )
           AND NOT {session_junk}
+        ON CONFLICT (source_label) WHERE source_label IS NOT NULL DO NOTHING
         "#
     ))
     .execute(pool)
@@ -1062,6 +1063,7 @@ pub async fn import_legacy_memory_notes(pool: &PgPool) -> Result<u64, StorageErr
             WHERE mi.source_label = 'legacy:global_memory:' || gm.id::text
         )
           AND NOT {global_junk}
+        ON CONFLICT (source_label) WHERE source_label IS NOT NULL DO NOTHING
         "#
     ))
     .execute(pool)
@@ -1182,26 +1184,14 @@ mod tests {
             return;
         };
 
-        sqlx::query("DELETE FROM memory_items WHERE source_label LIKE $1")
-            .bind("legacy:%")
-            .execute(&pool)
-            .await
-            .ok();
-        sqlx::query("DELETE FROM session_memory")
-            .execute(&pool)
-            .await
-            .ok();
-
         let session = crate::create_session(&pool).await.expect("session");
         let note = format!("durable-pref-{}", Uuid::new_v4());
         crate::insert_session_memory(&pool, session.id, None, &note)
             .await
             .expect("legacy insert");
 
-        let first = import_legacy_memory_notes(&pool).await.expect("import 1");
-        assert!(first >= 1);
-        let second = import_legacy_memory_notes(&pool).await.expect("import 2");
-        assert_eq!(second, 0);
+        let _ = import_legacy_memory_notes(&pool).await.expect("import 1");
+        let _ = import_legacy_memory_notes(&pool).await.expect("import 2");
 
         let rows = list_memory_items(
             &pool,
@@ -1212,7 +1202,7 @@ mod tests {
         )
         .await
         .expect("list");
-        assert!(rows.iter().any(|row| row.content == note));
+        assert_eq!(rows.iter().filter(|row| row.content == note).count(), 1);
 
         let _ = delete_memory_items_by_scope_key(&pool, &session.id.to_string())
             .await

@@ -30,10 +30,12 @@ mod scheduler;
 mod secrets;
 mod secure_headers;
 mod sessions_api;
+mod shutdown_api;
 mod sites_api;
 mod startup;
 mod sync_api;
 mod task;
+mod thinking_api;
 mod worker;
 mod worker_api;
 mod worker_observability;
@@ -57,6 +59,8 @@ async fn main() -> anyhow::Result<()> {
     let prepared = prepare(&config).await?;
     let state = prepared.state;
     let shutdown_token = prepared.shutdown_token;
+
+    otel::register_pipeline_metrics(state.metrics.clone(), state.worker_metrics.clone());
 
     let app = routes::build_router(state.clone());
 

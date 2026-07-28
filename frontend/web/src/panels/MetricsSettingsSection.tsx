@@ -1,12 +1,61 @@
 import { useCallback, useEffect, useState } from "react";
-import { fetchMetrics, type MetricsResponse } from "../api/metrics";
+import {
+  fetchMetrics,
+  fetchMetricsHistory,
+  type MetricsHistoryEntry,
+  type MetricsResponse,
+} from "../api/metrics";
 
 function ms(value?: number) {
   return `${Math.round(value ?? 0)} ms`;
 }
 
+type TrendField = {
+  label: string;
+  pick: (entry: MetricsHistoryEntry) => number;
+  format: (value: number) => string;
+};
+
+const TREND_FIELDS: TrendField[] = [
+  { label: "Avg task", pick: (e) => e.pipeline.avg_task_duration_ms, format: ms },
+  { label: "Avg tool", pick: (e) => e.pipeline.avg_tool_duration_ms, format: ms },
+  { label: "Avg LLM", pick: (e) => e.pipeline.avg_llm_duration_ms, format: ms },
+  { label: "Open tasks", pick: (e) => e.pipeline.open_tasks, format: (v) => String(v) },
+  { label: "Open jobs", pick: (e) => e.worker.open_jobs, format: (v) => String(v) },
+  { label: "Avg job", pick: (e) => e.worker.avg_job_duration_ms, format: ms },
+];
+
+function Sparkline({ values }: { values: number[] }) {
+  const width = 200;
+  const height = 40;
+  if (values.length < 2) {
+    return <span className="metricsSparklineEmpty">нет данных</span>;
+  }
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const step = width / (values.length - 1);
+  const points = values
+    .map((value, index) => {
+      const x = index * step;
+      const y = height - ((value - min) / span) * height;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+  return (
+    <svg
+      className="metricsSparkline"
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+    >
+      <polyline points={points} fill="none" strokeWidth={2} />
+    </svg>
+  );
+}
+
 export function MetricsSettingsSection() {
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
+  const [history, setHistory] = useState<MetricsHistoryEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -14,7 +63,12 @@ export function MetricsSettingsSection() {
     setLoading(true);
     setError(null);
     try {
-      setMetrics(await fetchMetrics());
+      const [current, historyResponse] = await Promise.all([
+        fetchMetrics(),
+        fetchMetricsHistory(60),
+      ]);
+      setMetrics(current);
+      setHistory([...historyResponse.entries].reverse());
     } catch (err) {
       setError(String(err));
     } finally {
@@ -196,6 +250,32 @@ export function MetricsSettingsSection() {
           <span>Recoveries</span>
         </article>
       </div>
+
+      <h4 className="workerSubheading">
+        История трендов ({history.length} снапшотов)
+      </h4>
+      {history.length < 2 ? (
+        <p className="settingsHint">
+          Недостаточно персистентных снапшотов для графика — включите
+          `EVOHIME_METRICS_PERSIST_INTERVAL_SECS` и подождите несколько интервалов.
+        </p>
+      ) : (
+        <div className="metricsTrendsGrid">
+          {TREND_FIELDS.map((field) => {
+            const values = history.map(field.pick);
+            const latest = values[values.length - 1];
+            return (
+              <article key={field.label} className="metricsTrendCard">
+                <div className="metricsTrendHeader">
+                  <span>{field.label}</span>
+                  <strong>{field.format(latest)}</strong>
+                </div>
+                <Sparkline values={values} />
+              </article>
+            );
+          })}
+        </div>
+      )}
     </section>
   );
 }

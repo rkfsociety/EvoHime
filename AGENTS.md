@@ -64,14 +64,14 @@ User message
 - Agent loop: native ReAct tool call → observation → next action; bounded iterations with checkpoints and pause/resume
 - Frontend shell split (`6.13`): `types` / `api` / `lib` / `hooks` / `panels`
 - Panels: Chat, Settings (Worker + Metrics), Tasks (deep), Actions (deep), Terminal, Files, Editor, Git, Plugins, Pull Requests (detail/diff/checks/create), Sites, Scheduled, Memory
-- Structured memory: `memory_items` + admit/retrieve/extract/experience/feedback + hybrid embeddings (`6.16`–`6.25`, optional remote neural); legacy notes still written/loaded
+- Structured memory: `memory_items` + admit/retrieve/extract/experience/feedback + hybrid embeddings (`6.16`–`6.25`, optional remote neural); legacy notes are migrate-only
 - Workers: health/stall reliability + `text.summarize` / `text.chunk` / `text.similarity` / `text.entities`
 - Native launcher + GitHub auth via local `gh`
 - CI: Rust format/Clippy/docs, protocol and OpenAPI drift, frontend typecheck/build, Python worker tests, PostgreSQL integration tests
 
 ### Incomplete / next
 
-- **Stage 7** Hardening + Product — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99` ✅ — cloud sync: push/pull (owner-only `/api/sync/status|push|pull`, история с direction в `sync_runs`, конфиг `EVOHIME_SYNC_URL`/`EVOHIME_SYNC_TOKEN`), идемпотентный restore (`restore_backup` + CLI `evohime-import`), авто-push (`EVOHIME_SYNC_AUTO_MINUTES`); **First implementation wave Phase 1–5** ✅; **Phase 1 (Scheduler correctness)** ✅, **Phase 2 (Request context)** ✅, **Phase 3 (Feature and API contracts)** ✅ завершена: backend enforcement для Sites/Scheduled/OTLP (403 Forbidden на disabled features) ✅, OpenAPI generation (85 operations) ✅, CI drift check (`openapi-drift` job) ✅; **Phase 4 (Test and lifecycle foundation)** ✅ завершена: graceful shutdown ✅, bounded session bus cleanup ✅, integration test harness ✅, E2E database persistence tests ✅; **Phase 5 (Security and performance)** ✅ завершена: API-key encryption (AES-256-GCM) ✅, gitleaks CI scanning ✅, secure headers middleware (CSP/X-Frame-Options) ✅, plugin trust scoring + risk-scan gate + lock-file integrity ✅, frontend code splitting (lazy-load panels) ✅; **7.8 (Plugin install)** ✅: deterministic versioning via commit pin, soft-delete uninstall with recovery, operator-scoped metadata, lock-file schema v1 (backward compatible); **7.9 (Plugin skills quarantine)** ✅: backend disabled skills filtering + DB storage + ReAct loop integration + UI toggle in PluginsPanel; **7.10 (Permission для memory.search)** ✅: Permission::MemorySearch enum, execute_memory_search permission check, UI translation in Settings; **7.60 (Sidebar global search)** ✅: `/api/projects/search` endpoint, SearchModal UI component, integration with file opener; **7.55 (Worker task schema registry)** ✅: `workers/schemas/worker-tasks.schema.json` + Python/Rust jsonschema validation (single source of truth for all 11 task payloads)
+- **Stage 7** Hardening + Product — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99`–`7.104` ✅; `7.108`–`7.116` ✅; незакрыты только `7.105`–`7.107`. Cloud sync включает owner-only `/api/sync/status|push|pull`, историю `sync_runs` с direction, `EVOHIME_SYNC_URL`/`EVOHIME_SYNC_TOKEN`, идемпотентный restore (`restore_backup` + CLI `evohime-import`) и авто-push (`EVOHIME_SYNC_AUTO_MINUTES`); **First implementation wave Phase 1–5** ✅. Phase 3 даёт backend feature enforcement для Sites/Scheduled/OTLP (403 Forbidden при отключённом feature), сгенерированный OpenAPI-контракт из 98 операций и CI drift check (`openapi-drift`); Phase 4 — graceful shutdown, bounded session bus cleanup, integration harness и E2E database persistence; Phase 5 — API-key encryption (AES-256-GCM), gitleaks, secure headers, plugin trust/risk/integrity и frontend code splitting. Также завершены extended reasoning (`7.111`), semantic project search (`7.112`), plugin audit trail (`7.113`), OTLP metrics trends (`7.114`), frontend performance (`7.115`) и session recovery (`7.116`).
 - Sites, Scheduled, OTLP и Cloud sync имеют gates через `EVOHIME_FEATURE_*` и `/api/features`
 - `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; `7.93`–`7.99` ✅; `7.100` ✅ — `browser.session.*` tools с persistent CDP-вкладкой на задачу (`EVOHIME_BROWSER_CDP_URL`); `7.101` ✅ — eval harness `evohime-evals`: golden tasks против реального agent loop; CI — mock, `--live --judge` — реальный провайдер + LLM-вердикты; `7.102` ✅ — trust scores в каталоге плагинов, UI-бейджи, risk-scan гейт установки и `.evohime/plugins.lock.json` + `/api/plugins/integrity`; `7.103` wave 1 ✅ — обучение на провалах: `extract_failure_candidates` (≤2 урока `failure_pattern`/`verification_rule`, confidence cap 0.6 — только Ask, без auto-promote), `FAILURE_EXTRACT_PROMPT` в post-task extract; wave 2 ✅ — эскалация повторов: `FeedbackSignal::Repeated` поднимает confidence (жёсткий кап 0.6, auto-promote по-прежнему невозможен) и importance (без верхнего капа) существующей experience-записи при повторном admit-дубликате `failure_pattern`/`verification_rule` в статусе `Candidate`; retrieval даёт этим двум kind'ам дополнительный бонус ранжирования над `success_pattern`/`playbook`; `7.104` ✅ — mobile-responsive shell: сайдбар и трейс задачи схлопываются в off-canvas дравер через CSS media query `≤768px` (гамбургер в topBar, общий backdrop, закрытие по Escape/клику вне/выбору пункта сайдбара), touch-таргеты (`sendButton`, пункты сайдбара, `traceToggle`/`traceClose`) увеличены до ≥44px на мобильном; десктопная раскладка (grid 280px+main+320px) не тронута
 
@@ -120,8 +120,11 @@ Each tool must have: unique name, description, JSON Schema input, required permi
 9. **Resource limits** — timeouts on tools
 10. **Security** — sandbox filesystem and shell operations
 11. **Commit continuously** — after finishing any coding task, completed change, or other finished work, make a git commit immediately without waiting to be asked. **Push only on explicit user request** — never push unless the user asks.
-12. **Keep CI current** — when changing Rust workspace members, dependencies, lint rules, or test expectations, update `.github/workflows/rust.yml` in the same change and keep the workflow aligned with the codebase.
-13. **Fix missing tools first** — if a required tool or command is not available in `PATH`, install or configure it before claiming a backend/frontend check passed.
+12. **Рабочая ветка** — разработка в этом репозитории всегда выполняется прямо в текущей `main`; отдельные ветки и worktree не создавать.
+13. **Keep CI current** — when changing Rust workspace members, dependencies, lint rules, or test expectations, update `.github/workflows/rust.yml` in the same change and keep the workflow aligned with the codebase.
+14. **Fix missing tools first** — if a required tool or command is not available in `PATH`, install or configure it before claiming a backend/frontend check passed.
+
+15. **Clean build artifacts** - after a build or verification, remove the workspace `target/` directory and any temporary Rust target/toolchain installed for that check when they are no longer needed for the next step; do not delete artifacts still required by an active process or subsequent verification.
 
 ## Environment
 
@@ -198,7 +201,7 @@ See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](d
 | 4 Editor + Git | ✅ Done |
 | 5 Task orchestration | ✅ Done |
 | 6 Advanced | ✅ Foundations complete |
-| 7 Hardening + Product | 🟡 In progress; `7.1`–`7.104` complete, First implementation wave Phase 4 ✅ |
+| 7 Hardening + Product | 🟡 In progress; `7.1`–`7.104` and `7.108`–`7.116` complete, `7.105`–`7.107` remain |
 
 Memory design: [docs/superpowers/specs/2026-07-16-agent-memory-design.md](docs/superpowers/specs/2026-07-16-agent-memory-design.md)
 

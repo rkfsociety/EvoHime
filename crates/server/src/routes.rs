@@ -8,6 +8,7 @@ use crate::plugin_skills_api;
 use crate::plugins;
 use crate::scheduled_api;
 use crate::sites_api;
+use crate::thinking_api;
 use crate::workspace;
 use axum::{
     middleware,
@@ -20,6 +21,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let router = Router::new()
         .route("/health", get(crate::health::health))
         .route("/health/deep", get(crate::health::deep_health))
+        .route("/shutdown", post(crate::shutdown_api::shutdown))
         .route("/openapi.json", get(crate::openapi::document))
         .route("/api/auth/status", get(crate::health::auth_status))
         .route(
@@ -45,6 +47,18 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route(
             "/api/models/available",
             get(crate::models_api::available_models),
+        )
+        .route(
+            "/api/models/cost-limits",
+            get(crate::models_api::list_cost_limits),
+        )
+        .route(
+            "/api/models/cost-limits/:model",
+            put(crate::models_api::update_cost_limit),
+        )
+        .route(
+            "/api/settings/thinking",
+            get(thinking_api::get_thinking_settings).put(thinking_api::put_thinking_settings),
         )
         .route(
             "/api/sessions",
@@ -189,6 +203,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/plugins/uninstall", post(plugins::uninstall_plugin))
         .route("/api/plugins/pin", post(plugins::pin_plugin))
         .route("/api/plugins/integrity", get(plugins::plugin_integrity))
+        .route("/api/plugins/audit", get(plugins::plugin_audit_trail))
         .route(
             "/api/plugins/:name/skills",
             get(plugins::list_plugin_skills),

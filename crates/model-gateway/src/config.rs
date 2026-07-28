@@ -1,5 +1,5 @@
 use crate::providers::{ProviderError, ProviderKind};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
 
@@ -18,7 +18,7 @@ pub const OPENAI_DEFAULT_MODEL: &str = "gpt-4o-mini";
 /// Known LiteRouter free models (non-exhaustive).
 pub const LITEROUTER_FREE_MODELS: &[&str] = &["deepseek:free", "mistral:free", "llama:free"];
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiteRouterConfig {
     pub api_key: String,
     pub base_url: String,
@@ -58,10 +58,17 @@ impl LiteRouterConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelRouteConfig {
     pub provider: ProviderKind,
     pub literouter: LiteRouterConfig,
+    /// Wave 3B: Provider supports extended thinking
+    #[serde(default = "default_thinking_support")]
+    pub supports_thinking: bool,
+}
+
+fn default_thinking_support() -> bool {
+    true
 }
 
 impl ModelRouteConfig {
@@ -71,6 +78,8 @@ impl ModelRouteConfig {
         base_url: impl Into<String>,
         model: impl Into<String>,
     ) -> Self {
+        // LiteRouter via Claude API supports thinking; other providers may not
+        let supports_thinking = matches!(provider, ProviderKind::LiteRouter);
         Self {
             provider,
             literouter: LiteRouterConfig {
@@ -78,6 +87,7 @@ impl ModelRouteConfig {
                 base_url: normalize_base_url(&base_url.into()),
                 model: model.into(),
             },
+            supports_thinking,
         }
     }
 
@@ -105,6 +115,7 @@ impl ModelRouteConfig {
                 base_url: "mock://local".to_string(),
                 model: model.into(),
             },
+            supports_thinking: true, // Mock supports all features
         }
     }
 
@@ -152,6 +163,7 @@ impl ModelGatewayConfig {
             ProviderKind::LiteRouter => ModelRouteConfig {
                 provider,
                 literouter,
+                supports_thinking: true,
             },
             ProviderKind::OpenAICompatible => {
                 let openai = LiteRouterConfig::openai_compatible_from_env();

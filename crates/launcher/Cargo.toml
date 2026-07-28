@@ -1,0 +1,59 @@
+[package]
+name = "evohime-launcher"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "evohime_launcher"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1"
+axum = { version = "0.7", features = ["json"] }
+chrono = { version = "0.4", features = ["serde"] }
+evohime-artifacts = { path = "../artifacts" }
+evohime-win-support = { path = "../win-support" }
+rand = "0.8"
+quick-xml = "0.41"
+reqwest = { version = "0.12", default-features = false, features = [
+  "json",
+  "rustls-tls",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", features = [
+  "postgres",
+  "runtime-tokio-rustls",
+  "chrono",
+  "migrate",
+] }
+thiserror = "2"
+tokio = { version = "1", features = [
+  "fs",
+  "process",
+  "macros",
+  "rt-multi-thread",
+  "time",
+  "net",
+  "sync",
+] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }
+tracing = "0.1"
+uuid = { version = "1", features = ["v4"] }
+
+# Фаза 2.5 / Фаза 4 плана: единый GUI-стек для Installer и Launcher (без
+# Tauri/WebView2). eframe/egui для окна, tray-icon для системного трея —
+# оба используемые здесь на одном потоке через один и тот же Win32
+# message loop (см. src/bin/spike_tray.rs).
+# Проект — Windows-only (раздел I плана), поэтому включаем только рендерер
+# (glow) и стандартные шрифты, без wayland/x11 (Linux-специфичные бэкенды).
+eframe = { version = "0.35", default-features = false, features = ["glow", "default_fonts"] }
+tray-icon = "0.24"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_UI_Input_KeyboardAndMouse"] }
+
+[dev-dependencies]
+sha2 = "0.10"
+tempfile = "3"
+zip = { version = "2", default-features = false, features = ["deflate"] }

@@ -1,6 +1,7 @@
 use crate::config::LiteRouterConfig;
 use crate::providers::{
-    ChatFuture, ChatMessage, ModelProvider, ProviderError, ProviderKind, TokenStream,
+    ChatFuture, ChatMessage, ModelProvider, ProviderError, ProviderKind, ThinkingConfig,
+    TokenStream,
 };
 use crate::retry::{compute_backoff, is_retryable_status, parse_retry_after_seconds, RetryPolicy};
 use crate::tools::{ChatResult, ChatStreamItem, LlmUsage, NativeToolCall, ToolSpec};
@@ -62,6 +63,29 @@ impl LiteRouterProvider {
         tools: Option<&[ToolSpec]>,
         stream: bool,
     ) -> Result<reqwest::Response, ProviderError> {
+        self.send_chat_request_internal(model, messages, tools, stream, None)
+            .await
+    }
+
+    async fn send_chat_request_with_thinking(
+        &self,
+        model: &str,
+        messages: &[ChatMessage],
+        tools: Option<&[ToolSpec]>,
+        thinking: Option<ThinkingConfig>,
+    ) -> Result<reqwest::Response, ProviderError> {
+        self.send_chat_request_internal(model, messages, tools, true, thinking)
+            .await
+    }
+
+    async fn send_chat_request_internal(
+        &self,
+        model: &str,
+        messages: &[ChatMessage],
+        tools: Option<&[ToolSpec]>,
+        stream: bool,
+        thinking: Option<ThinkingConfig>,
+    ) -> Result<reqwest::Response, ProviderError> {
         let body = ChatCompletionRequest {
             model: model.to_string(),
             messages: messages.iter().map(ApiMessage::from_chat_message).collect(),
@@ -75,6 +99,7 @@ impl LiteRouterProvider {
             } else {
                 None
             },
+            thinking,
         };
 
         let mut attempt: u32 = 0;
@@ -182,6 +207,61 @@ impl ModelProvider for LiteRouterProvider {
         })
     }
 
+    fn stream_with_thinking(
+        &self,
+        messages: &[ChatMessage],
+        thinking: Option<ThinkingConfig>,
+        tools: Option<&[ToolSpec]>,
+    ) -> TokenStream {
+        let provider = Self {
+            config: self.config.clone(),
+            client: self.client.clone(),
+            retry: self.retry.clone(),
+        };
+        let request_messages = messages.to_vec();
+        let tools = tools.map(|t| t.to_vec());
+
+        Box::pin(stream! {
+            let response = match provider
+                .send_chat_request_with_thinking(&provider.config.model, &request_messages, tools.as_deref(), thinking)
+                .await
+            {
+                Ok(response) => response,
+                Err(error) => {
+                    yield Err(error);
+                    return;
+                }
+            };
+
+            let mut buffer = String::new();
+            let mut byte_stream = response.bytes_stream();
+
+            while let Some(chunk) = byte_stream.next().await {
+                let chunk = match chunk {
+                    Ok(chunk) => chunk,
+                    Err(error) => {
+                        yield Err(ProviderError::Stream(error.to_string()));
+                        return;
+                    }
+                };
+
+                buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+                while let Some(line) = take_sse_line(&mut buffer) {
+                    if let Some(result) = parse_sse_line(&line) {
+                        yield result;
+                    }
+                }
+            }
+
+            if !buffer.trim().is_empty() {
+                if let Some(result) = parse_sse_line(buffer.trim()) {
+                    yield result;
+                }
+            }
+        })
+    }
+
     fn chat_with_tools(
         &self,
         model: Option<&str>,
@@ -224,6 +304,8 @@ struct ChatCompletionRequest {
     tools: Option<Vec<ToolSpec>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool_choice: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<crate::providers::ThinkingConfig>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -295,6 +377,8 @@ struct StreamChoice {
 struct StreamDelta {
     #[serde(default)]
     content: Option<String>,
+    #[serde(default)]
+    thinking: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -315,6 +399,8 @@ struct CompletionChoice {
 struct CompletionMessage {
     #[serde(default)]
     content: Option<String>,
+    #[serde(default)]
+    thinking: Option<String>,
     #[serde(default)]
     tool_calls: Vec<ApiToolCall>,
 }
@@ -351,6 +437,9 @@ impl ApiUsage {
             prompt_tokens: self.prompt_tokens,
             completion_tokens: self.completion_tokens,
             total_tokens: self.total_tokens,
+            cache_creation_input_tokens: None,
+            cache_read_input_tokens: None,
+            thinking_tokens: None,
         };
         if usage.total_tokens == 0 {
             usage.total_tokens = usage.prompt_tokens.saturating_add(usage.completion_tokens);
@@ -393,6 +482,7 @@ impl CompletionResponse {
             .collect();
         ChatResult {
             content: message.content.unwrap_or_default(),
+            thinking: message.thinking,
             tool_calls,
             usage,
         }
@@ -430,17 +520,23 @@ fn parse_sse_line(line: &str) -> Option<Result<ChatStreamItem, ProviderError>> {
         }
     }
 
-    let content = chunk
-        .choices
-        .first()
-        .and_then(|choice| choice.delta.content.clone())
-        .unwrap_or_default();
+    if let Some(choice) = chunk.choices.first() {
+        // Handle thinking chunks (Wave 3B: extended reasoning)
+        if let Some(thinking) = choice.delta.thinking.clone() {
+            if !thinking.is_empty() {
+                return Some(Ok(ChatStreamItem::Thinking(thinking)));
+            }
+        }
 
-    if content.is_empty() {
-        return None;
+        // Handle content chunks
+        if let Some(content) = choice.delta.content.clone() {
+            if !content.is_empty() {
+                return Some(Ok(ChatStreamItem::Delta(content)));
+            }
+        }
     }
 
-    Some(Ok(ChatStreamItem::Delta(content)))
+    None
 }
 
 #[cfg(test)]
@@ -530,6 +626,7 @@ mod tests {
                 prompt_tokens: 12,
                 completion_tokens: 34,
                 total_tokens: 46,
+                ..Default::default()
             })
         );
     }
@@ -545,6 +642,7 @@ mod tests {
             choices: vec![CompletionChoice {
                 message: CompletionMessage {
                     content: Some(String::new()),
+                    thinking: None,
                     tool_calls: vec![ApiToolCall {
                         id: Some("call_1".into()),
                         function: Some(ApiFunctionCall {
@@ -571,6 +669,7 @@ mod tests {
                 prompt_tokens: 100,
                 completion_tokens: 20,
                 total_tokens: 120,
+                ..Default::default()
             })
         );
     }
