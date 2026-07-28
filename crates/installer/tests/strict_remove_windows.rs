@@ -65,17 +65,13 @@ fn removes_junction_without_touching_its_external_target() {
     let external_file = external.join("keep.txt");
     std::fs::write(&external_file, b"keep").unwrap();
 
+    let command = format!(
+        "mklink /J \"{}\" \"{}\" >nul",
+        junction.display(),
+        external.display()
+    );
     let status = std::process::Command::new("cmd")
-        .args([
-            "/d",
-            "/s",
-            "/c",
-            &format!(
-                "mklink /J \"{}\" \"{}\" >nul",
-                junction.display(),
-                external.display()
-            ),
-        ])
+        .args(["/d", "/c", &command])
         .status()
         .unwrap();
     assert!(status.success(), "failed to create test junction");
