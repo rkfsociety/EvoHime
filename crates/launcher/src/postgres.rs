@@ -223,6 +223,26 @@ mod tests {
     }
 
     #[test]
+    fn expected_postgres_executable_requires_exact_bin_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let bin = root.path().join("EvoHime").join("pg16").join("bin");
+        let foreign_bin = root.path().join("foreign").join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::create_dir_all(&foreign_bin).unwrap();
+        std::fs::write(bin.join("postgres.exe"), b"expected").unwrap();
+        std::fs::write(foreign_bin.join("postgres.exe"), b"foreign").unwrap();
+
+        assert!(is_expected_postgres_executable(
+            &bin.join("postgres.exe"),
+            &bin
+        ));
+        assert!(!is_expected_postgres_executable(
+            &foreign_bin.join("postgres.exe"),
+            &bin
+        ));
+    }
+
+    #[test]
     fn pg_tool_command_sets_c_locale_without_changing_parent_environment() {
         let parent_locale = std::env::var_os("LC_ALL");
         let command = build_pg_command(Path::new(r"C:\EvoHime\pg16\bin\initdb.exe"), &[]);
