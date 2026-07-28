@@ -55,11 +55,11 @@ useVoiceInput(): {
 ```
 
 - `canStart` равно `true` только при `status === "idle"`; при `listening` кнопка выполняет stop, а при `stopping` остаётся заблокированной.
-- `canStart` является производным состоянием и не хранится отдельно; `isListening` также вычисляется как `status === "listening"`, чтобы `status` оставался единственным источником истины.
+- `canStart` и `isListening` являются производными значениями, вычисляемыми из `status`; `status` остаётся единственным источником истины, и оба значения отдельно не хранятся.
 
 - После успешной отправки сообщения или когда приложение намеренно сбрасывает composer вызывается `resetTranscript()`, чтобы следующий запуск не переиспользовал старый базовый снимок или финальный хвост.
 
-- В обычном жизненном цикле `stop()` resolves after `onend` and returns a ref-backed full composer text that includes the last `onresult` event. При unmount pending promise принудительно завершается текущим ref-backed текстом, поскольку обработчики recognition удаляются и ожидание `onend` больше невозможно.
+- В обычном жизненном цикле `stop()` завершается после `onend` и возвращает полный текст composer из ref, включая последнее событие `onresult`. При unmount ожидающий promise принудительно завершается текущим текстом из ref, поскольку обработчики recognition удаляются и ожидание `onend` больше невозможно.
 
 - [ ] **Step 1: Define browser-safe types and constructor lookup**
 
@@ -71,7 +71,7 @@ useVoiceInput(): {
 
 - [ ] **Step 3: Implement one reusable recognition instance**
 
-  Create the instance once in a ref. Set `lang = "ru-RU"`, `interimResults = true`, and request `continuous = true` where supported so natural pauses do not intentionally end the MVP dictation. On each start, capture `baseText`, clear only interim, increment `sessionIdRef`, and reset the current stop promise. The browser may still force `onend`; the user can start again without losing confirmed text.
+  Create the instance once in a ref. Set `lang = "ru-RU"`, `interimResults = true`, and запрашивать `continuous = true` там, где это поддерживается, чтобы обычные паузы не завершали диктовку намеренно. При каждом start сохранить `baseText`, очистить только interim, увеличить `sessionIdRef` и сбросить текущий stop promise. Браузер всё равно может принудительно вызвать `onend`; пользователь сможет запустить диктовку снова без потери подтверждённого текста.
 
 - [ ] **Step 4: Implement result, end, and error lifecycle**
 
