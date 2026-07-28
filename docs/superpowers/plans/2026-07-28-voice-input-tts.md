@@ -24,7 +24,7 @@
 - TTS callbacks изменяют состояние только для текущего active utterance; события отменённого utterance игнорируются.
 - Аудио не сохраняется и не отправляется на сервер.
 - На мобильном layout кнопки имеют touch-target не менее 44px.
-- В `frontend/web` сейчас нет существующего test runner; MVP не добавляет новые npm-зависимости и не обещает автоматические unit-тесты. Lifecycle проверяется typecheck/build и ручным browser matrix с DevTools/mocks.
+- В `frontend/web` используется встроенный Node test runner через `npm test`; новые npm-зависимости не добавляются. Lifecycle проверяется автоматическими runtime-тестами, typecheck/build и ручным browser matrix с DevTools/mocks.
 - Voice hooks не изменяют существующий message transport, WebSocket protocol, upload flow или backend contracts; они только подготавливают текст composer перед существующим `sendMessage`.
 
 ---
