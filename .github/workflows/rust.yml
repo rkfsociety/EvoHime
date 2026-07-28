@@ -103,7 +103,7 @@ jobs:
       - name: Test portable PostgreSQL ownership
         run: "cargo test -p evohime-launcher postgres::"
       - name: Test installer cleanup
-        run: cargo test -p evohime-installer --test setup_cleanup_windows
+        run: cargo test -p evohime-installer
       - name: Check installer
         run: cargo check -p evohime-installer
 
