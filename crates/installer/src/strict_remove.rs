@@ -4,6 +4,7 @@ use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 
 #[derive(Debug, thiserror::Error)]
@@ -70,9 +71,11 @@ pub async fn remove_tree_with_retries(
 fn remove_entry(path: &Path) -> Result<(), StrictRemoveError> {
     let metadata =
         std::fs::symlink_metadata(path).map_err(|error| StrictRemoveError::at(path, error))?;
-    let is_reparse_point = metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+    let attributes = metadata.file_attributes();
+    let is_directory = attributes & FILE_ATTRIBUTE_DIRECTORY != 0;
+    let is_reparse_point = attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0;
 
-    if metadata.is_dir() && !is_reparse_point {
+    if is_directory && !is_reparse_point {
         let entries =
             std::fs::read_dir(path).map_err(|error| StrictRemoveError::at(path, error))?;
         for entry in entries {
@@ -80,7 +83,7 @@ fn remove_entry(path: &Path) -> Result<(), StrictRemoveError> {
             remove_entry(&entry.path())?;
         }
         std::fs::remove_dir(path).map_err(|error| StrictRemoveError::at(path, error))
-    } else if metadata.is_dir() {
+    } else if is_directory {
         std::fs::remove_dir(path).map_err(|error| StrictRemoveError::at(path, error))
     } else {
         std::fs::remove_file(path).map_err(|error| StrictRemoveError::at(path, error))
