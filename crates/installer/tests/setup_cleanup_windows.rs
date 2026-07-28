@@ -3,6 +3,7 @@
 use evohime_installer::{
     clear_dirty_installation, clear_dirty_installation_safely, DirtyCleanupError,
 };
+use evohime_win_support::{is_process_alive, terminate_process};
 use std::os::windows::fs::OpenOptionsExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
@@ -47,6 +48,28 @@ fn main() {
     fs::write(data.join("exited"), b"").unwrap();
 }
 "#;
+
+const RESIDUAL_PROCESS_SOURCE: &str = r#"
+use std::thread;
+use std::time::Duration;
+
+fn main() {
+    loop {
+        thread::sleep(Duration::from_secs(30));
+    }
+}
+"#;
+
+struct ChildGuard(Child);
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        if is_process_alive(self.0.id()) {
+            let _ = terminate_process(self.0.id());
+        }
+        let _ = self.0.wait();
+    }
+}
 
 #[tokio::test]
 async fn removes_dirty_installation_before_continuing() {
@@ -128,6 +151,60 @@ async fn reports_verified_portable_postgres_shutdown_failure() {
     postgres.wait().unwrap();
 }
 
+#[tokio::test]
+async fn closes_portless_residual_processes_only_inside_dirty_installation() {
+    let root = tempfile::tempdir().unwrap();
+    let install_dir = root.path().join("EvoHime");
+    let installed_exe = install_dir
+        .join("versions")
+        .join("current")
+        .join("evohime-server.exe");
+    std::fs::create_dir_all(installed_exe.parent().unwrap()).unwrap();
+    compile_source(&installed_exe, RESIDUAL_PROCESS_SOURCE);
+
+    let external_dir = root.path().join("external");
+    let external_exe = external_dir.join("evohime-server.exe");
+    std::fs::create_dir_all(&external_dir).unwrap();
+    compile_source(&external_exe, RESIDUAL_PROCESS_SOURCE);
+
+    let mut inside = ChildGuard(spawn_residual_process(&installed_exe));
+    let mut outside = ChildGuard(spawn_residual_process(&external_exe));
+    std::thread::sleep(Duration::from_millis(250));
+
+    let result = clear_dirty_installation_safely(&install_dir).await;
+
+    assert!(result.unwrap());
+    assert!(!install_dir.exists());
+    assert!(!is_process_alive(inside.0.id()));
+    assert!(is_process_alive(outside.0.id()));
+    inside.0.wait().unwrap();
+    outside.0.kill().unwrap();
+    outside.0.wait().unwrap();
+}
+
+#[tokio::test]
+async fn leaves_processes_in_completed_installation_untouched() {
+    let root = tempfile::tempdir().unwrap();
+    let install_dir = root.path().join("EvoHime");
+    let installed_exe = install_dir
+        .join("versions")
+        .join("current")
+        .join("evohime-server.exe");
+    std::fs::create_dir_all(installed_exe.parent().unwrap()).unwrap();
+    compile_source(&installed_exe, RESIDUAL_PROCESS_SOURCE);
+    std::fs::write(install_dir.join(".setup_complete"), b"").unwrap();
+    let mut inside = ChildGuard(spawn_residual_process(&installed_exe));
+    std::thread::sleep(Duration::from_millis(250));
+
+    let result = clear_dirty_installation_safely(&install_dir).await;
+
+    assert!(!result.unwrap());
+    assert!(install_dir.exists());
+    assert!(is_process_alive(inside.0.id()));
+    inside.0.kill().unwrap();
+    inside.0.wait().unwrap();
+}
+
 fn compile_postgres_stubs(pg_bin_dir: &Path) {
     let postgres = pg_bin_dir.join("postgres.exe");
     compile_source(&postgres, POSTGRES_STUB_SOURCE);
@@ -150,6 +227,15 @@ fn compile_source(output: &Path, source: &str) {
 fn spawn_postgres_stub(pg_bin_dir: &Path, pg_data_dir: &Path) -> Child {
     Command::new(pg_bin_dir.join("postgres.exe"))
         .arg(pg_data_dir)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap()
+}
+
+fn spawn_residual_process(executable: &Path) -> Child {
+    Command::new(executable)
+        .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
