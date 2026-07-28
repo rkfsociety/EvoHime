@@ -461,48 +461,58 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
     let pg_bin_dir = pg_dir.join("bin");
     let pg_data_dir = pg_dir.join("data");
     tokio::fs::create_dir_all(&pg_data_dir).await?;
-    let mut command_observer = |event| send_command_event(tx, event, &[]);
-    restrict_to_current_user_observed(&pg_data_dir, &mut command_observer).await?;
+    let existing_config =
+        config::load(&install_dir).filter(|_| pg_data_dir.join("PG_VERSION").is_file());
+    let db_config = if let Some(config) = existing_config {
+        operation("Использую существующую базу данных.");
+        config
+    } else {
+        let mut command_observer = |event| send_command_event(tx, event, &[]);
+        restrict_to_current_user_observed(&pg_data_dir, &mut command_observer).await?;
 
-    stage("Генерация пароля базы данных...");
-    let db_password = generate_password(24);
-    let db_user = std::env::var("USERNAME").unwrap_or_else(|_| "evohime".to_string());
+        stage("Генерация пароля базы данных...");
+        let password = generate_password(24);
+        let user = std::env::var("USERNAME").unwrap_or_else(|_| "evohime".to_string());
 
-    stage("Инициализация базы данных (initdb)...");
-    postgres::initdb_observed(&pg_bin_dir, &pg_data_dir, &db_user, &db_password, |event| {
-        send_command_event(tx, event, &[db_password.as_str()])
-    })
-    .await?;
+        stage("Инициализация базы данных (initdb)...");
+        postgres::initdb_observed(&pg_bin_dir, &pg_data_dir, &user, &password, |event| {
+            send_command_event(tx, event, &[password.as_str()])
+        })
+        .await?;
 
-    let pg_hba_path = pg_data_dir.join("pg_hba.conf");
-    stage("Настройка аутентификации PostgreSQL...");
-    patch_pg_hba_trust_local(&pg_hba_path).await?;
-    operation(&format!(
-        "Локальная аутентификация PostgreSQL настроена: {}",
-        pg_hba_path.display()
-    ));
+        let pg_hba_path = pg_data_dir.join("pg_hba.conf");
+        stage("Настройка аутентификации PostgreSQL...");
+        patch_pg_hba_trust_local(&pg_hba_path).await?;
+        operation(&format!(
+            "Локальная аутентификация PostgreSQL настроена: {}",
+            pg_hba_path.display()
+        ));
+        DbConfig {
+            user,
+            password,
+            port: postgres::PG_PORT,
+            db_name: DB_NAME.to_string(),
+        }
+    };
+    let db_user = db_config.user.clone();
+    let db_password = db_config.password.clone();
 
     stage("Запуск PostgreSQL...");
-    postgres::start_observed(&pg_bin_dir, &pg_data_dir, postgres::PG_PORT, |event| {
-        send_command_event(tx, event, &[db_password.as_str()])
-    })
-    .await?;
+    if postgres::is_running(&pg_bin_dir, postgres::PG_PORT) {
+        operation("PostgreSQL уже запущен.");
+    } else {
+        postgres::start_observed(&pg_bin_dir, &pg_data_dir, postgres::PG_PORT, |event| {
+            send_command_event(tx, event, &[db_password.as_str()])
+        })
+        .await?;
+    }
 
     stage("Создание базы данных...");
     postgres::create_database_if_missing(&db_user, &db_password, postgres::PG_PORT, DB_NAME)
         .await?;
     operation(&format!("База данных {DB_NAME} готова."));
 
-    config::save(
-        &install_dir,
-        &DbConfig {
-            user: db_user.clone(),
-            password: db_password.clone(),
-            port: postgres::PG_PORT,
-            db_name: DB_NAME.to_string(),
-        },
-    )
-    .await?;
+    config::save(&install_dir, &db_config).await?;
     operation(&format!(
         "Конфигурация базы данных сохранена: {}",
         install_dir
