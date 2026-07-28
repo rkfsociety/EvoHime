@@ -25,6 +25,7 @@
 - Аудио не сохраняется и не отправляется на сервер.
 - На мобильном layout кнопки имеют touch-target не менее 44px.
 - В `frontend/web` сейчас нет существующего test runner; MVP не добавляет новые npm-зависимости и не обещает автоматические unit-тесты. Lifecycle проверяется typecheck/build и ручным browser matrix с DevTools/mocks.
+- Voice hooks не изменяют существующий message transport, WebSocket protocol, upload flow или backend contracts; они только подготавливают текст composer перед существующим `sendMessage`.
 
 ---
 
@@ -53,7 +54,9 @@ useVoiceInput(): {
 }
 ```
 
-- `canStart` равно `true` только когда status не `unsupported`, не `insecure-context`, не `stopping` и не `error`.
+- `canStart` равно `true` только при `status === "idle"`; при `listening` кнопка выполняет stop, а при `stopping` остаётся заблокированной.
+
+- После успешной отправки сообщения или очистки composer вызывается `resetTranscript()`, чтобы следующий запуск не переиспользовал старый базовый снимок или финальный хвост.
 
 - В обычном жизненном цикле `stop()` resolves after `onend` and returns a ref-backed full composer text that includes the last `onresult` event. При unmount pending promise принудительно завершается текущим ref-backed текстом, поскольку обработчики recognition удаляются и ожидание `onend` больше невозможно.
 
@@ -67,7 +70,7 @@ useVoiceInput(): {
 
 - [ ] **Step 3: Implement one reusable recognition instance**
 
-  Create the instance once in a ref. Set `lang = "ru-RU"`, `interimResults = true`, and `continuous = true` so natural pauses do not end the MVP dictation intentionally. On each start, capture `baseText`, clear only interim, increment `sessionIdRef`, and reset the current stop promise. The browser may still force `onend`; the user can start again without losing confirmed text.
+  Create the instance once in a ref. Set `lang = "ru-RU"`, `interimResults = true`, and request `continuous = true` where supported so natural pauses do not intentionally end the MVP dictation. On each start, capture `baseText`, clear only interim, increment `sessionIdRef`, and reset the current stop promise. The browser may still force `onend`; the user can start again without losing confirmed text.
 
 - [ ] **Step 4: Implement result, end, and error lifecycle**
 
@@ -75,7 +78,7 @@ useVoiceInput(): {
 
 - [ ] **Step 5: Make repeated start/stop deterministic**
 
-  A `start()` while listening or stopping is a no-op at the hook boundary; the UI maps the active mic click to `stop()`. A second `stop()` reuses the pending promise. If recognition is already inactive after automatic `onend`, `stop()` returns `Promise.resolve({ transcript: currentFullText })` and does not call `recognition.stop()`. A new recognition session never starts before the previous `onend`. On unmount, resolve pending `stop()` with the current ref-backed full text, then remove `onresult`, `onend`, and `onerror`, stop/abort recognition, clear refs, and do not update React state.
+  A `start()` while listening or stopping is a no-op at the hook boundary; the UI maps the active mic click to `stop()`. A second `stop()` reuses the pending promise. If recognition is already inactive after automatic `onend`, `stop()` returns `Promise.resolve({ transcript: currentFullText })` and does not call `recognition.stop()`. A new recognition session never starts before the previous `onend`. On unmount, resolve pending `stop()` with the current ref-backed full text, remove `onresult`, `onend`, and `onerror`, call `recognition.abort()`, clear refs, and do not update React state.
 
 - [ ] **Step 6: Run frontend validation**
 
@@ -155,11 +158,11 @@ git commit -m "feat(web): add centralized speech synthesis hook"
 
 - [ ] **Step 2: Serialize submit with recognition shutdown**
 
-  In `sendMessage`, if listening or stopping, await `stop()`, use its returned full transcript, update the composer value, and continue existing validation/upload/socket logic with that exact text. Guard the flow with `const submitPendingRef = useRef(false)` (or equivalent state): while `await stop()` is pending, repeated Enter and send-button clicks are ignored, and the flag resets in `finally`.
+  In `sendMessage`, if listening or stopping, await `stop()`, use its returned full transcript, update the composer value, and continue existing validation/upload/socket logic with that exact text. Guard the flow with `const submitPendingRef = useRef(false)` (or equivalent state): while `await stop()` is pending, repeated Enter and send-button clicks are ignored, and the flag resets in `finally`. After successful send, and whenever the composer is explicitly cleared, call `resetTranscript()`.
 
 - [ ] **Step 3: Add keyboard, error, and fallback behavior**
 
-  Handle `Escape` while listening, show `insecure-context`, `unsupported`, `not-allowed`, and other runtime errors through `composerNotice`, and leave manual input available whenever voice APIs fail. Do not auto-speak responses.
+  Handle `Escape` while listening, show all user-facing voice API errors exclusively through the existing `composerNotice` (no new error components), and leave manual input available whenever voice APIs fail. Do not auto-speak responses.
 
 - [ ] **Step 4: Add responsive and accessible styles**
 
@@ -171,7 +174,7 @@ git commit -m "feat(web): add centralized speech synthesis hook"
 
 - [ ] **Step 6: Run manual browser matrix**
 
-  In HTTPS or `localhost`, verify permission grant, `ru-RU` interim/final results, and that supported Chromium `continuous = true` permits dictation across ordinary pauses while allowing that the browser may still force `onend`. Verify `stopping`, `Esc`, repeated mic click, idempotent stop after automatic `onend`, send during listening without losing the last word or baseText, double-submit suppression, and editable composer after stop. Verify HTTP/insecure-context, missing constructor, Safari/iOS partial support, `not-allowed`, `no-speech`, `audio-capture`, `network`, and `language-not-supported` fallbacks.
+  In HTTPS or `localhost`, verify permission grant, `ru-RU` interim/final results, and that supported Chromium requests `continuous = true` and may permit dictation across ordinary pauses while the browser may still force `onend`. Verify `stopping`, `Esc`, repeated mic click, idempotent stop after automatic `onend`, send during listening without losing the last word or baseText, double-submit suppression, `resetTranscript()` after send/clear, and editable composer after stop. Verify HTTP/insecure-context, missing constructor, Safari/iOS partial support, `not-allowed`, `no-speech`, `audio-capture`, `network`, and `language-not-supported` fallbacks.
 
 - [ ] **Step 7: Commit the UI integration**
 
