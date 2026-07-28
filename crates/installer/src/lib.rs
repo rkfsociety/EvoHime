@@ -17,7 +17,10 @@ pub mod shortcut;
 pub mod strict_remove;
 pub mod ui;
 
-pub use dirty_cleanup::{clear_dirty_installation_safely, DirtyCleanupError};
+pub use dirty_cleanup::{
+    clear_dirty_installation_safely, clear_dirty_installation_safely_with_progress,
+    DirtyCleanupError,
+};
 pub use icacls::{restore_deletable_permissions, restrict_to_current_user, IcaclsError};
 pub use setup_marker::{clear_dirty_installation, is_installation_dirty, mark_setup_complete};
 pub use shortcut::{create_shortcut, ShortcutError};
