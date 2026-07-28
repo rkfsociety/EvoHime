@@ -22,6 +22,7 @@ import { useChat } from "./hooks/useChat";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useWorkspace } from "./hooks/useWorkspace";
 import { useVoiceInput } from "./hooks/useVoiceInput";
+import { useSpeechSynthesis } from "./hooks/useSpeechSynthesis";
 // Phase 5.8: Lazy-loaded panels for code splitting
 const ActionsPanel = lazy(() => import("./panels/ActionsPanel").then(m => ({ default: m.ActionsPanel })));
 const EditorPanel = lazy(() => import("./panels/EditorPanel").then(m => ({ default: m.EditorPanel })));
@@ -108,6 +109,7 @@ export function App() {
     chatLogRef, chatAutoScrollRef,
   } = chat;
   const voiceInput = useVoiceInput();
+  const speechSynthesis = useSpeechSynthesis();
   const voiceSessionRef = useRef(false);
   const submitPendingRef = useRef(false);
   const reportWorkspaceError = useCallback((message: string) => {
@@ -130,6 +132,12 @@ export function App() {
       setComposerNotice(null);
     }
   }, [setComposerNotice, voiceInput.error, voiceInput.status]);
+
+  useEffect(() => {
+    if (speechSynthesis.error) {
+      setComposerNotice(speechSynthesis.error);
+    }
+  }, [setComposerNotice, speechSynthesis.error]);
 
   useEffect(() => {
     if (!voiceSessionRef.current || (voiceInput.status !== "idle" && voiceInput.status !== "error")) {
@@ -1387,7 +1395,7 @@ export function App() {
               </div>
             </div>
           ) : (
-            visibleChatLines.map((line) => (
+            visibleChatLines.map((line, index) => (
               <Fragment key={line.id}>
                 <article
                   className={`line ${line.role}`}
@@ -1397,6 +1405,14 @@ export function App() {
                   {line.role === "assistant" ? <AgentAvatar size="sm" /> : null}
                   <strong>{translateChatRole(line.role, githubAuth?.login)}</strong>
                   <CopyMessageButton text={chatLinePlainText(line.role, line.text)} />
+                  {line.role === "assistant" && line.text.trim() ? (
+                    <SpeechMessageButton
+                      lineId={line.id}
+                      text={line.text}
+                      disabled={Boolean(stream) && index === lastAssistantLineIndex}
+                      speech={speechSynthesis}
+                    />
+                  ) : null}
                   {line.role === "assistant" ? <MarkdownMessage text={line.text} /> : <pre>{line.text}</pre>}
                 </article>
                 {showToolLines && line.role === "user" && line.taskId ? (
@@ -1414,6 +1430,15 @@ export function App() {
               <AgentAvatar size="sm" />
               <strong>Ассистент</strong>
               <CopyMessageButton text={chatLinePlainText("assistant", stream)} />
+              <button
+                type="button"
+                className="speechButton"
+                disabled
+                aria-label="Озвучивание доступно после завершения ответа"
+                title="Озвучивание доступно после завершения ответа"
+              >
+                ◖
+              </button>
               <MarkdownMessage text={stream} />
             </article>
           ) : null}
@@ -2035,6 +2060,40 @@ export function App() {
         }}
       />
     </main>
+  );
+}
+
+function SpeechMessageButton({
+  lineId,
+  text,
+  disabled,
+  speech,
+}: {
+  lineId: string;
+  text: string;
+  disabled: boolean;
+  speech: ReturnType<typeof useSpeechSynthesis>;
+}) {
+  const isSpeaking = speech.speakingMessageId === lineId;
+  const unavailable = !speech.isSupported;
+  return (
+    <button
+      type="button"
+      className={isSpeaking ? "speechButton speaking" : "speechButton"}
+      disabled={disabled || unavailable}
+      onClick={() => {
+        if (isSpeaking) {
+          speech.stop();
+        } else {
+          speech.speak(lineId, text);
+        }
+      }}
+      aria-label={isSpeaking ? "Остановить озвучивание" : "Озвучить сообщение"}
+      aria-pressed={isSpeaking}
+      title={disabled ? "Озвучивание доступно после завершения ответа" : "Озвучить сообщение"}
+    >
+      {isSpeaking ? "■" : "◖"}
+    </button>
   );
 }
 
