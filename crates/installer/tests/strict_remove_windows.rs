@@ -1,7 +1,7 @@
 #![cfg(windows)]
 
 use evohime_installer::{remove_tree_once, remove_tree_with_retries};
-use std::os::windows::fs::OpenOptionsExt;
+use std::os::windows::fs::{symlink_dir, OpenOptionsExt};
 use std::time::Duration;
 
 #[test]
@@ -65,16 +65,7 @@ fn removes_junction_without_touching_its_external_target() {
     let external_file = external.join("keep.txt");
     std::fs::write(&external_file, b"keep").unwrap();
 
-    let command = format!(
-        "mklink /J \"{}\" \"{}\" >nul",
-        junction.display(),
-        external.display()
-    );
-    let status = std::process::Command::new("cmd")
-        .args(["/d", "/c", &command])
-        .status()
-        .unwrap();
-    assert!(status.success(), "failed to create test junction");
+    symlink_dir(&external, &junction).unwrap();
 
     assert!(remove_tree_once(&dirty).unwrap());
 
