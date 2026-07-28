@@ -101,7 +101,7 @@ jobs:
       - name: Test artifact downloads
         run: cargo test -p evohime-artifacts
       - name: Test portable PostgreSQL ownership
-        run: cargo test -p evohime-launcher postgres::
+        run: "cargo test -p evohime-launcher postgres::"
       - name: Test installer cleanup
         run: cargo test -p evohime-installer --test setup_cleanup_windows
       - name: Check installer
