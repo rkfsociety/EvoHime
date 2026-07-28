@@ -1,9 +1,8 @@
 name: Build Release
 
-# Фаза 1 плана Installer/Launcher/Update: на каждый пуш в main сам решает,
-# нужен ли новый релиз (git-cliff считает следующую версию по Conventional
-# Commits с последнего тега — если только chore:/docs: и т.п., бампа нет и
-# ничего не публикуется), создаёт и пушит тег, затем собирает
+# Фаза 1 плана Installer/Launcher/Update: на releasable-пуш в main либо
+# при ручном запуске увеличивает шестизначный счётчик
+# v0.0.000001 → v0.0.000002, создаёт и пушит тег, затем собирает
 # самодостаточные артефакты (evohime-setup.exe, server.zip, launcher.zip,
 # dist.zip, migrations.zip, postgres.zip, worker.zip) и публикует GitHub Release с
 # автосгенерированным описанием изменений. Единственный exe-файл в релизе —
@@ -21,6 +20,7 @@ name: Build Release
 # git-cliff для расчёта следующей версии).
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     tags:
@@ -52,23 +52,6 @@ jobs:
         run: |
           echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
 
-      - name: Compute next version via git-cliff
-        if: github.ref == 'refs/heads/main'
-        id: cliff
-        # continue-on-error: git-cliff может завершиться с ошибкой, если в
-        # репозитории ещё нет ни одного тега (нечего "бампать") — этот
-        # случай обрабатывается в шаге ниже как bootstrap на v0.1.0, а не
-        # как падение всего workflow.
-        continue-on-error: true
-        uses: orhun/git-cliff-action@v4
-        with:
-          config: cliff.toml
-          args: --bumped-version
-        # Без GITHUB_REPO/GITHUB_TOKEN: cliff.toml не использует GitHub-
-        # метаданные (PR/контрибьюторы) в шаблоне, а git-cliff-action при
-        # их наличии всё равно пытается получить их через GitHub API — и
-        # падает с 403 (см. коммит-сообщение). Просто не даём повод.
-
       - name: Decide whether to release and tag
         id: decide
         run: |
@@ -82,32 +65,38 @@ jobs:
             exit 0
           fi
 
-          NEXT_VERSION="${{ steps.cliff.outputs.content }}"
-          CURRENT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-
-          if [ -z "$NEXT_VERSION" ] && [ -z "$CURRENT_TAG" ]; then
-            # Самый первый запуск: в репозитории ещё нет ни одного тега, и
-            # git-cliff не смог вычислить бамп относительно "ничего" —
-            # стартуем с v0.1.0.
-            echo "no existing tags — bootstrapping at v0.1.0"
-            NEXT_VERSION="v0.1.0"
-          elif [ -z "$NEXT_VERSION" ]; then
-            echo "git-cliff did not produce a version — skipping release"
+          CURRENT_TAG=$(
+            git tag --list 'v0.0.*' --sort=-creatordate |
+              grep -E '^v0\.0\.[0-9]{6}$' |
+              head -n 1
+          )
+          RANGE="${CURRENT_TAG:+${CURRENT_TAG}..HEAD}"
+          if ! git log ${RANGE:+"$RANGE"} --format='%s' |
+            grep -Eq '^(feat|fix|perf|refactor)(\([^)]*\))?!?:'; then
+            echo "no releasable commits since ${CURRENT_TAG:-the new counter baseline}"
             echo "should_release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          if [ "$NEXT_VERSION" = "$CURRENT_TAG" ]; then
-            echo "no version bump needed (only non-releasable commits since ${CURRENT_TAG:-the beginning})"
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          if [ -z "$CURRENT_TAG" ]; then
+            NEXT_COUNTER=1
           else
-            echo "bumping $CURRENT_TAG -> $NEXT_VERSION"
-            echo "should_release=true" >> "$GITHUB_OUTPUT"
-            echo "version=$NEXT_VERSION" >> "$GITHUB_OUTPUT"
+            CURRENT_COUNTER=${CURRENT_TAG##*.}
+            NEXT_COUNTER=$((10#$CURRENT_COUNTER + 1))
+          fi
+          if [ "$NEXT_COUNTER" -gt 999999 ]; then
+            echo "release counter exhausted at v0.0.999999" >&2
+            exit 1
           fi
 
-      # Тег создаём только для автоматического пути (push в main) — при
-      # ручном пуше тега он уже существует.
+          printf -v PADDED_COUNTER '%06d' "$NEXT_COUNTER"
+          NEXT_VERSION="v0.0.${PADDED_COUNTER}"
+          echo "bumping ${CURRENT_TAG:-new counter} -> $NEXT_VERSION"
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+          echo "version=$NEXT_VERSION" >> "$GITHUB_OUTPUT"
+
+      # Тег создаём для main/workflow_dispatch; при ручном пуше тега он уже
+      # существует.
       - name: Create and push tag
         if: github.ref == 'refs/heads/main' && steps.decide.outputs.should_release == 'true'
         run: |
@@ -378,17 +367,15 @@ jobs:
         run: |
           echo "${{ needs.determine-version.outputs.version }}+${{ needs.determine-version.outputs.short_sha }}" > release/version.txt
 
-      - name: Generate changelog with git-cliff
-        uses: orhun/git-cliff-action@v4
-        id: git-cliff
-        with:
-          config: cliff.toml
-          args: --latest --strip header
-        # Без GITHUB_REPO/GITHUB_TOKEN: см. пояснение у первого вызова
-        # git-cliff-action в job determine-version — та же причина.
-
-      - name: Write changelog to file
-        run: printf '%s\n' "${{ steps.git-cliff.outputs.content }}" > release/changelog.md
+      - name: Write changelog
+        run: |
+          CURRENT="${{ needs.determine-version.outputs.version }}"
+          PREVIOUS=$(git describe --tags --abbrev=0 "${CURRENT}^" 2>/dev/null || true)
+          if [ -n "$PREVIOUS" ]; then
+            git log "${PREVIOUS}..${CURRENT}" --pretty='- %s (`%h`)' > release/changelog.md
+          else
+            git log "${CURRENT}" --pretty='- %s (`%h`)' > release/changelog.md
+          fi
 
       - name: Compute SHA256 checksums
         run: |
@@ -398,8 +385,7 @@ jobs:
           done
 
       # Держим на странице релизов только самый свежий релиз — старые
-      # удаляются (только сам Release, git-теги остаются нетронутыми: они
-      # нужны git-cliff, чтобы верно посчитать следующую версию).
+      # удаляются (git-теги остаются нетронутыми для истории и счётчика).
       - name: Delete old releases (keep only the new one)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
