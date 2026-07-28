@@ -9,7 +9,7 @@
 
 use eframe::egui;
 use evohime_artifacts::{download_with_resume, extract_zip, verify_sha256};
-use evohime_installer::ui::append_log_entry;
+use evohime_installer::ui::{append_log_entry, copy_log_to_clipboard, show_details};
 use evohime_installer::{
     create_shortcut, is_installation_dirty, mark_setup_complete, restrict_to_current_user,
 };
@@ -51,8 +51,8 @@ const SURFACE_ALT: egui::Color32 = egui::Color32::from_rgb(35, 36, 45);
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([520.0, 420.0])
-            .with_min_inner_size([460.0, 360.0]),
+            .with_inner_size([900.0, 720.0])
+            .with_min_inner_size([720.0, 720.0]),
         ..Default::default()
     };
 
@@ -162,6 +162,7 @@ impl eframe::App for InstallerApp {
             .corner_radius(egui::CornerRadius::same(14))
             .inner_margin(egui::Margin::symmetric(22, 20))
             .show(ui, |ui| {
+                ui.set_min_size(ui.available_size());
                 ui.add_space(8.0);
                 ui.vertical_centered(|ui| {
                     ui.heading(egui::RichText::new("EvoHime").size(30.0).color(ACCENT));
@@ -219,26 +220,18 @@ impl eframe::App for InstallerApp {
                     );
                     ui.add_space(12.0);
 
-                    egui::CollapsingHeader::new("Подробности")
-                        .default_open(self.failed)
-                        .show(ui, |ui| {
-                            egui::ScrollArea::vertical()
-                                .max_height(120.0)
-                                .show(ui, |ui| {
-                                    for line in self.log.lines() {
-                                        ui.label(
-                                            egui::RichText::new(line).size(12.0).color(DIM_TEXT),
-                                        );
-                                    }
-                                });
-                        });
-
                     if self.finished {
                         ui.add_space(6.0);
                         ui.vertical_centered(|ui| {
                             ui.label("Запустите ярлык «EvoHime Launcher» на рабочем столе.");
                         });
                     }
+                }
+
+                ui.add_space(12.0);
+                let details = show_details(ui, &self.log);
+                if details.copy_button.clicked() {
+                    copy_log_to_clipboard(ui.ctx(), &self.log);
                 }
             });
 

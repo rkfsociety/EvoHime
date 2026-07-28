@@ -198,12 +198,16 @@ git commit -m "feat(installer): keep canonical copyable log text"
 - Использует: `InstallerApp::log: String`
 - Использует: `fn can_copy_log(log: &str) -> bool`
 - Использует: `fn copy_log_to_clipboard(ctx: &egui::Context, log: &str)`
-- Создаёт: `fn show_log_field(ui: &mut egui::Ui, log: &str) -> egui::text_edit::TextEditOutput`
-- Создаёт: `fn show_details(ui: &mut egui::Ui, log: &str) -> bool`
+- Создаёт: `fn show_log_field(ui: &mut egui::Ui, log: &str) -> LogFieldOutput`
+- Создаёт: `fn show_details(ui: &mut egui::Ui, log: &str) -> DetailsUiOutput`
 
-- [ ] **Шаг 1: Написать падающий layout-тест заполнения области и переноса строк**
+- [x] **Шаг 1: Написать падающие UI-тесты layout и доступности копирования**
 
-Добавить этот тест в `crates/installer/tests/ui.rs`:
+Добавить в `crates/installer/tests/ui.rs` тест заполнения области и переноса
+строк, а также тест недоступной кнопки при пустом журнале. Для layout-теста
+использовать собственный `Context::run_ui` со стандартными шрифтами:
+`egui::__run_test_ui` намеренно загружает пустой набор шрифтов, поэтому не
+может измерить и перенести кириллицу.
 
 ```rust
 #[test]
@@ -211,10 +215,7 @@ fn log_field_fills_available_space_and_wraps_long_lines() {
     let long_line = "очень длинная строка журнала ".repeat(80);
     let mut observed = None;
 
-    egui::__run_test_ui(|ui| {
-        ui.set_width(640.0);
-        ui.set_height(480.0);
-
+    run_sized_ui(egui::vec2(640.0, 480.0), |ui| {
         let output = show_log_field(ui, &long_line);
         observed = Some((
             output.response.rect.width(),
@@ -230,7 +231,7 @@ fn log_field_fills_available_space_and_wraps_long_lines() {
 }
 ```
 
-- [ ] **Шаг 2: Запустить layout-тест и подтвердить состояние RED**
+- [x] **Шаг 2: Запустить UI-тесты и подтвердить состояние RED**
 
 Выполнить:
 
@@ -238,73 +239,37 @@ fn log_field_fills_available_space_and_wraps_long_lines() {
 cargo test -p evohime-installer --test ui log_field_fills_available_space_and_wraps_long_lines
 ```
 
-Ожидается: компиляция падает, потому что `show_log_field` ещё не существует.
+Ожидается: компиляция падает, потому что `show_log_field` и `show_details` ещё
+не существуют.
 
-- [ ] **Шаг 3: Реализовать адаптивное поле журнала только для чтения**
+- [x] **Шаг 3: Реализовать адаптивное поле журнала только для чтения**
 
 Добавить публичные компоненты в `crates/installer/src/ui.rs`, затем
 импортировать их в `crates/installer/src/main.rs`:
 
 ```rust
-pub fn show_log_field(
-    ui: &mut egui::Ui,
-    log: &str,
-) -> egui::text_edit::TextEditOutput {
-    egui::Frame::new()
-        .fill(egui::Color32::from_rgb(18, 18, 23))
-        .stroke(egui::Stroke::new(1.0, egui::Color32::from_gray(58)))
-        .corner_radius(egui::CornerRadius::same(6))
-        .inner_margin(egui::Margin::same(8))
-        .show(ui, |ui| {
-            egui::ScrollArea::vertical()
-                .id_salt("installer-details-log")
-                .auto_shrink([false, false])
-                .stick_to_bottom(true)
-                .show(ui, |ui| {
-                    let min_size = ui.available_size();
-                    let mut read_only_log = log;
-
-                    egui::TextEdit::multiline(&mut read_only_log)
-                        .id_salt("installer-details-text")
-                        .font(egui::TextStyle::Monospace)
-                        .desired_width(ui.available_width())
-                        .min_size(min_size)
-                        .frame(false)
-                        .hint_text("Журнал пока пуст.")
-                        .show(ui)
-                })
-                .inner
-        })
-        .inner
+pub struct LogFieldOutput {
+    pub response: egui::Response,
+    pub text_response: egui::AtomLayoutResponse,
+    pub galley: Arc<egui::Galley>,
 }
 
-pub fn show_details(ui: &mut egui::Ui, log: &str) -> bool {
-    let copy_clicked = ui
-        .horizontal(|ui| {
-            ui.label(egui::RichText::new("Подробности").strong());
-            ui.with_layout(
-                egui::Layout::right_to_left(egui::Align::Center),
-                |ui| {
-                    ui.add_enabled(
-                        can_copy_log(log),
-                        egui::Button::new("Копировать всё"),
-                    )
-                    .clicked()
-                },
-            )
-            .inner
-        })
-        .inner;
-
-    ui.add_space(8.0);
-    let _ = show_log_field(ui, log);
-    copy_clicked
+pub struct DetailsUiOutput {
+    pub copy_button: egui::Response,
+    pub log_field: LogFieldOutput,
 }
 ```
 
+`show_log_field` заранее запоминает `ui.available_size()`, резервирует этот
+размер для внешнего `Frame` и возвращает его `Response` вместе с galley
+вложенного `TextEdit`. Это необходимо для egui 0.35: `TextEdit::min_size`
+использует ширину, но не заполняет высоту в вертикальном `ScrollArea`.
+`show_details` возвращает `DetailsUiOutput`, чтобы production-код проверял
+`copy_button.clicked()`, а тест — `copy_button.enabled()`.
+
 Неизменяемая реализация `TextBuffer` для `&str` оставляет поле интерактивным для выделения, но запрещает редактирование. Конечное значение `desired_width(ui.available_width())` сохраняет перенос многострочного текста; не заменять его на `f32::INFINITY`, потому что в egui 0.35 это отключает автоматический перенос.
 
-- [ ] **Шаг 4: Сделать окно и основной layout адаптивными**
+- [x] **Шаг 4: Сделать окно и основной layout адаптивными**
 
 Изменить `NativeOptions`:
 
@@ -326,14 +291,15 @@ viewport: egui::ViewportBuilder::default()
 
 ```rust
 ui.add_space(12.0);
-if show_details(ui, &self.log) {
+let details = show_details(ui, &self.log);
+if details.copy_button.clicked() {
     copy_log_to_clipboard(ui.ctx(), &self.log);
 }
 ```
 
 Удалить старые `CollapsingHeader`, `ScrollArea` с `max_height(120.0)` и цикл по строкам журнала. Не изменять события прогресса, строки статуса, расчёт прогресса, установочные операции или сообщение о ярлыке.
 
-- [ ] **Шаг 5: Запустить layout-тест и полные тесты установщика**
+- [x] **Шаг 5: Запустить layout-тест и полные тесты установщика**
 
 Выполнить:
 
@@ -346,7 +312,7 @@ cargo check -p evohime-installer
 
 Ожидается: layout-тест наблюдает минимум `610×450` логических points и больше одной строки galley; все тесты установщика проходят.
 
-- [ ] **Шаг 6: Закоммитить адаптивный интерфейс**
+- [x] **Шаг 6: Закоммитить адаптивный интерфейс**
 
 ```powershell
 git add -- crates/installer/src/main.rs crates/installer/src/ui.rs crates/installer/tests/ui.rs docs/superpowers/plans/2026-07-28-installer-details-layout.md
