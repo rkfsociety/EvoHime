@@ -16,9 +16,7 @@ use evohime_launcher::update_apply::{
     download_and_verify_assets, read_current_version, stage_and_switch, write_current_version,
     UpdatePlan,
 };
-use evohime_launcher::update_check::{
-    is_update_available, latest_version_from_atom, releases_atom_url,
-};
+use evohime_launcher::update_check::is_update_available;
 use evohime_launcher::{
     build_dsn, build_static_router, build_status_router, fetch_latest_release,
     generate_session_token, postgres, safe_mode, ManagedProcess,
@@ -244,12 +242,34 @@ fn pg_paths(install_dir: &Path) -> (PathBuf, PathBuf) {
 /// сессии для локального shutdown-эндпоинта и (если БД уже развёрнута)
 /// строка подключения, без которой сервер падает на несуществующий
 /// дефолт (`crates/server/src/app.rs`).
-fn server_env(token: &str, dsn: Option<&str>) -> Vec<(String, String)> {
-    let mut env = vec![("EVOHIME_LOCAL_TOKEN".to_string(), token.to_string())];
+fn server_env(token: &str, dsn: Option<&str>, workspace_root: &Path) -> Vec<(String, String)> {
+    let mut env = vec![
+        ("EVOHIME_LOCAL_TOKEN".to_string(), token.to_string()),
+        (
+            "WORKSPACE_ROOT".to_string(),
+            workspace_root.display().to_string(),
+        ),
+    ];
     if let Some(dsn) = dsn {
         env.push(("DATABASE_URL".to_string(), dsn.to_string()));
     }
     env
+}
+
+#[cfg(test)]
+mod server_env_tests {
+    use super::*;
+
+    #[test]
+    fn passes_an_existing_workspace_root_to_the_server() {
+        let root = Path::new(r"C:\EvoHime\versions\current");
+        let env = server_env("token", Some("postgres://example"), root);
+
+        assert!(env.contains(&(
+            "WORKSPACE_ROOT".to_string(),
+            root.display().to_string()
+        )));
+    }
 }
 
 async fn start_server_process(
@@ -273,7 +293,7 @@ async fn start_server_process(
         "http://127.0.0.1:3000/health",
         Some("http://127.0.0.1:3000/shutdown".to_string()),
     );
-    if let Err(err) = process.start(&server_env(token, dsn)).await {
+    if let Err(err) = process.start(&server_env(token, dsn, &dir)).await {
         tracing::error!(%err, "failed to start server.exe");
         return None;
     }
@@ -294,17 +314,17 @@ async fn check_for_updates(
     update_state: &Arc<Mutex<UpdateState>>,
     status: &Arc<Mutex<LauncherStatus>>,
 ) {
-    let feed_url = releases_atom_url(GITHUB_REPO);
-    let Ok(response) = client.get(&feed_url).send().await else {
-        tracing::warn!("failed to reach releases.atom — skipping this check");
+    let Ok((remote_version, assets)) = fetch_latest_release(client, GITHUB_REPO).await else {
+        tracing::warn!("failed to fetch the latest GitHub release — skipping this check");
         return;
     };
-    let Ok(body) = response.text().await else {
+    if assets.len() != 4 {
+        tracing::warn!(
+            asset_count = assets.len(),
+            "latest release is incomplete — skipping this check"
+        );
         return;
-    };
-    let Ok(remote_version) = latest_version_from_atom(&body) else {
-        return;
-    };
+    }
 
     let local = current_version.clone().unwrap_or_default();
     let available = is_update_available(&local, &remote_version);
@@ -415,7 +435,10 @@ async fn run_update_cycle(
         "http://127.0.0.1:3000/health",
         Some("http://127.0.0.1:3000/shutdown".to_string()),
     );
-    let start_ok = new_process.start(&server_env(token, dsn)).await.is_ok();
+    let start_ok = new_process
+        .start(&server_env(token, dsn, &final_dir))
+        .await
+        .is_ok();
 
     let healthy = start_ok
         && wait_for_health(
