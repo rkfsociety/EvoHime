@@ -108,6 +108,10 @@ jobs:
         run: "cargo test -p evohime-launcher postgres::"
       - name: Test installer cleanup
         run: cargo test -p evohime-installer
+      - name: Test hidden observed commands
+        run: cargo test -p evohime-launcher observed_command -- --nocapture
+      - name: Test installer timing
+        run: cargo test -p evohime-installer timing -- --nocapture
       - name: Check installer
         run: cargo check -p evohime-installer
 
