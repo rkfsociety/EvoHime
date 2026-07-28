@@ -26,6 +26,9 @@ pub enum DownloadError {
 /// `206 Partial Content` на запрос с частичным диапазоном), файл
 /// перекачивается с нуля — существующий частичный файл усекается, чтобы не
 /// получить дублирование/повреждение содержимого.
+///
+/// Если локальный файл уже не короче текущего удалённого артефакта и сервер
+/// отвечает `416 Range Not Satisfiable`, загрузка также повторяется с нуля.
 pub async fn download_with_resume(
     client: &reqwest::Client,
     url: &str,
@@ -41,7 +44,10 @@ pub async fn download_with_resume(
         request = request.header(reqwest::header::RANGE, format!("bytes={existing_len}-"));
     }
 
-    let response = request.send().await?;
+    let mut response = request.send().await?;
+    if existing_len > 0 && response.status() == StatusCode::RANGE_NOT_SATISFIABLE {
+        response = client.get(url).send().await?;
+    }
     let status = response.status();
 
     if !status.is_success() {
@@ -139,6 +145,31 @@ mod tests {
             downloaded, content,
             "resumed file content must exactly match source"
         );
+    }
+
+    #[tokio::test]
+    async fn restarts_download_when_existing_file_is_larger_than_remote() {
+        let source_dir = tempfile::tempdir().unwrap();
+        let content = b"current release artifact";
+        tokio::fs::write(source_dir.path().join("artifact.bin"), content)
+            .await
+            .unwrap();
+
+        let base_url = spawn_static_server(source_dir.path()).await;
+
+        let dest_dir = tempfile::tempdir().unwrap();
+        let dest = dest_dir.path().join("artifact.bin");
+        tokio::fs::write(&dest, b"stale release artifact that is larger")
+            .await
+            .unwrap();
+
+        let client = reqwest::Client::new();
+        download_with_resume(&client, &format!("{base_url}/artifact.bin"), &dest)
+            .await
+            .unwrap();
+
+        let downloaded = tokio::fs::read(&dest).await.unwrap();
+        assert_eq!(downloaded, content);
     }
 
     #[tokio::test]
