@@ -191,10 +191,7 @@ mod tests {
     #[tokio::test]
     async fn streams_stdout_stderr_and_terminal_status() {
         let mut command = Command::new("cmd");
-        command.args([
-            "/C",
-            "(echo stdout-line) & (echo stderr-line 1>&2) & exit /b 7",
-        ]);
+        command.args(["/C", "echo stdout-line & echo stderr-line 1>&2 & exit /b 7"]);
         assert_failed_command_events(command).await;
     }
 
