@@ -8,6 +8,8 @@ pub mod named_mutex;
 pub mod port_owner;
 pub mod process_liveness;
 pub mod process_owner;
+#[cfg(windows)]
+pub mod process_snapshot;
 pub mod process_time;
 pub mod replace_file;
 
@@ -23,6 +25,10 @@ pub use port_owner::find_pid_listening_on_port;
 pub use process_liveness::{is_process_alive, terminate_process};
 #[cfg(windows)]
 pub use process_owner::resolve_process_exe_path;
+#[cfg(windows)]
+pub use process_snapshot::{
+    processes_in_directory, terminate_and_wait, OwnedProcess, ProcessCleanupError,
+};
 #[cfg(windows)]
 pub use process_time::process_start_time;
 #[cfg(windows)]
