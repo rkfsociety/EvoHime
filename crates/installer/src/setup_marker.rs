@@ -15,7 +15,8 @@ const MARKER_FILE_NAME: &str = ".setup_complete";
 /// (маркер отсутствует) — вызывающий код должен удалить её перед повторной
 /// установкой.
 pub fn is_installation_dirty(install_dir: &Path) -> bool {
-    install_dir.exists() && !marker_path(install_dir).exists()
+    install_dir.exists()
+        && (!marker_path(install_dir).exists() || !database_config_path(install_dir).is_file())
 }
 
 /// Полностью удаляет незавершённую установку. Ошибка удаления возвращается
@@ -36,6 +37,10 @@ pub async fn mark_setup_complete(install_dir: &Path) -> std::io::Result<()> {
 
 fn marker_path(install_dir: &Path) -> std::path::PathBuf {
     install_dir.join(MARKER_FILE_NAME)
+}
+
+fn database_config_path(install_dir: &Path) -> std::path::PathBuf {
+    install_dir.join("launcher-data").join("config.json")
 }
 
 #[cfg(test)]
@@ -63,10 +68,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dir_with_marker_is_not_dirty() {
+    async fn marker_without_database_config_is_dirty() {
         let dir = tempfile::tempdir().unwrap();
         let install_dir = dir.path().join("EvoHime");
         std::fs::create_dir_all(&install_dir).unwrap();
+
+        mark_setup_complete(&install_dir).await.unwrap();
+
+        assert!(is_installation_dirty(&install_dir));
+    }
+
+    #[tokio::test]
+    async fn marker_with_database_config_is_not_dirty() {
+        let dir = tempfile::tempdir().unwrap();
+        let install_dir = dir.path().join("EvoHime");
+        let config_dir = install_dir.join("launcher-data");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::write(config_dir.join("config.json"), b"{}").unwrap();
 
         mark_setup_complete(&install_dir).await.unwrap();
 

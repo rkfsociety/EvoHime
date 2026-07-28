@@ -91,9 +91,38 @@ where
     let mut stdout_capture = String::new();
     let mut stderr_capture = String::new();
     let mut read_error = None;
+    let wait_for_child = child.wait();
+    tokio::pin!(wait_for_child);
 
-    while !stdout_done || !stderr_done {
+    let status = loop {
+        if stdout_done && stderr_done {
+            match wait_for_child.await {
+                Ok(status) => break status,
+                Err(error) => {
+                    observer(CommandEvent::Finished {
+                        success: false,
+                        exit_code: None,
+                        elapsed: started.elapsed(),
+                    });
+                    return Err(error);
+                }
+            }
+        }
+
         tokio::select! {
+            result = &mut wait_for_child => {
+                match result {
+                    Ok(status) => break status,
+                    Err(error) => {
+                        observer(CommandEvent::Finished {
+                            success: false,
+                            exit_code: None,
+                            elapsed: started.elapsed(),
+                        });
+                        return Err(error);
+                    }
+                }
+            }
             read = stdout_reader.read_until(b'\n', &mut stdout_line), if !stdout_done => {
                 match read {
                     Ok(0) => stdout_done = true,
@@ -108,7 +137,17 @@ where
                     }
                     Err(error) => {
                         read_error = Some(error);
-                        break;
+                        break match wait_for_child.await {
+                            Ok(status) => status,
+                            Err(error) => {
+                                observer(CommandEvent::Finished {
+                                    success: false,
+                                    exit_code: None,
+                                    elapsed: started.elapsed(),
+                                });
+                                return Err(error);
+                            }
+                        };
                     }
                 }
             }
@@ -126,16 +165,24 @@ where
                     }
                     Err(error) => {
                         read_error = Some(error);
-                        break;
+                        break match wait_for_child.await {
+                            Ok(status) => status,
+                            Err(error) => {
+                                observer(CommandEvent::Finished {
+                                    success: false,
+                                    exit_code: None,
+                                    elapsed: started.elapsed(),
+                                });
+                                return Err(error);
+                            }
+                        };
                     }
                 }
             }
         }
-    }
+    };
 
     if let Some(error) = read_error {
-        let _ = child.kill().await;
-        let _ = child.wait().await;
         observer(CommandEvent::Finished {
             success: false,
             exit_code: None,
@@ -143,18 +190,6 @@ where
         });
         return Err(error);
     }
-
-    let status = match child.wait().await {
-        Ok(status) => status,
-        Err(error) => {
-            observer(CommandEvent::Finished {
-                success: false,
-                exit_code: None,
-                elapsed: started.elapsed(),
-            });
-            return Err(error);
-        }
-    };
     let elapsed = started.elapsed();
     observer(CommandEvent::Finished {
         success: status.success(),
