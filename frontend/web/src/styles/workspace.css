@@ -233,7 +233,7 @@
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: minmax(54px, auto) auto;
+  grid-template-rows: minmax(54px, auto) auto auto;
   gap: 0;
   flex-wrap: wrap;
   min-height: 92px;
@@ -273,7 +273,7 @@
 
 .composerLeading {
   grid-column: 1;
-  grid-row: 2;
+  grid-row: 3;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -304,6 +304,59 @@
 .attachmentButton:hover {
   background: var(--surface-4);
   color: var(--text-0);
+}
+
+.voiceButton {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.voiceButton:hover:not(:disabled),
+.voiceButton:focus-visible,
+.voiceButton.listening {
+  background: rgba(62, 215, 178, 0.14);
+  color: var(--accent-0);
+}
+
+.voiceButtonIcon {
+  display: block;
+  width: 12px;
+  height: 15px;
+  border: 2px solid currentColor;
+  border-radius: 8px;
+  font-size: 0;
+}
+
+.voiceButtonIcon::after {
+  content: "";
+  display: block;
+  width: 16px;
+  height: 8px;
+  margin: 11px 0 0 -4px;
+  border: 1.5px solid currentColor;
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+}
+
+.composerInterim {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-height: 18px;
+  padding: 0 18px 5px;
+  color: rgba(143, 180, 255, 0.72);
+  font-size: 12px;
+  font-style: italic;
+  line-height: 1.35;
+  text-decoration: underline dashed;
+  text-underline-offset: 3px;
+  pointer-events: none;
 }
 
 .workModeSelect {
@@ -420,7 +473,7 @@
 
 .composerControls {
   grid-column: 2;
-  grid-row: 2;
+  grid-row: 3;
   display: flex;
   align-items: center;
   gap: 10px;

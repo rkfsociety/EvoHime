@@ -81,6 +81,12 @@
     height: 44px;
   }
 
+  .voiceButton,
+  .attachmentButton {
+    width: 44px;
+    height: 44px;
+  }
+
   .quickLink,
   .projectCard,
   .projectChatItem,

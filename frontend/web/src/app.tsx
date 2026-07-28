@@ -21,6 +21,7 @@ import { useServerEventHandler } from "./hooks/useServerEventHandler";
 import { useChat } from "./hooks/useChat";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useWorkspace } from "./hooks/useWorkspace";
+import { useVoiceInput } from "./hooks/useVoiceInput";
 // Phase 5.8: Lazy-loaded panels for code splitting
 const ActionsPanel = lazy(() => import("./panels/ActionsPanel").then(m => ({ default: m.ActionsPanel })));
 const EditorPanel = lazy(() => import("./panels/EditorPanel").then(m => ({ default: m.EditorPanel })));
@@ -106,9 +107,39 @@ export function App() {
     setDeletingSessionId, archivedChats, setArchivedChats, attachmentInputRef, sessionLoadRef,
     chatLogRef, chatAutoScrollRef,
   } = chat;
+  const voiceInput = useVoiceInput();
+  const voiceSessionRef = useRef(false);
+  const submitPendingRef = useRef(false);
   const reportWorkspaceError = useCallback((message: string) => {
     setLines((current) => [...current, createChatLine({ role: "system", text: message })]);
   }, [setLines]);
+  useEffect(() => {
+    if (voiceInput.error) {
+      setComposerNotice(voiceInput.error);
+      return;
+    }
+    if (voiceInput.status === "insecure-context") {
+      setComposerNotice("Голосовой ввод доступен только через HTTPS или localhost.");
+      return;
+    }
+    if (voiceInput.status === "unsupported") {
+      setComposerNotice("Голосовой ввод не поддерживается этим браузером.");
+      return;
+    }
+    if (voiceInput.status === "idle" && !voiceSessionRef.current) {
+      setComposerNotice(null);
+    }
+  }, [setComposerNotice, voiceInput.error, voiceInput.status]);
+
+  useEffect(() => {
+    if (!voiceSessionRef.current || (voiceInput.status !== "idle" && voiceInput.status !== "error")) {
+      return;
+    }
+    voiceSessionRef.current = false;
+    if (voiceInput.transcript) {
+      setInput(voiceInput.transcript);
+    }
+  }, [setInput, voiceInput.status, voiceInput.transcript]);
   const workspaceState = useWorkspace({ sessionId: activeSessionId, reportError: reportWorkspaceError });
   const {
     activePanel, navigateToPanel, traceOpen, setTraceOpen, showToolLines, setShowToolLines,
@@ -944,51 +975,65 @@ export function App() {
 
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const text = input.trim();
-    if (!text || socketState !== "connected") {
+    if (submitPendingRef.current) {
       return;
     }
-    if (!modelConfig?.configured) {
-      setComposerNotice("Сначала укажите API-ключ провайдера в настройках модели.");
-      return;
-    }
-    setComposerNotice(null);
-
-    if (!activeSessionId) {
-      setComposerNotice("Нет активной сессии для загрузки вложений.");
-      return;
-    }
-    if (attachments.length > 0) {
-      try {
-        await sessionsApi.uploadAttachments(
-          activeSessionId,
-          attachments,
-          selectedProject.path ?? undefined,
-        );
-      } catch (error) {
-        setComposerNotice(String(error));
+    submitPendingRef.current = true;
+    try {
+      let text = input.trim();
+      if (voiceInput.isListening || voiceInput.status === "stopping") {
+        const result = await voiceInput.stop();
+        text = result.transcript.trim();
+        setInput(result.transcript);
+      }
+      if (!text || socketState !== "connected") {
         return;
       }
-    }
-    const payload: ClientCommand = {
-      type: "user.message",
-      content: text,
-      model_route: selectedModelRoute || undefined,
-      model: selectedComposerModel || undefined,
-      workspace_path: selectedProject.path ?? undefined,
-    };
+      if (!modelConfig?.configured) {
+        setComposerNotice("Сначала укажите API-ключ провайдера в настройках модели.");
+        return;
+      }
+      setComposerNotice(null);
 
-    setChatSessions((current) => current.map((chat) => chat.session_id === activeSessionId
-      ? { ...chat, workspace_path: selectedProject.path }
-      : chat));
-    if (!sendSocket(payload)) {
-      setComposerNotice("Соединение с сервером потеряно.");
-      return;
-    }
-    setInput("");
-    setAttachments([]);
-    if (attachmentInputRef.current) {
-      attachmentInputRef.current.value = "";
+      if (!activeSessionId) {
+        setComposerNotice("Нет активной сессии для загрузки вложений.");
+        return;
+      }
+      if (attachments.length > 0) {
+        try {
+          await sessionsApi.uploadAttachments(
+            activeSessionId,
+            attachments,
+            selectedProject.path ?? undefined,
+          );
+        } catch (error) {
+          setComposerNotice(String(error));
+          return;
+        }
+      }
+      const payload: ClientCommand = {
+        type: "user.message",
+        content: text,
+        model_route: selectedModelRoute || undefined,
+        model: selectedComposerModel || undefined,
+        workspace_path: selectedProject.path ?? undefined,
+      };
+
+      setChatSessions((current) => current.map((chat) => chat.session_id === activeSessionId
+        ? { ...chat, workspace_path: selectedProject.path }
+        : chat));
+      if (!sendSocket(payload)) {
+        setComposerNotice("Соединение с сервером потеряно.");
+        return;
+      }
+      setInput("");
+      voiceInput.resetTranscript();
+      setAttachments([]);
+      if (attachmentInputRef.current) {
+        attachmentInputRef.current.value = "";
+      }
+    } finally {
+      submitPendingRef.current = false;
     }
   }
 
@@ -1483,6 +1528,26 @@ export function App() {
               >
                 +
               </button>
+              <button
+                type="button"
+                className={voiceInput.isListening ? "voiceButton listening" : "voiceButton"}
+                onClick={() => {
+                  if (voiceInput.isListening) {
+                    void voiceInput.stop();
+                    return;
+                  }
+                  if (voiceInput.canStart) {
+                    voiceSessionRef.current = true;
+                    voiceInput.start(input);
+                  }
+                }}
+                disabled={!voiceInput.canStart && !voiceInput.isListening}
+                aria-label={voiceInput.isListening ? "Остановить голосовой ввод" : "Начать голосовой ввод"}
+                aria-pressed={voiceInput.isListening}
+                title={voiceInput.status === "insecure-context" ? "Голосовой ввод доступен только через HTTPS или localhost" : "Голосовой ввод"}
+              >
+                <span className="voiceButtonIcon" aria-hidden="true">●</span>
+              </button>
               <div className="composerMenu">
                 <button
                   type="button"
@@ -1520,9 +1585,15 @@ export function App() {
             </div>
             <textarea
               rows={1}
-              value={input}
+              value={voiceInput.isListening || voiceInput.status === "stopping" ? voiceInput.transcript : input}
+              readOnly={voiceInput.isListening || voiceInput.status === "stopping"}
               onChange={(event) => setInput(event.target.value)}
               onKeyDown={(event) => {
+                if (event.key === "Escape" && (voiceInput.isListening || voiceInput.status === "stopping")) {
+                  event.preventDefault();
+                  void voiceInput.stop();
+                  return;
+                }
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();
                   event.currentTarget.form?.requestSubmit();
@@ -1531,6 +1602,11 @@ export function App() {
               placeholder="Введите сообщение..."
               aria-label="Текст сообщения"
             />
+            {voiceInput.isListening && voiceInput.interim ? (
+              <div className="composerInterim" aria-live="polite">
+                {voiceInput.interim}
+              </div>
+            ) : null}
             <div className="composerControls">
               <div className="composerMenu composerRouteMenu">
                 <button
