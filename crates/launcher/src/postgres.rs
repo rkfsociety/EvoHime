@@ -153,15 +153,17 @@ pub fn is_running(pg_bin_dir: &Path, port: u16) -> bool {
     let Some(exe_path) = evohime_win_support::resolve_process_exe_path(pid) else {
         return false;
     };
+    is_expected_postgres_executable(&exe_path, pg_bin_dir)
+}
+
+#[cfg(windows)]
+fn is_expected_postgres_executable(exe_path: &Path, pg_bin_dir: &Path) -> bool {
     let expected = pg_bin_dir.join("postgres.exe");
     exe_path
-        .file_name()
-        .is_some_and(|name| name.eq_ignore_ascii_case("postgres.exe"))
-        && exe_path
-            .parent()
-            .and_then(|p| p.canonicalize().ok())
-            .zip(expected.parent().and_then(|p| p.canonicalize().ok()))
-            .is_some_and(|(a, b)| a == b)
+        .canonicalize()
+        .ok()
+        .zip(expected.canonicalize().ok())
+        .is_some_and(|(actual, expected)| actual == expected)
 }
 
 #[cfg(not(windows))]
