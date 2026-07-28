@@ -5,6 +5,8 @@ import {
   canStartVoice,
   isListeningVoice,
   isCurrentVoiceSession,
+  isSpeechText,
+  isActiveUtterance,
 } from "./voice-runtime.ts";
 
 test("composeTranscript keeps manual text and appends finalized dictation", () => {
@@ -26,4 +28,17 @@ test("voice status derives listening from status", () => {
 test("late recognition callbacks are ignored after a newer session starts", () => {
   assert.equal(isCurrentVoiceSession(4, 4), true);
   assert.equal(isCurrentVoiceSession(4, 5), false);
+});
+
+test("speech no-ops for empty or whitespace-only text", () => {
+  assert.equal(isSpeechText(""), false);
+  assert.equal(isSpeechText("   "), false);
+  assert.equal(isSpeechText("озвучь это"), true);
+});
+
+test("speech callbacks only affect the active utterance", () => {
+  const active = {};
+  const stale = {};
+  assert.equal(isActiveUtterance(active, active), true);
+  assert.equal(isActiveUtterance(stale, active), false);
 });

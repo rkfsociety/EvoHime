@@ -17,3 +17,11 @@ export function isListeningVoice(status: VoiceInputStatus): boolean {
 export function isCurrentVoiceSession(sessionId: number, currentSessionId: number): boolean {
   return sessionId === currentSessionId;
 }
+
+export function isSpeechText(text: string): boolean {
+  return text.trim().length > 0;
+}
+
+export function isActiveUtterance<T>(utterance: T, activeUtterance: T | null): boolean {
+  return activeUtterance === utterance;
+}
