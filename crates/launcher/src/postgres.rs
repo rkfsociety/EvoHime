@@ -187,7 +187,9 @@ fn pg16_root(pg_bin_dir: &Path) -> std::path::PathBuf {
 
 async fn run_pg_tool(pg_bin_dir: &Path, tool: &str, args: &[&str]) -> Result<(), PgError> {
     let exe = pg_bin_dir.join(format!("{tool}.exe"));
-    let output = Command::new(&exe).args(args).output().await?;
+    let output = Command::from(build_pg_command(&exe, args))
+        .output()
+        .await?;
 
     if !output.status.success() {
         return Err(PgError::CommandFailed {
@@ -198,6 +200,12 @@ async fn run_pg_tool(pg_bin_dir: &Path, tool: &str, args: &[&str]) -> Result<(),
         });
     }
     Ok(())
+}
+
+fn build_pg_command(exe: &Path, args: &[&str]) -> std::process::Command {
+    let mut command = std::process::Command::new(exe);
+    command.env("LC_ALL", "C").args(args);
+    command
 }
 
 #[cfg(test)]
@@ -214,5 +222,19 @@ mod tests {
     fn is_running_false_when_nothing_listens() {
         // Port 1 is a reserved low port nothing in CI binds to.
         assert!(!is_running(Path::new(r"C:\nonexistent\pg16\bin"), 1));
+    }
+
+    #[test]
+    fn pg_tool_command_sets_c_locale_without_changing_parent_environment() {
+        let parent_locale = std::env::var_os("LC_ALL");
+        let command = build_pg_command(Path::new(r"C:\EvoHime\pg16\bin\initdb.exe"), &[]);
+
+        let locale = command
+            .get_envs()
+            .find(|(key, _)| key.to_string_lossy() == "LC_ALL")
+            .and_then(|(_, value)| value.map(|value| value.to_string_lossy().into_owned()));
+
+        assert_eq!(locale.as_deref(), Some("C"));
+        assert_eq!(std::env::var_os("LC_ALL"), parent_locale);
     }
 }
