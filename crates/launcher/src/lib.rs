@@ -11,6 +11,7 @@ pub mod dsn;
 pub mod github_api;
 pub mod history;
 pub mod migrations;
+pub mod observed_command;
 pub mod pg_auth;
 pub mod postgres;
 pub mod process_manager;
