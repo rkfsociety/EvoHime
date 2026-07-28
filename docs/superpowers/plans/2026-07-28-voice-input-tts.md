@@ -15,10 +15,15 @@
 - Отсутствие конструктора SpeechRecognition даёт `unsupported`; runtime-ошибка после успешного feature detection даёт `error` и `composerNotice`.
 - Язык распознавания фиксирован как `ru-RU`.
 - Во время диктовки composer `readOnly`; interim отображается отдельным полупрозрачным курсивным хвостом.
-- Отправка во время записи делает `const { transcript } = await stop()` и отправляет именно возвращённое значение.
+- Публичный `transcript` и результат `stop()` содержат полный composer text: `baseText + finalized dictated text`; `interim` содержит только неподтверждённый диктуемый хвост.
+- Отправка во время записи делает `const { transcript } = await stop()` и отправляет именно полный возвращённый текст.
+- `stop()` идемпотентен: после автоматического `onend` немедленно возвращает текущий итог и никогда не оставляет pending promise.
+- Каждая STT-сессия получает monotonically increasing id; поздние события старой сессии не меняют состояние новой.
 - Один TTS-хук управляет всеми сообщениями; стримящееся сообщение disabled, завершённые сообщения остаются доступны.
+- TTS callbacks изменяют состояние только для текущего active utterance; события отменённого utterance игнорируются.
 - Аудио не сохраняется и не отправляется на сервер.
 - На мобильном layout кнопки имеют touch-target не менее 44px.
+- В `frontend/web` сейчас нет существующего test runner; MVP не добавляет новые npm-зависимости и не обещает автоматические unit-тесты. Lifecycle проверяется typecheck/build и ручным browser matrix с DevTools/mocks.
 
 ---
 
@@ -27,7 +32,7 @@
 **Files:**
 - Create: `frontend/web/src/hooks/useVoiceInput.ts`
 - Create: `frontend/web/src/lib/voice-types.ts`
-- Test/verification: `frontend/web` typecheck/build и browser mock matrix из Task 3
+- Verification: `frontend/web` typecheck/build и ручная STT browser matrix из Task 3
 
 **Interfaces:**
 - Produces `VoiceInputStatus = "idle" | "listening" | "unsupported" | "insecure-context" | "error"`.
@@ -59,15 +64,15 @@ useVoiceInput(): {
 
 - [ ] **Step 3: Implement one reusable recognition instance**
 
-  Create the instance once in a ref. Set `lang = "ru-RU"`, `interimResults = true`, and `continuous = false`. On each start, capture `baseText`, clear only interim, and reset the current stop promise.
+  Create the instance once in a ref. Set `lang = "ru-RU"`, `interimResults = true`, and `continuous = true` so natural pauses do not end the MVP dictation intentionally. On each start, capture `baseText`, clear only interim, increment `sessionIdRef`, and reset the current stop promise. The browser may still force `onend`; the user can start again without losing confirmed text.
 
 - [ ] **Step 4: Implement result, end, and error lifecycle**
 
-  Append final results to the ref-backed transcript and expose interim separately. `onend` resolves the pending stop promise with `{ transcript }`. `no-speech` and `aborted` preserve confirmed text; `not-allowed`, `audio-capture`, `network`, `service-not-allowed`, `language-not-supported`, and unknown errors set `error`, finish the session, and preserve confirmed text.
+  Append final results to the ref-backed full composer text and expose interim separately. `onend` resolves the pending stop promise with `{ transcript }`. `no-speech` preserves confirmed text and shows a soft `composerNotice`; `aborted` caused by explicit stop/cleanup is normal and has no notice, while unexpected `aborted` only ends the session and preserves text. `not-allowed`, `audio-capture`, `network`, `service-not-allowed`, `language-not-supported`, and unknown errors set `error`, finish the session, and preserve confirmed text. Every callback checks the captured session id before mutating state or resolving a promise.
 
 - [ ] **Step 5: Make repeated start/stop deterministic**
 
-  A `start()` while listening is a no-op at the hook boundary; the UI maps the active mic click to `stop()`. A second `stop()` reuses the pending promise. Cleanup removes `onresult`, `onend`, and `onerror`, stops recognition, resolves/rejects pending lifecycle safely, and releases the ref on unmount.
+  A `start()` while listening is a no-op at the hook boundary; the UI maps the active mic click to `stop()`. A second `stop()` reuses the pending promise. If recognition is already inactive after automatic `onend`, `stop()` returns `Promise.resolve({ transcript: currentFullText })` and does not call `recognition.stop()`. On unmount, resolve pending `stop()` with the current ref-backed full text, then remove `onresult`, `onend`, and `onerror`, stop/abort recognition, clear refs, and do not update React state.
 
 - [ ] **Step 6: Run frontend validation**
 
@@ -89,7 +94,7 @@ git commit -m "feat(web): add browser voice input hook"
 **Files:**
 - Create: `frontend/web/src/hooks/useSpeechSynthesis.ts`
 - Modify: `frontend/web/src/lib/voice-types.ts`
-- Test/verification: `frontend/web` typecheck/build и TTS mock matrix из Task 3
+- Verification: `frontend/web` typecheck/build и ручная TTS browser matrix из Task 4
 
 **Interfaces:**
 - Produces:
@@ -110,7 +115,7 @@ useSpeechSynthesis(): {
 
 - [ ] **Step 2: Implement utterance lifecycle**
 
-  Wire `onstart`, `onend`, and `onerror`. `end`, explicit `stop`, and replacement all clear `speakingMessageId`; `error` additionally sets a user-safe `error` string without breaking chat.
+  Wire `onstart`, `onend`, and `onerror`. Store the utterance in `activeUtteranceRef`; each callback first checks `activeUtteranceRef.current === utterance`, so late events from a cancelled/replaced utterance cannot clear state for the new one. `end`, explicit `stop`, and replacement all clear `speakingMessageId`; `error` additionally sets a user-safe `error` string without breaking chat. Empty or whitespace-only text is a no-op.
 
 - [ ] **Step 3: Add list-level cleanup**
 
@@ -129,13 +134,13 @@ git commit -m "feat(web): add centralized speech synthesis hook"
 
 ---
 
-### Task 3: Composer, message actions, and browser verification
+### Task 3: Voice composer integration
 
 **Files:**
 - Modify: `frontend/web/src/app.tsx`
 - Modify: `frontend/web/src/styles/workspace.css`
 - Modify: `frontend/web/src/styles/mobile-shell.css` if the mobile target needs an override
-- Test/verification: `frontend/web` typecheck/build and manual browser matrix
+- Verification: `frontend/web` typecheck/build and manual STT browser matrix
 
 **Interfaces:**
 - Consumes the hooks from Tasks 1–2.
@@ -149,31 +154,68 @@ git commit -m "feat(web): add centralized speech synthesis hook"
 
   In `sendMessage`, if listening, await `stop()`, use its returned transcript, update the composer value, and continue existing validation/upload/socket logic with that exact text. Enter handling must not create a parallel submit while stop is pending.
 
-- [ ] **Step 3: Integrate centralized TTS**
-
-  Instantiate `useSpeechSynthesis()` once at the message-list owner. Add speak/stop action to assistant messages. Disable only the action for the currently streaming message; completed messages remain usable while a new response streams. Compare `line.id` with `speakingMessageId` for button state.
-
-- [ ] **Step 4: Add keyboard, error, and fallback behavior**
+- [ ] **Step 3: Add keyboard, error, and fallback behavior**
 
   Handle `Escape` while listening, show `insecure-context`, `unsupported`, `not-allowed`, and other runtime errors through `composerNotice`, and leave manual input available whenever voice APIs fail. Do not auto-speak responses.
 
-- [ ] **Step 5: Add responsive and accessible styles**
+- [ ] **Step 4: Add responsive and accessible styles**
 
-  Add mic and speak buttons with visible listening/speaking states, `aria-label`, `aria-pressed` where applicable, focus styles, and at least 44px touch targets. Keep the existing desktop composer grid intact.
+  Add the mic button with visible listening state, `aria-label`, `aria-pressed`, focus styles, and at least 44px touch targets. Keep the existing desktop composer grid intact; TTS button styles belong to Task 4.
 
-- [ ] **Step 6: Run static validation**
+- [ ] **Step 5: Run static validation**
 
-  Run `npm run typecheck`, `npm run build`, and `git diff --check` from the repository/frontend directories. Expected: all succeed and no protocol/backend files change.
+  Run `npm run typecheck`, `npm run build`, `git diff --check`, and `git diff --name-only`. Expected: all succeed and the changed paths are only `frontend/web/src/app.tsx`, the listed frontend styles, and the already committed hook/type files.
 
-- [ ] **Step 7: Run manual browser matrix**
+- [ ] **Step 6: Run manual browser matrix**
 
-  In HTTPS or `localhost`, verify permission grant, `ru-RU` interim/final results, `onend` after speech pause, `Esc`, repeated mic click, send during listening without losing the last word, and editable composer after stop. Verify HTTP/insecure-context, missing constructor, Safari/iOS partial support, `not-allowed`, `audio-capture`, `network`, and `language-not-supported` fallbacks. For TTS verify start/stop, natural `end`, `error`, replacement by another message, stream-only button disablement, and list cleanup.
+  In HTTPS or `localhost`, verify permission grant, `ru-RU` interim/final results, continuous dictation across pauses, `onend` after browser-forced stop, `Esc`, repeated mic click, send during listening without losing the last word or baseText, and editable composer after stop. Verify HTTP/insecure-context, missing constructor, Safari/iOS partial support, `not-allowed`, `no-speech`, `audio-capture`, `network`, and `language-not-supported` fallbacks.
 
-- [ ] **Step 8: Commit the UI integration**
+- [ ] **Step 7: Commit the UI integration**
 
 ```powershell
 git add frontend/web/src/app.tsx frontend/web/src/styles/workspace.css frontend/web/src/styles/mobile-shell.css
-git commit -m "feat(web): integrate voice controls in chat"
+git commit -m "feat(web): integrate voice input in composer"
+```
+
+---
+
+### Task 4: Assistant speech controls and final browser verification
+
+**Files:**
+- Modify: `frontend/web/src/app.tsx`
+- Modify: `frontend/web/src/styles/workspace.css`
+- Modify: `frontend/web/src/styles/mobile-shell.css` if the mobile target needs an override
+- Verification: `frontend/web` typecheck/build and manual TTS browser matrix
+
+**Interfaces:**
+- Consumes `useSpeechSynthesis()` from Task 2.
+- `speak(line.id, line.text)` starts a message; if `speakingMessageId === line.id`, the same button calls `stop()`.
+
+- [ ] **Step 1: Integrate the centralized TTS hook**
+
+  Instantiate `useSpeechSynthesis()` once at the message-list owner. Add an action to completed assistant messages. Disable the action only for the currently streaming message; completed messages remain usable while a new response streams. Compare `line.id` with `speakingMessageId` for button state.
+
+- [ ] **Step 2: Add TTS errors and empty-text behavior**
+
+  Render the hook error through the existing safe notice path. Do not render a speaking action for empty text, and make `speak()` a no-op for whitespace-only text.
+
+- [ ] **Step 3: Add TTS responsive and accessible styles**
+
+  Add visible speaking/stopped states, `aria-label`, focus styles, and at least 44px touch targets without changing the existing desktop chat layout.
+
+- [ ] **Step 4: Run static validation**
+
+  Run `npm run typecheck`, `npm run build`, `git diff --check`, and `git diff --name-only`. Expected: all succeed and the diff contains only the listed frontend files plus hook/type files.
+
+- [ ] **Step 5: Run manual TTS browser matrix**
+
+  Verify start/stop, natural `end`, synthesis `error`, replacement by another message, late events from the cancelled utterance not clearing the new message state, only the streaming message being disabled, completed messages remaining available during a new stream, and list cleanup calling `cancel()`.
+
+- [ ] **Step 6: Commit the UI integration**
+
+```powershell
+git add frontend/web/src/app.tsx frontend/web/src/styles/workspace.css frontend/web/src/styles/mobile-shell.css
+git commit -m "feat(web): add speech controls to assistant messages"
 ```
 
 ---
