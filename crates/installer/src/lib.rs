@@ -13,9 +13,13 @@ pub mod dirty_cleanup;
 pub mod icacls;
 pub mod setup_marker;
 pub mod shortcut;
+#[cfg(windows)]
+pub mod strict_remove;
 pub mod ui;
 
 pub use dirty_cleanup::{clear_dirty_installation_safely, DirtyCleanupError};
-pub use icacls::{restrict_to_current_user, IcaclsError};
+pub use icacls::{restore_deletable_permissions, restrict_to_current_user, IcaclsError};
 pub use setup_marker::{clear_dirty_installation, is_installation_dirty, mark_setup_complete};
 pub use shortcut::{create_shortcut, ShortcutError};
+#[cfg(windows)]
+pub use strict_remove::{remove_tree_once, remove_tree_with_retries, StrictRemoveError};
