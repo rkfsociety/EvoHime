@@ -92,6 +92,19 @@ jobs:
       - name: Run tests
         run: cargo test --workspace --all-features --all-targets --exclude evohime-launcher --exclude evohime-installer
 
+  windows-installer:
+    name: Windows Installer Tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test artifact downloads
+        run: cargo test -p evohime-artifacts
+      - name: Test installer cleanup
+        run: cargo test -p evohime-installer --test setup_cleanup_windows
+      - name: Check installer
+        run: cargo check -p evohime-installer
+
   docs:
     name: Docs
     runs-on: ubuntu-latest
