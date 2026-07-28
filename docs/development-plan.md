@@ -63,7 +63,7 @@ EvoHime Server — Rust
 
 ## Фактический статус на 2026-07-24
 
-Этапы 1–6 завершены на уровне foundations. Stage 7: hardening/product waves `7.1`–`7.98` выполнены; `7.99` (cloud sync) начат — wave 1 push операторского backup на remote endpoint завершена, дальше pull/restore и авто-sync.
+Этапы 1–6 завершены на уровне foundations. Stage 7: hardening/product waves `7.1`–`7.104` выполнены; `7.99` (cloud sync) закрыт целиком — owner-only push/pull операторского backup на remote endpoint, идемпотентный restore и фоновый авто-push.
 
 - tools: filesystem / shell / Git / browser / MCP в `tool-runtime`;
 - `agent-runtime`: native ReAct tool call → observation → next action; bounded limits; checkpoints; structured memory в prompt;
@@ -72,7 +72,7 @@ EvoHime Server — Rust
 - workers: health/stall + summarize/chunk/similarity/entities/diff/classify/language/redact handlers;
 - Stage 7: auth/permissions, recovery, memory quality, product honesty для Sites/Scheduled, CI gates, Dev Container/Compose, OpenAPI contract и experimental feature flags.
 
-**Текущий сквозной приоритет:** audit hardening Stage 7 — timeline/latency (`7.94`) и следующие пункты ([roadmap.md](roadmap.md) § Этап 7).
+**Текущий сквозной приоритет:** следующие пункты Stage 7 (`7.105+`) после закрытия hardening и cloud sync ([roadmap.md](roadmap.md) § Этап 7).
 
 ---
 
