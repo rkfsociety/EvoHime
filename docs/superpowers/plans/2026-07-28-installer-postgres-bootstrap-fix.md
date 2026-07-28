@@ -24,7 +24,7 @@
 
 **Files:**
 - Modify: `crates/installer/src/icacls.rs:20-31`
-- Test: `crates/installer/src/icacls.rs` в существующем `#[cfg(all(test, windows))]` модуле
+- Create: `crates/installer/tests/icacls_windows.rs`
 
 **Interfaces:**
 - Consumes: существующая `restrict_to_current_user(dir: &Path) -> Result<(), IcaclsError>`.
@@ -32,7 +32,9 @@
 
 - [ ] **Step 1: Написать падающий тест доступа во вложенный каталог**
 
-Добавить Windows-only Tokio-тест рядом с существующим тестом реального `icacls`:
+Добавить отдельный Windows-only integration test в
+`crates/installer/tests/icacls_windows.rs`, чтобы тестовый бинарник не наследовал
+GUI-subsystem установщика и запускался без elevation:
 
 ```rust
 #[tokio::test]
@@ -43,6 +45,14 @@ async fn grants_current_user_access_to_nested_directories() {
 
     restrict_to_current_user(&data).await.unwrap();
 
+    let acl = std::process::Command::new("icacls")
+        .arg(&data)
+        .output()
+        .unwrap();
+    assert!(acl.status.success());
+    let acl_text = String::from_utf8_lossy(&acl.stdout);
+    assert!(acl_text.contains("(OI)(CI)(F)"));
+
     let nested = data.join("nested");
     std::fs::create_dir(&nested).unwrap();
     std::fs::write(nested.join("probe.txt"), b"ok").unwrap();
@@ -51,7 +61,7 @@ async fn grants_current_user_access_to_nested_directories() {
 
 - [ ] **Step 2: Запустить тест и убедиться, что он падает по исходной причине**
 
-Run: `cargo test -p evohime-installer grants_current_user_access_to_nested_directories -- --exact --nocapture`
+Run: `cargo test -p evohime-installer --test icacls_windows grants_current_user_access_to_nested_directories -- --exact --nocapture`
 
 Expected: FAIL на `std::fs::write` с `Permission denied`, потому что текущий код выдаёт только `USERNAME:F` без наследования на вложенные каталоги.
 
@@ -67,13 +77,13 @@ let grant_arg = format!("{username}:(OI)(CI)F");
 
 - [ ] **Step 4: Запустить ACL-тест повторно**
 
-Run: `cargo test -p evohime-installer grants_current_user_access_to_nested_directories -- --exact --nocapture`
+Run: `cargo test -p evohime-installer --test icacls_windows grants_current_user_access_to_nested_directories -- --exact --nocapture`
 
 Expected: PASS; вложенный каталог создаётся, файл внутри него записывается.
 
 - [ ] **Step 5: Запустить существующий тест формы команды `icacls`**
 
-Run: `cargo test -p evohime-installer restricts_real_temp_directory_without_error -- --exact --nocapture`
+Run: `cargo test -p evohime-installer --test icacls_windows restricts_real_temp_directory_without_error -- --exact --nocapture`
 
 Expected: PASS; команда `icacls` завершается с кодом `0`.
 
@@ -168,7 +178,7 @@ git commit -m "fix(postgres): use portable locale for tool diagnostics"
 
 Run: `cargo fmt --check`
 
-Run: `cargo test -p evohime-installer`
+Run: `cargo test -p evohime-installer --tests`
 
 Run: `cargo test -p evohime-launcher`
 
