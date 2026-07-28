@@ -7,20 +7,24 @@
 //! прогресс приходит в UI-поток через mpsc-канал, чтобы не блокировать
 //! отрисовку окна во время сетевых операций/распаковки.
 
+use chrono::Local;
 use eframe::egui;
 use evohime_artifacts::{download_fresh_and_verify, extract_zip};
 use evohime_installer::ui::{append_log_entry, copy_log_to_clipboard, show_details};
 use evohime_installer::{
-    clear_dirty_installation_safely_with_progress, create_shortcut, is_installation_dirty,
-    mark_setup_complete, restrict_to_current_user,
+    clear_dirty_installation_safely_observed, create_shortcut_observed, format_elapsed,
+    is_installation_dirty, mark_setup_complete, redact_command_event,
+    restrict_to_current_user_observed, InstallationTiming,
 };
 use evohime_launcher::config::{self, DbConfig};
+use evohime_launcher::observed_command::{CommandEvent, CommandStream};
 use evohime_launcher::{
     apply_migrations, build_dsn, generate_password, patch_pg_hba_trust_local, postgres,
 };
 use evohime_win_support::{free_bytes_available, SingleInstanceLock};
 use std::path::PathBuf;
 use std::sync::mpsc;
+use std::time::Instant;
 
 const GITHUB_REPO: &str = "rkfsociety/EvoHime";
 const MIN_FREE_BYTES: u64 = 1_500_000_000; // ~1.5 ГБ, раздел VI плана
@@ -30,6 +34,8 @@ const DB_NAME: &str = "evohime";
 #[derive(Debug, Clone)]
 enum ProgressEvent {
     Stage(String),
+    Operation(String),
+    Command(CommandEvent),
     Error(String),
     Done,
 }
@@ -101,6 +107,7 @@ struct InstallerApp {
     finished: bool,
     failed: bool,
     started: bool,
+    timing: Option<InstallationTiming>,
 }
 
 impl InstallerApp {
@@ -113,11 +120,13 @@ impl InstallerApp {
             finished: false,
             failed: false,
             started: false,
+            timing: None,
         }
     }
 
     fn start_installation(&mut self) {
         self.started = true;
+        self.timing = Some(InstallationTiming::started(Instant::now()));
         let (tx, rx) = mpsc::channel();
         self.rx = Some(rx);
         std::thread::spawn(move || {
@@ -143,15 +152,30 @@ impl eframe::App for InstallerApp {
                     ProgressEvent::Stage(msg) => {
                         self.steps_done += 1;
                         self.current_stage = msg.clone();
-                        append_log_entry(&mut self.log, &msg);
+                        if let Some(timing) = &mut self.timing {
+                            timing.begin_stage(Instant::now());
+                        }
+                        append_log_entry(&mut self.log, &timestamped(&msg));
+                    }
+                    ProgressEvent::Operation(msg) => {
+                        append_log_entry(&mut self.log, &timestamped(&msg));
+                    }
+                    ProgressEvent::Command(event) => {
+                        append_log_entry(&mut self.log, &format_command_event(event));
                     }
                     ProgressEvent::Error(msg) => {
                         self.current_stage = "Установка прервана из-за ошибки.".to_string();
-                        append_log_entry(&mut self.log, &format!("Ошибка: {msg}"));
+                        append_log_entry(&mut self.log, &timestamped(&format!("Ошибка: {msg}")));
+                        if let Some(timing) = &mut self.timing {
+                            timing.finish(Instant::now());
+                        }
                         self.failed = true;
                     }
                     ProgressEvent::Done => {
                         self.current_stage = "Готово!".to_string();
+                        if let Some(timing) = &mut self.timing {
+                            timing.finish(Instant::now());
+                        }
                         self.finished = true;
                     }
                 }
@@ -210,6 +234,18 @@ impl eframe::App for InstallerApp {
                                 .color(DIM_TEXT)
                                 .size(13.0),
                         );
+                        if let Some(timing) = &self.timing {
+                            let elapsed = timing.elapsed(Instant::now());
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "Всего {} · этап {}",
+                                    format_elapsed(elapsed.total),
+                                    format_elapsed(elapsed.stage)
+                                ))
+                                .color(DIM_TEXT)
+                                .size(12.0),
+                            );
+                        }
                     });
 
                     ui.add_space(10.0);
@@ -241,6 +277,43 @@ impl eframe::App for InstallerApp {
     }
 }
 
+fn timestamped(message: &str) -> String {
+    format!("[{}] {message}", Local::now().format("%H:%M:%S"))
+}
+
+fn format_command_event(event: CommandEvent) -> String {
+    match event {
+        CommandEvent::Started { display } => timestamped(&format!("> {display}")),
+        CommandEvent::Output { stream, line } => {
+            let stream = match stream {
+                CommandStream::Stdout => "stdout",
+                CommandStream::Stderr => "stderr",
+            };
+            format!("[{stream}] {line}")
+        }
+        CommandEvent::Finished {
+            success,
+            exit_code,
+            elapsed,
+        } => {
+            let result = if success {
+                "Команда завершена успешно".to_string()
+            } else {
+                match exit_code {
+                    Some(code) => format!("Команда завершена с кодом {code}"),
+                    None => "Не удалось выполнить команду".to_string(),
+                }
+            };
+            timestamped(&format!("{result} ({:.1} с)", elapsed.as_secs_f64()))
+        }
+    }
+}
+
+fn send_command_event(tx: &mpsc::Sender<ProgressEvent>, event: CommandEvent, secrets: &[&str]) {
+    let event = redact_command_event(event, secrets);
+    let _ = tx.send(ProgressEvent::Command(event));
+}
+
 fn install_dir() -> PathBuf {
     let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".to_string());
     PathBuf::from(local_app_data).join("EvoHime")
@@ -256,6 +329,9 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
     let stage = |msg: &str| {
         let _ = tx.send(ProgressEvent::Stage(msg.to_string()));
     };
+    let operation = |msg: &str| {
+        let _ = tx.send(ProgressEvent::Operation(msg.to_string()));
+    };
 
     // 1. Предотвратить параллельный запуск двух Installer'ов (раздел XII
     //    плана, ответ на вопрос "что если запустят два инсталлятора сразу").
@@ -269,14 +345,19 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
     //    от прошлой неудачной попытки удаляется полностью.
     if is_installation_dirty(&install_dir) {
         stage("Обнаружена незавершённая установка...");
-        clear_dirty_installation_safely_with_progress(&install_dir, |message| stage(message))
-            .await
-            .map_err(|err| {
-                anyhow::anyhow!(
-                    "не удалось очистить незавершённую установку {}: {err}",
-                    install_dir.display()
-                )
-            })?;
+        clear_dirty_installation_safely_observed(
+            &install_dir,
+            |message| stage(message),
+            |event| send_command_event(tx, event, &[]),
+        )
+        .await
+        .map_err(|err| {
+            anyhow::anyhow!(
+                "не удалось очистить незавершённую установку {}: {err}",
+                install_dir.display()
+            )
+        })?;
+        operation("Незавершённая установка полностью очищена.");
     }
     tokio::fs::create_dir_all(&install_dir).await?;
 
@@ -319,6 +400,10 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
         if !ok {
             anyhow::bail!("SHA256 не совпадает для {asset_name} — прерываю установку");
         }
+        operation(&format!(
+            "{asset_name} скачан заново, SHA256 подтверждён: {}",
+            dest.display()
+        ));
     }
 
     // 4b. PostgreSQL не версионируется вместе с остальным релизом (как и
@@ -336,6 +421,10 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
         if !ok {
             anyhow::bail!("SHA256 не совпадает для postgres.zip — прерываю установку");
         }
+        operation(&format!(
+            "postgres.zip скачан заново, SHA256 подтверждён: {}",
+            pg_zip_path.display()
+        ));
     }
 
     // 5. Распаковка компонентов: server.zip — прямо в корень версии (даёт
@@ -352,11 +441,15 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
         ("launcher.zip", install_dir.join("launcher")),
     ] {
         let zip_path = versions_dir.join(zip_name);
+        let destination = dest.display().to_string();
         tokio::task::spawn_blocking(move || extract_zip(&zip_path, &dest)).await??;
+        operation(&format!("{zip_name} распакован: {destination}"));
     }
     {
         let dest = pg_dir.clone();
+        let destination = dest.display().to_string();
         tokio::task::spawn_blocking(move || extract_zip(&pg_zip_path, &dest)).await??;
+        operation(&format!("postgres.zip распакован: {destination}"));
     }
 
     // 6. Инициализация PostgreSQL: фикс прав через icacls (раздел III/VI
@@ -368,25 +461,37 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
     let pg_bin_dir = pg_dir.join("bin");
     let pg_data_dir = pg_dir.join("data");
     tokio::fs::create_dir_all(&pg_data_dir).await?;
-    restrict_to_current_user(&pg_data_dir).await?;
+    let mut command_observer = |event| send_command_event(tx, event, &[]);
+    restrict_to_current_user_observed(&pg_data_dir, &mut command_observer).await?;
 
     stage("Генерация пароля базы данных...");
     let db_password = generate_password(24);
     let db_user = std::env::var("USERNAME").unwrap_or_else(|_| "evohime".to_string());
 
     stage("Инициализация базы данных (initdb)...");
-    postgres::initdb(&pg_bin_dir, &pg_data_dir, &db_user, &db_password).await?;
+    postgres::initdb_observed(&pg_bin_dir, &pg_data_dir, &db_user, &db_password, |event| {
+        send_command_event(tx, event, &[db_password.as_str()])
+    })
+    .await?;
 
     let pg_hba_path = pg_data_dir.join("pg_hba.conf");
     stage("Настройка аутентификации PostgreSQL...");
     patch_pg_hba_trust_local(&pg_hba_path).await?;
+    operation(&format!(
+        "Локальная аутентификация PostgreSQL настроена: {}",
+        pg_hba_path.display()
+    ));
 
     stage("Запуск PostgreSQL...");
-    postgres::start(&pg_bin_dir, &pg_data_dir, postgres::PG_PORT).await?;
+    postgres::start_observed(&pg_bin_dir, &pg_data_dir, postgres::PG_PORT, |event| {
+        send_command_event(tx, event, &[db_password.as_str()])
+    })
+    .await?;
 
     stage("Создание базы данных...");
     postgres::create_database_if_missing(&db_user, &db_password, postgres::PG_PORT, DB_NAME)
         .await?;
+    operation(&format!("База данных {DB_NAME} готова."));
 
     config::save(
         &install_dir,
@@ -398,6 +503,13 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
         },
     )
     .await?;
+    operation(&format!(
+        "Конфигурация базы данных сохранена: {}",
+        install_dir
+            .join("launcher-data")
+            .join("config.json")
+            .display()
+    ));
 
     // 7. Применение миграций программно (раздел III плана, без sqlx-cli).
     stage("Применение миграций базы данных...");
@@ -415,6 +527,12 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
             .connect(&dsn)
             .await?;
         apply_migrations(&pool, &migrations_dir).await?;
+        operation(&format!(
+            "Миграции базы данных применены: {}",
+            migrations_dir.display()
+        ));
+    } else {
+        operation("Каталог миграций отсутствует, применение пропущено.");
     }
 
     // 8. Ярлык на рабочем столе (раздел VI плана).
@@ -425,11 +543,19 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
     if let Some(parent) = shortcut_path.parent() {
         tokio::fs::create_dir_all(parent).await.ok();
     }
-    let _ = create_shortcut(&shortcut_path, &launcher_exe).await;
+    match create_shortcut_observed(&shortcut_path, &launcher_exe, |event| {
+        send_command_event(tx, event, &[])
+    })
+    .await
+    {
+        Ok(()) => operation(&format!("Ярлык создан: {}", shortcut_path.display())),
+        Err(error) => operation(&format!("Не удалось создать ярлык: {error}")),
+    }
 
     // 9. Финальный маркер — строго последним шагом (раздел VI плана).
     stage("Финализация установки...");
     mark_setup_complete(&install_dir).await?;
+    operation("Маркер завершённой установки записан.");
 
     let _ = tx.send(ProgressEvent::Done);
     Ok(())
