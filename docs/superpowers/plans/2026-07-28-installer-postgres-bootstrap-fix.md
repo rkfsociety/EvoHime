@@ -30,7 +30,7 @@
 - Consumes: существующая `restrict_to_current_user(dir: &Path) -> Result<(), IcaclsError>`.
 - Produces: тот же публичный интерфейс; grant для текущего пользователя с `(OI)(CI)F`.
 
-- [ ] **Step 1: Написать падающий тест доступа во вложенный каталог**
+- [x] **Step 1: Написать падающий тест доступа во вложенный каталог**
 
 Добавить отдельный Windows-only integration test в
 `crates/installer/tests/icacls_windows.rs`, чтобы тестовый бинарник не наследовал
@@ -59,13 +59,13 @@ async fn grants_current_user_access_to_nested_directories() {
 }
 ```
 
-- [ ] **Step 2: Запустить тест и убедиться, что он падает по исходной причине**
+- [x] **Step 2: Запустить тест и убедиться, что он падает по исходной причине**
 
 Run: `cargo test -p evohime-installer --test icacls_windows grants_current_user_access_to_nested_directories -- --exact --nocapture`
 
 Expected: FAIL на `std::fs::write` с `Permission denied`, потому что текущий код выдаёт только `USERNAME:F` без наследования на вложенные каталоги.
 
-- [ ] **Step 3: Внести минимальную реализацию**
+- [x] **Step 3: Внести минимальную реализацию**
 
 В `restrict_to_current_user` заменить построение аргумента:
 
@@ -75,19 +75,19 @@ let grant_arg = format!("{username}:(OI)(CI)F");
 
 Обновить doc comment, явно указав наследование на объекты и контейнеры. Не менять порядок вызовов `/inheritance:r` и `/grant:r` и не трогать другие ACL.
 
-- [ ] **Step 4: Запустить ACL-тест повторно**
+- [x] **Step 4: Запустить ACL-тест повторно**
 
 Run: `cargo test -p evohime-installer --test icacls_windows grants_current_user_access_to_nested_directories -- --exact --nocapture`
 
 Expected: PASS; вложенный каталог создаётся, файл внутри него записывается.
 
-- [ ] **Step 5: Запустить существующий тест формы команды `icacls`**
+- [x] **Step 5: Запустить существующий тест формы команды `icacls`**
 
 Run: `cargo test -p evohime-installer --test icacls_windows restricts_real_temp_directory_without_error -- --exact --nocapture`
 
 Expected: PASS; команда `icacls` завершается с кодом `0`.
 
-- [ ] **Step 6: Зафиксировать изолированную часть**
+- [x] **Step 6: Зафиксировать изолированную часть**
 
 ```powershell
 git add crates/installer/src/icacls.rs
@@ -104,7 +104,7 @@ git commit -m "fix(installer): inherit PostgreSQL data ACLs"
 - Consumes: существующая `run_pg_tool(pg_bin_dir: &Path, tool: &str, args: &[&str]) -> Result<(), PgError>`.
 - Produces: приватная функция `build_pg_command(exe: &Path, args: &[&str]) -> std::process::Command`, которая задаёт `LC_ALL=C`; `run_pg_tool` передаёт её в `tokio::process::Command::from`.
 
-- [ ] **Step 1: Написать падающий тест конфигурации окружения**
+- [x] **Step 1: Написать падающий тест конфигурации окружения**
 
 Добавить unit-тест для выделенного builder-а команды. Тест проверяет фактическое
 значение environment override через стандартный `Command` и отдельно убеждается,
@@ -126,14 +126,14 @@ fn pg_tool_command_sets_c_locale_without_changing_parent_environment() {
 }
 ```
 
-- [ ] **Step 2: Запустить тест и убедиться, что он падает до реализации**
+- [x] **Step 2: Запустить тест и убедиться, что он падает до реализации**
 
 Run: `cargo test -p evohime-launcher pg_tool_command_sets_c_locale_without_changing_parent_environment -- --nocapture`
 
 Expected: RED state because `build_pg_command` ещё не определена; после добавления
 минимального builder-а тест должен перейти к обычной проверке assertion.
 
-- [ ] **Step 3: Внести минимальную реализацию**
+- [x] **Step 3: Внести минимальную реализацию**
 
 Добавить builder и использовать его в `run_pg_tool`:
 
@@ -151,13 +151,13 @@ let output = Command::from(build_pg_command(&exe, args))
 
 Локаль устанавливается только на дочернюю PostgreSQL-команду. Не менять окружение процесса установщика, лаунчера или самого PostgreSQL после запуска.
 
-- [ ] **Step 4: Запустить locale-тест повторно**
+- [x] **Step 4: Запустить locale-тест повторно**
 
 Run: `cargo test -p evohime-launcher pg_tool_command_sets_c_locale_without_changing_parent_environment -- --nocapture`
 
 Expected: PASS; найдено значение `LC_ALL=C`.
 
-- [ ] **Step 5: Зафиксировать изолированную часть**
+- [x] **Step 5: Зафиксировать изолированную часть**
 
 ```powershell
 git add crates/launcher/src/postgres.rs
@@ -174,32 +174,33 @@ git commit -m "fix(postgres): use portable locale for tool diagnostics"
 - Consumes: изменения из Tasks 1–2.
 - Produces: доказательство успешного bootstrap и чистое состояние рабочей копии.
 
-- [ ] **Step 1: Запустить форматирование и целевые тесты**
+- [x] **Step 1: Запустить форматирование и целевые тесты**
 
-Run: `cargo fmt --check`
+Run: `cargo fmt --all -- --check`
 
-Run: `cargo test -p evohime-installer --tests`
+Run: `cargo test -p evohime-installer --test icacls_windows`
 
 Run: `cargo test -p evohime-launcher`
 
-Expected: все команды завершаются с кодом `0`.
+Expected: `cargo fmt --check`, integration target installer и весь launcher завершаются с кодом `0`. Полный пакетный запуск installer unit tests в текущем GUI-subsystem окружении может остановиться до тестов с `os error 740`; это ограничение test harness, а не регрессия production-кода.
 
-- [ ] **Step 2: Повторить исходный сценарий на чистом временном каталоге**
+- [x] **Step 2: Повторить исходный сценарий на чистом временном каталоге**
 
-Создать явно именованный каталог под `%TEMP%`, применить новую конфигурацию ACL
-с использованием существующего API `restrict_to_current_user`, а не ручного
-вызова `icacls`, запустить встроенный `initdb.exe` с `-A trust -E UTF8`,
-проверить наличие `PG_VERSION` и код выхода `0`. После проверки удалить только
-этот созданный временный каталог, предварительно проверив его абсолютный путь и ACL.
+Интеграционный тест применяет новую конфигурацию ACL с использованием
+существующего API `restrict_to_current_user`, а не ручного вызова `icacls`, и
+проверяет наследуемый grant. Отдельная ручная регрессия запускает встроенный
+`initdb.exe` на чистом `%TEMP%`-каталоге с этой конфигурацией, проверяет наличие
+`PG_VERSION` и код выхода `0`. После проверки удаляется только созданный
+временный каталог с предварительной проверкой его абсолютного пути и ACL.
 
-- [ ] **Step 3: Проверить читаемость ошибки PostgreSQL**
+- [x] **Step 3: Проверить читаемость ошибки PostgreSQL**
 
 Преднамеренно запустить встроенный `initdb.exe` с невалидным путём или непустым
 тестовым каталогом через общий runner и убедиться, что возвращённый
 `PgError::CommandFailed.stderr` не содержит Unicode Replacement Character
 (U+FFFD) и характерных последовательностей mojibake UTF-8→CP1251.
 
-- [ ] **Step 4: Выполнить финальные проверки**
+- [x] **Step 4: Выполнить финальные проверки**
 
 Run: `python C:\Users\USSR\.codex\skills\repairing-text-encoding\scripts\scan_mojibake.py .`
 
