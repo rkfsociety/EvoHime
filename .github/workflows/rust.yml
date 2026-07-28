@@ -104,6 +104,8 @@ jobs:
         run: "cargo test -p evohime-win-support --test process_snapshot_windows"
       - name: Test portable PostgreSQL ownership
         run: "cargo test -p evohime-launcher postgres::"
+      - name: Test installer ACL recovery
+        run: "cargo test -p evohime-installer --test icacls_windows"
       - name: Test installer cleanup
         run: cargo test -p evohime-installer
       - name: Check installer
