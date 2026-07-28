@@ -55,8 +55,9 @@ useVoiceInput(): {
 ```
 
 - `canStart` равно `true` только при `status === "idle"`; при `listening` кнопка выполняет stop, а при `stopping` остаётся заблокированной.
+- `canStart` является производным состоянием и не хранится отдельно; `isListening` также вычисляется как `status === "listening"`, чтобы `status` оставался единственным источником истины.
 
-- После успешной отправки сообщения или очистки composer вызывается `resetTranscript()`, чтобы следующий запуск не переиспользовал старый базовый снимок или финальный хвост.
+- После успешной отправки сообщения или когда приложение намеренно сбрасывает composer вызывается `resetTranscript()`, чтобы следующий запуск не переиспользовал старый базовый снимок или финальный хвост.
 
 - В обычном жизненном цикле `stop()` resolves after `onend` and returns a ref-backed full composer text that includes the last `onresult` event. При unmount pending promise принудительно завершается текущим ref-backed текстом, поскольку обработчики recognition удаляются и ожидание `onend` больше невозможно.
 
@@ -78,7 +79,7 @@ useVoiceInput(): {
 
 - [ ] **Step 5: Make repeated start/stop deterministic**
 
-  A `start()` while listening or stopping is a no-op at the hook boundary; the UI maps the active mic click to `stop()`. A second `stop()` reuses the pending promise. If recognition is already inactive after automatic `onend`, `stop()` returns `Promise.resolve({ transcript: currentFullText })` and does not call `recognition.stop()`. A new recognition session never starts before the previous `onend`. On unmount, resolve pending `stop()` with the current ref-backed full text, remove `onresult`, `onend`, and `onerror`, call `recognition.abort()`, clear refs, and do not update React state.
+  A `start()` while listening or stopping is a no-op at the hook boundary; the UI maps the active mic click to `stop()`. A second `stop()` reuses the pending promise. If recognition is already inactive after automatic `onend`, `stop()` returns `Promise.resolve({ transcript: currentFullText })` and does not call `recognition.stop()`. A new recognition session never starts before the previous `onend`. On unmount, resolve pending `stop()` with the current ref-backed full text, remove `onresult`, `onend`, and `onerror`, call `recognition.abort()`, clear refs, and do not update React state. All recognition events delivered after cleanup are ignored.
 
 - [ ] **Step 6: Run frontend validation**
 
@@ -174,7 +175,7 @@ git commit -m "feat(web): add centralized speech synthesis hook"
 
 - [ ] **Step 6: Run manual browser matrix**
 
-  In HTTPS or `localhost`, verify permission grant, `ru-RU` interim/final results, and that supported Chromium requests `continuous = true` and may permit dictation across ordinary pauses while the browser may still force `onend`. Verify `stopping`, `Esc`, repeated mic click, idempotent stop after automatic `onend`, send during listening without losing the last word or baseText, double-submit suppression, `resetTranscript()` after send/clear, and editable composer after stop. Verify HTTP/insecure-context, missing constructor, Safari/iOS partial support, `not-allowed`, `no-speech`, `audio-capture`, `network`, and `language-not-supported` fallbacks.
+  In HTTPS or `localhost`, verify permission grant, `ru-RU` interim/final results, and that supported Chromium generally does not terminate dictation immediately on ordinary pauses when `continuous = true` is requested, while the browser may still force `onend`. Verify `stopping`, `Esc`, repeated mic click, idempotent stop after automatic `onend`, send during listening without losing the last word or baseText, double-submit suppression, `resetTranscript()` after send/application reset, and editable composer after stop. Verify HTTP/insecure-context, missing constructor, Safari/iOS partial support, `not-allowed`, `no-speech`, `audio-capture`, `network`, and `language-not-supported` fallbacks.
 
 - [ ] **Step 7: Commit the UI integration**
 
