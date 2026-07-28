@@ -178,8 +178,7 @@ mod tests {
     use tower_http::services::ServeDir;
 
     const FRESH_CONTENT: &[u8] = b"fresh artifact";
-    const FRESH_SHA256: &str =
-        "fba70a783cecd8de271f147d7afabee99f3ee796d97a080293f0adc2fbfff0af";
+    const FRESH_SHA256: &str = "fba70a783cecd8de271f147d7afabee99f3ee796d97a080293f0adc2fbfff0af";
 
     /// Spins up a real local HTTP server (axum + tower-http's `ServeDir`,
     /// which natively supports Range requests) serving `dir`, returning its
@@ -210,9 +209,7 @@ mod tests {
                 "/artifact.bin.sha256",
                 get(move || async move { (StatusCode::OK, checksum) }),
             );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();

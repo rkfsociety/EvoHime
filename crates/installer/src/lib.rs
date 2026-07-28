@@ -15,7 +15,5 @@ pub mod shortcut;
 pub mod ui;
 
 pub use icacls::{restrict_to_current_user, IcaclsError};
-pub use setup_marker::{
-    clear_dirty_installation, is_installation_dirty, mark_setup_complete,
-};
+pub use setup_marker::{clear_dirty_installation, is_installation_dirty, mark_setup_complete};
 pub use shortcut::{create_shortcut, ShortcutError};

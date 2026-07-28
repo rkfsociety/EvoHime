@@ -269,12 +269,14 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
     //    от прошлой неудачной попытки удаляется полностью.
     if is_installation_dirty(&install_dir) {
         stage("Обнаружена незавершённая установка, очищаю...");
-        clear_dirty_installation(&install_dir).await.map_err(|err| {
-            anyhow::anyhow!(
-                "не удалось очистить незавершённую установку {}: {err}",
-                install_dir.display()
-            )
-        })?;
+        clear_dirty_installation(&install_dir)
+            .await
+            .map_err(|err| {
+                anyhow::anyhow!(
+                    "не удалось очистить незавершённую установку {}: {err}",
+                    install_dir.display()
+                )
+            })?;
     }
     tokio::fs::create_dir_all(&install_dir).await?;
 
