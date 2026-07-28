@@ -14,10 +14,11 @@
 - `window.isSecureContext === false` или отсутствие свойства даёт состояние `insecure-context`, а не `unsupported`.
 - Отсутствие конструктора SpeechRecognition даёт `unsupported`; runtime-ошибка после успешного feature detection даёт `error` и `composerNotice`.
 - Язык распознавания фиксирован как `ru-RU`.
-- Во время диктовки composer `readOnly`; interim отображается отдельным полупрозрачным курсивным хвостом.
+- Во время диктовки textarea `readOnly`; подтверждённый полный `transcript` находится в textarea, а interim отображается отдельным полупрозрачным курсивным элементом рядом с composer и не входит в значение textarea до final.
 - Публичный `transcript` и результат `stop()` содержат полный composer text: `baseText + finalized dictated text`; `interim` содержит только неподтверждённый диктуемый хвост.
 - Отправка во время записи делает `const { transcript } = await stop()` и отправляет именно полный возвращённый текст.
 - `stop()` идемпотентен: после автоматического `onend` немедленно возвращает текущий итог и никогда не оставляет pending promise.
+- Между `recognition.stop()` и `onend` статус равен `stopping`; новые `start()` и `stop()` в этот период не создают сессию или новый promise.
 - Каждая STT-сессия получает monotonically increasing id; поздние события старой сессии не меняют состояние новой.
 - Один TTS-хук управляет всеми сообщениями; стримящееся сообщение disabled, завершённые сообщения остаются доступны.
 - TTS callbacks изменяют состояние только для текущего active utterance; события отменённого utterance игнорируются.
@@ -35,12 +36,12 @@
 - Verification: `frontend/web` typecheck/build и ручная STT browser matrix из Task 3
 
 **Interfaces:**
-- Produces `VoiceInputStatus = "idle" | "listening" | "unsupported" | "insecure-context" | "error"`.
+- Produces `VoiceInputStatus = "idle" | "listening" | "stopping" | "unsupported" | "insecure-context" | "error"`.
 - Produces:
 
 ```ts
 useVoiceInput(): {
-  isSupported: boolean;
+  canStart: boolean;
   isListening: boolean;
   status: VoiceInputStatus;
   error: string | null;
@@ -52,7 +53,9 @@ useVoiceInput(): {
 }
 ```
 
-- `stop()` resolves only from `onend` and returns a ref-backed final transcript that includes the last `onresult` event.
+- `canStart` равно `true` только когда status не `unsupported`, не `insecure-context`, не `stopping` и не `error`.
+
+- В обычном жизненном цикле `stop()` resolves after `onend` and returns a ref-backed full composer text that includes the last `onresult` event. При unmount pending promise принудительно завершается текущим ref-backed текстом, поскольку обработчики recognition удаляются и ожидание `onend` больше невозможно.
 
 - [ ] **Step 1: Define browser-safe types and constructor lookup**
 
@@ -68,11 +71,11 @@ useVoiceInput(): {
 
 - [ ] **Step 4: Implement result, end, and error lifecycle**
 
-  Append final results to the ref-backed full composer text and expose interim separately. `onend` resolves the pending stop promise with `{ transcript }`. `no-speech` preserves confirmed text and shows a soft `composerNotice`; `aborted` caused by explicit stop/cleanup is normal and has no notice, while unexpected `aborted` only ends the session and preserves text. `not-allowed`, `audio-capture`, `network`, `service-not-allowed`, `language-not-supported`, and unknown errors set `error`, finish the session, and preserve confirmed text. Every callback checks the captured session id before mutating state or resolving a promise.
+  Append final results to the ref-backed full composer text and expose interim separately. `onend` resolves the pending stop promise with `{ transcript }`. `no-speech` preserves confirmed text and shows a soft `composerNotice`; `aborted` caused by explicit stop/cleanup is normal and has no notice, while unexpected `aborted` only ends the session and preserves text. `not-allowed`, `audio-capture`, `network`, `service-not-allowed`, `language-not-supported`, and unknown errors set `error`, finish the session, and preserve confirmed text. Every callback checks the captured session id before mutating state or resolving a promise; the id protects React state and promises, not browser event identity.
 
 - [ ] **Step 5: Make repeated start/stop deterministic**
 
-  A `start()` while listening is a no-op at the hook boundary; the UI maps the active mic click to `stop()`. A second `stop()` reuses the pending promise. If recognition is already inactive after automatic `onend`, `stop()` returns `Promise.resolve({ transcript: currentFullText })` and does not call `recognition.stop()`. On unmount, resolve pending `stop()` with the current ref-backed full text, then remove `onresult`, `onend`, and `onerror`, stop/abort recognition, clear refs, and do not update React state.
+  A `start()` while listening or stopping is a no-op at the hook boundary; the UI maps the active mic click to `stop()`. A second `stop()` reuses the pending promise. If recognition is already inactive after automatic `onend`, `stop()` returns `Promise.resolve({ transcript: currentFullText })` and does not call `recognition.stop()`. A new recognition session never starts before the previous `onend`. On unmount, resolve pending `stop()` with the current ref-backed full text, then remove `onresult`, `onend`, and `onerror`, stop/abort recognition, clear refs, and do not update React state.
 
 - [ ] **Step 6: Run frontend validation**
 
@@ -143,16 +146,16 @@ git commit -m "feat(web): add centralized speech synthesis hook"
 - Verification: `frontend/web` typecheck/build and manual STT browser matrix
 
 **Interfaces:**
-- Consumes the hooks from Tasks 1–2.
+- Consumes `useVoiceInput()` from Task 1.
 - Existing `sendMessage` remains the only path that emits `ClientCommand`.
 
 - [ ] **Step 1: Integrate STT into composer**
 
-  Add the mic button beside attachments. On start pass the current `input` as `baseText`; while listening render `baseText + finalized transcript + interim`, set the textarea `readOnly`, and style interim distinctly. On `Esc`, active mic click, or stop flow preserve finalized text and clear interim.
+  Add the mic button beside attachments. Disable it when `canStart` is false and it is not currently listening; while listening, an active click calls `stop()`, while `stopping` prevents a new start. Pass the current `input` as `baseText`; the textarea displays the `transcript` value, which already contains `baseText + finalized dictated text`, and remains `readOnly`. Render `interim` in a separate element beside the composer; do not concatenate `baseText` into `transcript` a second time. On `Esc` or stop flow preserve finalized text and clear interim.
 
 - [ ] **Step 2: Serialize submit with recognition shutdown**
 
-  In `sendMessage`, if listening, await `stop()`, use its returned transcript, update the composer value, and continue existing validation/upload/socket logic with that exact text. Enter handling must not create a parallel submit while stop is pending.
+  In `sendMessage`, if listening or stopping, await `stop()`, use its returned full transcript, update the composer value, and continue existing validation/upload/socket logic with that exact text. Guard the flow with `const submitPendingRef = useRef(false)` (or equivalent state): while `await stop()` is pending, repeated Enter and send-button clicks are ignored, and the flag resets in `finally`.
 
 - [ ] **Step 3: Add keyboard, error, and fallback behavior**
 
@@ -168,7 +171,7 @@ git commit -m "feat(web): add centralized speech synthesis hook"
 
 - [ ] **Step 6: Run manual browser matrix**
 
-  In HTTPS or `localhost`, verify permission grant, `ru-RU` interim/final results, continuous dictation across pauses, `onend` after browser-forced stop, `Esc`, repeated mic click, send during listening without losing the last word or baseText, and editable composer after stop. Verify HTTP/insecure-context, missing constructor, Safari/iOS partial support, `not-allowed`, `no-speech`, `audio-capture`, `network`, and `language-not-supported` fallbacks.
+  In HTTPS or `localhost`, verify permission grant, `ru-RU` interim/final results, and that supported Chromium `continuous = true` permits dictation across ordinary pauses while allowing that the browser may still force `onend`. Verify `stopping`, `Esc`, repeated mic click, idempotent stop after automatic `onend`, send during listening without losing the last word or baseText, double-submit suppression, and editable composer after stop. Verify HTTP/insecure-context, missing constructor, Safari/iOS partial support, `not-allowed`, `no-speech`, `audio-capture`, `network`, and `language-not-supported` fallbacks.
 
 - [ ] **Step 7: Commit the UI integration**
 
@@ -224,4 +227,4 @@ git commit -m "feat(web): add speech controls to assistant messages"
 
 - Spec coverage: secure context, feature detection/runtime failure, STT errors, transcript race, readOnly UX, Esc/repeated stop, centralized TTS, streaming-specific disablement, cleanup, accessibility, responsive targets, and manual fallback matrix are covered above.
 - Completeness scan: each task has concrete files, interfaces, commands, and expected outcomes.
-- Type consistency: `useVoiceInput.stop()` returns `{ transcript: string }`; `useSpeechSynthesis.speak()` accepts `(messageId, text)` and exposes `speakingMessageId` used by Task 3.
+- Type consistency: `useVoiceInput.stop()` returns `{ transcript: string }`; `useSpeechSynthesis.speak()` accepts `(messageId, text)` and exposes `speakingMessageId` used by Task 4.
