@@ -6,9 +6,10 @@
 //! подтвердил по выделенному порту и точному пути исполняемого файла.
 
 use crate::{
-    is_installation_dirty, remove_tree_once, restore_deletable_permissions, IcaclsError,
+    is_installation_dirty, remove_tree_once, restore_deletable_permissions_observed, IcaclsError,
     StrictRemoveError,
 };
+use evohime_launcher::observed_command::CommandEvent;
 use evohime_launcher::postgres;
 use evohime_win_support::{processes_in_directory, terminate_and_wait, ProcessCleanupError};
 use std::path::Path;
@@ -31,7 +32,7 @@ pub enum DirtyCleanupError {
 pub async fn clear_dirty_installation_safely(
     install_dir: &Path,
 ) -> Result<bool, DirtyCleanupError> {
-    clear_dirty_installation_safely_with_progress(install_dir, |_| {}).await
+    clear_dirty_installation_safely_observed(install_dir, |_| {}, |_| {}).await
 }
 
 pub async fn clear_dirty_installation_safely_with_progress<F>(
@@ -40,6 +41,18 @@ pub async fn clear_dirty_installation_safely_with_progress<F>(
 ) -> Result<bool, DirtyCleanupError>
 where
     F: FnMut(&str),
+{
+    clear_dirty_installation_safely_observed(install_dir, &mut progress, |_| {}).await
+}
+
+pub async fn clear_dirty_installation_safely_observed<P, O>(
+    install_dir: &Path,
+    mut progress: P,
+    mut observer: O,
+) -> Result<bool, DirtyCleanupError>
+where
+    P: FnMut(&str),
+    O: FnMut(CommandEvent),
 {
     if !is_installation_dirty(install_dir) {
         return Ok(false);
@@ -52,7 +65,7 @@ where
         && pg_data_dir.is_dir()
         && postgres::is_running(&pg_bin_dir, postgres::PG_PORT)
     {
-        postgres::stop(&pg_bin_dir, &pg_data_dir)
+        postgres::stop_observed(&pg_bin_dir, &pg_data_dir, &mut observer)
             .await
             .map_err(|error| DirtyCleanupError::PostgresStop(error.to_string()))?;
     }
@@ -60,7 +73,7 @@ where
     terminate_owned_processes(install_dir)?;
 
     progress("Восстанавливаю права незавершённой установки...");
-    restore_deletable_permissions(install_dir).await?;
+    restore_deletable_permissions_observed(install_dir, &mut observer).await?;
 
     progress("Очищаю незавершённую установку...");
     let mut last_error = None;

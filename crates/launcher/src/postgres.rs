@@ -19,6 +19,8 @@ use std::path::Path;
 use tokio::fs;
 use tokio::process::Command;
 
+use crate::observed_command::{run_observed_command, CommandEvent};
+
 /// Порт нашего портативного кластера — не 5432, чтобы не конфликтовать с
 /// уже установленным у пользователя системным PostgreSQL (если есть).
 pub const PG_PORT: u16 = 55432;
@@ -50,6 +52,19 @@ pub async fn initdb(
     user: &str,
     password: &str,
 ) -> Result<(), PgError> {
+    initdb_observed(pg_bin_dir, data_dir, user, password, |_| {}).await
+}
+
+pub async fn initdb_observed<F>(
+    pg_bin_dir: &Path,
+    data_dir: &Path,
+    user: &str,
+    password: &str,
+    mut observer: F,
+) -> Result<(), PgError>
+where
+    F: FnMut(CommandEvent),
+{
     let pwfile = pg16_root(pg_bin_dir).join(".initdb-pwfile.tmp");
     fs::write(&pwfile, password).await?;
 
@@ -66,6 +81,7 @@ pub async fn initdb(
             "-E",
             "UTF8",
         ],
+        &mut observer,
     )
     .await;
 
@@ -76,6 +92,18 @@ pub async fn initdb(
 /// Запускает `postgres.exe` через `pg_ctl start -w` и дожидается, пока он
 /// начнёт принимать подключения (или вернёт ошибку по таймауту).
 pub async fn start(pg_bin_dir: &Path, data_dir: &Path, port: u16) -> Result<(), PgError> {
+    start_observed(pg_bin_dir, data_dir, port, |_| {}).await
+}
+
+pub async fn start_observed<F>(
+    pg_bin_dir: &Path,
+    data_dir: &Path,
+    port: u16,
+    mut observer: F,
+) -> Result<(), PgError>
+where
+    F: FnMut(CommandEvent),
+{
     let log_path = pg16_root(pg_bin_dir).join("postgres.log");
     run_pg_tool(
         pg_bin_dir,
@@ -92,12 +120,24 @@ pub async fn start(pg_bin_dir: &Path, data_dir: &Path, port: u16) -> Result<(), 
             "-o",
             &format!("-p {port}"),
         ],
+        &mut observer,
     )
     .await
 }
 
 /// Останавливает кластер (`pg_ctl stop -m fast -w`).
 pub async fn stop(pg_bin_dir: &Path, data_dir: &Path) -> Result<(), PgError> {
+    stop_observed(pg_bin_dir, data_dir, |_| {}).await
+}
+
+pub async fn stop_observed<F>(
+    pg_bin_dir: &Path,
+    data_dir: &Path,
+    mut observer: F,
+) -> Result<(), PgError>
+where
+    F: FnMut(CommandEvent),
+{
     run_pg_tool(
         pg_bin_dir,
         "pg_ctl",
@@ -111,6 +151,7 @@ pub async fn stop(pg_bin_dir: &Path, data_dir: &Path) -> Result<(), PgError> {
             "-t",
             "30",
         ],
+        &mut observer,
     )
     .await
 }
@@ -187,19 +228,47 @@ fn pg16_root(pg_bin_dir: &Path) -> std::path::PathBuf {
         .unwrap_or_else(|| pg_bin_dir.to_path_buf())
 }
 
-async fn run_pg_tool(pg_bin_dir: &Path, tool: &str, args: &[&str]) -> Result<(), PgError> {
+async fn run_pg_tool<F>(
+    pg_bin_dir: &Path,
+    tool: &str,
+    args: &[&str],
+    observer: &mut F,
+) -> Result<(), PgError>
+where
+    F: FnMut(CommandEvent),
+{
     let exe = pg_bin_dir.join(format!("{tool}.exe"));
-    let output = Command::from(build_pg_command(&exe, args)).output().await?;
+    let output = run_observed_command(
+        Command::from(build_pg_command(&exe, args)),
+        pg_tool_display(&exe, args),
+        observer,
+    )
+    .await?;
 
     if !output.status.success() {
         return Err(PgError::CommandFailed {
             tool: tool.to_string(),
             args: args.join(" "),
             status: output.status,
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            stderr: output.stderr,
         });
     }
     Ok(())
+}
+
+fn pg_tool_display(exe: &Path, args: &[&str]) -> String {
+    std::iter::once(exe.display().to_string())
+        .chain(args.iter().map(|arg| quote_display_arg(arg)))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn quote_display_arg(arg: &str) -> String {
+    if arg.contains(char::is_whitespace) || arg.contains('"') {
+        format!("\"{}\"", arg.replace('"', "\\\""))
+    } else {
+        arg.to_string()
+    }
 }
 
 fn build_pg_command(exe: &Path, args: &[&str]) -> std::process::Command {
@@ -256,5 +325,22 @@ mod tests {
 
         assert_eq!(locale.as_deref(), Some("C"));
         assert_eq!(std::env::var_os("LC_ALL"), parent_locale);
+    }
+
+    #[test]
+    fn initdb_display_contains_path_but_not_password() {
+        let display = pg_tool_display(
+            Path::new(r"C:\EvoHime\pg16\bin\initdb.exe"),
+            &[
+                "-D",
+                r"C:\EvoHime\pg16\data",
+                "--pwfile",
+                r"C:\EvoHime\pg16\.initdb-pwfile.tmp",
+            ],
+        );
+
+        assert!(display.contains("initdb.exe"));
+        assert!(display.contains("--pwfile"));
+        assert!(!display.contains("secret-password"));
     }
 }

@@ -82,8 +82,10 @@ where
         .stderr
         .take()
         .expect("stderr is piped before the child process starts");
-    let mut stdout_lines = BufReader::new(stdout).lines();
-    let mut stderr_lines = BufReader::new(stderr).lines();
+    let mut stdout_reader = BufReader::new(stdout);
+    let mut stderr_reader = BufReader::new(stderr);
+    let mut stdout_line = Vec::new();
+    let mut stderr_line = Vec::new();
     let mut stdout_done = false;
     let mut stderr_done = false;
     let mut stdout_capture = String::new();
@@ -92,32 +94,36 @@ where
 
     while !stdout_done || !stderr_done {
         tokio::select! {
-            line = stdout_lines.next_line(), if !stdout_done => {
-                match line {
-                    Ok(Some(line)) => {
+            read = stdout_reader.read_until(b'\n', &mut stdout_line), if !stdout_done => {
+                match read {
+                    Ok(0) => stdout_done = true,
+                    Ok(_) => {
+                        let line = decode_output_line(&stdout_line);
                         append_captured_line(&mut stdout_capture, &line);
                         observer(CommandEvent::Output {
                             stream: CommandStream::Stdout,
                             line,
                         });
+                        stdout_line.clear();
                     }
-                    Ok(None) => stdout_done = true,
                     Err(error) => {
                         read_error = Some(error);
                         break;
                     }
                 }
             }
-            line = stderr_lines.next_line(), if !stderr_done => {
-                match line {
-                    Ok(Some(line)) => {
+            read = stderr_reader.read_until(b'\n', &mut stderr_line), if !stderr_done => {
+                match read {
+                    Ok(0) => stderr_done = true,
+                    Ok(_) => {
+                        let line = decode_output_line(&stderr_line);
                         append_captured_line(&mut stderr_capture, &line);
                         observer(CommandEvent::Output {
                             stream: CommandStream::Stderr,
                             line,
                         });
+                        stderr_line.clear();
                     }
-                    Ok(None) => stderr_done = true,
                     Err(error) => {
                         read_error = Some(error);
                         break;
@@ -169,6 +175,12 @@ fn append_captured_line(output: &mut String, line: &str) {
         output.push('\n');
     }
     output.push_str(line);
+}
+
+fn decode_output_line(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes)
+        .trim_end_matches(['\r', '\n'])
+        .to_string()
 }
 
 #[cfg(test)]
@@ -235,5 +247,10 @@ mod tests {
     #[test]
     fn windows_commands_use_create_no_window() {
         assert_eq!(WINDOWS_CREATION_FLAGS, 0x0800_0000);
+    }
+
+    #[test]
+    fn invalid_utf8_output_is_preserved_lossily() {
+        assert_eq!(decode_output_line(&[b'o', b'k', 0xff, b'\r', b'\n']), "ok�");
     }
 }

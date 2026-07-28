@@ -18,11 +18,14 @@ pub mod strict_remove;
 pub mod ui;
 
 pub use dirty_cleanup::{
-    clear_dirty_installation_safely, clear_dirty_installation_safely_with_progress,
-    DirtyCleanupError,
+    clear_dirty_installation_safely, clear_dirty_installation_safely_observed,
+    clear_dirty_installation_safely_with_progress, DirtyCleanupError,
 };
-pub use icacls::{restore_deletable_permissions, restrict_to_current_user, IcaclsError};
+pub use icacls::{
+    restore_deletable_permissions, restore_deletable_permissions_observed,
+    restrict_to_current_user, restrict_to_current_user_observed, IcaclsError,
+};
 pub use setup_marker::{clear_dirty_installation, is_installation_dirty, mark_setup_complete};
-pub use shortcut::{create_shortcut, ShortcutError};
+pub use shortcut::{create_shortcut, create_shortcut_observed, ShortcutError};
 #[cfg(windows)]
 pub use strict_remove::{remove_tree_once, remove_tree_with_retries, StrictRemoveError};

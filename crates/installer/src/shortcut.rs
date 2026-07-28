@@ -9,6 +9,11 @@
 use std::path::Path;
 use tokio::process::Command;
 
+use evohime_launcher::observed_command::{run_observed_command, CommandEvent};
+
+const SHORTCUT_SAFE_DISPLAY: &str =
+    "powershell.exe -NoProfile -NonInteractive -Command <создание ярлыка EvoHime>";
+
 #[derive(Debug, thiserror::Error)]
 pub enum ShortcutError {
     #[error("powershell exited with status {status}: {stderr}")]
@@ -23,6 +28,17 @@ pub enum ShortcutError {
 /// Создаёт `.lnk`-ярлык `shortcut_path`, указывающий на `target_exe`, с
 /// рабочей директорией — папкой, содержащей `target_exe`.
 pub async fn create_shortcut(shortcut_path: &Path, target_exe: &Path) -> Result<(), ShortcutError> {
+    create_shortcut_observed(shortcut_path, target_exe, |_| {}).await
+}
+
+pub async fn create_shortcut_observed<F>(
+    shortcut_path: &Path,
+    target_exe: &Path,
+    observer: F,
+) -> Result<(), ShortcutError>
+where
+    F: FnMut(CommandEvent),
+{
     let working_dir = target_exe
         .parent()
         .map(|p| p.display().to_string())
@@ -39,15 +55,14 @@ pub async fn create_shortcut(shortcut_path: &Path, target_exe: &Path) -> Result<
         escape_single_quotes(&working_dir),
     );
 
-    let output = Command::new("powershell")
-        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
-        .output()
-        .await?;
+    let mut command = Command::new("powershell");
+    command.args(["-NoProfile", "-NonInteractive", "-Command", &script]);
+    let output = run_observed_command(command, SHORTCUT_SAFE_DISPLAY.to_string(), observer).await?;
 
     if !output.status.success() {
         return Err(ShortcutError::CommandFailed {
             status: output.status,
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            stderr: output.stderr,
         });
     }
     Ok(())
@@ -81,5 +96,15 @@ mod tests {
             .await
             .expect("shortcut file should exist");
         assert!(metadata.len() > 0, "a real .lnk file should be nonempty");
+    }
+
+    #[test]
+    fn safe_display_does_not_contain_powershell_script() {
+        assert_eq!(
+            SHORTCUT_SAFE_DISPLAY,
+            "powershell.exe -NoProfile -NonInteractive -Command <создание ярлыка EvoHime>"
+        );
+        assert!(!SHORTCUT_SAFE_DISPLAY.contains("WScript.Shell"));
+        assert!(!SHORTCUT_SAFE_DISPLAY.contains("TargetPath"));
     }
 }
