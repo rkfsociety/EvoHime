@@ -4,9 +4,9 @@
 
 **Goal:** Исправить и проверить инициализацию встроенного PostgreSQL в установщике без запуска от администратора и без mojibake в тексте ошибок.
 
-**Architecture:** Сохранить существующий раздел ответственности: `crates/installer/src/icacls.rs` задаёт приватные ACL для `data`, а `crates/launcher/src/postgres.rs` запускает PostgreSQL-утилиты. ACL получает наследование на файлы и каталоги через `(OI)(CI)F`; каждая дочерняя PostgreSQL-утилита получает `LC_ALL=C`.
+**Architecture:** Сохранить существующий раздел ответственности: `crates/installer/src/icacls.rs` задаёт приватные ACL для `data`, а `crates/launcher/src/postgres.rs` запускает PostgreSQL-утилиты. Текущему пользователю выдаётся наследуемое разрешение `(OI)(CI)F`; каждая дочерняя PostgreSQL-утилита получает `LC_ALL=C`.
 
-**Tech Stack:** Rust 2021, Tokio, `icacls.exe`, bundled PostgreSQL 16, Windows-only integration tests, Cargo.
+**Tech Stack:** Rust 2021, Tokio, `icacls.exe`, встроенный PostgreSQL 16, Windows-only integration tests, Cargo.
 
 ## Global Constraints
 
@@ -16,7 +16,7 @@
 - Не удалять автоматически существующий частично созданный каталог `data`.
 - Не добавлять зависимости без необходимости.
 - После каждой законченной части делать отдельный task-only commit.
-- После проверки удалить workspace `target/`, если он больше не нужен.
+- Удаление workspace `target/` является необязательным cleanup и не входит в критерии исправления.
 
 ---
 
@@ -92,59 +92,49 @@ git commit -m "fix(installer): inherit PostgreSQL data ACLs"
 
 **Interfaces:**
 - Consumes: существующая `run_pg_tool(pg_bin_dir: &Path, tool: &str, args: &[&str]) -> Result<(), PgError>`.
-- Produces: те же функции `initdb`, `start` и `stop`; каждый дочерний PostgreSQL-процесс получает `LC_ALL=C`.
+- Produces: приватная функция `build_pg_command(exe: &Path, args: &[&str]) -> std::process::Command`, которая задаёт `LC_ALL=C`; `run_pg_tool` передаёт её в `tokio::process::Command::from_std`.
 
 - [ ] **Step 1: Написать падающий тест конфигурации окружения**
 
-Добавить Windows-only Tokio-тест, который вызывает существующий `run_pg_tool`
-через `cmd.exe`. Тест временно задаёт родительскую `LC_ALL=ru_RU`, просит
-`cmd.exe` напечатать значение переменной в `stderr` и завершиться с кодом `1`:
+Добавить unit-тест для выделенного builder-а команды. Тест проверяет фактическое
+значение environment override через стандартный `Command` и отдельно убеждается,
+что окружение самого тестового процесса не изменилось:
 
 ```rust
-#[tokio::test]
-async fn postgres_tool_forces_c_locale() {
-    let previous = std::env::var_os("LC_ALL");
-    std::env::set_var("LC_ALL", "ru_RU");
+#[test]
+fn pg_tool_command_sets_c_locale_without_changing_parent_environment() {
+    let parent_locale = std::env::var_os("LC_ALL");
+    let command = build_pg_command(Path::new(r"C:\EvoHime\pg16\bin\initdb.exe"), &[]);
 
-    let comspec = std::env::var_os("ComSpec").unwrap();
-    let bin_dir = std::path::Path::new(&comspec).parent().unwrap();
-    let result = run_pg_tool(
-        bin_dir,
-        "cmd",
-        &["/C", "echo %LC_ALL% 1>&2 & exit /b 1"],
-    )
-    .await;
+    let locale = command
+        .get_envs()
+        .find(|(key, _)| key.to_string_lossy() == "LC_ALL")
+        .and_then(|(_, value)| value.map(|value| value.to_string_lossy().into_owned()));
 
-    match previous {
-        Some(value) => std::env::set_var("LC_ALL", value),
-        None => std::env::remove_var("LC_ALL"),
-    }
-
-    let error = result.unwrap_err();
-    let stderr = match error {
-        PgError::CommandFailed { stderr, .. } => stderr,
-        other => panic!("expected command failure, got {other:?}"),
-    };
-    assert!(stderr.contains('C'), "stderr was: {stderr:?}");
+    assert_eq!(locale.as_deref(), Some("C"));
+    assert_eq!(std::env::var_os("LC_ALL"), parent_locale);
 }
 ```
 
 - [ ] **Step 2: Запустить тест и убедиться, что он падает до реализации**
 
-Run: `cargo test -p evohime-launcher postgres_tool_forces_c_locale -- --exact --nocapture`
+Run: `cargo test -p evohime-launcher pg_tool_command_sets_c_locale_without_changing_parent_environment -- --exact --nocapture`
 
-Expected: FAIL because `run_pg_tool` currently inherits `LC_ALL=ru_RU`, so
-`stderr` does not contain the required `C` value.
+Expected: RED state because `build_pg_command` ещё не определена; после добавления
+минимального builder-а тест должен перейти к обычной проверке assertion.
 
 - [ ] **Step 3: Внести минимальную реализацию**
 
-Добавить `.env("LC_ALL", "C")` к дочерней команде в `run_pg_tool` перед
-передачей аргументов:
+Добавить builder и использовать его в `run_pg_tool`:
 
 ```rust
-let output = Command::new(&exe)
-    .env("LC_ALL", "C")
-    .args(args)
+fn build_pg_command(exe: &Path, args: &[&str]) -> std::process::Command {
+    let mut command = std::process::Command::new(exe);
+    command.env("LC_ALL", "C").args(args);
+    command
+}
+
+let output = Command::from_std(build_pg_command(&exe, args))
     .output()
     .await?;
 ```
@@ -153,7 +143,7 @@ let output = Command::new(&exe)
 
 - [ ] **Step 4: Запустить locale-тест повторно**
 
-Run: `cargo test -p evohime-launcher postgres_tool_forces_c_locale -- --exact --nocapture`
+Run: `cargo test -p evohime-launcher pg_tool_command_sets_c_locale_without_changing_parent_environment -- --exact --nocapture`
 
 Expected: PASS; найдено значение `LC_ALL=C`.
 
@@ -186,11 +176,18 @@ Expected: все команды завершаются с кодом `0`.
 
 - [ ] **Step 2: Повторить исходный сценарий на чистом временном каталоге**
 
-Создать явно именованный каталог под `%TEMP%`, применить исправленную ACL через `restrict_to_current_user`, запустить встроенный `initdb.exe` с `-A trust -E UTF8`, проверить наличие `PG_VERSION` и код выхода `0`. После проверки удалить только этот созданный временный каталог, предварительно проверив его абсолютный путь и ACL.
+Создать явно именованный каталог под `%TEMP%`, применить новую конфигурацию ACL
+с использованием существующего API `restrict_to_current_user`, а не ручного
+вызова `icacls`, запустить встроенный `initdb.exe` с `-A trust -E UTF8`,
+проверить наличие `PG_VERSION` и код выхода `0`. После проверки удалить только
+этот созданный временный каталог, предварительно проверив его абсолютный путь и ACL.
 
 - [ ] **Step 3: Проверить читаемость ошибки PostgreSQL**
 
-Преднамеренно запустить встроенный `initdb.exe` с невалидным путём или непустым тестовым каталогом через общий runner и убедиться, что возвращённый `PgError::CommandFailed.stderr` содержит англоязычный текст без `�`, `Рџ`, `СЃ` и других mojibake-фрагментов.
+Преднамеренно запустить встроенный `initdb.exe` с невалидным путём или непустым
+тестовым каталогом через общий runner и убедиться, что возвращённый
+`PgError::CommandFailed.stderr` не содержит Unicode Replacement Character
+(`�`) и характерных последовательностей mojibake UTF-8→CP1251.
 
 - [ ] **Step 4: Выполнить финальные проверки**
 
@@ -202,13 +199,12 @@ Run: `git status --short --branch`
 
 Expected: scanner не находит повреждённой кодировки в изменённых файлах, diff clean, рабочая копия содержит только относящиеся к задаче изменения.
 
-- [ ] **Step 5: Удалить ненужные Rust-артефакты**
+- [ ] **Step 5: Необязательный cleanup Rust-артефактов**
 
-Если после проверки не требуется продолжать работу с собранными артефактами, удалить только workspace `target/` и проверить, что активных процессов, использующих его, нет.
+Если нужно освободить место и активных процессов, использующих артефакты, нет,
+можно удалить только workspace `target/`. Этот cleanup не является критерием
+успеха исправления.
 
-- [ ] **Step 6: Зафиксировать проверку**
-
-```powershell
-git add docs/superpowers/plans/2026-07-28-installer-postgres-bootstrap-fix.md
-git commit -m "docs(installer): add PostgreSQL bootstrap fix plan"
-```
+После Tasks 1–2 отдельные task-only коммиты уже содержат код. Task 3 не создаёт
+пустой коммит: финальный результат передаётся после проверки `git status` и
+подтверждения, что в рабочей копии нет посторонних изменений.
