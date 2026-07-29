@@ -225,12 +225,12 @@ mod tests {
     #[cfg(windows)]
     #[tokio::test]
     async fn streams_stdout_stderr_and_terminal_status() {
-        let mut command = Command::new("powershell");
+        let mut command = Command::new("cmd.exe");
         command.args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            "[Console]::Out.WriteLine('stdout-line'); [Console]::Error.WriteLine('stderr-line'); [Console]::Out.Flush(); [Console]::Error.Flush(); exit 7",
+            "/D",
+            "/S",
+            "/C",
+            "echo(stdout-line&>&2 echo(stderr-line&exit /b 7",
         ]);
         assert_failed_command_events(command).await;
     }
