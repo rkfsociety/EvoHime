@@ -72,6 +72,15 @@ export function useWebSocket({ sessionId, onEvent, onReconnect }: UseWebSocketOp
   const socketRef = useRef<WebSocket | null>(null);
   const lastSequenceRef = useRef(0);
   const lastCursorRef = useRef<string | undefined>();
+  // onEvent/onReconnect are frequently recreated on every render by the
+  // caller (e.g. an inline onReconnect callback) — reading them through a
+  // ref keeps the effect below keyed only on sessionId, otherwise every
+  // parent re-render tears down and reopens the socket before it ever
+  // finishes connecting.
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
+  const onReconnectRef = useRef(onReconnect);
+  onReconnectRef.current = onReconnect;
 
   useEffect(() => {
     if (!sessionId) {
@@ -97,7 +106,7 @@ export function useWebSocket({ sessionId, onEvent, onReconnect }: UseWebSocketOp
       setSocketState(isInitial ? "connecting" : "reconnecting");
 
       if (!isInitial) {
-        onReconnect?.("started");
+        onReconnectRef.current?.("started");
       }
 
       const after = lastSequenceRef.current;
@@ -110,7 +119,7 @@ export function useWebSocket({ sessionId, onEvent, onReconnect }: UseWebSocketOp
         attempt = 0;
         setSocketState("connected");
         if (!isInitial) {
-          onReconnect?.("succeeded");
+          onReconnectRef.current?.("succeeded");
         }
         saveReplayContext(sessionId, lastSequenceRef.current, lastCursorRef.current);
       };
@@ -121,7 +130,7 @@ export function useWebSocket({ sessionId, onEvent, onReconnect }: UseWebSocketOp
         // Check if max retries exceeded
         if (attempt >= MAX_RETRY_ATTEMPTS) {
           setSocketState("failed");
-          onReconnect?.("failed");
+          onReconnectRef.current?.("failed");
           return;
         }
 
@@ -147,10 +156,10 @@ export function useWebSocket({ sessionId, onEvent, onReconnect }: UseWebSocketOp
           if (item.sequence <= lastSequenceRef.current) return;
           lastSequenceRef.current = item.sequence;
           saveReplayContext(sessionId, lastSequenceRef.current, lastCursorRef.current);
-          onEvent(item.event);
+          onEventRef.current(item.event);
           return;
         }
-        onEvent(raw as ServerEvent);
+        onEventRef.current(raw as ServerEvent);
       };
     };
 
@@ -162,7 +171,11 @@ export function useWebSocket({ sessionId, onEvent, onReconnect }: UseWebSocketOp
       if (socketRef.current === socket) socketRef.current = null;
       clearReplayContext();
     };
-  }, [onEvent, onReconnect, sessionId]);
+    // Intentionally NOT depending on onEvent/onReconnect: they're read via
+    // refs above so a caller passing an inline (identity-unstable)
+    // onReconnect doesn't tear down and reopen the socket on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
 
   function send(command: unknown): boolean {
     if (socketRef.current?.readyState !== WebSocket.OPEN) return false;
