@@ -1,4 +1,5 @@
 //! Task orchestration: pipeline, steps, memory, helpers.
+pub(crate) mod approval_review;
 pub mod helpers;
 pub mod memory;
 pub mod pipeline;

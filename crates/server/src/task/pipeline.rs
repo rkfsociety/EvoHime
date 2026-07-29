@@ -2,6 +2,7 @@
 use crate::app::AppState;
 use crate::permissions_api::permission_name;
 use crate::sessions_api::summarize_session_title;
+use crate::task::approval_review::approval_review;
 use crate::task::helpers::{
     claim_attachment_context, emit_event, load_chat_history, map_agent_error, resolve_model_route,
 };
@@ -366,6 +367,7 @@ pub(crate) async fn run_task_pipeline(
                 approval_id,
                 input,
             })) => {
+                let review = approval_review(&tool, &input);
                 emit_event(
                     state,
                     session_id,
@@ -386,7 +388,7 @@ pub(crate) async fn run_task_pipeline(
                         tool_name: tool.clone(),
                         permission: permission_name(permission).to_string(),
                         scope: scope.clone(),
-                        review: None,
+                        review,
                         created_at: chrono::Utc::now(),
                     },
                 )
