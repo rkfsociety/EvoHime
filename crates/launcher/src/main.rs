@@ -973,7 +973,25 @@ struct LauncherApp {
 
 impl eframe::App for LauncherApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        while tray_icon::TrayIconEvent::receiver().try_recv().is_ok() {}
+        while let Ok(event) = tray_icon::TrayIconEvent::receiver().try_recv() {
+            if let tray_icon::TrayIconEvent::DoubleClick { .. } = event {
+                ui.ctx()
+                    .send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ui.ctx()
+                    .send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Focus);
+            }
+        }
+
+        // Раздел II плана: закрытие крестиком сворачивает в трей вместо
+        // выхода — приложение продолжает раздавать 5173/3000/3001, пока
+        // пользователь явно не выберет "Exit" в меню трея.
+        if ui.ctx().input(|i| i.viewport().close_requested()) {
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
 
         while let Ok(event) = tray_icon::menu::MenuEvent::receiver().try_recv() {
             if event.id == self.tray_ids.open_dashboard {
