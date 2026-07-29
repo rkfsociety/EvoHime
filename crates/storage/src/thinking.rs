@@ -34,17 +34,19 @@ pub struct ThinkingUsage {
 
 /// Get or create global thinking settings (defaults to disabled, 5000 tokens budget)
 pub async fn get_or_create_thinking_settings(pool: &PgPool) -> sqlx::Result<ThinkingSettings> {
-    sqlx::query_as::<_, ThinkingSettings>(
+    sqlx::query(
         r#"
         INSERT INTO thinking_settings (enabled, budget_tokens)
-        VALUES (false, 5000)
-        ON CONFLICT DO NOTHING;
-
-        SELECT * FROM thinking_settings LIMIT 1
+        SELECT false, 5000
+        WHERE NOT EXISTS (SELECT 1 FROM thinking_settings)
         "#,
     )
-    .fetch_one(pool)
-    .await
+    .execute(pool)
+    .await?;
+
+    sqlx::query_as::<_, ThinkingSettings>("SELECT * FROM thinking_settings LIMIT 1")
+        .fetch_one(pool)
+        .await
 }
 
 /// Update global thinking settings
