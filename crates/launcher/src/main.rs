@@ -265,10 +265,7 @@ mod server_env_tests {
         let root = Path::new(r"C:\EvoHime\versions\current");
         let env = server_env("token", Some("postgres://example"), root);
 
-        assert!(env.contains(&(
-            "WORKSPACE_ROOT".to_string(),
-            root.display().to_string()
-        )));
+        assert!(env.contains(&("WORKSPACE_ROOT".to_string(), root.display().to_string())));
     }
 }
 
