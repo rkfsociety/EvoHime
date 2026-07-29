@@ -156,6 +156,7 @@ async fn run_supervisor(
 ) {
     let client = reqwest::Client::new();
     let mut current_version = read_current_version(&install_dir);
+    let workspace_dir = ensure_workspace_dir(&install_dir);
 
     let (pg_bin_dir, pg_data_dir) = pg_paths(&install_dir);
     let dsn = db_config.as_ref().map(|cfg| {
@@ -175,8 +176,14 @@ async fn run_supervisor(
         }
     }
 
-    let mut server_process =
-        start_server_process(&install_dir, &current_version, &token, dsn.as_deref()).await;
+    let mut server_process = start_server_process(
+        &install_dir,
+        &current_version,
+        &workspace_dir,
+        &token,
+        dsn.as_deref(),
+    )
+    .await;
     let mut worker_process = start_worker_process(&install_dir, &current_version).await;
 
     let mut health_tick = tokio::time::interval(HEALTH_CHECK_INTERVAL);
@@ -228,6 +235,7 @@ async fn run_supervisor(
                     Some(LauncherCommand::ApplyUpdate) => {
                         run_update_cycle(
                             &install_dir,
+                            &workspace_dir,
                             &token,
                             dsn.as_deref(),
                             &client,
@@ -285,6 +293,7 @@ mod server_env_tests {
 async fn start_server_process(
     install_dir: &Path,
     version: &Option<String>,
+    workspace_dir: &Path,
     token: &str,
     dsn: Option<&str>,
 ) -> Option<ManagedProcess> {
@@ -303,11 +312,40 @@ async fn start_server_process(
         "http://127.0.0.1:3000/health",
         Some("http://127.0.0.1:3000/shutdown".to_string()),
     );
-    if let Err(err) = process.start(&server_env(token, dsn, &dir)).await {
+    if let Err(err) = process.start(&server_env(token, dsn, workspace_dir)).await {
         tracing::error!(%err, "failed to start server.exe");
         return None;
     }
     Some(process)
+}
+
+/// Каталог установки (`versions/<version>`) — это собственные бинарники
+/// приложения, не рабочий проект пользователя: `git status`/`gh pr list`
+/// там всегда падали (не git-репозиторий, нет remote). Заводим отдельную
+/// стабильную по версиям директорию и делаем её валидным git-репозиторием,
+/// чтобы git/GitHub-панели по умолчанию не начинали с ошибки 500.
+fn ensure_workspace_dir(install_dir: &Path) -> PathBuf {
+    let workspace = install_dir.join("workspace");
+    if let Err(err) = std::fs::create_dir_all(&workspace) {
+        tracing::error!(%err, path = %workspace.display(), "failed to create workspace directory");
+        return workspace;
+    }
+    if !workspace.join(".git").exists() {
+        match std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(&workspace)
+            .status()
+        {
+            Ok(status) if !status.success() => {
+                tracing::warn!(%status, "git init in the workspace directory exited non-zero")
+            }
+            Err(err) => {
+                tracing::warn!(%err, "failed to git-init the workspace directory — is git on PATH?")
+            }
+            Ok(_) => {}
+        }
+    }
+    workspace
 }
 
 /// Запускает `worker.py` через системный Python (раздел II плана — worker
@@ -385,6 +423,7 @@ async fn check_for_updates(
 #[allow(clippy::too_many_arguments)]
 async fn run_update_cycle(
     install_dir: &Path,
+    workspace_dir: &Path,
     token: &str,
     dsn: Option<&str>,
     client: &reqwest::Client,
@@ -484,7 +523,7 @@ async fn run_update_cycle(
         Some("http://127.0.0.1:3000/shutdown".to_string()),
     );
     let start_ok = new_process
-        .start(&server_env(token, dsn, &final_dir))
+        .start(&server_env(token, dsn, workspace_dir))
         .await
         .is_ok();
 
@@ -509,7 +548,8 @@ async fn run_update_cycle(
             "Health-check после обновления не прошёл",
         )
         .await;
-        *server_process = start_server_process(install_dir, &saved_version, token, dsn).await;
+        *server_process =
+            start_server_process(install_dir, &saved_version, workspace_dir, token, dsn).await;
         update_component_status(status, "server", server_process.is_some());
         *worker_process = start_worker_process(install_dir, &saved_version).await;
         update_component_status(status, "worker", worker_process.is_some());

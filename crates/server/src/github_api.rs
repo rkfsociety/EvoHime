@@ -141,7 +141,15 @@ pub(crate) async fn list_pull_requests(
 
         let output = command.output().map_err(|error| error.to_string())?;
         if !output.status.success() {
-            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            // Воркспейс ещё не привязан к GitHub-репозиторию (нет `.git`
+            // или нет remote) — это ожидаемое "нет PR" состояние, а не
+            // сбой сервера, иначе панель показывает пугающий 500 на
+            // каждом старте до первого `git remote add`.
+            if stderr.contains("no git remotes found") || stderr.contains("not a git repository") {
+                return Ok(Vec::new());
+            }
+            return Err(stderr);
         }
 
         let prs = serde_json::from_slice::<Vec<GithubPullRequestSummary>>(&output.stdout)
