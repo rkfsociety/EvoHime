@@ -177,6 +177,7 @@ async fn run_supervisor(
 
     let mut server_process =
         start_server_process(&install_dir, &current_version, &token, dsn.as_deref()).await;
+    let mut worker_process = start_worker_process(&install_dir, &current_version).await;
 
     let mut health_tick = tokio::time::interval(HEALTH_CHECK_INTERVAL);
     let mut update_tick = tokio::time::interval(UPDATE_CHECK_INTERVAL);
@@ -191,6 +192,12 @@ async fn run_supervisor(
                     .next();
                 let online = if let Some(fut) = online { fut.await } else { false };
                 update_component_status(&status, "server", online);
+
+                let worker_online = match &worker_process {
+                    Some(process) => process.health_check(&client, Duration::from_secs(3)).await,
+                    None => false,
+                };
+                update_component_status(&status, "worker", worker_online);
             }
             _ = update_tick.tick() => {
                 check_for_updates(&client, &current_version, &update_state, &status).await;
@@ -205,6 +212,11 @@ async fn run_supervisor(
                             process.graceful_shutdown(&client, &token, Duration::from_secs(10)).await;
                         }
                         update_component_status(&status, "server", false);
+
+                        if let Some(process) = &mut worker_process {
+                            process.graceful_shutdown(&client, &token, Duration::from_secs(5)).await;
+                        }
+                        update_component_status(&status, "worker", false);
 
                         if db_config.is_some() {
                             if let Err(err) = postgres::stop(&pg_bin_dir, &pg_data_dir).await {
@@ -221,6 +233,7 @@ async fn run_supervisor(
                             &client,
                             &mut current_version,
                             &mut server_process,
+                            &mut worker_process,
                             &update_state,
                             &status,
                         )
@@ -297,6 +310,36 @@ async fn start_server_process(
     Some(process)
 }
 
+/// Запускает `worker.py` через системный Python (раздел II плана — worker
+/// не компилируется в exe, раздаётся как чистый stdlib-скрипт). Порт 8090
+/// зашит в `worker.py` по умолчанию и совпадает с дефолтом `PYTHON_WORKER_URL`
+/// в `crates/server/src/app.rs`, так что явно его не передаём.
+async fn start_worker_process(
+    install_dir: &Path,
+    version: &Option<String>,
+) -> Option<ManagedProcess> {
+    let version = version.clone().unwrap_or_else(|| "current".to_string());
+    let dir = install_dir.join("versions").join(version);
+    let worker_script = dir.join("worker").join("worker.py");
+    if !worker_script.exists() {
+        tracing::warn!(path = %worker_script.display(), "worker.py not found — nothing to supervise yet");
+        return None;
+    }
+
+    let mut process = ManagedProcess::new(
+        "worker",
+        PathBuf::from("python"),
+        vec![worker_script.display().to_string()],
+        "http://127.0.0.1:8090/health",
+        None,
+    );
+    if let Err(err) = process.start(&[]).await {
+        tracing::error!(%err, "failed to start worker.py — is Python installed and on PATH?");
+        return None;
+    }
+    Some(process)
+}
+
 fn update_component_status(status: &Arc<Mutex<LauncherStatus>>, name: &str, online: bool) {
     if let Ok(mut guard) = status.lock() {
         if let Some(component) = guard.components.iter_mut().find(|c| c.name == name) {
@@ -347,6 +390,7 @@ async fn run_update_cycle(
     client: &reqwest::Client,
     current_version: &mut Option<String>,
     server_process: &mut Option<ManagedProcess>,
+    worker_process: &mut Option<ManagedProcess>,
     update_state: &Arc<Mutex<UpdateState>>,
     status: &Arc<Mutex<LauncherStatus>>,
 ) {
@@ -422,6 +466,13 @@ async fn run_update_cycle(
             .graceful_shutdown(client, token, Duration::from_secs(10))
             .await;
     }
+    if let Some(process) = worker_process.take() {
+        let mut process = process;
+        process
+            .graceful_shutdown(client, token, Duration::from_secs(5))
+            .await;
+    }
+    update_component_status(status, "worker", false);
 
     progress("Запуск новой версии...");
     let new_server_exe = final_dir.join("server.exe");
@@ -460,12 +511,16 @@ async fn run_update_cycle(
         .await;
         *server_process = start_server_process(install_dir, &saved_version, token, dsn).await;
         update_component_status(status, "server", server_process.is_some());
+        *worker_process = start_worker_process(install_dir, &saved_version).await;
+        update_component_status(status, "worker", worker_process.is_some());
         return;
     }
 
     *server_process = Some(new_process);
     *current_version = Some(new_version.clone());
     update_component_status(status, "server", true);
+    *worker_process = start_worker_process(install_dir, current_version).await;
+    update_component_status(status, "worker", worker_process.is_some());
 
     let entry = UpdateHistoryEntry {
         timestamp: chrono::Utc::now().to_rfc3339(),
