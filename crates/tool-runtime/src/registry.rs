@@ -276,6 +276,10 @@ impl ToolRegistry {
             .get(name)
             .ok_or_else(|| ToolError::UnknownTool(name.to_string()))?;
 
+        if name == tools::patch::NAME {
+            tools::patch::validate_input(&input)?;
+        }
+
         for permission in definition.permissions {
             let scope = scope_from_input(name, &input);
             match self
@@ -721,5 +725,39 @@ mod tests {
             }
             other => panic!("expected NeedsApproval, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn oversized_patch_is_rejected_before_approval() {
+        let permissions = PermissionEngine::new();
+        permissions
+            .set_mode(
+                evohime_permissions::Permission::FilesystemWrite,
+                evohime_permissions::PermissionMode::Ask,
+            )
+            .await;
+        let registry = ToolRegistry::bootstrap_with_permissions(permissions);
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("file.txt"), "old\n").expect("write fixture");
+        let context = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: Some(Uuid::new_v4()),
+            progress_tx: None,
+        };
+
+        let error = registry
+            .execute(
+                &context,
+                "filesystem.patch",
+                serde_json::json!({
+                    "path": "file.txt",
+                    "patch": "a".repeat(tools::patch::MAX_PATCH_BYTES + 1)
+                }),
+            )
+            .await
+            .expect_err("preflight must reject oversized input");
+
+        assert!(matches!(error, ToolError::InvalidInput { .. }));
     }
 }

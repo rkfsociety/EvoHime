@@ -1,1 +1,1 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["path","patch"],"properties":{"path":{"type":"string"},"patch":{"type":"string"}},"additionalProperties":false}
+{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["path","patch"],"properties":{"path":{"type":"string"},"patch":{"type":"string","maxLength":131072}},"additionalProperties":false}
