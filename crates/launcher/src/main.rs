@@ -46,6 +46,7 @@ enum LauncherCommand {
     CheckUpdatesNow,
     ApplyUpdate,
     Stop,
+    Restart,
 }
 
 fn main() -> eframe::Result<()> {
@@ -231,6 +232,36 @@ async fn run_supervisor(
                             }
                         }
                         update_component_status(&status, "db", false);
+                    }
+                    Some(LauncherCommand::Restart) => {
+                        tracing::info!("restarting server/worker via tray command");
+                        if let Some(mut process) = server_process.take() {
+                            process
+                                .graceful_shutdown(&client, &token, Duration::from_secs(10))
+                                .await;
+                        }
+                        update_component_status(&status, "server", false);
+
+                        if let Some(mut process) = worker_process.take() {
+                            process
+                                .graceful_shutdown(&client, &token, Duration::from_secs(5))
+                                .await;
+                        }
+                        update_component_status(&status, "worker", false);
+
+                        server_process = start_server_process(
+                            &install_dir,
+                            &current_version,
+                            &workspace_dir,
+                            &token,
+                            dsn.as_deref(),
+                        )
+                        .await;
+                        update_component_status(&status, "server", server_process.is_some());
+
+                        worker_process =
+                            start_worker_process(&install_dir, &current_version).await;
+                        update_component_status(&status, "worker", worker_process.is_some());
                     }
                     Some(LauncherCommand::ApplyUpdate) => {
                         run_update_cycle(
@@ -876,6 +907,7 @@ struct TrayMenuIds {
     open_dashboard: tray_icon::menu::MenuId,
     check_updates: tray_icon::menu::MenuId,
     stop: tray_icon::menu::MenuId,
+    restart: tray_icon::menu::MenuId,
     exit: tray_icon::menu::MenuId,
 }
 
@@ -885,6 +917,7 @@ fn build_tray_menu() -> TrayMenu {
     let open_dashboard = tray_icon::menu::MenuItem::new("Open Dashboard", true, None);
     let check_updates = tray_icon::menu::MenuItem::new("Check Updates", true, None);
     let stop = tray_icon::menu::MenuItem::new("Stop", true, None);
+    let restart = tray_icon::menu::MenuItem::new("Restart", true, None);
     let settings = tray_icon::menu::MenuItem::new("Settings", true, None);
     let exit = tray_icon::menu::MenuItem::new("Exit", true, None);
 
@@ -892,6 +925,7 @@ fn build_tray_menu() -> TrayMenu {
         open_dashboard: open_dashboard.id().clone(),
         check_updates: check_updates.id().clone(),
         stop: stop.id().clone(),
+        restart: restart.id().clone(),
         exit: exit.id().clone(),
     };
 
@@ -901,6 +935,7 @@ fn build_tray_menu() -> TrayMenu {
         &open_dashboard,
         &check_updates,
         &stop,
+        &restart,
         &settings,
         &tray_icon::menu::PredefinedMenuItem::separator(),
         &exit,
@@ -947,6 +982,8 @@ impl eframe::App for LauncherApp {
                 let _ = self.command_tx.send(LauncherCommand::CheckUpdatesNow);
             } else if event.id == self.tray_ids.stop {
                 let _ = self.command_tx.send(LauncherCommand::Stop);
+            } else if event.id == self.tray_ids.restart {
+                let _ = self.command_tx.send(LauncherCommand::Restart);
             } else if event.id == self.tray_ids.exit {
                 std::process::exit(0);
             }
