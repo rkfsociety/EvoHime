@@ -296,7 +296,7 @@ Task lifecycle реализован: start/complete/fail/cancel/resume/retry. St
 
 - Waves A–D закрыли trust/security, recovery, agent quality и product honesty для Sites/Scheduled;
 - Wave E `7.84`–`7.98` закрыла PostgreSQL/frontend/protocol/docs CI, Dev Container, OpenAPI и feature flags;
-- `7.99`–`7.104` и `7.108`–`7.116` завершены; остаются `7.105`–`7.107`.
+- `7.99`–`7.105` и `7.108`–`7.116` завершены; остаются `7.106`–`7.107`.
 
 ---
 

@@ -1,6 +1,6 @@
 # EvoHime — Дорожная карта
 
-> Обновлено: 2026-07-26 (реконциляция Stage 7 с фактическим кодом и ad-hoc wave-трекингом)
+> Обновлено: 2026-07-29 (реконциляция Stage 7 с фактическим кодом и ad-hoc wave-трекингом)
 
 ## Обзор
 
@@ -17,7 +17,7 @@
 | 4 | Editor + Git | ✅ Done | Browser file tree, Monaco editor, Git status/diff/actions, and synchronization events |
 | 5 | Оркестрация | ✅ Complete | Lifecycle, команды, storage и recovery готовы |
 | 6 | Advanced | ✅ Foundations done | Memory, PR, workers, observability, tool catalog |
-| 7 | Hardening + Product | 🟡 In progress | Security, reliability, Sites/Scheduled, agent 2.0, CI, DX; `7.105`–`7.107` remain |
+| 7 | Hardening + Product | 🟡 In progress | Security, reliability, Sites/Scheduled, agent 2.0, CI, DX; `7.106`–`7.107` remain |
 | 8 | Agent Intelligence + DX | 📝 Plan | Reasoning 2.0, experience/memory 3.0, subagent playbooks, plugin runtime 2.0, local reliability, UX/a11y |
 
 ---
@@ -484,7 +484,7 @@
 | 7.102 | Marketplace for playbooks / plugins with trust scores | L | ✅ | trust score из проверяемых сигналов + UI-бейджи; install-гейт со статическим risk scan (отказ ниже-official без `force`); lock-файл с content-hash и `/api/plugins/integrity` (ok/modified/unlocked/missing) + integrity-chip. Криптоподписи/репутация авторов — вне пункта: внешней PKI у OSS-каталогов нет |
 | 7.103 | Online continual learning (still no weight fine-tune; stronger experience) | L | ✅ | wave 1 ✅: обучение на провалах — ограниченная полоса extract (≤2 кандидата `failure_pattern`/`verification_rule`, scope experience, confidence cap 0.6 → только Ask-гейт, без auto-promote); harmful-фидбек использованной памяти уже был; wave 2 ✅: эскалация confidence/importance при повторе через `FeedbackSignal::Repeated` (confidence кап 0.6 не снимается) и retrieval-бонус для failure_pattern/verification_rule над success_pattern/playbook |
 | 7.104 | Mobile-responsive shell (browser-only, no native app) | M | ✅ | off-canvas sidebar/trace-panel drawers через CSS media query `≤768px` (гамбургер, общий backdrop, закрытие по Escape/клику вне/выбору пункта), touch-таргеты ≥44px; десктопная раскладка не тронута |
-| 7.105 | Voice input / TTS optional | M | ⬜ | |
+| 7.105 | Voice input / TTS optional | M | ✅ | Browser-only Web Speech API: `useVoiceInput` with secure-context/error lifecycle and `ru-RU` transcript handling; centralized `useSpeechSynthesis`; accessible composer/message controls; commits `aeec3af`, `5762c52`, `b447c42`, `3525369` |
 | 7.106 | Diff review UI for agent patches before apply | L | ⬜ | approvals coarse today |
 | 7.107 | Worktree-aware multi-checkout agent (parallel tasks isolated) | L | ⬜ | |
 | 7.108 | Cost budgets & spend caps per day/model | M | ✅ | Backend (Wave 1): `cost_limits` table (`crates/storage/src/cost_limits.rs`), `/api/models/cost-limits` CRUD; Frontend (Wave 2): `SpendSettingsSection.tsx` в Settings, gauge визуализация, edit/save flow; коммит `2f3257e` |
@@ -499,16 +499,16 @@
 
 ### Suggested Stage 7 delivery waves
 
-**Актуальный статус 2026-07-26:** `7.93`–`7.104` ✅ — request context, task timeline telemetry, log safety, deep health checks, backup/export, multi-operator authz, cloud sync, browser sessions, eval harness, plugin trust/integrity, failure learning и mobile shell; `7.108`–`7.116` ✅ — cost limits, self-update, extended reasoning, semantic project search, plugin audit trail, OTLP trends, frontend performance и session recovery.
+**Актуальный статус 2026-07-29:** `7.93`–`7.105` ✅ — request context, task timeline telemetry, log safety, deep health checks, backup/export, multi-operator authz, cloud sync, browser sessions, eval harness, plugin trust/integrity, failure learning, mobile shell и voice/TTS; `7.108`–`7.116` ✅ — cost limits, self-update, extended reasoning, semantic project search, plugin audit trail, OTLP trends, frontend performance и session recovery.
 
-**Актуальный статус 2026-07-26:** `7.108`–`7.116` подтверждены кодом и тестами; OpenAPI-контракт содержит 98 операций. Session recovery отслеживается как `7.116`, а `7.109` — как self-update launcher. Единственные реальные незакрытые Stage 7 пункты: `7.105` (voice/TTS), `7.106` (diff review UI), `7.107` (worktree-aware multi-checkout agent) — все три `⬜`, без кода в репозитории.
+**Актуальный статус 2026-07-29:** `7.105` и `7.108`–`7.116` подтверждены кодом; OpenAPI-контракт содержит 98 операций. Session recovery отслеживается как `7.116`, а `7.109` — как self-update launcher. Единственные реальные незакрытые Stage 7 пункты: `7.106` (diff review UI) и `7.107` (worktree-aware multi-checkout agent).
 
 1. **Wave A (trust):** `7.1`–`7.6`, `7.11`, `7.15`–`7.16` ✅
 2. **Wave B (survive restarts):** `7.17`–`7.27`, `7.40`–`7.41` ✅
 3. **Wave C (agent quality):** `7.28`–`7.39`, `7.42`–`7.51`, `7.52` ✅
 4. **Wave D (product honesty):** 7.62–7.68, 7.72–7.73 ✅
 5. **Wave E (DX/CI):** `7.56`, `7.69`–`7.71`, `7.84`–`7.98` ✅
-6. **Wave F (scale/moonshots):** 7.54 ✅, `7.57`–`7.59` ⬜, `7.98`–`7.104` ✅, `7.108`–`7.116` ✅ → осталось `7.105`–`7.107`
+6. **Wave F (scale/moonshots):** 7.54 ✅, `7.57`–`7.59` ⬜, `7.98`–`7.105` ✅, `7.108`–`7.116` ✅ → осталось `7.106`–`7.107`
 
 ### Критерий готовности Stage 7 (минимум)
 

@@ -2,7 +2,7 @@
 
 **Дата:** 2026-07-24  
 **Версия:** 1.0  
-**Статус:** Threat-model scope `7.A–7.E` завершён; Stage 7 в целом ещё содержит `7.105`–`7.107`
+**Статус:** Threat-model scope `7.A–7.E` завершён; в Stage 7 остаются `7.106`–`7.107`
 
 ---
 
@@ -189,7 +189,7 @@ EvoHime — локальная single-tenant платформа для AI-аге
 ## Recommended Actions Going Forward
 
 ### Threat-model scope завершён
-Все пункты 7.A–7.E реализованы. Это закрывает scope threat model, но не означает завершение всего Stage 7: в roadmap остаются `7.105`–`7.107`; пункты `7.57`–`7.59` отложены на Stage 8.E.
+Все пункты 7.A–7.E реализованы. Это закрывает scope threat model, но не означает завершение всего Stage 7: в roadmap остаются `7.106`–`7.107`; пункты `7.57`–`7.59` отложены на Stage 8.E.
 
 ### Stage 8 приоритеты для threat model
 1. **8.24–8.27:** Point-in-time recovery, circuit breaker, graceful degradation

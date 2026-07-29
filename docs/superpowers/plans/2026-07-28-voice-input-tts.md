@@ -2,6 +2,8 @@
 
 > **Для агентных исполнителей:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (рекомендуется) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** Implemented as Stage `7.105` in commits `aeec3af`, `5762c52`, `b447c42`, and `3525369`. The unchecked boxes below are preserved as the original execution checklist, not the current roadmap status.
+
 **Goal:** Добавить в browser-only чат EvoHime безопасный голосовой ввод на Web Speech API и ручное озвучивание завершённых ответов через `speechSynthesis`.
 
 **Architecture:** STT будет изолирован в `useVoiceInput`, который переиспользует один экземпляр recognition, хранит transcript в ref/state и возвращает итог из `stop()` после `onend`. TTS будет одним `useSpeechSynthesis` на уровне списка сообщений с глобально единственным `speakingMessageId`; отдельные сообщения только сравнивают свой id с этим значением.
