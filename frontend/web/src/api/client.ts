@@ -103,6 +103,16 @@ export function parseApiErrorBody(text: string): ApiErrorBody | null {
   }
 }
 
+// Панель раздаётся статикой Launcher'а на 5173, а API живёт на server.exe
+// (порт 3000, см. crates/server/src/cors.rs) — относительный fetch() резолвился
+// бы на 5173 и получал 404 от статик-сервера. CORS на 3000 уже разрешает
+// origin 5173, поэтому бьём абсолютным адресом, как launcher.ts делает для 3001.
+const API_ORIGIN = "http://localhost:3000";
+
+function apiUrl(path: string): string {
+  return `${API_ORIGIN}${path}`;
+}
+
 const API_TOKEN_STORAGE_KEY = "evohime_api_token";
 
 export function getApiToken(): string | null {
@@ -140,8 +150,7 @@ export function withAuth(init?: RequestInit): RequestInit {
 }
 
 export function websocketUrl(path: string): string {
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const url = new URL(path, `${protocol}//${window.location.host}`);
+  const url = new URL(path, `ws://localhost:3000`);
   const token = getApiToken();
   if (token) {
     url.searchParams.set("access_token", token);
@@ -158,7 +167,7 @@ export async function apiRequest<T>(
   init?: RequestInit,
   fallbackError = "Запрос к API не удался",
 ): Promise<T> {
-  const response = await fetch(path, withAuth(init));
+  const response = await fetch(apiUrl(path), withAuth(init));
   const text = await response.text();
   if (!response.ok) {
     throwApiError(response.status, text, fallbackError);
@@ -174,7 +183,7 @@ export async function apiRequestVoid(
   init?: RequestInit,
   fallbackError = "Запрос к API не удался",
 ): Promise<void> {
-  const response = await fetch(path, withAuth(init));
+  const response = await fetch(apiUrl(path), withAuth(init));
   if (!response.ok) {
     const text = await response.text();
     throwApiError(response.status, text, fallbackError);
@@ -186,7 +195,7 @@ export async function apiRequestBlob(
   init?: RequestInit,
   fallbackError = "Не удалось получить файл из API",
 ): Promise<Blob> {
-  const response = await fetch(path, withAuth(init));
+  const response = await fetch(apiUrl(path), withAuth(init));
   if (!response.ok) {
     const text = await response.text();
     throwApiError(response.status, text, fallbackError);
