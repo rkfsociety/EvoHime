@@ -219,6 +219,7 @@ git commit -m "feat(tools): bound patch input before approval"
 **Files:**
 - Modify: `crates/protocol/schema/evohime.protocol.schema.json`
 - Modify: `crates/protocol/src/lib.rs`
+- Modify: `crates/server/src/task/pipeline.rs` (set `review: None` until Task 3)
 - Regenerate: `frontend/web/src/protocol.generated.ts`
 - Modify only if export is absent after generation: `frontend/web/src/protocol.ts`
 
@@ -363,7 +364,7 @@ against a fresh generation.
 - [ ] **Step 7: Commit**
 
 ```powershell
-git add crates/protocol/schema/evohime.protocol.schema.json crates/protocol/src/lib.rs frontend/web/src/protocol.generated.ts frontend/web/src/protocol.ts
+git add crates/protocol/schema/evohime.protocol.schema.json crates/protocol/src/lib.rs crates/server/src/task/pipeline.rs frontend/web/src/protocol.generated.ts frontend/web/src/protocol.ts
 git commit -m "feat(protocol): describe approval diff reviews"
 ```
 
