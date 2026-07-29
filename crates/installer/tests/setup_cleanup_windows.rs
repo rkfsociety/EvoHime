@@ -192,6 +192,9 @@ async fn leaves_processes_in_completed_installation_untouched() {
         .join("evohime-server.exe");
     std::fs::create_dir_all(installed_exe.parent().unwrap()).unwrap();
     compile_source(&installed_exe, RESIDUAL_PROCESS_SOURCE);
+    let config_dir = install_dir.join("launcher-data");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::write(config_dir.join("config.json"), b"{}").unwrap();
     std::fs::write(install_dir.join(".setup_complete"), b"").unwrap();
     let mut inside = ChildGuard(spawn_residual_process(&installed_exe));
     std::thread::sleep(Duration::from_millis(250));
