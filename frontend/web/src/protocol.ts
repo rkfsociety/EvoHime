@@ -4,6 +4,7 @@ export type {
   AgentPlanUpdatedEvent,
   ActionLoggedEvent,
   ApprovalRequiredEvent,
+  UnifiedDiffReview,
   MemoryAskEvent,
   MemoryProposedEvent,
   MemoryAcceptedEvent,

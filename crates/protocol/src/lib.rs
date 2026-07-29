@@ -11,6 +11,12 @@ pub struct PlanStep {
     pub depends_on: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ApprovalReview {
+    UnifiedDiff { path: String, diff: String },
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ServerEvent {
@@ -117,6 +123,8 @@ pub enum ServerEvent {
         tool_name: String,
         permission: String,
         scope: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        review: Option<ApprovalReview>,
         created_at: DateTime<Utc>,
     },
     #[serde(rename = "memory.proposed")]
@@ -347,13 +355,41 @@ mod tests {
         let event = ServerEvent::ApprovalRequired {
             approval_id: Uuid::nil(),
             task_id: Uuid::nil(),
-            tool_name: "shell.execute".into(),
-            permission: "shell_execute".into(),
-            scope: "workspace".into(),
+            tool_name: "filesystem.patch".into(),
+            permission: "filesystem_write".into(),
+            scope: "src/lib.rs".into(),
+            review: Some(ApprovalReview::UnifiedDiff {
+                path: "src/lib.rs".into(),
+                diff: "@@ -1 +1 @@\n-old\n+new".into(),
+            }),
             created_at: Utc::now(),
         };
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json["type"], "approval.required");
+        assert_eq!(json["review"]["kind"], "unified_diff");
+        assert_eq!(json["review"]["path"], "src/lib.rs");
+        assert_eq!(json["review"]["diff"], "@@ -1 +1 @@\n-old\n+new");
+        let decoded: ServerEvent = serde_json::from_value(json).unwrap();
+        assert!(matches!(
+            decoded,
+            ServerEvent::ApprovalRequired {
+                review: Some(ApprovalReview::UnifiedDiff { .. }),
+                ..
+            }
+        ));
+
+        let ordinary = ServerEvent::ApprovalRequired {
+            approval_id: Uuid::nil(),
+            task_id: Uuid::nil(),
+            tool_name: "shell.execute".into(),
+            permission: "shell_execute".into(),
+            scope: "workspace".into(),
+            review: None,
+            created_at: Utc::now(),
+        };
+        let ordinary_json = serde_json::to_value(ordinary).unwrap();
+        assert!(ordinary_json.get("review").is_none());
+
         for command in [
             ClientCommand::ApprovalGranted {
                 approval_id: Uuid::nil(),

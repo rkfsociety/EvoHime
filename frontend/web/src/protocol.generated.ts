@@ -152,7 +152,13 @@ export interface ApprovalRequiredEvent {
   tool_name: string;
   permission: string;
   scope: string;
+  review?: UnifiedDiffReview;
   created_at: DateTime;
+}
+export interface UnifiedDiffReview {
+  kind: "unified_diff";
+  path: string;
+  diff: string;
 }
 export interface MemoryProposedEvent {
   type: "memory.proposed";

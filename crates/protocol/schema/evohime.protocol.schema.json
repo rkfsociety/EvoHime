@@ -275,10 +275,20 @@
       "properties": { "type": { "const": "action.logged" }, "task_id": { "$ref": "#/$defs/Uuid" }, "action": { "type": "string" }, "detail": { "type": "string" }, "created_at": { "$ref": "#/$defs/DateTime" }, "correlation_id": { "$ref": "#/$defs/Uuid" }, "duration_ms": { "type": "integer", "minimum": 0 } },
       "additionalProperties": false
     },
+    "UnifiedDiffReview": {
+      "type": "object",
+      "required": ["kind", "path", "diff"],
+      "properties": {
+        "kind": { "const": "unified_diff" },
+        "path": { "type": "string" },
+        "diff": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
     "ApprovalRequiredEvent": {
       "type": "object", "required": ["type", "approval_id", "task_id", "tool_name", "permission", "scope", "created_at"],
       "properties": {
-        "type": { "const": "approval.required" }, "approval_id": { "$ref": "#/$defs/Uuid" }, "task_id": { "$ref": "#/$defs/Uuid" }, "tool_name": { "type": "string" }, "permission": { "type": "string" }, "scope": { "type": "string" }, "created_at": { "$ref": "#/$defs/DateTime" }
+        "type": { "const": "approval.required" }, "approval_id": { "$ref": "#/$defs/Uuid" }, "task_id": { "$ref": "#/$defs/Uuid" }, "tool_name": { "type": "string" }, "permission": { "type": "string" }, "scope": { "type": "string" }, "review": { "$ref": "#/$defs/UnifiedDiffReview" }, "created_at": { "$ref": "#/$defs/DateTime" }
       }, "additionalProperties": false
     },
     "MemoryProposedEvent": {

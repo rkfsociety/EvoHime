@@ -386,6 +386,7 @@ pub(crate) async fn run_task_pipeline(
                         tool_name: tool.clone(),
                         permission: permission_name(permission).to_string(),
                         scope: scope.clone(),
+                        review: None,
                         created_at: chrono::Utc::now(),
                     },
                 )
