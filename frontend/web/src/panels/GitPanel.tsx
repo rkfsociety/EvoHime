@@ -1,3 +1,4 @@
+import { DiffViewer } from "../components/DiffViewer";
 import type { GitAction } from "../types";
 
 type GitPanelProps = {
@@ -121,24 +122,7 @@ export function GitPanel({
       </div>
       <div className="gitSummary">
         <h3>Изменения{gitDiffPath ? ` · ${gitDiffPath}` : ""}</h3>
-        <pre className="gitDiffViewer">
-          {(gitDiff || "Нет изменений").split("\n").map((line, index) => (
-            <span
-              className={
-                line.startsWith("+") && !line.startsWith("+++")
-                  ? "diffAdded"
-                  : line.startsWith("-") && !line.startsWith("---")
-                    ? "diffRemoved"
-                    : line.startsWith("@@")
-                      ? "diffContext"
-                      : ""
-              }
-              key={`${index}-${line}`}
-            >
-              {line || " "}
-            </span>
-          ))}
-        </pre>
+        <DiffViewer diff={gitDiff} />
       </div>
     </div>
   );

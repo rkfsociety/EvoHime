@@ -736,28 +736,28 @@
   overflow-wrap: anywhere;
 }
 
-.gitDiffViewer {
+.diffViewer {
   display: grid;
   gap: 2px;
 }
 
-.gitDiffViewer span {
+.diffViewer span {
   display: block;
   padding: 0 8px;
   border-radius: 4px;
 }
 
-.gitDiffViewer .diffAdded {
+.diffViewer .diffAdded {
   background: rgba(57, 216, 178, 0.14);
   color: #a5f5dd;
 }
 
-.gitDiffViewer .diffRemoved {
+.diffViewer .diffRemoved {
   background: rgba(255, 101, 125, 0.14);
   color: #ffb0bd;
 }
 
-.gitDiffViewer .diffContext {
+.diffViewer .diffContext {
   color: #9fc0ff;
 }
 
