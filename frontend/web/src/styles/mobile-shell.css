@@ -101,4 +101,19 @@
     min-width: 44px;
     min-height: 44px;
   }
+
+  .patchReviewModal {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    padding: 16px;
+  }
+
+  .patchReviewModal .diffViewer {
+    min-height: 120px;
+    max-height: 55vh;
+  }
+
+  .approvalActions button {
+    min-height: 44px;
+  }
 }
