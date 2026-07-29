@@ -2,12 +2,13 @@
 
 Last updated: 2026-07-29
 
-## Stage: 7 active (Stages 1–6 foundations complete, `7.105` and `7.108`–`7.116` complete; `7.106`–`7.107` remain)
+## Stage: 7 active (Stages 1–6 foundations complete, `7.105`–`7.106` and `7.108`–`7.116` complete; only `7.107` remains)
 
-Normal tasks use native ReAct tool calling: the model selects a tool, receives its observation, and selects the next action until `assistant.reply`. Tool-level permission approvals remain enabled for protected operations.
+Normal tasks use native ReAct tool calling: the model selects a tool, receives its observation, and selects the next action until `assistant.reply`. Tool-level permission approvals remain enabled for protected operations. Pending `filesystem.patch` calls in `Ask` mode carry a bounded typed `approval.required.review`; the browser shows the exact unified diff and only allows apply-once or deny.
 
 **Wave Progress (2026-07-29):**
 - ✅ `7.105` Voice input / TTS — browser Web Speech API input and manual speech synthesis controls
+- ✅ `7.106` Diff review UI — 128 KiB preflight, typed optional approval review, shared diff renderer and apply-once patch modal
 - ✅ `7.110` Formal threat model doc: `docs/security/threat-model.md` + `SECURITY.md`
 - ✅ `7.108` Wave 1: Cost limits backend — PostgreSQL schema (0031), storage module, API endpoints `/api/models/cost-limits` (GET/PUT)
 - ✅ `7.108` Wave 2: Spend Panel frontend — Settings tab with cost limits, token tracking UI, edit/save flow, gauge visualization
@@ -19,7 +20,7 @@ Normal tasks use native ReAct tool calling: the model selects a tool, receives i
 - ✅ `7.115` Frontend performance — sourcemaps, error traces, lazy panels and Lighthouse pass
 - ✅ `7.116` Session recovery — keyset history pagination, reconnect backoff and paginated replay
 
-Stages 1–6 foundations are complete. Stage 7 hardening/product items through `7.116` are implemented except `7.106`–`7.107`; `7.105` (voice input / TTS) is complete in the browser frontend, and `7.99` (cloud sync) is complete: owner-only `/api/sync/status|push|pull` move the operator `BackupDump` to/from `EVOHIME_SYNC_URL` with direction-aware history in `sync_runs` (pull enforces a 64 MiB body limit and checksum verification), `restore_backup` + CLI `evohime-import` restore a dump idempotently, and `EVOHIME_SYNC_AUTO_MINUTES` enables a background auto-push loop for the bootstrap owner.
+Stages 1–6 foundations are complete. Stage 7 hardening/product items through `7.116` are implemented except `7.107`; `7.105` (voice input / TTS) and `7.106` (diff review UI) are complete in the browser frontend, and `7.99` (cloud sync) is complete: owner-only `/api/sync/status|push|pull` move the operator `BackupDump` to/from `EVOHIME_SYNC_URL` with direction-aware history in `sync_runs` (pull enforces a 64 MiB body limit and checksum verification), `restore_backup` + CLI `evohime-import` restore a dump idempotently, and `EVOHIME_SYNC_AUTO_MINUTES` enables a background auto-push loop for the bootstrap owner.
 
 ## Crates
 
@@ -221,7 +222,7 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.51` реализован: Python worker и зеркальная Rust-валидация получили `text.classify`, `text.language` и `text.redact`; все три handler доступны также через `worker.run`.
 
-**Актуализация 2026-07-29:** `7.51`, product honesty для Sites/Scheduled, scheduler correctness, request context, task timeline telemetry, log safety, deep health checks, backup/export, cloud sync, browser sessions, eval harness, plugin trust/integrity, failure learning, mobile shell, voice input / TTS, threat model, cost limits, self-update, extended reasoning, semantic project search, plugin audit, OTLP trends, frontend performance и session recovery выполнены. Реально незакрыты только `7.106`–`7.107`.
+**Актуализация 2026-07-29:** `7.51`, product honesty для Sites/Scheduled, scheduler correctness, request context, task timeline telemetry, log safety, deep health checks, backup/export, cloud sync, browser sessions, eval harness, plugin trust/integrity, failure learning, mobile shell, voice input / TTS, diff review UI, threat model, cost limits, self-update, extended reasoning, semantic project search, plugin audit, OTLP trends, frontend performance и session recovery выполнены. Реально незакрыт только `7.107`.
 
-1. **Stage 7** — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99`–`7.105` ✅; `7.108`–`7.116` ✅.
-2. **Ближайшая незавершённая задача:** `7.106` Diff review UI; затем `7.107` Worktree-aware multi-checkout agent.
+1. **Stage 7** — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99`–`7.106` ✅; `7.108`–`7.116` ✅.
+2. **Ближайшая незавершённая задача:** `7.107` Worktree-aware multi-checkout agent.

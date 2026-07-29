@@ -63,7 +63,7 @@ EvoHime Server — Rust
 
 ## Фактический статус на 2026-07-26
 
-Этапы 1–6 завершены на уровне foundations. Stage 7: hardening/product waves `7.1`–`7.104` и `7.108`–`7.116` выполнены; `7.99` (cloud sync) закрыт целиком — owner-only push/pull операторского backup на remote endpoint, идемпотентный restore и фоновый авто-push. `7.105` Voice input / TTS также реализован; остаются `7.106` Diff review UI и `7.107` Worktree-aware multi-checkout agent.
+Этапы 1–6 завершены на уровне foundations. Stage 7: hardening/product waves `7.1`–`7.106` и `7.108`–`7.116` выполнены; `7.99` (cloud sync) закрыт целиком — owner-only push/pull операторского backup на remote endpoint, идемпотентный restore и фоновый авто-push. `7.105` Voice input / TTS и `7.106` Diff review UI также реализованы; остаётся `7.107` Worktree-aware multi-checkout agent.
 
 - tools: filesystem / shell / Git / browser / MCP в `tool-runtime`;
 - `agent-runtime`: native ReAct tool call → observation → next action; bounded limits; checkpoints; structured memory в prompt;
@@ -72,7 +72,7 @@ EvoHime Server — Rust
 - workers: health/stall + summarize/chunk/similarity/entities/diff/classify/language/redact handlers;
 - Stage 7: auth/permissions, recovery, memory quality, product honesty для Sites/Scheduled, CI gates, Dev Container/Compose, OpenAPI contract и experimental feature flags.
 
-**Текущий сквозной приоритет:** завершение оставшихся Stage 7 пунктов — `7.106`–`7.107` ([roadmap.md](roadmap.md) § Этап 7).
+**Текущий сквозной приоритет:** завершение последнего Stage 7 пункта — `7.107` Worktree-aware multi-checkout agent ([roadmap.md](roadmap.md) § Этап 7).
 
 ---
 
@@ -296,7 +296,7 @@ Task lifecycle реализован: start/complete/fail/cancel/resume/retry. St
 
 - Waves A–D закрыли trust/security, recovery, agent quality и product honesty для Sites/Scheduled;
 - Wave E `7.84`–`7.98` закрыла PostgreSQL/frontend/protocol/docs CI, Dev Container, OpenAPI и feature flags;
-- `7.99`–`7.105` и `7.108`–`7.116` завершены; остаются `7.106`–`7.107`.
+- `7.99`–`7.106` и `7.108`–`7.116` завершены; остаётся `7.107`.
 
 ---
 

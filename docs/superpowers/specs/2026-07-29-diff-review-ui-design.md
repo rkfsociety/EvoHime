@@ -1,7 +1,7 @@
 # Diff Review UI (`7.106`) Design
 
 **Date:** 2026-07-29
-**Status:** Approved for implementation planning
+**Status:** Implemented
 **Roadmap item:** `7.106` — Diff review UI for agent patches before apply
 
 ## Goal

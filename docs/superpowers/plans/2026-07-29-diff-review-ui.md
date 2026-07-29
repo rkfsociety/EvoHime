@@ -2,6 +2,20 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** Implemented on 2026-07-29
+
+**Execution record:**
+
+- `e2b6a1e` — bounded `filesystem.patch` input before approval.
+- `086bf3c` — typed optional unified-diff review in Rust, schema and generated TypeScript.
+- `179c6ad` — server derives the review from the authoritative pending patch input.
+- `0c687b3` — shared diff classifier/viewer used by the Git panel.
+- `03f2303` — responsive apply-once patch review modal.
+- Verification: protocol 9/9, tool runtime 65 unit + 5 integration, server binary 107/107, frontend 11/11, TypeScript typecheck, Vite production build and protocol drift check passed.
+- `cargo fmt --all -- --check` remains blocked by pre-existing formatting in `crates/launcher/src/main.rs`; all Rust files changed by `7.106` pass targeted `rustfmt --check`.
+- The unqualified focused server command also asks Windows to launch the unrelated `plugin_install_lifecycle` integration binary and receives OS error 740; `cargo test -p evohime-server --bin evohime-server` passes all 107 server unit tests, including both patch-review tests.
+- Cleanup of the verified `C:\github\EvoHime\target` path was attempted after validation, but the execution policy rejected the recursive removal command before it ran; the build artifacts therefore remain.
+
 **Goal:** Show the complete, bounded unified diff for a pending `filesystem.patch` approval and let the operator apply or deny that exact patch.
 
 **Architecture:** Add patch-specific preflight validation before the permission loop, extend `approval.required` with an optional typed unified-diff review, derive that review server-side from the authoritative pending tool input, and render it through a shared read-only diff component. Existing approval commands and all non-patch approvals remain unchanged.
@@ -41,7 +55,7 @@
 - Produces: `pub(crate) fn validate_input(value: &Value) -> Result<(), ToolError>`
 - Consumes later: server review construction relies on `NeedsApproval.input` having passed this preflight.
 
-- [ ] **Step 1: Add failing unit tests for the byte limit**
+- [x] **Step 1: Add failing unit tests for the byte limit**
 
 In `crates/tool-runtime/src/tools/patch.rs`, add a `#[cfg(test)]` module with:
 
@@ -70,7 +84,7 @@ fn counts_utf8_bytes_not_characters() {
 }
 ```
 
-- [ ] **Step 2: Add a failing registry test proving validation precedes approval**
+- [x] **Step 2: Add a failing registry test proving validation precedes approval**
 
 In `crates/tool-runtime/src/registry.rs`, create an Ask-mode `PermissionEngine`,
 execute `filesystem.patch` with an oversized patch, and assert the result is
@@ -106,7 +120,7 @@ async fn oversized_patch_is_rejected_before_approval() {
 }
 ```
 
-- [ ] **Step 3: Run the focused tests and verify RED**
+- [x] **Step 3: Run the focused tests and verify RED**
 
 Run:
 
@@ -118,7 +132,7 @@ cargo test -p evohime-tool-runtime oversized_patch_is_rejected_before_approval
 Expected: compilation fails because `MAX_PATCH_BYTES` and `validate_input`
 do not exist.
 
-- [ ] **Step 4: Add the shared parser/validator**
+- [x] **Step 4: Add the shared parser/validator**
 
 In `patch.rs`:
 
@@ -166,7 +180,7 @@ pub(crate) fn validate_input(value: &Value) -> Result<(), ToolError> {
 Change `execute` to call `parse_input(value)?` instead of its current inline
 `serde_json::from_value`.
 
-- [ ] **Step 5: Run patch preflight before the permission loop**
+- [x] **Step 5: Run patch preflight before the permission loop**
 
 In `ToolRegistry::execute_with_cancellation`, after resolving the
 `ToolDefinition` and before iterating `definition.permissions`, add:
@@ -180,7 +194,7 @@ if name == tools::patch::NAME {
 This ordering is the invariant tested by
 `oversized_patch_is_rejected_before_approval`.
 
-- [ ] **Step 6: Add the JSON Schema hint**
+- [x] **Step 6: Add the JSON Schema hint**
 
 Change `crates/tool-runtime/schemas/filesystem.patch.json` so `patch` is:
 
@@ -193,7 +207,7 @@ Change `crates/tool-runtime/schemas/filesystem.patch.json` so `patch` is:
 
 Keep `required` and `additionalProperties: false` unchanged.
 
-- [ ] **Step 7: Run GREEN verification**
+- [x] **Step 7: Run GREEN verification**
 
 Run:
 
@@ -205,7 +219,7 @@ cargo test -p evohime-tool-runtime
 
 Expected: all tool-runtime tests pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```powershell
 git add crates/tool-runtime/src/tools/patch.rs crates/tool-runtime/src/registry.rs crates/tool-runtime/schemas/filesystem.patch.json
@@ -237,7 +251,7 @@ pub enum ApprovalReview {
 - Consumes later: server builds `ApprovalReview`; frontend renders
   `request.review`.
 
-- [ ] **Step 1: Extend the existing protocol round-trip test first**
+- [x] **Step 1: Extend the existing protocol round-trip test first**
 
 Update `round_trips_approval_event_and_commands` in
 `crates/protocol/src/lib.rs` to construct:
@@ -272,7 +286,7 @@ assert!(matches!(
 Add a second ordinary approval with `review: None` and assert serialized JSON
 omits `review`.
 
-- [ ] **Step 2: Run the protocol test and verify RED**
+- [x] **Step 2: Run the protocol test and verify RED**
 
 Run:
 
@@ -283,7 +297,7 @@ cargo test -p evohime-protocol round_trips_approval_event_and_commands
 Expected: compilation fails because `ApprovalReview` and the `review` field
 do not exist.
 
-- [ ] **Step 3: Add the Rust protocol type**
+- [x] **Step 3: Add the Rust protocol type**
 
 Before `ServerEvent`, add:
 
@@ -305,7 +319,7 @@ review: Option<ApprovalReview>,
 Update every existing Rust construction of `ApprovalRequired` to set
 `review: None` until Task 3 supplies the patch review.
 
-- [ ] **Step 4: Add the JSON Schema definition**
+- [x] **Step 4: Add the JSON Schema definition**
 
 Add:
 
@@ -330,7 +344,7 @@ Add optional `review` to `ApprovalRequiredEvent.properties`:
 
 Do not add `review` to the event's required array.
 
-- [ ] **Step 5: Regenerate TypeScript**
+- [x] **Step 5: Regenerate TypeScript**
 
 Run from repository root:
 
@@ -344,7 +358,7 @@ Inspect `frontend/web/src/protocol.generated.ts` and confirm it contains
 If `frontend/web/src/protocol.ts` does not re-export the generated review
 type, add `UnifiedDiffReview` to its type export list.
 
-- [ ] **Step 6: Run GREEN and drift verification**
+- [x] **Step 6: Run GREEN and drift verification**
 
 Run:
 
@@ -361,7 +375,7 @@ Expected: Rust tests pass and two consecutive protocol generations produce
 identical bytes. CI will additionally compare the committed generated file
 against a fresh generation.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add crates/protocol/schema/evohime.protocol.schema.json crates/protocol/src/lib.rs crates/server/src/task/pipeline.rs frontend/web/src/protocol.generated.ts frontend/web/src/protocol.ts
@@ -390,7 +404,7 @@ pub(crate) fn approval_review(tool_name: &str, input: &Value) -> Option<Approval
 - Pipeline passes the returned value directly into
   `ServerEvent::ApprovalRequired.review`.
 
-- [ ] **Step 1: Write focused helper tests**
+- [x] **Step 1: Write focused helper tests**
 
 Create `approval_review.rs` with tests first:
 
@@ -436,7 +450,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run the helper tests and verify RED**
+- [x] **Step 2: Run the helper tests and verify RED**
 
 After adding `pub mod approval_review;` in `task/mod.rs`, run:
 
@@ -446,7 +460,7 @@ cargo test -p evohime-server approval_review::tests::
 
 Expected: compilation fails because the helper is not implemented.
 
-- [ ] **Step 3: Implement the pure helper**
+- [x] **Step 3: Implement the pure helper**
 
 Add:
 
@@ -469,7 +483,7 @@ pub(crate) fn approval_review(tool_name: &str, input: &Value) -> Option<Approval
 
 Re-export it from `task/mod.rs` with the existing task helper pattern.
 
-- [ ] **Step 4: Wire the helper into the emitted event**
+- [x] **Step 4: Wire the helper into the emitted event**
 
 In the `ToolError::NeedsApproval` branch in `pipeline.rs`, derive the review
 before moving `tool` or `input` into checkpoint JSON:
@@ -495,7 +509,7 @@ ServerEvent::ApprovalRequired {
 Do not alter `approval_wait.input` or `react_pending_call.arguments`; they
 remain the authoritative resume payload.
 
-- [ ] **Step 5: Run GREEN verification**
+- [x] **Step 5: Run GREEN verification**
 
 Run:
 
@@ -508,7 +522,7 @@ cargo check -p evohime-server
 Expected: helper tests pass and the server compiles with the new protocol
 field.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add crates/server/src/task/approval_review.rs crates/server/src/task/mod.rs crates/server/src/task/pipeline.rs
@@ -543,7 +557,7 @@ export function classifyDiffLine(line: string): DiffLineKind;
 
 - Consumes later: `ApprovalModal` uses `DiffViewer`.
 
-- [ ] **Step 1: Write the failing classifier tests**
+- [x] **Step 1: Write the failing classifier tests**
 
 Create `diff.test.mjs`:
 
@@ -568,7 +582,7 @@ Change the frontend test script to run every library test:
 "test": "node --test --experimental-strip-types src/lib/*.test.mjs"
 ```
 
-- [ ] **Step 2: Run the frontend tests and verify RED**
+- [x] **Step 2: Run the frontend tests and verify RED**
 
 Run from `frontend/web`:
 
@@ -578,7 +592,7 @@ npm test
 
 Expected: the new test fails because `diff.ts` does not exist.
 
-- [ ] **Step 3: Implement classification**
+- [x] **Step 3: Implement classification**
 
 Create `diff.ts`:
 
@@ -593,7 +607,7 @@ export function classifyDiffLine(line: string): DiffLineKind {
 }
 ```
 
-- [ ] **Step 4: Implement the presentation-only component**
+- [x] **Step 4: Implement the presentation-only component**
 
 Create `DiffViewer.tsx`:
 
@@ -636,7 +650,7 @@ export function DiffViewer({
 }
 ```
 
-- [ ] **Step 5: Refactor `GitPanel` to use `DiffViewer`**
+- [x] **Step 5: Refactor `GitPanel` to use `DiffViewer`**
 
 Import `DiffViewer` and replace the inline split/map block with:
 
@@ -650,7 +664,7 @@ Import `DiffViewer` and replace the inline split/map block with:
 Rename `.gitDiffViewer` selectors in `panels.css` to `.diffViewer` without
 changing their current colors or spacing.
 
-- [ ] **Step 6: Run GREEN verification**
+- [x] **Step 6: Run GREEN verification**
 
 Run from `frontend/web`:
 
@@ -662,7 +676,7 @@ npm run build
 
 Expected: tests, typecheck, and build pass; Git panel behavior is unchanged.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add frontend/web/src/lib/diff.ts frontend/web/src/lib/diff.test.mjs frontend/web/src/components/DiffViewer.tsx frontend/web/src/panels/GitPanel.tsx frontend/web/src/styles/panels.css frontend/web/package.json
@@ -692,7 +706,7 @@ export function canRememberApprovalPath(request: ApprovalRequiredEvent): boolean
 
 - Existing `onGrant(false)` and `onDeny()` callbacks remain unchanged.
 
-- [ ] **Step 1: Write failing presentation-rule tests**
+- [x] **Step 1: Write failing presentation-rule tests**
 
 Create `approval-review.test.mjs`:
 
@@ -737,7 +751,7 @@ The ordinary assertion uses the existing `isRememberableApprovalScope`
 inside the implementation, so also add a non-path scope case that expects
 `false`.
 
-- [ ] **Step 2: Run tests and verify RED**
+- [x] **Step 2: Run tests and verify RED**
 
 Run from `frontend/web`:
 
@@ -747,7 +761,7 @@ npm test
 
 Expected: failure because `approval-review.ts` does not exist.
 
-- [ ] **Step 3: Implement presentation helpers**
+- [x] **Step 3: Implement presentation helpers**
 
 Create:
 
@@ -767,7 +781,7 @@ export function canRememberApprovalPath(request: ApprovalRequiredEvent): boolean
 These helpers decide presentation only; review eligibility remains
 server-authored.
 
-- [ ] **Step 4: Add the patch-review modal variant**
+- [x] **Step 4: Add the patch-review modal variant**
 
 In `ApprovalModal.tsx`:
 
@@ -798,7 +812,7 @@ In `ApprovalModal.tsx`:
 Avoid non-null assertions in final code by narrowing
 `request.review?.kind === "unified_diff"` into a local `review` variable.
 
-- [ ] **Step 5: Add bounded responsive styles**
+- [x] **Step 5: Add bounded responsive styles**
 
 In `memory-responsive.css`:
 
@@ -831,7 +845,7 @@ Add `patchReviewModal` conditionally to the dialog class. In
 }
 ```
 
-- [ ] **Step 6: Run frontend verification**
+- [x] **Step 6: Run frontend verification**
 
 Run from `frontend/web`:
 
@@ -845,7 +859,7 @@ Expected: all pass. Inspect the built UI through the normal
 `.\start-dev.ps1` stack only if a live manual check is needed; do not replace
 the requested app launcher with standalone server/frontend commands.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add frontend/web/src/lib/approval-review.ts frontend/web/src/lib/approval-review.test.mjs frontend/web/src/components/ApprovalModal.tsx frontend/web/src/styles/memory-responsive.css frontend/web/src/styles/mobile-shell.css
@@ -871,7 +885,7 @@ git commit -m "feat(web): review agent patches before approval"
 - Makes `7.107` the only unfinished Stage 7 roadmap item.
 - Records exact implementation commits and verification commands.
 
-- [ ] **Step 1: Run the complete relevant verification before status claims**
+- [x] **Step 1: Run the complete relevant verification before status claims**
 
 From repository root:
 
@@ -900,14 +914,14 @@ git status --short
 
 Expected: all commands succeed; only files named by this plan are modified.
 
-- [ ] **Step 2: Remove Rust build artifacts**
+- [x] **Step 2: Remove Rust build artifacts**
 
 After all Rust checks are complete and no process uses them, resolve and
 verify that the path is exactly `<repo>\target`, then remove it. If the
 execution environment blocks deletion, report the policy block explicitly
 instead of claiming cleanup.
 
-- [ ] **Step 3: Update canonical status documents**
+- [x] **Step 3: Update canonical status documents**
 
 Apply these consistent facts everywhere:
 
@@ -925,7 +939,7 @@ is explicitly dated.
 Set both spec and plan status to `Implemented`, and check completed plan
 steps only after their commands actually passed.
 
-- [ ] **Step 4: Scan for stale status**
+- [x] **Step 4: Scan for stale status**
 
 Run:
 
@@ -939,14 +953,14 @@ Expected: no stale status matches. Then verify positive status references:
 rg -n '7\.106|7\.107' AGENTS.md docs/architecture.md docs/current-state.md docs/development-plan.md docs/roadmap.md docs/security/threat-model.md
 ```
 
-- [ ] **Step 5: Commit documentation**
+- [x] **Step 5: Commit documentation**
 
 ```powershell
 git add AGENTS.md docs/architecture.md docs/current-state.md docs/development-plan.md docs/roadmap.md docs/security/threat-model.md docs/superpowers/specs/2026-07-29-diff-review-ui-design.md docs/superpowers/plans/2026-07-29-diff-review-ui.md
 git commit -m "docs: mark patch review complete"
 ```
 
-- [ ] **Step 6: Final repository verification**
+- [x] **Step 6: Final repository verification**
 
 Run:
 
