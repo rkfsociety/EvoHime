@@ -28,6 +28,7 @@ pub enum UpdateError {
 
 /// Один артефакт релиза для скачивания: имя файла, URL самого файла и URL
 /// его `*.sha256`.
+#[derive(Clone)]
 pub struct ReleaseAsset {
     pub file_name: String,
     pub download_url: String,

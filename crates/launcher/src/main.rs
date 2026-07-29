@@ -18,8 +18,8 @@ use evohime_launcher::update_apply::{
 };
 use evohime_launcher::update_check::is_update_available;
 use evohime_launcher::{
-    build_dsn, build_static_router, build_status_router, fetch_latest_release,
-    generate_session_token, postgres, safe_mode, ManagedProcess,
+    build_dsn, build_static_router, build_status_router, build_updater_args, fetch_latest_release,
+    generate_session_token, postgres, safe_mode, spawn_updater, ManagedProcess,
 };
 use evohime_win_support::SingleInstanceLock;
 use std::path::{Path, PathBuf};
@@ -392,7 +392,9 @@ async fn check_for_updates(
     update_state: &Arc<Mutex<UpdateState>>,
     status: &Arc<Mutex<LauncherStatus>>,
 ) {
-    let Ok((remote_version, assets)) = fetch_latest_release(client, GITHUB_REPO).await else {
+    let Ok((remote_version, assets, _launcher_asset)) =
+        fetch_latest_release(client, GITHUB_REPO).await
+    else {
         tracing::warn!("failed to fetch the latest GitHub release — skipping this check");
         return;
     };
@@ -437,18 +439,19 @@ async fn run_update_cycle(
 
     let saved_version = current_version.clone();
 
-    let (new_version, assets) = match fetch_latest_release(client, GITHUB_REPO).await {
-        Ok(result) => result,
-        Err(err) => {
-            finish_update(
-                update_state,
-                status,
-                false,
-                format!("Не удалось получить релиз: {err}"),
-            );
-            return;
-        }
-    };
+    let (new_version, assets, launcher_asset) =
+        match fetch_latest_release(client, GITHUB_REPO).await {
+            Ok(result) => result,
+            Err(err) => {
+                finish_update(
+                    update_state,
+                    status,
+                    false,
+                    format!("Не удалось получить релиз: {err}"),
+                );
+                return;
+            }
+        };
 
     let plan = UpdatePlan {
         install_dir: install_dir.to_path_buf(),
@@ -573,6 +576,183 @@ async fn run_update_cycle(
     let _ = append_and_save(&history_path, entry).await;
 
     finish_update(update_state, status, true, "Готово!".to_string());
+
+    // Отдельный, необязательный шаг: launcher.zip не входит в основной
+    // 4-ассетный цикл выше (см. комментарий у `LAUNCHER_ASSET` в
+    // github_api.rs), поэтому докачивается и применяется здесь же, но
+    // изолированно — сбой здесь не должен откатывать уже успешно
+    // применённое обновление server/dist/migrations/worker.
+    if let Some(launcher_asset) = launcher_asset {
+        let launcher_plan = UpdatePlan {
+            install_dir: install_dir.to_path_buf(),
+            new_version: "launcher".to_string(),
+            assets: vec![launcher_asset],
+            dsn: None,
+        };
+        if let Err(err) =
+            download_and_verify_assets(&launcher_plan, client, &download_dir, &progress).await
+        {
+            tracing::warn!(%err, "failed to download launcher.zip — launcher self-update skipped this cycle");
+        } else {
+            apply_launcher_self_update(
+                install_dir,
+                &download_dir,
+                token,
+                client,
+                server_process,
+                worker_process,
+                &progress,
+            )
+            .await;
+        }
+    }
+}
+
+/// Отдельное, best-effort самообновление `evohime-launcher.exe` (раздел
+/// VIII плана). В отличие от server/dist/migrations/worker, launcher не
+/// может подменить собственный работающий файл — вместо этого передаёт
+/// эстафету внешнему `updater.exe`: тот дожидается завершения текущего
+/// процесса, атомарно заменяет exe и перезапускает уже новую версию.
+/// При успехе управление из этой функции не возвращается — процесс
+/// завершается сам (`std::process::exit`), чтобы освободить файл для
+/// `updater.exe`. Любая ошибка на пути — просто предупреждение в лог:
+/// старый launcher продолжает работать с уже обновлёнными server/worker,
+/// а самообновление лаунчера попробуется снова в следующем цикле.
+#[allow(clippy::too_many_arguments)]
+async fn apply_launcher_self_update(
+    install_dir: &Path,
+    download_dir: &Path,
+    token: &str,
+    client: &reqwest::Client,
+    server_process: &mut Option<ManagedProcess>,
+    worker_process: &mut Option<ManagedProcess>,
+    progress: &(dyn Fn(&str) + Send + Sync),
+) {
+    let launcher_zip = download_dir.join("launcher.zip");
+    if !launcher_zip.exists() {
+        return;
+    }
+
+    progress("Обновление Launcher'а...");
+    let extract_dir = install_dir
+        .join("launcher-data")
+        .join("launcher_update_tmp");
+    if extract_dir.exists() {
+        let _ = tokio::fs::remove_dir_all(&extract_dir).await;
+    }
+    if let Err(err) = tokio::fs::create_dir_all(&extract_dir).await {
+        tracing::warn!(%err, "failed to prepare the launcher update directory — skipping");
+        return;
+    }
+
+    let extract_task = {
+        let launcher_zip = launcher_zip.clone();
+        let extract_dir = extract_dir.clone();
+        tokio::task::spawn_blocking(move || {
+            evohime_artifacts::extract_zip(&launcher_zip, &extract_dir)
+        })
+    };
+    match extract_task.await {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => {
+            tracing::warn!(%err, "failed to extract launcher.zip — skipping launcher self-update");
+            return;
+        }
+        Err(err) => {
+            tracing::warn!(%err, "launcher.zip extraction task panicked — skipping launcher self-update");
+            return;
+        }
+    }
+
+    let new_launcher_exe = extract_dir.join("evohime-launcher.exe");
+    let new_updater_exe = extract_dir.join("updater.exe");
+    if !new_launcher_exe.exists() || !new_updater_exe.exists() {
+        tracing::warn!(
+            "launcher.zip did not contain the expected evohime-launcher.exe/updater.exe — skipping"
+        );
+        return;
+    }
+
+    // updater.exe должен пережить выход текущего процесса, поэтому не
+    // может остаться во временной папке загрузки, которую следующий цикл
+    // обновления вправе удалить или перезаписать.
+    let updater_dest = install_dir.join("launcher-data").join("updater.exe");
+    if let Err(err) = tokio::fs::copy(&new_updater_exe, &updater_dest).await {
+        tracing::warn!(%err, "failed to stage updater.exe — skipping launcher self-update");
+        return;
+    }
+
+    let own_exe = match std::env::current_exe() {
+        Ok(path) => path,
+        Err(err) => {
+            tracing::warn!(%err, "failed to resolve own executable path — skipping launcher self-update");
+            return;
+        }
+    };
+    let own_pid = std::process::id();
+    let updater_args = match build_updater_args(own_exe, own_pid, new_launcher_exe) {
+        Ok(args) => args,
+        Err(err) => {
+            tracing::warn!(%err, "failed to build updater arguments — skipping launcher self-update");
+            return;
+        }
+    };
+
+    progress("Перезапуск Launcher'а...");
+    if let Some(mut process) = server_process.take() {
+        process
+            .graceful_shutdown(client, token, Duration::from_secs(10))
+            .await;
+    }
+    if let Some(mut process) = worker_process.take() {
+        process
+            .graceful_shutdown(client, token, Duration::from_secs(5))
+            .await;
+    }
+
+    if let Err(err) = spawn_updater(&updater_dest, &updater_args) {
+        tracing::warn!(%err, "failed to spawn updater.exe — launcher self-update aborted, this session keeps running");
+        return;
+    }
+
+    // updater.exe теперь ждёт завершения именно этого процесса (по PID +
+    // exe-пути + времени старта), прежде чем сможет безопасно заменить
+    // файл. Возврат отсюда без выхода означает, что updater.exe будет
+    // ждать полные 30 секунд и затем убьёт нас принудительно — выходим
+    // сразу и чисто.
+    std::process::exit(0);
+}
+
+#[cfg(test)]
+mod launcher_self_update_tests {
+    /// Проверяет, что `launcher.zip` в том же формате, что публикует
+    /// `build-releases.yml` (`evohime-launcher.exe`+`updater.exe` на корне
+    /// архива, без вложенной папки — см. `Compress-Archive -Path
+    /// artifact/evohime-launcher.exe,artifact/updater.exe`), распаковывается
+    /// ровно туда, где их ищет `apply_launcher_self_update`
+    /// (`extract_dir.join("evohime-launcher.exe")` / `.join("updater.exe")`).
+    #[test]
+    fn launcher_zip_extracts_both_exes_to_the_expected_flat_paths() {
+        let zip_dir = tempfile::tempdir().unwrap();
+        let zip_path = zip_dir.path().join("launcher.zip");
+        {
+            let file = std::fs::File::create(&zip_path).unwrap();
+            let mut writer = zip::ZipWriter::new(file);
+            let options = zip::write::SimpleFileOptions::default();
+            use std::io::Write;
+            writer.start_file("evohime-launcher.exe", options).unwrap();
+            writer.write_all(b"fake launcher bytes").unwrap();
+            writer.start_file("updater.exe", options).unwrap();
+            writer.write_all(b"fake updater bytes").unwrap();
+            writer.finish().unwrap();
+        }
+
+        let extract_dir = tempfile::tempdir().unwrap();
+        evohime_artifacts::extract_zip(&zip_path, extract_dir.path()).unwrap();
+
+        assert!(extract_dir.path().join("evohime-launcher.exe").exists());
+        assert!(extract_dir.path().join("updater.exe").exists());
+    }
 }
 
 async fn wait_for_health(
