@@ -280,12 +280,20 @@ pub(crate) async fn handle_socket(
                             // itself failed) via its own authoritative DB check.
                             if was_paused && cancel_result.is_ok() {
                                 state.task_cancellations.lock().await.remove(&task_id);
-                            } else {
-                                crate::task::helpers::release_task_cancellation_if_terminal(
-                                    &state, task_id,
-                                )
-                                .await;
                             }
+                            // else: do nothing here. If the task was `running`,
+                            // its own spawned future's eventual post-await
+                            // `release_task_cancellation_if_terminal` call is the
+                            // only correct place to release the entry — once
+                            // that future actually stops writing to the
+                            // workspace, not the instant `cancel_task`'s DB
+                            // transition completes. If `cancel_task` itself
+                            // failed (invalid FSM transition), there is nothing
+                            // new to release here either: a task that was
+                            // already terminal already released itself when it
+                            // finished, and a task in some other live state
+                            // still has a future that will release it in due
+                            // course.
                             let _ = finalize_open_task_steps(&state, task_id, "cancelled").await;
                             emit_event(
                                 &state,
@@ -465,6 +473,14 @@ pub(crate) async fn handle_socket(
                             evohime_task_engine::cancel_task(&state.pool, task_id)
                                 .await
                                 .map_err(|error| ApiError::Internal(error.to_string()))?;
+                            // The `pending` check above already confirmed this
+                            // task was `paused` — same precondition as
+                            // `TaskCancel`'s `was_paused` branch — so there is
+                            // no live spawned future left that will ever run
+                            // its own post-await cleanup. Force-remove now or
+                            // this entry (and the isolation it forces on every
+                            // subsequent task) leaks until server restart.
+                            state.task_cancellations.lock().await.remove(&task_id);
                             finalize_open_task_steps(&state, task_id, "cancelled").await?;
                             evohime_storage::merge_checkpoint(
                                 &state.pool,
@@ -661,6 +677,20 @@ pub(crate) async fn handle_socket(
                             .await?;
 
                             let token = CancellationToken::new();
+                            // Resolve the workspace path BEFORE the atomic
+                            // insert below: this is fallible (e.g.
+                            // `canonicalize()` failing on a since-deleted/
+                            // renamed project directory), and a bare `?`
+                            // failing here must happen before anything is
+                            // inserted into `task_cancellations` — otherwise
+                            // the freshly-inserted entry for `task_id` would
+                            // leak forever with nothing left to ever release
+                            // it (the retry never got far enough to spawn
+                            // anything).
+                            let primary_root = crate::task::helpers::resolve_workspace_path(
+                                &state,
+                                task.workspace_path.clone(),
+                            )?;
                             // Same atomic insert-and-check as the `UserMessage`
                             // handler (Step 2) — teardown above may have just
                             // deleted this task's own row, so whether it needs a
@@ -673,10 +703,6 @@ pub(crate) async fn handle_socket(
                                 guard.insert(task_id, token.clone());
                                 is_concurrent
                             };
-                            let primary_root = crate::task::helpers::resolve_workspace_path(
-                                &state,
-                                task.workspace_path.clone(),
-                            )?;
                             if is_concurrent {
                                 if let Err(error) = crate::task::worktree::provision_worktree(
                                     &state, task_id, &primary_root,
