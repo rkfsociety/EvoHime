@@ -20,7 +20,12 @@ pub struct ScoreBreakdown {
 }
 
 impl ScoreBreakdown {
-    /// Validates that all score components are in the valid range [0.0–1.0]
+    /// Validates score components:
+    /// - similarity_score, tool_success_rate, complexity_penalty, final_score: [0.0–1.0]
+    /// - feedback_adjustment: [-1.0, +1.0] (internal representation for scoring formula)
+    ///
+    /// Conversion note: feedback_adjustment is stored in [-1.0, +1.0] for formula computation.
+    /// When serializing to frontend, normalize via: (1 + feedback_adjustment) / 2 → [0.0, 1.0]
     pub fn is_valid(&self) -> bool {
         self.similarity_score >= 0.0
             && self.similarity_score <= 1.0
@@ -28,7 +33,7 @@ impl ScoreBreakdown {
             && self.tool_success_rate <= 1.0
             && self.complexity_penalty >= 0.0
             && self.complexity_penalty <= 1.0
-            && self.feedback_adjustment >= 0.0
+            && self.feedback_adjustment >= -1.0
             && self.feedback_adjustment <= 1.0
             && self.final_score >= 0.0
             && self.final_score <= 1.0
@@ -108,12 +113,24 @@ mod tests {
     }
 
     #[test]
-    fn score_breakdown_is_invalid_when_feedback_adjustment_negative() {
+    fn score_breakdown_is_valid_when_feedback_adjustment_negative_in_range() {
         let breakdown = ScoreBreakdown {
             similarity_score: 0.85,
             tool_success_rate: 0.9,
             complexity_penalty: 0.1,
-            feedback_adjustment: -0.05,
+            feedback_adjustment: -0.5, // Negative feedback is valid (range is [-1.0, +1.0])
+            final_score: 0.75,
+        };
+        assert!(breakdown.is_valid());
+    }
+
+    #[test]
+    fn score_breakdown_is_invalid_when_feedback_adjustment_below_minus_one() {
+        let breakdown = ScoreBreakdown {
+            similarity_score: 0.85,
+            tool_success_rate: 0.9,
+            complexity_penalty: 0.1,
+            feedback_adjustment: -1.5,
             final_score: 0.75,
         };
         assert!(!breakdown.is_valid());
