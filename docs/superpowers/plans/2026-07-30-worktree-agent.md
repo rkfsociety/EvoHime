@@ -35,6 +35,8 @@ Recorded here so a future reader doesn't mistake these for oversights — each w
 - **`worktree_op_timeout()`'s 30-second default may be too tight for `git worktree add` on a very large repository.** Rather than guess at a larger blanket default that would then be needlessly long for the common case, this is a tuning knob: `EVOHIME_WORKTREE_OP_TIMEOUT_SECS` already exists for exactly this. Operators running this against a large repository should set it explicitly; this plan doesn't attempt to auto-detect repo size to pick a default.
 - **Server-restart cleanup and the retry-teardown in Task 5, Step 5 are both best-effort** (`remove_worktree` failures are logged and leave the row for the next pass, never surfaced as a hard error) — consistent with every other cleanup path in this design.
 - **Multiple isolated tasks completing in sequence each land their own commit** on `primary_workspace_root` rather than being squashed together into one. This is intentional, not an omission: one commit per task keeps the primary checkout's history legible about which task authored which change, which matters more here than a shorter commit list. Squashing across tasks is not discussed further because it's a strictly worse default for traceability, not an alternative left unweighed.
+- **The task-start rate limiter now counts every `paused` task toward its concurrency cap, indefinitely, not just actively-running ones.** `ws.rs`'s `UserMessage` handler feeds `state.task_cancellations.lock().await.len()` into `state.rate_limiter.allow_task_start(concurrent)` (`crates/server/src/rate_limit.rs`'s `check_concurrent_tasks`, default cap `EVOHIME_MAX_CONCURRENT_TASKS=16`). Task 5's fix deliberately keeps a paused task's `task_cancellations` entry alive for as long as it has unfinished business (Task 5, Step 3) — and this counter reads the same map, so a handful of tasks sitting on `approval.required` now count against the same budget that used to only reflect tasks actually executing. Not fixed here: a paused task genuinely does still represent open, unresolved work on the server, so counting it toward a *concurrency* limit isn't obviously wrong — and decoupling the limiter from `task_cancellations` would mean adding a dedicated DB query on every task-start message (a hot path), for a soft protective limit whose default (16) leaves a wide margin before this matters in practice. Revisit only if the default cap turns out to be too tight for real usage patterns with several approval-paused tasks outstanding at once.
+- **`TaskRetry`'s own atomic `is_concurrent` check can observe its own not-yet-released stale entry.** Step 5's `TaskRetry` rewrite reads `!guard.is_empty()` (Task 5, Step 5) before inserting a fresh token; if this exact task's own prior entry somehow failed to be released (e.g. `release_task_cancellation_if_terminal`'s DB check hit a transient error — logged, not retried), `is_concurrent` would read `true` from the task's own leftover entry, not a genuinely different concurrent task. The failure direction is safe (spurious extra isolation, never spurious *lack* of isolation), so this is accepted rather than fixed with, e.g., an `is_concurrent = guard.keys().any(|k| *k != task_id)` refinement — that refinement would itself need to be justified against every other call site's identical pattern (`UserMessage`, `TaskPlanApprove`, `TaskResume` all have the same theoretical shape), which is a larger change than this one path warrants on its own.
 
 ---
 
@@ -48,7 +50,7 @@ Recorded here so a future reader doesn't mistake these for oversights — each w
 - **Modify** `crates/server/src/app.rs` — add `workspace_merge_locks` field and `merge_lock_for` helper method to `AppState`.
 - **Modify** `crates/server/src/startup.rs` — construct the new field; add the startup cleanup pass after `recover_after_restart`; re-seed `task_cancellations` for tasks that were already non-terminal before this restart.
 - **Modify** `crates/server/src/task/helpers.rs` — add `release_task_cancellation_if_terminal` and the `TaskCancellationGuard` panic-safety guard.
-- **Modify** `crates/server/src/ws.rs` — atomic trigger decision, worktree provisioning, fail-fast on concurrent provisioning failure; keep `task_cancellations` alive through approval pauses, `TaskCancel`, and `TaskRetry`.
+- **Modify** `crates/server/src/ws.rs` — atomic trigger decision, worktree provisioning, fail-fast on concurrent provisioning failure; keep `task_cancellations` alive through approval pauses, `TaskCancel`, `TaskPlanReject`, and `TaskRetry`.
 - **Modify** `crates/server/src/task/pipeline.rs` — resolve worktree override for `AgentConfig.workspace_root`, call `finalize_worktree` on success.
 
 ---
@@ -1784,22 +1786,49 @@ For a task that's actively *running*, the situation is the opposite of what it f
                             // `release_task_cancellation_if_terminal` call (once
                             // `process_user_message` genuinely returns) remove it
                             // — that's the only moment the workspace is actually
-                            // free again. `release_task_cancellation_if_terminal`
-                            // still runs unconditionally below for every other
-                            // case (task was already terminal, the FSM transition
-                            // itself failed) via its own authoritative DB check.
+                            // free again. See the `else` comment below for every
+                            // other case.
                             if was_paused && cancel_result.is_ok() {
                                 state.task_cancellations.lock().await.remove(&task_id);
-                            } else {
-                                crate::task::helpers::release_task_cancellation_if_terminal(
-                                    &state, task_id,
-                                )
-                                .await;
                             }
+                            // else: do nothing here. If the task was `running`,
+                            // its own spawned future's eventual post-await
+                            // `release_task_cancellation_if_terminal` call is the
+                            // only correct place to release the entry — once
+                            // that future actually stops writing to the
+                            // workspace, not the instant `cancel_task`'s DB
+                            // transition completes. If `cancel_task` itself
+                            // failed (invalid FSM transition), there is nothing
+                            // new to release here either: a task that was
+                            // already terminal already released itself when it
+                            // finished, and a task in some other live state
+                            // still has a future that will release it in due
+                            // course.
                             let _ = finalize_open_task_steps(&state, task_id, "cancelled").await;
 ```
 
-This replaces the existing first five lines of the `TaskCancel` arm (find it via `grep -n "ClientCommand::TaskCancel" crates/server/src/ws.rs`) — everything from `emit_event(...)` onward in that arm is unchanged. `release_task_cancellation_if_terminal` (Task 5, Step 3) is defined before this task in execution order, so it's already available here. Note that in the `was_paused` branch, `release_task_cancellation_if_terminal` would also happen to remove the entry correctly on its own (a cancelled task is terminal) — the direct force-remove isn't strictly necessary there either, but keeping it makes the paused-and-just-cancelled case's removal unconditional on the DB round-trip inside `release_task_cancellation_if_terminal` succeeding, rather than silently leaving the entry in place if that check happens to fail transiently right at this moment.
+This replaces the existing first five lines of the `TaskCancel` arm (find it via `grep -n "ClientCommand::TaskCancel" crates/server/src/ws.rs`) — everything from `emit_event(...)` onward in that arm is unchanged.
+
+**Do not call `release_task_cancellation_if_terminal` from this handler at all**, including for the non-paused-success case — an earlier draft of this fix called it unconditionally in an `else` branch, reasoning it was harmless because it re-checks DB status before removing. That reasoning was wrong in a way that defeated the whole point of this step: by the time this line runs, `cancel_task` has *already* transitioned a `running` task all the way to `cancelled` (a terminal status) synchronously — so `release_task_cancellation_if_terminal` sees "terminal" and removes the entry immediately regardless of whether the task's actual spawned future has stopped running yet, which is exactly the premature-removal race this whole fix exists to prevent. There is no case where calling it here is both safe and necessary: a `paused` task is handled by the `if` branch above; a `running` task must wait for its own future's post-await cleanup; and any task that was already terminal before this command even ran already released itself when it finished. Do nothing else in this handler.
+
+- [ ] **Step 4.5: Fix `TaskPlanReject` leaking a `task_cancellations` entry forever**
+
+`ClientCommand::TaskPlanReject` (`ws.rs:453-483` before this step) requires the task to be `paused` on a plan-approval round-trip (same precondition shape as `TaskCancel`'s `was_paused`), then calls `evohime_task_engine::cancel_task` — and, before this fix, never touched `task_cancellations` at all. Before Step 3's fix, this was safe: pausing had already removed the old unconditional entry the instant the task paused. Now that a paused task's entry survives the pause by design (Step 3), rejecting its plan leaves no live spawned future behind that will ever call `release_task_cancellation_if_terminal` on its own — the entry (and the isolation it forces on every subsequent task) leaks permanently until the server restarts. This is the same class of gap Step 4 closed for `TaskCancel`'s paused case, just on a different command that also transitions a paused task straight to a terminal status.
+
+In `crates/server/src/ws.rs`'s `ClientCommand::TaskPlanReject` handler, right after the existing `evohime_task_engine::cancel_task(&state.pool, task_id).await.map_err(...)?;` call succeeds (and before `finalize_open_task_steps`), add:
+
+```rust
+                            // The `pending` check above already confirmed this
+                            // task was `paused` — same precondition as
+                            // `TaskCancel`'s `was_paused` branch — so there is
+                            // no live spawned future left that will ever run
+                            // its own post-await cleanup. Force-remove now or
+                            // this entry (and the isolation it forces on every
+                            // subsequent task) leaks until server restart.
+                            state.task_cancellations.lock().await.remove(&task_id);
+```
+
+Placed after the `?` on `cancel_task` (so a failed transition never triggers the removal) and before `finalize_open_task_steps`/`merge_checkpoint`/the `emit_event` calls (so a later failure in any of those can't leave the removal half-applied — the removal itself is infallible and synchronous, so ordering it early is simply cleaner, not required for correctness). `pending` at `ws.rs:464-467` already requires `task.status == "paused"` before this line is ever reachable, so this cannot accidentally force-remove an entry belonging to a task that's actually still `running`.
 
 - [ ] **Step 5: Fix `TaskRetry` reusing a stale worktree after a failed merge**
 
@@ -1892,6 +1921,20 @@ In `crates/server/src/ws.rs`'s `ClientCommand::TaskRetry` handler, replace the e
                             .await?;
 
                             let token = CancellationToken::new();
+                            // Resolve the workspace path BEFORE the atomic
+                            // insert below: this is fallible (e.g.
+                            // `canonicalize()` failing on a since-deleted/
+                            // renamed project directory), and a bare `?`
+                            // failing here must happen before anything is
+                            // inserted into `task_cancellations` — otherwise
+                            // the freshly-inserted entry for `task_id` would
+                            // leak forever with nothing left to ever release
+                            // it (the retry never got far enough to spawn
+                            // anything).
+                            let primary_root = crate::task::helpers::resolve_workspace_path(
+                                &state,
+                                task.workspace_path.clone(),
+                            )?;
                             // Same atomic insert-and-check as the `UserMessage`
                             // handler (Step 2) — teardown above may have just
                             // deleted this task's own row, so whether it needs a
@@ -1904,10 +1947,6 @@ In `crates/server/src/ws.rs`'s `ClientCommand::TaskRetry` handler, replace the e
                                 guard.insert(task_id, token.clone());
                                 is_concurrent
                             };
-                            let primary_root = crate::task::helpers::resolve_workspace_path(
-                                &state,
-                                task.workspace_path.clone(),
-                            )?;
                             if is_concurrent {
                                 if let Err(error) = crate::task::worktree::provision_worktree(
                                     &state, task_id, &primary_root,
@@ -1962,6 +2001,8 @@ In `crates/server/src/ws.rs`'s `ClientCommand::TaskRetry` handler, replace the e
 ```
 
 One detail worth calling out about this rewrite: unlike Step 2's `UserMessage` handler, this arm's `is_concurrent` check runs *after* `retry_task`/the status-changed events, not before — that's intentional here (retry's pre-existing side effects up through emitting `ActionLogged` must fire even if provisioning subsequently fails, so the client sees the retry was accepted before it's told the retry then failed to isolate), but it does mean the `is_concurrent` snapshot is taken slightly later relative to this arm's own side effects than Step 2's is. This is still safe for the same reason Step 2's own snapshot-then-provision gap is safe (documented inline there): the only direction that must never happen is starting unisolated when isolation was actually needed, and inserting into `task_cancellations` before provisioning (not after) still guarantees that. `resolve_workspace_path(state: &Arc<AppState>, requested_path: Option<String>) -> Result<PathBuf, ApiError>` (`crates/server/src/task/helpers.rs:42`, confirmed by direct inspection) takes an owned `Option<String>`, hence `task.workspace_path.clone()` above rather than `.as_deref()`.
+
+Note the specific placement of `resolve_workspace_path(...)?` *before* the atomic `is_concurrent`/insert block, not after it. `resolve_workspace_path` is fallible in ordinary ways (e.g. `canonicalize()` failing on a since-deleted or renamed project directory), and its bare `?` propagates out of this whole message-handling function. If that call ran *after* the insert into `task_cancellations` — as an earlier draft of this fix did — a failure there would leak the just-inserted entry forever (nothing downstream would ever release it, since the retry never got far enough to spawn anything) on top of killing the client's websocket connection. Resolving the path first means a failure here happens before any state mutation, safe by construction, and consistent with how this same handler already treats `evohime_storage::load_task(...)?` at its very top.
 
 - [ ] **Step 6: Verify it compiles**
 
