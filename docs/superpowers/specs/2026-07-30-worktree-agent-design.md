@@ -275,6 +275,17 @@ On successful task completion, before the task transitions to
    task's in-progress, unrelated work. Scoping every git invocation below
    to the specific paths this merge's own patch touches is what makes
    merge-back safe to run next to a live unisolated task.
+
+   To be explicit about what this scoping does and doesn't protect
+   against: `workspace_root` having *unrelated* uncommitted content
+   (different files) is fully safe, by construction, per the paragraph
+   above. `workspace_root` having uncommitted content in the *same* files
+   this merge's own patch touches is not specially handled — it surfaces
+   as an ordinary content conflict (step 8 below), the same as if another
+   isolated task's *committed* changes collided there. There's no
+   meaningful difference between the two from `git apply --3way`'s
+   perspective, and none is needed: a human still has to look at either
+   case.
 5. Apply the patch to `workspace_root` with `git apply --3way --index`, so
    that changes landed on `workspace_root` by *other* tasks in the meantime
    (each merged the same way) are tolerated as long as they don't textually
@@ -401,9 +412,15 @@ The rule instead: query each row's task status directly.
   `EVOHIME_WORKTREE_RETENTION_SECS`, default 24h) — directory removed if
   present (`NotFound` is not an error — see the ordering note in Merge-back
   step 7), `git worktree prune` run against the row's own
-  `primary_workspace_root`, and the row deleted. Rows newer than the
-  window are left for the *next* startup check, giving an operator a real
-  window to inspect a conflict before it's swept.
+  `primary_workspace_root`, and the row deleted, under the same
+  per-`primary_workspace_root` lock (`workspace_merge_locks`) a normal
+  merge-back would take — cleanup's own `git worktree remove`/`prune`
+  touch the same `.git/worktrees/` metadata a concurrently-finishing
+  *different* task's merge-back could be touching for the same repository;
+  without sharing the lock, those two git invocations could race on the
+  same `.git` directory's internal state. Rows newer than the window are
+  left for the *next* startup check, giving an operator a real window to
+  inspect a conflict before it's swept.
   - If `primary_workspace_root` itself no longer exists on disk (the repo
     was moved or deleted), `git -C <primary_root> worktree prune` can never
     succeed — retrying it forever would leave the row stuck permanently.
@@ -587,6 +604,14 @@ hyperscale multi-tenant service):
   dozen files, nowhere near the OS command-line length limit (Windows:
   ~32K characters) that would require a `--pathspec-from-file=-`-based
   rewrite; not worth the added complexity until it's an observed problem.
+- **`std::env::temp_dir()` is assumed stable for the lifetime of a given
+  worktree.** If the environment that determines it (`TMPDIR`/`TEMP`)
+  changed between the server run that provisioned a worktree and a later
+  run's cleanup pass, that cleanup pass would look in the wrong place and
+  never find it. Changing where the OS puts temp files between restarts of
+  the same deployment is already an unusual operational action with
+  consequences well beyond this feature (every other use of temp files in
+  the process would be affected too); not defended against specially here.
 
 ## Testing
 
