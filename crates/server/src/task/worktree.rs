@@ -1469,10 +1469,11 @@ mod tests {
             "an extreme retention value must not delete a just-created row"
         );
 
-        let overflow_row = evohime_storage::task_worktrees::get_task_worktree(&state.pool, overflow_task)
-            .await
-            .expect("get overflow row for manual cleanup")
-            .expect("overflow row present");
+        let overflow_row =
+            evohime_storage::task_worktrees::get_task_worktree(&state.pool, overflow_task)
+                .await
+                .expect("get overflow row for manual cleanup")
+                .expect("overflow row present");
         remove_worktree(overflow_repo.path(), &PathBuf::from(&overflow_row.worktree_path))
             .await
             .expect("manual cleanup");
