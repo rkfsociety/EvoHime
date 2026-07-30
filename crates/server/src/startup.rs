@@ -129,6 +129,7 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
         mcp_servers: Arc::new(Mutex::new(config.mcp_servers.clone())),
         session_buses: Arc::new(Mutex::new(HashMap::new())),
         task_cancellations: Arc::new(Mutex::new(HashMap::new())),
+        workspace_merge_locks: Arc::new(Mutex::new(HashMap::new())),
         worker: worker::WorkerClient::new(config.worker_url.clone())?,
         worker_job_stall: config.worker_job_stall,
         plugin_catalog_cache: plugins::PluginCatalogCache::default(),

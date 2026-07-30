@@ -122,6 +122,13 @@ pub struct AppState {
     pub mcp_servers: Arc<Mutex<Vec<McpServerConfig>>>,
     pub session_buses: Arc<Mutex<HashMap<Uuid, broadcast::Sender<HistoryItem>>>>,
     pub task_cancellations: Arc<Mutex<HashMap<Uuid, CancellationToken>>>,
+    /// Per-`primary_workspace_root` locks serializing merge-back (Stage
+    /// 7.107): applying an isolated worktree's diff onto its primary
+    /// checkout and committing it there. Keyed by path rather than a single
+    /// global lock so unrelated workspaces (Sites feature) never wait on
+    /// each other. `tokio::sync::Mutex` like every other AppState lock — it
+    /// never poisons on panic.
+    pub workspace_merge_locks: Arc<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>>,
     pub worker: WorkerClient,
     pub worker_job_stall: Duration,
     pub plugin_catalog_cache: PluginCatalogCache,
@@ -217,6 +224,17 @@ impl AppState {
                 buses.remove(&session_id);
             }
         }
+    }
+
+    /// Returns the merge-back lock for `primary_root`, creating one on
+    /// first use. The outer map lock is held only long enough to
+    /// get-or-insert the entry, never for the duration of a merge.
+    pub(crate) async fn merge_lock_for(&self, primary_root: &std::path::Path) -> Arc<Mutex<()>> {
+        let mut locks = self.workspace_merge_locks.lock().await;
+        locks
+            .entry(primary_root.to_path_buf())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
     }
 }
 
