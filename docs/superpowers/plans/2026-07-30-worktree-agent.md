@@ -893,18 +893,38 @@ async fn apply_patch(primary_root: &Path, patch: &[u8]) -> Result<(), WorktreeEr
             .map_err(|error| WorktreeError::Io(format!("failed to spawn git apply: {error}")))
     };
     let mut child = spawn.await?;
-    {
+    // `stdin` must be taken out of `child` *before* `wait_with_output()` is
+    // called (which takes ownership of `child`), and the write must run
+    // concurrently with draining stdout/stderr below — a large patch that
+    // produces enough stdout/stderr (e.g. many per-file conflict messages
+    // during a large 3-way merge) to fill the OS pipe buffer before the
+    // parent starts reading would otherwise deadlock: the child blocks
+    // writing to its full stdout/stderr pipe while the parent is still
+    // blocked writing the remaining stdin.
+    let mut stdin = child.stdin.take().expect("stdin piped");
+
+    let io = async {
         use tokio::io::AsyncWriteExt;
-        let mut stdin = child.stdin.take().expect("stdin piped");
-        stdin
-            .write_all(patch)
-            .await
-            .map_err(|error| WorktreeError::Io(format!("failed to write patch to git apply: {error}")))?;
-    }
-    let output = tokio::time::timeout(merge_timeout(), child.wait_with_output())
+        let write_fut = async {
+            let result = stdin.write_all(patch).await;
+            // Close stdin as soon as the write completes (rather than
+            // waiting for the whole `io` future to finish) so `git apply`
+            // sees EOF and can proceed even while stdout/stderr are still
+            // being drained below.
+            drop(stdin);
+            result
+        };
+        tokio::join!(write_fut, child.wait_with_output())
+    };
+
+    let (write_result, output_result) = tokio::time::timeout(merge_timeout(), io)
         .await
-        .map_err(|_| WorktreeError::Io("git apply timed out".to_string()))?
+        .map_err(|_| WorktreeError::Io("git apply timed out".to_string()))?;
+
+    write_result.map_err(|error| WorktreeError::Io(format!("failed to write patch to git apply: {error}")))?;
+    let output = output_result
         .map_err(|error| WorktreeError::Io(format!("failed to wait on git apply: {error}")))?;
+
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(WorktreeError::Io(format!(
@@ -1005,13 +1025,22 @@ pub(crate) async fn merge_worktree_into_primary(
     // running unisolated task could have unrelated staged changes too.
     let mut quiet_args: Vec<&str> = vec!["diff", "--cached", "--quiet", "--"];
     quiet_args.extend(all_paths.iter().copied());
-    let staged = Command::new("git")
-        .arg("-C")
-        .arg(primary_root)
-        .args(&quiet_args)
-        .status()
+    // Wrapped in the same `tokio::time::timeout` idiom as every other git
+    // call in this file (`run_git`, `changed_paths`, `diff_cached_patch`) —
+    // a bare untimed `.status().await` here would let a hung `git diff
+    // --quiet` on a huge index block the merge indefinitely.
+    let run = async {
+        Command::new("git")
+            .arg("-C")
+            .arg(primary_root)
+            .args(&quiet_args)
+            .status()
+            .await
+            .map_err(|error| WorktreeError::Io(format!("failed to run git diff --cached --quiet: {error}")))
+    };
+    let staged = tokio::time::timeout(merge_timeout(), run)
         .await
-        .map_err(|error| WorktreeError::Io(format!("failed to run git diff --cached --quiet: {error}")))?;
+        .map_err(|_| WorktreeError::Io("git diff --cached --quiet timed out".to_string()))??;
     if staged.success() {
         // Exit code 0 means no staged differences in this merge's own paths.
         return Ok(());
