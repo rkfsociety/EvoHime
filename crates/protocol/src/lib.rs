@@ -2,6 +2,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+pub mod planning;
+
+pub use planning::{PlanCandidate, ScoreBreakdown};
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PlanStep {
     pub id: String,
@@ -47,6 +51,13 @@ pub enum ServerEvent {
     AgentStatus { task_id: Uuid, phase: String },
     #[serde(rename = "agent.plan.updated")]
     AgentPlanUpdated { task_id: Uuid, plan: Vec<PlanStep> },
+    #[serde(rename = "agent.plan")]
+    AgentPlan {
+        task_id: Uuid,
+        candidates: Vec<PlanCandidate>,
+        chosen_plan_id: String,
+        reasoning: String,
+    },
     #[serde(rename = "tool.started")]
     ToolStarted { task_id: Uuid, tool_name: String },
     #[serde(rename = "tool.output")]
@@ -475,6 +486,67 @@ mod tests {
             decoded,
             ClientCommand::TaskPlanApprove { task_id, plan }
                 if task_id == Uuid::nil() && plan[0].id == "step-1"
+        ));
+    }
+
+    #[test]
+    fn serializes_agent_plan_event() {
+        let event = ServerEvent::AgentPlan {
+            task_id: Uuid::nil(),
+            candidates: vec![
+                PlanCandidate {
+                    id: "plan-1".to_string(),
+                    description: "Parallel execution".to_string(),
+                    confidence: 0.85,
+                    score_breakdown: ScoreBreakdown {
+                        similarity_score: 0.9,
+                        tool_success_rate: 0.85,
+                        complexity_penalty: 0.1,
+                        feedback_adjustment: 0.0,
+                        final_score: 0.8,
+                    },
+                },
+                PlanCandidate {
+                    id: "plan-2".to_string(),
+                    description: "Sequential execution".to_string(),
+                    confidence: 0.65,
+                    score_breakdown: ScoreBreakdown {
+                        similarity_score: 0.7,
+                        tool_success_rate: 0.75,
+                        complexity_penalty: 0.05,
+                        feedback_adjustment: 0.0,
+                        final_score: 0.67,
+                    },
+                },
+            ],
+            chosen_plan_id: "plan-1".to_string(),
+            reasoning: "First plan has higher confidence and better scores".to_string(),
+        };
+
+        let json = serde_json::to_value(&event).expect("event serializes");
+        assert_eq!(json["type"], "agent.plan");
+        assert_eq!(json["chosen_plan_id"], "plan-1");
+        assert_eq!(json["candidates"].as_array().unwrap().len(), 2);
+        assert_eq!(json["candidates"][0]["id"], "plan-1");
+        assert_eq!(
+            json["candidates"][0]["score_breakdown"]["similarity_score"].is_number(),
+            true
+        );
+
+        let decoded: ServerEvent =
+            serde_json::from_value(json).expect("event deserializes");
+        assert!(matches!(
+            decoded,
+            ServerEvent::AgentPlan {
+                task_id,
+                chosen_plan_id,
+                candidates,
+                reasoning
+            }
+                if task_id == Uuid::nil()
+                    && chosen_plan_id == "plan-1"
+                    && candidates.len() == 2
+                    && reasoning.contains("confidence")
         ));
     }
 }

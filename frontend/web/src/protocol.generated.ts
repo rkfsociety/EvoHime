@@ -11,6 +11,7 @@ export type ServerEvent =
   | AgentMessageDeltaEvent
   | AgentStatusEvent
   | AgentPlanUpdatedEvent
+  | AgentPlanEvent
   | ToolStartedEvent
   | ToolOutputEvent
   | ToolOutputDeltaEvent
@@ -74,6 +75,26 @@ export interface PlanStep {
   tool_name: string;
   description: string;
   depends_on?: string[];
+}
+export interface AgentPlanEvent {
+  type: "agent.plan";
+  task_id: Uuid;
+  candidates: PlanCandidate[];
+  chosen_plan_id: string;
+  reasoning: string;
+}
+export interface PlanCandidate {
+  id: string;
+  description: string;
+  confidence: number;
+  score_breakdown: ScoreBreakdown;
+}
+export interface ScoreBreakdown {
+  similarity_score: number;
+  tool_success_rate: number;
+  complexity_penalty: number;
+  feedback_adjustment: number;
+  final_score: number;
 }
 export interface ToolStartedEvent {
   type: "tool.started";

@@ -29,6 +29,29 @@
       },
       "additionalProperties": false
     },
+    "ScoreBreakdown": {
+      "type": "object",
+      "required": ["similarity_score", "tool_success_rate", "complexity_penalty", "feedback_adjustment", "final_score"],
+      "properties": {
+        "similarity_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "tool_success_rate": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "complexity_penalty": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "feedback_adjustment": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "final_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      },
+      "additionalProperties": false
+    },
+    "PlanCandidate": {
+      "type": "object",
+      "required": ["id", "description", "confidence", "score_breakdown"],
+      "properties": {
+        "id": { "type": "string" },
+        "description": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "score_breakdown": { "$ref": "#/$defs/ScoreBreakdown" }
+      },
+      "additionalProperties": false
+    },
     "ServerEvent": {
       "oneOf": [
         { "$ref": "#/$defs/SessionCreatedEvent" },
@@ -36,6 +59,7 @@
         { "$ref": "#/$defs/AgentMessageDeltaEvent" },
         { "$ref": "#/$defs/AgentStatusEvent" },
         { "$ref": "#/$defs/AgentPlanUpdatedEvent" },
+        { "$ref": "#/$defs/AgentPlanEvent" },
         { "$ref": "#/$defs/ToolStartedEvent" },
         { "$ref": "#/$defs/ToolOutputEvent" },
         { "$ref": "#/$defs/ToolOutputDeltaEvent" },
@@ -124,6 +148,21 @@
           "type": "array",
           "items": { "$ref": "#/$defs/PlanStep" }
         }
+      },
+      "additionalProperties": false
+    },
+    "AgentPlanEvent": {
+      "type": "object",
+      "required": ["type", "task_id", "candidates", "chosen_plan_id", "reasoning"],
+      "properties": {
+        "type": { "const": "agent.plan" },
+        "task_id": { "$ref": "#/$defs/Uuid" },
+        "candidates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/PlanCandidate" }
+        },
+        "chosen_plan_id": { "type": "string" },
+        "reasoning": { "type": "string" }
       },
       "additionalProperties": false
     },
