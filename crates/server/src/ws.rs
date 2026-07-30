@@ -274,10 +274,8 @@ pub(crate) async fn handle_socket(
                             // `release_task_cancellation_if_terminal` call (once
                             // `process_user_message` genuinely returns) remove it
                             // — that's the only moment the workspace is actually
-                            // free again. `release_task_cancellation_if_terminal`
-                            // still runs unconditionally below for every other
-                            // case (task was already terminal, the FSM transition
-                            // itself failed) via its own authoritative DB check.
+                            // free again. See the `else` comment below for every
+                            // other case.
                             if was_paused && cancel_result.is_ok() {
                                 state.task_cancellations.lock().await.remove(&task_id);
                             }
