@@ -453,6 +453,24 @@ pub(crate) async fn add_worktree(
             repo.display()
         )));
     }
+    if worktree_path.exists() {
+        // `git worktree add` refuses to target an existing directory. Since
+        // `worktree_path` is derived from a fresh task_id, this only
+        // happens if a prior attempt for this exact task_id partially
+        // failed — e.g. `git worktree add` succeeded but the subsequent
+        // `task_worktrees` insert failed *and* that failure's own rollback
+        // (`remove_worktree`) also failed (both true simultaneously, or
+        // this task_id is being provisioned again after such a failure).
+        // Not reachable through this design's normal call pattern today,
+        // but cheap to make provisioning self-healing against it rather
+        // than failing outright on leftover debris.
+        tokio::fs::remove_dir_all(&worktree_path)
+            .await
+            .map_err(|error| WorktreeError::Io(format!(
+                "worktree path {} already exists and could not be cleared: {error}",
+                worktree_path.display()
+            )))?;
+    }
     if let Some(parent) = worktree_path.parent() {
         tokio::fs::create_dir_all(parent)
             .await
@@ -590,7 +608,7 @@ git commit -m "feat(server): add pure git-worktree add/remove helpers (7.107)"
 **Interfaces:**
 - Consumes: `WorktreeError`, `run_git`, `rev_parse_head` (Task 2).
 - Produces:
-  - `pub(crate) const MERGE_TIMEOUT: Duration` (5 minutes — diff/apply/commit can be slower than metadata ops on a large patch).
+  - `pub(crate) fn merge_timeout() -> Duration` (default 5 minutes, overridable via `EVOHIME_WORKTREE_MERGE_TIMEOUT_SECS` — diff/apply/commit can be slower than metadata ops on a large patch, and a fixed constant would be too tight for a very large repository).
   - `pub(crate) async fn merge_worktree_into_primary(worktree_path: &Path, primary_root: &Path, base_sha: &str, task_id: Uuid) -> Result<(), WorktreeError>`
 
 **Every operation below is scoped to exactly the paths this merge's own patch touches — never to `workspace_root`'s whole index/tree.** Whenever the currently-*first* task is running unisolated (the common case: `is_concurrent == false` at its own start), its tool calls write directly into `primary_root`, uncommitted, for the entire time any *other* task is running isolated. A blanket `git commit` (with no pathspec) could sweep that first task's unrelated staged changes into this merge's commit; a blanket `git reset --hard` on conflict could destroy its in-progress uncommitted work outright. Scoping every git invocation to this merge's own path list is what makes it safe to run next to a live unisolated task.
@@ -602,7 +620,17 @@ Append to `crates/server/src/task/worktree.rs` (add `use uuid::Uuid;` and `use t
 ```rust
 /// Diff/apply/commit can be slower than metadata-only git operations on a
 /// large patch.
-pub(crate) const MERGE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+/// Overridable via `EVOHIME_WORKTREE_MERGE_TIMEOUT_SECS` (default 5
+/// minutes) — a fixed constant would be too tight for diff/apply/commit
+/// against a very large repository or patch.
+pub(crate) fn merge_timeout() -> Duration {
+    std::env::var("EVOHIME_WORKTREE_MERGE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|secs: &u64| *secs > 0)
+        .map(Duration::from_secs)
+        .unwrap_or_else(|| Duration::from_secs(5 * 60))
+}
 
 struct ChangedPaths {
     /// Paths that existed at `base_sha` (modified, deleted, or either side
@@ -628,7 +656,7 @@ async fn changed_paths(worktree_path: &Path, base_sha: &str) -> Result<ChangedPa
     let output = run_git(
         worktree_path,
         &["diff", "--cached", "--name-status", base_sha],
-        MERGE_TIMEOUT,
+        merge_timeout(),
     )
     .await?;
     let mut existing = Vec::new();
@@ -638,7 +666,19 @@ async fn changed_paths(worktree_path: &Path, base_sha: &str) -> Result<ChangedPa
         let status = fields.next().unwrap_or_default();
         match status.chars().next() {
             Some('A') => added.extend(fields.next().map(str::to_string)),
-            Some('R') => existing.extend(fields.map(str::to_string)), // old + new name
+            Some('R') => {
+                // `--name-status` gives "R<score>\t<old>\t<new>". The old
+                // name existed at base_sha (restorable via `git checkout
+                // HEAD --`); the new name did not (it must be treated like
+                // an added path — unstaged and deleted directly on
+                // rollback). Lumping both into `existing`, as an earlier
+                // version of this function did, breaks conflict recovery:
+                // `git checkout HEAD -- <old> <new>` errors out entirely on
+                // the unmatched new-name pathspec, aborting the restore for
+                // *every* path in that one invocation, not just the rename.
+                existing.extend(fields.next().map(str::to_string));
+                added.extend(fields.next().map(str::to_string));
+            }
             _ => existing.extend(fields.next().map(str::to_string)),
         }
     }
@@ -660,7 +700,7 @@ async fn diff_cached_patch(worktree_path: &Path, base_sha: &str) -> Result<Vec<u
             .await
             .map_err(|error| WorktreeError::Io(format!("failed to run git diff: {error}")))
     };
-    let output = tokio::time::timeout(MERGE_TIMEOUT, run)
+    let output = tokio::time::timeout(merge_timeout(), run)
         .await
         .map_err(|_| WorktreeError::Io("git diff --cached --binary timed out".to_string()))??;
     if !output.status.success() {
@@ -693,7 +733,7 @@ async fn apply_patch(primary_root: &Path, patch: &[u8]) -> Result<(), WorktreeEr
             .await
             .map_err(|error| WorktreeError::Io(format!("failed to write patch to git apply: {error}")))?;
     }
-    let output = tokio::time::timeout(MERGE_TIMEOUT, child.wait_with_output())
+    let output = tokio::time::timeout(merge_timeout(), child.wait_with_output())
         .await
         .map_err(|_| WorktreeError::Io("git apply timed out".to_string()))?
         .map_err(|error| WorktreeError::Io(format!("failed to wait on git apply: {error}")))?;
@@ -717,7 +757,7 @@ async fn restore_paths(repo: &Path, changed: &ChangedPaths) {
     if !changed.existing.is_empty() {
         let mut args: Vec<&str> = vec!["checkout", "HEAD", "--"];
         args.extend(changed.existing.iter().map(String::as_str));
-        if let Err(error) = run_git(repo, &args, MERGE_TIMEOUT).await {
+        if let Err(error) = run_git(repo, &args, merge_timeout()).await {
             warn!(%error, "failed to restore existing paths to HEAD after a failed merge-back");
         }
     }
@@ -755,7 +795,7 @@ pub(crate) async fn merge_worktree_into_primary(
 
     // Stage everything first: `git diff` never shows untracked files
     // regardless of which commit it's compared against.
-    run_git(worktree_path, &["add", "-A"], MERGE_TIMEOUT).await?;
+    run_git(worktree_path, &["add", "-A"], merge_timeout()).await?;
 
     let changed = changed_paths(worktree_path, base_sha).await?;
     let all_paths = changed.all();
@@ -796,7 +836,7 @@ pub(crate) async fn merge_worktree_into_primary(
     // changes to those paths regardless of what else is staged/dirty
     // elsewhere in the index — this is what keeps a concurrently-running
     // unisolated task's unrelated state out of this commit.
-    if let Err(commit_error) = run_git(primary_root, &commit_args, MERGE_TIMEOUT).await {
+    if let Err(commit_error) = run_git(primary_root, &commit_args, merge_timeout()).await {
         restore_paths(primary_root, &changed).await;
         return Err(WorktreeError::Io(format!(
             "commit failed after a clean apply: {commit_error}"
@@ -965,12 +1005,68 @@ Add this test to the `#[cfg(test)] mod tests` block:
             .await
             .expect("remove worktree");
     }
+
+    #[tokio::test]
+    async fn merge_back_restores_cleanly_when_a_conflict_coincides_with_a_rename() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        init_repo(repo.path());
+        std::fs::write(repo.path().join("other.txt"), "base\n").expect("write");
+        run(repo.path(), &["git", "add", "."]);
+        run(repo.path(), &["git", "commit", "-m", "add other.txt"]);
+        let base_sha = rev_parse_head(repo.path()).await.expect("rev-parse");
+
+        let worktree_root = tempfile::tempdir().expect("tempdir");
+        let worktree_path = worktree_root.path().join("wt-1");
+        add_worktree(repo.path(), &worktree_path, &base_sha)
+            .await
+            .expect("add worktree");
+
+        // Worktree renames README.md *and* edits an unrelated file.
+        std::fs::rename(
+            worktree_path.join("README.md"),
+            worktree_path.join("RENAMED.md"),
+        )
+        .expect("rename");
+        std::fs::write(worktree_path.join("other.txt"), "from worktree\n").expect("write");
+
+        // Primary independently edits the same unrelated file, forcing a conflict.
+        std::fs::write(repo.path().join("other.txt"), "from primary\n").expect("write");
+        run(repo.path(), &["git", "add", "."]);
+        run(repo.path(), &["git", "commit", "-m", "primary edit"]);
+        let head_before_merge = rev_parse_head(repo.path()).await.expect("rev-parse");
+
+        let result =
+            merge_worktree_into_primary(&worktree_path, repo.path(), &base_sha, Uuid::new_v4()).await;
+        assert!(matches!(result, Err(WorktreeError::Conflict(_))));
+
+        let head_after_merge = rev_parse_head(repo.path()).await.expect("rev-parse after");
+        assert_eq!(head_before_merge, head_after_merge, "HEAD must not advance");
+
+        // Regression check: lumping a rename's old+new name into the same
+        // `existing` bucket makes `git checkout HEAD -- <old> <new>` error
+        // out on the unmatched new-name pathspec, aborting the restore for
+        // every path in that invocation — not just the rename — and leaving
+        // the repo dirty.
+        let status_output = StdCommand::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(repo.path())
+            .output()
+            .expect("git status --porcelain");
+        assert!(
+            status_output.stdout.is_empty(),
+            "primary_root must be fully clean after a conflict that coincides with a rename"
+        );
+
+        remove_worktree(repo.path(), &worktree_path)
+            .await
+            .expect("remove worktree");
+    }
 ```
 
 - [ ] **Step 2: Run the tests**
 
 Run: `cargo test -p evohime-server task::worktree:: -- --nocapture`
-Expected: all eight tests `PASS`.
+Expected: all nine tests `PASS`.
 
 - [ ] **Step 3: Commit**
 
