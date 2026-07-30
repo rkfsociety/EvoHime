@@ -39,6 +39,8 @@ Recorded here so a future reader doesn't mistake these for oversights — each w
 - **`TaskRetry`'s own atomic `is_concurrent` check can observe its own not-yet-released stale entry.** Step 5's `TaskRetry` rewrite reads `!guard.is_empty()` (Task 5, Step 5) before inserting a fresh token; if this exact task's own prior entry somehow failed to be released (e.g. `release_task_cancellation_if_terminal`'s DB check hit a transient error — logged, not retried), `is_concurrent` would read `true` from the task's own leftover entry, not a genuinely different concurrent task. The failure direction is safe (spurious extra isolation, never spurious *lack* of isolation), so this is accepted rather than fixed with, e.g., an `is_concurrent = guard.keys().any(|k| *k != task_id)` refinement — that refinement would itself need to be justified against every other call site's identical pattern (`UserMessage`, `TaskPlanApprove`, `TaskResume` all have the same theoretical shape), which is a larger change than this one path warrants on its own.
 - **A merge conflict on `finalize_worktree` discards the agent's final message and emits a `TaskCompleted` immediately followed by a `TaskFailed`.** The agent loop finishes its own steps and emits `TaskCompleted` (and marks its steps `completed`) before `finalize_worktree` ever runs (Task 6, Step 2's placement — right after the success-path `match agent_result` block, immediately before `insert_message`). If the merge then conflicts, the client sees a completed-then-failed sequence, and the assistant's own summary of the work is never persisted (`insert_message` never runs, since `finalize_worktree`'s error propagates first). This is a direct consequence of the plan's own mandated placement (merge-back must run before `process_user_message` returns, so `ws.rs`'s cleanup naturally waits — see Task 6, Step 2's own reasoning), not an implementation oversight — reordering it to insert the message first would mean persisting a message describing work that, from primary's perspective, never actually landed. Accepted as a UX rough edge, not fixed here.
 - **The merge-back lock key (`primary_workspace_root`) isn't normalized identically across every task-start path.** For a task started via `ws.rs`'s `UserMessage` handler, `primary_workspace_root` is the canonicalized, `public_fs_path`-normalized string (`crates/server/src/task/helpers.rs::public_fs_path`, avoiding Windows' `\\?\`-prefixed `canonicalize()` output). For a task with no `task.workspace_path` at all (reachable via `state.workspace_root` fallback in `pipeline.rs`, e.g. a scheduler-started task), it's `state.workspace_root` — not necessarily run through the same normalization. Two tasks that are actually the same physical repository could in principle hash to two different `merge_lock_for` entries and merge concurrently without serializing against each other. This is a pre-existing path-representation inconsistency in the codebase (not introduced by this feature), and normalizing it project-wide is out of scope for the merge-lock registry specifically — flagged here rather than silently accepted, since it's the one place this feature's own correctness depends on two representations of "the same repo" actually being equal.
+- **The periodic worktree-cleanup loop's first tick can race the startup-time cleanup pass.** `tokio::time::interval` fires its first tick immediately, and `worktree_cleanup_loop` (Task 7, Step 3) is spawned well before the startup-time `cleanup_stale_worktrees`/`cleanup_orphaned_worktree_directories` calls run a few lines later in the same function. Both passes can therefore run concurrently over the same rows on process start. Not a safety issue — the per-primary-root `merge_lock_for` lock still serializes the actual git work, and `delete_task_worktree` on an already-deleted row is a harmless no-op — but the loser of the race logs a spurious "failed to remove stale worktree" warning for a row the other pass already cleaned up. Accepted as log noise, not fixed, since delaying the loop's first tick (e.g. `ticker.tick().await` before the loop body) would also delay how quickly a *genuinely* stuck worktree gets swept if the server starts up already in a bad state — a worse trade-off than an occasional duplicate warning.
+- **The orphan sweep does one DB round-trip (`get_task_worktree`) per candidate directory.** Fine at the scale this feature operates at (one row per concurrently isolated task); if the `evohime-worktrees/` directory ever accumulated thousands of entries this would become a noticeable per-tick cost. Not optimized here (e.g. by batching against the row list `cleanup_stale_worktrees` already fetched moments earlier in the same pass) because that scale isn't realistic for this feature's actual usage pattern.
 - **`worktree_row` is read once near the top of `pipeline.rs`'s task-execution function and reused for the merge-back call much later, without re-fetching.** In principle a stale snapshot could point `finalize_worktree` at a row/directory that's since been removed. In practice this isn't reachable given the rest of this design's own invariants: `cleanup_stale_worktrees` (Task 7) only ever touches rows for *terminal* tasks, and `TaskRetry`'s teardown (Task 5, Step 5) only runs for tasks already `status == "failed"` — while this function is running, the task is `running` (non-terminal) the entire time, so nothing else in this feature can remove its row out from under it mid-execution. Re-fetching immediately before the merge would add a DB round-trip to guard against a window that doesn't actually exist under this design's own state machine.
 
 ---
@@ -1495,31 +1497,55 @@ pub(crate) async fn provision_worktree(
         .join("evohime-worktrees")
         .join(task_id.to_string());
 
-    add_worktree(primary_root, &worktree_path, &base_sha).await?;
-
+    // The DB row is inserted BEFORE the worktree directory is created on
+    // disk — deliberately the reverse of a naive "create then record" order.
+    // `cleanup_orphaned_worktree_directories` (Task 7) runs periodically (not
+    // just once at startup), and it deletes any `.git`-marked, UUID-named
+    // directory under `evohime-worktrees/` that has no matching
+    // `task_worktrees` row. With the naive order, a directory just created
+    // by `add_worktree` would sit in exactly that "no row yet" state for the
+    // entire gap until `insert_task_worktree` completes — a window the
+    // periodic sweep could land in and delete out from under an in-flight
+    // provision. Inserting the row first closes that window: either this
+    // insert fails and nothing was ever created on disk, or it succeeds and
+    // the row exists (even briefly pointing at a directory that doesn't
+    // exist yet, which the sweep's own "no row" check correctly ignores)
+    // before `add_worktree` ever runs.
     if let Err(error) = evohime_storage::task_worktrees::insert_task_worktree(
         &state.pool,
         &evohime_storage::task_worktrees::NewTaskWorktree {
             task_id,
-            base_commit_sha: base_sha,
+            base_commit_sha: base_sha.clone(),
             worktree_path: worktree_path.to_string_lossy().into_owned(),
             primary_workspace_root: primary_root.to_string_lossy().into_owned(),
         },
     )
     .await
     {
-        // Roll back: without a row, nothing (merge-back, startup cleanup)
-        // will ever find this directory again — it would become a
-        // permanent orphan otherwise. If this rollback attempt *also*
-        // fails (e.g. a transient git/filesystem error right on top of the
-        // DB error above), the directory is still not lost forever: it's
-        // exactly what `cleanup_orphaned_worktree_directories` (Task 7)
-        // exists to sweep — a `.git`-marked directory under
-        // `evohime-worktrees/` with no matching `task_worktrees` row.
-        let _ = remove_worktree(primary_root, &worktree_path).await;
+        // Nothing to roll back yet — no directory was created.
         return Err(WorktreeError::Io(format!(
             "failed to persist task_worktrees row: {error}"
         )));
+    }
+
+    if let Err(add_error) = add_worktree(primary_root, &worktree_path, &base_sha).await {
+        // Roll back the row: without a directory, this row would otherwise
+        // be a permanent phantom pointing at a worktree that was never
+        // actually created. If this delete itself fails too (e.g. a
+        // transient DB error right on top of the `add_worktree` failure),
+        // it's not lost forever — the phantom-row check above (in Task 5's
+        // fix) already discards exactly this shape of row (directory
+        // missing) and reprovisions on the next attempt.
+        if let Err(delete_error) =
+            evohime_storage::task_worktrees::delete_task_worktree(&state.pool, task_id).await
+        {
+            tracing::warn!(
+                %task_id,
+                %delete_error,
+                "failed to delete task_worktrees row after add_worktree failed; leaving a phantom row for the next provision attempt to discard"
+            );
+        }
+        return Err(add_error);
     }
 
     Ok(())
@@ -2318,7 +2344,15 @@ pub(crate) async fn cleanup_orphaned_worktree_directories(state: &Arc<AppState>)
         }
     };
 
-    while let Ok(Some(entry)) = entries.next_entry().await {
+    loop {
+        let entry = match entries.next_entry().await {
+            Ok(Some(entry)) => entry,
+            Ok(None) => break,
+            Err(error) => {
+                warn!(%error, path = %root.display(), "failed to read next entry while scanning for orphaned worktree directories; ending this sweep early");
+                break;
+            }
+        };
         let Some(task_id) = entry
             .file_name()
             .to_str()
