@@ -4,7 +4,7 @@
 
 **Goal:** When a second task starts while another task is already running against the same server, isolate it in a detached-HEAD git worktree instead of the shared `workspace_root`, and automatically fold its changes back into the primary checkout when it finishes.
 
-**Architecture:** A new `task_worktrees` Postgres table tracks one row per isolated task (`base_commit_sha`, `worktree_path`, `primary_workspace_root`). `crates/server/src/ws.rs` decides isolation atomically alongside its existing `task_cancellations` bookkeeping and provisions the worktree via `git worktree add --detach` into the OS temp directory (never inside the tracked repo tree), idempotently and with rollback if persisting the row fails. `crates/server/src/task/pipeline.rs` points the agent's `workspace_root` at the worktree when a row exists, then on success squash-merges the worktree's diff back onto the primary checkout under a per-`primary_workspace_root` lock (`workspace_merge_locks`, not one global lock), using `git add -A` + `git diff --cached` + `git apply --3way --index` + `git commit`, resetting the primary checkout back to a clean `HEAD` on conflict. Startup cleanup keys off each row's owning task's *live* status, not a restart-scoped snapshot. All git subprocess calls follow the existing `tokio::process::Command` pattern already used in `crates/tool-runtime/src/tools/git.rs` and `crates/server/src/github_api.rs`.
+**Architecture:** A new `task_worktrees` Postgres table tracks one row per isolated task (`base_commit_sha`, `worktree_path`, `primary_workspace_root`). `crates/server/src/ws.rs` decides isolation atomically alongside its existing `task_cancellations` bookkeeping (which must survive an approval pause, a `TaskCancel`, a `TaskRetry`'s stale-worktree teardown, and a server restart for the isolation decision to stay correct across all of a task's lifecycle transitions — Task 5, Task 7 Step 3.5) and provisions the worktree via `git worktree add --detach` into the OS temp directory (never inside the tracked repo tree), idempotently and with rollback if persisting the row fails. `crates/server/src/task/pipeline.rs` points the agent's `workspace_root` at the worktree when a row exists, then on success squash-merges the worktree's diff back onto the primary checkout under a per-`primary_workspace_root` lock (`workspace_merge_locks`, not one global lock), using `git add -A` + `git diff --cached` + `git apply --3way --index` + `git commit`, resetting the primary checkout back to a clean `HEAD` on conflict. Startup cleanup keys off each row's owning task's *live* status, not a restart-scoped snapshot. All git subprocess calls follow the existing `tokio::process::Command` pattern already used in `crates/tool-runtime/src/tools/git.rs` and `crates/server/src/github_api.rs`.
 
 **Tech Stack:** Rust (axum, sqlx/Postgres, tokio), `git` CLI via `tokio::process::Command`.
 
@@ -46,8 +46,9 @@ Recorded here so a future reader doesn't mistake these for oversights — each w
 - **Create** `crates/server/src/task/worktree.rs` — all git-subprocess mechanics (pure functions taking explicit paths) plus the `AppState`-aware orchestration functions (`provision_worktree`, `finalize_worktree`, `cleanup_stale_worktrees`).
 - **Modify** `crates/server/src/task/mod.rs` — register the new module.
 - **Modify** `crates/server/src/app.rs` — add `workspace_merge_locks` field and `merge_lock_for` helper method to `AppState`.
-- **Modify** `crates/server/src/startup.rs` — construct the new field; add the startup cleanup pass after `recover_after_restart`.
-- **Modify** `crates/server/src/ws.rs` — atomic trigger decision, worktree provisioning, fail-fast on concurrent provisioning failure.
+- **Modify** `crates/server/src/startup.rs` — construct the new field; add the startup cleanup pass after `recover_after_restart`; re-seed `task_cancellations` for tasks that were already non-terminal before this restart.
+- **Modify** `crates/server/src/task/helpers.rs` — add `release_task_cancellation_if_terminal` and the `TaskCancellationGuard` panic-safety guard.
+- **Modify** `crates/server/src/ws.rs` — atomic trigger decision, worktree provisioning, fail-fast on concurrent provisioning failure; keep `task_cancellations` alive through approval pauses, `TaskCancel`, and `TaskRetry`.
 - **Modify** `crates/server/src/task/pipeline.rs` — resolve worktree override for `AgentConfig.workspace_root`, call `finalize_worktree` on success.
 
 ---
@@ -1668,7 +1669,7 @@ impl Drop for TaskCancellationGuard {
 }
 ```
 
-Now, in each of the four spawn sites in `crates/server/src/ws.rs` — this task's own spawned block plus the three resume-path spawned blocks in the `TaskPlanApprove`, `TaskResume`, and `TaskRetry` handlers (find each with `grep -n "tokio::spawn" crates/server/src/ws.rs`) — make two changes:
+Now, in three of the four spawn sites in `crates/server/src/ws.rs` — this task's own spawned block plus the two resume-path spawned blocks in the `TaskPlanApprove` and `TaskResume` handlers (find each with `grep -n "tokio::spawn" crates/server/src/ws.rs`) — make two changes. **Skip `TaskRetry` here** — Step 5 below replaces its entire arm from scratch (including its own copy of this exact guard wiring, plus the `is_concurrent`/`provision_worktree` logic Step 2 added to the `UserMessage` handler), so editing it here first would just be immediately overwritten:
 
 1. Right after the block's existing `let state_for_task = state.clone();` (or equivalent clone) and before `tokio::spawn(async move { ... })`, add:
 
@@ -1738,7 +1739,9 @@ This replaces the existing first five lines of the `TaskCancel` arm (find it via
 
 A task that failed for a reason *other* than a merge conflict (e.g. the agent itself errored) never reached `finalize_worktree` at all — its worktree still has whatever the agent produced, uncommitted, and resuming into it on retry is exactly the desired "continue where it left off" behavior. The two cases are indistinguishable from `task_worktrees` alone (both just leave a row behind), so the safe general fix is: always reprovision fresh on retry rather than trying to tell the two cases apart. The in-progress agent work in the second case is not silently lost either way — nothing had merged it into primary yet, so discarding the isolated copy and starting the retry from primary's current `HEAD` is a clean restart, not a partial one.
 
-In `crates/server/src/ws.rs`'s `ClientCommand::TaskRetry` handler, before calling `retry_task`, tear down any existing worktree for this `task_id` and let the retry re-provision from scratch under the same atomic `is_concurrent` check the initial `UserMessage` path uses:
+Unlike `TaskPlanApprove`/`TaskResume` (which just re-spawn `resume_task_run` and rely on `pipeline.rs`'s existing `get_task_worktree` lookup — correct as-is, since a task that was never isolated to begin with is protected from colliding with a *new* concurrent task by Step 3's fix keeping its `task_cancellations` entry alive through the pause, not by anything re-checked here), `TaskRetry`'s current handler (`crates/server/src/ws.rs:492-557`, confirmed by direct inspection) never calls `provision_worktree` or recomputes `is_concurrent` at all — it unconditionally inserts a token and spawns `resume_task_run`. That's fine as long as the row from the task's original (possibly unisolated) start is left untouched. It stops being fine the moment this step's own teardown deletes that row: with no row, `pipeline.rs` falls back to `primary_workspace_root` unconditionally, so a retried task would always run unisolated after teardown — even if some *other* task is genuinely running concurrently against the same workspace at that exact moment, which is precisely the collision this whole feature exists to prevent. Teardown-without-recompute is not an option; the fix has to redo the atomic check.
+
+In `crates/server/src/ws.rs`'s `ClientCommand::TaskRetry` handler, replace the existing body from `let task = match evohime_storage::load_task(...)` (`ws.rs:493`) through the `let state_for_task = state.clone();`/`tokio::spawn(async move { ... });` block (`ws.rs:533-556`) with:
 
 ```rust
                         ClientCommand::TaskRetry { task_id } => {
@@ -1778,9 +1781,103 @@ In `crates/server/src/ws.rs`'s `ClientCommand::TaskRetry` handler, before callin
                                 }
                             }
                             let _ = retry_task(&state.pool, task_id).await;
+                            state.metrics.task_retry(session_id, task_id);
+                            emit_event(
+                                &state,
+                                session_id,
+                                Some(task_id),
+                                ServerEvent::TaskStatusChanged {
+                                    task_id,
+                                    status: "running".to_string(),
+                                },
+                            )
+                            .await?;
+                            emit_event(
+                                &state,
+                                session_id,
+                                Some(task_id),
+                                ServerEvent::ActionLogged {
+                                    task_id,
+                                    action: "task.retry".to_string(),
+                                    detail: "Failed task scheduled for retry".to_string(),
+                                    created_at: chrono::Utc::now(),
+                                    correlation_id: Some(task_id),
+                                    duration_ms: None,
+                                },
+                            )
+                            .await?;
+
+                            let token = CancellationToken::new();
+                            // Same atomic insert-and-check as the `UserMessage`
+                            // handler (Step 2) — teardown above may have just
+                            // deleted this task's own row, so whether it needs a
+                            // *fresh* one now depends on the current state of
+                            // `task_cancellations` at this exact instant, not on
+                            // whatever was true when the task originally started.
+                            let is_concurrent = {
+                                let mut guard = state.task_cancellations.lock().await;
+                                let is_concurrent = !guard.is_empty();
+                                guard.insert(task_id, token.clone());
+                                is_concurrent
+                            };
+                            let primary_root = crate::task::helpers::resolve_workspace_path(
+                                &state,
+                                task.workspace_path.clone(),
+                            )?;
+                            if is_concurrent {
+                                if let Err(error) = crate::task::worktree::provision_worktree(
+                                    &state, task_id, &primary_root,
+                                )
+                                .await
+                                {
+                                    error!(%task_id, %error, "failed to allocate isolated worktree for retried concurrent task");
+                                    state.task_cancellations.lock().await.remove(&task_id);
+                                    let _ = fail_task(&state.pool, task_id).await;
+                                    let _ = emit_event(
+                                        &state,
+                                        session_id,
+                                        Some(task_id),
+                                        ServerEvent::TaskFailed {
+                                            task_id,
+                                            error: format!("failed to allocate isolated worktree: {error}"),
+                                            duration_ms: None,
+                                        },
+                                    )
+                                    .await;
+                                    continue;
+                                }
+                            }
+                            let mut cancellation_guard =
+                                crate::task::helpers::TaskCancellationGuard::new(state.clone(), task_id);
+                            let state_for_task = state.clone();
+                            tokio::spawn(async move {
+                                if let Err((task_id, error)) =
+                                    resume_task_run(&state_for_task, task, token, false).await
+                                {
+                                    let _ = emit_event(
+                                        &state_for_task,
+                                        session_id,
+                                        Some(task_id),
+                                        ServerEvent::TaskFailed {
+                                            task_id,
+                                            error: error.to_string(),
+                                            duration_ms: None,
+                                        },
+                                    )
+                                    .await;
+                                    let _ = fail_task(&state_for_task.pool, task_id).await;
+                                }
+                                cancellation_guard.disarm();
+                                crate::task::helpers::release_task_cancellation_if_terminal(
+                                    &state_for_task,
+                                    task_id,
+                                )
+                                .await;
+                            });
+                        }
 ```
 
-This replaces the existing first six lines of the `TaskRetry` arm (`grep -n "ClientCommand::TaskRetry" crates/server/src/ws.rs`) up to and including the `let _ = retry_task(&state.pool, task_id).await;` line — everything from `state.metrics.task_retry(...)` onward is unchanged. Reprovisioning itself still only happens if the retried run's own path through `ws.rs`'s spawned block re-checks `is_concurrent` and calls `provision_worktree` the same way the initial `UserMessage` handler does (Step 2 above) — confirm the `TaskRetry` handler's spawn shares that same trigger logic rather than skipping straight to `resume_task_run`; if it currently doesn't, this step must add that check to the `TaskRetry` arm too, not just the teardown shown here.
+One detail worth calling out about this rewrite: unlike Step 2's `UserMessage` handler, this arm's `is_concurrent` check runs *after* `retry_task`/the status-changed events, not before — that's intentional here (retry's pre-existing side effects up through emitting `ActionLogged` must fire even if provisioning subsequently fails, so the client sees the retry was accepted before it's told the retry then failed to isolate), but it does mean the `is_concurrent` snapshot is taken slightly later relative to this arm's own side effects than Step 2's is. This is still safe for the same reason Step 2's own snapshot-then-provision gap is safe (documented inline there): the only direction that must never happen is starting unisolated when isolation was actually needed, and inserting into `task_cancellations` before provisioning (not after) still guarantees that. `resolve_workspace_path(state: &Arc<AppState>, requested_path: Option<String>) -> Result<PathBuf, ApiError>` (`crates/server/src/task/helpers.rs:42`, confirmed by direct inspection) takes an owned `Option<String>`, hence `task.workspace_path.clone()` above rather than `.as_deref()`.
 
 - [ ] **Step 6: Verify it compiles**
 
@@ -2221,6 +2318,8 @@ This must come *after* the `worktree_retention` binding introduced earlier in th
 ```
 
 This runs for every non-terminal status, not just `paused` — a task caught mid-`retrying` by a crash (a narrow window inside `retry_task`'s two back-to-back transitions) has just as much unfinished business as one that's cleanly `paused`. Reusing `TERMINAL_TASK_STATUSES` (defined earlier in this same task) rather than a second hardcoded status list is what keeps this in sync with `release_task_cancellation_if_terminal` (Task 5) and `cleanup_stale_worktrees` (this task) automatically if a status is ever added or renamed later.
+
+This deliberately loads every task row (`evohime_storage::list_tasks(pool, None)`, no status filter pushed into SQL) rather than a query pre-filtered server-side to non-terminal statuses. `TERMINAL_TASK_STATUSES` lives in `crates/server` (Task 7, Step 1); `evohime_storage` is a lower-level crate `crates/server` depends on, not the reverse, so a SQL-side `WHERE status NOT IN (...)` filter would have to hardcode its own separate copy of the same status list — reintroducing exactly the two-places-to-keep-in-sync problem `TERMINAL_TASK_STATUSES` exists to eliminate (see its own doc comment, Task 7 Step 1). Filtering in Rust against the one real definition costs one full `tasks` table scan at startup only, not per-request — acceptable for a table whose growth is bounded by actual task volume, and worth revisiting only if that table's size becomes a real startup-latency concern on its own.
 
 - [ ] **Step 4: Verify it compiles**
 
@@ -2718,6 +2817,10 @@ Start the stack with `.\start-dev.ps1` (per `AGENTS.md`/project convention — n
 
 3c. Cancel-while-paused check (Task 5, Step 4's fix): trigger another `approval.required` pause, then send `TaskCancel` for it instead of approving. Confirm a task started immediately afterward is *not* needlessly isolated (i.e. `is_concurrent` is `false` again) — proving the cancelled task's `task_cancellations` entry was actually released.
 
+3d. Stale-worktree retry check (Task 5, Step 5's fix): start a task that gets isolated (start it while another is running, per 3a), and force it to fail while isolated — e.g. deny a required approval, or otherwise induce a merge conflict on its merge-back — so its `task_worktrees` row and worktree directory are left behind per `finalize_worktree`'s design. Confirm via server logs the row/directory exist (`SELECT * FROM task_worktrees WHERE task_id = ...`, or check `%TEMP%/evohime-worktrees/<task_id>` on disk). Send `TaskRetry` for it and confirm in the logs that the *old* worktree path is removed and a *new* one is provisioned (different path) before the retried run starts — not the same stale directory reused as-is.
+
+3e. Restart-survives-pause check (Task 7, Step 3.5's fix): trigger an `approval.required` pause, then restart the server process (`.\start-dev.ps1` again) without approving or cancelling it first. Immediately after the restart completes, start a new, unrelated task against the same workspace and confirm via server logs that it gets isolated into a worktree (`is_concurrent` was `true`) — proving the paused task's `task_cancellations` entry was correctly re-seeded from its DB status rather than starting the post-restart map empty.
+
 - [ ] **Step 4: Clean build artifacts**
 
 Per `AGENTS.md` rule 15, remove the workspace `target/` directory once verification is complete and nothing else in this session still needs it:
@@ -2729,7 +2832,7 @@ Run: `cargo clean` (only if no further verification in this session depends on t
 In `docs/roadmap.md`, change the `7.107` row's status from `⬜` to `✅` and fill in the evidence column, e.g.:
 
 ```
-| 7.107 | Worktree-aware multi-checkout agent (parallel tasks isolated) | L | ✅ | `task_worktrees` table; detached-HEAD worktrees under OS temp dir, provisioned atomically alongside `task_cancellations` (idempotent, rolled back on DB failure, entries kept alive through approval pauses); path-scoped squash merge-back (`git apply --3way --index` + scoped `commit`/`checkout HEAD` restore, never a blanket reset/commit) under a per-workspace `workspace_merge_locks` registry; startup cleanup keyed to live task status with retention-overflow and cascade-orphan handling |
+| 7.107 | Worktree-aware multi-checkout agent (parallel tasks isolated) | L | ✅ | `task_worktrees` table; detached-HEAD worktrees under OS temp dir, provisioned atomically alongside `task_cancellations` (idempotent, rolled back on DB failure, entries kept alive through approval pauses, `TaskCancel`, `TaskRetry`'s stale-worktree teardown, a server restart, and a panic via `TaskCancellationGuard`); path-scoped squash merge-back (`git apply --3way --index` + scoped `commit`/`checkout HEAD` restore, never a blanket reset/commit) under a per-workspace `workspace_merge_locks` registry, serialization verified under real concurrent execution; startup cleanup keyed to live task status with retention-overflow and cascade-orphan handling |
 ```
 
 Before editing, run `grep -rn "7.107" AGENTS.md docs/roadmap.md docs/current-state.md docs/architecture.md docs/development-plan.md` to see every current mention verbatim rather than assuming the "остался `7.107`" phrasing is identical across all four files — update each occurrence to match its own file's actual wording, then update the "остался `7.107`" sentences in `AGENTS.md`, `docs/current-state.md`, `docs/architecture.md`, and `docs/development-plan.md` to reflect Stage 7 being fully complete.
