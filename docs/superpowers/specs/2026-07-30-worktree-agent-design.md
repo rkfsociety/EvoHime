@@ -1,7 +1,7 @@
 # Worktree-Aware Multi-Checkout Agent (`7.107`) Design
 
 **Date:** 2026-07-30
-**Status:** Draft
+**Status:** Ready for implementation
 **Roadmap item:** `7.107` — Worktree-aware multi-checkout agent (parallel tasks isolated)
 
 ## Problem
@@ -240,6 +240,20 @@ task completes (success)
   -> ok: git commit (workspace_root), remove worktree, delete task_worktrees row, unlock
   -> conflict: fail task, keep worktree + row, unlock
 ```
+
+## Implementation notes
+
+- `git worktree remove` must be called with `--force`: after the squash
+  commit lands on `workspace_root`, the worktree itself is still "dirty"
+  relative to its own `base_commit_sha` (nothing was reset inside it), so
+  a plain `git worktree remove` would fail with `fatal: '<path>' contains
+  uncommitted changes`.
+- A rename in the worktree diff can appear to `git apply --3way` as a
+  delete+create pair. If another concurrent task edits that same file's
+  content on `workspace_root` in the meantime, the 3-way merge may not
+  reconcile cleanly. This is exactly the conflict path already specified
+  above (fail merge-back, keep the worktree for manual inspection) — no
+  extra rename-detection logic is needed for it.
 
 ## Testing
 
