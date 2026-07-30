@@ -84,9 +84,23 @@ the existing rate-limit check already had a milder version of.
 
 - Location: `<workspace_root>/.evohime/worktrees/<task_id>/`, consistent
   with the existing `.evohime/` convention (plugins, plugins.lock.json).
-- Creation: `git worktree add --detach <path> HEAD` run against
-  `workspace_root`. Detached HEAD — no branch is created or checked out,
-  satisfying the no-new-branches rule.
+- Creation: first `git rev-parse HEAD` against `workspace_root` to capture
+  an explicit `base_commit_sha`, then `git worktree add --detach <path>
+  <base_commit_sha>` — pinning the worktree to that exact commit rather
+  than the moving ref `HEAD`. This matters because `workspace_root`'s
+  `HEAD` can itself move between the `rev-parse` and the `worktree add`
+  call (another task's merge-back landing a commit); pinning to the SHA
+  makes the worktree's base unambiguous regardless. Detached HEAD — no
+  branch is created or checked out, satisfying the no-new-branches rule.
+- Persisted state: a new `task_worktrees` table (migration), columns
+  `task_id` (PK, FK to `tasks`), `base_commit_sha`, `worktree_path`,
+  `created_at`. Following this project's convention of persisting
+  task-related state in PostgreSQL rather than side-channel files (same
+  pattern as checkpoints, `sync_runs`, `plugin_audit`), this is what both
+  merge-back and the startup cleanup step (below) read from — not the
+  worktree directory's git metadata, and not a file inside the worktree
+  itself (which `git add -A` would otherwise pick up as part of the diff).
+  The row is deleted when the worktree is removed.
 - The agent runtime, tool registry, and all filesystem/shell/git tool calls
   for that task operate against this path exactly as they would against
   `workspace_root` — no other code path changes.
@@ -106,14 +120,15 @@ On successful task completion, before the task transitions to
    compared against — a file the agent created but never staged would
    silently be dropped from the merge otherwise. Staging everything first
    makes the following diff/apply steps see the complete set of changes.
-3. Compute the diff against the commit the worktree was created from
-   (`git diff --cached <base_commit>`; the base commit is recorded when the
-   worktree is created).
-4. Apply that diff to `workspace_root` with a 3-way merge
-   (`git apply --3way`), so that changes landed on `workspace_root` by
-   *other* tasks in the meantime (each merged the same way) are tolerated
-   as long as they don't textually conflict. `--3way` already stages
-   cleanly-merged hunks into `workspace_root`'s index as part of applying.
+3. Compute the diff against `base_commit_sha` read back from
+   `task_worktrees` (`git diff --cached <base_commit_sha>`).
+4. Apply that diff to `workspace_root` with `git apply --3way --index`, so
+   that changes landed on `workspace_root` by *other* tasks in the meantime
+   (each merged the same way) are tolerated as long as they don't textually
+   conflict. Plain `git apply` only ever touches the working tree; `--3way`
+   alone does not reliably update `workspace_root`'s index for cleanly
+   merged hunks — `--index` is required to actually stage them so the
+   following commit captures the full result.
 5. On a clean apply: run `git commit` on `workspace_root` to land the
    result as an actual commit, not a dirty working tree sitting on top of
    an otherwise-clean `HEAD`. The task's own `git.commit` call(s) made
@@ -142,16 +157,17 @@ transitions to `Cancelled` as today.
 `.evohime/worktrees/<task_id>/` directories can be left on disk if the
 server crashes mid-task. At startup, after `recover_after_restart`
 (`crates/task-engine/src/lib.rs:136`) determines which tasks are
-resumable, the server walks `.evohime/worktrees/`:
+resumable, the server reads all rows from `task_worktrees` (the source of
+truth, not a directory scan):
 
-- a directory whose `task_id` is among the resumable tasks is kept — the
-  task will continue using it;
-- every other directory (task already terminal, or not going to be
-  auto-resumed per `RestartResumePolicy`) is removed, followed by
-  `git worktree prune` to drop the now-stale `.git/worktrees/` metadata.
+- a row whose `task_id` is among the resumable tasks is kept — the task
+  will continue using `worktree_path`;
+- every other row (task already terminal, or not going to be auto-resumed
+  per `RestartResumePolicy`) has its directory removed, its `git worktree
+  prune` run against `workspace_root`, and the row deleted.
 
-This runs unconditionally at startup (cheap directory scan when the folder
-is empty or absent) so orphaned worktrees never accumulate indefinitely.
+This runs unconditionally at startup (cheap query when the table is empty)
+so orphaned worktrees never accumulate indefinitely.
 
 ### Error handling / fallback
 
@@ -169,16 +185,18 @@ is empty or absent) so orphaned worktrees never accumulate indefinitely.
 task start (single task_cancellations lock guard covers both steps)
   -> is_concurrent = !task_cancellations.is_empty(); insert(task_id, token)
        false -> workspace_root (unchanged path)
-       true  -> git worktree add --detach .evohime/worktrees/<task_id> HEAD
+       true  -> base_commit_sha = git rev-parse HEAD
+                git worktree add --detach .evohime/worktrees/<task_id> <base_commit_sha>
+                insert task_worktrees(task_id, base_commit_sha, worktree_path)
                 -> AgentLoopConfig.workspace_root = worktree path
 task runs (filesystem/shell/git tools operate on worktree path)
 task completes (success)
   -> lock workspace_merge_lock
   -> git add -A (in worktree, catches untracked files)
-  -> git diff --cached <base_commit> (in worktree)
-  -> git apply --3way (against workspace_root, stages clean hunks)
-  -> ok: git commit (workspace_root), remove worktree, unlock
-  -> conflict: fail task, keep worktree, unlock
+  -> git diff --cached <base_commit_sha> (in worktree; sha from task_worktrees)
+  -> git apply --3way --index (against workspace_root, stages clean hunks)
+  -> ok: git commit (workspace_root), remove worktree, delete task_worktrees row, unlock
+  -> conflict: fail task, keep worktree + row, unlock
 ```
 
 ## Testing
@@ -199,6 +217,6 @@ task completes (success)
   (a real commit exists) after a successful merge, including a case where
   the worktree only ever created an untracked file and never called
   `git.commit` itself.
-- A startup-cleanup test: a stale `.evohime/worktrees/<id>/` directory
-  whose task is terminal is removed on server start; one whose task is
-  resumable is kept.
+- A startup-cleanup test: a stale `task_worktrees` row + directory whose
+  task is terminal is removed on server start (row and directory both
+  gone); one whose task is resumable is kept.
