@@ -80,10 +80,34 @@ tasks get worktrees. This keeps the zero-concurrency path (the overwhelming
 common case) exactly as fast and simple as it is today, and closes the race
 the existing rate-limit check already had a milder version of.
 
+**The `task_cancellations` entry is the concurrency signal other tasks rely
+on, so it must stay for as long as this task can still touch
+`workspace_root`** — that includes the entire merge-back critical section
+(steps 1–6 below), not just the agent loop's own work. Today,
+`crates/server/src/ws.rs:193-197` removes the entry immediately after
+`process_user_message` returns. Merge-back must happen *inside*
+`process_user_message` (or whatever wraps it), before that removal, on
+every path — success, failure, and cancellation. If the entry were removed
+before merge-back finishes running `git apply`/`git commit` against
+`workspace_root`, a new task starting in that window would see an empty
+map, skip isolation, and run directly against `workspace_root` while this
+task's merge-back is still touching it — reintroducing the exact race this
+design exists to prevent.
+
 ### Worktree lifecycle
 
-- Location: `<workspace_root>/.evohime/worktrees/<task_id>/`, consistent
-  with the existing `.evohime/` convention (plugins, plugins.lock.json).
+- Location: **outside** `workspace_root` entirely —
+  `std::env::temp_dir().join("evohime-worktrees").join(task_id)`. Not
+  `.evohime/worktrees/` inside the repo: `.evohime/` is not gitignored
+  (`.evohime/plugins/...` is tracked today), so a worktree nested inside
+  the tracked tree would itself be a full checkout of the repo sitting at a
+  path git in `workspace_root` can see. `git add -A` — run either inside
+  the worktree during merge-back, or by any other unisolated task running
+  ordinary agent operations against `workspace_root` — would then pick up
+  that entire nested checkout as untracked content and could get it
+  committed. Keeping worktrees off the tracked tree entirely removes this
+  class of bug structurally instead of depending on a `.gitignore` entry
+  staying correct forever.
 - Creation: first `git rev-parse HEAD` against `workspace_root` to capture
   an explicit `base_commit_sha`, then `git worktree add --detach <path>
   <base_commit_sha>` — pinning the worktree to that exact commit rather
@@ -139,8 +163,15 @@ On successful task completion, before the task transitions to
    merge)"`. This keeps `workspace_root` in the same clean-HEAD state the
    "commit continuously" rule expects, whether or not this task actually
    needed isolation.
-6. Remove the worktree (`git worktree remove --force` + `git worktree
-   prune`) and release the lock.
+6. Remove the worktree directory (`git worktree remove --force` + `git
+   worktree prune`), *then* delete the `task_worktrees` row, then release
+   the lock. A filesystem removal and a Postgres delete can't be made truly
+   atomic together, so this is ordered instead: if the process dies between
+   the two, the row survives pointing at an already-removed directory,
+   never the reverse (a directory surviving with no row, which the startup
+   cleanup pass wouldn't know to look for). Startup cleanup (below) treats
+   "directory already gone" as a normal no-op, not an error, when it
+   processes such a row.
 7. On failure (patch does not apply cleanly, or the commit step fails):
    leave the worktree in place, fail the task with a message that includes
    the worktree path, and release the lock. No automatic conflict
@@ -154,7 +185,7 @@ transitions to `Cancelled` as today.
 
 ### Cleanup on server restart
 
-`.evohime/worktrees/<task_id>/` directories can be left on disk if the
+Worktree directories under the OS temp dir can be left on disk if the
 server crashes mid-task. At startup, after `recover_after_restart`
 (`crates/task-engine/src/lib.rs:136`) determines which tasks are
 resumable, the server reads all rows from `task_worktrees` (the source of
@@ -163,21 +194,32 @@ truth, not a directory scan):
 - a row whose `task_id` is among the resumable tasks is kept — the task
   will continue using `worktree_path`;
 - every other row (task already terminal, or not going to be auto-resumed
-  per `RestartResumePolicy`) has its directory removed, its `git worktree
-  prune` run against `workspace_root`, and the row deleted.
+  per `RestartResumePolicy`) has its directory removed if present
+  (`NotFound` is not an error — see the ordering note in Merge-back step 6),
+  `git worktree prune` run against `workspace_root`, and the row deleted.
 
 This runs unconditionally at startup (cheap query when the table is empty)
 so orphaned worktrees never accumulate indefinitely.
 
 ### Error handling / fallback
 
-- If `workspace_root` is not a git repository (`git worktree add` fails
-  immediately), isolation is skipped for that task: log a warning once and
-  fall back to the shared `workspace_root`, matching the existing
-  behavior. The server must not crash or fail the task because isolation
-  wasn't available.
-- If worktree creation fails for any other reason (disk full, permissions),
-  same fallback: log and use the shared root.
+Falling back to the shared `workspace_root` is only ever safe when
+`is_concurrent == false` — that's the situation the fallback matches
+anyway (no other task is touching `workspace_root`, so using it directly
+carries none of the risk this design exists to prevent):
+
+- `is_concurrent == false` and `workspace_root` is not a git repository, or
+  worktree creation fails for any other reason (disk full, permissions):
+  isolation is skipped, log a warning once, use `workspace_root` directly.
+  Identical to today's behavior.
+- `is_concurrent == true` and worktree creation fails for *any* reason:
+  isolation cannot be provided but another task is actively using
+  `workspace_root` — falling back to the shared root here would recreate
+  the exact race/corruption this design exists to prevent. The task fails
+  immediately instead, with an error naming the underlying cause (e.g.
+  "failed to allocate isolated worktree: disk full"), and the
+  `task_cancellations` entry is removed as part of that failure. It does
+  not touch `workspace_root`.
 
 ## Data flow summary
 
@@ -186,7 +228,7 @@ task start (single task_cancellations lock guard covers both steps)
   -> is_concurrent = !task_cancellations.is_empty(); insert(task_id, token)
        false -> workspace_root (unchanged path)
        true  -> base_commit_sha = git rev-parse HEAD
-                git worktree add --detach .evohime/worktrees/<task_id> <base_commit_sha>
+                git worktree add --detach <temp_dir>/evohime-worktrees/<task_id> <base_commit_sha>
                 insert task_worktrees(task_id, base_commit_sha, worktree_path)
                 -> AgentLoopConfig.workspace_root = worktree path
 task runs (filesystem/shell/git tools operate on worktree path)
@@ -210,7 +252,7 @@ task completes (success)
   behind.
 - A conflict-path test: two concurrent tasks edit the same file/line; the
   second to merge fails with its worktree preserved, and its files are
-  still present in `.evohime/worktrees/<task_id>/` afterward.
+  still present at `worktree_path` (from `task_worktrees`) afterward.
 - A fallback test: `workspace_root` is a plain (non-git) temp directory;
   task execution proceeds without isolation and without error.
 - A merge-back test asserting `workspace_root`'s `HEAD` actually advances
@@ -219,4 +261,8 @@ task completes (success)
   `git.commit` itself.
 - A startup-cleanup test: a stale `task_worktrees` row + directory whose
   task is terminal is removed on server start (row and directory both
-  gone); one whose task is resumable is kept.
+  gone); one whose task is resumable is kept; a row whose directory is
+  already missing is deleted without error.
+- A concurrent-failure test: `is_concurrent == true` and worktree creation
+  is forced to fail; the task fails immediately and `workspace_root` is
+  left untouched (no fallback to the shared root).
