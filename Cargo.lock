@@ -1751,6 +1751,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "evohime-protocol",
  "rust_decimal",
  "serde",
  "serde_json",

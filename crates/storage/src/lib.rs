@@ -13,6 +13,7 @@ pub mod memory;
 pub mod metrics_snapshots;
 pub mod operators;
 pub mod permission_audit;
+pub mod planning_history;
 pub mod plugin_audit;
 pub mod plugin_skills;
 pub mod pool;
@@ -66,6 +67,10 @@ pub use operators::{
 pub use permission_audit::{
     insert_permission_audit, list_permission_audit, NewPermissionAudit, PermissionAuditRow,
 };
+pub use planning_history::{
+    cleanup_old_planning_history, insert_planning_history, list_planning_by_task,
+    NewPlanningHistory, PlanningHistoryEntry,
+};
 pub use plugin_audit::{
     insert_plugin_audit, list_plugin_audit, NewPluginAudit, PluginAuditRow, ACTION_FORCE_OVERRIDE,
     ACTION_INSTALL, ACTION_PIN, ACTION_UNINSTALL, ACTION_UPDATE,
@@ -109,6 +114,8 @@ pub enum StorageError {
     InvalidOperator(String),
     #[error("invalid sync run: {0}")]
     InvalidSync(String),
+    #[error("invalid planning history: {0}")]
+    InvalidPlanningHistory(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
