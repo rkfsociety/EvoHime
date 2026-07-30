@@ -2604,8 +2604,9 @@ Then add the tests:
         let repo = tempfile::tempdir().expect("tempdir");
         init_repo(repo.path());
 
-        // Task A starts unisolated (nothing running yet) — nothing to provision.
-        // Task B starts while A is "running" (simulated: A's worktree provisioned first).
+        // Simulates two tasks racing to start against the same primary
+        // repo: task A's worktree is provisioned first, then task B's,
+        // before either one finalizes.
         provision_worktree(&state, task_id_a, repo.path())
             .await
             .expect("provision A");
@@ -2621,7 +2622,6 @@ Then add the tests:
             .await
             .expect("get B")
             .expect("row B present");
-        assert_ne!(row_a.worktree_path, row_b.worktree_path);
 
         std::fs::write(PathBuf::from(&row_a.worktree_path).join("a.txt"), "from a\n")
             .expect("write a");
@@ -2647,12 +2647,30 @@ Then add the tests:
             .is_none());
     }
 
+    // Merged from three formerly-separate `#[tokio::test]` functions
+    // (`cleanup_removes_only_terminal_rows_past_retention`,
+    // `cleanup_drops_a_row_whose_primary_root_no_longer_exists`,
+    // `cleanup_retention_overflow_does_not_delete_everything`). Each of
+    // these scenarios calls `cleanup_stale_worktrees`, which in turn calls
+    // `evohime_storage::task_worktrees::list_task_worktrees_with_status` —
+    // a query with NO scoping `WHERE` clause at all, so it sees every
+    // `task_worktrees` row in the entire database. `cargo test` runs
+    // separate test functions in parallel by default, so as three
+    // independent tests, one test's `Duration::from_secs(0)` sweep (which
+    // makes every terminal row in the WHOLE DB eligible for deletion, not
+    // just this test's own rows) could delete another concurrently-running
+    // test's row out from under it. Running all three scenarios
+    // sequentially inside one function removes that race entirely: nothing
+    // else in this binary is running `cleanup_stale_worktrees` concurrently
+    // with these calls.
     #[tokio::test]
-    async fn cleanup_removes_only_terminal_rows_past_retention() {
+    async fn cleanup_stale_worktrees_scenarios() {
         let Some(pool) = evohime_storage::connect_integration_pool().await else {
             eprintln!("skipping worktree cleanup test: database unavailable");
             return;
         };
+
+        // --- Scenario 1: only terminal rows past retention are removed ---
         let failed_task = seed_task(&pool).await; // starts 'running'
         let paused_task = seed_task(&pool).await;
         let recent_failed_task = seed_task(&pool).await;
@@ -2746,85 +2764,74 @@ Then add the tests:
                 .await
                 .expect("delete row for manual cleanup");
         }
-    }
 
-    #[tokio::test]
-    async fn cleanup_drops_a_row_whose_primary_root_no_longer_exists() {
-        let Some(pool) = evohime_storage::connect_integration_pool().await else {
-            eprintln!("skipping worktree cleanup test: database unavailable");
-            return;
-        };
-        let task_id = seed_task(&pool).await;
-        let state = AppState::for_worktree_tests(pool);
+        // --- Scenario 2: a row whose primary_workspace_root no longer
+        // exists is still dropped, not stuck forever ---
+        let gone_root_task = seed_task(&state.pool).await;
 
-        let repo = tempfile::tempdir().expect("tempdir");
-        init_repo(repo.path());
-        provision_worktree(&state, task_id, repo.path())
+        let gone_root_repo = tempfile::tempdir().expect("tempdir");
+        init_repo(gone_root_repo.path());
+        provision_worktree(&state, gone_root_task, gone_root_repo.path())
             .await
-            .expect("provision");
+            .expect("provision gone_root_task");
         sqlx::query("UPDATE tasks SET status = 'failed' WHERE id = $1")
-            .bind(task_id)
+            .bind(gone_root_task)
             .execute(&state.pool)
             .await
-            .expect("mark failed");
+            .expect("mark gone_root_task failed");
 
         // The repo itself disappears (moved/deleted) before the next
         // server restart — simulate that by dropping the tempdir.
-        drop(repo);
+        drop(gone_root_repo);
 
         cleanup_stale_worktrees(&state, Duration::from_secs(0)).await;
 
         assert!(
-            evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id)
+            evohime_storage::task_worktrees::get_task_worktree(&state.pool, gone_root_task)
                 .await
-                .expect("get after cleanup")
+                .expect("get gone_root_task after cleanup")
                 .is_none(),
             "a row whose primary_workspace_root is gone must still be dropped, not stuck forever"
         );
-    }
 
-    #[tokio::test]
-    async fn cleanup_retention_overflow_does_not_delete_everything() {
-        let Some(pool) = evohime_storage::connect_integration_pool().await else {
-            eprintln!("skipping worktree cleanup test: database unavailable");
-            return;
-        };
-        let task_id = seed_task(&pool).await;
-        let state = AppState::for_worktree_tests(pool);
+        // --- Scenario 3: an out-of-range retention must not delete
+        // everything ---
+        let overflow_task = seed_task(&state.pool).await;
 
-        let repo = tempfile::tempdir().expect("tempdir");
-        init_repo(repo.path());
-        provision_worktree(&state, task_id, repo.path())
+        let overflow_repo = tempfile::tempdir().expect("tempdir");
+        init_repo(overflow_repo.path());
+        provision_worktree(&state, overflow_task, overflow_repo.path())
             .await
-            .expect("provision");
+            .expect("provision overflow_task");
         sqlx::query("UPDATE tasks SET status = 'failed' WHERE id = $1")
-            .bind(task_id)
+            .bind(overflow_task)
             .execute(&state.pool)
             .await
-            .expect("mark failed");
+            .expect("mark overflow_task failed");
 
         // An out-of-range retention must degrade to "keep everything this
         // run", not silently collapse to a zero-length window.
         cleanup_stale_worktrees(&state, Duration::MAX).await;
 
         assert!(
-            evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id)
+            evohime_storage::task_worktrees::get_task_worktree(&state.pool, overflow_task)
                 .await
-                .expect("get after cleanup")
+                .expect("get overflow_task after cleanup")
                 .is_some(),
             "an extreme retention value must not delete a just-created row"
         );
 
-        let row = evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id)
-            .await
-            .expect("get row for manual cleanup")
-            .expect("row present");
-        remove_worktree(repo.path(), &PathBuf::from(&row.worktree_path))
+        let overflow_row =
+            evohime_storage::task_worktrees::get_task_worktree(&state.pool, overflow_task)
+                .await
+                .expect("get overflow row for manual cleanup")
+                .expect("overflow row present");
+        remove_worktree(overflow_repo.path(), &PathBuf::from(&overflow_row.worktree_path))
             .await
             .expect("manual cleanup");
-        evohime_storage::task_worktrees::delete_task_worktree(&state.pool, task_id)
+        evohime_storage::task_worktrees::delete_task_worktree(&state.pool, overflow_task)
             .await
-            .expect("delete row for manual cleanup");
+            .expect("delete overflow row for manual cleanup");
     }
 
     #[tokio::test]
@@ -2970,6 +2977,15 @@ Expected: all tests pass (integration tests requiring Postgres either pass or se
 
 Run: `cargo clippy --workspace --all-features --all-targets -- -D warnings`
 Expected: no warnings.
+
+- [ ] **Step 2.5: Check formatting**
+
+Run: `cargo fmt --all -- --check`
+Expected: CI runs this check (`docs/architecture.md`'s "CI: Rust format/Clippy/docs..." line; confirmed via `.github/workflows/rust.yml`), but nothing earlier in this plan explicitly gates on it — this step exists to close that gap before calling Stage 7 done. If it reports diffs confined to lines this plan's own commits touched, run `cargo fmt` on the affected crate(s) and commit the formatting fix. If it reports diffs in files/lines this plan never touched (pre-existing drift unrelated to 7.107 — plausible, since this crate already carries some at the time this plan was written), do not reformat those wholesale as a side effect of finishing this plan — a blanket reformat of pre-existing, unrelated code is its own separate change with its own review, not something to fold silently into a 7.107 commit. Note any such pre-existing drift to the user instead of fixing it here.
+
+- [ ] **Step 2.6: Verify against a real Postgres if one is reachable**
+
+Every integration test added or touched by this plan (`crates/storage/src/task_worktrees.rs`, `crates/server/src/task/worktree.rs`) gracefully self-skips when `DATABASE_URL`/integration Postgres is unreachable, and — per `AGENTS.md` rule 13 — a self-skip must never be reported as "verified" in place of a real pass. If this environment has no integration Postgres configured (check via the existing convention: run one of these tests with `-- --nocapture` and look for a `skipping ... database unavailable` line), the tests in this plan have only ever exercised their skip-guard branch, not their actual DB-backed logic — call this out explicitly rather than silently treating Step 1's "all tests pass" as full coverage. If a Postgres instance can be reached (e.g. via `.\scripts\setup-local.ps1 -InstallPostgres -ApplyMigrations`, per `AGENTS.md`'s local-dev instructions), re-run `cargo test -p evohime-server task::worktree:: -- --nocapture` and `cargo test -p evohime-storage task_worktrees -- --nocapture` against it and confirm every test's real logic actually ran (not just its skip branch) before considering this plan's test coverage trustworthy — installing/configuring a database service is itself an action with side effects beyond this plan's own file changes, so treat it the same as any other action outside the repo's own working tree: confirm with the user before doing it rather than assuming it's implied by "run the tests."
 
 - [ ] **Step 3: Manual smoke test via the real launcher**
 
