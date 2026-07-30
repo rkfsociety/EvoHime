@@ -143,7 +143,7 @@ pub async fn score_candidate_plans(
         }
 
         // Clamp feedback to [-1.0, 1.0]
-        let feedback_clamped: f32 = feedback_adjustment.max(-1.0).min(1.0);
+        let feedback_clamped: f32 = feedback_adjustment.clamp(-1.0, 1.0);
 
         // Apply the corrected scoring formula:
         // final_score = (w1·similarity + w2·tool_success + w3·(1-complexity) + w4·(1+feedback)/2) / Σw
