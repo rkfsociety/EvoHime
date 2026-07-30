@@ -21,6 +21,7 @@ pub mod scheduled;
 pub mod scopes;
 pub mod sites;
 pub mod sync;
+pub mod task_worktrees;
 pub mod test_db;
 pub mod thinking;
 
