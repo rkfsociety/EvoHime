@@ -243,13 +243,25 @@ On successful task completion, before the task transitions to
    compared against — a file the agent created but never staged would
    silently be dropped from the merge otherwise. Staging everything first
    makes the following diff/apply steps see the complete set of changes.
-4. Get the list of changed paths (`git diff --cached --name-only
-   <base_commit_sha>`), then the full patch content (`git diff --cached
-   --binary <base_commit_sha>`; `--binary` is required or a changed binary
-   file's actual bytes are omitted from the diff and can never be
-   reconstructed by `git apply` — without it, a binary file change would
-   silently vanish from the merge). If the path list is empty, nothing
-   changed relative to base; skip straight to step 7 (remove worktree,
+4. Get the list of changed paths (`git diff --cached --name-status -z
+   <base_commit_sha>`, NUL-delimited), then the full patch content (`git
+   diff --cached --binary <base_commit_sha>`; `--binary` is required or a
+   changed binary file's actual bytes are omitted from the diff and can
+   never be reconstructed by `git apply` — without it, a binary file
+   change would silently vanish from the merge). The path-list call must
+   use `-z`: git's default `core.quotePath=true` C-style-quotes any path
+   containing a non-ASCII byte — not a hypothetical for a project whose
+   own docs and history are full of Cyrillic — and a naive newline/tab
+   split would leave the quote characters embedded in the "path" string,
+   breaking every later `checkout`/`reset`/`commit` pathspec built from it.
+   `--name-status` (not `--name-only`) additionally classifies each path:
+   a rename's old name existed at `base_commit_sha` (restorable via `git
+   checkout HEAD --` on conflict) while its new name did not — treating
+   both identically breaks conflict recovery, since `git checkout HEAD --`
+   errors out entirely on an unmatched pathspec, aborting the restore for
+   every other path in the same invocation too, not just the rename's new
+   name. If the path list is empty, nothing changed relative to base; skip
+   straight to step 7 (remove worktree,
    delete row) — there's nothing to apply or commit.
 
    **Every remaining step below operates on this exact path list only,
@@ -416,15 +428,22 @@ physical directory is never touched and leaks permanently; the row-driven
 pass above has no way to know it ever existed. To bound this: after the
 row-driven pass, list the subdirectories of
 `std::env::temp_dir().join("evohime-worktrees")` and remove any whose name
-(parsed as a task ID) has no matching `task_worktrees` row — its owning row
-is gone by definition, so nothing else will ever reference it again. This
-pass doesn't need a primary root (there's no way to recover one for an
-orphan) — a plain `remove_dir_all` on the directory is sufficient; it's no
-longer registered with any git repository worth pruning against.
+parses as a task ID, has no matching `task_worktrees` row, *and* contains a
+`.git` entry (confirming it's actually one of this feature's worktree
+checkouts, not an unrelated directory that happens to have a UUID-shaped
+name) — its owning row is gone by definition, so nothing else will ever
+reference it again. This pass doesn't need a primary root (there's no way
+to recover one for an orphan) — a plain `remove_dir_all` on the directory
+is sufficient; it's no longer registered with any git repository worth
+pruning against.
 
-This runs unconditionally at startup (cheap query when the table is empty)
-so orphaned worktrees never accumulate indefinitely, without ever deleting
-a worktree a non-terminal task still depends on.
+Both this pass and the row-driven pass above run at startup, and again on
+a fixed hourly interval for the lifetime of the process (mirroring
+`crate::worker_api::worker_retention_loop`'s existing shape) — startup
+alone would mean a long-lived server (weeks without a restart) never
+sweeps a worktree that's stuck because its removal keeps failing (Merge-
+back's cleanup-failure note above), leaving it until the next restart
+regardless of how far past the retention window it is.
 
 ### Error handling / fallback
 
@@ -514,6 +533,60 @@ task completes (success)
   out from under an in-flight isolated task is already an unusual,
   operator-initiated action with its own consequences independent of this
   feature.
+
+## Known limitations, deliberately out of scope
+
+Recorded once, here, so these don't get re-litigated across review passes
+without new information — each has already been weighed against this
+project's actual scale (a self-hosted, single/small-team tool, not a
+hyperscale multi-tenant service):
+
+- **`is_concurrent` is global, not scoped per `primary_workspace_root`**
+  (see Non-goals). A task on an unrelated Sites workspace can trigger
+  unnecessary isolation for a concurrently-starting task elsewhere. Cost is
+  bounded to occasional wasted isolation, never a correctness risk — the
+  same reasoning covers the very similar concern that `is_concurrent` is a
+  snapshot taken under the lock and not re-checked after it's released.
+- **`workspace_merge_locks` grows for the process lifetime, one entry per
+  distinct `primary_workspace_root` ever used.** Bounded by how many
+  distinct workspaces this server ever touches, not by task volume — for
+  this product's realistic usage that's a handful to a few dozen entries
+  (`PathBuf` + `Arc<Mutex<()>>` each), not a meaningful memory concern.
+- **Retrying/resuming a task after a failed merge-back reuses its existing
+  worktree and row without any special-casing needed.** `provision_worktree`
+  is idempotent (a row already existing is a no-op), and `retry_task`
+  (`crates/task-engine/src/lib.rs`) reuses the *same* `task_id` rather than
+  minting a new one — so `pipeline.rs`'s `get_task_worktree(task.id)` finds
+  the same row, the agent resumes in the same worktree, and `base_commit_sha`
+  stays valid regardless of how much `workspace_root` moved in the
+  meantime (a `git diff` against a fixed commit remains correct no matter
+  how much later it's read).
+- **A worktree or `task_worktrees` row that's manually tampered with**
+  (the directory deleted by hand while the row remains, or vice versa)
+  isn't specially detected. The existing failure modes already degrade
+  gracefully rather than panicking: a missing worktree directory makes the
+  next merge-back attempt fail cleanly (its first `git` call errors,
+  surfaced as a normal task failure) instead of corrupting anything, and
+  `remove_worktree` already tolerates a missing directory during cleanup.
+  This is a self-inflicted, operator-caused scenario with no realistic
+  automatic recovery, not a gap in the design.
+- **No defense against a human manually running `git` commands
+  (`checkout`, `reset`, `gc`, ...) in `workspace_root` while a merge-back
+  holds its lock.** The per-path lock only ever coordinates this server's
+  own concurrent tasks against each other — it was never going to be able
+  to coordinate against a human at the same terminal, and no git-automation
+  tool can.
+- **No upfront `git --version` availability check.** This is not a new
+  dependency 7.107 introduces — every pre-existing `git.*` tool
+  (`status`/`diff`/`commit`/`pull`/`push`) already assumes `git` is on
+  `PATH`; if it weren't, those would already be broken independent of this
+  feature.
+- **No pathspec batching for an extremely large changed-file list.**
+  `all_paths` is passed directly as CLI arguments to `checkout`/`reset`/
+  `commit`. A single agent task realistically touches a handful to a few
+  dozen files, nowhere near the OS command-line length limit (Windows:
+  ~32K characters) that would require a `--pathspec-from-file=-`-based
+  rewrite; not worth the added complexity until it's an observed problem.
 
 ## Testing
 
