@@ -236,6 +236,56 @@ impl AppState {
             .or_insert_with(|| Arc::new(Mutex::new(())))
             .clone()
     }
+
+    #[cfg(test)]
+    pub(crate) fn for_worktree_tests(pool: sqlx::PgPool) -> Arc<Self> {
+        use std::collections::HashMap;
+        use tokio::sync::{Mutex, RwLock};
+        Arc::new(Self {
+            pool,
+            workspace_root: std::env::temp_dir(),
+            // `AuthConfig` derives `Default` (`api_token: None`) — use that
+            // directly instead of `from_env()`, so a stray `EVOHIME_API_TOKEN`
+            // set in the test-runner's own environment can't change what
+            // this builder produces.
+            auth: crate::auth::AuthConfig::default(),
+            tools: evohime_tool_runtime::ToolRegistry::bootstrap_with_permissions(
+                evohime_permissions::PermissionEngine::new(),
+            ),
+            permissions: evohime_permissions::PermissionEngine::new(),
+            model_gateway: Arc::new(RwLock::new(None)),
+            model_config: Arc::new(RwLock::new(ModelGatewayConfig {
+                default_route: "default".to_string(),
+                routes: HashMap::new(),
+            })),
+            mcp_servers: Arc::new(Mutex::new(Vec::new())),
+            session_buses: Arc::new(Mutex::new(HashMap::new())),
+            task_cancellations: Arc::new(Mutex::new(HashMap::new())),
+            workspace_merge_locks: Arc::new(Mutex::new(HashMap::new())),
+            worker: crate::worker::WorkerClient::new("http://127.0.0.1:8090".to_string())
+                .expect("worker client"),
+            worker_job_stall: std::time::Duration::from_secs(30),
+            plugin_catalog_cache: crate::plugins::PluginCatalogCache::default(),
+            metrics: Arc::new(crate::observability::PipelineMetrics::new()),
+            worker_metrics: Arc::new(crate::worker_observability::WorkerMetrics::new()),
+            // Same reasoning as `auth` above: construct `RateLimitConfig`
+            // directly (mirroring `from_env()`'s own defaults) rather than
+            // reading the environment, so a stray `EVOHIME_RATE_LIMIT_*`
+            // value can't affect these tests.
+            rate_limiter: Arc::new(crate::rate_limit::RateLimiter::new(
+                crate::rate_limit::RateLimitConfig {
+                    session_per_minute: 30,
+                    task_per_minute: 60,
+                    worker_job_per_minute: 30,
+                    max_concurrent_tasks: 16,
+                    max_concurrent_worker_jobs: 32,
+                    disabled: false,
+                },
+            )),
+            shutdown_token: tokio_util::sync::CancellationToken::new(),
+            local_shutdown_secret: None,
+        })
+    }
 }
 
 #[derive(Debug, Deserialize)]

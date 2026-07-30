@@ -876,6 +876,21 @@ mod tests {
         run(dir, &["git", "commit", "-m", "init"]);
     }
 
+    async fn seed_task(pool: &sqlx::PgPool) -> Uuid {
+        let session_id: Uuid =
+            sqlx::query_scalar("INSERT INTO sessions DEFAULT VALUES RETURNING id")
+                .fetch_one(pool)
+                .await
+                .expect("insert session");
+        sqlx::query_scalar(
+            "INSERT INTO tasks (session_id, user_message, status) VALUES ($1, 'test', 'running') RETURNING id",
+        )
+        .bind(session_id)
+        .fetch_one(pool)
+        .await
+        .expect("insert task")
+    }
+
     #[tokio::test]
     async fn rev_parse_head_returns_a_sha() {
         let repo = tempfile::tempdir().expect("tempdir");
@@ -1222,5 +1237,354 @@ mod tests {
         remove_worktree(repo.path(), &worktree_path)
             .await
             .expect("remove worktree");
+    }
+
+    #[tokio::test]
+    async fn provision_and_finalize_round_trip_through_a_shared_repo() {
+        let Some(pool) = evohime_storage::connect_integration_pool().await else {
+            eprintln!("skipping worktree orchestration test: database unavailable");
+            return;
+        };
+        let task_id_a = seed_task(&pool).await;
+        let task_id_b = seed_task(&pool).await;
+        let state = AppState::for_worktree_tests(pool);
+
+        let repo = tempfile::tempdir().expect("tempdir");
+        init_repo(repo.path());
+
+        // Task A starts unisolated (nothing running yet) — nothing to provision.
+        // Task B starts while A is "running" (simulated: A's worktree provisioned first).
+        provision_worktree(&state, task_id_a, repo.path())
+            .await
+            .expect("provision A");
+        provision_worktree(&state, task_id_b, repo.path())
+            .await
+            .expect("provision B");
+
+        let row_a = evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id_a)
+            .await
+            .expect("get A")
+            .expect("row A present");
+        let row_b = evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id_b)
+            .await
+            .expect("get B")
+            .expect("row B present");
+        assert_ne!(row_a.worktree_path, row_b.worktree_path);
+
+        std::fs::write(PathBuf::from(&row_a.worktree_path).join("a.txt"), "from a\n")
+            .expect("write a");
+        std::fs::write(PathBuf::from(&row_b.worktree_path).join("b.txt"), "from b\n")
+            .expect("write b");
+
+        finalize_worktree(&state, task_id_a, repo.path(), &row_a)
+            .await
+            .expect("finalize A");
+        finalize_worktree(&state, task_id_b, repo.path(), &row_b)
+            .await
+            .expect("finalize B");
+
+        assert!(repo.path().join("a.txt").exists());
+        assert!(repo.path().join("b.txt").exists());
+        assert!(evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id_a)
+            .await
+            .expect("get A after")
+            .is_none());
+        assert!(evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id_b)
+            .await
+            .expect("get B after")
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn cleanup_removes_only_terminal_rows_past_retention() {
+        let Some(pool) = evohime_storage::connect_integration_pool().await else {
+            eprintln!("skipping worktree cleanup test: database unavailable");
+            return;
+        };
+        let failed_task = seed_task(&pool).await; // starts 'running'
+        let paused_task = seed_task(&pool).await;
+        let recent_failed_task = seed_task(&pool).await;
+        let state = AppState::for_worktree_tests(pool);
+
+        let repo = tempfile::tempdir().expect("tempdir");
+        init_repo(repo.path());
+
+        provision_worktree(&state, failed_task, repo.path())
+            .await
+            .expect("provision failed_task");
+        provision_worktree(&state, paused_task, repo.path())
+            .await
+            .expect("provision paused_task");
+        provision_worktree(&state, recent_failed_task, repo.path())
+            .await
+            .expect("provision recent_failed_task");
+
+        sqlx::query("UPDATE tasks SET status = 'failed' WHERE id = $1")
+            .bind(failed_task)
+            .execute(&state.pool)
+            .await
+            .expect("mark failed");
+        sqlx::query("UPDATE tasks SET status = 'paused' WHERE id = $1")
+            .bind(paused_task)
+            .execute(&state.pool)
+            .await
+            .expect("mark paused");
+        sqlx::query("UPDATE tasks SET status = 'failed' WHERE id = $1")
+            .bind(recent_failed_task)
+            .execute(&state.pool)
+            .await
+            .expect("mark recent_failed");
+
+        // Retention of 0 makes every terminal row immediately eligible;
+        // back-date recent_failed_task's row so it still falls inside a
+        // real (non-zero) window in the second half of this test.
+        cleanup_stale_worktrees(&state, Duration::from_secs(0)).await;
+
+        assert!(
+            evohime_storage::task_worktrees::get_task_worktree(&state.pool, failed_task)
+                .await
+                .expect("get failed_task")
+                .is_none(),
+            "a terminal task's row past retention must be removed"
+        );
+        assert!(
+            evohime_storage::task_worktrees::get_task_worktree(&state.pool, paused_task)
+                .await
+                .expect("get paused_task")
+                .is_some(),
+            "a non-terminal task's row must never be removed by age alone"
+        );
+        assert!(
+            evohime_storage::task_worktrees::get_task_worktree(&state.pool, recent_failed_task)
+                .await
+                .expect("get recent_failed_task")
+                .is_none(),
+            "retention of 0 makes even a just-created terminal row eligible"
+        );
+
+        // Re-provision recent_failed_task to exercise a real retention
+        // window: with a long retention, a just-failed row must survive.
+        provision_worktree(&state, recent_failed_task, repo.path())
+            .await
+            .expect("re-provision recent_failed_task");
+        sqlx::query("UPDATE tasks SET status = 'failed' WHERE id = $1")
+            .bind(recent_failed_task)
+            .execute(&state.pool)
+            .await
+            .expect("mark recent_failed again");
+        cleanup_stale_worktrees(&state, Duration::from_secs(24 * 60 * 60)).await;
+        assert!(
+            evohime_storage::task_worktrees::get_task_worktree(&state.pool, recent_failed_task)
+                .await
+                .expect("get recent_failed_task after real retention")
+                .is_some(),
+            "a terminal row younger than the retention window must survive"
+        );
+
+        // Clean up the still-live rows manually so the test doesn't leak worktrees.
+        for task_id in [paused_task, recent_failed_task] {
+            let row = evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id)
+                .await
+                .expect("get row for manual cleanup")
+                .expect("row present");
+            remove_worktree(repo.path(), &PathBuf::from(&row.worktree_path))
+                .await
+                .expect("manual cleanup");
+            evohime_storage::task_worktrees::delete_task_worktree(&state.pool, task_id)
+                .await
+                .expect("delete row for manual cleanup");
+        }
+    }
+
+    #[tokio::test]
+    async fn cleanup_drops_a_row_whose_primary_root_no_longer_exists() {
+        let Some(pool) = evohime_storage::connect_integration_pool().await else {
+            eprintln!("skipping worktree cleanup test: database unavailable");
+            return;
+        };
+        let task_id = seed_task(&pool).await;
+        let state = AppState::for_worktree_tests(pool);
+
+        let repo = tempfile::tempdir().expect("tempdir");
+        init_repo(repo.path());
+        provision_worktree(&state, task_id, repo.path())
+            .await
+            .expect("provision");
+        sqlx::query("UPDATE tasks SET status = 'failed' WHERE id = $1")
+            .bind(task_id)
+            .execute(&state.pool)
+            .await
+            .expect("mark failed");
+
+        // The repo itself disappears (moved/deleted) before the next
+        // server restart — simulate that by dropping the tempdir.
+        drop(repo);
+
+        cleanup_stale_worktrees(&state, Duration::from_secs(0)).await;
+
+        assert!(
+            evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id)
+                .await
+                .expect("get after cleanup")
+                .is_none(),
+            "a row whose primary_workspace_root is gone must still be dropped, not stuck forever"
+        );
+    }
+
+    #[tokio::test]
+    async fn cleanup_retention_overflow_does_not_delete_everything() {
+        let Some(pool) = evohime_storage::connect_integration_pool().await else {
+            eprintln!("skipping worktree cleanup test: database unavailable");
+            return;
+        };
+        let task_id = seed_task(&pool).await;
+        let state = AppState::for_worktree_tests(pool);
+
+        let repo = tempfile::tempdir().expect("tempdir");
+        init_repo(repo.path());
+        provision_worktree(&state, task_id, repo.path())
+            .await
+            .expect("provision");
+        sqlx::query("UPDATE tasks SET status = 'failed' WHERE id = $1")
+            .bind(task_id)
+            .execute(&state.pool)
+            .await
+            .expect("mark failed");
+
+        // An out-of-range retention must degrade to "keep everything this
+        // run", not silently collapse to a zero-length window.
+        cleanup_stale_worktrees(&state, Duration::MAX).await;
+
+        assert!(
+            evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id)
+                .await
+                .expect("get after cleanup")
+                .is_some(),
+            "an extreme retention value must not delete a just-created row"
+        );
+
+        let row = evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id)
+            .await
+            .expect("get row for manual cleanup")
+            .expect("row present");
+        remove_worktree(repo.path(), &PathBuf::from(&row.worktree_path))
+            .await
+            .expect("manual cleanup");
+        evohime_storage::task_worktrees::delete_task_worktree(&state.pool, task_id)
+            .await
+            .expect("delete row for manual cleanup");
+    }
+
+    #[tokio::test]
+    async fn orphan_sweep_removes_a_directory_with_no_matching_row() {
+        let Some(pool) = evohime_storage::connect_integration_pool().await else {
+            eprintln!("skipping worktree orphan-sweep test: database unavailable");
+            return;
+        };
+        let state = AppState::for_worktree_tests(pool);
+
+        let orphan_id = Uuid::new_v4();
+        let orphan_dir = std::env::temp_dir()
+            .join("evohime-worktrees")
+            .join(orphan_id.to_string());
+        tokio::fs::create_dir_all(&orphan_dir)
+            .await
+            .expect("create orphan dir");
+        // The sweep requires a `.git` marker before deleting anything (only
+        // confirming a directory is actually one of our worktree checkouts,
+        // not an unrelated directory that happens to have a UUID-shaped
+        // name) — a real worktree always has this, so the test must too.
+        tokio::fs::write(orphan_dir.join(".git"), "gitdir: /fake/for/test\n")
+            .await
+            .expect("create .git marker");
+        // No task_worktrees row for orphan_id at all — simulates a row that
+        // disappeared via ON DELETE CASCADE without this app's own code
+        // ever running to clean up the directory.
+
+        cleanup_orphaned_worktree_directories(&state).await;
+
+        assert!(
+            !orphan_dir.exists(),
+            "a worktree directory with no matching row must be swept"
+        );
+    }
+
+    #[tokio::test]
+    async fn merge_lock_serializes_two_concurrent_merges_into_the_same_primary() {
+        // The unit tests above (Task 3) only ever call
+        // `merge_worktree_into_primary` sequentially — none of them prove
+        // `AppState::merge_lock_for` (Task 4) actually serializes two
+        // merges racing for the *same* `primary_root` at the true OS-thread
+        // level, only that the function is correct when called one at a
+        // time. This test drives two real concurrent `finalize_worktree`
+        // calls through `tokio::join!` and asserts the result is exactly
+        // what serialized execution would produce: two clean commits, no
+        // corrupted index, no lost file.
+        let Some(pool) = evohime_storage::connect_integration_pool().await else {
+            eprintln!("skipping worktree merge-lock test: database unavailable");
+            return;
+        };
+        let task_id_a = seed_task(&pool).await;
+        let task_id_b = seed_task(&pool).await;
+        let state = AppState::for_worktree_tests(pool);
+
+        let repo = tempfile::tempdir().expect("tempdir");
+        init_repo(repo.path());
+
+        provision_worktree(&state, task_id_a, repo.path())
+            .await
+            .expect("provision A");
+        provision_worktree(&state, task_id_b, repo.path())
+            .await
+            .expect("provision B");
+        let row_a = evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id_a)
+            .await
+            .expect("get A")
+            .expect("row A present");
+        let row_b = evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id_b)
+            .await
+            .expect("get B")
+            .expect("row B present");
+
+        std::fs::write(PathBuf::from(&row_a.worktree_path).join("from-a.txt"), "a\n")
+            .expect("write a");
+        std::fs::write(PathBuf::from(&row_b.worktree_path).join("from-b.txt"), "b\n")
+            .expect("write b");
+
+        // Both finalize calls race for the same `merge_lock_for(repo.path())`
+        // lock. If it didn't actually serialize them, two concurrent
+        // `git add -A` / `git commit` invocations against the same
+        // `primary_root` would be expected to corrupt the index or drop one
+        // side's file outright on at least some fraction of runs.
+        let (result_a, result_b) = tokio::join!(
+            finalize_worktree(&state, task_id_a, repo.path(), &row_a),
+            finalize_worktree(&state, task_id_b, repo.path(), &row_b),
+        );
+        result_a.expect("finalize A");
+        result_b.expect("finalize B");
+
+        assert!(repo.path().join("from-a.txt").exists(), "task A's file must survive");
+        assert!(repo.path().join("from-b.txt").exists(), "task B's file must survive");
+
+        let status_output = StdCommand::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(repo.path())
+            .output()
+            .expect("git status --porcelain");
+        assert!(
+            status_output.stdout.is_empty(),
+            "primary_root must be fully clean after two concurrent merges"
+        );
+
+        let log_output = StdCommand::new("git")
+            .args(["log", "--oneline"])
+            .current_dir(repo.path())
+            .output()
+            .expect("git log --oneline");
+        let commit_count = String::from_utf8_lossy(&log_output.stdout).lines().count();
+        assert_eq!(
+            commit_count, 3,
+            "expected the initial commit plus one commit per task, in some order"
+        );
     }
 }
