@@ -136,31 +136,55 @@ pub(crate) async fn provision_worktree(
         .join("evohime-worktrees")
         .join(task_id.to_string());
 
-    add_worktree(primary_root, &worktree_path, &base_sha).await?;
-
+    // The DB row is inserted BEFORE the worktree directory is created on
+    // disk — deliberately the reverse of the order this function used to
+    // use. `cleanup_orphaned_worktree_directories` now runs periodically
+    // (not just once at startup), and it deletes any `.git`-marked,
+    // UUID-named directory under `evohime-worktrees/` that has no matching
+    // `task_worktrees` row. With the old order, a directory created by
+    // `add_worktree` sat in exactly that "no row yet" state for the entire
+    // gap until `insert_task_worktree` completed — a window the periodic
+    // sweep could now land in and delete out from under an in-flight
+    // provision. Inserting the row first closes that window: either this
+    // insert fails and nothing was ever created on disk, or it succeeds and
+    // the row exists (even briefly pointing at a directory that doesn't
+    // exist yet, which the sweep's own "no row" check correctly ignores)
+    // before `add_worktree` ever runs.
     if let Err(error) = evohime_storage::task_worktrees::insert_task_worktree(
         &state.pool,
         &evohime_storage::task_worktrees::NewTaskWorktree {
             task_id,
-            base_commit_sha: base_sha,
+            base_commit_sha: base_sha.clone(),
             worktree_path: worktree_path.to_string_lossy().into_owned(),
             primary_workspace_root: primary_root.to_string_lossy().into_owned(),
         },
     )
     .await
     {
-        // Roll back: without a row, nothing (merge-back, startup cleanup)
-        // will ever find this directory again — it would become a
-        // permanent orphan otherwise. If this rollback attempt *also*
-        // fails (e.g. a transient git/filesystem error right on top of the
-        // DB error above), the directory is still not lost forever: it's
-        // exactly what `cleanup_orphaned_worktree_directories` (Task 7)
-        // exists to sweep — a `.git`-marked directory under
-        // `evohime-worktrees/` with no matching `task_worktrees` row.
-        let _ = remove_worktree(primary_root, &worktree_path).await;
+        // Nothing to roll back yet — no directory was created.
         return Err(WorktreeError::Io(format!(
             "failed to persist task_worktrees row: {error}"
         )));
+    }
+
+    if let Err(add_error) = add_worktree(primary_root, &worktree_path, &base_sha).await {
+        // Roll back the row: without a directory, this row would otherwise
+        // be a permanent phantom pointing at a worktree that was never
+        // actually created. If this delete itself fails too (e.g. a
+        // transient DB error right on top of the `add_worktree` failure),
+        // it's not lost forever — the phantom-row check at the top of this
+        // function already discards exactly this shape of row (directory
+        // missing) and reprovisions on the next attempt.
+        if let Err(delete_error) =
+            evohime_storage::task_worktrees::delete_task_worktree(&state.pool, task_id).await
+        {
+            warn!(
+                %task_id,
+                %delete_error,
+                "failed to delete task_worktrees row after add_worktree failed; leaving a phantom row for the next provision attempt to discard"
+            );
+        }
+        return Err(add_error);
     }
 
     Ok(())
@@ -338,7 +362,15 @@ pub(crate) async fn cleanup_orphaned_worktree_directories(state: &Arc<AppState>)
         }
     };
 
-    while let Ok(Some(entry)) = entries.next_entry().await {
+    loop {
+        let entry = match entries.next_entry().await {
+            Ok(Some(entry)) => entry,
+            Ok(None) => break,
+            Err(error) => {
+                warn!(%error, path = %root.display(), "failed to read next entry while scanning for orphaned worktree directories; ending this sweep early");
+                break;
+            }
+        };
         let Some(task_id) = entry
             .file_name()
             .to_str()
