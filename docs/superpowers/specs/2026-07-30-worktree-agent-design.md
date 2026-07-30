@@ -484,8 +484,36 @@ task completes (success)
   content on `workspace_root` in the meantime, the 3-way merge may not
   reconcile cleanly. This is exactly the conflict path already specified
   above (scoped `git checkout HEAD --` restore on `workspace_root`, fail
-  merge-back, keep the worktree for manual inspection) — no extra
-  rename-detection logic is needed for it.
+  merge-back, keep the worktree for manual inspection) — no *git-level*
+  rename-detection is needed for that. The path-classification step that
+  drives the scoped restore itself does need to treat a rename's old and
+  new names differently, though: the old name existed at `base_commit_sha`
+  (restorable via `git checkout HEAD --`), the new one did not. Lumping
+  both under "existing" and handing them to a single `git checkout HEAD --`
+  call is a real bug, not a theoretical one — an unmatched pathspec makes
+  that git invocation error out for *all* paths in the same call, not just
+  the rename's new name, so the whole scoped restore silently fails for
+  every other conflicting file too whenever a rename happens to be part of
+  the same patch.
+- `git apply --3way` cannot meaningfully three-way-merge a binary file —
+  there's no line-level content to reconcile. If the same binary file was
+  changed both on `workspace_root` (by whatever's running there
+  unisolated) and in the isolated worktree, the apply fails and the whole
+  merge takes the conflict path, exactly as it would for a textual
+  collision. This is a known, accepted limitation rather than a gap to
+  close: automatically reconciling two different binary edits isn't
+  possible in general, so surfacing it as a conflict for manual resolution
+  is already the correct behavior, not a missing feature.
+- If `workspace_root` is ever force-pushed or otherwise rewritten such that
+  `base_commit_sha` is no longer reachable from its history, `git apply
+  --3way` loses its ability to three-way-merge (it needs the base blob,
+  which becomes unreachable-but-not-yet-garbage-collected, and eventually
+  actually gone once `git gc` runs) and degrades to a plain patch apply,
+  which is far more likely to conflict. This is a known limitation, not
+  something this design defends against — force-pushing `workspace_root`
+  out from under an in-flight isolated task is already an unusual,
+  operator-initiated action with its own consequences independent of this
+  feature.
 
 ## Testing
 
@@ -534,6 +562,11 @@ task completes (success)
 - A binary-file test: a worktree creates/modifies a binary file; merge-back
   lands it correctly on `workspace_root` (byte-for-byte), proving `--binary`
   is wired through the diff.
+- A rename-plus-conflict regression test: a worktree both renames a file
+  and edits a second, unrelated file that also conflicts with a concurrent
+  primary-side edit; after the resulting failure, `workspace_root` is fully
+  clean (`git status --porcelain` empty) — the rename's new name must not
+  make the scoped restore abort for the *other* conflicting path too.
 - A cleanup-failure-is-not-task-failure test: `finalize_worktree`'s merge
   step succeeds but `remove_worktree` is forced to fail; the function still
   reports success (the task completes), and the row/directory remain for a
