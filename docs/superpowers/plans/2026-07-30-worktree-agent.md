@@ -4,7 +4,7 @@
 
 **Goal:** When a second task starts while another task is already running against the same server, isolate it in a detached-HEAD git worktree instead of the shared `workspace_root`, and automatically fold its changes back into the primary checkout when it finishes.
 
-**Architecture:** A new `task_worktrees` Postgres table tracks one row per isolated task (`base_commit_sha`, `worktree_path`, `primary_workspace_root`). `crates/server/src/ws.rs` decides isolation atomically alongside its existing `task_cancellations` bookkeeping and provisions the worktree via `git worktree add --detach` into the OS temp directory (never inside the tracked repo tree). `crates/server/src/task/pipeline.rs` points the agent's `workspace_root` at the worktree when a row exists, then on success squash-merges the worktree's diff back onto the primary checkout under a dedicated `workspace_merge_lock`, using `git add -A` + `git diff --cached` + `git apply --3way --index` + `git commit`. All git subprocess calls follow the existing `tokio::process::Command` pattern already used in `crates/tool-runtime/src/tools/git.rs` and `crates/server/src/github_api.rs`.
+**Architecture:** A new `task_worktrees` Postgres table tracks one row per isolated task (`base_commit_sha`, `worktree_path`, `primary_workspace_root`). `crates/server/src/ws.rs` decides isolation atomically alongside its existing `task_cancellations` bookkeeping and provisions the worktree via `git worktree add --detach` into the OS temp directory (never inside the tracked repo tree), idempotently and with rollback if persisting the row fails. `crates/server/src/task/pipeline.rs` points the agent's `workspace_root` at the worktree when a row exists, then on success squash-merges the worktree's diff back onto the primary checkout under a per-`primary_workspace_root` lock (`workspace_merge_locks`, not one global lock), using `git add -A` + `git diff --cached` + `git apply --3way --index` + `git commit`, resetting the primary checkout back to a clean `HEAD` on conflict. Startup cleanup keys off each row's owning task's *live* status, not a restart-scoped snapshot. All git subprocess calls follow the existing `tokio::process::Command` pattern already used in `crates/tool-runtime/src/tools/git.rs` and `crates/server/src/github_api.rs`.
 
 **Tech Stack:** Rust (axum, sqlx/Postgres, tokio), `git` CLI via `tokio::process::Command`.
 
@@ -12,7 +12,7 @@
 
 - No feature branches are ever created — worktrees are detached HEAD only. (Design §Non-goals)
 - No new approval/review UI — per-write approvals already happened inside the worktree via the existing permissions engine. (Design §Non-goals)
-- `tokio::sync::Mutex` only for the new lock (`workspace_merge_lock`) and any reuse of `task_cancellations` — never `std::sync::Mutex`, since tokio's mutex never poisons on panic. (Design §Trigger)
+- `tokio::sync::Mutex` only for the new lock registry (`workspace_merge_locks`) and any reuse of `task_cancellations` — never `std::sync::Mutex`, since tokio's mutex never poisons on panic. (Design §Trigger)
 - Every DB schema change goes through `migrations/`, next free number is `0035`. (`AGENTS.md` rule 7; confirmed via `ls migrations/`)
 - After finishing this plan: `cargo test --workspace --all-features --all-targets`, `cargo clippy --workspace --all-features --all-targets -- -D warnings`, and clean up `target/` when no longer needed for a later step. (`AGENTS.md` rules 5, 15)
 - Commit after every task; never push unless the user explicitly asks. (`AGENTS.md` rule 11)
@@ -26,7 +26,7 @@
 - **Modify** `crates/storage/src/lib.rs` — register `pub mod task_worktrees;`.
 - **Create** `crates/server/src/task/worktree.rs` — all git-subprocess mechanics (pure functions taking explicit paths) plus the `AppState`-aware orchestration functions (`provision_worktree`, `finalize_worktree`, `cleanup_stale_worktrees`).
 - **Modify** `crates/server/src/task/mod.rs` — register the new module.
-- **Modify** `crates/server/src/app.rs` — add `workspace_merge_lock` field to `AppState`.
+- **Modify** `crates/server/src/app.rs` — add `workspace_merge_locks` field and `merge_lock_for` helper method to `AppState`.
 - **Modify** `crates/server/src/startup.rs` — construct the new field; add the startup cleanup pass after `recover_after_restart`.
 - **Modify** `crates/server/src/ws.rs` — atomic trigger decision, worktree provisioning, fail-fast on concurrent provisioning failure.
 - **Modify** `crates/server/src/task/pipeline.rs` — resolve worktree override for `AgentConfig.workspace_root`, call `finalize_worktree` on success.
@@ -48,6 +48,8 @@
   - `pub async fn get_task_worktree(pool: &PgPool, task_id: Uuid) -> Result<Option<TaskWorktreeRow>, StorageError>`
   - `pub async fn delete_task_worktree(pool: &PgPool, task_id: Uuid) -> Result<(), StorageError>`
   - `pub async fn list_task_worktrees(pool: &PgPool) -> Result<Vec<TaskWorktreeRow>, StorageError>`
+  - `pub struct TaskWorktreeWithStatus { pub row: TaskWorktreeRow, pub task_status: String }`
+  - `pub async fn list_task_worktrees_with_status(pool: &PgPool) -> Result<Vec<TaskWorktreeWithStatus>, StorageError>` — joins against `tasks.status` so startup cleanup can decide per row without a second round-trip per task.
 
 - [ ] **Step 1: Write the migration**
 
@@ -152,6 +154,58 @@ pub async fn list_task_worktrees(pool: &PgPool) -> Result<Vec<TaskWorktreeRow>, 
     .await?)
 }
 
+#[derive(Debug, Clone, FromRow)]
+struct TaskWorktreeWithStatusRow {
+    task_id: Uuid,
+    base_commit_sha: String,
+    worktree_path: String,
+    primary_workspace_root: String,
+    created_at: DateTime<Utc>,
+    task_status: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskWorktreeWithStatus {
+    pub row: TaskWorktreeRow,
+    pub task_status: String,
+}
+
+/// Every `task_worktrees` row alongside its owning task's *current* status.
+/// Startup cleanup uses `task_status` (not the transient, restart-scoped set
+/// `recover_after_restart` returns) to decide whether a row is still needed —
+/// see the design doc's Cleanup section for why that distinction matters
+/// (an approval-paused task's worktree must never be swept just because it
+/// wasn't mid-crash at the moment of *this* restart).
+pub async fn list_task_worktrees_with_status(
+    pool: &PgPool,
+) -> Result<Vec<TaskWorktreeWithStatus>, StorageError> {
+    let rows = sqlx::query_as::<_, TaskWorktreeWithStatusRow>(
+        r#"
+        SELECT tw.task_id, tw.base_commit_sha, tw.worktree_path, tw.primary_workspace_root,
+               tw.created_at, t.status AS task_status
+        FROM task_worktrees tw
+        JOIN tasks t ON t.id = tw.task_id
+        ORDER BY tw.created_at ASC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| TaskWorktreeWithStatus {
+            row: TaskWorktreeRow {
+                task_id: row.task_id,
+                base_commit_sha: row.base_commit_sha,
+                worktree_path: row.worktree_path,
+                primary_workspace_root: row.primary_workspace_root,
+                created_at: row.created_at,
+            },
+            task_status: row.task_status,
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,6 +264,53 @@ mod tests {
             .await
             .expect("get after delete")
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn list_with_status_reports_the_owning_tasks_current_status() {
+        let Some(pool) = connect_pool().await else {
+            eprintln!("skipping task_worktrees integration test: database unavailable");
+            return;
+        };
+
+        let task_id = seed_task(&pool).await; // seed_task inserts with status 'running'
+        insert_task_worktree(
+            &pool,
+            &NewTaskWorktree {
+                task_id,
+                base_commit_sha: "deadbeef".to_string(),
+                worktree_path: "/tmp/evohime-worktrees/example".to_string(),
+                primary_workspace_root: "/tmp/example-repo".to_string(),
+            },
+        )
+        .await
+        .expect("insert");
+
+        let with_status = list_task_worktrees_with_status(&pool)
+            .await
+            .expect("list with status");
+        let found = with_status
+            .iter()
+            .find(|entry| entry.row.task_id == task_id)
+            .expect("row present");
+        assert_eq!(found.task_status, "running");
+
+        sqlx::query("UPDATE tasks SET status = 'paused' WHERE id = $1")
+            .bind(task_id)
+            .execute(&pool)
+            .await
+            .expect("update status");
+
+        let with_status = list_task_worktrees_with_status(&pool)
+            .await
+            .expect("list with status after update");
+        let found = with_status
+            .iter()
+            .find(|entry| entry.row.task_id == task_id)
+            .expect("row present after update");
+        assert_eq!(found.task_status, "paused");
+
+        delete_task_worktree(&pool, task_id).await.expect("cleanup");
     }
 }
 ```
@@ -437,19 +538,45 @@ git commit -m "feat(server): add pure git-worktree add/remove helpers (7.107)"
 
 **Interfaces:**
 - Consumes: `WorktreeError` from Task 2.
-- Produces: `pub(crate) async fn merge_worktree_into_primary(worktree_path: &Path, primary_root: &Path, base_sha: &str, task_id: Uuid) -> Result<(), WorktreeError>`
+- Produces:
+  - `pub(crate) async fn reset_hard_head(repo: &Path) -> Result<(), WorktreeError>`
+  - `pub(crate) async fn merge_worktree_into_primary(worktree_path: &Path, primary_root: &Path, base_sha: &str, task_id: Uuid) -> Result<(), WorktreeError>`
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `crates/server/src/task/worktree.rs` (add `use uuid::Uuid;` to the top-level `use` block, and add this function above the `#[cfg(test)]` module):
+Append to `crates/server/src/task/worktree.rs` (add `use uuid::Uuid;` and `use tracing::info;` to the top-level `use` block, and add these functions above the `#[cfg(test)]` module):
 
 ```rust
+/// Discards any uncommitted state in `repo` — used only to recover from a
+/// failed `git apply --3way --index`, which can leave the working
+/// tree/index with conflict markers and unmerged entries. Nothing from a
+/// failed apply was ever committed, so resetting to `HEAD` only ever
+/// discards that failed attempt, never a real commit.
+pub(crate) async fn reset_hard_head(repo: &Path) -> Result<(), WorktreeError> {
+    run_git(repo, &["reset", "--hard", "HEAD"]).await?;
+    Ok(())
+}
+
 pub(crate) async fn merge_worktree_into_primary(
     worktree_path: &Path,
     primary_root: &Path,
     base_sha: &str,
     task_id: Uuid,
 ) -> Result<(), WorktreeError> {
+    // Diagnostic only: `git apply --3way` already handles a moved primary
+    // HEAD correctly, but logging the drift up front means a later conflict
+    // can be told apart from "another task's merge landed in between" vs.
+    // "same base, genuine textual collision" without reconstructing it after
+    // the fact.
+    if let Ok(current_head) = rev_parse_head(primary_root).await {
+        info!(
+            task_id = %task_id,
+            base_commit_sha = base_sha,
+            primary_head = %current_head,
+            "starting worktree merge-back"
+        );
+    }
+
     // Stage everything first: `git diff` never shows untracked files
     // regardless of which commit it's compared against.
     run_git(worktree_path, &["add", "-A"]).await?;
@@ -496,6 +623,17 @@ pub(crate) async fn merge_worktree_into_primary(
         .map_err(|error| WorktreeError::Io(format!("failed to wait on git apply: {error}")))?;
     if !apply_output.status.success() {
         let stderr = String::from_utf8_lossy(&apply_output.stderr).trim().to_string();
+        // A failed 3-way apply can leave primary_root's working tree/index
+        // with conflict markers and unmerged entries. Nothing from this
+        // attempt was ever committed, so it's always safe to discard it —
+        // and necessary, or the *next* task to touch primary_root (isolated
+        // or not) would inherit a half-merged git state it had nothing to
+        // do with.
+        if let Err(reset_error) = reset_hard_head(primary_root).await {
+            return Err(WorktreeError::Conflict(format!(
+                "git apply --3way --index failed: {stderr}; additionally failed to reset primary_root afterward: {reset_error}"
+            )));
+        }
         return Err(WorktreeError::Conflict(format!(
             "git apply --3way --index failed: {stderr}"
         )));
@@ -587,6 +725,27 @@ Add this test to the `#[cfg(test)] mod tests` block:
             "HEAD must not advance when merge-back conflicts"
         );
 
+        // A failed 3-way apply must not leave primary_root with unmerged
+        // index entries or a dirty working tree for the next task to inherit.
+        let ls_files_unmerged = StdCommand::new("git")
+            .args(["ls-files", "-u"])
+            .current_dir(repo.path())
+            .output()
+            .expect("git ls-files -u");
+        assert!(
+            ls_files_unmerged.stdout.is_empty(),
+            "primary_root must have no unmerged entries after a failed merge-back"
+        );
+        let status_output = StdCommand::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(repo.path())
+            .output()
+            .expect("git status --porcelain");
+        assert!(
+            status_output.stdout.is_empty(),
+            "primary_root must be clean after a failed merge-back"
+        );
+
         remove_worktree(repo.path(), &worktree_path)
             .await
             .expect("remove worktree");
@@ -607,7 +766,7 @@ git commit -m "feat(server): add worktree merge-back with 3-way apply + squash c
 
 ---
 
-### Task 4: `AppState.workspace_merge_lock` and module registration
+### Task 4: `AppState.workspace_merge_locks` (per-path lock registry) and module registration
 
 **Files:**
 - Modify: `crates/server/src/app.rs`
@@ -615,7 +774,11 @@ git commit -m "feat(server): add worktree merge-back with 3-way apply + squash c
 - Modify: `crates/server/src/task/mod.rs`
 
 **Interfaces:**
-- Produces: `AppState.workspace_merge_lock: Arc<tokio::sync::Mutex<()>>`
+- Produces:
+  - `AppState.workspace_merge_locks: Arc<tokio::sync::Mutex<HashMap<PathBuf, Arc<tokio::sync::Mutex<()>>>>>`
+  - `AppState::merge_lock_for(&self, primary_root: &Path) -> Arc<tokio::sync::Mutex<()>>`
+
+A single global lock would make an unrelated task on workspace B wait on a slow merge for workspace A for no reason (Sites feature allows distinct `primary_workspace_root`s to be active concurrently). `merge_lock_for` briefly locks the outer map to get-or-insert a per-path `Mutex`, then returns it — the outer map lock is never held for the duration of an actual merge.
 
 - [ ] **Step 1: Register the worktree module**
 
@@ -636,16 +799,34 @@ pub(crate) use pipeline::*;
 pub(crate) use steps::*;
 ```
 
-- [ ] **Step 2: Add the field to `AppState`**
+- [ ] **Step 2: Add the field and helper method to `AppState`**
 
-In `crates/server/src/app.rs`, add the field right after `task_cancellations` (around line 124):
+In `crates/server/src/app.rs`, add the field right after `task_cancellations` (around line 124; also add `use std::path::PathBuf;` to the top-level `use` block if not already present — it is, via `AppConfig.workspace_root: PathBuf`):
 
 ```rust
     pub task_cancellations: Arc<Mutex<HashMap<Uuid, CancellationToken>>>,
-    /// Serializes merge-back (Stage 7.107): applying an isolated worktree's
-    /// diff onto its primary checkout and committing it there. `tokio::sync::Mutex`
-    /// like every other AppState lock — it never poisons on panic.
-    pub workspace_merge_lock: Arc<Mutex<()>>,
+    /// Per-`primary_workspace_root` locks serializing merge-back (Stage
+    /// 7.107): applying an isolated worktree's diff onto its primary
+    /// checkout and committing it there. Keyed by path rather than a single
+    /// global lock so unrelated workspaces (Sites feature) never wait on
+    /// each other. `tokio::sync::Mutex` like every other AppState lock — it
+    /// never poisons on panic.
+    pub workspace_merge_locks: Arc<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>>,
+```
+
+In the `impl AppState` block (starts around line 139), add:
+
+```rust
+    /// Returns the merge-back lock for `primary_root`, creating one on
+    /// first use. The outer map lock is held only long enough to
+    /// get-or-insert the entry, never for the duration of a merge.
+    pub(crate) async fn merge_lock_for(&self, primary_root: &std::path::Path) -> Arc<Mutex<()>> {
+        let mut locks = self.workspace_merge_locks.lock().await;
+        locks
+            .entry(primary_root.to_path_buf())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
+    }
 ```
 
 - [ ] **Step 3: Construct it in `startup.rs`**
@@ -654,19 +835,19 @@ In `crates/server/src/startup.rs`, add the field to the `AppState { ... }` liter
 
 ```rust
         task_cancellations: Arc::new(Mutex::new(HashMap::new())),
-        workspace_merge_lock: Arc::new(Mutex::new(())),
+        workspace_merge_locks: Arc::new(Mutex::new(HashMap::new())),
 ```
 
 - [ ] **Step 4: Verify it compiles**
 
 Run: `cargo check -p evohime-server`
-Expected: no errors (this task only adds a field and wires it up — nothing consumes it yet, so no unused-field warning since the field is `pub`).
+Expected: no errors (this task only adds a field/method and wires it up — nothing calls `merge_lock_for` yet, but it's `pub(crate)` so no dead-code warning fires for an unused-but-reachable method... actually it *will* warn as unused until Task 6 calls it. That's expected and resolved by the next task — do not silence it with `#[allow(dead_code)]`.)
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add crates/server/src/app.rs crates/server/src/startup.rs crates/server/src/task/mod.rs
-git commit -m "feat(server): add workspace_merge_lock to AppState (7.107)"
+git commit -m "feat(server): add per-workspace merge lock registry to AppState (7.107)"
 ```
 
 ---
@@ -691,6 +872,18 @@ pub(crate) async fn provision_worktree(
     task_id: Uuid,
     primary_root: &Path,
 ) -> Result<(), WorktreeError> {
+    // Idempotent: nothing in this design calls provision_worktree twice for
+    // the same task today, but if a future retry path ever did, calling
+    // `git worktree add` again would fail outright since the directory
+    // already exists. Treat an existing row as already-done instead.
+    if evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id)
+        .await
+        .map_err(|error| WorktreeError::Io(format!("failed to check for existing task_worktrees row: {error}")))?
+        .is_some()
+    {
+        return Ok(());
+    }
+
     let base_sha = rev_parse_head(primary_root).await?;
     let worktree_path = std::env::temp_dir()
         .join("evohime-worktrees")
@@ -698,7 +891,7 @@ pub(crate) async fn provision_worktree(
 
     add_worktree(primary_root, &worktree_path, &base_sha).await?;
 
-    evohime_storage::task_worktrees::insert_task_worktree(
+    if let Err(error) = evohime_storage::task_worktrees::insert_task_worktree(
         &state.pool,
         &evohime_storage::task_worktrees::NewTaskWorktree {
             task_id,
@@ -708,7 +901,15 @@ pub(crate) async fn provision_worktree(
         },
     )
     .await
-    .map_err(|error| WorktreeError::Io(format!("failed to persist task_worktrees row: {error}")))?;
+    {
+        // Roll back: without a row, nothing (merge-back, startup cleanup)
+        // will ever find this directory again — it would become a
+        // permanent orphan otherwise.
+        let _ = remove_worktree(primary_root, &worktree_path).await;
+        return Err(WorktreeError::Io(format!(
+            "failed to persist task_worktrees row: {error}"
+        )));
+    }
 
     Ok(())
 }
@@ -844,7 +1045,7 @@ git commit -m "feat(server): trigger worktree isolation atomically on concurrent
 - Modify: `crates/server/src/task/pipeline.rs`
 
 **Interfaces:**
-- Consumes: `merge_worktree_into_primary`, `remove_worktree`, `WorktreeError` (Task 2/3); `evohime_storage::task_worktrees::{get_task_worktree, delete_task_worktree, TaskWorktreeRow}` (Task 1); `state.workspace_merge_lock` (Task 4).
+- Consumes: `merge_worktree_into_primary`, `remove_worktree`, `WorktreeError` (Task 2/3); `evohime_storage::task_worktrees::{get_task_worktree, delete_task_worktree, TaskWorktreeRow}` (Task 1); `AppState::merge_lock_for` (Task 4).
 - Produces: `pub(crate) async fn finalize_worktree(state: &Arc<AppState>, task_id: Uuid, primary_root: &Path, row: &evohime_storage::task_worktrees::TaskWorktreeRow) -> Result<(), WorktreeError>`
 
 - [ ] **Step 1: Add `finalize_worktree` to `worktree.rs`**
@@ -858,9 +1059,15 @@ pub(crate) async fn finalize_worktree(
     primary_root: &Path,
     row: &evohime_storage::task_worktrees::TaskWorktreeRow,
 ) -> Result<(), WorktreeError> {
-    let _guard = state.workspace_merge_lock.lock().await;
+    let lock = state.merge_lock_for(primary_root).await;
+    let _guard = lock.lock().await;
 
     let worktree_path = PathBuf::from(&row.worktree_path);
+    // On Err (conflict), merge_worktree_into_primary has already reset
+    // primary_root back to a clean HEAD internally — the row and worktree
+    // are deliberately left in place here for manual recovery (design
+    // doc, Merge-back step 8), so this function's caller (pipeline.rs) is
+    // free to just propagate the error as a task failure.
     merge_worktree_into_primary(&worktree_path, primary_root, &row.base_commit_sha, task_id).await?;
 
     // git worktree remove requires --force here: the worktree is still
@@ -967,28 +1174,34 @@ git commit -m "feat(server): merge isolated worktree back into primary checkout 
 - Modify: `crates/server/src/startup.rs`
 
 **Interfaces:**
-- Consumes: `evohime_storage::task_worktrees::list_task_worktrees`, `delete_task_worktree`; `remove_worktree` (Task 2/3).
-- Produces: `pub(crate) async fn cleanup_stale_worktrees(state: &Arc<AppState>, resumable_task_ids: &std::collections::HashSet<Uuid>, retention: Duration)`
+- Consumes: `evohime_storage::task_worktrees::{list_task_worktrees_with_status, delete_task_worktree}` (Task 1); `remove_worktree` (Task 2).
+- Produces: `pub(crate) async fn cleanup_stale_worktrees(state: &Arc<AppState>, retention: Duration)`
+
+Cleanup decides per row from the owning task's **current** status (`task_status`, joined in `list_task_worktrees_with_status`), not from a restart-scoped snapshot. This matters concretely: a task `Paused` on an `approval.required` round-trip never appears in `recover_after_restart`'s return value on a later, unrelated restart (it wasn't crashed — pipeline.rs's `NeedsApproval` branch returns `Ok(())` normally), yet its worktree is still in active use and must never be swept. Querying live status instead of that snapshot handles this correctly and makes the function's signature simpler (no `resumable_task_ids` parameter to keep in sync with anything).
 
 - [ ] **Step 1: Add `cleanup_stale_worktrees` to `worktree.rs`**
 
-Add after `finalize_worktree` (add `use std::collections::HashSet;` and `use std::time::Duration;` and `use tracing::warn;` to the imports):
+Add after `finalize_worktree` (add `use std::time::Duration;` and `use tracing::warn;` to the imports):
 
 ```rust
-/// Removes worktree directories (and their `task_worktrees` rows) left
-/// behind by a server crash, once they're older than `retention` and their
-/// task isn't among `resumable_task_ids` (tasks `recover_after_restart`
-/// determined were still running/cancelling — those keep their worktree,
-/// since resuming reuses it). Rows newer than `retention` are left for a
-/// later restart, giving an operator a window to inspect a worktree kept
-/// around after a merge conflict before it's swept.
-pub(crate) async fn cleanup_stale_worktrees(
-    state: &Arc<AppState>,
-    resumable_task_ids: &HashSet<Uuid>,
-    retention: Duration,
-) {
-    let rows = match evohime_storage::task_worktrees::list_task_worktrees(&state.pool).await {
-        Ok(rows) => rows,
+const TERMINAL_TASK_STATUSES: &[&str] = &["completed", "failed", "cancelled"];
+
+/// Removes worktree directories (and their `task_worktrees` rows) whose
+/// owning task has reached a terminal status (`completed`/`failed`/
+/// `cancelled`) and is older than `retention`. A `completed` row should
+/// never actually be found here — a successful merge-back deletes its own
+/// row before the task transitions to `completed` — but is handled the
+/// same way rather than treated as a bug if a crash landed one anyway.
+///
+/// Rows for non-terminal tasks (`running`, `paused`, `cancelling`,
+/// `retrying`) are never touched regardless of age: the task may still
+/// resume and reuse that exact worktree. Terminal rows younger than
+/// `retention` are left for a later startup, giving an operator a window
+/// to inspect a worktree kept around after a merge conflict before it's
+/// swept.
+pub(crate) async fn cleanup_stale_worktrees(state: &Arc<AppState>, retention: Duration) {
+    let entries = match evohime_storage::task_worktrees::list_task_worktrees_with_status(&state.pool).await {
+        Ok(entries) => entries,
         Err(error) => {
             warn!(%error, "failed to list task_worktrees for startup cleanup");
             return;
@@ -997,8 +1210,9 @@ pub(crate) async fn cleanup_stale_worktrees(
 
     let cutoff = chrono::Utc::now() - chrono::Duration::from_std(retention).unwrap_or_default();
 
-    for row in rows {
-        if resumable_task_ids.contains(&row.task_id) {
+    for entry in entries {
+        let row = entry.row;
+        if !TERMINAL_TASK_STATUSES.contains(&entry.task_status.as_str()) {
             continue;
         }
         if row.created_at > cutoff {
@@ -1040,14 +1254,11 @@ In `crates/server/src/startup.rs`, right after the existing block that builds `r
 Insert directly after the `resume_policy` line, before `if !recovered.is_empty() {`:
 
 ```rust
-    let resumable_task_ids: std::collections::HashSet<uuid::Uuid> =
-        recovered.iter().map(|task| task.id).collect();
     let worktree_retention = duration_secs_env_local("EVOHIME_WORKTREE_RETENTION_SECS", 24 * 60 * 60);
-    crate::task::worktree::cleanup_stale_worktrees(&state, &resumable_task_ids, worktree_retention)
-        .await;
+    crate::task::worktree::cleanup_stale_worktrees(&state, worktree_retention).await;
 ```
 
-This reuses the `duration_secs_env_local` helper already defined at the top of `startup.rs`, matching the pattern used for `WORKER_HEALTH_INTERVAL_SECS` etc. — default retention is 24 hours.
+This reuses the `duration_secs_env_local` helper already defined at the top of `startup.rs`, matching the pattern used for `WORKER_HEALTH_INTERVAL_SECS` etc. — default retention is 24 hours. It deliberately runs independently of the `recovered`/`resume_policy` logic right below it — cleanup consults live task status itself, not that restart-scoped list.
 
 - [ ] **Step 3: Verify it compiles**
 
@@ -1073,7 +1284,7 @@ git commit -m "feat(server): clean up stale worktrees on server startup (7.107)"
 
 - [ ] **Step 1: Write the failing tests**
 
-Add to the `#[cfg(test)] mod tests` block in `crates/server/src/task/worktree.rs`. These need a real `AppState`; build a minimal one directly (only the fields these functions touch: `pool`, `task_cancellations` is not needed here since we call `provision_worktree`/`finalize_worktree` directly, `workspace_merge_lock`). Add `use crate::app::AppState;` (already added in Task 5) and construct via `AppState` struct literal — since not all fields are `pub(crate)`-constructible outside `crate::app`, add a `#[cfg(test)] impl AppState { pub(crate) fn for_worktree_tests(pool: PgPool) -> Arc<Self> }` helper in `crates/server/src/app.rs` instead of duplicating the full literal in the test:
+Add to the `#[cfg(test)] mod tests` block in `crates/server/src/task/worktree.rs`. These need a real `AppState`; build a minimal one directly (only the fields these functions touch: `pool`, `workspace_merge_locks` — `task_cancellations` is not needed here since we call `provision_worktree`/`finalize_worktree` directly). Add `use crate::app::AppState;` (already added in Task 5) and construct via `AppState` struct literal — since not all fields are `pub(crate)`-constructible outside `crate::app`, add a `#[cfg(test)] impl AppState { pub(crate) fn for_worktree_tests(pool: PgPool) -> Arc<Self> }` helper in `crates/server/src/app.rs` instead of duplicating the full literal in the test:
 
 There is exactly one existing `AppState { ... }` construction site today (`crates/server/src/startup.rs:121`, confirmed by searching for `AppState {` across the crate) — no test-only builder exists yet, so this is genuinely new, not a duplicate.
 
@@ -1101,7 +1312,7 @@ In `crates/server/src/app.rs`, add at the end of the `impl AppState` block:
             mcp_servers: Arc::new(Mutex::new(Vec::new())),
             session_buses: Arc::new(Mutex::new(HashMap::new())),
             task_cancellations: Arc::new(Mutex::new(HashMap::new())),
-            workspace_merge_lock: Arc::new(Mutex::new(())),
+            workspace_merge_locks: Arc::new(Mutex::new(HashMap::new())),
             worker: crate::worker::WorkerClient::new("http://127.0.0.1:8090".to_string())
                 .expect("worker client"),
             worker_job_stall: std::time::Duration::from_secs(30),
@@ -1115,6 +1326,25 @@ In `crates/server/src/app.rs`, add at the end of the `impl AppState` block:
     }
 ```
 
+Also add a `seed_task` test helper — `task_worktrees.task_id` is a foreign key into `tasks(id)` (Task 1's migration), so every orchestration test needs a real row there first, not a bare `Uuid::new_v4()`:
+
+```rust
+    async fn seed_task(pool: &sqlx::PgPool) -> Uuid {
+        let session_id: Uuid =
+            sqlx::query_scalar("INSERT INTO sessions DEFAULT VALUES RETURNING id")
+                .fetch_one(pool)
+                .await
+                .expect("insert session");
+        sqlx::query_scalar(
+            "INSERT INTO tasks (session_id, user_message, status) VALUES ($1, 'test', 'running') RETURNING id",
+        )
+        .bind(session_id)
+        .fetch_one(pool)
+        .await
+        .expect("insert task")
+    }
+```
+
 Then add the tests:
 
 ```rust
@@ -1124,13 +1354,12 @@ Then add the tests:
             eprintln!("skipping worktree orchestration test: database unavailable");
             return;
         };
+        let task_id_a = seed_task(&pool).await;
+        let task_id_b = seed_task(&pool).await;
         let state = AppState::for_worktree_tests(pool);
 
         let repo = tempfile::tempdir().expect("tempdir");
         init_repo(repo.path());
-
-        let task_id_a = Uuid::new_v4();
-        let task_id_b = Uuid::new_v4();
 
         // Task A starts unisolated (nothing running yet) — nothing to provision.
         // Task B starts while A is "running" (simulated: A's worktree provisioned first).
@@ -1176,50 +1405,104 @@ Then add the tests:
     }
 
     #[tokio::test]
-    async fn cleanup_removes_only_non_resumable_rows_past_retention() {
+    async fn cleanup_removes_only_terminal_rows_past_retention() {
         let Some(pool) = evohime_storage::connect_integration_pool().await else {
             eprintln!("skipping worktree cleanup test: database unavailable");
             return;
         };
+        let failed_task = seed_task(&pool).await; // starts 'running'
+        let paused_task = seed_task(&pool).await;
+        let recent_failed_task = seed_task(&pool).await;
         let state = AppState::for_worktree_tests(pool);
 
         let repo = tempfile::tempdir().expect("tempdir");
         init_repo(repo.path());
 
-        let stale_task = Uuid::new_v4();
-        let resumable_task = Uuid::new_v4();
-        provision_worktree(&state, stale_task, repo.path())
+        provision_worktree(&state, failed_task, repo.path())
             .await
-            .expect("provision stale");
-        provision_worktree(&state, resumable_task, repo.path())
+            .expect("provision failed_task");
+        provision_worktree(&state, paused_task, repo.path())
             .await
-            .expect("provision resumable");
+            .expect("provision paused_task");
+        provision_worktree(&state, recent_failed_task, repo.path())
+            .await
+            .expect("provision recent_failed_task");
 
-        let resumable_ids = std::collections::HashSet::from([resumable_task]);
-        cleanup_stale_worktrees(&state, &resumable_ids, Duration::from_secs(0)).await;
-
-        assert!(evohime_storage::task_worktrees::get_task_worktree(&state.pool, stale_task)
+        sqlx::query("UPDATE tasks SET status = 'failed' WHERE id = $1")
+            .bind(failed_task)
+            .execute(&state.pool)
             .await
-            .expect("get stale")
-            .is_none());
+            .expect("mark failed");
+        sqlx::query("UPDATE tasks SET status = 'paused' WHERE id = $1")
+            .bind(paused_task)
+            .execute(&state.pool)
+            .await
+            .expect("mark paused");
+        sqlx::query("UPDATE tasks SET status = 'failed' WHERE id = $1")
+            .bind(recent_failed_task)
+            .execute(&state.pool)
+            .await
+            .expect("mark recent_failed");
+
+        // Retention of 0 makes every terminal row immediately eligible;
+        // back-date recent_failed_task's row so it still falls inside a
+        // real (non-zero) window in the second half of this test.
+        cleanup_stale_worktrees(&state, Duration::from_secs(0)).await;
+
         assert!(
-            evohime_storage::task_worktrees::get_task_worktree(&state.pool, resumable_task)
+            evohime_storage::task_worktrees::get_task_worktree(&state.pool, failed_task)
                 .await
-                .expect("get resumable")
-                .is_some()
+                .expect("get failed_task")
+                .is_none(),
+            "a terminal task's row past retention must be removed"
+        );
+        assert!(
+            evohime_storage::task_worktrees::get_task_worktree(&state.pool, paused_task)
+                .await
+                .expect("get paused_task")
+                .is_some(),
+            "a non-terminal task's row must never be removed by age alone"
+        );
+        assert!(
+            evohime_storage::task_worktrees::get_task_worktree(&state.pool, recent_failed_task)
+                .await
+                .expect("get recent_failed_task")
+                .is_none(),
+            "retention of 0 makes even a just-created terminal row eligible"
         );
 
-        // Clean up the resumable one manually so the test doesn't leak a worktree.
-        let row = evohime_storage::task_worktrees::get_task_worktree(&state.pool, resumable_task)
+        // Re-provision recent_failed_task to exercise a real retention
+        // window: with a long retention, a just-failed row must survive.
+        provision_worktree(&state, recent_failed_task, repo.path())
             .await
-            .expect("get resumable row")
-            .expect("row present");
-        remove_worktree(repo.path(), &PathBuf::from(&row.worktree_path))
+            .expect("re-provision recent_failed_task");
+        sqlx::query("UPDATE tasks SET status = 'failed' WHERE id = $1")
+            .bind(recent_failed_task)
+            .execute(&state.pool)
             .await
-            .expect("cleanup");
-        evohime_storage::task_worktrees::delete_task_worktree(&state.pool, resumable_task)
-            .await
-            .expect("delete resumable row");
+            .expect("mark recent_failed again");
+        cleanup_stale_worktrees(&state, Duration::from_secs(24 * 60 * 60)).await;
+        assert!(
+            evohime_storage::task_worktrees::get_task_worktree(&state.pool, recent_failed_task)
+                .await
+                .expect("get recent_failed_task after real retention")
+                .is_some(),
+            "a terminal row younger than the retention window must survive"
+        );
+
+        // Clean up the still-live rows manually so the test doesn't leak worktrees.
+        for task_id in [paused_task, recent_failed_task] {
+            let row = evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id)
+                .await
+                .expect("get row for manual cleanup")
+                .expect("row present");
+            remove_worktree(repo.path(), &PathBuf::from(&row.worktree_path))
+                .await
+                .expect("manual cleanup");
+            evohime_storage::task_worktrees::delete_task_worktree(&state.pool, task_id)
+                .await
+                .expect("delete row for manual cleanup");
+        }
     }
 ```
 
@@ -1268,7 +1551,7 @@ Run: `cargo clean` (only if no further verification in this session depends on t
 In `docs/roadmap.md`, change the `7.107` row's status from `⬜` to `✅` and fill in the evidence column, e.g.:
 
 ```
-| 7.107 | Worktree-aware multi-checkout agent (parallel tasks isolated) | L | ✅ | `task_worktrees` table; detached-HEAD worktrees under OS temp dir, provisioned atomically alongside `task_cancellations`; squash merge-back via `git apply --3way --index` under `workspace_merge_lock`; startup cleanup of non-resumable stale worktrees |
+| 7.107 | Worktree-aware multi-checkout agent (parallel tasks isolated) | L | ✅ | `task_worktrees` table; detached-HEAD worktrees under OS temp dir, provisioned atomically alongside `task_cancellations` (idempotent, rolled back on DB failure); squash merge-back via `git apply --3way --index` under a per-workspace `workspace_merge_locks` registry, with primary-checkout reset on conflict; startup cleanup keyed to live task status, retained for terminal tasks past `EVOHIME_WORKTREE_RETENTION_SECS` |
 ```
 
 Also update the "остался `7.107`" sentences in `AGENTS.md`, `docs/current-state.md`, `docs/architecture.md`, and `docs/development-plan.md` to reflect Stage 7 being fully complete.
