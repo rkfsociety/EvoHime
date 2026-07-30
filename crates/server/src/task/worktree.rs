@@ -166,6 +166,54 @@ pub(crate) async fn provision_worktree(
     Ok(())
 }
 
+pub(crate) async fn finalize_worktree(
+    state: &Arc<AppState>,
+    task_id: Uuid,
+    primary_root: &Path,
+    row: &evohime_storage::task_worktrees::TaskWorktreeRow,
+) -> Result<(), WorktreeError> {
+    let lock = state.merge_lock_for(primary_root).await;
+    let _guard = lock.lock().await;
+
+    let worktree_path = PathBuf::from(&row.worktree_path);
+    // On Err (conflict), merge_worktree_into_primary has already restored
+    // just its own changed paths on primary_root — the row and worktree
+    // are deliberately left in place here for manual recovery (design
+    // doc, Merge-back step 8), so this function's caller (pipeline.rs) is
+    // free to just propagate the error as a task failure.
+    merge_worktree_into_primary(&worktree_path, primary_root, &row.base_commit_sha, task_id).await?;
+
+    // By this point the merge has already committed successfully on
+    // primary_root — the task's user-visible work is done. A failure past
+    // this point is pure housekeeping (a file lock on Windows, a transient
+    // DB error), not work loss: log it and leave the worktree/row for the
+    // next server-startup cleanup pass to retry, rather than reporting the
+    // task itself as failed.
+    //
+    // git worktree remove requires --force here: the worktree is still
+    // "dirty" relative to its own base_commit_sha (nothing was reset inside
+    // it), even though its diff already landed on primary_root.
+    if let Err(error) = remove_worktree(primary_root, &worktree_path).await {
+        tracing::warn!(%task_id, %error, "failed to remove worktree after a successful merge; leaving it for startup cleanup to retry");
+        // Deliberately does NOT call `delete_task_worktree` here even though
+        // the merge itself already succeeded: keeping the row is what lets
+        // `cleanup_stale_worktrees` (Task 7) retry through the git-aware
+        // `remove_worktree` (which also runs `git worktree prune`) on the
+        // next pass. Deleting the row instead would only hand this
+        // directory to `cleanup_orphaned_worktree_directories`'s plain
+        // `remove_dir_all` sweep — which never touches `.git/worktrees/`
+        // metadata in `primary_root` — reintroducing the same leftover-
+        // metadata problem Task 2's `remove_worktree` fix exists to close.
+        return Ok(());
+    }
+
+    if let Err(error) = evohime_storage::task_worktrees::delete_task_worktree(&state.pool, task_id).await {
+        tracing::warn!(%task_id, %error, "failed to delete task_worktrees row after a successful merge; leaving it for startup cleanup to retry");
+    }
+
+    Ok(())
+}
+
 pub(crate) async fn add_worktree(
     repo: &Path,
     worktree_path: &Path,

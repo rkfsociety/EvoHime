@@ -74,11 +74,22 @@ pub(crate) async fn run_task_pipeline(
         .workspace_path
         .clone()
         .unwrap_or_else(|| state.workspace_root.to_string_lossy().into_owned());
-    let workspace_root = task
+    // `primary_workspace_root` is the task's own semantic project root — the
+    // same value used for memory scoping/UI display, and what merge-back
+    // must land its commit on. `workspace_root` may be overridden below to
+    // point at an isolated worktree; memory/UI scoping never is.
+    let primary_workspace_root = task
         .workspace_path
         .as_deref()
         .map(PathBuf::from)
         .unwrap_or_else(|| state.workspace_root.clone());
+    let worktree_row = evohime_storage::task_worktrees::get_task_worktree(&state.pool, task.id)
+        .await
+        .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
+    let workspace_root = worktree_row
+        .as_ref()
+        .map(|row| PathBuf::from(&row.worktree_path))
+        .unwrap_or_else(|| primary_workspace_root.clone());
     let attachment_context = if emit_started {
         claim_attachment_context(state, session_id, task.id, &workspace_root)
             .await
@@ -201,12 +212,7 @@ pub(crate) async fn run_task_pipeline(
         operator_id: session.operator_id,
         user_message: agent_user_message,
         created_at: task.created_at,
-        demo_file_path: task
-            .workspace_path
-            .as_deref()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| state.workspace_root.clone())
-            .join("docs/sample-context.md"),
+        demo_file_path: workspace_root.join("docs/sample-context.md"),
         workspace_root,
         model_route,
         model: task.model.clone(),
@@ -472,6 +478,12 @@ pub(crate) async fn run_task_pipeline(
             return Err((task.id, ApiError::Internal(error.to_string())));
         }
     };
+
+    if let Some(row) = &worktree_row {
+        crate::task::worktree::finalize_worktree(state, task.id, &primary_workspace_root, row)
+            .await
+            .map_err(|error| (task.id, ApiError::Internal(error.to_string())))?;
+    }
 
     evohime_storage::insert_message(
         &state.pool,
