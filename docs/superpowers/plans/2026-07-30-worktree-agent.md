@@ -1421,16 +1421,39 @@ pub(crate) async fn provision_worktree(
     task_id: Uuid,
     primary_root: &Path,
 ) -> Result<(), WorktreeError> {
-    // Idempotent: nothing in this design calls provision_worktree twice for
-    // the same task today, but if a future retry path ever did, calling
-    // `git worktree add` again would fail outright since the directory
-    // already exists. Treat an existing row as already-done instead.
-    if evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id)
-        .await
-        .map_err(|error| WorktreeError::Io(format!("failed to check for existing task_worktrees row: {error}")))?
-        .is_some()
+    // Idempotent: Task 5, Step 5's `TaskRetry` teardown calls this again for
+    // a task_id that already had a row once, after deleting the old one —
+    // so a plain "row exists → already done" check isn't quite enough on
+    // its own. A row can also outlive its own worktree directory: if a
+    // caller's own removal succeeds but the matching `delete_task_worktree`
+    // afterward fails (e.g. a transient DB blip right after a successful
+    // `git worktree remove`), the row is left pointing at a directory that
+    // no longer exists. Treating that phantom row as "already provisioned"
+    // would make every later call here silently no-op forever, while
+    // `pipeline.rs` keeps trying to run an agent against a workspace_root
+    // that was never actually recreated. So: an existing row only means
+    // "already done" if its directory is actually still there; otherwise
+    // treat it as stale and reprovision fresh, same as a missing row.
+    if let Some(existing) =
+        evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id)
+            .await
+            .map_err(|error| WorktreeError::Io(format!("failed to check for existing task_worktrees row: {error}")))?
     {
-        return Ok(());
+        if Path::new(&existing.worktree_path).exists() {
+            return Ok(());
+        }
+        tracing::warn!(
+            %task_id,
+            worktree_path = %existing.worktree_path,
+            "found a task_worktrees row with no matching directory; discarding it and reprovisioning"
+        );
+        if let Err(error) =
+            evohime_storage::task_worktrees::delete_task_worktree(&state.pool, task_id).await
+        {
+            return Err(WorktreeError::Io(format!(
+                "failed to delete phantom task_worktrees row before reprovisioning: {error}"
+            )));
+        }
     }
 
     let base_sha = rev_parse_head(primary_root).await?;
@@ -1741,6 +1764,8 @@ A task that failed for a reason *other* than a merge conflict (e.g. the agent it
 
 Unlike `TaskPlanApprove`/`TaskResume` (which just re-spawn `resume_task_run` and rely on `pipeline.rs`'s existing `get_task_worktree` lookup — correct as-is, since a task that was never isolated to begin with is protected from colliding with a *new* concurrent task by Step 3's fix keeping its `task_cancellations` entry alive through the pause, not by anything re-checked here), `TaskRetry`'s current handler (`crates/server/src/ws.rs:492-557`, confirmed by direct inspection) never calls `provision_worktree` or recomputes `is_concurrent` at all — it unconditionally inserts a token and spawns `resume_task_run`. That's fine as long as the row from the task's original (possibly unisolated) start is left untouched. It stops being fine the moment this step's own teardown deletes that row: with no row, `pipeline.rs` falls back to `primary_workspace_root` unconditionally, so a retried task would always run unisolated after teardown — even if some *other* task is genuinely running concurrently against the same workspace at that exact moment, which is precisely the collision this whole feature exists to prevent. Teardown-without-recompute is not an option; the fix has to redo the atomic check.
 
+The teardown itself must also be gated on the task actually *being* `failed` before this handler touches its worktree. `crates/server/src/ws.rs`'s current `TaskRetry` handler has no precondition check at all — it calls `retry_task` (which enforces the `failed → retrying` FSM transition internally and is silently ignored via `let _ = ...` on failure) and unconditionally emits `TaskStatusChanged`/`ActionLogged` regardless of whether that transition actually happened, unlike e.g. `TaskPlanApprove`'s explicit `pending` precondition check (`ws.rs:244-248`) before it does anything real. That existing looseness is tolerable today because nothing in the unconditional part has a destructive side effect. Adding worktree teardown changes that: if `TaskRetry` is sent for a task that *isn't* actually `failed` — a stale client message, a race with another status change — blindly tearing down `task_worktrees` for it would rip an in-use worktree out from under a task that's genuinely still `running`/`paused` and actively isolated. The fix must check the already-loaded `task`'s own status before doing anything destructive, not rely on `retry_task`'s internal FSM check running (silently ignored) after the fact.
+
 In `crates/server/src/ws.rs`'s `ClientCommand::TaskRetry` handler, replace the existing body from `let task = match evohime_storage::load_task(...)` (`ws.rs:493`) through the `let state_for_task = state.clone();`/`tokio::spawn(async move { ... });` block (`ws.rs:533-556`) with:
 
 ```rust
@@ -1752,6 +1777,20 @@ In `crates/server/src/ws.rs`'s `ClientCommand::TaskRetry` handler, replace the e
                                 Some(task) => task,
                                 None => continue,
                             };
+                            // Precondition gate for the worktree teardown below
+                            // (new in 7.107): only a task that is actually
+                            // `failed` right now may have its worktree torn
+                            // down. Without this check, a stale/invalid
+                            // `TaskRetry` for a task that's genuinely still
+                            // `running` or `paused` would destroy a worktree
+                            // still in active use — `retry_task`'s own FSM
+                            // check happens too late (after teardown) and its
+                            // failure is silently ignored (`let _ = ...`)
+                            // exactly as it already is below, so it cannot be
+                            // relied on to prevent this.
+                            if task.status != "failed" {
+                                continue;
+                            }
                             // Discard any worktree left behind by a prior failed
                             // attempt (whether it failed mid-merge or mid-agent-run)
                             // rather than resuming into potentially stale/dirty
