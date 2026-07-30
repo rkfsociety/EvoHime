@@ -45,19 +45,40 @@ its changes back into the primary checkout automatically.
 
 Isolation is decided once, at task start, using the existing
 `task_cancellations` map as the source of truth for "is another task
-already running against this workspace":
+already running against this workspace". `task_cancellations` is
+`Arc<tokio::sync::Mutex<HashMap<Uuid, CancellationToken>>>` — the same
+`tokio::sync::Mutex` type used for every other `AppState` map, which never
+poisons on panic (its `lock()` is infallible, unlike `std::sync::Mutex`).
+`workspace_merge_lock` (below) must use the same type for the same reason.
 
-- Before registering the new task's `CancellationToken`, check whether the
-  map is non-empty.
-- If empty: proceed exactly as today, `AgentLoopConfig.workspace_root =
-  state.workspace_root.clone()`.
-- If non-empty: allocate a worktree (below) and set
+The existing code at `crates/server/src/ws.rs:126` reads
+`task_cancellations.lock().await.len()` for rate limiting and drops the
+guard immediately; a separate lock/insert happens later at
+`ws.rs:169-173`. That gap is a real TOCTOU race — two tasks starting within
+the same window can both observe an empty map and both run unisolated
+against the shared checkout. The isolation decision must not repeat this
+mistake: the "is the map non-empty" check and the `insert` of the new
+task's `CancellationToken` happen under a **single** lock acquisition:
+
+```rust
+let is_concurrent = {
+    let mut guard = state.task_cancellations.lock().await;
+    let is_concurrent = !guard.is_empty();
+    guard.insert(task_id, token.clone());
+    is_concurrent
+}; // guard dropped here, decision already made atomically
+```
+
+- `is_concurrent == false`: proceed exactly as today,
+  `AgentLoopConfig.workspace_root = state.workspace_root.clone()`.
+- `is_concurrent == true`: allocate a worktree (below) and set
   `AgentLoopConfig.workspace_root` to the worktree path instead.
 
 This means the *first* task to start after an idle period always uses the
 primary checkout directly; only the second and later concurrently-running
 tasks get worktrees. This keeps the zero-concurrency path (the overwhelming
-common case) exactly as fast and simple as it is today.
+common case) exactly as fast and simple as it is today, and closes the race
+the existing rate-limit check already had a milder version of.
 
 ### Worktree lifecycle
 
@@ -69,43 +90,68 @@ common case) exactly as fast and simple as it is today.
 - The agent runtime, tool registry, and all filesystem/shell/git tool calls
   for that task operate against this path exactly as they would against
   `workspace_root` — no other code path changes.
-- A new `AppState` field, `Arc<Mutex<()>>` (`workspace_merge_lock`), is
-  added to serialize the merge-back step (below) across concurrently
-  finishing tasks.
+- A new `AppState` field, `Arc<tokio::sync::Mutex<()>>`
+  (`workspace_merge_lock`), is added to serialize the merge-back step
+  (below) across concurrently finishing tasks.
 
 ### Merge-back
 
 On successful task completion, before the task transitions to
 `Completed`:
 
-1. Acquire `workspace_merge_lock`.
-2. Compute the diff of the worktree against the commit it was created from
-   (`git diff <base_commit>` inside the worktree; the base commit is
-   recorded when the worktree is created).
-3. Apply that diff to `workspace_root` with a 3-way merge
+1. Acquire `workspace_merge_lock` (`tokio::sync::Mutex<()>`, same rationale
+   as `task_cancellations` above — must not poison).
+2. Inside the worktree, run `git add -A` first. `git diff <base_commit>`
+   alone never shows untracked files regardless of the commit it's
+   compared against — a file the agent created but never staged would
+   silently be dropped from the merge otherwise. Staging everything first
+   makes the following diff/apply steps see the complete set of changes.
+3. Compute the diff against the commit the worktree was created from
+   (`git diff --cached <base_commit>`; the base commit is recorded when the
+   worktree is created).
+4. Apply that diff to `workspace_root` with a 3-way merge
    (`git apply --3way`), so that changes landed on `workspace_root` by
    *other* tasks in the meantime (each merged the same way) are tolerated
-   as long as they don't textually conflict.
-4. On success: remove the worktree (`git worktree remove --force` +
-   `git worktree prune`) and release the lock.
-5. On failure (patch does not apply cleanly): leave the worktree in place,
-   fail the task with a message that includes the worktree path, and
-   release the lock. No automatic conflict resolution — this is a rare
-   edge case (two concurrent tasks touching the same lines) and is surfaced
-   for manual inspection rather than guessed at.
+   as long as they don't textually conflict. `--3way` already stages
+   cleanly-merged hunks into `workspace_root`'s index as part of applying.
+5. On a clean apply: run `git commit` on `workspace_root` to land the
+   result as an actual commit, not a dirty working tree sitting on top of
+   an otherwise-clean `HEAD`. The task's own `git.commit` call(s) made
+   *inside* the worktree (per the "commit continuously" rule) already
+   captured proper messages there; replaying each of those message
+   verbatim on `workspace_root` is unnecessary complexity, so this is a
+   single squash commit, message `"agent: task <task_id> (worktree
+   merge)"`. This keeps `workspace_root` in the same clean-HEAD state the
+   "commit continuously" rule expects, whether or not this task actually
+   needed isolation.
+6. Remove the worktree (`git worktree remove --force` + `git worktree
+   prune`) and release the lock.
+7. On failure (patch does not apply cleanly, or the commit step fails):
+   leave the worktree in place, fail the task with a message that includes
+   the worktree path, and release the lock. No automatic conflict
+   resolution — this is a rare edge case (two concurrent tasks touching the
+   same lines) and is surfaced for manual inspection rather than guessed
+   at.
 
 Cancellation follows the same shape as failure: the worktree is left in
 place (not silently deleted) so in-progress work isn't lost, and the task
 transitions to `Cancelled` as today.
 
-No commits happen inside the worktree, and no commits happen automatically
-on `workspace_root` either — merge-back only updates the working tree/index
-of the primary checkout, exactly like the agent's own `filesystem.write`
-calls would. The existing `git.commit` tool (used by the agent itself
-during the task, per the "commit continuously" rule) is what actually
-creates commits; that tool call itself happened inside the worktree and its
-effect (the staged/committed state) is part of the diff carried back in
-step 2–3.
+### Cleanup on server restart
+
+`.evohime/worktrees/<task_id>/` directories can be left on disk if the
+server crashes mid-task. At startup, after `recover_after_restart`
+(`crates/task-engine/src/lib.rs:136`) determines which tasks are
+resumable, the server walks `.evohime/worktrees/`:
+
+- a directory whose `task_id` is among the resumable tasks is kept — the
+  task will continue using it;
+- every other directory (task already terminal, or not going to be
+  auto-resumed per `RestartResumePolicy`) is removed, followed by
+  `git worktree prune` to drop the now-stale `.git/worktrees/` metadata.
+
+This runs unconditionally at startup (cheap directory scan when the folder
+is empty or absent) so orphaned worktrees never accumulate indefinitely.
 
 ### Error handling / fallback
 
@@ -120,17 +166,18 @@ step 2–3.
 ## Data flow summary
 
 ```
-task start
-  -> task_cancellations non-empty?
-       no  -> workspace_root (unchanged path)
-       yes -> git worktree add --detach .evohime/worktrees/<task_id> HEAD
-              -> AgentLoopConfig.workspace_root = worktree path
+task start (single task_cancellations lock guard covers both steps)
+  -> is_concurrent = !task_cancellations.is_empty(); insert(task_id, token)
+       false -> workspace_root (unchanged path)
+       true  -> git worktree add --detach .evohime/worktrees/<task_id> HEAD
+                -> AgentLoopConfig.workspace_root = worktree path
 task runs (filesystem/shell/git tools operate on worktree path)
 task completes (success)
   -> lock workspace_merge_lock
-  -> git diff <base_commit> (in worktree)
-  -> git apply --3way (against workspace_root)
-  -> ok: remove worktree, unlock
+  -> git add -A (in worktree, catches untracked files)
+  -> git diff --cached <base_commit> (in worktree)
+  -> git apply --3way (against workspace_root, stages clean hunks)
+  -> ok: git commit (workspace_root), remove worktree, unlock
   -> conflict: fail task, keep worktree, unlock
 ```
 
@@ -148,3 +195,10 @@ task completes (success)
   still present in `.evohime/worktrees/<task_id>/` afterward.
 - A fallback test: `workspace_root` is a plain (non-git) temp directory;
   task execution proceeds without isolation and without error.
+- A merge-back test asserting `workspace_root`'s `HEAD` actually advances
+  (a real commit exists) after a successful merge, including a case where
+  the worktree only ever created an untracked file and never called
+  `git.commit` itself.
+- A startup-cleanup test: a stale `.evohime/worktrees/<id>/` directory
+  whose task is terminal is removed on server start; one whose task is
+  resumable is kept.
