@@ -4,6 +4,7 @@ pub mod helpers;
 pub mod memory;
 pub mod pipeline;
 pub mod steps;
+pub(crate) mod worktree;
 
 pub(crate) use helpers::*;
 pub(crate) use memory::*;
