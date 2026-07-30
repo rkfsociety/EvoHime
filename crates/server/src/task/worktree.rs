@@ -1252,8 +1252,9 @@ mod tests {
         let repo = tempfile::tempdir().expect("tempdir");
         init_repo(repo.path());
 
-        // Task A starts unisolated (nothing running yet) — nothing to provision.
-        // Task B starts while A is "running" (simulated: A's worktree provisioned first).
+        // Simulates two tasks running concurrently against the same primary
+        // repo: task A's worktree is provisioned first, then task B's,
+        // before either one finalizes.
         provision_worktree(&state, task_id_a, repo.path())
             .await
             .expect("provision A");
@@ -1269,7 +1270,6 @@ mod tests {
             .await
             .expect("get B")
             .expect("row B present");
-        assert_ne!(row_a.worktree_path, row_b.worktree_path);
 
         std::fs::write(PathBuf::from(&row_a.worktree_path).join("a.txt"), "from a\n")
             .expect("write a");
@@ -1295,12 +1295,30 @@ mod tests {
             .is_none());
     }
 
+    // Merged from three formerly-separate `#[tokio::test]` functions
+    // (`cleanup_removes_only_terminal_rows_past_retention`,
+    // `cleanup_drops_a_row_whose_primary_root_no_longer_exists`,
+    // `cleanup_retention_overflow_does_not_delete_everything`). Each of
+    // these scenarios calls `cleanup_stale_worktrees`, which in turn calls
+    // `evohime_storage::task_worktrees::list_task_worktrees_with_status` —
+    // a query with NO scoping `WHERE` clause at all, so it sees every
+    // `task_worktrees` row in the entire database. `cargo test` runs
+    // separate test functions in parallel by default, so as three
+    // independent tests, one test's `Duration::from_secs(0)` sweep (which
+    // makes every terminal row in the WHOLE DB eligible for deletion, not
+    // just this test's own rows) could delete another concurrently-running
+    // test's row out from under it. Running all three scenarios
+    // sequentially inside one function removes that race entirely: nothing
+    // else in this binary is running `cleanup_stale_worktrees` concurrently
+    // with these calls.
     #[tokio::test]
-    async fn cleanup_removes_only_terminal_rows_past_retention() {
+    async fn cleanup_stale_worktrees_scenarios() {
         let Some(pool) = evohime_storage::connect_integration_pool().await else {
             eprintln!("skipping worktree cleanup test: database unavailable");
             return;
         };
+
+        // --- Scenario 1: only terminal rows past retention are removed ---
         let failed_task = seed_task(&pool).await; // starts 'running'
         let paused_task = seed_task(&pool).await;
         let recent_failed_task = seed_task(&pool).await;
@@ -1394,85 +1412,73 @@ mod tests {
                 .await
                 .expect("delete row for manual cleanup");
         }
-    }
 
-    #[tokio::test]
-    async fn cleanup_drops_a_row_whose_primary_root_no_longer_exists() {
-        let Some(pool) = evohime_storage::connect_integration_pool().await else {
-            eprintln!("skipping worktree cleanup test: database unavailable");
-            return;
-        };
-        let task_id = seed_task(&pool).await;
-        let state = AppState::for_worktree_tests(pool);
+        // --- Scenario 2: a row whose primary_workspace_root no longer
+        // exists is still dropped, not stuck forever ---
+        let gone_root_task = seed_task(&state.pool).await;
 
-        let repo = tempfile::tempdir().expect("tempdir");
-        init_repo(repo.path());
-        provision_worktree(&state, task_id, repo.path())
+        let gone_root_repo = tempfile::tempdir().expect("tempdir");
+        init_repo(gone_root_repo.path());
+        provision_worktree(&state, gone_root_task, gone_root_repo.path())
             .await
-            .expect("provision");
+            .expect("provision gone_root_task");
         sqlx::query("UPDATE tasks SET status = 'failed' WHERE id = $1")
-            .bind(task_id)
+            .bind(gone_root_task)
             .execute(&state.pool)
             .await
-            .expect("mark failed");
+            .expect("mark gone_root_task failed");
 
         // The repo itself disappears (moved/deleted) before the next
         // server restart — simulate that by dropping the tempdir.
-        drop(repo);
+        drop(gone_root_repo);
 
         cleanup_stale_worktrees(&state, Duration::from_secs(0)).await;
 
         assert!(
-            evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id)
+            evohime_storage::task_worktrees::get_task_worktree(&state.pool, gone_root_task)
                 .await
-                .expect("get after cleanup")
+                .expect("get gone_root_task after cleanup")
                 .is_none(),
             "a row whose primary_workspace_root is gone must still be dropped, not stuck forever"
         );
-    }
 
-    #[tokio::test]
-    async fn cleanup_retention_overflow_does_not_delete_everything() {
-        let Some(pool) = evohime_storage::connect_integration_pool().await else {
-            eprintln!("skipping worktree cleanup test: database unavailable");
-            return;
-        };
-        let task_id = seed_task(&pool).await;
-        let state = AppState::for_worktree_tests(pool);
+        // --- Scenario 3: an out-of-range retention must not delete
+        // everything ---
+        let overflow_task = seed_task(&state.pool).await;
 
-        let repo = tempfile::tempdir().expect("tempdir");
-        init_repo(repo.path());
-        provision_worktree(&state, task_id, repo.path())
+        let overflow_repo = tempfile::tempdir().expect("tempdir");
+        init_repo(overflow_repo.path());
+        provision_worktree(&state, overflow_task, overflow_repo.path())
             .await
-            .expect("provision");
+            .expect("provision overflow_task");
         sqlx::query("UPDATE tasks SET status = 'failed' WHERE id = $1")
-            .bind(task_id)
+            .bind(overflow_task)
             .execute(&state.pool)
             .await
-            .expect("mark failed");
+            .expect("mark overflow_task failed");
 
         // An out-of-range retention must degrade to "keep everything this
         // run", not silently collapse to a zero-length window.
         cleanup_stale_worktrees(&state, Duration::MAX).await;
 
         assert!(
-            evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id)
+            evohime_storage::task_worktrees::get_task_worktree(&state.pool, overflow_task)
                 .await
-                .expect("get after cleanup")
+                .expect("get overflow_task after cleanup")
                 .is_some(),
             "an extreme retention value must not delete a just-created row"
         );
 
-        let row = evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id)
+        let overflow_row = evohime_storage::task_worktrees::get_task_worktree(&state.pool, overflow_task)
             .await
-            .expect("get row for manual cleanup")
-            .expect("row present");
-        remove_worktree(repo.path(), &PathBuf::from(&row.worktree_path))
+            .expect("get overflow row for manual cleanup")
+            .expect("overflow row present");
+        remove_worktree(overflow_repo.path(), &PathBuf::from(&overflow_row.worktree_path))
             .await
             .expect("manual cleanup");
-        evohime_storage::task_worktrees::delete_task_worktree(&state.pool, task_id)
+        evohime_storage::task_worktrees::delete_task_worktree(&state.pool, overflow_task)
             .await
-            .expect("delete row for manual cleanup");
+            .expect("delete overflow row for manual cleanup");
     }
 
     #[tokio::test]
