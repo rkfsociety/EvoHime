@@ -185,7 +185,7 @@ pub(crate) async fn emit_event(
 /// the same directory the paused task will resume into later (7.107).
 pub(crate) async fn release_task_cancellation_if_terminal(state: &Arc<AppState>, task_id: Uuid) {
     let is_terminal = match evohime_storage::load_task(&state.pool, task_id).await {
-        Ok(Some(task)) => matches!(task.status.as_str(), "completed" | "failed" | "cancelled"),
+        Ok(Some(task)) => crate::task::worktree::TERMINAL_TASK_STATUSES.contains(&task.status.as_str()),
         Ok(None) => true, // task row is gone entirely — nothing left to track
         Err(error) => {
             tracing::warn!(%task_id, %error, "failed to check task status before releasing task_cancellations entry; leaving it in place");

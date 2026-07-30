@@ -145,6 +145,18 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
     tokio::spawn(async move {
         worker_retention_loop(retention_state, retention_days).await;
     });
+    let worktree_retention = duration_secs_env_local("EVOHIME_WORKTREE_RETENTION_SECS", 24 * 60 * 60);
+    let worktree_cleanup_interval =
+        duration_secs_env_local("EVOHIME_WORKTREE_CLEANUP_INTERVAL_SECS", 60 * 60);
+    let worktree_cleanup_state = state.clone();
+    tokio::spawn(async move {
+        crate::task::worktree::worktree_cleanup_loop(
+            worktree_cleanup_state,
+            worktree_cleanup_interval,
+            worktree_retention,
+        )
+        .await;
+    });
     let health_state = state.clone();
     let health_interval = config.worker_health_interval;
     let health_stale = config.worker_health_stale;
@@ -273,6 +285,32 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
         .await
         .context("recover tasks after restart")?;
     let resume_policy = evohime_task_engine::RestartResumePolicy::from_env();
+
+    crate::task::worktree::cleanup_stale_worktrees(&state, worktree_retention).await;
+    crate::task::worktree::cleanup_orphaned_worktree_directories(&state).await;
+
+    let non_terminal_tasks = evohime_storage::list_tasks(&state.pool, None)
+        .await
+        .context("list tasks for task_cancellations startup seed")?
+        .into_iter()
+        .filter(|task| !crate::task::worktree::TERMINAL_TASK_STATUSES.contains(&task.status.as_str()));
+    {
+        let mut cancellations = state.task_cancellations.lock().await;
+        for task in non_terminal_tasks {
+            // A fresh token here is never wired to anything that can
+            // actually cancel this specific task mid-flight — it exists
+            // purely so this entry's *presence* makes `is_concurrent` true
+            // for any task starting before this one resumes or is
+            // cancelled. Real cancellation of an already-paused task goes
+            // through `evohime_task_engine::cancel_task` directly (see
+            // `TaskCancel`, Task 5 Step 4), which doesn't depend on this
+            // token at all.
+            cancellations
+                .entry(task.id)
+                .or_insert_with(tokio_util::sync::CancellationToken::new);
+        }
+    }
+
     if resume_policy.auto_resume_mutating {
         info!("EVOHIME_AUTO_RESUME_ON_RESTART enabled: mutating tasks may auto-resume");
     }

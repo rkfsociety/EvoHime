@@ -214,6 +214,171 @@ pub(crate) async fn finalize_worktree(
     Ok(())
 }
 
+/// The single, centralized definition of "terminal" for a task's
+/// `evohime_storage::TaskRow.status` string. Both this module's cleanup and
+/// `crate::task::helpers::release_task_cancellation_if_terminal` (Task 5)
+/// key off exactly this list — if a new status is ever added upstream
+/// (`evohime_protocol::TaskStatus`), it must be classified here in one
+/// place, not re-derived independently in multiple call sites where one of
+/// them could silently drift and either leak a worktree that should have
+/// been cleaned, or — worse — sweep one still needed by an active task.
+pub(crate) const TERMINAL_TASK_STATUSES: &[&str] = &["completed", "failed", "cancelled"];
+
+/// Removes worktree directories (and their `task_worktrees` rows) whose
+/// owning task has reached a terminal status (`completed`/`failed`/
+/// `cancelled`) and is older than `retention`. A `completed` row should
+/// never actually be found here — a successful merge-back deletes its own
+/// row before the task transitions to `completed` — but is handled the
+/// same way rather than treated as a bug if a crash landed one anyway.
+///
+/// Rows for non-terminal tasks (`running`, `paused`, `cancelling`,
+/// `retrying`) are never touched regardless of age: the task may still
+/// resume and reuse that exact worktree. Terminal rows younger than
+/// `retention` are left for a later startup, giving an operator a window
+/// to inspect a worktree kept around after a merge conflict before it's
+/// swept.
+pub(crate) async fn cleanup_stale_worktrees(state: &Arc<AppState>, retention: Duration) {
+    let entries = match evohime_storage::task_worktrees::list_task_worktrees_with_status(&state.pool).await {
+        Ok(entries) => entries,
+        Err(error) => {
+            warn!(%error, "failed to list task_worktrees for startup cleanup");
+            return;
+        }
+    };
+
+    // `chrono::Duration::from_std` returns `Err` for out-of-range inputs.
+    // Falling back to `.unwrap_or_default()` there would silently give a
+    // *zero*-length window — making `cutoff` equal to "now" and making every
+    // terminal row immediately eligible for deletion regardless of its real
+    // age, the exact opposite of a retention grace period. Fall back to an
+    // effectively-unbounded window instead, so an extreme/misconfigured
+    // value degrades to "keep everything this run" rather than "keep
+    // nothing."
+    // `365 * 100` is ~99.7 real years (leap years aren't accounted for), not
+    // exactly 100 — irrelevant to this fallback's actual purpose ("keep
+    // everything indefinitely for this run"), but naming it precisely
+    // avoids implying a guarantee this constant doesn't make.
+    let retention_chrono =
+        chrono::Duration::from_std(retention).unwrap_or_else(|_| chrono::Duration::days(365 * 100));
+    let cutoff = chrono::Utc::now() - retention_chrono;
+
+    for entry in entries {
+        let row = entry.row;
+        if !TERMINAL_TASK_STATUSES.contains(&entry.task_status.as_str()) {
+            continue;
+        }
+        if row.created_at > cutoff {
+            continue;
+        }
+
+        let worktree_path = PathBuf::from(&row.worktree_path);
+        let primary_root = PathBuf::from(&row.primary_workspace_root);
+
+        if !primary_root.exists() {
+            // The repo itself is gone (moved/deleted) — `git -C primary_root
+            // worktree prune` can never succeed, so retrying forever would
+            // leave this row stuck permanently. Best-effort remove the
+            // worktree directory directly (no git involved, nothing left to
+            // prune metadata from) and drop the row regardless of outcome.
+            let _ = tokio::fs::remove_dir_all(&worktree_path).await;
+            if let Err(error) =
+                evohime_storage::task_worktrees::delete_task_worktree(&state.pool, row.task_id).await
+            {
+                warn!(task_id = %row.task_id, %error, "failed to delete task_worktrees row for a worktree whose primary_workspace_root no longer exists");
+            }
+            continue;
+        }
+
+        // Take the same per-primary-root lock a normal merge-back would
+        // (`AppState::merge_lock_for`, Task 4). Without it, this cleanup
+        // pass's `git worktree remove`/`prune` (both touch `.git/worktrees/`
+        // metadata under primary_root's own `.git` directory) could run
+        // concurrently with a *different*, still-active task's
+        // `finalize_worktree` targeting the same primary_root — two git
+        // invocations racing on the same repository's internal state.
+        let lock = state.merge_lock_for(&primary_root).await;
+        let _guard = lock.lock().await;
+        if let Err(error) = remove_worktree(&primary_root, &worktree_path).await {
+            warn!(
+                task_id = %row.task_id,
+                %error,
+                "failed to remove stale worktree during startup cleanup"
+            );
+            // Keep the row — retry on the next restart rather than losing
+            // track of a directory that may still exist.
+            continue;
+        }
+        if let Err(error) =
+            evohime_storage::task_worktrees::delete_task_worktree(&state.pool, row.task_id).await
+        {
+            warn!(task_id = %row.task_id, %error, "failed to delete stale task_worktrees row");
+        }
+    }
+}
+
+/// Sweeps `evohime-worktrees/` for directories with no matching
+/// `task_worktrees` row. `task_worktrees.task_id` is a foreign key on
+/// `tasks(id) ON DELETE CASCADE` — if a task or its owning session is ever
+/// deleted directly (session archival, restore/import flows), Postgres
+/// removes the `task_worktrees` row as a side effect without running any of
+/// this application's cleanup code, permanently leaking the physical
+/// directory. The row-driven pass above has no way to know such a directory
+/// ever existed; this reconciles against the filesystem directly instead.
+/// A missing row means nothing will ever reference this directory again, so
+/// a plain `remove_dir_all` is sufficient — there's no primary repository
+/// left worth pruning `git worktree` metadata against.
+pub(crate) async fn cleanup_orphaned_worktree_directories(state: &Arc<AppState>) {
+    let root = std::env::temp_dir().join("evohime-worktrees");
+    let mut entries = match tokio::fs::read_dir(&root).await {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+        Err(error) => {
+            warn!(%error, path = %root.display(), "failed to scan for orphaned worktree directories");
+            return;
+        }
+    };
+
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let Some(task_id) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| Uuid::parse_str(name).ok())
+        else {
+            continue; // not a task-id-named directory; leave it alone
+        };
+        let has_row = matches!(
+            evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id).await,
+            Ok(Some(_))
+        );
+        if has_row {
+            continue;
+        }
+        // A UUID-shaped directory name alone isn't proof this is actually
+        // one of our worktrees — an unrelated directory could coincidentally
+        // land here with a UUID-like name. Require the `.git` marker file
+        // every real worktree checkout has before deleting anything.
+        if !entry.path().join(".git").exists() {
+            continue;
+        }
+        if let Err(error) = tokio::fs::remove_dir_all(entry.path()).await {
+            warn!(%task_id, %error, "failed to remove orphaned worktree directory");
+        }
+    }
+}
+
+/// Runs both cleanup passes on a fixed interval so a stuck worktree (e.g.
+/// one whose removal in `finalize_worktree` kept failing) doesn't have to
+/// wait for the next server restart to be swept — mirrors
+/// `crate::worker_api::worker_retention_loop`'s shape.
+pub(crate) async fn worktree_cleanup_loop(state: Arc<AppState>, interval: Duration, retention: Duration) {
+    let mut ticker = tokio::time::interval(interval);
+    loop {
+        ticker.tick().await;
+        cleanup_stale_worktrees(&state, retention).await;
+        cleanup_orphaned_worktree_directories(&state).await;
+    }
+}
+
 pub(crate) async fn add_worktree(
     repo: &Path,
     worktree_path: &Path,
