@@ -39,9 +39,7 @@ impl PlanCandidate {
     /// Validates that confidence is in the valid range [0.0–1.0]
     /// and that the embedded score breakdown is also valid
     pub fn is_valid(&self) -> bool {
-        self.confidence >= 0.0
-            && self.confidence <= 1.0
-            && self.score_breakdown.is_valid()
+        self.confidence >= 0.0 && self.confidence <= 1.0 && self.score_breakdown.is_valid()
     }
 }
 
@@ -271,8 +269,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&original).expect("serializes");
-        let deserialized: PlanCandidate =
-            serde_json::from_str(&json).expect("deserializes");
+        let deserialized: PlanCandidate = serde_json::from_str(&json).expect("deserializes");
 
         assert_eq!(deserialized, original);
     }

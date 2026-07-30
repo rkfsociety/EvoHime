@@ -33,7 +33,6 @@ pub struct NewPlanningHistory {
     pub reasoning: String,
 }
 
-
 impl NewPlanningHistory {
     /// Validates and normalizes the entry (truncates reasoning if needed).
     /// Returns Ok(normalized_entry) or Err if validation fails.
@@ -160,20 +159,18 @@ mod tests {
         let entry = NewPlanningHistory {
             task_id: task,
             session_id: session,
-            candidates: vec![
-                PlanCandidate {
-                    id: "plan-1".to_string(),
-                    description: "Test plan".to_string(),
-                    confidence: 0.85,
-                    score_breakdown: ScoreBreakdown {
-                        similarity_score: 0.9,
-                        tool_success_rate: 0.85,
-                        complexity_penalty: 0.1,
-                        feedback_adjustment: 0.0,
-                        final_score: 0.8,
-                    },
+            candidates: vec![PlanCandidate {
+                id: "plan-1".to_string(),
+                description: "Test plan".to_string(),
+                confidence: 0.85,
+                score_breakdown: ScoreBreakdown {
+                    similarity_score: 0.9,
+                    tool_success_rate: 0.85,
+                    complexity_penalty: 0.1,
+                    feedback_adjustment: 0.0,
+                    final_score: 0.8,
                 },
-            ],
+            }],
             chosen_plan_id: Some("plan-1".to_string()),
             reasoning: "Selected based on similarity score".to_string(),
         };
@@ -403,11 +400,13 @@ mod tests {
         assert_eq!(deleted, 1u64); // Only the old entry should be deleted
 
         // Verify only one entry remains
-        let remaining = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM planning_history WHERE task_id = $1")
-            .bind(task)
-            .fetch_one(&pool)
-            .await
-            .expect("count");
+        let remaining = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM planning_history WHERE task_id = $1",
+        )
+        .bind(task)
+        .fetch_one(&pool)
+        .await
+        .expect("count");
 
         assert_eq!(remaining, 1i64);
     }

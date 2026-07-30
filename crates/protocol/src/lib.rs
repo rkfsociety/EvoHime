@@ -533,8 +533,7 @@ mod tests {
             true
         );
 
-        let decoded: ServerEvent =
-            serde_json::from_value(json).expect("event deserializes");
+        let decoded: ServerEvent = serde_json::from_value(json).expect("event deserializes");
         assert!(matches!(
             decoded,
             ServerEvent::AgentPlan {
