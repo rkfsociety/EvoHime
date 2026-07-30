@@ -1,8 +1,8 @@
 # EvoHime — Current State
 
-Last updated: 2026-07-29
+Last updated: 2026-07-30
 
-## Stage: 7 active (Stages 1–6 foundations complete, `7.105`–`7.106` and `7.108`–`7.116` complete; only `7.107` remains)
+## Stage: 7 complete (Stages 1–6 foundations complete; `7.1`–`7.116` complete, including `7.107` worktree-aware multi-checkout agent)
 
 Normal tasks use native ReAct tool calling: the model selects a tool, receives its observation, and selects the next action until `assistant.reply`. Tool-level permission approvals remain enabled for protected operations. Pending `filesystem.patch` calls in `Ask` mode carry a bounded typed `approval.required.review`; the browser shows the exact unified diff and only allows apply-once or deny.
 
@@ -19,8 +19,9 @@ Normal tasks use native ReAct tool calling: the model selects a tool, receives i
 - ✅ `7.114` OTLP metrics export and `/api/metrics/history` frontend trends
 - ✅ `7.115` Frontend performance — sourcemaps, error traces, lazy panels and Lighthouse pass
 - ✅ `7.116` Session recovery — keyset history pagination, reconnect backoff and paginated replay
+- ✅ `7.107` Worktree-aware multi-checkout agent — a second task starting while another runs against the same workspace is isolated in a detached-HEAD git worktree (`task_worktrees` table), merged back onto the primary checkout on success under a per-workspace lock, with startup/hourly cleanup and full `task_cancellations` lifecycle correctness across pauses, cancels, retries, restarts, and panics
 
-Stages 1–6 foundations are complete. Stage 7 hardening/product items through `7.116` are implemented except `7.107`; `7.105` (voice input / TTS) and `7.106` (diff review UI) are complete in the browser frontend, and `7.99` (cloud sync) is complete: owner-only `/api/sync/status|push|pull` move the operator `BackupDump` to/from `EVOHIME_SYNC_URL` with direction-aware history in `sync_runs` (pull enforces a 64 MiB body limit and checksum verification), `restore_backup` + CLI `evohime-import` restore a dump idempotently, and `EVOHIME_SYNC_AUTO_MINUTES` enables a background auto-push loop for the bootstrap owner.
+Stages 1–6 foundations are complete. **Stage 7 hardening/product items are fully implemented, `7.107` closing it out.** `7.105` (voice input / TTS) and `7.106` (diff review UI) are complete in the browser frontend, and `7.99` (cloud sync) is complete: owner-only `/api/sync/status|push|pull` move the operator `BackupDump` to/from `EVOHIME_SYNC_URL` with direction-aware history in `sync_runs` (pull enforces a 64 MiB body limit and checksum verification), `restore_backup` + CLI `evohime-import` restore a dump idempotently, and `EVOHIME_SYNC_AUTO_MINUTES` enables a background auto-push loop for the bootstrap owner.
 
 ## Crates
 
@@ -222,7 +223,7 @@ Frontend layout: `app.tsx` shell + `panels/` + typed `api/` + `hooks/useServerEv
 
 `7.51` реализован: Python worker и зеркальная Rust-валидация получили `text.classify`, `text.language` и `text.redact`; все три handler доступны также через `worker.run`.
 
-**Актуализация 2026-07-29:** `7.51`, product honesty для Sites/Scheduled, scheduler correctness, request context, task timeline telemetry, log safety, deep health checks, backup/export, cloud sync, browser sessions, eval harness, plugin trust/integrity, failure learning, mobile shell, voice input / TTS, diff review UI, threat model, cost limits, self-update, extended reasoning, semantic project search, plugin audit, OTLP trends, frontend performance и session recovery выполнены. Реально незакрыт только `7.107`.
+**Актуализация 2026-07-30:** `7.51`, product honesty для Sites/Scheduled, scheduler correctness, request context, task timeline telemetry, log safety, deep health checks, backup/export, cloud sync, browser sessions, eval harness, plugin trust/integrity, failure learning, mobile shell, voice input / TTS, diff review UI, threat model, cost limits, self-update, extended reasoning, semantic project search, plugin audit, OTLP trends, frontend performance, session recovery и worktree-aware multi-checkout agent выполнены. **Stage 7 полностью завершён.**
 
-1. **Stage 7** — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99`–`7.106` ✅; `7.108`–`7.116` ✅.
-2. **Ближайшая незавершённая задача:** `7.107` Worktree-aware multi-checkout agent.
+1. **Stage 7** — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99`–`7.116` ✅ (включая `7.107`). **Complete.**
+2. **Следующий шаг:** Stage 8 (Agent Intelligence, Plugin Runtime 2.0 & Local Excellence) — см. `docs/roadmap.md` § Этап 8.
