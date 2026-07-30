@@ -10,36 +10,28 @@ mod react;
 mod tool_budget;
 mod util;
 
-pub use tool_budget::{budget_tool_result_list, budget_tool_results, ToolResultBudget};
 
 use chrono::{DateTime, Utc};
 use evohime_model_gateway::{
-    providers::ChatMessage, providers::ChatRole, ModelGateway, NativeToolCall,
+    providers::ChatMessage, ModelGateway, NativeToolCall,
 };
-use evohime_project_index::ProjectIndex;
 use evohime_protocol::{PlanStep, ServerEvent};
-use evohime_tool_runtime::{ToolContext, ToolRegistry};
-use futures_util::StreamExt;
-use serde_json::json;
-use std::{collections::HashSet, path::PathBuf};
+use evohime_tool_runtime::ToolRegistry;
+use std::path::PathBuf;
 use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio::time::{interval, MissedTickBehavior};
 use uuid::Uuid;
 
 #[cfg(test)]
 use context::build_workspace_rules;
-use context::{build_memory_context, build_workspace_rules_async, relative_workspace_path};
-use execute::{execute_plan_steps, requires_mutation};
-use parse::{format_plan, parse_model_tool_calls};
-use plan::{
-    collect_plan_steps, parse_replan_decision, plan_needs_replan_cycle, planning_prompt_for_tools,
-    ReplanDecision, REPLAN_PROMPT,
+use util::emit;
+use evohime_protocol::planning::PlanCandidate;
+use crate::planning::{
+    generate_candidate_plans, score_candidate_plans, prune_to_top_n, ExperienceHandle,
+    PlanningConfig, PlanningError, ScoringWeights, MockLlmClient,
 };
-use util::{
-    collect_llm_stream_with_telemetry, emit, MAX_REPLAN_ROUNDS, MODEL_REQUEST_COOLDOWN,
-    PLANNING_TIMEOUT, RESPONSE_TIMEOUT,
-};
+use sqlx::PgPool;
+use evohime_storage::planning_history::{insert_planning_history, NewPlanningHistory};
 
 #[derive(Clone)]
 pub struct AgentConfig {
@@ -115,6 +107,235 @@ pub enum AgentError {
     },
 }
 
+/// Simple mock implementation of ExperienceHandle for initial planning integration
+struct SimpleExperienceHandle;
+
+impl ExperienceHandle for SimpleExperienceHandle {
+    fn search_similar(&self, _task_desc: &str) -> impl std::future::Future<Output = Result<f32, PlanningError>> + Send {
+        async move {
+            // Return neutral similarity score for now
+            Ok(0.5)
+        }
+    }
+}
+
+/// Context from planning phase to be injected into react loop
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct PlanningPhaseContext {
+    pub chosen_plan_description: Option<String>,
+}
+
+/// Execute the planning phase: generate candidates, score, prune, emit event, save history
+async fn run_planning_phase(
+    config: &AgentConfig,
+    gateway: &ModelGateway,
+    event_tx: &UnboundedSender<ServerEvent>,
+    pool: Option<&PgPool>,
+) -> PlanningPhaseContext {
+    // Default configuration values
+    let planning_config = PlanningConfig {
+        num_candidates: std::env::var("EVOHIME_PLANNING_NUM_CANDIDATES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(3),
+        top_n: std::env::var("EVOHIME_PLANNING_TOP_N")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1),
+        weights: ScoringWeights {
+            similarity: 0.3,
+            tool_success: 0.3,
+            complexity: 0.2,
+            feedback: 0.2,
+        },
+    };
+
+    // Fallback plan (single synthetic plan if anything fails)
+    let fallback_plan = PlanCandidate {
+        id: "default".to_string(),
+        description: format!("Execute: {}", config.user_message),
+        confidence: 0.5,
+        score_breakdown: evohime_protocol::planning::ScoreBreakdown {
+            similarity_score: 0.5,
+            tool_success_rate: 0.5,
+            complexity_penalty: 0.5,
+            feedback_adjustment: 0.0,
+            final_score: 0.5,
+        },
+    };
+
+    // Try to run the planning phase
+    match run_planning_phase_inner(
+        config,
+        gateway,
+        &planning_config,
+        event_tx,
+        pool,
+    )
+    .await
+    {
+        Ok(context) => context,
+        Err(error) => {
+            tracing::warn!("planning phase failed, using fallback: {}", error);
+            // Emit a synthetic plan event with the fallback
+            let _ = emit(
+                event_tx,
+                ServerEvent::AgentPlan {
+                    task_id: config.task_id,
+                    candidates: vec![fallback_plan.clone()],
+                    chosen_plan_id: "default".to_string(),
+                    reasoning: "Fallback plan due to planning phase error".to_string(),
+                },
+            );
+
+            // Try to save history with fallback (non-fatal on error)
+            if let Some(pool) = pool {
+                let history_entry = NewPlanningHistory {
+                    task_id: config.task_id,
+                    session_id: config.session_id,
+                    candidates: vec![fallback_plan.clone()],
+                    chosen_plan_id: Some("default".to_string()),
+                    reasoning: format!("Fallback: {}", error),
+                };
+                if let Err(e) = insert_planning_history(pool, history_entry).await {
+                    tracing::warn!("failed to save fallback planning history: {}", e);
+                }
+            }
+
+            PlanningPhaseContext {
+                chosen_plan_description: Some(fallback_plan.description),
+            }
+        }
+    }
+}
+
+/// Inner planning phase execution
+async fn run_planning_phase_inner(
+    config: &AgentConfig,
+    _gateway: &ModelGateway,
+    planning_config: &PlanningConfig,
+    event_tx: &UnboundedSender<ServerEvent>,
+    pool: Option<&PgPool>,
+) -> Result<PlanningPhaseContext, String> {
+    // Emit status
+    emit(
+        event_tx,
+        ServerEvent::AgentStatus {
+            task_id: config.task_id,
+            phase: "planning".into(),
+        },
+    )
+    .map_err(|_| "failed to emit planning status")?;
+
+    // Generate candidate plans using mock LLM client for now
+    let llm_client = MockLlmClient {
+        num_to_generate: planning_config.num_candidates,
+    };
+    let experience = SimpleExperienceHandle;
+
+    let candidates = generate_candidate_plans(
+        &llm_client,
+        &config.user_message,
+        planning_config.num_candidates,
+        &experience,
+    )
+    .await
+    .map_err(|e| format!("plan generation failed: {}", e))?;
+
+    if candidates.is_empty() {
+        return Err("no candidates generated".to_string());
+    }
+
+    // Score candidates if we have a pool
+    let scored_candidates = if let Some(pool) = pool {
+        score_candidate_plans(
+            &candidates,
+            &config.user_message,
+            &planning_config.weights,
+            pool,
+            &experience,
+        )
+        .await
+        .map_err(|e| format!("plan scoring failed: {}", e))?
+    } else {
+        // If no pool, use candidates as-is with default scores
+        candidates
+            .into_iter()
+            .map(|c| {
+                (
+                    c.clone(),
+                    evohime_protocol::planning::ScoreBreakdown {
+                        similarity_score: 0.5,
+                        tool_success_rate: 0.5,
+                        complexity_penalty: 0.5,
+                        feedback_adjustment: 0.0,
+                        final_score: 0.5,
+                    },
+                )
+            })
+            .collect()
+    };
+
+    // Prune to top N
+    let pruned = prune_to_top_n(scored_candidates, planning_config.top_n);
+
+    if pruned.is_empty() {
+        return Err("no candidates after pruning".to_string());
+    }
+
+    // Choose the best candidate (first after pruning)
+    let chosen_candidate = pruned[0].0.clone();
+    let chosen_plan_id = chosen_candidate.id.clone();
+    let chosen_description = chosen_candidate.description.clone();
+    let chosen_confidence = chosen_candidate.confidence;
+
+    // Extract all candidates for the event (original scored list)
+    let all_candidates: Vec<PlanCandidate> = pruned.iter().map(|(c, _)| c.clone()).collect();
+
+    let reasoning = format!(
+        "Selected plan {} with confidence {:.2}",
+        chosen_plan_id, chosen_confidence
+    );
+
+    // Emit AgentPlan event
+    emit(
+        event_tx,
+        ServerEvent::AgentPlan {
+            task_id: config.task_id,
+            candidates: all_candidates.clone(),
+            chosen_plan_id: chosen_plan_id.clone(),
+            reasoning: reasoning.clone(),
+        },
+    )
+    .map_err(|_| "failed to emit plan event")?;
+
+    // Save planning history (non-fatal on error)
+    if let Some(pool) = pool {
+        let history_entry = NewPlanningHistory {
+            task_id: config.task_id,
+            session_id: config.session_id,
+            candidates: all_candidates,
+            chosen_plan_id: Some(chosen_plan_id.clone()),
+            reasoning,
+        };
+        if let Err(e) = insert_planning_history(pool, history_entry).await {
+            tracing::warn!("failed to save planning history: {}", e);
+        }
+    }
+
+    tracing::info!(
+        task_id = %config.task_id,
+        chosen_plan_id = %chosen_plan_id,
+        confidence = chosen_confidence,
+        "planning phase completed"
+    );
+
+    Ok(PlanningPhaseContext {
+        chosen_plan_description: Some(chosen_description),
+    })
+}
+
 pub async fn run_agent_loop(
     config: AgentConfig,
     gateway: &ModelGateway,
@@ -177,7 +398,7 @@ pub async fn run_agent_loop_resumed(
     .await
 }
 
-#[allow(clippy::too_many_arguments, unreachable_code)]
+#[allow(clippy::too_many_arguments)]
 async fn run_agent_loop_inner(
     config: AgentConfig,
     gateway: &ModelGateway,
@@ -201,6 +422,16 @@ async fn run_agent_loop_inner(
     }
 
     let resume = resume.unwrap_or_default();
+
+    // Execute planning phase before react loop
+    let _planning_context = run_planning_phase(
+        &config,
+        gateway,
+        &event_tx,
+        config.memory_pool.as_ref(),
+    )
+    .await;
+
     return react::run_react_loop(
         config,
         gateway,
@@ -211,480 +442,19 @@ async fn run_agent_loop_inner(
         resume.clone(),
     )
     .await;
-
-    let tool_output = match resume.workspace_context.clone() {
-        Some(output) => output,
-        None => {
-            if !config.demo_file_path.is_file() {
-                "Контекстный файл проекта отсутствует; проект может быть пустым.".to_string()
-            } else {
-                emit(
-                    &event_tx,
-                    ServerEvent::ToolStarted {
-                        task_id: config.task_id,
-                        tool_name: "filesystem.read".to_string(),
-                    },
-                )?;
-
-                let relative_path =
-                    relative_workspace_path(&config.workspace_root, &config.demo_file_path);
-                let tool_ctx = ToolContext {
-                    workspace_root: config.workspace_root.clone(),
-                    task_id: config.task_id,
-                    session_id: Some(config.session_id),
-                    progress_tx: None,
-                };
-                let tool_result = tools
-                    .execute(
-                        &tool_ctx,
-                        "filesystem.read",
-                        json!({ "path": relative_path }),
-                    )
-                    .await?;
-
-                emit(
-                    &event_tx,
-                    ServerEvent::ToolOutput {
-                        task_id: config.task_id,
-                        tool_name: "filesystem.read".to_string(),
-                        output: tool_result.output.clone(),
-                    },
-                )?;
-
-                emit(
-                    &event_tx,
-                    ServerEvent::ToolCompleted {
-                        task_id: config.task_id,
-                        tool_name: "filesystem.read".to_string(),
-                        success: true,
-                    },
-                )?;
-
-                tool_result.output
-            }
-        }
-    };
-    let project_context =
-        ProjectIndex::new(config.workspace_root.clone()).build_context(&config.user_message, 5);
-    let memory_context = build_memory_context(&memory_notes);
-    let rules_context = build_workspace_rules_async(
-        &config.workspace_root,
-        config.operator_id,
-        config.memory_pool.as_ref(),
-    )
-    .await;
-
-    let mut planning_messages = Vec::with_capacity(history.len() + 4);
-    planning_messages.push(ChatMessage::text(
-        ChatRole::System,
-        if crate::native_tools::native_tool_calls_enabled() {
-            crate::native_tools::native_planning_prompt()
-        } else {
-            planning_prompt_for_tools(tools)
-        },
-    ));
-    if let Some(context) = &rules_context {
-        planning_messages.push(ChatMessage::text(ChatRole::System, context.clone()));
-    }
-    if let Some(context) = &project_context {
-        planning_messages.push(ChatMessage::text(ChatRole::System, context.clone()));
-    }
-    if let Some(context) = &memory_context {
-        planning_messages.push(ChatMessage::text(ChatRole::System, context.clone()));
-    }
-    if let Some(context) = &config.planning_memory_context {
-        planning_messages.push(ChatMessage::text(ChatRole::System, context.clone()));
-    }
-    planning_messages.extend(history.clone());
-    planning_messages.push(ChatMessage::text(
-        ChatRole::User,
-        format!(
-            "User request:\n{}\n\nWorkspace context from `{}`:\n```\n{}\n```",
-            config.user_message,
-            config.demo_file_path.display(),
-            tool_output
-        ),
-    ));
-
-    let (plan, mut plan_outputs, mut mutation_executed, mut satisfied_steps, truncated) =
-        if let Some(existing_plan) = resume.plan.clone() {
-            emit(
-                &event_tx,
-                ServerEvent::AgentPlanUpdated {
-                    task_id: config.task_id,
-                    plan: existing_plan.clone(),
-                },
-            )?;
-            let satisfied: HashSet<String> = resume.completed_step_ids.iter().cloned().collect();
-            let pending: Vec<PlanStep> = existing_plan
-                .iter()
-                .filter(|step| !satisfied.contains(&step.id))
-                .cloned()
-                .collect();
-            let mut outputs = resume.tool_results.clone();
-            let (new_outputs, mutation, newly_satisfied) = if pending.is_empty() {
-                (Vec::new(), false, satisfied.clone())
-            } else {
-                execute_plan_steps(&pending, &satisfied, &config, gateway, tools, &event_tx).await?
-            };
-            outputs.extend(new_outputs);
-            let outputs = budget_tool_result_list(&outputs, ToolResultBudget::from_env());
-            (existing_plan, outputs, mutation, newly_satisfied, false)
-        } else {
-            let mut plan =
-                match collect_plan_steps(gateway, &config, tools, &planning_messages).await {
-                    Ok(plan) => plan,
-                    Err(error) => return Err(error),
-                };
-            let mut truncated = false;
-            if let Some(max_steps) = config.subagent_max_steps {
-                if plan.len() > max_steps {
-                    plan.truncate(max_steps);
-                    truncated = true;
-                }
-            }
-
-            emit(
-                &event_tx,
-                ServerEvent::AgentPlanUpdated {
-                    task_id: config.task_id,
-                    plan: plan.clone(),
-                },
-            )?;
-
-            let (outputs, mutation, satisfied) =
-                execute_plan_steps(&plan, &HashSet::new(), &config, gateway, tools, &event_tx)
-                    .await?;
-            let outputs = budget_tool_result_list(&outputs, ToolResultBudget::from_env());
-            (plan, outputs, mutation, satisfied, truncated)
-        };
-
-    let mut accumulated_plan = plan.clone();
-    let resumed_with_plan = resume.plan.is_some();
-    let had_incomplete_steps = plan
-        .iter()
-        .any(|step| !resume.completed_step_ids.iter().any(|id| id == &step.id));
-    if !config.is_subagent
-        && plan_needs_replan_cycle(&plan)
-        && (!resumed_with_plan || had_incomplete_steps)
-    {
-        for round in 0..MAX_REPLAN_ROUNDS {
-            tokio::time::sleep(MODEL_REQUEST_COOLDOWN).await;
-            let observe = {
-                let budgeted = budget_tool_results(&plan_outputs, ToolResultBudget::from_env());
-                if budgeted.is_empty() {
-                    "(no tool results yet)".to_string()
-                } else {
-                    budgeted
-                }
-            };
-            let mut replan_messages = Vec::with_capacity(history.len() + 5);
-            replan_messages.push(ChatMessage::text(ChatRole::System, REPLAN_PROMPT));
-            if let Some(context) = &rules_context {
-                replan_messages.push(ChatMessage::text(ChatRole::System, context.clone()));
-            }
-            if let Some(context) = &config.planning_memory_context {
-                replan_messages.push(ChatMessage::text(ChatRole::System, context.clone()));
-            }
-            replan_messages.extend(history.clone());
-            replan_messages.push(ChatMessage::text(ChatRole::User, format!(
-                    "User request:\n{}\n\nCurrent plan:\n{}\n\nTool results so far:\n{}\n\nRound {} of {}.",
-                    config.user_message,
-                    format_plan(&accumulated_plan),
-                    observe,
-                    round + 1,
-                    MAX_REPLAN_ROUNDS
-                )));
-
-            let raw_replan = collect_llm_stream_with_telemetry(
-                &config,
-                gateway,
-                &config.planning_model_route,
-                config.planning_model.as_deref(),
-                "replan",
-                gateway.stream_chat_for_route_with_model(
-                    &config.planning_model_route,
-                    config.planning_model.as_deref(),
-                    &replan_messages,
-                )?,
-                PLANNING_TIMEOUT,
-            )
-            .await?;
-
-            match parse_replan_decision(&raw_replan.text) {
-                ReplanDecision::Done => break,
-                ReplanDecision::Continue(steps) => {
-                    let existing: HashSet<String> = accumulated_plan
-                        .iter()
-                        .map(|step| step.id.clone())
-                        .collect();
-                    let new_steps: Vec<PlanStep> = steps
-                        .into_iter()
-                        .filter(|step| !existing.contains(&step.id))
-                        .collect();
-                    if new_steps.is_empty() {
-                        break;
-                    }
-                    accumulated_plan.extend(new_steps.iter().cloned());
-                    emit(
-                        &event_tx,
-                        ServerEvent::AgentPlanUpdated {
-                            task_id: config.task_id,
-                            plan: accumulated_plan.clone(),
-                        },
-                    )?;
-                    let (outputs, round_mutation, round_satisfied) = execute_plan_steps(
-                        &new_steps,
-                        &satisfied_steps,
-                        &config,
-                        gateway,
-                        tools,
-                        &event_tx,
-                    )
-                    .await?;
-                    plan_outputs.extend(outputs);
-                    plan_outputs =
-                        budget_tool_result_list(&plan_outputs, ToolResultBudget::from_env());
-                    mutation_executed |= round_mutation;
-                    satisfied_steps.extend(round_satisfied);
-                }
-            }
-        }
-    }
-
-    tokio::time::sleep(MODEL_REQUEST_COOLDOWN).await;
-
-    let mut messages = Vec::with_capacity(history.len() + 4);
-    messages.push(ChatMessage::text(ChatRole::System, SYSTEM_PROMPT));
-    if let Some(context) = &rules_context {
-        messages.push(ChatMessage::text(ChatRole::System, context.clone()));
-    }
-    if let Some(context) = &project_context {
-        messages.push(ChatMessage::text(ChatRole::System, context.clone()));
-    }
-    if let Some(context) = &memory_context {
-        messages.push(ChatMessage::text(ChatRole::System, context.clone()));
-    }
-    messages.extend(history);
-    let tool_results_for_prompt = budget_tool_results(&plan_outputs, ToolResultBudget::from_env());
-    let context = format!(
-        "{}\n\nPlan tool results:\n{}",
-        tool_output, tool_results_for_prompt
-    );
-    messages.push(ChatMessage::text(ChatRole::User, format!(
-            "{}\n\nPlan:\n{}\n\nContext from `{}`:\n```\n{}\n```\n\nFinal answer rules: all requested tools have already been executed. Reply only with ordinary human-readable text. Never return JSON, tool.call, XML, or any internal protocol.",
-            config.user_message,
-            format_plan(&accumulated_plan),
-            config.demo_file_path.display(),
-            context
-        )));
-
-    let mut final_message = String::new();
-    let mut response_usage = None;
-    let provider = gateway
-        .route_provider_kind(&config.model_route)
-        .map(|kind| kind.as_str().to_string())
-        .unwrap_or_else(|_| "unknown".into());
-    let model_name = gateway
-        .resolve_model_name(&config.model_route, config.model.as_deref())
-        .unwrap_or_else(|_| "unknown".into());
-    let llm_meta = crate::llm_telemetry::LlmCallMeta {
-        phase: "respond",
-        provider,
-        model: model_name,
-        session_id: config.session_id,
-        task_id: config.task_id,
-    };
-    let (llm_span, llm_started) = crate::llm_telemetry::start_llm_span(&llm_meta);
-    let mut stream = gateway.stream_chat_for_route_with_model(
-        &config.model_route,
-        config.model.as_deref(),
-        &messages,
-    )?;
-
-    let stream_result = {
-        let _guard = llm_span.enter();
-        tokio::time::timeout(RESPONSE_TIMEOUT, async {
-            let mut thinking_buffer = String::new();
-            let mut flush_interval = interval(std::time::Duration::from_millis(500));
-            flush_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-            let request_id = format!("{}", Uuid::new_v4());
-            let correlation_id = format!("{}", Uuid::new_v4());
-
-            loop {
-                tokio::select! {
-                    item = stream.next() => {
-                        match item {
-                            Some(Ok(evohime_model_gateway::ChatStreamItem::Thinking(chunk))) => {
-                                thinking_buffer.push_str(&chunk);
-
-                                // Emit batch when buffer exceeds 2KB
-                                if thinking_buffer.len() > 2048 {
-                                    let _ = emit(
-                                        &event_tx,
-                                        ServerEvent::AgentThinking {
-                                            task_id: config.task_id,
-                                            thinking: thinking_buffer.clone(),
-                                            created_at: Utc::now(),
-                                            correlation_id: Some(correlation_id.clone()),
-                                            llm_request_id: request_id.clone(),
-                                        },
-                                    );
-                                    thinking_buffer.clear();
-                                }
-                            }
-                            Some(Ok(evohime_model_gateway::ChatStreamItem::Delta(delta))) => {
-                                // Flush any remaining thinking before final message
-                                if !thinking_buffer.is_empty() {
-                                    let _ = emit(
-                                        &event_tx,
-                                        ServerEvent::AgentThinking {
-                                            task_id: config.task_id,
-                                            thinking: thinking_buffer.clone(),
-                                            created_at: Utc::now(),
-                                            correlation_id: Some(correlation_id.clone()),
-                                            llm_request_id: request_id.clone(),
-                                        },
-                                    );
-                                    thinking_buffer.clear();
-                                }
-                                final_message.push_str(&delta);
-                                let _ = emit(
-                                    &event_tx,
-                                    ServerEvent::AgentMessageDelta {
-                                        task_id: config.task_id,
-                                        delta,
-                                    },
-                                );
-                            }
-                            Some(Ok(evohime_model_gateway::ChatStreamItem::Usage(usage))) => {
-                                response_usage = Some(usage);
-                            }
-                            Some(Err(err)) => return Err(err),
-                            None => {
-                                // Stream ended - flush any remaining thinking
-                                if !thinking_buffer.is_empty() {
-                                    let _ = emit(
-                                        &event_tx,
-                                        ServerEvent::AgentThinking {
-                                            task_id: config.task_id,
-                                            thinking: thinking_buffer,
-                                            created_at: Utc::now(),
-                                            correlation_id: Some(correlation_id),
-                                            llm_request_id: request_id,
-                                        },
-                                    );
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    // Periodic flush every 500ms if buffer not empty
-                    _ = flush_interval.tick() => {
-                        if !thinking_buffer.is_empty() {
-                            let _ = emit(
-                                &event_tx,
-                                ServerEvent::AgentThinking {
-                                    task_id: config.task_id,
-                                    thinking: thinking_buffer.clone(),
-                                    created_at: Utc::now(),
-                                    correlation_id: Some(correlation_id.clone()),
-                                    llm_request_id: request_id.clone(),
-                                },
-                            );
-                            thinking_buffer.clear();
-                        }
-                    }
-                }
-            }
-            Ok::<(), evohime_model_gateway::providers::ProviderError>(())
-        })
-        .await
-    };
-    let ok = stream_result.is_ok()
-        && stream_result
-            .as_ref()
-            .ok()
-            .map(|r| r.is_ok())
-            .unwrap_or(false);
-    crate::llm_telemetry::finish_llm_span(
-        &llm_span,
-        llm_started,
-        &llm_meta,
-        response_usage,
-        ok,
-        config.telemetry.as_ref(),
-    );
-    stream_result.map_err(|_| AgentError::ModelTimeout {
-        phase: "response",
-        timeout_seconds: RESPONSE_TIMEOUT.as_secs(),
-    })??;
-
-    if let Some(tool_plan) = parse_model_tool_calls(&final_message) {
-        let (response_outputs, response_mutation_executed, _) = execute_plan_steps(
-            &tool_plan,
-            &satisfied_steps,
-            &config,
-            gateway,
-            tools,
-            &event_tx,
-        )
-        .await?;
-        mutation_executed |= response_mutation_executed;
-        final_message = if response_outputs.is_empty() {
-            "Инструмент выполнен, но не вернул текстовый результат.".to_string()
-        } else {
-            response_outputs.join("\n\n")
-        };
-    }
-
-    if !config.is_subagent && requires_mutation(&config.user_message) && !mutation_executed {
-        return Err(AgentError::PlanStepFailed {
-            step_id: "mutation-check".to_string(),
-            tool_name: "agent-runtime".to_string(),
-            message: "задача требовала изменения workspace, но ни одного изменяющего инструмента не выполнено".to_string(),
-        });
-    }
-
-    if final_message.trim().is_empty() {
-        final_message = "No response from the model.".to_string();
-        emit(
-            &event_tx,
-            ServerEvent::AgentMessageDelta {
-                task_id: config.task_id,
-                delta: final_message.clone(),
-            },
-        )?;
-    }
-
-    if !config.is_subagent {
-        emit(
-            &event_tx,
-            ServerEvent::TaskCompleted {
-                task_id: config.task_id,
-                final_message: final_message.clone(),
-                completed_at: Utc::now(),
-                duration_ms: None,
-            },
-        )?;
-    }
-
-    let steps_run = satisfied_steps.len();
-    Ok(AgentRunResult {
-        final_message,
-        steps_run,
-        truncated,
-        thinking: None,
-    })
 }
 
 const SYSTEM_PROMPT: &str = "You are EvoHime, a helpful AI coding assistant. Follow the workspace rules supplied in the system context, preserve user intent, never claim a change was made unless a tool result confirms it, and answer concisely using the provided workspace context. When an action is required, return an explicit JSON tool.call object with type, tool, and input; do not merely describe the call.";
 
 #[cfg(test)]
 mod tests {
-    use super::execute::{dependency_batches_pending, is_mutating_tool, tool_input};
+    use super::execute::{dependency_batches_pending, is_mutating_tool, tool_input, requires_mutation};
     use super::parse::{default_plan, parse_plan, REGISTERED_TOOLS};
+    use super::plan::{parse_replan_decision, ReplanDecision};
+    use super::context::{relative_workspace_path, build_memory_context};
+    use super::util::MODEL_REQUEST_COOLDOWN;
     use super::*;
+    use evohime_model_gateway::providers::ChatRole;
     use std::{
         collections::HashSet,
         path::{Path, PathBuf},
@@ -1384,6 +1154,96 @@ mod tests {
         assert!(!saw_task_started);
         assert!(!saw_tool_started);
         assert!(!saw_tool_output);
+    }
+
+    #[tokio::test]
+    async fn planning_phase_generates_candidates() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config = AgentConfig {
+            task_id: Uuid::new_v4(),
+            session_id: Uuid::new_v4(),
+            operator_id: Uuid::nil(),
+            user_message: "test planning".to_string(),
+            created_at: chrono::Utc::now(),
+            demo_file_path: temp.path().join("context.md"),
+            workspace_root: temp.path().to_path_buf(),
+            model_route: "default".to_string(),
+            model: None,
+            planning_model_route: "default".to_string(),
+            planning_model: None,
+            planning_memory_context: None,
+            memory_pool: None,
+            workspace_key: String::new(),
+            is_subagent: false,
+            subagent_depth: 0,
+            subagent_max_steps: None,
+            telemetry: None,
+        };
+
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let provider = RecordingProvider::new(vec![]);
+        let gateway = evohime_model_gateway::ModelGateway::from_provider(std::sync::Arc::new(provider));
+
+        let context = run_planning_phase(&config, &gateway, &tx, None).await;
+
+        // Should return a context with a chosen plan
+        assert!(context.chosen_plan_description.is_some());
+    }
+
+    #[tokio::test]
+    async fn planning_phase_fallback_on_error() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config = AgentConfig {
+            task_id: Uuid::new_v4(),
+            session_id: Uuid::new_v4(),
+            operator_id: Uuid::nil(),
+            user_message: "test planning fallback".to_string(),
+            created_at: chrono::Utc::now(),
+            demo_file_path: temp.path().join("context.md"),
+            workspace_root: temp.path().to_path_buf(),
+            model_route: "default".to_string(),
+            model: None,
+            planning_model_route: "default".to_string(),
+            planning_model: None,
+            planning_memory_context: None,
+            memory_pool: None,
+            workspace_key: String::new(),
+            is_subagent: false,
+            subagent_depth: 0,
+            subagent_max_steps: None,
+            telemetry: None,
+        };
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let provider = RecordingProvider::new(vec![]);
+        let gateway = evohime_model_gateway::ModelGateway::from_provider(std::sync::Arc::new(provider));
+
+        let context = run_planning_phase(&config, &gateway, &tx, None).await;
+
+        // Even on error, should return a fallback context
+        assert!(context.chosen_plan_description.is_some());
+
+        // Should have emitted at least one event
+        let mut found_plan_event = false;
+        while let Some(event) = rx.recv().await {
+            match event {
+                ServerEvent::AgentPlan { .. } => found_plan_event = true,
+                _ => {}
+            }
+            if found_plan_event {
+                break;
+            }
+        }
+        assert!(found_plan_event, "should have emitted AgentPlan event");
+    }
+
+    #[test]
+    fn simple_experience_handle_returns_neutral_score() {
+        let handle = SimpleExperienceHandle;
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+        let score = rt.block_on(handle.search_similar("test task"));
+        assert!(score.is_ok());
+        assert_eq!(score.unwrap(), 0.5);
     }
 }
 
