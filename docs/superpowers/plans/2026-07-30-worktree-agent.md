@@ -61,7 +61,7 @@
 CREATE TABLE IF NOT EXISTS task_worktrees (
     task_id uuid PRIMARY KEY REFERENCES tasks(id) ON DELETE CASCADE,
     base_commit_sha text NOT NULL,
-    worktree_path text NOT NULL,
+    worktree_path text NOT NULL UNIQUE,
     primary_workspace_root text NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -442,34 +442,77 @@ pub(crate) async fn add_worktree(
     worktree_path: &Path,
     base_sha: &str,
 ) -> Result<(), WorktreeError> {
+    // Defense in depth, two layers:
+    // 1. A cheap lexical check on `worktree_path` itself — no I/O, works
+    //    even though `worktree_path` doesn't exist yet (nothing to
+    //    canonicalize). Catches the direct case: whatever constructed
+    //    `worktree_path` handed this function a path that's textually
+    //    inside `repo`.
     if repo == worktree_path || worktree_path.starts_with(repo) {
-        // Defense in depth: the OS-temp-dir choice for worktree_path already
-        // avoids this structurally, but a misconfigured TMPDIR/TEMP could in
-        // principle point inside the repo — fail clearly instead of letting
-        // `git worktree add` create a nested checkout under `repo`.
         return Err(WorktreeError::Io(format!(
             "refusing to create worktree {} nested inside primary root {}",
             worktree_path.display(),
             repo.display()
         )));
     }
+    // 2. A canonical check on the OS temp *root* (`worktree_path` is always
+    //    `temp_root/evohime-worktrees/<task_id>`, and temp_root always
+    //    exists, unlike `worktree_path` itself) against `repo`, both
+    //    canonicalized — catches a misconfigured TMPDIR/TEMP that's a
+    //    symlink or Windows junction pointing inside `repo`, which check 1's
+    //    lexical comparison alone could miss. `repo` is already canonical
+    //    by the time it reaches here (it comes from `resolve_workspace_path`,
+    //    which canonicalizes), but canonicalizing it again is idempotent.
+    let temp_root = std::env::temp_dir();
+    let canonical_temp_root = temp_root
+        .canonicalize()
+        .map_err(|error| WorktreeError::Io(format!("failed to canonicalize {}: {error}", temp_root.display())))?;
+    let canonical_repo = repo
+        .canonicalize()
+        .map_err(|error| WorktreeError::Io(format!("failed to canonicalize {}: {error}", repo.display())))?;
+    if canonical_temp_root == canonical_repo || canonical_temp_root.starts_with(&canonical_repo) {
+        return Err(WorktreeError::Io(format!(
+            "refusing to create worktree {} — the OS temp directory {} is nested inside primary root {}",
+            worktree_path.display(),
+            canonical_temp_root.display(),
+            canonical_repo.display()
+        )));
+    }
+
     if worktree_path.exists() {
         // `git worktree add` refuses to target an existing directory. Since
         // `worktree_path` is derived from a fresh task_id, this only
         // happens if a prior attempt for this exact task_id partially
         // failed — e.g. `git worktree add` succeeded but the subsequent
         // `task_worktrees` insert failed *and* that failure's own rollback
-        // (`remove_worktree`) also failed (both true simultaneously, or
-        // this task_id is being provisioned again after such a failure).
-        // Not reachable through this design's normal call pattern today,
-        // but cheap to make provisioning self-healing against it rather
-        // than failing outright on leftover debris.
-        tokio::fs::remove_dir_all(&worktree_path)
-            .await
-            .map_err(|error| WorktreeError::Io(format!(
-                "worktree path {} already exists and could not be cleared: {error}",
-                worktree_path.display()
-            )))?;
+        // (`remove_worktree`) also failed. Not reachable through this
+        // design's normal call pattern today, but cheap to make
+        // provisioning self-healing against it. Prefer `remove_worktree`
+        // (git-aware — cleans up `.git/worktrees/<id>/` metadata registered
+        // for it, avoiding a `fatal: ... is a missing but locked working
+        // tree` / `prune` error on the *next* `git worktree add`) over a
+        // raw directory delete. Only if that fails (e.g. this directory was
+        // never actually registered as a worktree of `repo` at all) fall
+        // back to a raw removal, and only after confirming it looks like a
+        // worktree checkout (`.git` marker file present) rather than
+        // blindly deleting an unrelated directory that happened to land at
+        // this path.
+        if let Err(remove_error) = remove_worktree(repo, worktree_path).await {
+            if worktree_path.exists() {
+                if !worktree_path.join(".git").exists() {
+                    return Err(WorktreeError::Io(format!(
+                        "worktree path {} already exists, is not a recognized git worktree, and git worktree remove failed ({remove_error}) — refusing to delete it blindly",
+                        worktree_path.display()
+                    )));
+                }
+                tokio::fs::remove_dir_all(&worktree_path).await.map_err(|error| {
+                    WorktreeError::Io(format!(
+                        "worktree path {} already exists and could not be cleared: {error}",
+                        worktree_path.display()
+                    ))
+                })?;
+            }
+        }
     }
     if let Some(parent) = worktree_path.parent() {
         tokio::fs::create_dir_all(parent)
@@ -583,13 +626,40 @@ mod tests {
         assert!(matches!(error, WorktreeError::Io(_)));
         assert!(!nested.exists());
     }
+
+    #[tokio::test]
+    async fn add_worktree_self_heals_a_leftover_directory_from_a_prior_attempt() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        init_repo(repo.path());
+        let base_sha = rev_parse_head(repo.path()).await.expect("rev-parse");
+
+        let worktree_root = tempfile::tempdir().expect("tempdir");
+        let worktree_path = worktree_root.path().join("wt-1");
+
+        // First attempt succeeds normally.
+        add_worktree(repo.path(), &worktree_path, &base_sha)
+            .await
+            .expect("first add worktree");
+
+        // A second call for the exact same path — simulating provisioning
+        // being retried after some earlier failure left this directory
+        // behind — must not fail with "already exists".
+        add_worktree(repo.path(), &worktree_path, &base_sha)
+            .await
+            .expect("add worktree must self-heal a pre-existing directory");
+        assert!(worktree_path.join("README.md").exists());
+
+        remove_worktree(repo.path(), &worktree_path)
+            .await
+            .expect("remove worktree");
+    }
 }
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail to compile first, then pass**
 
 Run: `cargo test -p evohime-server task::worktree:: -- --nocapture`
-Expected: compiles and all five tests `PASS` (git must be on `PATH`, as it already is elsewhere in this workspace's tests, e.g. `crates/tool-runtime/src/tools/git.rs`).
+Expected: compiles and all six tests `PASS` (git must be on `PATH`, as it already is elsewhere in this workspace's tests, e.g. `crates/tool-runtime/src/tools/git.rs`).
 
 - [ ] **Step 3: Commit**
 
@@ -624,12 +694,19 @@ Append to `crates/server/src/task/worktree.rs` (add `use uuid::Uuid;` and `use t
 /// minutes) — a fixed constant would be too tight for diff/apply/commit
 /// against a very large repository or patch.
 pub(crate) fn merge_timeout() -> Duration {
-    std::env::var("EVOHIME_WORKTREE_MERGE_TIMEOUT_SECS")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .filter(|secs: &u64| *secs > 0)
-        .map(Duration::from_secs)
-        .unwrap_or_else(|| Duration::from_secs(5 * 60))
+    static VALUE: std::sync::OnceLock<Duration> = std::sync::OnceLock::new();
+    // Read (and validate) the env var once per process rather than on every
+    // call — this is on the hot path of every merge-back, and the value
+    // can't meaningfully change mid-process anyway (nothing in this design
+    // re-reads the environment after startup).
+    *VALUE.get_or_init(|| {
+        std::env::var("EVOHIME_WORKTREE_MERGE_TIMEOUT_SECS")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .filter(|secs: &u64| *secs > 0)
+            .map(Duration::from_secs)
+            .unwrap_or_else(|| Duration::from_secs(5 * 60))
+    })
 }
 
 struct ChangedPaths {
@@ -653,33 +730,64 @@ impl ChangedPaths {
 }
 
 async fn changed_paths(worktree_path: &Path, base_sha: &str) -> Result<ChangedPaths, WorktreeError> {
-    let output = run_git(
-        worktree_path,
-        &["diff", "--cached", "--name-status", base_sha],
-        merge_timeout(),
-    )
-    .await?;
+    // `-z`: NUL-delimited, *unquoted* paths. Without it, git's default
+    // `core.quotePath=true` C-style-quotes any path containing a non-ASCII
+    // byte — not a hypothetical for a project whose own docs and commit
+    // history are full of Cyrillic — wrapping it in literal quote
+    // characters that a naive tab/newline split would leave embedded in
+    // the path string, breaking every later `checkout`/`reset`/`commit`
+    // pathspec built from this list ("file not found"). `-z` sidesteps
+    // quoting entirely and also removes any ambiguity from a filename that
+    // happens to contain a literal newline.
+    let run = async {
+        Command::new("git")
+            .arg("-C")
+            .arg(worktree_path)
+            .args(["diff", "--cached", "--name-status", "-z", base_sha])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await
+            .map_err(|error| WorktreeError::Io(format!("failed to run git diff --name-status: {error}")))
+    };
+    let output = tokio::time::timeout(merge_timeout(), run)
+        .await
+        .map_err(|_| WorktreeError::Io("git diff --cached --name-status -z timed out".to_string()))??;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(WorktreeError::Io(format!(
+            "git diff --cached --name-status -z failed: {stderr}"
+        )));
+    }
+
+    // Each record is NUL-separated: "STATUS\0PATH\0" for add/modify/delete,
+    // or "R<score>\0OLD\0NEW\0" for a rename — never ambiguous, since a NUL
+    // byte is exactly what `-z` guarantees never appears inside a field.
+    let mut fields = output
+        .stdout
+        .split(|&byte| byte == 0)
+        .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+        .filter(|field| !field.is_empty())
+        .collect::<std::collections::VecDeque<_>>();
+
     let mut existing = Vec::new();
     let mut added = Vec::new();
-    for line in output.lines() {
-        let mut fields = line.split('\t');
-        let status = fields.next().unwrap_or_default();
+    while let Some(status) = fields.pop_front() {
         match status.chars().next() {
-            Some('A') => added.extend(fields.next().map(str::to_string)),
+            Some('A') => added.extend(fields.pop_front()),
             Some('R') => {
-                // `--name-status` gives "R<score>\t<old>\t<new>". The old
-                // name existed at base_sha (restorable via `git checkout
-                // HEAD --`); the new name did not (it must be treated like
-                // an added path — unstaged and deleted directly on
+                // The old name existed at base_sha (restorable via `git
+                // checkout HEAD --`); the new name did not (must be treated
+                // like an added path — unstaged and deleted directly on
                 // rollback). Lumping both into `existing`, as an earlier
                 // version of this function did, breaks conflict recovery:
                 // `git checkout HEAD -- <old> <new>` errors out entirely on
                 // the unmatched new-name pathspec, aborting the restore for
                 // *every* path in that one invocation, not just the rename.
-                existing.extend(fields.next().map(str::to_string));
-                added.extend(fields.next().map(str::to_string));
+                existing.extend(fields.pop_front());
+                added.extend(fields.pop_front());
             }
-            _ => existing.extend(fields.next().map(str::to_string)),
+            _ => existing.extend(fields.pop_front()),
         }
     }
     Ok(ChangedPaths { existing, added })
@@ -768,6 +876,11 @@ async fn restore_paths(repo: &Path, changed: &ChangedPaths) {
             warn!(%error, "failed to unstage added paths after a failed merge-back");
         }
         for path in &changed.added {
+            // Intentionally ignored: this path may never have actually been
+            // created on primary_root at all (the failed apply could have
+            // hit its conflict on an earlier file in a multi-file patch,
+            // before ever touching this one) — "already absent" is the
+            // expected common case here, not an error worth surfacing.
             let _ = tokio::fs::remove_file(repo.join(path)).await;
         }
     }
@@ -1061,12 +1174,45 @@ Add this test to the `#[cfg(test)] mod tests` block:
             .await
             .expect("remove worktree");
     }
+
+    #[tokio::test]
+    async fn merge_back_lands_a_file_with_a_non_ascii_name() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        init_repo(repo.path());
+        let base_sha = rev_parse_head(repo.path()).await.expect("rev-parse");
+
+        let worktree_root = tempfile::tempdir().expect("tempdir");
+        let worktree_path = worktree_root.path().join("wt-1");
+        add_worktree(repo.path(), &worktree_path, &base_sha)
+            .await
+            .expect("add worktree");
+
+        // Without `-z`, git's default core.quotePath C-style-quotes this
+        // filename, and a naive tab/newline split would leave the quote
+        // characters embedded in the "path", breaking every later
+        // checkout/reset/commit pathspec built from it.
+        let filename = "отчёт.txt";
+        std::fs::write(worktree_path.join(filename), "содержимое\n").expect("write");
+
+        merge_worktree_into_primary(&worktree_path, repo.path(), &base_sha, Uuid::new_v4())
+            .await
+            .expect("merge back");
+
+        assert!(
+            repo.path().join(filename).exists(),
+            "a non-ASCII filename must land at the exact same name on primary_root"
+        );
+
+        remove_worktree(repo.path(), &worktree_path)
+            .await
+            .expect("remove worktree");
+    }
 ```
 
 - [ ] **Step 2: Run the tests**
 
 Run: `cargo test -p evohime-server task::worktree:: -- --nocapture`
-Expected: all nine tests `PASS`.
+Expected: all twelve tests `PASS`.
 
 - [ ] **Step 3: Commit**
 
@@ -1304,6 +1450,13 @@ Replace it with:
                                 guard.insert(task_id, token.clone());
                                 is_concurrent
                             };
+                            // `is_concurrent` is a snapshot at this exact instant, not
+                            // re-checked after the lock above is released. If the other
+                            // task finishes between here and `provision_worktree` below,
+                            // this task still isolates unnecessarily — extra overhead,
+                            // never a correctness issue (the reverse — starting unisolated
+                            // when isolation was actually needed — is what must never
+                            // happen, and this ordering guarantees that direction is safe).
                             if is_concurrent {
                                 if let Err(error) = crate::task::worktree::provision_worktree(
                                     &state,
@@ -1339,7 +1492,7 @@ Note: `is_concurrent == false` (the common case) never calls `provision_worktree
 
 - [ ] **Step 3: Fix a live concurrency bug this feature depends on — `task_cancellations` must survive an approval pause**
 
-`is_concurrent` (Step 2) is only correct if `task_cancellations` actually reflects every task that still has unfinished business in a workspace — including one that's `Paused` waiting on `approval.required`, not just one currently executing. Today it doesn't: `crates/server/src/ws.rs` has four places that spawn a task run and unconditionally remove its `task_cancellations` entry once the run's `.await` resolves — the `UserMessage` handler this task is already editing (originally ~ws.rs:193-197, now shifted by Step 2's edit), and three resume paths (plan-approval-granted, tool-approval-granted, manual task-resume) that all follow the identical insert-before-spawn / remove-after-await shape. `process_user_message`/`resume_task_run` return `Ok(())` both when a task truly completes *and* when it merely pauses for approval (`crates/server/src/task/pipeline.rs`'s `NeedsApproval` branch returns early). All four sites currently treat both cases identically and remove the entry either way — so a paused task's directory stops being protected by `is_concurrent` the moment it pauses, even though it's still going to resume into that same directory later. A second task starting in that window sees an empty map, runs unisolated, and can end up running *at the same time* as the first task once it's approved and resumes — the exact race this whole feature exists to prevent, on a mainline (not edge-case) flow.
+`is_concurrent` (Step 2) is only correct if `task_cancellations` actually reflects every task that still has unfinished business in a workspace — including one that's `Paused` waiting on `approval.required`, not just one currently executing. Today it doesn't: `crates/server/src/ws.rs` has four places that spawn a task run and unconditionally remove its `task_cancellations` entry once the run's `.await` resolves — the `UserMessage` handler this task is already editing (originally ~ws.rs:193-197, now shifted by Step 2's edit), and three resume paths (`ClientCommand::TaskPlanApprove`, `TaskResume`, `TaskRetry`) that all follow the identical insert-before-spawn / remove-after-await shape. `process_user_message`/`resume_task_run` return `Ok(())` both when a task truly completes *and* when it merely pauses for approval (`crates/server/src/task/pipeline.rs`'s `NeedsApproval` branch returns early). All four sites currently treat both cases identically and remove the entry either way — so a paused task's directory stops being protected by `is_concurrent` the moment it pauses, even though it's still going to resume into that same directory later. A second task starting in that window sees an empty map, runs unisolated, and can end up running *at the same time* as the first task once it's approved and resumes — the exact race this whole feature exists to prevent, on a mainline (not edge-case) flow.
 
 Add a shared helper to `crates/server/src/task/helpers.rs` (alongside `resolve_workspace_path` etc.):
 
@@ -1365,7 +1518,7 @@ pub(crate) async fn release_task_cancellation_if_terminal(state: &Arc<AppState>,
 }
 ```
 
-Now replace all four `.task_cancellations.lock().await.remove(&task_id);` calls in `crates/server/src/ws.rs` (the one inside this task's own spawned block, plus the three resume-path spawned blocks at the plan-approval-granted, tool-approval-granted, and manual-resume handlers — find each with `grep -n "task_cancellations" crates/server/src/ws.rs` and match the `.remove(&task_id)` pattern specifically, not the `.insert(...)` calls) with:
+Now replace all four `.task_cancellations.lock().await.remove(&task_id);` calls in `crates/server/src/ws.rs` (the one inside this task's own spawned block, plus the three resume-path spawned blocks in the `TaskPlanApprove`, `TaskResume`, and `TaskRetry` handlers — find each with `grep -n "task_cancellations" crates/server/src/ws.rs` and match the `.remove(&task_id)` pattern specifically, not the `.insert(...)` calls) with:
 
 ```rust
                                 crate::task::helpers::release_task_cancellation_if_terminal(
@@ -1557,6 +1710,8 @@ git commit -m "feat(server): merge isolated worktree back into primary checkout 
 - Produces:
   - `pub(crate) async fn cleanup_stale_worktrees(state: &Arc<AppState>, retention: Duration)`
   - `pub(crate) async fn cleanup_orphaned_worktree_directories(state: &Arc<AppState>)`
+  - `pub(crate) async fn worktree_cleanup_loop(state: Arc<AppState>, interval: Duration, retention: Duration)`
+  - `pub(crate) const TERMINAL_TASK_STATUSES: &[&str]`
 
 Cleanup decides per row from the owning task's **current** status (`task_status`, joined in `list_task_worktrees_with_status`), not from a restart-scoped snapshot. This matters concretely: a task `Paused` on an `approval.required` round-trip never appears in `recover_after_restart`'s return value on a later, unrelated restart (it wasn't crashed — pipeline.rs's `NeedsApproval` branch returns `Ok(())` normally), yet its worktree is still in active use and must never be swept. Querying live status instead of that snapshot handles this correctly and makes the function's signature simpler (no `resumable_task_ids` parameter to keep in sync with anything).
 
@@ -1565,7 +1720,15 @@ Cleanup decides per row from the owning task's **current** status (`task_status`
 Add after `finalize_worktree` (add `use std::time::Duration;` and `use tracing::warn;` to the imports):
 
 ```rust
-const TERMINAL_TASK_STATUSES: &[&str] = &["completed", "failed", "cancelled"];
+/// The single, centralized definition of "terminal" for a task's
+/// `evohime_storage::TaskRow.status` string. Both this module's cleanup and
+/// `crate::task::helpers::release_task_cancellation_if_terminal` (Task 5)
+/// key off exactly this list — if a new status is ever added upstream
+/// (`evohime_protocol::TaskStatus`), it must be classified here in one
+/// place, not re-derived independently in multiple call sites where one of
+/// them could silently drift and either leak a worktree that should have
+/// been cleaned, or — worse — sweep one still needed by an active task.
+pub(crate) const TERMINAL_TASK_STATUSES: &[&str] = &["completed", "failed", "cancelled"];
 
 /// Removes worktree directories (and their `task_worktrees` rows) whose
 /// owning task has reached a terminal status (`completed`/`failed`/
@@ -1680,16 +1843,38 @@ pub(crate) async fn cleanup_orphaned_worktree_directories(state: &Arc<AppState>)
             evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id).await,
             Ok(Some(_))
         );
-        if !has_row {
-            if let Err(error) = tokio::fs::remove_dir_all(entry.path()).await {
-                warn!(%task_id, %error, "failed to remove orphaned worktree directory");
-            }
+        if has_row {
+            continue;
+        }
+        // A UUID-shaped directory name alone isn't proof this is actually
+        // one of our worktrees — an unrelated directory could coincidentally
+        // land here with a UUID-like name. Require the `.git` marker file
+        // every real worktree checkout has before deleting anything.
+        if !entry.path().join(".git").exists() {
+            continue;
+        }
+        if let Err(error) = tokio::fs::remove_dir_all(entry.path()).await {
+            warn!(%task_id, %error, "failed to remove orphaned worktree directory");
         }
     }
 }
 ```
 
-- [ ] **Step 2: Call both from `startup.rs`**
+- [ ] **Step 2: Centralize terminal-status handling — remove the duplication in `helpers.rs`**
+
+`release_task_cancellation_if_terminal` (Task 5) was written against its own inline `matches!(..., "completed" | "failed" | "cancelled")` because `TERMINAL_TASK_STATUSES` (just defined above) didn't exist yet at that point in the plan. Now that it does, update `crates/server/src/task/helpers.rs` so there's exactly one definition of "terminal" for the whole feature — a status added later in only one of the two places would either leak a worktree that should've been cleaned, or sweep one an active task still needs. Replace:
+
+```rust
+        Ok(Some(task)) => matches!(task.status.as_str(), "completed" | "failed" | "cancelled"),
+```
+
+with:
+
+```rust
+        Ok(Some(task)) => crate::task::worktree::TERMINAL_TASK_STATUSES.contains(&task.status.as_str()),
+```
+
+- [ ] **Step 3: Call both from `startup.rs`, and add a periodic background pass alongside the startup one**
 
 In `crates/server/src/startup.rs`, right after the existing block that builds `recovered` and before the `if !recovered.is_empty() { ... }` loop (around line 273–278):
 
@@ -1710,16 +1895,51 @@ Insert directly after the `resume_policy` line, before `if !recovered.is_empty()
 
 This reuses the `duration_secs_env_local` helper already defined at the top of `startup.rs`, matching the pattern used for `WORKER_HEALTH_INTERVAL_SECS` etc. — default retention is 24 hours. It deliberately runs independently of the `recovered`/`resume_policy` logic right below it — cleanup consults live task status itself, not that restart-scoped list. The orphan sweep runs after the row-driven pass so it never races against a row that pass is still processing.
 
-- [ ] **Step 3: Verify it compiles**
+Running cleanup only at startup means a long-lived server process (weeks without a restart) never sweeps a stuck worktree — e.g. one whose `remove_worktree` in `finalize_worktree` (Task 6) kept failing (a persistent Windows file lock). This project already has an established pattern for exactly this shape of problem: `crates/server/src/worker_api.rs`'s `worker_retention_loop(state, retention_days)`, spawned once in `startup.rs` and ticking hourly. Add the same shape here.
+
+In `crates/server/src/task/worktree.rs`, add after `cleanup_orphaned_worktree_directories`:
+
+```rust
+/// Runs both cleanup passes on a fixed interval so a stuck worktree (e.g.
+/// one whose removal in `finalize_worktree` kept failing) doesn't have to
+/// wait for the next server restart to be swept — mirrors
+/// `crate::worker_api::worker_retention_loop`'s shape.
+pub(crate) async fn worktree_cleanup_loop(state: Arc<AppState>, interval: Duration, retention: Duration) {
+    let mut ticker = tokio::time::interval(interval);
+    loop {
+        ticker.tick().await;
+        cleanup_stale_worktrees(&state, retention).await;
+        cleanup_orphaned_worktree_directories(&state).await;
+    }
+}
+```
+
+Then, in `crates/server/src/startup.rs`, spawn it near the existing `worker_retention_loop`/`worker_health_loop` spawns (around line 144-152):
+
+```rust
+    let worktree_cleanup_state = state.clone();
+    tokio::spawn(async move {
+        crate::task::worktree::worktree_cleanup_loop(
+            worktree_cleanup_state,
+            Duration::from_secs(60 * 60),
+            worktree_retention,
+        )
+        .await;
+    });
+```
+
+This must come *after* the `worktree_retention` binding introduced earlier in this step (it reuses the same value the startup-time pass used, so both agree on the same retention window).
+
+- [ ] **Step 4: Verify it compiles**
 
 Run: `cargo check -p evohime-server`
 Expected: no errors.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add crates/server/src/task/worktree.rs crates/server/src/startup.rs
-git commit -m "feat(server): clean up stale worktrees on server startup (7.107)"
+git commit -m "feat(server): clean up stale worktrees at startup and on an hourly loop (7.107)"
 ```
 
 ---
@@ -1750,7 +1970,11 @@ In `crates/server/src/app.rs`, add at the end of the `impl AppState` block:
         Arc::new(Self {
             pool,
             workspace_root: std::env::temp_dir(),
-            auth: crate::auth::AuthConfig::from_env(),
+            // `AuthConfig` derives `Default` (`api_token: None`) — use that
+            // directly instead of `from_env()`, so a stray `EVOHIME_API_TOKEN`
+            // set in the test-runner's own environment can't change what
+            // this builder produces.
+            auth: crate::auth::AuthConfig::default(),
             tools: evohime_tool_runtime::ToolRegistry::bootstrap_with_permissions(
                 evohime_permissions::PermissionEngine::new(),
             ),
@@ -1770,7 +1994,20 @@ In `crates/server/src/app.rs`, add at the end of the `impl AppState` block:
             plugin_catalog_cache: crate::plugins::PluginCatalogCache::default(),
             metrics: Arc::new(crate::observability::PipelineMetrics::new()),
             worker_metrics: Arc::new(crate::worker_observability::WorkerMetrics::new()),
-            rate_limiter: Arc::new(crate::rate_limit::RateLimiter::from_env()),
+            // Same reasoning as `auth` above: construct `RateLimitConfig`
+            // directly (mirroring `from_env()`'s own defaults) rather than
+            // reading the environment, so a stray `EVOHIME_RATE_LIMIT_*`
+            // value can't affect these tests.
+            rate_limiter: Arc::new(crate::rate_limit::RateLimiter::new(
+                crate::rate_limit::RateLimitConfig {
+                    session_per_minute: 30,
+                    task_per_minute: 60,
+                    worker_job_per_minute: 30,
+                    max_concurrent_tasks: 16,
+                    max_concurrent_worker_jobs: 32,
+                    disabled: false,
+                },
+            )),
             shutdown_token: tokio_util::sync::CancellationToken::new(),
             local_shutdown_secret: None,
         })
