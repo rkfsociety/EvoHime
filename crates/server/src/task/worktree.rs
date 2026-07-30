@@ -4,9 +4,11 @@
 //! matching the pattern already used in `evohime_tool_runtime`'s git tools and
 //! `crate::github_api`.
 
+use crate::app::AppState;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::process::Command;
 use tracing::{info, warn};
@@ -87,6 +89,81 @@ pub(crate) async fn rev_parse_head(repo: &Path) -> Result<String, WorktreeError>
     run_git(repo, &["rev-parse", "HEAD"], worktree_op_timeout())
         .await
         .map_err(|error| WorktreeError::NotAGitRepo(error.to_string()))
+}
+
+pub(crate) async fn provision_worktree(
+    state: &Arc<AppState>,
+    task_id: Uuid,
+    primary_root: &Path,
+) -> Result<(), WorktreeError> {
+    // Idempotent: Task 5, Step 5's `TaskRetry` teardown calls this again for
+    // a task_id that already had a row once, after deleting the old one —
+    // so a plain "row exists → already done" check isn't quite enough on
+    // its own. A row can also outlive its own worktree directory: if a
+    // caller's own removal succeeds but the matching `delete_task_worktree`
+    // afterward fails (e.g. a transient DB blip right after a successful
+    // `git worktree remove`), the row is left pointing at a directory that
+    // no longer exists. Treating that phantom row as "already provisioned"
+    // would make every later call here silently no-op forever, while
+    // `pipeline.rs` keeps trying to run an agent against a workspace_root
+    // that was never actually recreated. So: an existing row only means
+    // "already done" if its directory is actually still there; otherwise
+    // treat it as stale and reprovision fresh, same as a missing row.
+    if let Some(existing) =
+        evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id)
+            .await
+            .map_err(|error| WorktreeError::Io(format!("failed to check for existing task_worktrees row: {error}")))?
+    {
+        if Path::new(&existing.worktree_path).exists() {
+            return Ok(());
+        }
+        tracing::warn!(
+            %task_id,
+            worktree_path = %existing.worktree_path,
+            "found a task_worktrees row with no matching directory; discarding it and reprovisioning"
+        );
+        if let Err(error) =
+            evohime_storage::task_worktrees::delete_task_worktree(&state.pool, task_id).await
+        {
+            return Err(WorktreeError::Io(format!(
+                "failed to delete phantom task_worktrees row before reprovisioning: {error}"
+            )));
+        }
+    }
+
+    let base_sha = rev_parse_head(primary_root).await?;
+    let worktree_path = std::env::temp_dir()
+        .join("evohime-worktrees")
+        .join(task_id.to_string());
+
+    add_worktree(primary_root, &worktree_path, &base_sha).await?;
+
+    if let Err(error) = evohime_storage::task_worktrees::insert_task_worktree(
+        &state.pool,
+        &evohime_storage::task_worktrees::NewTaskWorktree {
+            task_id,
+            base_commit_sha: base_sha,
+            worktree_path: worktree_path.to_string_lossy().into_owned(),
+            primary_workspace_root: primary_root.to_string_lossy().into_owned(),
+        },
+    )
+    .await
+    {
+        // Roll back: without a row, nothing (merge-back, startup cleanup)
+        // will ever find this directory again — it would become a
+        // permanent orphan otherwise. If this rollback attempt *also*
+        // fails (e.g. a transient git/filesystem error right on top of the
+        // DB error above), the directory is still not lost forever: it's
+        // exactly what `cleanup_orphaned_worktree_directories` (Task 7)
+        // exists to sweep — a `.git`-marked directory under
+        // `evohime-worktrees/` with no matching `task_worktrees` row.
+        let _ = remove_worktree(primary_root, &worktree_path).await;
+        return Err(WorktreeError::Io(format!(
+            "failed to persist task_worktrees row: {error}"
+        )));
+    }
+
+    Ok(())
 }
 
 pub(crate) async fn add_worktree(

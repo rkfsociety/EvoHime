@@ -142,11 +142,11 @@ pub(crate) async fn handle_socket(
                                 .await;
                                 continue;
                             }
-                            let workspace_path = resolve_workspace_path(&state, workspace_path)?;
+                            let workspace_path_buf = resolve_workspace_path(&state, workspace_path)?;
                             // Persist a stable public path so UI project matching works on Windows
                             // (canonicalize() otherwise yields `\\?\F:\...`).
                             let workspace_path =
-                                crate::task::helpers::public_fs_path(&workspace_path);
+                                crate::task::helpers::public_fs_path(&workspace_path_buf);
                             let task = match start_task(
                                 &state.pool,
                                 session_id,
@@ -166,11 +166,56 @@ pub(crate) async fn handle_socket(
 
                             let task_id = task.id;
                             let token = CancellationToken::new();
-                            state
-                                .task_cancellations
-                                .lock()
+                            // Single lock acquisition: the "is another task already
+                            // running" check and this task's own registration must not
+                            // be split into two separate lock/unlock pairs, or two tasks
+                            // starting in the same instant could both observe an empty
+                            // map and both skip isolation (7.107).
+                            let is_concurrent = {
+                                let mut guard = state.task_cancellations.lock().await;
+                                let is_concurrent = !guard.is_empty();
+                                guard.insert(task_id, token.clone());
+                                is_concurrent
+                            };
+                            // `is_concurrent` is a snapshot at this exact instant, not
+                            // re-checked after the lock above is released. If the other
+                            // task finishes between here and `provision_worktree` below,
+                            // this task still isolates unnecessarily — extra overhead,
+                            // never a correctness issue (the reverse — starting unisolated
+                            // when isolation was actually needed — is what must never
+                            // happen, and this ordering guarantees that direction is safe).
+                            if is_concurrent {
+                                if let Err(error) = crate::task::worktree::provision_worktree(
+                                    &state,
+                                    task_id,
+                                    &workspace_path_buf,
+                                )
                                 .await
-                                .insert(task_id, token.clone());
+                                {
+                                    error!(%task_id, %error, "failed to allocate isolated worktree for concurrent task");
+                                    state.task_cancellations.lock().await.remove(&task_id);
+                                    let _ = fail_task(&state.pool, task_id).await;
+                                    let _ = emit_event(
+                                        &state,
+                                        session_id,
+                                        Some(task_id),
+                                        ServerEvent::TaskFailed {
+                                            task_id,
+                                            error: format!(
+                                                "failed to allocate isolated worktree: {error}"
+                                            ),
+                                            duration_ms: None,
+                                        },
+                                    )
+                                    .await;
+                                    continue;
+                                }
+                            }
+                            let mut cancellation_guard =
+                                crate::task::helpers::TaskCancellationGuard::new(
+                                    state.clone(),
+                                    task_id,
+                                );
                             let state_for_task = state.clone();
                             tokio::spawn(async move {
                                 if let Err((task_id, error)) =
@@ -190,20 +235,57 @@ pub(crate) async fn handle_socket(
                                     .await;
                                     let _ = fail_task(&state_for_task.pool, task_id).await;
                                 }
-                                state_for_task
-                                    .task_cancellations
-                                    .lock()
-                                    .await
-                                    .remove(&task_id);
+                                cancellation_guard.disarm();
+                                crate::task::helpers::release_task_cancellation_if_terminal(
+                                    &state_for_task,
+                                    task_id,
+                                )
+                                .await;
                             });
                         }
                         ClientCommand::TaskCancel { task_id } => {
+                            let was_paused = evohime_storage::load_task(&state.pool, task_id)
+                                .await
+                                .map_err(|error| ApiError::Internal(error.to_string()))?
+                                .map(|task| task.status == "paused")
+                                .unwrap_or(false);
                             let cancellation =
                                 state.task_cancellations.lock().await.get(&task_id).cloned();
                             if let Some(token) = cancellation {
                                 token.cancel();
                             }
-                            let _ = evohime_task_engine::cancel_task(&state.pool, task_id).await;
+                            let cancel_result =
+                                evohime_task_engine::cancel_task(&state.pool, task_id).await;
+                            // Force-remove immediately only for a task that was
+                            // `paused` (no live spawned future left to ever run
+                            // Step 3's post-await cleanup on its own) — and only
+                            // once the FSM transition actually landed it in
+                            // `Cancelled`. A task that was `running` must NOT be
+                            // force-removed here even on a successful cancel:
+                            // `cancel_task`'s DB transition is immediate, but the
+                            // spawned `process_user_message` future may still be
+                            // actively writing to `primary_workspace_root` for
+                            // some time after this call returns — removing the
+                            // entry now, before that future actually stops, would
+                            // let a new task start unisolated while the
+                            // cancelled-but-not-yet-stopped one is still live in
+                            // the same directory. For a `running` task, leave the
+                            // entry in place and let that future's own eventual
+                            // `release_task_cancellation_if_terminal` call (once
+                            // `process_user_message` genuinely returns) remove it
+                            // — that's the only moment the workspace is actually
+                            // free again. `release_task_cancellation_if_terminal`
+                            // still runs unconditionally below for every other
+                            // case (task was already terminal, the FSM transition
+                            // itself failed) via its own authoritative DB check.
+                            if was_paused && cancel_result.is_ok() {
+                                state.task_cancellations.lock().await.remove(&task_id);
+                            } else {
+                                crate::task::helpers::release_task_cancellation_if_terminal(
+                                    &state, task_id,
+                                )
+                                .await;
+                            }
                             let _ = finalize_open_task_steps(&state, task_id, "cancelled").await;
                             emit_event(
                                 &state,
@@ -331,6 +413,11 @@ pub(crate) async fn handle_socket(
                                 .lock()
                                 .await
                                 .insert(task_id, token.clone());
+                            let mut cancellation_guard =
+                                crate::task::helpers::TaskCancellationGuard::new(
+                                    state.clone(),
+                                    task_id,
+                                );
                             let state_for_task = state.clone();
                             tokio::spawn(async move {
                                 if let Err((task_id, error)) =
@@ -349,11 +436,12 @@ pub(crate) async fn handle_socket(
                                     .await;
                                     let _ = fail_task(&state_for_task.pool, task_id).await;
                                 }
-                                state_for_task
-                                    .task_cancellations
-                                    .lock()
-                                    .await
-                                    .remove(&task_id);
+                                cancellation_guard.disarm();
+                                crate::task::helpers::release_task_cancellation_if_terminal(
+                                    &state_for_task,
+                                    task_id,
+                                )
+                                .await;
                             });
                         }
                         ClientCommand::TaskPlanReject { task_id } => {
@@ -464,6 +552,11 @@ pub(crate) async fn handle_socket(
                                 .lock()
                                 .await
                                 .insert(task_id, token.clone());
+                            let mut cancellation_guard =
+                                crate::task::helpers::TaskCancellationGuard::new(
+                                    state.clone(),
+                                    task_id,
+                                );
                             let state_for_task = state.clone();
                             tokio::spawn(async move {
                                 if let Err((task_id, error)) =
@@ -482,11 +575,12 @@ pub(crate) async fn handle_socket(
                                     .await;
                                     let _ = fail_task(&state_for_task.pool, task_id).await;
                                 }
-                                state_for_task
-                                    .task_cancellations
-                                    .lock()
-                                    .await
-                                    .remove(&task_id);
+                                cancellation_guard.disarm();
+                                crate::task::helpers::release_task_cancellation_if_terminal(
+                                    &state_for_task,
+                                    task_id,
+                                )
+                                .await;
                             });
                         }
                         ClientCommand::TaskRetry { task_id } => {
@@ -497,6 +591,48 @@ pub(crate) async fn handle_socket(
                                 Some(task) => task,
                                 None => continue,
                             };
+                            // Precondition gate for the worktree teardown below
+                            // (new in 7.107): only a task that is actually
+                            // `failed` right now may have its worktree torn
+                            // down. Without this check, a stale/invalid
+                            // `TaskRetry` for a task that's genuinely still
+                            // `running` or `paused` would destroy a worktree
+                            // still in active use — `retry_task`'s own FSM
+                            // check happens too late (after teardown) and its
+                            // failure is silently ignored (`let _ = ...`)
+                            // exactly as it already is below, so it cannot be
+                            // relied on to prevent this.
+                            if task.status != "failed" {
+                                continue;
+                            }
+                            // Discard any worktree left behind by a prior failed
+                            // attempt (whether it failed mid-merge or mid-agent-run)
+                            // rather than resuming into potentially stale/dirty
+                            // state — see this step's design note above. Best-effort:
+                            // a failure here just means the row/directory are left
+                            // for the next startup cleanup pass, same as any other
+                            // `remove_worktree` failure elsewhere in this feature.
+                            if let Ok(Some(row)) =
+                                evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id)
+                                    .await
+                            {
+                                let worktree_path = std::path::PathBuf::from(&row.worktree_path);
+                                let primary_root = std::path::PathBuf::from(&row.primary_workspace_root);
+                                let lock = state.merge_lock_for(&primary_root).await;
+                                let _guard = lock.lock().await;
+                                if let Err(error) =
+                                    crate::task::worktree::remove_worktree(&primary_root, &worktree_path)
+                                        .await
+                                {
+                                    tracing::warn!(%task_id, %error, "failed to remove stale worktree before retry; leaving it for startup cleanup");
+                                } else if let Err(error) = evohime_storage::task_worktrees::delete_task_worktree(
+                                    &state.pool, task_id,
+                                )
+                                .await
+                                {
+                                    tracing::warn!(%task_id, %error, "failed to delete stale task_worktrees row before retry");
+                                }
+                            }
                             let _ = retry_task(&state.pool, task_id).await;
                             state.metrics.task_retry(session_id, task_id);
                             emit_event(
@@ -525,11 +661,47 @@ pub(crate) async fn handle_socket(
                             .await?;
 
                             let token = CancellationToken::new();
-                            state
-                                .task_cancellations
-                                .lock()
+                            // Same atomic insert-and-check as the `UserMessage`
+                            // handler (Step 2) — teardown above may have just
+                            // deleted this task's own row, so whether it needs a
+                            // *fresh* one now depends on the current state of
+                            // `task_cancellations` at this exact instant, not on
+                            // whatever was true when the task originally started.
+                            let is_concurrent = {
+                                let mut guard = state.task_cancellations.lock().await;
+                                let is_concurrent = !guard.is_empty();
+                                guard.insert(task_id, token.clone());
+                                is_concurrent
+                            };
+                            let primary_root = crate::task::helpers::resolve_workspace_path(
+                                &state,
+                                task.workspace_path.clone(),
+                            )?;
+                            if is_concurrent {
+                                if let Err(error) = crate::task::worktree::provision_worktree(
+                                    &state, task_id, &primary_root,
+                                )
                                 .await
-                                .insert(task_id, token.clone());
+                                {
+                                    error!(%task_id, %error, "failed to allocate isolated worktree for retried concurrent task");
+                                    state.task_cancellations.lock().await.remove(&task_id);
+                                    let _ = fail_task(&state.pool, task_id).await;
+                                    let _ = emit_event(
+                                        &state,
+                                        session_id,
+                                        Some(task_id),
+                                        ServerEvent::TaskFailed {
+                                            task_id,
+                                            error: format!("failed to allocate isolated worktree: {error}"),
+                                            duration_ms: None,
+                                        },
+                                    )
+                                    .await;
+                                    continue;
+                                }
+                            }
+                            let mut cancellation_guard =
+                                crate::task::helpers::TaskCancellationGuard::new(state.clone(), task_id);
                             let state_for_task = state.clone();
                             tokio::spawn(async move {
                                 if let Err((task_id, error)) =
@@ -548,11 +720,12 @@ pub(crate) async fn handle_socket(
                                     .await;
                                     let _ = fail_task(&state_for_task.pool, task_id).await;
                                 }
-                                state_for_task
-                                    .task_cancellations
-                                    .lock()
-                                    .await
-                                    .remove(&task_id);
+                                cancellation_guard.disarm();
+                                crate::task::helpers::release_task_cancellation_if_terminal(
+                                    &state_for_task,
+                                    task_id,
+                                )
+                                .await;
                             });
                         }
                         ClientCommand::ApprovalGranted {

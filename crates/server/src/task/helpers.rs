@@ -177,6 +177,80 @@ pub(crate) async fn emit_event(
     Ok(())
 }
 
+/// Removes `task_id` from `task_cancellations` only if the task has reached
+/// a terminal status. A task that merely paused (e.g. for
+/// `approval.required`) still has unfinished business in its workspace and
+/// must keep signaling `is_concurrent` to any task starting while it's
+/// paused — removing it early would let a second task start unisolated in
+/// the same directory the paused task will resume into later (7.107).
+pub(crate) async fn release_task_cancellation_if_terminal(state: &Arc<AppState>, task_id: Uuid) {
+    let is_terminal = match evohime_storage::load_task(&state.pool, task_id).await {
+        Ok(Some(task)) => matches!(task.status.as_str(), "completed" | "failed" | "cancelled"),
+        Ok(None) => true, // task row is gone entirely — nothing left to track
+        Err(error) => {
+            tracing::warn!(%task_id, %error, "failed to check task status before releasing task_cancellations entry; leaving it in place");
+            false
+        }
+    };
+    if is_terminal {
+        state.task_cancellations.lock().await.remove(&task_id);
+    }
+}
+
+/// Guards against a panic inside `process_user_message`/`resume_task_run`
+/// leaking a `task_cancellations` entry forever. Those calls run directly
+/// inside a `tokio::spawn`'d block with no outer `.await` — a panic there
+/// aborts that spawned task immediately; normal post-await cleanup code
+/// (including `release_task_cancellation_if_terminal` above) never runs,
+/// since Rust doesn't execute code *after* a panic within the same async
+/// fn, only `Drop` impls of values already on the stack as it unwinds.
+/// Construct one right after inserting into `task_cancellations`, and call
+/// `.disarm()` immediately before invoking
+/// `release_task_cancellation_if_terminal` on every normal (non-panicking)
+/// exit path — that's what makes the forced removal fire *only* on a panic,
+/// never on an ordinary pause. On an ordinary pause, disarming still lets
+/// `release_task_cancellation_if_terminal`'s own terminal-status check
+/// decide correctly whether to actually remove the entry; the guard itself
+/// never makes that decision.
+pub(crate) struct TaskCancellationGuard {
+    state: Arc<AppState>,
+    task_id: Uuid,
+    armed: bool,
+}
+
+impl TaskCancellationGuard {
+    pub(crate) fn new(state: Arc<AppState>, task_id: Uuid) -> Self {
+        Self {
+            state,
+            task_id,
+            armed: true,
+        }
+    }
+
+    pub(crate) fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for TaskCancellationGuard {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        // Dropping during a panic unwind can't run `.await` directly, so
+        // spawn a fire-and-forget task to do the actual removal. Forced and
+        // unconditional (unlike `release_task_cancellation_if_terminal`):
+        // a panic means the task's real status is unknown/inconsistent, and
+        // leaving every future task on this workspace isolated forever is
+        // worse than the (already-abnormal) alternative.
+        let state = self.state.clone();
+        let task_id = self.task_id;
+        tokio::spawn(async move {
+            state.task_cancellations.lock().await.remove(&task_id);
+        });
+    }
+}
+
 pub(crate) async fn find_session_for_task(
     state: &Arc<AppState>,
     task_id: Uuid,
