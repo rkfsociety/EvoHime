@@ -61,15 +61,13 @@ async fn run_git(repo: &Path, args: &[&str], timeout: Duration) -> Result<String
             .await
             .map_err(|error| WorktreeError::Io(format!("failed to run git: {error}")))
     };
-    let output = tokio::time::timeout(timeout, run)
-        .await
-        .map_err(|_| {
-            WorktreeError::Io(format!(
-                "git -C {} {} timed out after {timeout:?}",
-                repo.display(),
-                args.join(" ")
-            ))
-        })??;
+    let output = tokio::time::timeout(timeout, run).await.map_err(|_| {
+        WorktreeError::Io(format!(
+            "git -C {} {} timed out after {timeout:?}",
+            repo.display(),
+            args.join(" ")
+        ))
+    })??;
 
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -109,10 +107,13 @@ pub(crate) async fn provision_worktree(
     // that was never actually recreated. So: an existing row only means
     // "already done" if its directory is actually still there; otherwise
     // treat it as stale and reprovision fresh, same as a missing row.
-    if let Some(existing) =
-        evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id)
-            .await
-            .map_err(|error| WorktreeError::Io(format!("failed to check for existing task_worktrees row: {error}")))?
+    if let Some(existing) = evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id)
+        .await
+        .map_err(|error| {
+            WorktreeError::Io(format!(
+                "failed to check for existing task_worktrees row: {error}"
+            ))
+        })?
     {
         if Path::new(&existing.worktree_path).exists() {
             return Ok(());
@@ -205,7 +206,8 @@ pub(crate) async fn finalize_worktree(
     // are deliberately left in place here for manual recovery (design
     // doc, Merge-back step 8), so this function's caller (pipeline.rs) is
     // free to just propagate the error as a task failure.
-    merge_worktree_into_primary(&worktree_path, primary_root, &row.base_commit_sha, task_id).await?;
+    merge_worktree_into_primary(&worktree_path, primary_root, &row.base_commit_sha, task_id)
+        .await?;
 
     // By this point the merge has already committed successfully on
     // primary_root — the task's user-visible work is done. A failure past
@@ -231,7 +233,9 @@ pub(crate) async fn finalize_worktree(
         return Ok(());
     }
 
-    if let Err(error) = evohime_storage::task_worktrees::delete_task_worktree(&state.pool, task_id).await {
+    if let Err(error) =
+        evohime_storage::task_worktrees::delete_task_worktree(&state.pool, task_id).await
+    {
         tracing::warn!(%task_id, %error, "failed to delete task_worktrees row after a successful merge; leaving it for startup cleanup to retry");
     }
 
@@ -262,13 +266,14 @@ pub(crate) const TERMINAL_TASK_STATUSES: &[&str] = &["completed", "failed", "can
 /// to inspect a worktree kept around after a merge conflict before it's
 /// swept.
 pub(crate) async fn cleanup_stale_worktrees(state: &Arc<AppState>, retention: Duration) {
-    let entries = match evohime_storage::task_worktrees::list_task_worktrees_with_status(&state.pool).await {
-        Ok(entries) => entries,
-        Err(error) => {
-            warn!(%error, "failed to list task_worktrees for startup cleanup");
-            return;
-        }
-    };
+    let entries =
+        match evohime_storage::task_worktrees::list_task_worktrees_with_status(&state.pool).await {
+            Ok(entries) => entries,
+            Err(error) => {
+                warn!(%error, "failed to list task_worktrees for startup cleanup");
+                return;
+            }
+        };
 
     // `chrono::Duration::from_std` returns `Err` for out-of-range inputs.
     // Falling back to `.unwrap_or_default()` there would silently give a
@@ -306,7 +311,8 @@ pub(crate) async fn cleanup_stale_worktrees(state: &Arc<AppState>, retention: Du
             // prune metadata from) and drop the row regardless of outcome.
             let _ = tokio::fs::remove_dir_all(&worktree_path).await;
             if let Err(error) =
-                evohime_storage::task_worktrees::delete_task_worktree(&state.pool, row.task_id).await
+                evohime_storage::task_worktrees::delete_task_worktree(&state.pool, row.task_id)
+                    .await
             {
                 warn!(task_id = %row.task_id, %error, "failed to delete task_worktrees row for a worktree whose primary_workspace_root no longer exists");
             }
@@ -402,7 +408,11 @@ pub(crate) async fn cleanup_orphaned_worktree_directories(state: &Arc<AppState>)
 /// one whose removal in `finalize_worktree` kept failing) doesn't have to
 /// wait for the next server restart to be swept — mirrors
 /// `crate::worker_api::worker_retention_loop`'s shape.
-pub(crate) async fn worktree_cleanup_loop(state: Arc<AppState>, interval: Duration, retention: Duration) {
+pub(crate) async fn worktree_cleanup_loop(
+    state: Arc<AppState>,
+    interval: Duration,
+    retention: Duration,
+) {
     let mut ticker = tokio::time::interval(interval);
     loop {
         ticker.tick().await;
@@ -438,12 +448,18 @@ pub(crate) async fn add_worktree(
     //    by the time it reaches here (it comes from `resolve_workspace_path`,
     //    which canonicalizes), but canonicalizing it again is idempotent.
     let temp_root = std::env::temp_dir();
-    let canonical_temp_root = temp_root
-        .canonicalize()
-        .map_err(|error| WorktreeError::Io(format!("failed to canonicalize {}: {error}", temp_root.display())))?;
-    let canonical_repo = repo
-        .canonicalize()
-        .map_err(|error| WorktreeError::Io(format!("failed to canonicalize {}: {error}", repo.display())))?;
+    let canonical_temp_root = temp_root.canonicalize().map_err(|error| {
+        WorktreeError::Io(format!(
+            "failed to canonicalize {}: {error}",
+            temp_root.display()
+        ))
+    })?;
+    let canonical_repo = repo.canonicalize().map_err(|error| {
+        WorktreeError::Io(format!(
+            "failed to canonicalize {}: {error}",
+            repo.display()
+        ))
+    })?;
     if canonical_temp_root == canonical_repo || canonical_temp_root.starts_with(&canonical_repo) {
         return Err(WorktreeError::Io(format!(
             "refusing to create worktree {} — the OS temp directory {} is nested inside primary root {}",
@@ -485,19 +501,21 @@ pub(crate) async fn add_worktree(
                         worktree_path.display()
                     )));
                 }
-                tokio::fs::remove_dir_all(&worktree_path).await.map_err(|error| {
-                    WorktreeError::Io(format!(
-                        "worktree path {} already exists and could not be cleared: {error}",
-                        worktree_path.display()
-                    ))
-                })?;
+                tokio::fs::remove_dir_all(&worktree_path)
+                    .await
+                    .map_err(|error| {
+                        WorktreeError::Io(format!(
+                            "worktree path {} already exists and could not be cleared: {error}",
+                            worktree_path.display()
+                        ))
+                    })?;
             }
         }
     }
     if let Some(parent) = worktree_path.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|error| WorktreeError::Io(format!("failed to create {}: {error}", parent.display())))?;
+        tokio::fs::create_dir_all(parent).await.map_err(|error| {
+            WorktreeError::Io(format!("failed to create {}: {error}", parent.display()))
+        })?;
     }
     let worktree_path_str = worktree_path.to_string_lossy().into_owned();
     run_git(
@@ -509,7 +527,10 @@ pub(crate) async fn add_worktree(
     Ok(())
 }
 
-pub(crate) async fn remove_worktree(repo: &Path, worktree_path: &Path) -> Result<(), WorktreeError> {
+pub(crate) async fn remove_worktree(
+    repo: &Path,
+    worktree_path: &Path,
+) -> Result<(), WorktreeError> {
     // `worktree remove`'s own failure is captured, not propagated
     // immediately with `?` — `prune` below must always run regardless, or
     // `.git/worktrees/<id>/` metadata for this path is left registered in
@@ -574,7 +595,10 @@ impl ChangedPaths {
     }
 }
 
-async fn changed_paths(worktree_path: &Path, base_sha: &str) -> Result<ChangedPaths, WorktreeError> {
+async fn changed_paths(
+    worktree_path: &Path,
+    base_sha: &str,
+) -> Result<ChangedPaths, WorktreeError> {
     // `-z`: NUL-delimited, *unquoted* paths. Without it, git's default
     // `core.quotePath=true` C-style-quotes any path containing a non-ASCII
     // byte — not a hypothetical for a project whose own docs and commit
@@ -593,11 +617,15 @@ async fn changed_paths(worktree_path: &Path, base_sha: &str) -> Result<ChangedPa
             .stderr(Stdio::piped())
             .output()
             .await
-            .map_err(|error| WorktreeError::Io(format!("failed to run git diff --name-status: {error}")))
+            .map_err(|error| {
+                WorktreeError::Io(format!("failed to run git diff --name-status: {error}"))
+            })
     };
     let output = tokio::time::timeout(merge_timeout(), run)
         .await
-        .map_err(|_| WorktreeError::Io("git diff --cached --name-status -z timed out".to_string()))??;
+        .map_err(|_| {
+            WorktreeError::Io("git diff --cached --name-status -z timed out".to_string())
+        })??;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(WorktreeError::Io(format!(
@@ -715,7 +743,9 @@ async fn apply_patch(primary_root: &Path, patch: &[u8]) -> Result<(), WorktreeEr
         .await
         .map_err(|_| WorktreeError::Io("git apply timed out".to_string()))?;
 
-    write_result.map_err(|error| WorktreeError::Io(format!("failed to write patch to git apply: {error}")))?;
+    write_result.map_err(|error| {
+        WorktreeError::Io(format!("failed to write patch to git apply: {error}"))
+    })?;
     let output = output_result
         .map_err(|error| WorktreeError::Io(format!("failed to wait on git apply: {error}")))?;
 
@@ -809,7 +839,9 @@ pub(crate) async fn merge_worktree_into_primary(
         return Err(WorktreeError::Conflict(if restored_cleanly {
             apply_error.to_string()
         } else {
-            format!("{apply_error} (rollback incomplete — see logs, primary_root may still be dirty)")
+            format!(
+                "{apply_error} (rollback incomplete — see logs, primary_root may still be dirty)"
+            )
         }));
     }
 
@@ -826,7 +858,9 @@ pub(crate) async fn merge_worktree_into_primary(
             .args(&quiet_args)
             .status()
             .await
-            .map_err(|error| WorktreeError::Io(format!("failed to run git diff --cached --quiet: {error}")))
+            .map_err(|error| {
+                WorktreeError::Io(format!("failed to run git diff --cached --quiet: {error}"))
+            })
     };
     let staged = tokio::time::timeout(merge_timeout(), run)
         .await
@@ -847,7 +881,11 @@ pub(crate) async fn merge_worktree_into_primary(
         let restored_cleanly = restore_paths(primary_root, &changed).await;
         return Err(WorktreeError::Io(format!(
             "commit failed after a clean apply: {commit_error}{}",
-            if restored_cleanly { "" } else { " (rollback incomplete — see logs, primary_root may still be dirty)" }
+            if restored_cleanly {
+                ""
+            } else {
+                " (rollback incomplete — see logs, primary_root may still be dirty)"
+            }
         )));
     }
     Ok(())
@@ -1000,7 +1038,10 @@ mod tests {
             .expect("merge back");
 
         let head_after = rev_parse_head(repo.path()).await.expect("rev-parse after");
-        assert_ne!(head_before, head_after, "HEAD must advance after merge-back");
+        assert_ne!(
+            head_before, head_after,
+            "HEAD must advance after merge-back"
+        );
         assert!(repo.path().join("new-file.txt").exists());
 
         remove_worktree(repo.path(), &worktree_path)
@@ -1030,7 +1071,8 @@ mod tests {
         let head_before_merge = rev_parse_head(repo.path()).await.expect("rev-parse");
 
         let result =
-            merge_worktree_into_primary(&worktree_path, repo.path(), &base_sha, Uuid::new_v4()).await;
+            merge_worktree_into_primary(&worktree_path, repo.path(), &base_sha, Uuid::new_v4())
+                .await;
         assert!(matches!(result, Err(WorktreeError::Conflict(_))));
 
         let head_after_merge = rev_parse_head(repo.path()).await.expect("rev-parse after");
@@ -1086,7 +1128,8 @@ mod tests {
         // shapes of "unrelated dirty state" must survive untouched.
         std::fs::write(repo.path().join("live-task-staged.txt"), "wip staged\n").expect("write");
         run(repo.path(), &["git", "add", "live-task-staged.txt"]);
-        std::fs::write(repo.path().join("live-task-unstaged.txt"), "wip unstaged\n").expect("write");
+        std::fs::write(repo.path().join("live-task-unstaged.txt"), "wip unstaged\n")
+            .expect("write");
 
         merge_worktree_into_primary(&worktree_path, repo.path(), &base_sha, Uuid::new_v4())
             .await
@@ -1143,7 +1186,10 @@ mod tests {
             .expect("merge back");
 
         let landed = std::fs::read(repo.path().join("image.bin")).expect("read merged binary");
-        assert_eq!(landed, binary_content, "binary content must survive merge-back byte-for-byte");
+        assert_eq!(
+            landed, binary_content,
+            "binary content must survive merge-back byte-for-byte"
+        );
 
         remove_worktree(repo.path(), &worktree_path)
             .await
@@ -1180,7 +1226,8 @@ mod tests {
         let head_before_merge = rev_parse_head(repo.path()).await.expect("rev-parse");
 
         let result =
-            merge_worktree_into_primary(&worktree_path, repo.path(), &base_sha, Uuid::new_v4()).await;
+            merge_worktree_into_primary(&worktree_path, repo.path(), &base_sha, Uuid::new_v4())
+                .await;
         assert!(matches!(result, Err(WorktreeError::Conflict(_))));
 
         let head_after_merge = rev_parse_head(repo.path()).await.expect("rev-parse after");
@@ -1271,10 +1318,16 @@ mod tests {
             .expect("get B")
             .expect("row B present");
 
-        std::fs::write(PathBuf::from(&row_a.worktree_path).join("a.txt"), "from a\n")
-            .expect("write a");
-        std::fs::write(PathBuf::from(&row_b.worktree_path).join("b.txt"), "from b\n")
-            .expect("write b");
+        std::fs::write(
+            PathBuf::from(&row_a.worktree_path).join("a.txt"),
+            "from a\n",
+        )
+        .expect("write a");
+        std::fs::write(
+            PathBuf::from(&row_b.worktree_path).join("b.txt"),
+            "from b\n",
+        )
+        .expect("write b");
 
         finalize_worktree(&state, task_id_a, repo.path(), &row_a)
             .await
@@ -1285,14 +1338,18 @@ mod tests {
 
         assert!(repo.path().join("a.txt").exists());
         assert!(repo.path().join("b.txt").exists());
-        assert!(evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id_a)
-            .await
-            .expect("get A after")
-            .is_none());
-        assert!(evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id_b)
-            .await
-            .expect("get B after")
-            .is_none());
+        assert!(
+            evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id_a)
+                .await
+                .expect("get A after")
+                .is_none()
+        );
+        assert!(
+            evohime_storage::task_worktrees::get_task_worktree(&state.pool, task_id_b)
+                .await
+                .expect("get B after")
+                .is_none()
+        );
     }
 
     // Merged from three formerly-separate `#[tokio::test]` functions
@@ -1474,9 +1531,12 @@ mod tests {
                 .await
                 .expect("get overflow row for manual cleanup")
                 .expect("overflow row present");
-        remove_worktree(overflow_repo.path(), &PathBuf::from(&overflow_row.worktree_path))
-            .await
-            .expect("manual cleanup");
+        remove_worktree(
+            overflow_repo.path(),
+            &PathBuf::from(&overflow_row.worktree_path),
+        )
+        .await
+        .expect("manual cleanup");
         evohime_storage::task_worktrees::delete_task_worktree(&state.pool, overflow_task)
             .await
             .expect("delete overflow row for manual cleanup");
@@ -1553,10 +1613,16 @@ mod tests {
             .expect("get B")
             .expect("row B present");
 
-        std::fs::write(PathBuf::from(&row_a.worktree_path).join("from-a.txt"), "a\n")
-            .expect("write a");
-        std::fs::write(PathBuf::from(&row_b.worktree_path).join("from-b.txt"), "b\n")
-            .expect("write b");
+        std::fs::write(
+            PathBuf::from(&row_a.worktree_path).join("from-a.txt"),
+            "a\n",
+        )
+        .expect("write a");
+        std::fs::write(
+            PathBuf::from(&row_b.worktree_path).join("from-b.txt"),
+            "b\n",
+        )
+        .expect("write b");
 
         // Both finalize calls race for the same `merge_lock_for(repo.path())`
         // lock. If it didn't actually serialize them, two concurrent
@@ -1570,8 +1636,14 @@ mod tests {
         result_a.expect("finalize A");
         result_b.expect("finalize B");
 
-        assert!(repo.path().join("from-a.txt").exists(), "task A's file must survive");
-        assert!(repo.path().join("from-b.txt").exists(), "task B's file must survive");
+        assert!(
+            repo.path().join("from-a.txt").exists(),
+            "task A's file must survive"
+        );
+        assert!(
+            repo.path().join("from-b.txt").exists(),
+            "task B's file must survive"
+        );
 
         let status_output = StdCommand::new("git")
             .args(["status", "--porcelain"])

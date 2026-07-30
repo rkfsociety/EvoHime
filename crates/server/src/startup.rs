@@ -145,7 +145,8 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
     tokio::spawn(async move {
         worker_retention_loop(retention_state, retention_days).await;
     });
-    let worktree_retention = duration_secs_env_local("EVOHIME_WORKTREE_RETENTION_SECS", 24 * 60 * 60);
+    let worktree_retention =
+        duration_secs_env_local("EVOHIME_WORKTREE_RETENTION_SECS", 24 * 60 * 60);
     let worktree_cleanup_interval =
         duration_secs_env_local("EVOHIME_WORKTREE_CLEANUP_INTERVAL_SECS", 60 * 60);
     let worktree_cleanup_state = state.clone();
@@ -293,7 +294,9 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
         .await
         .context("list tasks for task_cancellations startup seed")?
         .into_iter()
-        .filter(|task| !crate::task::worktree::TERMINAL_TASK_STATUSES.contains(&task.status.as_str()));
+        .filter(|task| {
+            !crate::task::worktree::TERMINAL_TASK_STATUSES.contains(&task.status.as_str())
+        });
     {
         let mut cancellations = state.task_cancellations.lock().await;
         for task in non_terminal_tasks {
