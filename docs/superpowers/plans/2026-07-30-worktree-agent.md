@@ -1719,10 +1719,17 @@ Then move it into the spawned block by capturing it in the `async move` closure 
 
 - [ ] **Step 4: Fix `TaskCancel` for a currently-paused task**
 
-`ClientCommand::TaskCancel` (`ws.rs:200-218`) transitions the task to `Cancelled` by calling `evohime_task_engine::cancel_task` directly. For a task that's actively running, cancellation triggers the token, the spawned future's `await` resolves, and Step 3's new helper removes the entry correctly. But for a task that's currently *paused* (no active spawned future — its `.await` already resolved when it first paused), nothing will ever re-run Step 3's check, so cancelling a paused task would transition it to `Cancelled` in the database while leaving its `task_cancellations` entry stuck forever — needlessly isolating every future task indefinitely. Add a direct removal right after the cancellation:
+`ClientCommand::TaskCancel` (`ws.rs:200-218`) transitions the task to `Cancelled` by calling `evohime_task_engine::cancel_task` directly. For a task that's currently *paused* (no active spawned future — its `.await` already resolved when it first paused), nothing will ever re-run Step 3's cleanup check, so cancelling a paused task would transition it to `Cancelled` in the database while leaving its `task_cancellations` entry stuck forever — needlessly isolating every future task indefinitely.
+
+For a task that's actively *running*, the situation is the opposite of what it first looks like: `cancel_task`'s `"running"` branch (`crates/task-engine/src/lib.rs:94-98`) transitions `running → cancelling → cancelled` as an immediate, synchronous DB update — it does **not** wait for the spawned `process_user_message` future to actually observe `token.cancel()` and return. That future may still be mid-way through a tool call for some time after `cancel_task` returns `Ok`, still genuinely writing to `primary_workspace_root`. Force-removing the `task_cancellations` entry the instant `cancel_task` succeeds — regardless of whether the task was `running` or `paused` beforehand — would open exactly the window this feature exists to close: a *new* task starting a moment later sees `is_concurrent = false` and runs unisolated in `primary_workspace_root`, concurrently with the still-unwinding cancelled task. The DB says `cancelled`; the filesystem doesn't know that yet. Only a *paused* task is safe to force-remove immediately, because by definition it has no live spawned future left to eventually clean up after itself — Step 4's fix must tell the two cases apart by checking the task's status *before* calling `cancel_task` (once cancelled, the DB no longer distinguishes which state it cancelled from).
 
 ```rust
                         ClientCommand::TaskCancel { task_id } => {
+                            let was_paused = evohime_storage::load_task(&state.pool, task_id)
+                                .await
+                                .map_err(|error| ApiError::Internal(error.to_string()))?
+                                .map(|task| task.status == "paused")
+                                .unwrap_or(false);
                             let cancellation =
                                 state.task_cancellations.lock().await.get(&task_id).cloned();
                             if let Some(token) = cancellation {
@@ -1730,20 +1737,29 @@ Then move it into the spawned block by capturing it in the `async move` closure 
                             }
                             let cancel_result =
                                 evohime_task_engine::cancel_task(&state.pool, task_id).await;
-                            // Only force-remove here if the FSM transition actually
-                            // landed the task in `Cancelled` — an unconditional
-                            // remove would also fire when `cancel_task` fails an
-                            // invalid-transition check (e.g. the task is currently
-                            // `retrying`, which isn't directly cancellable per the
-                            // FSM in `evohime_task_engine::cancel_task`), leaving a
-                            // genuinely non-terminal task with no
-                            // `task_cancellations` entry — the same unsafe-concurrency
-                            // window this whole feature exists to close. Falling
-                            // through to `release_task_cancellation_if_terminal`
-                            // covers every other case (task was already terminal,
-                            // or is paused and cancel succeeded) via its own
-                            // authoritative DB status check.
-                            if cancel_result.is_ok() {
+                            // Force-remove immediately only for a task that was
+                            // `paused` (no live spawned future left to ever run
+                            // Step 3's post-await cleanup on its own) — and only
+                            // once the FSM transition actually landed it in
+                            // `Cancelled`. A task that was `running` must NOT be
+                            // force-removed here even on a successful cancel:
+                            // `cancel_task`'s DB transition is immediate, but the
+                            // spawned `process_user_message` future may still be
+                            // actively writing to `primary_workspace_root` for
+                            // some time after this call returns — removing the
+                            // entry now, before that future actually stops, would
+                            // let a new task start unisolated while the
+                            // cancelled-but-not-yet-stopped one is still live in
+                            // the same directory. For a `running` task, leave the
+                            // entry in place and let that future's own eventual
+                            // `release_task_cancellation_if_terminal` call (once
+                            // `process_user_message` genuinely returns) remove it
+                            // — that's the only moment the workspace is actually
+                            // free again. `release_task_cancellation_if_terminal`
+                            // still runs unconditionally below for every other
+                            // case (task was already terminal, the FSM transition
+                            // itself failed) via its own authoritative DB check.
+                            if was_paused && cancel_result.is_ok() {
                                 state.task_cancellations.lock().await.remove(&task_id);
                             } else {
                                 crate::task::helpers::release_task_cancellation_if_terminal(
@@ -1754,7 +1770,7 @@ Then move it into the spawned block by capturing it in the `async move` closure 
                             let _ = finalize_open_task_steps(&state, task_id, "cancelled").await;
 ```
 
-This replaces the existing first five lines of the `TaskCancel` arm (find it via `grep -n "ClientCommand::TaskCancel" crates/server/src/ws.rs`) — everything from `emit_event(...)` onward in that arm is unchanged. `release_task_cancellation_if_terminal` (Task 5, Step 3) is defined before this task in execution order, so it's already available here. Removing on a successful cancel is safe/idempotent even for an actively-running task too (Step 3's helper would find the row already gone and just no-op if this arm's own spawn hasn't unwound yet).
+This replaces the existing first five lines of the `TaskCancel` arm (find it via `grep -n "ClientCommand::TaskCancel" crates/server/src/ws.rs`) — everything from `emit_event(...)` onward in that arm is unchanged. `release_task_cancellation_if_terminal` (Task 5, Step 3) is defined before this task in execution order, so it's already available here. Note that in the `was_paused` branch, `release_task_cancellation_if_terminal` would also happen to remove the entry correctly on its own (a cancelled task is terminal) — the direct force-remove isn't strictly necessary there either, but keeping it makes the paused-and-just-cancelled case's removal unconditional on the DB round-trip inside `release_task_cancellation_if_terminal` succeeding, rather than silently leaving the entry in place if that check happens to fail transiently right at this moment.
 
 - [ ] **Step 5: Fix `TaskRetry` reusing a stale worktree after a failed merge**
 
