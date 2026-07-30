@@ -38,6 +38,18 @@ its changes back into the primary checkout automatically.
   today.
 - No support for workspaces that are not git repositories beyond graceful
   fallback (see Error handling).
+- Concurrency detection (`is_concurrent`) stays global across
+  `task_cancellations`, not scoped per distinct `workspace_root`. A task
+  can carry its own `workspace_root` via `task.workspace_path` (Sites
+  feature, `crates/server/src/task/pipeline.rs:73-81`) that differs from
+  `AppState.workspace_root`; this design does not check whether a
+  concurrently-running task actually targets the *same* directory before
+  triggering isolation. The only cost of this simplification is an
+  occasional unnecessary worktree (isolation triggered for two tasks on
+  unrelated Sites workspaces); it is never a correctness risk, since
+  merge-back always targets the isolated task's own resolved
+  `workspace_root`, never a different one. Scoping the trigger per-path is
+  future work if the waste turns out to matter in practice.
 
 ## Architecture
 
