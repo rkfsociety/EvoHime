@@ -348,7 +348,7 @@ git commit -m "feat(storage): add task_worktrees table and DAO (7.107)"
 - Consumes: nothing outside `std`/`tokio::process`.
 - Produces (module-private-to-crate, used by Task 5/6/7):
   - `pub(crate) enum WorktreeError { NotAGitRepo(String), Conflict(String), Io(String) }` with a `Display` impl.
-  - `pub(crate) const WORKTREE_OP_TIMEOUT: Duration` (30s) — quick, metadata-only git operations.
+  - `pub(crate) fn worktree_op_timeout() -> Duration` (default 30s, overridable via `EVOHIME_WORKTREE_OP_TIMEOUT_SECS`) — quick, metadata-only git operations. Same configuration mechanism as `merge_timeout()` (env var + cached `OnceLock`), rather than a hardcoded constant for one and an env-configurable function for the other — one consistent approach for both timeout categories.
   - `pub(crate) async fn rev_parse_head(repo: &Path) -> Result<String, WorktreeError>`
   - `pub(crate) async fn add_worktree(repo: &Path, worktree_path: &Path, base_sha: &str) -> Result<(), WorktreeError>`
   - `pub(crate) async fn remove_worktree(repo: &Path, worktree_path: &Path) -> Result<(), WorktreeError>` (tolerates a missing `worktree_path`)
@@ -393,7 +393,22 @@ impl fmt::Display for WorktreeError {
 }
 
 /// Quick, metadata-only git operations (rev-parse, worktree add/remove/prune).
-pub(crate) const WORKTREE_OP_TIMEOUT: Duration = Duration::from_secs(30);
+/// Overridable via `EVOHIME_WORKTREE_OP_TIMEOUT_SECS` (default 30s). Same
+/// mechanism as `merge_timeout()` below (env var + cached `OnceLock`) —
+/// one consistent configuration approach for both timeout categories,
+/// rather than a hardcoded constant for this one and an env-configurable
+/// function for the other.
+pub(crate) fn worktree_op_timeout() -> Duration {
+    static VALUE: std::sync::OnceLock<Duration> = std::sync::OnceLock::new();
+    *VALUE.get_or_init(|| {
+        std::env::var("EVOHIME_WORKTREE_OP_TIMEOUT_SECS")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .filter(|secs: &u64| *secs > 0)
+            .map(Duration::from_secs)
+            .unwrap_or_else(|| Duration::from_secs(30))
+    })
+}
 
 async fn run_git(repo: &Path, args: &[&str], timeout: Duration) -> Result<String, WorktreeError> {
     let run = async {
@@ -432,7 +447,7 @@ async fn run_git(repo: &Path, args: &[&str], timeout: Duration) -> Result<String
 }
 
 pub(crate) async fn rev_parse_head(repo: &Path) -> Result<String, WorktreeError> {
-    run_git(repo, &["rev-parse", "HEAD"], WORKTREE_OP_TIMEOUT)
+    run_git(repo, &["rev-parse", "HEAD"], worktree_op_timeout())
         .await
         .map_err(|error| WorktreeError::NotAGitRepo(error.to_string()))
 }
@@ -523,7 +538,7 @@ pub(crate) async fn add_worktree(
     run_git(
         repo,
         &["worktree", "add", "--detach", &worktree_path_str, base_sha],
-        WORKTREE_OP_TIMEOUT,
+        worktree_op_timeout(),
     )
     .await?;
     Ok(())
@@ -535,11 +550,11 @@ pub(crate) async fn remove_worktree(repo: &Path, worktree_path: &Path) -> Result
         run_git(
             repo,
             &["worktree", "remove", "--force", &worktree_path_str],
-            WORKTREE_OP_TIMEOUT,
+            worktree_op_timeout(),
         )
         .await?;
     }
-    run_git(repo, &["worktree", "prune"], WORKTREE_OP_TIMEOUT).await?;
+    run_git(repo, &["worktree", "prune"], worktree_op_timeout()).await?;
     Ok(())
 }
 
@@ -861,19 +876,29 @@ async fn apply_patch(primary_root: &Path, patch: &[u8]) -> Result<(), WorktreeEr
 /// rather than propagating, since this itself only runs while already
 /// recovering from a failed apply/commit — the original error is what the
 /// caller returns.
-async fn restore_paths(repo: &Path, changed: &ChangedPaths) {
+/// Returns `false` if any part of the restore itself failed — the caller
+/// folds that into its own error message rather than leaving "rollback may
+/// be incomplete" as something only visible in a log line elsewhere. A
+/// partial-restore failure still returns the *original* conflict/commit
+/// error to the task (this function's own failures are secondary), just
+/// with that extra fact appended so it isn't silently invisible outside
+/// the logs.
+async fn restore_paths(repo: &Path, changed: &ChangedPaths) -> bool {
+    let mut clean = true;
     if !changed.existing.is_empty() {
         let mut args: Vec<&str> = vec!["checkout", "HEAD", "--"];
         args.extend(changed.existing.iter().map(String::as_str));
         if let Err(error) = run_git(repo, &args, merge_timeout()).await {
             warn!(%error, "failed to restore existing paths to HEAD after a failed merge-back");
+            clean = false;
         }
     }
     if !changed.added.is_empty() {
         let mut args: Vec<&str> = vec!["reset", "--"];
         args.extend(changed.added.iter().map(String::as_str));
-        if let Err(error) = run_git(repo, &args, WORKTREE_OP_TIMEOUT).await {
+        if let Err(error) = run_git(repo, &args, worktree_op_timeout()).await {
             warn!(%error, "failed to unstage added paths after a failed merge-back");
+            clean = false;
         }
         for path in &changed.added {
             // Intentionally ignored: this path may never have actually been
@@ -884,6 +909,7 @@ async fn restore_paths(repo: &Path, changed: &ChangedPaths) {
             let _ = tokio::fs::remove_file(repo.join(path)).await;
         }
     }
+    clean
 }
 
 pub(crate) async fn merge_worktree_into_primary(
@@ -920,8 +946,12 @@ pub(crate) async fn merge_worktree_into_primary(
     let patch = diff_cached_patch(worktree_path, base_sha).await?;
 
     if let Err(apply_error) = apply_patch(primary_root, &patch).await {
-        restore_paths(primary_root, &changed).await;
-        return Err(WorktreeError::Conflict(apply_error.to_string()));
+        let restored_cleanly = restore_paths(primary_root, &changed).await;
+        return Err(WorktreeError::Conflict(if restored_cleanly {
+            apply_error.to_string()
+        } else {
+            format!("{apply_error} (rollback incomplete — see logs, primary_root may still be dirty)")
+        }));
     }
 
     // Only commit if THIS merge's own paths actually have staged changes —
@@ -950,9 +980,10 @@ pub(crate) async fn merge_worktree_into_primary(
     // elsewhere in the index — this is what keeps a concurrently-running
     // unisolated task's unrelated state out of this commit.
     if let Err(commit_error) = run_git(primary_root, &commit_args, merge_timeout()).await {
-        restore_paths(primary_root, &changed).await;
+        let restored_cleanly = restore_paths(primary_root, &changed).await;
         return Err(WorktreeError::Io(format!(
-            "commit failed after a clean apply: {commit_error}"
+            "commit failed after a clean apply: {commit_error}{}",
+            if restored_cleanly { "" } else { " (rollback incomplete — see logs, primary_root may still be dirty)" }
         )));
     }
     Ok(())
@@ -1363,7 +1394,12 @@ pub(crate) async fn provision_worktree(
     {
         // Roll back: without a row, nothing (merge-back, startup cleanup)
         // will ever find this directory again — it would become a
-        // permanent orphan otherwise.
+        // permanent orphan otherwise. If this rollback attempt *also*
+        // fails (e.g. a transient git/filesystem error right on top of the
+        // DB error above), the directory is still not lost forever: it's
+        // exactly what `cleanup_orphaned_worktree_directories` (Task 7)
+        // exists to sweep — a `.git`-marked directory under
+        // `evohime-worktrees/` with no matching `task_worktrees` row.
         let _ = remove_worktree(primary_root, &worktree_path).await;
         return Err(WorktreeError::Io(format!(
             "failed to persist task_worktrees row: {error}"
@@ -1492,7 +1528,9 @@ Note: `is_concurrent == false` (the common case) never calls `provision_worktree
 
 - [ ] **Step 3: Fix a live concurrency bug this feature depends on — `task_cancellations` must survive an approval pause**
 
-`is_concurrent` (Step 2) is only correct if `task_cancellations` actually reflects every task that still has unfinished business in a workspace — including one that's `Paused` waiting on `approval.required`, not just one currently executing. Today it doesn't: `crates/server/src/ws.rs` has four places that spawn a task run and unconditionally remove its `task_cancellations` entry once the run's `.await` resolves — the `UserMessage` handler this task is already editing (originally ~ws.rs:193-197, now shifted by Step 2's edit), and three resume paths (`ClientCommand::TaskPlanApprove`, `TaskResume`, `TaskRetry`) that all follow the identical insert-before-spawn / remove-after-await shape. `process_user_message`/`resume_task_run` return `Ok(())` both when a task truly completes *and* when it merely pauses for approval (`crates/server/src/task/pipeline.rs`'s `NeedsApproval` branch returns early). All four sites currently treat both cases identically and remove the entry either way — so a paused task's directory stops being protected by `is_concurrent` the moment it pauses, even though it's still going to resume into that same directory later. A second task starting in that window sees an empty map, runs unisolated, and can end up running *at the same time* as the first task once it's approved and resumes — the exact race this whole feature exists to prevent, on a mainline (not edge-case) flow.
+`is_concurrent` (Step 2) is only correct if `task_cancellations` actually reflects every task that still has unfinished business in a workspace — including one that's `Paused` waiting on `approval.required`, not just one currently executing. That's a real broadening of what this pre-existing field means: it was a `CancellationToken` registry for actively-running tasks (its name and original purpose), and this fix repurposes it into a "task still has unfinished business" registry — a `Paused` task's entry stays not because anything might still cancel it right now, but because `is_concurrent` needs to know it exists. Renaming the field itself is out of scope here (it's pre-existing infrastructure used well beyond this feature, touching it would violate "minimize diff scope"); this paragraph is the canonical place documenting the expanded meaning for anyone reading `crates/server/src/app.rs`'s field later.
+
+Today it doesn't: `crates/server/src/ws.rs` has four places that spawn a task run and unconditionally remove its `task_cancellations` entry once the run's `.await` resolves — the `UserMessage` handler this task is already editing (originally ~ws.rs:193-197, now shifted by Step 2's edit), and three resume paths (`ClientCommand::TaskPlanApprove`, `TaskResume`, `TaskRetry`) that all follow the identical insert-before-spawn / remove-after-await shape. `process_user_message`/`resume_task_run` return `Ok(())` both when a task truly completes *and* when it merely pauses for approval (`crates/server/src/task/pipeline.rs`'s `NeedsApproval` branch returns early). All four sites currently treat both cases identically and remove the entry either way — so a paused task's directory stops being protected by `is_concurrent` the moment it pauses, even though it's still going to resume into that same directory later. A second task starting in that window sees an empty map, runs unisolated, and can end up running *at the same time* as the first task once it's approved and resumes — the exact race this whole feature exists to prevent, on a mainline (not edge-case) flow.
 
 Add a shared helper to `crates/server/src/task/helpers.rs` (alongside `resolve_workspace_path` etc.):
 
@@ -1791,6 +1829,15 @@ pub(crate) async fn cleanup_stale_worktrees(state: &Arc<AppState>, retention: Du
             continue;
         }
 
+        // Take the same per-primary-root lock a normal merge-back would
+        // (`AppState::merge_lock_for`, Task 4). Without it, this cleanup
+        // pass's `git worktree remove`/`prune` (both touch `.git/worktrees/`
+        // metadata under primary_root's own `.git` directory) could run
+        // concurrently with a *different*, still-active task's
+        // `finalize_worktree` targeting the same primary_root — two git
+        // invocations racing on the same repository's internal state.
+        let lock = state.merge_lock_for(&primary_root).await;
+        let _guard = lock.lock().await;
         if let Err(error) = remove_worktree(&primary_root, &worktree_path).await {
             warn!(
                 task_id = %row.task_id,
@@ -1914,14 +1961,16 @@ pub(crate) async fn worktree_cleanup_loop(state: Arc<AppState>, interval: Durati
 }
 ```
 
-Then, in `crates/server/src/startup.rs`, spawn it near the existing `worker_retention_loop`/`worker_health_loop` spawns (around line 144-152):
+Then, in `crates/server/src/startup.rs`, spawn it near the existing `worker_retention_loop`/`worker_health_loop` spawns (around line 144-152). Make the interval configurable the same way `worktree_retention` already is, rather than hardcoding it — a stuck worktree otherwise waits up to a fixed hour regardless of how urgently an operator might want to shorten that window:
 
 ```rust
+    let worktree_cleanup_interval =
+        duration_secs_env_local("EVOHIME_WORKTREE_CLEANUP_INTERVAL_SECS", 60 * 60);
     let worktree_cleanup_state = state.clone();
     tokio::spawn(async move {
         crate::task::worktree::worktree_cleanup_loop(
             worktree_cleanup_state,
-            Duration::from_secs(60 * 60),
+            worktree_cleanup_interval,
             worktree_retention,
         )
         .await;
@@ -2287,6 +2336,13 @@ Then add the tests:
         tokio::fs::create_dir_all(&orphan_dir)
             .await
             .expect("create orphan dir");
+        // The sweep requires a `.git` marker before deleting anything (only
+        // confirming a directory is actually one of our worktree checkouts,
+        // not an unrelated directory that happens to have a UUID-shaped
+        // name) — a real worktree always has this, so the test must too.
+        tokio::fs::write(orphan_dir.join(".git"), "gitdir: /fake/for/test\n")
+            .await
+            .expect("create .git marker");
         // No task_worktrees row for orphan_id at all — simulates a row that
         // disappeared via ON DELETE CASCADE without this app's own code
         // ever running to clean up the directory.
