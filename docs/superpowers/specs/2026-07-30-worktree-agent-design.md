@@ -106,6 +106,45 @@ map, skip isolation, and run directly against `workspace_root` while this
 task's merge-back is still touching it — reintroducing the exact race this
 design exists to prevent.
 
+**The entry must also survive an approval pause, not just merge-back —
+this is a live bug in the code the entry pattern already follows.**
+`crates/server/src/ws.rs` has four places that spawn a task run and remove
+its `task_cancellations` entry unconditionally once the run's `await`
+resolves: the initial `UserMessage` handler (~ws.rs:193-197) and three
+resume paths (plan-approval-granted ~ws.rs:352-356, tool-approval-granted,
+and manual task-resume — all following the identical insert-before-spawn /
+remove-after-await shape). A task that pauses for `approval.required`
+(`crates/server/src/task/pipeline.rs`'s `NeedsApproval` branch) returns
+`Ok(())` from `process_user_message`/`resume_task_run` *without finishing*
+— it is `Paused`, not done, and will keep using the same
+`primary_workspace_root` once resumed. All four call sites currently treat
+that `Ok(())` exactly like true completion and remove the entry anyway.
+Concretely: task A (first, unisolated) pauses for approval and its entry
+is removed → task B starts, sees an empty map, also runs unisolated
+directly against the same `primary_workspace_root` → the user approves A →
+A resumes, still unisolated, now potentially running *at the same time* as
+B in the same directory. This reintroduces the exact concurrent-write race
+this whole design exists to prevent, and it is a mainline flow (approval
+pauses are a normal, frequently-used path), not an edge case.
+
+Fix: at all four removal sites, only remove the entry once the task's
+*current* status (re-read from `tasks` via `evohime_storage::load_task`)
+is terminal (`completed`/`failed`/`cancelled`) — never on a bare `Ok(()))`.
+A `Paused` task keeps its entry indefinitely, which is correct: as long as
+it's paused, some other task starting concurrently must still isolate
+against the same directory. The entry is only actually removed when the
+task reaches a real terminal state — either by finishing normally (the
+resumed run eventually completes) or by being explicitly cancelled.
+
+That last case needs one more fix: `ClientCommand::TaskCancel`
+(`ws.rs:200-218`) cancels a task by calling `evohime_task_engine::cancel_task`
+directly — for a currently-*paused* task, there is no active spawned
+future whose `await` will ever resolve again to trigger the
+status-recheck-and-remove above. `TaskCancel`'s handler must remove the
+`task_cancellations` entry itself, right after transitioning the task to
+`Cancelled`, or a cancelled-while-paused task's entry would never be
+cleaned up and every later task would be needlessly isolated forever.
+
 ### Worktree lifecycle
 
 - Location: **outside** `workspace_root` entirely —
@@ -140,6 +179,23 @@ design exists to prevent.
 - The agent runtime, tool registry, and all filesystem/shell/git tool calls
   for that task operate against this path exactly as they would against
   `workspace_root` — no other code path changes.
+- Defense in depth: before calling `git worktree add`, verify
+  `worktree_path` does not start with `primary_root` (it never will in
+  practice, since the path is built from `std::env::temp_dir()`, but this
+  is a one-line, zero-cost assertion against `std::env::temp_dir()` ever
+  being misconfigured — e.g. a `TMPDIR`/`TEMP` environment variable
+  pointing inside the repository — turning what would otherwise be the
+  exact nested-checkout hazard the OS-temp-dir choice above exists to
+  avoid into a clear startup error instead of a silent repeat of it).
+- Every `git` subprocess call in this feature runs under a timeout
+  (`tokio::time::timeout`), matching the existing convention of explicit
+  per-operation `Duration` constants in
+  `crates/tool-runtime/src/tools/git.rs` (`STATUS_TIMEOUT`,
+  `COMMIT_TIMEOUT`, etc.). Without one, a hung `git` process (a stale lock
+  file, an unresponsive network filesystem) would block merge-back
+  indefinitely — and since merge-back holds the per-path merge lock for
+  its duration, every other task later targeting the same
+  `primary_workspace_root` would queue up behind it forever too.
 - Idempotent by construction: provisioning first checks `task_worktrees`
   for an existing row for this `task_id` and returns immediately if one is
   found, instead of calling `git worktree add` again (which would fail —
@@ -187,25 +243,54 @@ On successful task completion, before the task transitions to
    compared against — a file the agent created but never staged would
    silently be dropped from the merge otherwise. Staging everything first
    makes the following diff/apply steps see the complete set of changes.
-4. Compute the diff against `base_commit_sha` read back from
-   `task_worktrees` (`git diff --cached <base_commit_sha>`).
-5. Apply that diff to `workspace_root` with `git apply --3way --index`, so
+4. Get the list of changed paths (`git diff --cached --name-only
+   <base_commit_sha>`), then the full patch content (`git diff --cached
+   --binary <base_commit_sha>`; `--binary` is required or a changed binary
+   file's actual bytes are omitted from the diff and can never be
+   reconstructed by `git apply` — without it, a binary file change would
+   silently vanish from the merge). If the path list is empty, nothing
+   changed relative to base; skip straight to step 7 (remove worktree,
+   delete row) — there's nothing to apply or commit.
+
+   **Every remaining step below operates on this exact path list only,
+   never on `workspace_root`'s tree/index as a whole.** `workspace_root`
+   is not a scratch space reserved for this merge — whenever `is_concurrent
+   == false` for the currently-first task, that unisolated task's own
+   tool calls are writing directly into this same directory, uncommitted,
+   for the *entire* time other tasks are running isolated. An operation
+   that touches "everything currently staged/dirty" (`git commit` with no
+   pathspec, `git reset --hard`) would destroy or silently absorb that
+   task's in-progress, unrelated work. Scoping every git invocation below
+   to the specific paths this merge's own patch touches is what makes
+   merge-back safe to run next to a live unisolated task.
+5. Apply the patch to `workspace_root` with `git apply --3way --index`, so
    that changes landed on `workspace_root` by *other* tasks in the meantime
    (each merged the same way) are tolerated as long as they don't textually
    conflict. Plain `git apply` only ever touches the working tree; `--3way`
    alone does not reliably update `workspace_root`'s index for cleanly
    merged hunks — `--index` is required to actually stage them so the
-   following commit captures the full result.
-6. On a clean apply: run `git commit` on `workspace_root` to land the
-   result as an actual commit, not a dirty working tree sitting on top of
-   an otherwise-clean `HEAD`. The task's own `git.commit` call(s) made
-   *inside* the worktree (per the "commit continuously" rule) already
-   captured proper messages there; replaying each of those message
-   verbatim on `workspace_root` is unnecessary complexity, so this is a
-   single squash commit, message `"agent: task <task_id> (worktree
-   merge)"`. This keeps `workspace_root` in the same clean-HEAD state the
-   "commit continuously" rule expects, whether or not this task actually
-   needed isolation.
+   following commit captures the full result. (`git apply` itself already
+   only ever touches the paths named in the patch — this step doesn't need
+   an explicit pathspec, only the steps that operate on "whatever is
+   currently staged" do.)
+6. On a clean apply: check whether anything is actually staged *for this
+   merge's own paths* (`git diff --cached --quiet -- <path-list>`) — a
+   3-way merge can legitimately produce no staged diff if the primary side
+   already matched. If something is staged, commit **scoped to exactly
+   this merge's path list**: `git commit -m "agent: task <task_id>
+   (worktree merge)" -- <path-list>`. Per `git commit`'s own semantics,
+   passing pathspecs commits only changes to those paths regardless of
+   what else happens to be staged or dirty elsewhere in the index —
+   this is what keeps a concurrently-running unisolated task's unrelated
+   staged/dirty state out of this commit. If the commit itself fails
+   (rare — e.g. a hook rejects it), restore just this merge's paths (next
+   step) and return an `Io` error rather than leaving them staged.
+   The task's own `git.commit` call(s) made *inside* the worktree (per the
+   "commit continuously" rule) already captured proper messages there;
+   replaying each of those verbatim on `workspace_root` is unnecessary
+   complexity, so this is a single squash commit. This keeps
+   `workspace_root` in the same clean-HEAD state the "commit continuously"
+   rule expects, whether or not this task actually needed isolation.
 7. Remove the worktree directory (`git worktree remove --force` + `git
    worktree prune`), *then* delete the `task_worktrees` row, then release
    the lock. A filesystem removal and a Postgres delete can't be made truly
@@ -214,27 +299,45 @@ On successful task completion, before the task transitions to
    never the reverse (a directory surviving with no row, which the startup
    cleanup pass wouldn't know to look for). Startup cleanup (below) treats
    "directory already gone" as a normal no-op, not an error, when it
-   processes such a row.
-8. On failure (patch does not apply cleanly, or the commit step fails):
-   **first restore `workspace_root` to a clean state** — `git apply
-   --3way --index` can leave the primary checkout's live working
-   tree/index with conflict markers and unmerged entries (visible via
-   `git ls-files -u`) when the 3-way merge can't reconcile automatically.
-   Nothing from this failed attempt was ever committed, so it's always safe
-   to run `git reset --hard HEAD` (discarding only this merge attempt,
-   never a real commit) before returning the error — otherwise the *next*
-   task to touch `workspace_root`, isolated or not, would inherit a
-   half-merged git state it had nothing to do with. Only after that
-   restoration: leave the worktree itself in place (its own state is
-   unaffected by the primary-side reset), fail the task with a message
-   that includes the worktree path, and release the lock. No automatic
-   conflict resolution — this is a rare edge case (two concurrent tasks
-   touching the same lines) and is surfaced for manual inspection rather
-   than guessed at. **The `task_worktrees` row is deliberately not deleted
-   here** — it, and the worktree directory it points at, are the only
-   record of the unmerged work, kept so an operator can inspect and
-   manually recover it (see Cleanup on server restart for how long that
-   window lasts).
+   processes such a row. **Failure at this step is not a merge failure —
+   see the note at the end of this list.**
+8. On a failed apply, or a failed scoped commit (step 6): **restore only
+   this merge's own path list to `HEAD`** —
+   `git checkout HEAD -- <path-list>` (plus, for paths the patch newly
+   created that never existed at `HEAD`, `git reset -- <path-list>` to
+   unstage before removing the now-untracked file directly — a created
+   file has nothing at `HEAD` for `checkout` to restore). A failed 3-way
+   apply can leave conflict markers and unmerged entries (visible via
+   `git ls-files -u`) in the specific files it touched; nothing from this
+   merge attempt was ever committed, so restoring exactly those paths is
+   always safe. This is deliberately **not** `git reset --hard HEAD` — a
+   blanket reset would also discard any unrelated uncommitted work
+   belonging to a concurrently-running unisolated task elsewhere in
+   `workspace_root` (see the note in step 4). Restoring only this merge's
+   own paths leaves everything else in `workspace_root` exactly as it was.
+   The residual risk this doesn't eliminate — the unisolated task happens
+   to be editing the *same* file this merge's patch also touches — is
+   exactly what a content conflict already means; there's no way to
+   automatically untangle two concurrent edits to identical lines, and
+   that's why this stays a manual-recovery path rather than an
+   auto-resolve. After restoring: leave the worktree itself in place (its
+   own state is unaffected), fail the task with a message that includes
+   the worktree path, and release the lock. **The `task_worktrees` row is
+   deliberately not deleted here** — it, and the worktree directory it
+   points at, are the only record of the unmerged work, kept so an
+   operator can inspect and manually recover it (see Cleanup on server
+   restart for how long that window lasts).
+
+**Cleanup failure (step 7) must not be reported as a task failure.** By
+the time step 7 runs, the merge already committed successfully on
+`workspace_root` — the user-visible outcome of the task is already
+correct. If `git worktree remove` fails (file lock, permissions — not
+uncommon on Windows) or the `task_worktrees` delete fails (transient DB
+error), that's a housekeeping problem, not a work-loss problem: log a
+warning and leave the worktree directory / row in place for the next
+server-startup cleanup pass to retry (same "row outlives a mid-removal
+crash" tolerance already designed into the ordering above). The task still
+completes successfully.
 
 Cancellation follows the same shape as failure: the worktree is left in
 place (not silently deleted) so in-progress work isn't lost, and the task
@@ -289,6 +392,35 @@ The rule instead: query each row's task status directly.
   `primary_workspace_root`, and the row deleted. Rows newer than the
   window are left for the *next* startup check, giving an operator a real
   window to inspect a conflict before it's swept.
+  - If `primary_workspace_root` itself no longer exists on disk (the repo
+    was moved or deleted), `git -C <primary_root> worktree prune` can never
+    succeed — retrying it forever would leave the row stuck permanently.
+    In that specific case, skip straight to deleting the row (there is no
+    repository left to prune metadata from) after a best-effort plain
+    `remove_dir_all` on the worktree directory itself if it still exists.
+- Converting `retention` (a `Duration`) to a `chrono::Duration` for the
+  cutoff comparison must not silently produce a zero-length window:
+  `chrono::Duration::from_std` returns `Err` for out-of-range inputs, and
+  naively falling back to `.unwrap_or_default()` gives a **zero** duration
+  — making `cutoff` equal to "now" and immediately eligible-for-deletion
+  every terminal row regardless of its actual age, the opposite of the
+  intended retention grace period. The fallback must be a very large
+  window (effectively "never expire this run") instead of zero.
+
+**Orphaned-directory reconciliation.** `task_worktrees.task_id` is a
+foreign key on `tasks(id) ON DELETE CASCADE`. If a task or its owning
+session is ever deleted directly (session archival/deletion, restore/import
+flows), Postgres removes the `task_worktrees` row as a side effect of that
+cascade — without running any of this application's cleanup code, so the
+physical directory is never touched and leaks permanently; the row-driven
+pass above has no way to know it ever existed. To bound this: after the
+row-driven pass, list the subdirectories of
+`std::env::temp_dir().join("evohime-worktrees")` and remove any whose name
+(parsed as a task ID) has no matching `task_worktrees` row — its owning row
+is gone by definition, so nothing else will ever reference it again. This
+pass doesn't need a primary root (there's no way to recover one for an
+orphan) — a plain `remove_dir_all` on the directory is sufficient; it's no
+longer registered with any git repository worth pruning against.
 
 This runs unconditionally at startup (cheap query when the table is empty)
 so orphaned worktrees never accumulate indefinitely, without ever deleting
@@ -329,10 +461,15 @@ task completes (success)
   -> lock workspace_merge_locks[primary_workspace_root]
   -> log base_commit_sha vs current rev-parse HEAD (diagnostic only)
   -> git add -A (in worktree, catches untracked files)
-  -> git diff --cached <base_commit_sha> (in worktree; sha from task_worktrees)
-  -> git apply --3way --index (against workspace_root, stages clean hunks)
-  -> ok: git commit (workspace_root), remove worktree, delete task_worktrees row, unlock
-  -> conflict: git reset --hard HEAD (workspace_root), fail task, keep worktree + row, unlock
+  -> path_list = git diff --cached --name-only <base_commit_sha> (in worktree)
+  -> patch = git diff --cached --binary <base_commit_sha> (in worktree)
+  -> git apply --3way --index (against workspace_root; patch already scoped to path_list)
+  -> ok: git commit -- <path_list> (workspace_root, scoped — never touches unrelated
+        state e.g. a concurrently-running unisolated task's own uncommitted work)
+     -> remove worktree, delete task_worktrees row, unlock (failure here: log + retry
+        later, task still succeeds — the commit already landed)
+  -> conflict/commit-failure: git checkout HEAD -- <path_list> (workspace_root,
+        scoped restore, never a blanket reset), fail task, keep worktree + row, unlock
 ```
 
 ## Implementation notes
@@ -346,9 +483,9 @@ task completes (success)
   delete+create pair. If another concurrent task edits that same file's
   content on `workspace_root` in the meantime, the 3-way merge may not
   reconcile cleanly. This is exactly the conflict path already specified
-  above (`git reset --hard HEAD` on `workspace_root`, fail merge-back, keep
-  the worktree for manual inspection) — no extra rename-detection logic is
-  needed for it.
+  above (scoped `git checkout HEAD --` restore on `workspace_root`, fail
+  merge-back, keep the worktree for manual inspection) — no extra
+  rename-detection logic is needed for it.
 
 ## Testing
 
@@ -389,3 +526,30 @@ task completes (success)
 - A conflict-recovery test: after a forced merge conflict, `workspace_root`
   has no unmerged index entries (`git ls-files -u` empty) and matches its
   pre-attempt `HEAD` afterward.
+- A scoped-operation test: `workspace_root` has unrelated uncommitted
+  changes (simulating a live unisolated task) in a *different* file before
+  merge-back runs; those changes are still present, untouched, both after
+  a successful merge-back commit and after a forced conflict's recovery
+  restore.
+- A binary-file test: a worktree creates/modifies a binary file; merge-back
+  lands it correctly on `workspace_root` (byte-for-byte), proving `--binary`
+  is wired through the diff.
+- A cleanup-failure-is-not-task-failure test: `finalize_worktree`'s merge
+  step succeeds but `remove_worktree` is forced to fail; the function still
+  reports success (the task completes), and the row/directory remain for a
+  later retry.
+- An approval-pause concurrency test: task A starts unisolated, pauses for
+  approval (its `task_cancellations` entry must still be present); task B
+  starting at that point must observe `is_concurrent == true` and get
+  isolated.
+- A `TaskCancel`-while-paused test: cancelling a paused task removes its
+  `task_cancellations` entry directly (not just via the terminal-status
+  recheck path, which never re-runs for an already-idle paused task).
+- A retention-overflow test: an extreme `retention` value must not make
+  `cutoff` collapse to "now" (i.e. must not delete a row created a second
+  ago).
+- A missing-primary-root test: a row's `primary_workspace_root` no longer
+  exists on disk; cleanup deletes the row without retrying forever.
+- An orphaned-directory test: a directory under `evohime-worktrees/` with
+  no matching `task_worktrees` row (simulating a cascade-deleted task) is
+  removed by the reconciliation pass.
