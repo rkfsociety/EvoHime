@@ -91,7 +91,7 @@ pub(crate) async fn run_task_pipeline(
         .map(|row| PathBuf::from(&row.worktree_path))
         .unwrap_or_else(|| primary_workspace_root.clone());
     let attachment_context = if emit_started {
-        claim_attachment_context(state, session_id, task.id, &workspace_root)
+        claim_attachment_context(state, session_id, task.id, &primary_workspace_root)
             .await
             .map_err(|error| (task.id, error))?
     } else {
