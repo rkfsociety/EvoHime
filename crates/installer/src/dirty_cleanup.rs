@@ -93,7 +93,12 @@ where
     )))
 }
 
-fn terminate_owned_processes(install_dir: &Path) -> Result<(), DirtyCleanupError> {
+/// Останавливает процессы, чей исполняемый файл находится внутри
+/// `install_dir` (postgres, launcher, server/worker), кроме текущего.
+/// Используется и при очистке "грязной" установки, и перед повторной
+/// распаковкой уже установленной версии (переустановка/ручной запуск
+/// Installer поверх работающего EvoHime).
+pub fn terminate_owned_processes(install_dir: &Path) -> Result<(), DirtyCleanupError> {
     if !install_dir.exists() {
         return Ok(());
     }

@@ -14,7 +14,7 @@ use evohime_installer::ui::{append_log_entry, copy_log_to_clipboard, show_detail
 use evohime_installer::{
     clear_dirty_installation_safely_observed, create_shortcut_observed, format_elapsed,
     is_installation_dirty, mark_setup_complete, redact_command_event,
-    restrict_to_current_user_observed, InstallationTiming,
+    restrict_to_current_user_observed, terminate_owned_processes, InstallationTiming,
 };
 use evohime_launcher::config::{self, DbConfig};
 use evohime_launcher::observed_command::{CommandEvent, CommandStream};
@@ -427,6 +427,27 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
         ));
     }
 
+    // 4c. Остановка уже работающего EvoHime (переустановка/ручной повторный
+    //     запуск Installer поверх установленной версии): без этого
+    //     распаковка ниже падает с "файл занят другим процессом" на
+    //     postgres.exe/launcher.exe/server.exe, которые Installer не
+    //     запускал сам и о которых ничего не знает, кроме их расположения
+    //     внутри install_dir.
+    let pg_bin_dir = pg_dir.join("bin");
+    let pg_data_dir = pg_dir.join("data");
+    if pg_bin_dir.is_dir() && pg_data_dir.is_dir() && postgres::is_running(&pg_bin_dir, postgres::PG_PORT)
+    {
+        stage("Остановка запущенного PostgreSQL...");
+        postgres::stop_observed(&pg_bin_dir, &pg_data_dir, |event| {
+            send_command_event(tx, event, &[])
+        })
+        .await
+        .map_err(|err| anyhow::anyhow!("не удалось остановить работающий PostgreSQL: {err}"))?;
+    }
+    stage("Остановка запущенных процессов EvoHime...");
+    terminate_owned_processes(&install_dir)
+        .map_err(|err| anyhow::anyhow!("не удалось остановить процессы EvoHime: {err}"))?;
+
     // 5. Распаковка компонентов: server.zip — прямо в корень версии (даёт
     //    <version>/server.exe), launcher.zip — вне versions_dir, в
     //    install_dir/launcher (общий для всех версий), postgres.zip — в
@@ -458,8 +479,6 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
     //    trust-аутентификация для локальных подключений (нет
     //    многопользовательской экспозиции, которую нужно защищать —
     //    см. pg_auth.rs), запуск кластера и создание базы.
-    let pg_bin_dir = pg_dir.join("bin");
-    let pg_data_dir = pg_dir.join("data");
     tokio::fs::create_dir_all(&pg_data_dir).await?;
     let existing_config =
         config::load(&install_dir).filter(|_| pg_data_dir.join("PG_VERSION").is_file());

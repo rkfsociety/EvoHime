@@ -21,7 +21,7 @@ pub mod ui;
 
 pub use dirty_cleanup::{
     clear_dirty_installation_safely, clear_dirty_installation_safely_observed,
-    clear_dirty_installation_safely_with_progress, DirtyCleanupError,
+    clear_dirty_installation_safely_with_progress, terminate_owned_processes, DirtyCleanupError,
 };
 pub use icacls::{
     restore_deletable_permissions, restore_deletable_permissions_observed,
