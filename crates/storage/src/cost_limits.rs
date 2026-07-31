@@ -165,9 +165,15 @@ pub async fn check_spending_cap(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_db::connect_integration_pool;
 
-    #[sqlx::test(migrations = "../../migrations")]
-    async fn test_cost_limit_crud(pool: PgPool) {
+    #[tokio::test]
+    async fn test_cost_limit_crud() {
+        let Some(pool) = connect_integration_pool().await else {
+            eprintln!("skipping cost_limits integration test: database unavailable");
+            return;
+        };
+
         // Create
         let limit = get_or_create_cost_limit(&pool, "test-model", 1_000_000)
             .await
@@ -194,8 +200,13 @@ mod tests {
         assert!(fetched.is_some());
     }
 
-    #[sqlx::test(migrations = "../../migrations")]
-    async fn test_spending_tracking(pool: PgPool) {
+    #[tokio::test]
+    async fn test_spending_tracking() {
+        let Some(pool) = connect_integration_pool().await else {
+            eprintln!("skipping cost_limits integration test: database unavailable");
+            return;
+        };
+
         // Set limit
         let _limit = get_or_create_cost_limit(&pool, "test-model2", 100_000)
             .await

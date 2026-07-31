@@ -80,6 +80,17 @@ mod tests {
 
     #[tokio::test]
     async fn creates_a_real_lnk_file() {
+        // Check if powershell is available before running test
+        let powershell_check = Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", "Write-Output 'ok'"])
+            .output()
+            .await;
+
+        if powershell_check.is_err() {
+            eprintln!("skipping creates_a_real_lnk_file: powershell.exe not available");
+            return;
+        }
+
         let dir = tempfile::tempdir().unwrap();
         let target_exe = dir.path().join("evohime-launcher.exe");
         tokio::fs::write(&target_exe, b"fake exe contents")
