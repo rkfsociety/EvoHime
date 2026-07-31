@@ -5,6 +5,7 @@ use sqlx::{FromRow, PgPool};
 use thiserror::Error;
 use uuid::Uuid;
 
+pub mod artifact_reviews;
 pub mod attachments;
 pub mod backup;
 pub mod cost_limits;
@@ -26,6 +27,10 @@ pub mod task_worktrees;
 pub mod test_db;
 pub mod thinking;
 
+pub use artifact_reviews::{
+    insert_artifact_review, list_artifact_reviews_by_task, ArtifactReviewRow, NewArtifactReview,
+    ReviewArtifactKind, ReviewerCommentEntry,
+};
 pub use attachments::{
     claim_pending_session_attachments, create_session_attachment, list_pending_session_attachments,
     list_session_attachments, SessionAttachmentRow,
@@ -116,6 +121,8 @@ pub enum StorageError {
     InvalidSync(String),
     #[error("invalid planning history: {0}")]
     InvalidPlanningHistory(String),
+    #[error("invalid artifact review: {0}")]
+    InvalidArtifactReview(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
