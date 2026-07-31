@@ -105,9 +105,51 @@ jobs:
           git tag "${{ steps.decide.outputs.version }}"
           git push origin "${{ steps.decide.outputs.version }}"
 
+  # Гейт: релиз не публикуется, если CI (.github/workflows/rust.yml) на этом
+  # же коммите красный. Для ручного пуша тега v* гейт пропускается — это
+  # осознанный оверрайд (см. заголовок файла), CI по тегам не запускается.
+  wait-for-ci:
+    name: Wait for CI to pass
+    needs: determine-version
+    if: needs.determine-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check CI status for this commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "manual tag push — skipping CI gate"
+            exit 0
+          fi
+
+          SHA="${{ github.sha }}"
+          echo "waiting for CI workflow run on $SHA"
+          for _ in $(seq 1 80); do
+            RUN_JSON=$(gh api "repos/${{ github.repository }}/actions/workflows/rust.yml/runs?head_sha=$SHA&event=push" --jq '.workflow_runs[0] // empty')
+            if [ -n "$RUN_JSON" ]; then
+              STATUS=$(echo "$RUN_JSON" | jq -r '.status')
+              CONCLUSION=$(echo "$RUN_JSON" | jq -r '.conclusion')
+              echo "CI run status=$STATUS conclusion=$CONCLUSION"
+              if [ "$STATUS" = "completed" ]; then
+                if [ "$CONCLUSION" = "success" ]; then
+                  echo "CI passed"
+                  exit 0
+                fi
+                echo "CI did not succeed (conclusion=$CONCLUSION) — aborting release" >&2
+                exit 1
+              fi
+            else
+              echo "CI run not found yet, retrying..."
+            fi
+            sleep 15
+          done
+          echo "timed out waiting for CI to complete" >&2
+          exit 1
+
   build-server:
     name: Build server.zip (Windows)
-    needs: determine-version
+    needs: [determine-version, wait-for-ci]
     if: needs.determine-version.outputs.should_release == 'true'
     runs-on: windows-latest
     steps:
@@ -138,7 +180,7 @@ jobs:
 
   build-launcher:
     name: Build launcher.zip (Windows)
-    needs: determine-version
+    needs: [determine-version, wait-for-ci]
     if: needs.determine-version.outputs.should_release == 'true'
     runs-on: windows-latest
     steps:
@@ -182,7 +224,7 @@ jobs:
 
   build-installer:
     name: Build evohime-setup.exe (Windows)
-    needs: determine-version
+    needs: [determine-version, wait-for-ci]
     if: needs.determine-version.outputs.should_release == 'true'
     runs-on: windows-latest
     steps:
@@ -208,7 +250,7 @@ jobs:
 
   build-frontend:
     name: Build React static bundle
-    needs: determine-version
+    needs: [determine-version, wait-for-ci]
     if: needs.determine-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     defaults:
@@ -237,7 +279,7 @@ jobs:
 
   package-migrations:
     name: Package migrations.zip
-    needs: determine-version
+    needs: [determine-version, wait-for-ci]
     if: needs.determine-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -264,7 +306,7 @@ jobs:
   # launcher.zip) — скачивается Installer'ом один раз при установке.
   package-postgres:
     name: Package postgres.zip
-    needs: determine-version
+    needs: [determine-version, wait-for-ci]
     if: needs.determine-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     env:
@@ -289,7 +331,7 @@ jobs:
 
   package-worker:
     name: Package worker.zip (with Windows wheels)
-    needs: determine-version
+    needs: [determine-version, wait-for-ci]
     if: needs.determine-version.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     # Раннер здесь Linux, но requirements.txt проекта содержит только чистый
