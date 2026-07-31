@@ -8,3 +8,4 @@ frontend/web/node_modules/
 *.log
 *.tsbuildinfo
 workers/python/__pycache__/
+.superpowers/
