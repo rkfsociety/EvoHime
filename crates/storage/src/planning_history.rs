@@ -141,7 +141,7 @@ mod tests {
 
         // Create a session and task for testing
         let session = sqlx::query_scalar::<_, Uuid>(
-            "INSERT INTO sessions (operator_id) VALUES ('00000000-0000-0000-0000-000000000000'::uuid) RETURNING id",
+            "INSERT INTO sessions (operator_id) VALUES ('00000000-0000-0000-0000-000000000001'::uuid) RETURNING id",
         )
         .fetch_one(&pool)
         .await
@@ -203,7 +203,7 @@ mod tests {
         };
 
         let session = sqlx::query_scalar::<_, Uuid>(
-            "INSERT INTO sessions (operator_id) VALUES ('00000000-0000-0000-0000-000000000000'::uuid) RETURNING id",
+            "INSERT INTO sessions (operator_id) VALUES ('00000000-0000-0000-0000-000000000001'::uuid) RETURNING id",
         )
         .fetch_one(&pool)
         .await
@@ -292,7 +292,7 @@ mod tests {
         };
 
         let session = sqlx::query_scalar::<_, Uuid>(
-            "INSERT INTO sessions (operator_id) VALUES ('00000000-0000-0000-0000-000000000000'::uuid) RETURNING id",
+            "INSERT INTO sessions (operator_id) VALUES ('00000000-0000-0000-0000-000000000001'::uuid) RETURNING id",
         )
         .fetch_one(&pool)
         .await
@@ -339,6 +339,10 @@ mod tests {
     }
 
     #[tokio::test]
+    // sqlx encodes &Vec<Value> as a single jsonb value (matches production
+    // code); an owned Vec<Value> is encoded as a postgres jsonb[] array and
+    // fails to bind against the jsonb column.
+    #[allow(clippy::needless_borrows_for_generic_args)]
     async fn cleanup_old_planning_history_by_retention() {
         let Some(pool) = connect_integration_pool().await else {
             eprintln!("skipping cleanup test: database unavailable");
@@ -346,7 +350,7 @@ mod tests {
         };
 
         let session = sqlx::query_scalar::<_, Uuid>(
-            "INSERT INTO sessions (operator_id) VALUES ('00000000-0000-0000-0000-000000000000'::uuid) RETURNING id",
+            "INSERT INTO sessions (operator_id) VALUES ('00000000-0000-0000-0000-000000000001'::uuid) RETURNING id",
         )
         .fetch_one(&pool)
         .await
@@ -369,7 +373,7 @@ mod tests {
         )
         .bind(task)
         .bind(session)
-        .bind(vec![json!({"id":"plan-1"})])
+        .bind(&vec![json!({"id":"plan-1"})])
         .bind("plan-1")
         .bind("old reasoning")
         .execute(&pool)
@@ -385,7 +389,7 @@ mod tests {
         )
         .bind(task)
         .bind(session)
-        .bind(vec![json!({"id":"plan-2"})])
+        .bind(&vec![json!({"id":"plan-2"})])
         .bind("plan-2")
         .bind("recent reasoning")
         .execute(&pool)
