@@ -950,26 +950,35 @@ export function App() {
     );
   }
 
-  function defaultPlanningRouteDraft(name: string): ModelRouteDraft {
+  // New reviewer/synthesizer routes are seeded from an already-configured
+  // route (orchestrator, then the default route, then whatever exists) —
+  // never a hardcoded model guess. That route's model came from the
+  // provider's real list at some point, so it's guaranteed to actually
+  // exist, unlike an invented string.
+  function defaultPlanningRouteDraft(name: string, seed: ModelRouteDraft | undefined): ModelRouteDraft {
     return {
       name,
-      provider: "literouter",
-      model: "deepseek:free",
-      base_url: "https://api.literouter.com/v1",
+      provider: seed?.provider ?? "literouter",
+      model: seed?.model ?? "",
+      base_url: seed?.base_url ?? "https://api.literouter.com/v1",
       api_key: "",
-      billing_mode: "free",
+      billing_mode: seed?.billing_mode ?? "free",
     };
   }
 
   function setReviewerCount(count: number) {
     setModelDrafts((current) => {
+      const seed =
+        current.find((route) => route.name === "orchestrator") ??
+        current.find((route) => route.name === modelDefaultRoute) ??
+        current[0];
       const withoutReviewers = current.filter((route) => !/^reviewer_\d+$/.test(route.name));
       const reviewers = Array.from({ length: count }, (_, index) => {
         const name = `reviewer_${index}`;
-        return current.find((route) => route.name === name) ?? defaultPlanningRouteDraft(name);
+        return current.find((route) => route.name === name) ?? defaultPlanningRouteDraft(name, seed);
       });
       const hasSynthesizer = current.some((route) => route.name === "synthesizer");
-      const synthesizer = hasSynthesizer ? [] : [defaultPlanningRouteDraft("synthesizer")];
+      const synthesizer = hasSynthesizer ? [] : [defaultPlanningRouteDraft("synthesizer", seed)];
       return [...withoutReviewers, ...reviewers, ...synthesizer];
     });
     setTimeout(() => void saveModelConfig(), 0);

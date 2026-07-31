@@ -194,10 +194,12 @@ export function SettingsPanel({
                         value={activeModelRoute.provider}
                         onChange={(event) => {
                           const provider = event.target.value;
+                          // Model is left untouched here — it's never guessed/hardcoded,
+                          // only ever set by the user from the real list the provider
+                          // returns (composer model picker / the Settings dropdown below).
                           onUpdateModelDraft(activeModelRouteIndex, {
                             provider,
                             base_url: provider === "literouter" ? "https://api.literouter.com/v1" : "https://api.openai.com/v1",
-                            model: provider === "literouter" ? "deepseek:free" : "gpt-4o-mini",
                             billing_mode: provider === "literouter" ? "free" : "paid",
                           });
                         }}
@@ -267,10 +269,11 @@ export function SettingsPanel({
                           value={orchestratorRoute.provider}
                           onChange={(event) => {
                             const provider = event.target.value;
+                            // Model is left untouched here — only ever set from the real
+                            // list the provider returns (the dropdown below), never guessed.
                             onUpdateModelDraft(orchestratorRouteIndex, {
                               provider,
                               base_url: provider === "literouter" ? "https://api.literouter.com/v1" : "https://api.openai.com/v1",
-                              model: provider === "literouter" ? "deepseek:free" : "gpt-4o-mini",
                               billing_mode: provider === "literouter" ? "free" : "paid",
                             });
                           }}
@@ -279,6 +282,35 @@ export function SettingsPanel({
                           <option value="openai-compatible">OpenAI-compatible</option>
                         </select>
                       </label>
+                      {orchestratorRoute.provider === "literouter" ? (
+                        <label>
+                          <span>Режим LiteRouter</span>
+                          <select
+                            value={orchestratorRoute.billing_mode}
+                            onChange={(event) => {
+                              const billing_mode = event.target.value as "free" | "paid";
+                              const candidates = [
+                                orchestratorRoute.model,
+                                ...(modelConfig?.routes.find((route) => route.name === orchestratorRoute.name)
+                                  ?.available_models ?? []),
+                                ...orchestratorModels,
+                                ...(modelConfig?.available_models ?? []),
+                              ];
+                              onUpdateModelDraft(orchestratorRouteIndex, {
+                                billing_mode,
+                                model: reconcileModelForBilling(
+                                  orchestratorRoute.model,
+                                  billing_mode,
+                                  candidates,
+                                ),
+                              });
+                            }}
+                          >
+                            <option value="free">Бесплатный — только :free</option>
+                            <option value="paid">Платный — без :free</option>
+                          </select>
+                        </label>
+                      ) : null}
                       <label>
                         <span>Модель</span>
                         <select
