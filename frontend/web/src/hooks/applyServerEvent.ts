@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import type {
   ActionLoggedEvent,
+  AgentPlanEvent,
   ApprovalRequiredEvent,
   MemoryAskEvent,
   PlanStep,
@@ -8,7 +9,7 @@ import type {
   TaskStatusChangedEvent,
   TaskStepChangedEvent,
 } from "../protocol";
-import type { ActionView, ChatLine, ChatSessionSummary, TaskStepView, TaskView } from "../types";
+import type { ActionView, AgentPlanDisplay, ChatLine, ChatSessionSummary, TaskStepView, TaskView } from "../types";
 import { createChatLine } from "../lib/chat-lines";
 import { formatPlan, summarizeChatTitle } from "../lib/format";
 import { normalizePath, parentPath } from "../lib/paths";
@@ -31,6 +32,7 @@ export type ServerEventHandlerContext = {
   setTerminalEntries: Dispatch<SetStateAction<TerminalStreamEntry[]>>;
   setApproval: Dispatch<SetStateAction<ApprovalRequiredEvent | null>>;
   setMemoryAsk: Dispatch<SetStateAction<MemoryAskEvent | null>>;
+  setAgentPlan: Dispatch<SetStateAction<AgentPlanDisplay | null>>;
   setActions: Dispatch<SetStateAction<ActionView[]>>;
   setSelectedFileNotice: Dispatch<SetStateAction<string | null>>;
   setGitStatus: Dispatch<SetStateAction<string>>;
@@ -347,6 +349,22 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
       });
       break;
     }
+    case "agent.plan":
+      ctx.setAgentPlan({
+        candidates: event.candidates,
+        chosenPlanId: event.chosen_plan_id,
+        reasoning: event.reasoning,
+        taskId: event.task_id,
+      });
+      ctx.setLines((current) => [
+        ...current,
+        createChatLine({
+          role: "system",
+          text: `План-кандидат выбран: ${event.chosen_plan_id}`,
+          taskId: event.task_id,
+        }),
+      ]);
+      break;
     case "agent.plan.updated":
       ctx.setTasks((current) => {
         const task = current[event.task_id];

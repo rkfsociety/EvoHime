@@ -189,7 +189,14 @@ export type GitSnapshot = {
 
 export type GitAction = "commit" | "pull" | "push";
 
-import type { PlanStep } from "./protocol";
+import type { PlanStep, PlanCandidate } from "./protocol";
+
+export type AgentPlanDisplay = {
+  candidates: PlanCandidate[];
+  chosenPlanId: string;
+  reasoning: string;
+  taskId: string;
+};
 
 export type TaskStepView = {
   id: string;

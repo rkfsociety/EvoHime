@@ -14,6 +14,7 @@ import { SearchModal, type SearchResult } from "./components/SearchModal";
 import { AgentAvatar } from "./components/AgentAvatar";
 import { AgentBrand } from "./components/AgentBrand";
 import { AgentMark } from "./components/AgentMark";
+import { AgentPlanView } from "./components/AgentPlanView";
 import { BootNoticeBanner } from "./components/BootNoticeBanner";
 import { PanelErrorBoundary } from "./components/PanelErrorBoundary";
 import { SettingsModal } from "./components/SettingsModal";
@@ -78,6 +79,7 @@ import {
 } from "./lib/storage";
 import type {
   ActionView,
+  AgentPlanDisplay,
   ChatLine,
   ChatSessionSummary,
   FeatureFlags,
@@ -178,6 +180,7 @@ export function App() {
   const [actions, setActions] = useState<ActionView[]>([]);
   const [approval, setApproval] = useState<ApprovalRequiredEvent | null>(null);
   const [memoryAsk, setMemoryAsk] = useState<MemoryAskEvent | null>(null);
+  const [agentPlan, setAgentPlan] = useState<AgentPlanDisplay | null>(null);
   const [githubAuth, setGithubAuth] = useState<GithubAuthInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -694,6 +697,7 @@ export function App() {
     setTerminalEntries,
     setApproval,
     setMemoryAsk,
+    setAgentPlan,
     setActions,
     setSelectedFileNotice,
     setGitStatus,
@@ -1459,6 +1463,23 @@ export function App() {
             </article>
           ) : null}
         </div>
+        {agentPlan ? (
+          <div className="agentPlanContainer">
+            <AgentPlanView
+              candidates={agentPlan.candidates}
+              chosenPlanId={agentPlan.chosenPlanId}
+              reasoning={agentPlan.reasoning}
+            />
+            <button
+              type="button"
+              className="agentPlanCloseButton"
+              onClick={() => setAgentPlan(null)}
+              aria-label="Закрыть план"
+            >
+              ✕
+            </button>
+          </div>
+        ) : null}
         {!hasConversation ? (
           <div className="projectContext">
             <button

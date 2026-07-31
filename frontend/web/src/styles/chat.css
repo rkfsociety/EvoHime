@@ -694,3 +694,243 @@
   font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: pre-wrap;
 }
+
+/* Agent Plan View Styles */
+.agentPlanContainer {
+  position: relative;
+  margin: 0 16px 16px 16px;
+  padding: 16px;
+  border: 1px solid var(--border-0);
+  border-radius: 12px;
+  background: var(--surface-1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.agentPlanCloseButton {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border-0);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-1);
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.agentPlanCloseButton:hover {
+  background: rgba(143, 180, 255, 0.1);
+  border-color: rgba(143, 180, 255, 0.3);
+  color: var(--text-0);
+}
+
+.agentPlanView {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.agentPlanWarning {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 196, 120, 0.1);
+  border: 1px solid rgba(255, 196, 120, 0.3);
+  color: var(--text-0);
+  font-size: 13px;
+}
+
+.agentPlanWarning strong {
+  display: block;
+  margin-bottom: 4px;
+  color: rgba(255, 196, 120, 0.8);
+}
+
+.agentPlanReasoning {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(91, 134, 255, 0.08);
+  border: 1px solid rgba(91, 134, 255, 0.2);
+}
+
+.agentPlanReasoning strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-0);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.7;
+}
+
+.agentPlanReasoning p {
+  margin: 0;
+  color: var(--text-1);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.agentPlanCandidates {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.agentPlanCandidate {
+  padding: 12px 14px;
+  border: 1px solid var(--border-0);
+  border-radius: 10px;
+  background: var(--surface-0);
+  transition: all 0.2s ease;
+}
+
+.agentPlanCandidate.chosen {
+  border-color: rgba(76, 175, 80, 0.4);
+  background: rgba(76, 175, 80, 0.06);
+}
+
+.agentPlanCandidateHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.agentPlanCandidateInfo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.agentPlanCandidateInfo strong {
+  color: var(--text-0);
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.agentPlanChosenBadge {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(76, 175, 80, 0.2);
+  color: rgba(76, 175, 80, 0.8);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.agentPlanConfidence {
+  flex-shrink: 0;
+  color: var(--text-0);
+  font-weight: 600;
+  font-size: 13px;
+  min-width: 44px;
+  text-align: right;
+}
+
+.agentPlanScoreBreakdown {
+  margin-top: 8px;
+}
+
+.agentPlanScoreBreakdown summary {
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+  user-select: none;
+  transition: all 0.15s ease;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
+.agentPlanScoreBreakdown summary:hover {
+  background: rgba(143, 180, 255, 0.08);
+  color: var(--text-1);
+}
+
+.agentPlanScoreBreakdown table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.agentPlanScoreBreakdown tbody tr {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.agentPlanScoreBreakdown tbody tr:last-child {
+  border-bottom: none;
+}
+
+.agentPlanScoreBreakdown td {
+  padding: 8px 0;
+  color: var(--text-1);
+}
+
+.agentPlanScoreBreakdown td:first-child {
+  padding-left: 8px;
+}
+
+.agentPlanScoreBreakdown td.scoreValue {
+  text-align: right;
+  padding-right: 8px;
+  font-weight: 500;
+  color: var(--text-0);
+}
+
+.agentPlanScoreBreakdown tbody tr.scoreFinal {
+  font-weight: 600;
+  background: rgba(143, 180, 255, 0.05);
+}
+
+.agentPlanScoreBreakdown tbody tr.scoreFinal td {
+  padding: 10px 0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .agentPlanContainer {
+    margin: 0 12px 12px 12px;
+    padding: 12px;
+  }
+
+  .agentPlanCloseButton {
+    width: 36px;
+    height: 36px;
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .agentPlanCandidateHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .agentPlanConfidence {
+    text-align: left;
+    width: 100%;
+  }
+}
+
+/* Dark mode support (if needed) */
+@media (prefers-color-scheme: dark) {
+  .agentPlanCandidate.chosen {
+    border-color: rgba(76, 175, 80, 0.5);
+    background: rgba(76, 175, 80, 0.08);
+  }
+}

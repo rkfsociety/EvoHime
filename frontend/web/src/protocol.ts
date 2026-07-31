@@ -1,6 +1,7 @@
 export type {
   AgentMessageDeltaEvent,
   AgentStatusEvent,
+  AgentPlanEvent,
   AgentPlanUpdatedEvent,
   ActionLoggedEvent,
   ApprovalRequiredEvent,
@@ -11,6 +12,8 @@ export type {
   MemoryRejectedEvent,
   MemoryUsedEvent,
   PlanStep,
+  PlanCandidate,
+  ScoreBreakdown,
   ClientCommand,
   FileChangedEvent,
   HistoryItem,
