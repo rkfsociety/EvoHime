@@ -14,5 +14,8 @@ pub use planning::{
     generate_candidate_plans, prune_to_top_n, score_candidate_plans, ExperienceHandle, LlmClient,
     MockLlmClient, PlanningConfig, PlanningError, ScoringWeights,
 };
-pub use review::{ArtifactKind, ReviewEngineError, ReviewerComment, ReviewerRoute};
+pub use review::{
+    run_review_round, ArtifactKind, ReviewEngineConfig, ReviewEngineError, ReviewRoundResult,
+    ReviewerComment, ReviewerRoute,
+};
 pub use subagent::SubagentBudget;
