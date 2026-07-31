@@ -15,6 +15,7 @@ import { formatSessionPreview, formatSessionTitle, translatePermissionName } fro
 import { reconcileModelForBilling } from "../lib/modelBilling";
 import { LocalAuthSettingsSection } from "./LocalAuthSettingsSection";
 import { MetricsSettingsSection } from "./MetricsSettingsSection";
+import { PlanningSettingsSection } from "./PlanningSettingsSection";
 import { ThinkingSettingsSection } from "./ThinkingSettingsSection";
 import { WorkerSettingsSection } from "./WorkerSettingsSection";
 import { SpendSettingsSection } from "./SpendSettingsSection";
@@ -32,6 +33,10 @@ type SettingsPanelProps = {
   orchestratorRoute: ModelRouteDraft | null;
   orchestratorRouteIndex: number;
   orchestratorModels: string[];
+  reviewerRoutes: Array<{ route: ModelRouteDraft; index: number }>;
+  synthesizerRoute: ModelRouteDraft | null;
+  synthesizerRouteIndex: number;
+  onSetReviewerCount: (count: number) => void;
   onUpdateModelDraft: (index: number, patch: Partial<ModelRouteDraft>) => void;
   onSaveModelConfig: () => void;
   permissionSettings: PermissionSettings;
@@ -63,6 +68,7 @@ const SETTINGS_TABS: Array<[SettingsTab, string, string]> = [
   ["metrics", "Metrics", "Pipeline snapshot"],
   ["thinking", "Мышление", "Бюджет и настройки расширенного мышления"],
   ["spend", "Spend", "Лимиты и отслеживание"],
+  ["planning", "Планирование", "Ревьюверы и синтезатор"],
   ["launcher", "Launcher", "Статус и обновления"],
   ["archive", "Архив", "Скрытые чаты"],
 ];
@@ -91,6 +97,10 @@ export function SettingsPanel({
   orchestratorRoute,
   orchestratorRouteIndex,
   orchestratorModels,
+  reviewerRoutes,
+  synthesizerRoute,
+  synthesizerRouteIndex,
+  onSetReviewerCount,
   onUpdateModelDraft,
   onSaveModelConfig,
   permissionSettings,
@@ -446,6 +456,19 @@ export function SettingsPanel({
         {settingsTab === "thinking" ? <ThinkingSettingsSection /> : null}
 
         {settingsTab === "spend" ? <SpendSettingsSection /> : null}
+
+        {settingsTab === "planning" ? (
+          <PlanningSettingsSection
+            reviewerRoutes={reviewerRoutes}
+            reviewerModels={orchestratorModels}
+            synthesizerRoute={synthesizerRoute}
+            synthesizerRouteIndex={synthesizerRouteIndex}
+            synthesizerModels={orchestratorModels}
+            onSetReviewerCount={onSetReviewerCount}
+            onUpdateModelDraft={onUpdateModelDraft}
+            onSave={onSaveModelConfig}
+          />
+        ) : null}
 
         {settingsTab === "launcher" ? <LauncherStatusSection /> : null}
 

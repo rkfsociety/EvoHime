@@ -179,6 +179,7 @@ export type SettingsTab =
   | "metrics"
   | "thinking"
   | "spend"
+  | "planning"
   | "launcher"
   | "archive";
 

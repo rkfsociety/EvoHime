@@ -665,6 +665,21 @@ export function App() {
   const activeModelRoute = modelDrafts[activeModelRouteIndex] ?? null;
   const orchestratorRouteIndex = modelDrafts.findIndex((route) => route.name === "orchestrator");
   const orchestratorRoute = orchestratorRouteIndex >= 0 ? modelDrafts[orchestratorRouteIndex] : null;
+  const reviewerRoutes = modelDrafts
+    .map((route, index) => ({ route, index }))
+    .filter(({ route }) => /^reviewer_\d+$/.test(route.name))
+    .sort((a, b) => a.route.name.localeCompare(b.route.name, undefined, { numeric: true }));
+  const synthesizerRouteIndex = modelDrafts.findIndex((route) => route.name === "synthesizer");
+  const synthesizerRoute = synthesizerRouteIndex >= 0 ? modelDrafts[synthesizerRouteIndex] : null;
+
+  useEffect(() => {
+    if (settingsTab !== "planning" || !modelConfig) {
+      return;
+    }
+    if (reviewerRoutes.length === 0) {
+      setReviewerCount(1);
+    }
+  }, [settingsTab, modelConfig, reviewerRoutes.length]);
   const visiblePullRequests = useMemo(() => {
     const query = pullRequestSearch.trim().toLowerCase();
     if (!query) {
@@ -915,6 +930,31 @@ export function App() {
     setModelDrafts((current) =>
       current.map((route, routeIndex) => (routeIndex === index ? { ...route, ...patch } : route)),
     );
+  }
+
+  function defaultPlanningRouteDraft(name: string): ModelRouteDraft {
+    return {
+      name,
+      provider: "literouter",
+      model: "deepseek:free",
+      base_url: "https://api.literouter.com/v1",
+      api_key: "",
+      billing_mode: "free",
+    };
+  }
+
+  function setReviewerCount(count: number) {
+    setModelDrafts((current) => {
+      const withoutReviewers = current.filter((route) => !/^reviewer_\d+$/.test(route.name));
+      const reviewers = Array.from({ length: count }, (_, index) => {
+        const name = `reviewer_${index}`;
+        return current.find((route) => route.name === name) ?? defaultPlanningRouteDraft(name);
+      });
+      const hasSynthesizer = current.some((route) => route.name === "synthesizer");
+      const synthesizer = hasSynthesizer ? [] : [defaultPlanningRouteDraft("synthesizer")];
+      return [...withoutReviewers, ...reviewers, ...synthesizer];
+    });
+    setTimeout(() => void saveModelConfig(), 0);
   }
 
   async function saveModelConfig() {
@@ -1183,6 +1223,10 @@ export function App() {
           orchestratorRoute={orchestratorRoute}
           orchestratorRouteIndex={orchestratorRouteIndex}
           orchestratorModels={orchestratorModels}
+          reviewerRoutes={reviewerRoutes}
+          synthesizerRoute={synthesizerRoute}
+          synthesizerRouteIndex={synthesizerRouteIndex}
+          onSetReviewerCount={setReviewerCount}
           onUpdateModelDraft={updateModelDraft}
           onSaveModelConfig={() => void saveModelConfig()}
           permissionSettings={permissionSettings}
