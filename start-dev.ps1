@@ -214,25 +214,6 @@ function Restart-WorkerProcess {
   $script:workerWasRunning = $true
 }
 
-function Set-NotifyIconState {
-  param(
-    [System.Windows.Forms.NotifyIcon]$Icon,
-    [System.Drawing.Icon]$RunningIcon,
-    [System.Drawing.Icon]$StoppedIcon,
-    [bool]$Running,
-    [string]$RunningText,
-    [string]$StoppedText
-  )
-
-  if ($Running) {
-    $Icon.Icon = $RunningIcon
-    $Icon.Text = $RunningText
-  } else {
-    $Icon.Icon = $StoppedIcon
-    $Icon.Text = $StoppedText
-  }
-}
-
 if ($Server) {
   Set-Location $root
   Import-DotEnv
@@ -439,97 +420,78 @@ $form.Location = New-Object System.Drawing.Point(-32000, -32000)
 $form.Width = 1
 $form.Height = 1
 
-$serverIcon = New-Object System.Windows.Forms.NotifyIcon
-$webIcon = New-Object System.Windows.Forms.NotifyIcon
-$workerIcon = New-Object System.Windows.Forms.NotifyIcon
+$appIcon = New-Object System.Windows.Forms.NotifyIcon
+$appMenu = New-Object System.Windows.Forms.ContextMenuStrip
 
-$serverMenu = New-Object System.Windows.Forms.ContextMenuStrip
-$webMenu = New-Object System.Windows.Forms.ContextMenuStrip
-$workerMenu = New-Object System.Windows.Forms.ContextMenuStrip
+# Mirrors the release Launcher's tray menu shape (crates/launcher/src/main.rs
+# build_tray_menu: Open Dashboard / Check Updates / Stop / Restart / Settings
+# / separator / Exit — one icon, global Stop/Restart). "Check Updates" is
+# dropped here: a dev checkout has no self-update mechanism to check.
+# Stop/Restart act on the whole dev stack (server+web+worker) as one unit,
+# matching the release Launcher's single-process semantics; running them as
+# three separate dev processes underneath is the dev-only difference being
+# tested. Settings deep-links into the web panel's settings modal via
+# ?settings=1 (frontend/web/src/app.tsx), same as the release Launcher.
+$menuOpenDashboard = $appMenu.Items.Add('Open Dashboard')
+$menuStop = $appMenu.Items.Add('Stop')
+$menuRestart = $appMenu.Items.Add('Restart')
+$menuSettings = $appMenu.Items.Add('Settings')
+[void]$appMenu.Items.Add('-')
+$menuExit = $appMenu.Items.Add('Exit')
 
-$serverOpen = $serverMenu.Items.Add('Открыть health')
-$serverRestart = $serverMenu.Items.Add('Перезапустить сервер')
-$serverStop = $serverMenu.Items.Add('Остановить сервер')
-$serverExit = $serverMenu.Items.Add('Выйти')
-
-$webOpen = $webMenu.Items.Add('Открыть панель')
-$webStop = $webMenu.Items.Add('Остановить панель')
-$webExit = $webMenu.Items.Add('Выйти')
-
-$workerOpen = $workerMenu.Items.Add('Открыть health')
-$workerRestart = $workerMenu.Items.Add('Перезапустить worker')
-$workerStop = $workerMenu.Items.Add('Остановить worker')
-$workerExit = $workerMenu.Items.Add('Выйти')
-
-$serverOpen.Add_Click({ Open-Url $serverUrl })
-$serverRestart.Add_Click({
-  Restart-ServerProcess
-})
-$serverStop.Add_Click({
+$menuOpenDashboard.Add_Click({ Open-Url $webUrl })
+$menuSettings.Add_Click({ Open-Url "$webUrl/?settings=1" })
+$menuStop.Add_Click({
   $script:serverRestartEnabled = $false
-  Stop-Tree $script:serverProcess
-})
-$serverExit.Add_Click({
-  $script:serverRestartEnabled = $false
-  $form.Close()
-})
-
-$webOpen.Add_Click({ Open-Url $webUrl })
-$webStop.Add_Click({
   $script:webRestartEnabled = $false
-  Stop-Tree $script:webProcess
-})
-$webExit.Add_Click({
-  $script:webRestartEnabled = $false
-  $form.Close()
-})
-
-$workerOpen.Add_Click({ Open-Url $workerUrl })
-$workerRestart.Add_Click({
-  Restart-WorkerProcess
-})
-$workerStop.Add_Click({
   $script:workerRestartEnabled = $false
+  Stop-Tree $script:serverProcess
+  Stop-Tree $script:webProcess
   Stop-Tree $script:workerProcess
 })
-$workerExit.Add_Click({
-  $script:workerRestartEnabled = $false
-  $form.Close()
+$menuRestart.Add_Click({
+  Restart-ServerProcess
+  $script:webRestartEnabled = $true
+  Stop-Tree $script:webProcess
+  Wait-ForExit $script:webProcess
+  $script:webProcess = Start-ManagedProcess '-Web'
+  Restart-WorkerProcess
 })
+$menuExit.Add_Click({ $form.Close() })
 
-$serverIcon.ContextMenuStrip = $serverMenu
-$webIcon.ContextMenuStrip = $webMenu
-$workerIcon.ContextMenuStrip = $workerMenu
-$serverIcon.Visible = $true
-$webIcon.Visible = $true
-$workerIcon.Visible = $true
-$serverIcon.Text = 'Сервер запускается...'
-$webIcon.Text = 'Панель запускается...'
-$workerIcon.Text = 'Worker запускается...'
-$serverIcon.Icon = [System.Drawing.SystemIcons]::Warning
-$webIcon.Icon = [System.Drawing.SystemIcons]::Warning
-$workerIcon.Icon = [System.Drawing.SystemIcons]::Warning
-
-$serverIcon.Add_MouseUp({
-  param($sender, $eventArgs)
-  if ($eventArgs.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
-    Open-Url $serverUrl
+$appIconPath = Join-Path $root 'frontend\web\public\favicon.ico'
+$appBrandIcon = $null
+if (Test-Path -LiteralPath $appIconPath) {
+  try {
+    $appBrandIcon = New-Object System.Drawing.Icon($appIconPath)
+  } catch {
+    $appBrandIcon = $null
   }
-})
+}
+if (-not $appBrandIcon) {
+  $appBrandIcon = [System.Drawing.SystemIcons]::Application
+}
 
-$webIcon.Add_MouseUp({
+$appIcon.ContextMenuStrip = $appMenu
+$appIcon.Visible = $true
+$appIcon.Text = 'EvoHime: запускается...'
+$appIcon.Icon = $appBrandIcon
+
+$appIcon.Add_MouseUp({
   param($sender, $eventArgs)
   if ($eventArgs.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
     Open-Url $webUrl
   }
 })
 
-$workerIcon.Add_MouseUp({
-  param($sender, $eventArgs)
-  if ($eventArgs.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
-    Open-Url $workerUrl
-  }
-})
+function Update-AppIconState {
+  param([bool]$ServerRunning, [bool]$WebRunning, [bool]$WorkerRunning)
+
+  $mark = { param($ok) if ($ok) { 'OK' } else { 'X' } }
+  $tooltip = "EvoHime | Server:$(& $mark $ServerRunning) Web:$(& $mark $WebRunning) Worker:$(& $mark $WorkerRunning)"
+  # NotifyIcon.Text throws if >= 64 chars (WinForms/.NET Framework limit). Icon stays the EvoHime brand icon regardless of state.
+  $appIcon.Text = $tooltip.Substring(0, [Math]::Min(63, $tooltip.Length))
+}
 
 $script:serverWasRunning = $true
 $script:webWasRunning = $true
@@ -545,12 +507,10 @@ $timer.Add_Tick({
   $webRunning = -not $script:webProcess.HasExited
   $workerRunning = -not $script:workerProcess.HasExited
 
-  Set-NotifyIconState -Icon $serverIcon -RunningIcon ([System.Drawing.SystemIcons]::Application) -StoppedIcon ([System.Drawing.SystemIcons]::Error) -Running $serverRunning -RunningText 'Сервер работает' -StoppedText 'Сервер остановлен'
-  Set-NotifyIconState -Icon $webIcon -RunningIcon ([System.Drawing.SystemIcons]::Information) -StoppedIcon ([System.Drawing.SystemIcons]::Error) -Running $webRunning -RunningText 'Панель работает' -StoppedText 'Панель остановлена'
-  Set-NotifyIconState -Icon $workerIcon -RunningIcon ([System.Drawing.SystemIcons]::Shield) -StoppedIcon ([System.Drawing.SystemIcons]::Error) -Running $workerRunning -RunningText 'Python worker работает' -StoppedText 'Python worker остановлен'
+  Update-AppIconState -ServerRunning $serverRunning -WebRunning $webRunning -WorkerRunning $workerRunning
 
   if ($script:serverWasRunning -and -not $serverRunning) {
-    $serverIcon.ShowBalloonTip(3000, 'EvoHime', 'Сервер остановлен', [System.Windows.Forms.ToolTipIcon]::Error)
+    $appIcon.ShowBalloonTip(3000, 'EvoHime', 'Сервер остановлен', [System.Windows.Forms.ToolTipIcon]::Error)
     if ($script:serverRestartEnabled) {
       Write-Host '[EvoHime] Сервер завершился неожиданно, перезапускаю...'
       $script:serverProcess = Start-ManagedProcess '-Server'
@@ -558,7 +518,7 @@ $timer.Add_Tick({
     }
   }
   if ($script:webWasRunning -and -not $webRunning) {
-    $webIcon.ShowBalloonTip(3000, 'EvoHime', 'Панель остановлена', [System.Windows.Forms.ToolTipIcon]::Error)
+    $appIcon.ShowBalloonTip(3000, 'EvoHime', 'Панель остановлена', [System.Windows.Forms.ToolTipIcon]::Error)
     if ($script:webRestartEnabled) {
       Write-Host '[EvoHime] Панель завершилась неожиданно, перезапускаю...'
       $script:webProcess = Start-ManagedProcess '-Web'
@@ -566,7 +526,7 @@ $timer.Add_Tick({
     }
   }
   if ($script:workerWasRunning -and -not $workerRunning) {
-    $workerIcon.ShowBalloonTip(3000, 'EvoHime', 'Python worker остановлен', [System.Windows.Forms.ToolTipIcon]::Error)
+    $appIcon.ShowBalloonTip(3000, 'EvoHime', 'Python worker остановлен', [System.Windows.Forms.ToolTipIcon]::Error)
     if ($script:workerRestartEnabled) {
       Write-Host '[EvoHime] Python worker завершился неожиданно, перезапускаю...'
       $script:workerProcess = Start-ManagedProcess '-Worker'
@@ -592,15 +552,9 @@ $form.Add_FormClosing({
   Stop-Tree $script:webProcess
   Stop-Tree $script:serverProcess
   Stop-LocalDatabase
-  $serverIcon.Visible = $false
-  $webIcon.Visible = $false
-  $workerIcon.Visible = $false
-  $serverIcon.Dispose()
-  $webIcon.Dispose()
-  $workerIcon.Dispose()
-  $serverMenu.Dispose()
-  $webMenu.Dispose()
-  $workerMenu.Dispose()
+  $appIcon.Visible = $false
+  $appIcon.Dispose()
+  $appMenu.Dispose()
   $timer.Dispose()
   if ($script:launcherMutex) {
     $script:launcherMutex.ReleaseMutex()
@@ -615,6 +569,6 @@ Write-Host 'Server: http://localhost:3000/health'
 Write-Host 'Web:    http://localhost:5173'
 Write-Host "Worker: $workerUrl"
 Write-Host ''
-Write-Host 'Click the tray icons to open browser tabs. Right-click to stop each process.'
+Write-Host 'Click the tray icon (or "Open Dashboard") to open the panel. Right-click for Stop/Restart/Exit.'
 
 [System.Windows.Forms.Application]::Run($form)
