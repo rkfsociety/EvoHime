@@ -908,6 +908,7 @@ struct TrayMenuIds {
     check_updates: tray_icon::menu::MenuId,
     stop: tray_icon::menu::MenuId,
     restart: tray_icon::menu::MenuId,
+    settings: tray_icon::menu::MenuId,
     exit: tray_icon::menu::MenuId,
 }
 
@@ -926,11 +927,13 @@ fn build_tray_menu() -> TrayMenu {
         check_updates: check_updates.id().clone(),
         stop: stop.id().clone(),
         restart: restart.id().clone(),
+        settings: settings.id().clone(),
         exit: exit.id().clone(),
     };
 
-    // Settings полноценно заработает в Фазе 7 (веб-панель/окно настроек) —
-    // здесь присутствует в меню (раздел VII плана), но пока без обработчика.
+    // Settings открывает веб-панель на вкладке настроек (раздел VII плана) —
+    // сам modal/UI реализован во фронтенде (SettingsPanel.tsx), тут просто
+    // deep-link через ?settings=1.
     menu.append_items(&[
         &open_dashboard,
         &check_updates,
@@ -1002,6 +1005,8 @@ impl eframe::App for LauncherApp {
                 let _ = self.command_tx.send(LauncherCommand::Stop);
             } else if event.id == self.tray_ids.restart {
                 let _ = self.command_tx.send(LauncherCommand::Restart);
+            } else if event.id == self.tray_ids.settings {
+                let _ = webbrowser_open("http://localhost:5173/?settings=1");
             } else if event.id == self.tray_ids.exit {
                 std::process::exit(0);
             }

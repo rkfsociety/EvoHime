@@ -182,7 +182,17 @@ export function App() {
   const [memoryAsk, setMemoryAsk] = useState<MemoryAskEvent | null>(null);
   const [agentPlan, setAgentPlan] = useState<AgentPlanDisplay | null>(null);
   const [githubAuth, setGithubAuth] = useState<GithubAuthInfo | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(
+    () => new URLSearchParams(window.location.search).get("settings") === "1",
+  );
+  useEffect(() => {
+    if (!window.location.search.includes("settings=")) {
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete("settings");
+    window.history.replaceState(null, "", url.toString());
+  }, []);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   useEffect(() => {
@@ -415,6 +425,14 @@ export function App() {
   useEffect(() => {
     const route = modelDrafts.find((item) => item.name === "orchestrator");
     if (!route) {
+      return;
+    }
+    if (!route.configured) {
+      // No API key saved yet (fresh install / cleared settings) — the provider
+      // would just 401 on an empty key, which isn't a real "startup problem",
+      // it's an expected "not set up yet" state. Skip the probe and the banner
+      // until the user actually saves a key in Settings.
+      setOrchestratorModels([]);
       return;
     }
     let cancelled = false;
