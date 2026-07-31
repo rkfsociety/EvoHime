@@ -2,7 +2,7 @@ mod agent_loop;
 mod llm_telemetry;
 mod native_tools;
 mod planning;
-mod reflection;
+pub mod reflection;
 mod review;
 mod subagent;
 

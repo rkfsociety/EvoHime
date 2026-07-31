@@ -42,6 +42,18 @@ impl ReflectionEngine {
                 reasoning.push_str("Output contains failure indicators or is empty. ");
             }
 
+            // Check failure patterns against output as well
+            for (pattern_id, pattern_name, base_conf) in &known_failure_patterns {
+                if output_lower.contains(&pattern_name.to_lowercase()) {
+                    error_patterns.push(ErrorPattern {
+                        pattern_id: pattern_id.clone(),
+                        pattern_name: pattern_name.clone(),
+                        confidence: *base_conf,
+                        source: "experience_memory".to_string(),
+                    });
+                }
+            }
+
             if let Some(expected) = &context.expected_outcome {
                 if !context.tool_output.contains(expected) {
                     success_score *= 0.7;
