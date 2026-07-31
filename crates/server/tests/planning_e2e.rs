@@ -286,9 +286,21 @@ async fn test_e2e_full_planning_flow_with_history() {
         }
     };
 
-    // Setup
-    let task_id = Uuid::new_v4();
-    let session_id = Uuid::new_v4();
+    // Setup: planning_history has FK constraints on sessions/tasks, so real
+    // rows must exist before an entry referencing them can be inserted.
+    let session_id = sqlx::query_scalar::<_, Uuid>(
+        "INSERT INTO sessions (operator_id) VALUES ('00000000-0000-0000-0000-000000000001'::uuid) RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("create session");
+    let task_id = sqlx::query_scalar::<_, Uuid>(
+        "INSERT INTO tasks (session_id, user_message, status) VALUES ($1, 'test', 'running') RETURNING id",
+    )
+    .bind(session_id)
+    .fetch_one(&pool)
+    .await
+    .expect("create task");
     let config = PlanningConfig {
         num_candidates: 3,
         top_n: 1,
@@ -399,8 +411,19 @@ async fn test_e2e_reasoning_truncation() {
         }
     };
 
-    let task_id = Uuid::new_v4();
-    let session_id = Uuid::new_v4();
+    let session_id = sqlx::query_scalar::<_, Uuid>(
+        "INSERT INTO sessions (operator_id) VALUES ('00000000-0000-0000-0000-000000000001'::uuid) RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("create session");
+    let task_id = sqlx::query_scalar::<_, Uuid>(
+        "INSERT INTO tasks (session_id, user_message, status) VALUES ($1, 'test', 'running') RETURNING id",
+    )
+    .bind(session_id)
+    .fetch_one(&pool)
+    .await
+    .expect("create task");
 
     // Create reasoning longer than 512 chars
     let long_reasoning = "a".repeat(600);
