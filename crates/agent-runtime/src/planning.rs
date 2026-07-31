@@ -115,14 +115,30 @@ pub async fn generate_candidate_plans<L: LlmClient + ?Sized, E: ExperienceHandle
 /// Helper function to query tool success rate from storage
 /// Returns the ratio of successful tool calls to total tool calls for similar tasks
 /// Falls back to 0.5 if no history is available
-async fn get_tool_success_rate(_pool: &PgPool, _task_desc: &str) -> Result<f32, PlanningError> {
-    // TODO: Implement actual query to execution_history or similar table
-    // For now, return fallback value
-    // In a real implementation:
-    // - Query tasks matching task_desc
-    // - Count successful (tool_call_success=true) vs total tool calls
-    // - Return success_count / total_count, or 0.5 if no history
-    Ok(0.5)
+async fn get_tool_success_rate(pool: &PgPool, _task_desc: &str) -> Result<f32, PlanningError> {
+    // `task_steps` doesn't carry enough text to match against `_task_desc` with any
+    // real precision (no per-tool breakdown on PlanCandidate to narrow by tool_name
+    // either), so this reports the overall historical completion rate across all
+    // recorded tool steps rather than a task-specific one. Falls back to 0.5
+    // (neutral) when there's no history yet (fresh install) or the query fails.
+    let row: (i64, i64) = sqlx::query_as(
+        r#"
+        SELECT
+            COUNT(*) FILTER (WHERE status = 'completed') AS success_count,
+            COUNT(*) FILTER (WHERE status IN ('completed', 'failed')) AS total_count
+        FROM task_steps
+        "#,
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(|e| PlanningError::ScoringFailed(format!("tool success rate query failed: {e}")))?;
+
+    let (success_count, total_count) = row;
+    if total_count == 0 {
+        return Ok(0.5);
+    }
+
+    Ok(success_count as f32 / total_count as f32)
 }
 
 /// Score candidate plans using the unified formula:

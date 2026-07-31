@@ -422,8 +422,9 @@ async fn judge_final_answer(
         match item {
             Ok(ChatStreamItem::Delta(delta)) => output.push_str(&delta),
             Ok(ChatStreamItem::Thinking(_thinking)) => {
-                // TODO: Phase 3 will handle thinking events properly
-                // For now, simply skip thinking chunks during streaming
+                // Judge-verdict extraction — only the final text matters here,
+                // so reasoning traces are intentionally discarded (extended
+                // reasoning streaming to the UI is handled separately, see 7.111).
             }
             Ok(ChatStreamItem::Usage(_)) => {}
             Err(error) => return Err(format!("judge model call failed: {error}")),

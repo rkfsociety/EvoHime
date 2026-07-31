@@ -73,8 +73,9 @@ pub(crate) async fn collect_gateway_text(
             match chunk.ok()? {
                 ChatStreamItem::Delta(text) => output.push_str(&text),
                 ChatStreamItem::Thinking(_thinking) => {
-                    // TODO: Phase 3 will handle thinking events properly
-                    // For now, simply skip thinking chunks during streaming
+                    // Internal extraction call — only the final text matters here,
+                    // so reasoning traces are intentionally discarded (extended
+                    // reasoning streaming to the UI is handled separately, see 7.111).
                 }
                 ChatStreamItem::Usage(_) => {}
             }
