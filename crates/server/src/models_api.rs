@@ -205,6 +205,10 @@ pub(crate) fn build_model_config(
             "Нужен хотя бы один маршрут и маршрут по умолчанию".to_string(),
         ));
     }
+    fn inherits_default_key(name: &str) -> bool {
+        name == "orchestrator" || name == "synthesizer" || name.starts_with("reviewer_")
+    }
+
     let mut routes = HashMap::new();
     let requested_default_key = request
         .routes
@@ -266,7 +270,7 @@ pub(crate) fn build_model_config(
             .get(&name)
             .map(|item| item.literouter.api_key.clone())
             .or_else(|| {
-                (name == "orchestrator").then(|| {
+                inherits_default_key(&name).then(|| {
                     current
                         .routes
                         .get(&current.default_route)
@@ -276,7 +280,7 @@ pub(crate) fn build_model_config(
                 })
             })
             .unwrap_or_default();
-        let api_key = if name == "orchestrator" {
+        let api_key = if inherits_default_key(&name) {
             requested_default_key.clone()
         } else {
             route
@@ -420,6 +424,53 @@ mod tests {
             config.routes["orchestrator"].literouter.api_key,
             "lr_test_key"
         );
+    }
+
+    #[test]
+    fn carries_default_api_key_to_new_reviewer_and_synthesizer_routes() {
+        let current = evohime_model_gateway::ModelGatewayConfig {
+            default_route: "default".to_string(),
+            routes: HashMap::from([(
+                "default".to_string(),
+                ModelRouteConfig::literouter("", "https://api.literouter.com/v1", "deepseek:free"),
+            )]),
+        };
+        let config = build_model_config(
+            ModelSettingsRequest {
+                default_route: "default".to_string(),
+                routes: vec![
+                    ModelRouteRequest {
+                        name: "default".to_string(),
+                        provider: "literouter".to_string(),
+                        model: "deepseek:free".to_string(),
+                        base_url: "https://api.literouter.com/v1".to_string(),
+                        api_key: Some("lr_test_key".to_string()),
+                        billing_mode: "free".to_string(),
+                    },
+                    ModelRouteRequest {
+                        name: "reviewer_0".to_string(),
+                        provider: "literouter".to_string(),
+                        model: "deepseek:free".to_string(),
+                        base_url: "https://api.literouter.com/v1".to_string(),
+                        api_key: None,
+                        billing_mode: "free".to_string(),
+                    },
+                    ModelRouteRequest {
+                        name: "synthesizer".to_string(),
+                        provider: "literouter".to_string(),
+                        model: "deepseek:free".to_string(),
+                        base_url: "https://api.literouter.com/v1".to_string(),
+                        api_key: None,
+                        billing_mode: "free".to_string(),
+                    },
+                ],
+            },
+            &current,
+        )
+        .expect("model config is valid");
+
+        assert_eq!(config.routes["reviewer_0"].literouter.api_key, "lr_test_key");
+        assert_eq!(config.routes["synthesizer"].literouter.api_key, "lr_test_key");
     }
 
     #[test]
