@@ -38,4 +38,9 @@ export type {
   ApprovalDeniedCommand,
   MemoryAcceptCommand,
   MemoryRejectCommand,
+  AgentReflectionEvent,
+  ReflectionType,
+  ReflectionAction,
+  ReflectionAnalysis,
+  ErrorPattern,
 } from "./protocol.generated";

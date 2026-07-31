@@ -28,7 +28,8 @@ export type ServerEvent =
   | MemoryAskEvent
   | MemoryAcceptedEvent
   | MemoryRejectedEvent
-  | MemoryUsedEvent;
+  | MemoryUsedEvent
+  | AgentReflectionEvent;
 export type Uuid = string;
 export type DateTime = string;
 export type ClientCommand =
@@ -218,6 +219,28 @@ export interface MemoryUsedEvent {
   task_id: Uuid;
   signal: string;
   confidence: number;
+}
+export interface AgentReflectionEvent {
+  type: "agent.reflection";
+  task_id: Uuid;
+  timestamp: DateTime;
+  reflection_type: "post_tool_execution" | "plan_revision" | "error_recovery";
+  tool_call_id?: Uuid;
+  analysis: ReflectionAnalysis;
+  action: "proceed" | "ask_user" | "retry_tool" | "revise_plan" | "escalate";
+  recommendation?: string;
+}
+export interface ReflectionAnalysis {
+  success_score: number;
+  error_patterns: ErrorPattern[];
+  confidence: number;
+  reasoning: string;
+}
+export interface ErrorPattern {
+  pattern_id: string;
+  pattern_name: string;
+  confidence: number;
+  source: "experience_memory" | "heuristic";
 }
 export interface UserMessageCommand {
   type: "user.message";

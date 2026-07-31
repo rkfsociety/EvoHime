@@ -77,6 +77,7 @@
         ,{ "$ref": "#/$defs/MemoryAcceptedEvent" }
         ,{ "$ref": "#/$defs/MemoryRejectedEvent" }
         ,{ "$ref": "#/$defs/MemoryUsedEvent" }
+        ,{ "$ref": "#/$defs/AgentReflectionEvent" }
       ]
     },
     "ClientCommand": {
@@ -390,6 +391,52 @@
         "task_id": { "$ref": "#/$defs/Uuid" },
         "signal": { "type": "string" },
         "confidence": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "ErrorPattern": {
+      "type": "object",
+      "required": ["pattern_id", "pattern_name", "confidence", "source"],
+      "properties": {
+        "pattern_id": { "type": "string" },
+        "pattern_name": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "source": { "type": "string", "enum": ["experience_memory", "heuristic"] }
+      },
+      "additionalProperties": false
+    },
+    "ReflectionAnalysis": {
+      "type": "object",
+      "required": ["success_score", "error_patterns", "confidence", "reasoning"],
+      "properties": {
+        "success_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "error_patterns": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ErrorPattern" }
+        },
+        "confidence": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "reasoning": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "AgentReflectionEvent": {
+      "type": "object",
+      "required": ["type", "task_id", "timestamp", "reflection_type", "analysis", "action"],
+      "properties": {
+        "type": { "const": "agent.reflection" },
+        "task_id": { "$ref": "#/$defs/Uuid" },
+        "timestamp": { "$ref": "#/$defs/DateTime" },
+        "reflection_type": {
+          "type": "string",
+          "enum": ["post_tool_execution", "plan_revision", "error_recovery"]
+        },
+        "tool_call_id": { "$ref": "#/$defs/Uuid" },
+        "analysis": { "$ref": "#/$defs/ReflectionAnalysis" },
+        "action": {
+          "type": "string",
+          "enum": ["proceed", "ask_user", "retry_tool", "revise_plan", "escalate"]
+        },
+        "recommendation": { "type": "string" }
       },
       "additionalProperties": false
     },

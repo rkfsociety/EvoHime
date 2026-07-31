@@ -21,6 +21,40 @@ pub enum ApprovalReview {
     UnifiedDiff { path: String, diff: String },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReflectionType {
+    PostToolExecution,
+    PlanRevision,
+    ErrorRecovery,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReflectionAction {
+    Proceed,
+    AskUser,
+    RetryTool,
+    RevisePlan,
+    Escalate,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ErrorPattern {
+    pub pattern_id: String,
+    pub pattern_name: String,
+    pub confidence: f64,
+    pub source: String, // "experience_memory" | "heuristic"
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReflectionAnalysis {
+    pub success_score: f64,
+    pub error_patterns: Vec<ErrorPattern>,
+    pub confidence: f64,
+    pub reasoning: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ServerEvent {
@@ -169,6 +203,18 @@ pub enum ServerEvent {
         task_id: Uuid,
         signal: String,
         confidence: f64,
+    },
+    #[serde(rename = "agent.reflection")]
+    AgentReflection {
+        task_id: Uuid,
+        timestamp: DateTime<Utc>,
+        reflection_type: ReflectionType,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool_call_id: Option<Uuid>,
+        analysis: ReflectionAnalysis,
+        action: ReflectionAction,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        recommendation: Option<String>,
     },
 }
 
