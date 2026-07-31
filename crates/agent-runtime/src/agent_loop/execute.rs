@@ -7,144 +7,14 @@ use crate::subagent::execute_agent_run;
 use evohime_model_gateway::ModelGateway;
 use evohime_protocol::{PlanStep, ServerEvent};
 use evohime_tool_runtime::{ToolContext, ToolError, ToolRegistry};
-use futures_util::future::join_all;
 use serde_json::{json, Value};
-use std::{
-    collections::{HashMap, HashSet},
-    path::Path,
-};
+use std::path::Path;
 use tokio::sync::mpsc::UnboundedSender;
-
-pub(crate) fn dependency_batches_pending(
-    pending: &[PlanStep],
-    satisfied: &HashSet<String>,
-) -> Result<Vec<Vec<PlanStep>>, AgentError> {
-    let known_ids: HashSet<&str> = pending
-        .iter()
-        .map(|step| step.id.as_str())
-        .chain(satisfied.iter().map(String::as_str))
-        .collect();
-    let mut remaining: Vec<&PlanStep> = pending.iter().collect();
-    let mut completed = satisfied.clone();
-    let mut batches = Vec::new();
-
-    while !remaining.is_empty() {
-        let mut ready = Vec::new();
-        let mut blocked = Vec::new();
-
-        for step in remaining {
-            if let Some(missing) = step
-                .depends_on
-                .iter()
-                .map(String::as_str)
-                .find(|dependency| !known_ids.contains(dependency))
-            {
-                return Err(AgentError::PlanStepFailed {
-                    step_id: step.id.clone(),
-                    tool_name: step.tool_name.clone(),
-                    message: format!("unknown dependency {missing}"),
-                });
-            }
-
-            if step
-                .depends_on
-                .iter()
-                .all(|dependency| completed.contains(dependency))
-            {
-                ready.push((*step).clone());
-            } else {
-                blocked.push(step);
-            }
-        }
-
-        if ready.is_empty() {
-            let cycle_step = blocked
-                .first()
-                .map(|step| step.id.clone())
-                .unwrap_or_else(|| "unknown".to_string());
-            return Err(AgentError::PlanStepFailed {
-                step_id: cycle_step,
-                tool_name: "plan".to_string(),
-                message: "dependency cycle detected".to_string(),
-            });
-        }
-
-        completed.extend(ready.iter().map(|step| step.id.clone()));
-        batches.push(ready);
-        remaining = blocked;
-    }
-
-    Ok(batches)
-}
-
-pub(crate) async fn execute_plan_steps(
-    plan: &[PlanStep],
-    prior_satisfied: &HashSet<String>,
-    config: &AgentConfig,
-    gateway: &ModelGateway,
-    tools: &ToolRegistry,
-    event_tx: &UnboundedSender<ServerEvent>,
-) -> Result<(Vec<String>, bool, HashSet<String>), AgentError> {
-    let batches = dependency_batches_pending(plan, prior_satisfied)?;
-    let mut outputs = Vec::new();
-    let mut successful_steps: HashMap<String, bool> = prior_satisfied
-        .iter()
-        .map(|id| (id.clone(), true))
-        .collect();
-    let mut mutation_executed = false;
-
-    for batch in batches {
-        let step_results =
-            join_all(
-                batch.iter().map(|step| {
-                    let step = step.clone();
-                    async move {
-                        execute_single_plan_step(&step, config, gateway, tools, event_tx).await
-                    }
-                }),
-            )
-            .await;
-
-        for (step, result) in batch.into_iter().zip(step_results) {
-            match result {
-                Ok(StepOutcome::SkippedAssistant) => {
-                    successful_steps.insert(step.id, true);
-                }
-                Ok(StepOutcome::SkippedUnsupported { message }) => {
-                    outputs.push(message);
-                    successful_steps.insert(step.id, false);
-                }
-                Ok(StepOutcome::Completed {
-                    output,
-                    mutation,
-                    success,
-                }) => {
-                    outputs.push(output);
-                    mutation_executed |= mutation;
-                    successful_steps.insert(step.id, success);
-                }
-                Err(error) => return Err(error),
-            }
-        }
-    }
-
-    let newly_satisfied = successful_steps
-        .into_iter()
-        .filter_map(|(id, ok)| ok.then_some(id))
-        .collect();
-    Ok((outputs, mutation_executed, newly_satisfied))
-}
 
 pub(crate) enum StepOutcome {
     SkippedAssistant,
-    SkippedUnsupported {
-        message: String,
-    },
-    Completed {
-        output: String,
-        mutation: bool,
-        success: bool,
-    },
+    SkippedUnsupported { message: String },
+    Completed { output: String },
 }
 
 pub(crate) async fn execute_single_plan_step(
@@ -260,8 +130,6 @@ pub(crate) async fn execute_single_plan_step(
                     &format!("{} ({effective_tool_name}):\n{}", step.id, result.output),
                     ToolResultBudget::from_env().per_result_chars,
                 ),
-                mutation: is_mutating_tool(effective_tool_name),
-                success: true,
             })
         }
         Err(error) => {
@@ -293,11 +161,7 @@ pub(crate) async fn execute_single_plan_step(
                 effective_tool_name,
                 "filesystem.read" | "filesystem.list" | "filesystem.search" | "memory.search"
             ) {
-                return Ok(StepOutcome::Completed {
-                    output,
-                    mutation: false,
-                    success: false,
-                });
+                return Ok(StepOutcome::Completed { output });
             }
             Err(AgentError::PlanStepFailed {
                 step_id: step.id.clone(),
@@ -306,50 +170,6 @@ pub(crate) async fn execute_single_plan_step(
             })
         }
     }
-}
-
-pub(crate) fn requires_mutation(message: &str) -> bool {
-    let message = message.to_lowercase();
-    // Advisory / exploratory questions ("что можно добавить?") must not force writes.
-    if looks_like_advisory_question(&message) {
-        return false;
-    }
-    [
-        "реализ",
-        "исправ",
-        "создай",
-        "добав",
-        "implement",
-        "modify",
-        "write",
-    ]
-    .iter()
-    .any(|marker| message.contains(marker))
-}
-
-pub(crate) fn looks_like_advisory_question(message: &str) -> bool {
-    [
-        "что можно",
-        "что стоит",
-        "можно ли",
-        "стоит ли",
-        "какие улучш",
-        "какие измен",
-        "что улучшить",
-        "предложи",
-        "посоветуй",
-        "рекоменд",
-        "what can",
-        "what should",
-        "what could",
-        "any suggestions",
-        "suggest ",
-        "recommend",
-        "ideas to improve",
-        "ideas for",
-    ]
-    .iter()
-    .any(|marker| message.contains(marker))
 }
 
 pub(crate) fn tool_input(

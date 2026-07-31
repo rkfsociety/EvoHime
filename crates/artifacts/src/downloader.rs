@@ -275,6 +275,7 @@ mod tests {
         let dest = dir.path().join("artifact.bin");
         let locked = std::fs::OpenOptions::new()
             .create(true)
+            .truncate(true)
             .write(true)
             .share_mode(0)
             .open(&dest)

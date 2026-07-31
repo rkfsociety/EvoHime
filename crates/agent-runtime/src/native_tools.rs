@@ -1,37 +1,8 @@
 //! OpenAI-compatible tool specs for native planning (Stage 7.28).
 
-use evohime_model_gateway::{NativeToolCall, ToolSpec};
-use evohime_protocol::PlanStep;
+use evohime_model_gateway::ToolSpec;
 use evohime_tool_runtime::ToolRegistry;
-use serde_json::{json, Value};
-
-const NATIVE_PLANNING_PROMPT: &str = "You are EvoHime's task planner. Call one or more tools to fulfill the user request. Prefer the fewest tools. Use assistant.reply only when no tool is needed. Do not invent file paths — use relative workspace paths. For mutating tools, include complete executable arguments.";
-
-pub fn native_tool_calls_enabled() -> bool {
-    match std::env::var("EVOHIME_NATIVE_TOOL_CALLS") {
-        Ok(value) => {
-            let trimmed = value.trim().to_ascii_lowercase();
-            !(trimmed.is_empty()
-                || trimmed == "0"
-                || trimmed == "false"
-                || trimmed == "off"
-                || trimmed == "no")
-        }
-        Err(_) => true,
-    }
-}
-
-pub fn native_tool_calls_supported_for_model(model: Option<&str>) -> bool {
-    !model
-        .unwrap_or_default()
-        .trim()
-        .to_ascii_lowercase()
-        .starts_with("gpt-5")
-}
-
-pub fn native_planning_prompt() -> String {
-    NATIVE_PLANNING_PROMPT.to_string()
-}
+use serde_json::json;
 
 pub fn openai_tools_for_registry(tools: &ToolRegistry) -> Vec<ToolSpec> {
     let mut specs: Vec<ToolSpec> = tools
@@ -53,39 +24,6 @@ pub fn openai_tools_for_registry(tools: &ToolRegistry) -> Vec<ToolSpec> {
     specs.sort_by(|left, right| left.function.name.cmp(&right.function.name));
     specs.dedup_by(|left, right| left.function.name == right.function.name);
     specs
-}
-
-pub fn plan_from_native_tool_calls(calls: &[NativeToolCall]) -> Vec<PlanStep> {
-    let steps: Vec<PlanStep> = calls
-        .iter()
-        .enumerate()
-        .map(|(index, call)| {
-            let tool_name = canonical_tool_name(&call.name);
-            let description = normalize_arguments_description(&tool_name, &call.arguments);
-            PlanStep {
-                id: format!("step-{}", index + 1),
-                tool_name,
-                description,
-                depends_on: Vec::new(),
-            }
-        })
-        .collect();
-    steps
-}
-
-fn normalize_arguments_description(tool_name: &str, arguments: &str) -> String {
-    let trimmed = arguments.trim();
-    if trimmed.is_empty() {
-        return "{}".into();
-    }
-    if tool_name == "assistant.reply" {
-        if let Ok(value) = serde_json::from_str::<Value>(trimmed) {
-            if let Some(message) = value.get("message").and_then(Value::as_str) {
-                return message.to_string();
-            }
-        }
-    }
-    trimmed.to_string()
 }
 
 fn provider_tool_name(name: &str) -> String {
@@ -324,29 +262,7 @@ mod tests {
     }
 
     #[test]
-    fn plan_from_native_preserves_json_arguments() {
-        let plan = plan_from_native_tool_calls(&[NativeToolCall {
-            id: "1".into(),
-            name: "filesystem.read".into(),
-            arguments: r#"{"path":"docs/a.md"}"#.into(),
-        }]);
-        assert_eq!(plan.len(), 1);
-        assert_eq!(plan[0].tool_name, "filesystem.read");
-        assert!(plan[0].description.contains("docs/a.md"));
-    }
-
-    #[test]
-    fn assistant_reply_uses_message_field() {
-        let plan = plan_from_native_tool_calls(&[NativeToolCall {
-            id: "1".into(),
-            name: "assistant.reply".into(),
-            arguments: r#"{"message":"hello"}"#.into(),
-        }]);
-        assert_eq!(plan[0].description, "hello");
-    }
-
-    #[test]
-    fn native_tool_names_are_provider_safe_and_round_trip() {
+    fn native_tool_names_are_provider_safe() {
         let tools = ToolRegistry::bootstrap_with_permissions(PermissionEngine::new());
         let specs = openai_tools_for_registry(&tools);
 
@@ -359,19 +275,11 @@ mod tests {
         assert!(specs
             .iter()
             .any(|spec| spec.function.name == "filesystem_read"));
-
-        let plan = plan_from_native_tool_calls(&[NativeToolCall {
-            id: "1".into(),
-            name: "filesystem_read".into(),
-            arguments: r#"{"path":"docs/a.md"}"#.into(),
-        }]);
-        assert_eq!(plan[0].tool_name, "filesystem.read");
     }
 
     #[test]
-    fn disables_chat_tools_for_reasoning_models() {
-        assert!(!native_tool_calls_supported_for_model(Some("gpt-5.6-luna")));
-        assert!(native_tool_calls_supported_for_model(Some("deepseek:free")));
-        assert!(native_tool_calls_supported_for_model(None));
+    fn canonical_tool_name_round_trips_provider_names() {
+        assert_eq!(canonical_tool_name("filesystem_read"), "filesystem.read");
+        assert_eq!(canonical_tool_name("assistant_reply"), "assistant.reply");
     }
 }

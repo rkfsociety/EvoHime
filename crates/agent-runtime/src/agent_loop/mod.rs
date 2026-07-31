@@ -1,11 +1,8 @@
-//! Agent orchestration: plan → execute → replan → respond.
-//!
-//! Split in Stage 7.29: [`parse`], [`plan`], [`execute`], [`context`], [`util`].
+//! Agent orchestration: ReAct loop (plan → act → observe → respond).
 
 mod context;
 mod execute;
 mod parse;
-mod plan;
 mod react;
 mod tool_budget;
 mod util;
@@ -26,8 +23,6 @@ use crate::planning::{
     MockLlmClient, PlanningConfig, PlanningError, ScoringWeights,
 };
 
-#[cfg(test)]
-use context::build_workspace_rules;
 use util::emit;
 
 #[derive(Clone)]
@@ -108,14 +103,9 @@ pub enum AgentError {
 struct SimpleExperienceHandle;
 
 impl ExperienceHandle for SimpleExperienceHandle {
-    fn search_similar(
-        &self,
-        _task_desc: &str,
-    ) -> impl std::future::Future<Output = Result<f32, PlanningError>> + Send {
-        async move {
-            // Return neutral similarity score for now
-            Ok(0.5)
-        }
+    async fn search_similar(&self, _task_desc: &str) -> Result<f32, PlanningError> {
+        // Return neutral similarity score for now
+        Ok(0.5)
     }
 }
 
@@ -431,31 +421,14 @@ async fn run_agent_loop_inner(
     .await;
 }
 
-const SYSTEM_PROMPT: &str = "You are EvoHime, a helpful AI coding assistant. Follow the workspace rules supplied in the system context, preserve user intent, never claim a change was made unless a tool result confirms it, and answer concisely using the provided workspace context. When an action is required, return an explicit JSON tool.call object with type, tool, and input; do not merely describe the call.";
-
 #[cfg(test)]
 mod tests {
-    use super::context::{build_memory_context, relative_workspace_path};
-    use super::execute::{
-        dependency_batches_pending, is_mutating_tool, requires_mutation, tool_input,
-    };
-    use super::parse::{default_plan, parse_plan, REGISTERED_TOOLS};
-    use super::plan::{parse_replan_decision, ReplanDecision};
+    use super::context::{build_memory_context, build_workspace_rules};
+    use super::execute::{is_mutating_tool, tool_input};
     use super::util::MODEL_REQUEST_COOLDOWN;
     use super::*;
     use evohime_model_gateway::providers::ChatRole;
-    use std::{
-        collections::HashSet,
-        path::{Path, PathBuf},
-        time::Duration,
-    };
-
-    #[test]
-    fn relative_path_from_workspace() {
-        let root = PathBuf::from("/workspace");
-        let file = PathBuf::from("/workspace/docs/a.md");
-        assert_eq!(relative_workspace_path(&root, &file), "docs/a.md");
-    }
+    use std::{path::Path, time::Duration};
 
     #[test]
     fn builds_memory_context_block() {
@@ -504,14 +477,6 @@ mod tests {
         let context = build_workspace_rules(temp.path()).expect("plugin context");
         assert!(context.contains("Plugin `demo` v1.0.0 loaded"));
         assert!(context.contains("skill `bootstrap`"));
-    }
-
-    #[test]
-    fn prose_is_not_parsed_as_fake_reply_steps() {
-        let plan = parse_plan(
-            "Я вижу, что нужно исследовать проект.\n\nДавайте начнём с анализа структуры.",
-        );
-        assert_eq!(plan, default_plan());
     }
 
     #[test]
@@ -629,128 +594,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_filesystem_write_plan_line() {
-        let plan = parse_plan("filesystem.write: Update `docs/test.md`:\n```markdown\nhello\n```");
-        assert_eq!(plan[0].tool_name, "filesystem.write");
-        assert_eq!(
-            plan[0].description,
-            "Update `docs/test.md`:\n```markdown\nhello\n```"
-        );
-    }
-
-    #[test]
-    fn parses_markdown_write_step_with_declared_path() {
-        let plan = parse_plan(
-            "**step-1: filesystem.write**\npath: workers/python/handler.py\n```python\nprint('ok')\n```",
-        );
-        assert_eq!(plan.len(), 1);
-        assert_eq!(plan[0].tool_name, "filesystem.write");
-        assert!(plan[0]
-            .description
-            .contains("path: workers/python/handler.py"));
-    }
-
-    #[test]
-    fn parses_markup_tool_calls_from_model_output() {
-        let plan = parse_plan(
-            r#"<function_calls><invoke name="filesystem.write"><parameter name="path">workers/python/handler.py</parameter><parameter name="content">print('ok')</parameter></invoke></function_calls>"#,
-        );
-        assert_eq!(plan.len(), 1);
-        assert_eq!(plan[0].tool_name, "filesystem.write");
-        assert!(plan[0].description.contains("workers/python/handler.py"));
-        assert!(plan[0].description.contains("print('ok')"));
-    }
-
-    #[test]
-    fn parses_json_tool_call_from_model_output() {
-        let plan = parse_plan(
-            r#"Выполняю:
-```json
-{
-  "type": "tool.call",
-  "tool": "filesystem.write",
-  "input": {
-    "path": "docs/agent-dogfood-check.md",
-    "content": "agent write verified"
-  }
-}
-```"#,
-        );
-        assert_eq!(plan.len(), 1);
-        assert_eq!(plan[0].tool_name, "filesystem.write");
-        assert!(plan[0]
-            .description
-            .contains("path: docs/agent-dogfood-check.md"));
-        assert!(plan[0].description.contains("agent write verified"));
-    }
-
-    #[test]
-    fn parses_direct_typed_json_tool_call() {
-        let plan = parse_plan(
-            r#"```json
-{"type":"filesystem.write","path":"docs/direct.md","content":"direct"}
-```"#,
-        );
-        assert_eq!(plan.len(), 1);
-        assert_eq!(plan[0].tool_name, "filesystem.write");
-        assert!(plan[0].description.contains("docs/direct.md"));
-    }
-
-    #[test]
-    fn parses_browser_and_mcp_tool_calls_into_executable_input() {
-        let browser = parse_plan(
-            r#"{"type":"tool.call","tool":"browser.open","input":{"url":"https://example.com","max_chars":1000}}"#,
-        );
-        assert_eq!(browser.len(), 1);
-        assert_eq!(browser[0].tool_name, "browser.open");
-        let browser_input =
-            tool_input("browser.open", &browser[0].description, Path::new(".")).expect("browser");
-        assert_eq!(browser_input["url"], "https://example.com");
-        assert_eq!(browser_input["max_chars"], 1000);
-
-        let extract = parse_plan(
-            r#"{"type":"tool.call","tool":"browser.extract","input":{"url":"https://example.com","selector":"h1"}}"#,
-        );
-        let extract_input = tool_input("browser.extract", &extract[0].description, Path::new("."))
-            .expect("extract");
-        assert_eq!(extract_input["selector"], "h1");
-
-        let mcp = parse_plan(
-            r#"{"type":"tool.call","tool":"mcp.call","input":{"url":"https://mcp.example/rpc","method":"tools/list","params":{}}}"#,
-        );
-        let mcp_input = tool_input("mcp.call", &mcp[0].description, Path::new(".")).expect("mcp");
-        assert_eq!(mcp_input["method"], "tools/list");
-
-        let memory = parse_plan(
-            r#"[{"id":"m1","tool_name":"memory.search","description":"{\"query\":\"worktrees\",\"limit\":5}","depends_on":[]}]"#,
-        );
-        let memory_input =
-            tool_input("memory.search", &memory[0].description, Path::new(".")).expect("memory");
-        assert_eq!(memory_input["query"], "worktrees");
-        assert_eq!(memory_input["limit"], 5);
-    }
-
-    #[test]
-    fn registered_tools_cover_bootstrap_registry() {
-        let registry = ToolRegistry::bootstrap();
-        let names = registry
-            .list()
-            .into_iter()
-            .map(|tool| tool.name)
-            .collect::<std::collections::HashSet<_>>();
-        for tool in REGISTERED_TOOLS {
-            if *tool == "assistant.reply" {
-                continue;
-            }
-            assert!(
-                names.contains(tool),
-                "REGISTERED_TOOLS entry `{tool}` missing from ToolRegistry::bootstrap()"
-            );
-        }
-        assert_eq!(names.len(), REGISTERED_TOOLS.len() - 1);
-    }
-
-    #[test]
     fn keeps_model_requests_apart_for_literouter_rate_limit() {
         assert!(MODEL_REQUEST_COOLDOWN >= Duration::from_secs(5));
     }
@@ -760,54 +603,6 @@ mod tests {
         assert!(is_mutating_tool("filesystem.write"));
         assert!(is_mutating_tool("shell.execute"));
         assert!(!is_mutating_tool("filesystem.read"));
-    }
-
-    #[test]
-    fn detects_when_user_requested_a_mutation() {
-        assert!(requires_mutation("Реализуй следующий пункт"));
-        assert!(requires_mutation("Implement the feature"));
-        assert!(requires_mutation("Добавь логирование в server"));
-        assert!(!requires_mutation("Прочитай файл и объясни его содержимое"));
-        // Trace regression: advisory "добавить?" must not trip mutation-check.
-        assert!(!requires_mutation(
-            "изучи дорожную карту и код, что можно улучшить или добавить?"
-        ));
-        assert!(!requires_mutation("What can we improve or add next?"));
-    }
-
-    #[test]
-    fn parses_tagged_tool_call_from_model_output() {
-        let plan = parse_plan(
-            r#"<tool_call>
-{"type":"filesystem.write","path":"docs/tagged.md","content":"tagged"}
-</tool_call>"#,
-        );
-        assert_eq!(plan.len(), 1);
-        assert_eq!(plan[0].tool_name, "filesystem.write");
-        assert!(plan[0].description.contains("path: docs/tagged.md"));
-        assert!(plan[0].description.contains("tagged"));
-    }
-
-    #[test]
-    fn keeps_valid_tagged_calls_when_a_later_call_is_truncated() {
-        let plan = parse_plan(
-            r#"<tool_call>{"type":"filesystem.write","path":"docs/first.md","content":"ok"}</tool_call>
-<tool_call>{"type":"filesystem.write","path":"docs/broken.md"</tool_call>
-<tool_call>{"type":"filesystem.write","path":"docs/third.md","content":"ok"}</tool_call>"#,
-        );
-        assert_eq!(plan.len(), 2);
-        assert!(plan[0].description.contains("docs/first.md"));
-        assert!(plan[1].description.contains("docs/third.md"));
-    }
-
-    #[test]
-    fn keeps_valid_markup_calls_before_a_truncated_invoke() {
-        let plan = parse_plan(
-            r#"<invoke name="filesystem.write"><parameter name="path">docs/first.md</parameter><parameter name="content">ok</parameter></invoke>
-<invoke name="filesystem.write"><parameter name="path">docs/broken.md</parameter>"#,
-        );
-        assert_eq!(plan.len(), 1);
-        assert!(plan[0].description.contains("docs/first.md"));
     }
 
     #[tokio::test]
@@ -919,100 +714,6 @@ mod tests {
 
         assert!(!result.final_message.contains("tool.call"));
         assert!(result.final_message.contains("answer from file"));
-    }
-
-    #[test]
-    fn parses_replan_done_and_continue() {
-        assert_eq!(
-            parse_replan_decision(r#"{"done":true}"#),
-            ReplanDecision::Done
-        );
-        let decision = parse_replan_decision(
-            r#"{"done":false,"steps":[{"id":"step-2","tool_name":"filesystem.read","description":"read `docs/a.md`","depends_on":["step-1"]}]}"#,
-        );
-        match decision {
-            ReplanDecision::Continue(steps) => {
-                assert_eq!(steps.len(), 1);
-                assert_eq!(steps[0].id, "step-2");
-                assert_eq!(steps[0].depends_on, vec!["step-1".to_string()]);
-            }
-            ReplanDecision::Done => panic!("expected continue"),
-        }
-        assert_eq!(
-            parse_replan_decision("not json at all"),
-            ReplanDecision::Done
-        );
-    }
-
-    #[test]
-    fn dependency_batches_run_independent_steps_together() {
-        let plan = vec![
-            PlanStep {
-                id: "a".into(),
-                tool_name: "filesystem.read".into(),
-                description: "read a".into(),
-                depends_on: vec![],
-            },
-            PlanStep {
-                id: "b".into(),
-                tool_name: "filesystem.read".into(),
-                description: "read b".into(),
-                depends_on: vec![],
-            },
-            PlanStep {
-                id: "c".into(),
-                tool_name: "filesystem.write".into(),
-                description: "write c".into(),
-                depends_on: vec!["a".into(), "b".into()],
-            },
-        ];
-        let batches = dependency_batches_pending(&plan, &HashSet::new()).expect("batches");
-        assert_eq!(batches.len(), 2);
-        assert_eq!(batches[0].len(), 2);
-        assert_eq!(batches[1][0].id, "c");
-    }
-
-    #[test]
-    fn dependency_batches_honor_prior_satisfied_steps() {
-        let pending = vec![PlanStep {
-            id: "c".into(),
-            tool_name: "filesystem.write".into(),
-            description: "write c".into(),
-            depends_on: vec!["a".into()],
-        }];
-        let mut satisfied = HashSet::new();
-        satisfied.insert("a".into());
-        let batches = dependency_batches_pending(&pending, &satisfied).expect("batches");
-        assert_eq!(batches.len(), 1);
-        assert_eq!(batches[0][0].id, "c");
-    }
-
-    #[test]
-    fn parses_model_plan_json_and_dependencies() {
-        let plan = parse_plan(
-            r#"[{"id":"read","tool_name":"filesystem.read","description":"read context","depends_on":[]}]"#,
-        );
-        assert_eq!(plan[0].tool_name, "filesystem.read");
-    }
-
-    #[test]
-    fn parses_fenced_json_plan_blocks() {
-        let plan = parse_plan(
-            "```json\n[{\"id\":\"read\",\"tool_name\":\"filesystem.read\",\"description\":\"read context\",\"depends_on\":[]}]\n```",
-        );
-        assert_eq!(plan.len(), 1);
-        assert_eq!(plan[0].id, "read");
-        assert_eq!(plan[0].tool_name, "filesystem.read");
-    }
-
-    #[test]
-    fn parses_wrapped_plan_objects() {
-        let plan = parse_plan(
-            r#"{"steps":[{"tool_name":"filesystem.read","description":"read context","depends_on":[]} ]}"#,
-        );
-        assert_eq!(plan.len(), 1);
-        assert_eq!(plan[0].id, "step-1");
-        assert_eq!(plan[0].tool_name, "filesystem.read");
     }
 
     #[tokio::test]
@@ -1217,9 +918,8 @@ mod tests {
         // Should have emitted at least one event
         let mut found_plan_event = false;
         while let Some(event) = rx.recv().await {
-            match event {
-                ServerEvent::AgentPlan { .. } => found_plan_event = true,
-                _ => {}
+            if let ServerEvent::AgentPlan { .. } = event {
+                found_plan_event = true;
             }
             if found_plan_event {
                 break;

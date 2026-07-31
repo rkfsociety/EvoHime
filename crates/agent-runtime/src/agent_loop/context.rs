@@ -3,12 +3,6 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-pub(crate) fn relative_workspace_path(workspace_root: &Path, file_path: &Path) -> String {
-    file_path
-        .strip_prefix(workspace_root)
-        .map(|path| path.display().to_string())
-        .unwrap_or_else(|_| file_path.display().to_string())
-}
 pub(crate) fn build_memory_context(notes: &[String]) -> Option<String> {
     evohime_memory::format_untrusted_memory_notes(notes)
 }

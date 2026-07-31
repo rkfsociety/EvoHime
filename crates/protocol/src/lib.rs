@@ -528,10 +528,7 @@ mod tests {
         assert_eq!(json["chosen_plan_id"], "plan-1");
         assert_eq!(json["candidates"].as_array().unwrap().len(), 2);
         assert_eq!(json["candidates"][0]["id"], "plan-1");
-        assert_eq!(
-            json["candidates"][0]["score_breakdown"]["similarity_score"].is_number(),
-            true
-        );
+        assert!(json["candidates"][0]["score_breakdown"]["similarity_score"].is_number());
 
         let decoded: ServerEvent = serde_json::from_value(json).expect("event deserializes");
         assert!(matches!(
