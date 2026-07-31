@@ -17,7 +17,7 @@ pub struct PlanningHistoryEntry {
     pub id: Uuid,
     pub task_id: Uuid,
     pub session_id: Uuid,
-    pub candidates: Vec<Value>, // Array of PlanCandidate serialized to JSON
+    pub candidates: Value, // JSON array of PlanCandidate objects
     pub chosen_plan_id: Option<String>,
     pub reasoning: String,
     pub created_at: DateTime<Utc>,
@@ -63,12 +63,15 @@ pub async fn insert_planning_history(
 ) -> Result<PlanningHistoryEntry, StorageError> {
     let validated = entry.validate()?;
 
-    // Serialize candidates to JSON array
-    let candidates_json: Vec<Value> = validated
-        .candidates
-        .iter()
-        .map(|c| serde_json::to_value(c).unwrap_or(Value::Null))
-        .collect();
+    // Serialize candidates to a single JSON array value (the column is a
+    // scalar jsonb, not a postgres array of jsonb).
+    let candidates_json: Value = Value::Array(
+        validated
+            .candidates
+            .iter()
+            .map(|c| serde_json::to_value(c).unwrap_or(Value::Null))
+            .collect(),
+    );
 
     let row = sqlx::query_as::<_, PlanningHistoryEntry>(
         r#"
@@ -183,7 +186,7 @@ mod tests {
         assert_eq!(inserted.session_id, session);
         assert_eq!(inserted.chosen_plan_id, Some("plan-1".to_string()));
         assert_eq!(inserted.reasoning, "Selected based on similarity score");
-        assert_eq!(inserted.candidates.len(), 1);
+        assert_eq!(inserted.candidates.as_array().map(Vec::len), Some(1));
 
         // List and verify
         let rows = list_planning_by_task(&pool, task)
@@ -339,10 +342,6 @@ mod tests {
     }
 
     #[tokio::test]
-    // sqlx encodes &Vec<Value> as a single jsonb value (matches production
-    // code); an owned Vec<Value> is encoded as a postgres jsonb[] array and
-    // fails to bind against the jsonb column.
-    #[allow(clippy::needless_borrows_for_generic_args)]
     async fn cleanup_old_planning_history_by_retention() {
         let Some(pool) = connect_integration_pool().await else {
             eprintln!("skipping cleanup test: database unavailable");
@@ -373,7 +372,7 @@ mod tests {
         )
         .bind(task)
         .bind(session)
-        .bind(&vec![json!({"id":"plan-1"})])
+        .bind(json!([{"id":"plan-1"}]))
         .bind("plan-1")
         .bind("old reasoning")
         .execute(&pool)
@@ -389,7 +388,7 @@ mod tests {
         )
         .bind(task)
         .bind(session)
-        .bind(&vec![json!({"id":"plan-2"})])
+        .bind(json!([{"id":"plan-2"}]))
         .bind("plan-2")
         .bind("recent reasoning")
         .execute(&pool)

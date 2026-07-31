@@ -357,7 +357,10 @@ async fn test_e2e_full_planning_flow_with_history() {
     assert_eq!(inserted.session_id, session_id);
     assert_eq!(inserted.chosen_plan_id, Some(chosen_plan_id.clone()));
     assert_eq!(inserted.reasoning, reasoning);
-    assert_eq!(inserted.candidates.len(), config.num_candidates);
+    assert_eq!(
+        inserted.candidates.as_array().map(Vec::len),
+        Some(config.num_candidates)
+    );
 
     // Verify reasoning ≤ 512 chars
     assert!(
@@ -379,7 +382,10 @@ async fn test_e2e_full_planning_flow_with_history() {
     assert_eq!(first_entry.task_id, task_id);
     assert_eq!(first_entry.session_id, session_id);
     assert_eq!(first_entry.chosen_plan_id, Some(chosen_plan_id.clone()));
-    assert_eq!(first_entry.candidates.len(), config.num_candidates);
+    assert_eq!(
+        first_entry.candidates.as_array().map(Vec::len),
+        Some(config.num_candidates)
+    );
 }
 
 /// Test: Reasoning truncation when longer than 512 chars

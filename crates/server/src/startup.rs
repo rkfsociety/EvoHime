@@ -481,10 +481,6 @@ mod tests {
     use uuid::Uuid;
 
     #[tokio::test]
-    // sqlx encodes &Vec<Value> as a single jsonb value (matches production
-    // code); an owned Vec<Value> is encoded as a postgres jsonb[] array and
-    // fails to bind against the jsonb column.
-    #[allow(clippy::needless_borrows_for_generic_args)]
     async fn test_cleanup_deletes_old_planning_history() {
         let Some(pool) = evohime_storage::test_db::connect_integration_pool().await else {
             eprintln!("skipping cleanup test: database unavailable");
@@ -516,7 +512,7 @@ mod tests {
         )
         .bind(task)
         .bind(session)
-        .bind(&vec![serde_json::json!({"id":"plan-1"})])
+        .bind(serde_json::json!([{"id":"plan-1"}]))
         .bind("plan-1")
         .bind("old reasoning")
         .execute(&pool)
@@ -568,10 +564,6 @@ mod tests {
     }
 
     #[tokio::test]
-    // sqlx encodes &Vec<Value> as a single jsonb value (matches production
-    // code); an owned Vec<Value> is encoded as a postgres jsonb[] array and
-    // fails to bind against the jsonb column.
-    #[allow(clippy::needless_borrows_for_generic_args)]
     async fn test_cleanup_retains_recent_rows() {
         let Some(pool) = evohime_storage::test_db::connect_integration_pool().await else {
             eprintln!("skipping retention test: database unavailable");
@@ -603,7 +595,7 @@ mod tests {
         )
         .bind(task)
         .bind(session)
-        .bind(&vec![serde_json::json!({"id":"plan-1"})])
+        .bind(serde_json::json!([{"id":"plan-1"}]))
         .bind("plan-1")
         .bind("recent reasoning")
         .execute(&pool)
