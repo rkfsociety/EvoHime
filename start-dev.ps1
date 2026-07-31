@@ -75,6 +75,75 @@ function Wait-ForHttp([string]$url, [int]$timeoutSeconds = 60) {
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+# Small visible progress window for Stop/Restart from the tray — restarts
+# take several seconds (graceful process stop + relaunch + health checks),
+# and with no feedback it looked like the button did nothing. Mirrors the
+# progress bar in the release Launcher's egui window (crates/launcher).
+$script:progressForm = $null
+$script:progressLabel = $null
+$script:progressBar = $null
+
+function Show-RestartProgress([string]$title) {
+  $script:progressForm = New-Object System.Windows.Forms.Form
+  $script:progressForm.Text = $title
+  $script:progressForm.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedToolWindow
+  $script:progressForm.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+  $script:progressForm.TopMost = $true
+  $script:progressForm.ShowInTaskbar = $false
+  $script:progressForm.Width = 360
+  $script:progressForm.Height = 120
+
+  $script:progressLabel = New-Object System.Windows.Forms.Label
+  $script:progressLabel.Text = 'Запускаю...'
+  $script:progressLabel.AutoSize = $false
+  $script:progressLabel.Width = 320
+  $script:progressLabel.Height = 24
+  $script:progressLabel.Location = New-Object System.Drawing.Point(16, 16)
+  $script:progressForm.Controls.Add($script:progressLabel)
+
+  $script:progressBar = New-Object System.Windows.Forms.ProgressBar
+  $script:progressBar.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
+  $script:progressBar.MarqueeAnimationSpeed = 30
+  $script:progressBar.Width = 320
+  $script:progressBar.Height = 24
+  $script:progressBar.Location = New-Object System.Drawing.Point(16, 48)
+  $script:progressForm.Controls.Add($script:progressBar)
+
+  $script:progressForm.Show()
+  [System.Windows.Forms.Application]::DoEvents()
+}
+
+function Set-RestartProgress([string]$text) {
+  if (-not $script:progressForm) {
+    return
+  }
+  $script:progressLabel.Text = $text
+  # Pump the message loop so the label/marquee actually repaint while we
+  # block synchronously on process stop/start/health-check calls below.
+  [System.Windows.Forms.Application]::DoEvents()
+}
+
+function Close-RestartProgress([int]$lingerMs = 900) {
+  if (-not $script:progressForm) {
+    return
+  }
+  Start-Sleep -Milliseconds $lingerMs
+  $script:progressForm.Close()
+  $script:progressForm.Dispose()
+  $script:progressForm = $null
+  $script:progressLabel = $null
+  $script:progressBar = $null
+}
+
+function Get-QuietHealth([string]$url, [int]$timeoutSeconds = 20) {
+  try {
+    Wait-ForHttp $url $timeoutSeconds
+    return $true
+  } catch {
+    return $false
+  }
+}
+
 function Get-CargoExe {
   $cargo = Get-Command cargo -ErrorAction SilentlyContinue
   if ($cargo) {
@@ -192,26 +261,6 @@ function Start-ManagedProcess([string]$switchName) {
     $PSCommandPath,
     $switchName
   ) -WorkingDirectory $root -RedirectStandardOutput (Join-Path $logRoot "$name.out.log") -RedirectStandardError (Join-Path $logRoot "$name.err.log")
-}
-
-function Restart-ServerProcess {
-  Write-Host '[EvoHime] Restarting server...'
-  $script:serverRestartEnabled = $true
-  $script:serverWasRunning = $false
-  Stop-Tree $script:serverProcess
-  Wait-ForExit $script:serverProcess
-  $script:serverProcess = Start-ManagedProcess '-Server'
-  $script:serverWasRunning = $true
-}
-
-function Restart-WorkerProcess {
-  Write-Host '[EvoHime] Restarting Python worker...'
-  $script:workerRestartEnabled = $true
-  $script:workerWasRunning = $false
-  Stop-Tree $script:workerProcess
-  Wait-ForExit $script:workerProcess
-  $script:workerProcess = Start-ManagedProcess '-Worker'
-  $script:workerWasRunning = $true
 }
 
 if ($Server) {
@@ -442,20 +491,65 @@ $menuExit = $appMenu.Items.Add('Exit')
 $menuOpenDashboard.Add_Click({ Open-Url $webUrl })
 $menuSettings.Add_Click({ Open-Url "$webUrl/?settings=1" })
 $menuStop.Add_Click({
+  Show-RestartProgress 'EvoHime — остановка'
   $script:serverRestartEnabled = $false
   $script:webRestartEnabled = $false
   $script:workerRestartEnabled = $false
+
+  Set-RestartProgress 'Останавливаю сервер...'
   Stop-Tree $script:serverProcess
+  Set-RestartProgress 'Останавливаю панель...'
   Stop-Tree $script:webProcess
+  Set-RestartProgress 'Останавливаю worker...'
   Stop-Tree $script:workerProcess
+
+  Set-RestartProgress 'Остановлено'
+  Close-RestartProgress
 })
 $menuRestart.Add_Click({
-  Restart-ServerProcess
+  Show-RestartProgress 'EvoHime — перезапуск'
+
+  Set-RestartProgress 'Останавливаю сервер...'
+  $script:serverRestartEnabled = $true
+  $script:serverWasRunning = $false
+  Stop-Tree $script:serverProcess
+  Wait-ForExit $script:serverProcess
+
+  Set-RestartProgress 'Останавливаю панель...'
   $script:webRestartEnabled = $true
+  $script:webWasRunning = $false
   Stop-Tree $script:webProcess
   Wait-ForExit $script:webProcess
+
+  Set-RestartProgress 'Останавливаю worker...'
+  $script:workerRestartEnabled = $true
+  $script:workerWasRunning = $false
+  Stop-Tree $script:workerProcess
+  Wait-ForExit $script:workerProcess
+
+  Set-RestartProgress 'Запускаю сервер...'
+  $script:serverProcess = Start-ManagedProcess '-Server'
+  $script:serverWasRunning = $true
+
+  Set-RestartProgress 'Запускаю панель...'
   $script:webProcess = Start-ManagedProcess '-Web'
-  Restart-WorkerProcess
+  $script:webWasRunning = $true
+
+  Set-RestartProgress 'Запускаю worker...'
+  $script:workerProcess = Start-ManagedProcess '-Worker'
+  $script:workerWasRunning = $true
+
+  Set-RestartProgress 'Проверяю health...'
+  $serverHealthy = Get-QuietHealth $serverUrl
+  $webHealthy = Get-QuietHealth $webUrl
+  $workerHealthy = Get-QuietHealth $workerUrl
+
+  if ($serverHealthy -and $webHealthy -and $workerHealthy) {
+    Set-RestartProgress 'Готово'
+  } else {
+    Set-RestartProgress 'Готово (есть проблемы, см. трей)'
+  }
+  Close-RestartProgress
 })
 $menuExit.Add_Click({ $form.Close() })
 

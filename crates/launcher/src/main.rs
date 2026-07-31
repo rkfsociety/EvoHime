@@ -42,6 +42,40 @@ struct UpdateState {
     last_message: String,
 }
 
+/// Restart/Stop progress reported to the tray window so the user sees *what*
+/// is happening and roughly how far along it is, instead of the tray icon
+/// silently flickering — restarts take several seconds (graceful shutdown +
+/// process spawn) and looked like nothing was happening.
+#[derive(Clone)]
+struct RestartProgress {
+    label: String,
+    fraction: f32,
+}
+
+fn set_progress(shared: &Arc<Mutex<Option<RestartProgress>>>, label: &str, fraction: f32) {
+    if let Ok(mut guard) = shared.lock() {
+        *guard = Some(RestartProgress {
+            label: label.to_string(),
+            fraction,
+        });
+    }
+}
+
+/// Leaves the final "Готово"/"Остановлено" message on screen briefly, then
+/// clears it — but only if nothing else (a fresh restart) has since
+/// overwritten it, otherwise this would stomp a newer in-progress message.
+fn clear_progress_after(shared: &Arc<Mutex<Option<RestartProgress>>>, delay: Duration) {
+    let shared = shared.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(delay).await;
+        if let Ok(mut guard) = shared.lock() {
+            if guard.as_ref().is_some_and(|p| p.fraction >= 1.0) {
+                *guard = None;
+            }
+        }
+    });
+}
+
 enum LauncherCommand {
     CheckUpdatesNow,
     ApplyUpdate,
@@ -91,6 +125,7 @@ fn main() -> eframe::Result<()> {
         update_available: false,
     }));
     let update_state = Arc::new(Mutex::new(UpdateState::default()));
+    let restart_progress: Arc<Mutex<Option<RestartProgress>>> = Arc::new(Mutex::new(None));
 
     let current_dir = current_version_dir(&install_dir);
     spawn_static_server(&runtime, current_dir.join("dist"), session_token.clone());
@@ -104,6 +139,7 @@ fn main() -> eframe::Result<()> {
             db_config,
             shared_status.clone(),
             update_state.clone(),
+            restart_progress.clone(),
             command_rx,
         ));
     }
@@ -132,6 +168,8 @@ fn main() -> eframe::Result<()> {
                 tray_ids: tray_menu.ids,
                 status: shared_status,
                 update_state,
+                restart_progress,
+                was_showing_restart_progress: false,
                 command_tx,
                 safe_mode,
                 show_confirm_dialog: false,
@@ -153,6 +191,7 @@ async fn run_supervisor(
     db_config: Option<DbConfig>,
     status: Arc<Mutex<LauncherStatus>>,
     update_state: Arc<Mutex<UpdateState>>,
+    restart_progress: Arc<Mutex<Option<RestartProgress>>>,
     mut commands: tokio::sync::mpsc::UnboundedReceiver<LauncherCommand>,
 ) {
     let client = reqwest::Client::new();
@@ -216,25 +255,31 @@ async fn run_supervisor(
                         check_for_updates(&client, &current_version, &update_state, &status).await;
                     }
                     Some(LauncherCommand::Stop) => {
+                        set_progress(&restart_progress, "Останавливаю сервер...", 0.2);
                         if let Some(process) = &mut server_process {
                             process.graceful_shutdown(&client, &token, Duration::from_secs(10)).await;
                         }
                         update_component_status(&status, "server", false);
 
+                        set_progress(&restart_progress, "Останавливаю worker...", 0.5);
                         if let Some(process) = &mut worker_process {
                             process.graceful_shutdown(&client, &token, Duration::from_secs(5)).await;
                         }
                         update_component_status(&status, "worker", false);
 
                         if db_config.is_some() {
+                            set_progress(&restart_progress, "Останавливаю базу данных...", 0.8);
                             if let Err(err) = postgres::stop(&pg_bin_dir, &pg_data_dir).await {
                                 tracing::error!(%err, "failed to stop bundled PostgreSQL");
                             }
                         }
                         update_component_status(&status, "db", false);
+                        set_progress(&restart_progress, "Остановлено", 1.0);
+                        clear_progress_after(&restart_progress, Duration::from_secs(2));
                     }
                     Some(LauncherCommand::Restart) => {
                         tracing::info!("restarting server/worker via tray command");
+                        set_progress(&restart_progress, "Останавливаю сервер...", 0.1);
                         if let Some(mut process) = server_process.take() {
                             process
                                 .graceful_shutdown(&client, &token, Duration::from_secs(10))
@@ -242,6 +287,7 @@ async fn run_supervisor(
                         }
                         update_component_status(&status, "server", false);
 
+                        set_progress(&restart_progress, "Останавливаю worker...", 0.3);
                         if let Some(mut process) = worker_process.take() {
                             process
                                 .graceful_shutdown(&client, &token, Duration::from_secs(5))
@@ -249,6 +295,7 @@ async fn run_supervisor(
                         }
                         update_component_status(&status, "worker", false);
 
+                        set_progress(&restart_progress, "Запускаю сервер...", 0.55);
                         server_process = start_server_process(
                             &install_dir,
                             &current_version,
@@ -259,9 +306,29 @@ async fn run_supervisor(
                         .await;
                         update_component_status(&status, "server", server_process.is_some());
 
+                        set_progress(&restart_progress, "Запускаю worker...", 0.75);
                         worker_process =
                             start_worker_process(&install_dir, &current_version).await;
                         update_component_status(&status, "worker", worker_process.is_some());
+
+                        set_progress(&restart_progress, "Проверяю health...", 0.9);
+                        let server_online = match &server_process {
+                            Some(p) => p.health_check(&client, Duration::from_secs(5)).await,
+                            None => false,
+                        };
+                        update_component_status(&status, "server", server_online);
+                        let worker_online = match &worker_process {
+                            Some(p) => p.health_check(&client, Duration::from_secs(5)).await,
+                            None => false,
+                        };
+                        update_component_status(&status, "worker", worker_online);
+
+                        set_progress(
+                            &restart_progress,
+                            if server_online && worker_online { "Готово" } else { "Готово (есть проблемы, см. индикаторы)" },
+                            1.0,
+                        );
+                        clear_progress_after(&restart_progress, Duration::from_secs(2));
                     }
                     Some(LauncherCommand::ApplyUpdate) => {
                         run_update_cycle(
@@ -969,6 +1036,8 @@ struct LauncherApp {
     tray_ids: TrayMenuIds,
     status: Arc<Mutex<LauncherStatus>>,
     update_state: Arc<Mutex<UpdateState>>,
+    restart_progress: Arc<Mutex<Option<RestartProgress>>>,
+    was_showing_restart_progress: bool,
     command_tx: tokio::sync::mpsc::UnboundedSender<LauncherCommand>,
     safe_mode: bool,
     show_confirm_dialog: bool,
@@ -1012,9 +1081,32 @@ impl eframe::App for LauncherApp {
             }
         }
 
+        let current_progress = self.restart_progress.lock().ok().and_then(|g| g.clone());
+        if current_progress.is_some() && !self.was_showing_restart_progress {
+            // Restart/Stop was just triggered — surface the window so the
+            // user actually sees the progress instead of a silently
+            // flickering tray icon (this was the whole point of adding it).
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+        self.was_showing_restart_progress = current_progress.is_some();
+
         ui.heading("EvoHime Launcher");
         if self.safe_mode {
             ui.colored_label(egui::Color32::YELLOW, "Safe Mode");
+        }
+
+        if let Some(progress) = &current_progress {
+            ui.separator();
+            ui.label(&progress.label);
+            ui.add(
+                egui::ProgressBar::new(progress.fraction)
+                    .show_percentage()
+                    .animate(true),
+            );
         }
         ui.separator();
 
