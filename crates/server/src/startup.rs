@@ -236,6 +236,34 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
         });
     }
 
+    // Spawn planning history TTL cleanup loop
+    {
+        let planning_pool = state.pool.clone();
+        let planning_shutdown = shutdown_token.clone();
+        let planning_retention_days = config.planning_retention_days;
+        info!(
+            retention_days = planning_retention_days,
+            "starting planning history TTL cleanup loop"
+        );
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(Duration::from_secs(86400)); // 24h
+            loop {
+                tokio::select! {
+                    _ = planning_shutdown.cancelled() => {
+                        info!("planning history cleanup loop shutting down");
+                        break;
+                    }
+                    _ = ticker.tick() => {
+                        match evohime_storage::planning_history::cleanup_old_planning_history(&planning_pool, planning_retention_days).await {
+                            Ok(count) => info!("planning history cleanup: {} rows deleted", count),
+                            Err(e) => warn!("planning history cleanup failed: {}", e),
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     match evohime_storage::import_legacy_memory_notes(&state.pool).await {
         Ok(imported) => {
             if imported > 0 {
@@ -443,4 +471,198 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
         default_provider_name,
         shutdown_token,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use evohime_storage::planning_history::{insert_planning_history, NewPlanningHistory};
+    use evohime_protocol::planning::{PlanCandidate, ScoreBreakdown};
+    use uuid::Uuid;
+
+    #[tokio::test]
+    async fn test_cleanup_deletes_old_planning_history() {
+        let Some(pool) = evohime_storage::test_db::connect_integration_pool().await else {
+            eprintln!("skipping cleanup test: database unavailable");
+            return;
+        };
+
+        // Create test session and task
+        let session = sqlx::query_scalar::<_, Uuid>(
+            "INSERT INTO sessions (operator_id) VALUES ('00000000-0000-0000-0000-000000000000'::uuid) RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("create session");
+
+        let task = sqlx::query_scalar::<_, Uuid>(
+            "INSERT INTO tasks (session_id, user_message, status) VALUES ($1, 'test', 'running') RETURNING id",
+        )
+        .bind(session)
+        .fetch_one(&pool)
+        .await
+        .expect("create task");
+
+        // Insert an old entry (100 days ago)
+        sqlx::query(
+            r#"
+            INSERT INTO planning_history (task_id, session_id, candidates, chosen_plan_id, reasoning, created_at)
+            VALUES ($1, $2, $3, $4, $5, now() - interval '100 days')
+            "#,
+        )
+        .bind(task)
+        .bind(session)
+        .bind(&vec![serde_json::json!({"id":"plan-1"})])
+        .bind("plan-1")
+        .bind("old reasoning")
+        .execute(&pool)
+        .await
+        .expect("insert old entry");
+
+        // Insert a recent entry
+        let recent_entry = NewPlanningHistory {
+            task_id: task,
+            session_id: session,
+            candidates: vec![PlanCandidate {
+                id: "plan-2".to_string(),
+                description: "Test plan".to_string(),
+                confidence: 0.85,
+                score_breakdown: ScoreBreakdown {
+                    similarity_score: 0.9,
+                    tool_success_rate: 0.85,
+                    complexity_penalty: 0.1,
+                    feedback_adjustment: 0.0,
+                    final_score: 0.8,
+                },
+            }],
+            chosen_plan_id: Some("plan-2".to_string()),
+            reasoning: "recent reasoning".to_string(),
+        };
+
+        insert_planning_history(&pool, recent_entry)
+            .await
+            .expect("insert recent entry");
+
+        // Run cleanup with 30-day retention
+        let deleted = evohime_storage::planning_history::cleanup_old_planning_history(&pool, 30)
+            .await
+            .expect("cleanup should succeed");
+
+        // Should have deleted 1 old entry
+        assert_eq!(deleted, 1u64, "should delete exactly 1 old entry");
+
+        // Verify only 1 entry remains
+        let remaining = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM planning_history WHERE task_id = $1",
+        )
+        .bind(task)
+        .fetch_one(&pool)
+        .await
+        .expect("count entries");
+
+        assert_eq!(remaining, 1i64, "should retain exactly 1 recent entry");
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_retains_recent_rows() {
+        let Some(pool) = evohime_storage::test_db::connect_integration_pool().await else {
+            eprintln!("skipping retention test: database unavailable");
+            return;
+        };
+
+        // Create test session and task
+        let session = sqlx::query_scalar::<_, Uuid>(
+            "INSERT INTO sessions (operator_id) VALUES ('00000000-0000-0000-0000-000000000000'::uuid) RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("create session");
+
+        let task = sqlx::query_scalar::<_, Uuid>(
+            "INSERT INTO tasks (session_id, user_message, status) VALUES ($1, 'test', 'running') RETURNING id",
+        )
+        .bind(session)
+        .fetch_one(&pool)
+        .await
+        .expect("create task");
+
+        // Insert entry created 10 days ago (within retention window)
+        sqlx::query(
+            r#"
+            INSERT INTO planning_history (task_id, session_id, candidates, chosen_plan_id, reasoning, created_at)
+            VALUES ($1, $2, $3, $4, $5, now() - interval '10 days')
+            "#,
+        )
+        .bind(task)
+        .bind(session)
+        .bind(&vec![serde_json::json!({"id":"plan-1"})])
+        .bind("plan-1")
+        .bind("recent reasoning")
+        .execute(&pool)
+        .await
+        .expect("insert recent entry");
+
+        // Run cleanup with 30-day retention
+        let deleted = evohime_storage::planning_history::cleanup_old_planning_history(&pool, 30)
+            .await
+            .expect("cleanup should succeed");
+
+        // Should delete 0 entries
+        assert_eq!(deleted, 0u64, "should not delete entries within retention window");
+
+        // Verify entry still exists
+        let remaining = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM planning_history WHERE task_id = $1",
+        )
+        .bind(task)
+        .fetch_one(&pool)
+        .await
+        .expect("count entries");
+
+        assert_eq!(remaining, 1i64, "should retain entry within retention window");
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_loop_shutdown() {
+        let Some(_pool) = evohime_storage::test_db::connect_integration_pool().await else {
+            eprintln!("skipping shutdown test: database unavailable");
+            return;
+        };
+
+        // Create cancellation token and immediately cancel it
+        let shutdown_token = CancellationToken::new();
+        let shutdown_clone = shutdown_token.clone();
+
+        // Spawn cleanup loop that will immediately receive shutdown
+        let handle = tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(Duration::from_secs(86400));
+            let mut iterations = 0;
+            loop {
+                tokio::select! {
+                    _ = shutdown_clone.cancelled() => {
+                        break;
+                    }
+                    _ = ticker.tick() => {
+                        iterations += 1;
+                    }
+                }
+            }
+            iterations
+        });
+
+        // Give task a moment to start
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Send shutdown signal
+        shutdown_token.cancel();
+
+        // Wait for task to complete
+        let iterations = tokio::time::timeout(Duration::from_secs(5), handle)
+            .await
+            .expect("task should complete quickly")
+            .expect("task should not panic");
+
+        // Should not have ticked since we canceled immediately
+        assert_eq!(iterations, 0, "cleanup should exit cleanly on shutdown signal");
+    }
 }

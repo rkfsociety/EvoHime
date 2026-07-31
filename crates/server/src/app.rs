@@ -28,6 +28,7 @@ pub struct AppConfig {
     pub worker_health_interval: Duration,
     pub worker_health_stale: Duration,
     pub worker_job_stall: Duration,
+    pub planning_retention_days: i32,
     /// Секретный токен, сгенерированный Launcher'ом при старте и переданный
     /// через переменную окружения `EVOHIME_LOCAL_TOKEN` (раздел IV/XV плана
     /// Installer/Launcher/Update). Требуется для `POST /shutdown` — без
@@ -65,6 +66,11 @@ impl AppConfig {
         let worker_health_interval = duration_secs_env("WORKER_HEALTH_INTERVAL_SECS", 5);
         let worker_health_stale = duration_secs_env("WORKER_HEALTH_STALE_SECS", 15);
         let worker_job_stall = duration_secs_env("WORKER_JOB_STALL_SECS", 30);
+        let planning_retention_days = env::var("PLANNING_RETENTION_DAYS")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .filter(|days: &i32| *days > 0)
+            .unwrap_or(30);
         let local_shutdown_secret = env::var("EVOHIME_LOCAL_TOKEN")
             .ok()
             .filter(|token| !token.is_empty());
@@ -82,6 +88,7 @@ impl AppConfig {
             worker_health_interval,
             worker_health_stale,
             worker_job_stall,
+            planning_retention_days,
             local_shutdown_secret,
         })
     }
