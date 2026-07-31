@@ -71,7 +71,12 @@ pub(crate) async fn call_reviewer(
 
     for _attempt in 0..2 {
         if let Ok(result) = gateway
-            .chat_with_tools_for_route(&reviewer.route_name, reviewer.model.as_deref(), &messages, &[])
+            .chat_with_tools_for_route(
+                &reviewer.route_name,
+                reviewer.model.as_deref(),
+                &messages,
+                &[],
+            )
             .await
         {
             return ReviewerComment {
@@ -271,16 +276,18 @@ async fn self_check(
         )
         .await?;
 
-    let call = result
-        .tool_calls
-        .first()
-        .ok_or_else(|| ReviewEngineError::Gateway(ProviderError::Api(
+    let call = result.tool_calls.first().ok_or_else(|| {
+        ReviewEngineError::Gateway(ProviderError::Api(
             "self-check did not call submit_self_check".into(),
-        )))?;
+        ))
+    })?;
     let parsed: SelfCheckArgs = serde_json::from_str(&call.arguments)
         .map_err(|error| ReviewEngineError::Gateway(ProviderError::Api(error.to_string())))?;
 
-    Ok(SelfCheckDecision { complete: parsed.complete, content: parsed.content })
+    Ok(SelfCheckDecision {
+        complete: parsed.complete,
+        content: parsed.content,
+    })
 }
 
 /// Runs one full review round: sequential reviewers -> synthesizer -> reviser
@@ -298,8 +305,14 @@ pub async fn run_review_round(
     let synthesized_feedback =
         synthesize_feedback(gateway, config, artifact_kind, &reviewer_comments).await?;
 
-    let mut revised_content =
-        revise_artifact(gateway, config, artifact_kind, content, &synthesized_feedback).await?;
+    let mut revised_content = revise_artifact(
+        gateway,
+        config,
+        artifact_kind,
+        content,
+        &synthesized_feedback,
+    )
+    .await?;
 
     let mut self_check_iterations = 0;
     while self_check_iterations < config.max_self_check_iterations {
@@ -351,6 +364,7 @@ fn to_storage_kind(kind: ArtifactKind) -> ReviewArtifactKind {
 /// Runs one review round and persists it to `artifact_reviews`. `round_number`
 /// is 1-based and caller-supplied (the caller tracks how many rounds have run
 /// for this task+artifact_kind so far).
+#[allow(clippy::too_many_arguments)]
 pub async fn run_and_persist_review_round(
     pool: &PgPool,
     gateway: &ModelGateway,
@@ -430,8 +444,14 @@ mod tests {
             ),
         ]);
         let routes = vec![
-            ReviewerRoute { route_name: "reviewer_0".into(), model: None },
-            ReviewerRoute { route_name: "reviewer_1".into(), model: None },
+            ReviewerRoute {
+                route_name: "reviewer_0".into(),
+                model: None,
+            },
+            ReviewerRoute {
+                route_name: "reviewer_1".into(),
+                model: None,
+            },
         ];
 
         let comments = run_reviewers(&gateway, &routes, ArtifactKind::Plan, "plan text")
@@ -453,12 +473,21 @@ mod tests {
             "reviewer_1",
             MockProvider::with_tool_call_sequence(
                 "m",
-                vec![ChatResult { content: "ok".into(), ..Default::default() }],
+                vec![ChatResult {
+                    content: "ok".into(),
+                    ..Default::default()
+                }],
             ),
         )]);
         let routes = vec![
-            ReviewerRoute { route_name: "reviewer_0".into(), model: None },
-            ReviewerRoute { route_name: "reviewer_1".into(), model: None },
+            ReviewerRoute {
+                route_name: "reviewer_0".into(),
+                model: None,
+            },
+            ReviewerRoute {
+                route_name: "reviewer_1".into(),
+                model: None,
+            },
         ];
 
         let comments = run_reviewers(&gateway, &routes, ArtifactKind::Plan, "plan text")
@@ -472,7 +501,10 @@ mod tests {
     #[tokio::test]
     async fn errors_when_every_reviewer_fails() {
         let gateway = gateway_with_routes(vec![]);
-        let routes = vec![ReviewerRoute { route_name: "reviewer_0".into(), model: None }];
+        let routes = vec![ReviewerRoute {
+            route_name: "reviewer_0".into(),
+            model: None,
+        }];
 
         let error = run_reviewers(&gateway, &routes, ArtifactKind::Plan, "plan text")
             .await
@@ -488,14 +520,20 @@ mod tests {
                 "reviewer_0",
                 MockProvider::with_tool_call_sequence(
                     "m",
-                    vec![ChatResult { content: "add tests".into(), ..Default::default() }],
+                    vec![ChatResult {
+                        content: "add tests".into(),
+                        ..Default::default()
+                    }],
                 ),
             ),
             (
                 "synthesizer",
                 MockProvider::with_tool_call_sequence(
                     "m",
-                    vec![ChatResult { content: "Add tests for step 2.".into(), ..Default::default() }],
+                    vec![ChatResult {
+                        content: "Add tests for step 2.".into(),
+                        ..Default::default()
+                    }],
                 ),
             ),
             (
@@ -504,14 +542,19 @@ mod tests {
                     "m",
                     vec![
                         // 1st call: revise_artifact (plain content)
-                        ChatResult { content: "step 1\nstep 2 (with tests)".into(), ..Default::default() },
+                        ChatResult {
+                            content: "step 1\nstep 2 (with tests)".into(),
+                            ..Default::default()
+                        },
                         // 2nd call: self_check tool call, complete=true
                         ChatResult {
                             content: String::new(),
                             tool_calls: vec![evohime_model_gateway::NativeToolCall {
                                 id: "call_1".into(),
                                 name: "submit_self_check".into(),
-                                arguments: r#"{"complete":true,"content":"step 1\nstep 2 (with tests)"}"#.into(),
+                                arguments:
+                                    r#"{"complete":true,"content":"step 1\nstep 2 (with tests)"}"#
+                                        .into(),
                             }],
                             ..Default::default()
                         },
@@ -520,9 +563,18 @@ mod tests {
             ),
         ]);
         let config = ReviewEngineConfig {
-            reviewer_routes: vec![ReviewerRoute { route_name: "reviewer_0".into(), model: None }],
-            synthesizer_route: ReviewerRoute { route_name: "synthesizer".into(), model: None },
-            main_route: ReviewerRoute { route_name: "main".into(), model: None },
+            reviewer_routes: vec![ReviewerRoute {
+                route_name: "reviewer_0".into(),
+                model: None,
+            }],
+            synthesizer_route: ReviewerRoute {
+                route_name: "synthesizer".into(),
+                model: None,
+            },
+            main_route: ReviewerRoute {
+                route_name: "main".into(),
+                model: None,
+            },
             max_self_check_iterations: 5,
         };
 
@@ -551,14 +603,20 @@ mod tests {
                 "reviewer_0",
                 MockProvider::with_tool_call_sequence(
                     "m",
-                    vec![ChatResult { content: "issue".into(), ..Default::default() }],
+                    vec![ChatResult {
+                        content: "issue".into(),
+                        ..Default::default()
+                    }],
                 ),
             ),
             (
                 "synthesizer",
                 MockProvider::with_tool_call_sequence(
                     "m",
-                    vec![ChatResult { content: "fix the issue".into(), ..Default::default() }],
+                    vec![ChatResult {
+                        content: "fix the issue".into(),
+                        ..Default::default()
+                    }],
                 ),
             ),
             (
@@ -566,7 +624,10 @@ mod tests {
                 MockProvider::with_tool_call_sequence(
                     "m",
                     vec![
-                        ChatResult { content: "revised".into(), ..Default::default() },
+                        ChatResult {
+                            content: "revised".into(),
+                            ..Default::default()
+                        },
                         never_complete.clone(),
                         never_complete,
                     ],
@@ -574,9 +635,18 @@ mod tests {
             ),
         ]);
         let config = ReviewEngineConfig {
-            reviewer_routes: vec![ReviewerRoute { route_name: "reviewer_0".into(), model: None }],
-            synthesizer_route: ReviewerRoute { route_name: "synthesizer".into(), model: None },
-            main_route: ReviewerRoute { route_name: "main".into(), model: None },
+            reviewer_routes: vec![ReviewerRoute {
+                route_name: "reviewer_0".into(),
+                model: None,
+            }],
+            synthesizer_route: ReviewerRoute {
+                route_name: "synthesizer".into(),
+                model: None,
+            },
+            main_route: ReviewerRoute {
+                route_name: "main".into(),
+                model: None,
+            },
             max_self_check_iterations: 2,
         };
 
@@ -594,14 +664,20 @@ mod tests {
                 "reviewer_0",
                 MockProvider::with_tool_call_sequence(
                     "m",
-                    vec![ChatResult { content: "issue".into(), ..Default::default() }],
+                    vec![ChatResult {
+                        content: "issue".into(),
+                        ..Default::default()
+                    }],
                 ),
             ),
             (
                 "synthesizer",
                 MockProvider::with_tool_call_sequence(
                     "m",
-                    vec![ChatResult { content: "fix it".into(), ..Default::default() }],
+                    vec![ChatResult {
+                        content: "fix it".into(),
+                        ..Default::default()
+                    }],
                 ),
             ),
             (
@@ -609,18 +685,33 @@ mod tests {
                 MockProvider::with_tool_call_sequence(
                     "m",
                     vec![
-                        ChatResult { content: "revised once".into(), ..Default::default() },
+                        ChatResult {
+                            content: "revised once".into(),
+                            ..Default::default()
+                        },
                         // Self-check replies with plain text instead of calling
                         // submit_self_check — simulates a model that ignores tool_choice.
-                        ChatResult { content: "looks fine to me".into(), ..Default::default() },
+                        ChatResult {
+                            content: "looks fine to me".into(),
+                            ..Default::default()
+                        },
                     ],
                 ),
             ),
         ]);
         let config = ReviewEngineConfig {
-            reviewer_routes: vec![ReviewerRoute { route_name: "reviewer_0".into(), model: None }],
-            synthesizer_route: ReviewerRoute { route_name: "synthesizer".into(), model: None },
-            main_route: ReviewerRoute { route_name: "main".into(), model: None },
+            reviewer_routes: vec![ReviewerRoute {
+                route_name: "reviewer_0".into(),
+                model: None,
+            }],
+            synthesizer_route: ReviewerRoute {
+                route_name: "synthesizer".into(),
+                model: None,
+            },
+            main_route: ReviewerRoute {
+                route_name: "main".into(),
+                model: None,
+            },
             max_self_check_iterations: 5,
         };
 
@@ -658,14 +749,20 @@ mod tests {
                 "reviewer_0",
                 MockProvider::with_tool_call_sequence(
                     "m",
-                    vec![ChatResult { content: "NO ISSUES".into(), ..Default::default() }],
+                    vec![ChatResult {
+                        content: "NO ISSUES".into(),
+                        ..Default::default()
+                    }],
                 ),
             ),
             (
                 "synthesizer",
                 MockProvider::with_tool_call_sequence(
                     "m",
-                    vec![ChatResult { content: "NO ISSUES".into(), ..Default::default() }],
+                    vec![ChatResult {
+                        content: "NO ISSUES".into(),
+                        ..Default::default()
+                    }],
                 ),
             ),
             (
@@ -673,7 +770,10 @@ mod tests {
                 MockProvider::with_tool_call_sequence(
                     "m",
                     vec![
-                        ChatResult { content: "plan v2".into(), ..Default::default() },
+                        ChatResult {
+                            content: "plan v2".into(),
+                            ..Default::default()
+                        },
                         ChatResult {
                             content: String::new(),
                             tool_calls: vec![evohime_model_gateway::NativeToolCall {
@@ -688,14 +788,30 @@ mod tests {
             ),
         ]);
         let config = ReviewEngineConfig {
-            reviewer_routes: vec![ReviewerRoute { route_name: "reviewer_0".into(), model: None }],
-            synthesizer_route: ReviewerRoute { route_name: "synthesizer".into(), model: None },
-            main_route: ReviewerRoute { route_name: "main".into(), model: None },
+            reviewer_routes: vec![ReviewerRoute {
+                route_name: "reviewer_0".into(),
+                model: None,
+            }],
+            synthesizer_route: ReviewerRoute {
+                route_name: "synthesizer".into(),
+                model: None,
+            },
+            main_route: ReviewerRoute {
+                route_name: "main".into(),
+                model: None,
+            },
             max_self_check_iterations: 3,
         };
 
         run_and_persist_review_round(
-            &pool, &gateway, &config, task, session, ArtifactKind::Plan, 1, "plan v1",
+            &pool,
+            &gateway,
+            &config,
+            task,
+            session,
+            ArtifactKind::Plan,
+            1,
+            "plan v1",
         )
         .await
         .expect("round persists");

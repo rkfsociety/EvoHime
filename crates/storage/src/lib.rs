@@ -86,6 +86,7 @@ pub use plugin_skills::{
     PluginSkillRow,
 };
 pub use pool::{connect_pool, PoolConfig};
+pub use reflection::{ReflectionEventDAO, ReflectionEventRow};
 pub use restore::{restore_backup, validate_backup_header, RestoreReport};
 pub use scopes::{
     archive_session_for_operator, delete_session_for_operator, list_archived_sessions_for_operator,
@@ -105,7 +106,6 @@ pub use thinking::{
     get_monthly_thinking_cost, get_or_create_thinking_settings, record_thinking_usage,
     update_thinking_settings, ThinkingSettings, ThinkingUsage,
 };
-pub use reflection::{ReflectionEventDAO, ReflectionEventRow};
 
 #[derive(Debug, Error)]
 pub enum StorageError {

@@ -1,6 +1,6 @@
 use crate::reflection::{ReflectionEngine, ToolOutputContext};
-use evohime_protocol::{ReflectionType, ReflectionAction, ReflectionAnalysis};
 use chrono::Utc;
+use evohime_protocol::{ReflectionAction, ReflectionAnalysis, ReflectionType};
 use uuid::Uuid;
 
 pub struct ReflectionStageInput {

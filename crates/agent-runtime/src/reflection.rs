@@ -37,7 +37,10 @@ impl ReflectionEngine {
         } else {
             let output_lower = context.tool_output.to_lowercase();
 
-            if output_lower.contains("failed") || output_lower.contains("error") || output_lower.is_empty() {
+            if output_lower.contains("failed")
+                || output_lower.contains("error")
+                || output_lower.is_empty()
+            {
                 success_score *= 0.5;
                 reasoning.push_str("Output contains failure indicators or is empty. ");
             }
@@ -69,16 +72,16 @@ impl ReflectionEngine {
                     }
                 }
                 "shell.execute" => {
-                    if context.tool_output.contains("not found") || context.tool_output.contains("No such") {
+                    if context.tool_output.contains("not found")
+                        || context.tool_output.contains("No such")
+                    {
                         success_score *= 0.2;
                         reasoning.push_str("Shell: command not found or missing file. ");
                     }
                 }
-                "git.commit" => {
-                    if context.tool_output.contains("nothing to commit") {
-                        success_score *= 0.5;
-                        reasoning.push_str("Git: nothing to commit. ");
-                    }
+                "git.commit" if context.tool_output.contains("nothing to commit") => {
+                    success_score *= 0.5;
+                    reasoning.push_str("Git: nothing to commit. ");
                 }
                 _ => {}
             }
@@ -87,7 +90,7 @@ impl ReflectionEngine {
         let confidence = if success_score > 0.7 { 0.9 } else { 0.6 };
 
         let analysis = ReflectionAnalysis {
-            success_score: success_score.max(0.0).min(1.0),
+            success_score: success_score.clamp(0.0, 1.0),
             error_patterns,
             confidence,
             reasoning: if reasoning.is_empty() {
@@ -127,9 +130,10 @@ mod tests {
             expected_outcome: None,
         };
 
-        let (analysis, action) = ReflectionEngine::analyze_tool_output(&context, vec![
-            ("E001".to_string(), "not found".to_string(), 0.8),
-        ]);
+        let (analysis, action) = ReflectionEngine::analyze_tool_output(
+            &context,
+            vec![("E001".to_string(), "not found".to_string(), 0.8)],
+        );
 
         assert_eq!(analysis.success_score, 0.0);
         assert!(!analysis.error_patterns.is_empty());

@@ -14,7 +14,11 @@ fn test_reflection_analyzes_tool_success() {
     let (analysis, action) = ReflectionEngine::analyze_tool_output(&context, vec![]);
 
     assert!(analysis.success_score > 0.8, "Success score should be high");
-    assert_eq!(action, ReflectionAction::Proceed, "Should proceed on success");
+    assert_eq!(
+        action,
+        ReflectionAction::Proceed,
+        "Should proceed on success"
+    );
 }
 
 #[test]
@@ -27,12 +31,16 @@ fn test_reflection_detects_tool_error() {
         expected_outcome: None,
     };
 
-    let (analysis, action) = ReflectionEngine::analyze_tool_output(&context, vec![
-        ("E_PERM".to_string(), "Permission denied".to_string(), 0.85),
-    ]);
+    let (analysis, action) = ReflectionEngine::analyze_tool_output(
+        &context,
+        vec![("E_PERM".to_string(), "Permission denied".to_string(), 0.85)],
+    );
 
     assert_eq!(analysis.success_score, 0.0, "Error score should be 0");
-    assert!(!analysis.error_patterns.is_empty(), "Should detect error patterns");
+    assert!(
+        !analysis.error_patterns.is_empty(),
+        "Should detect error patterns"
+    );
     assert!(
         matches!(action, ReflectionAction::RetryTool),
         "Should retry on error"
@@ -57,7 +65,10 @@ fn test_reflection_matches_failure_patterns() {
     let (analysis, _) = ReflectionEngine::analyze_tool_output(&context, patterns);
 
     assert!(
-        analysis.error_patterns.iter().any(|p| p.pattern_name.contains("connection")),
+        analysis
+            .error_patterns
+            .iter()
+            .any(|p| p.pattern_name.contains("connection")),
         "Should match connection refused pattern"
     );
 }

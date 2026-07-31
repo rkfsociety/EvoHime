@@ -4,7 +4,7 @@ mod context;
 mod execute;
 mod parse;
 mod react;
-mod reflection_stage;
+pub mod reflection_stage;
 mod tool_budget;
 mod util;
 

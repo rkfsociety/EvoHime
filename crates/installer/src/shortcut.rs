@@ -82,7 +82,12 @@ mod tests {
     async fn creates_a_real_lnk_file() {
         // Check if powershell is available before running test
         let powershell_check = Command::new("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-Command", "Write-Output 'ok'"])
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Write-Output 'ok'",
+            ])
             .output()
             .await;
 

@@ -39,8 +39,11 @@ export type {
   MemoryAcceptCommand,
   MemoryRejectCommand,
   AgentReflectionEvent,
-  ReflectionType,
-  ReflectionAction,
   ReflectionAnalysis,
   ErrorPattern,
 } from "./protocol.generated";
+
+import type { AgentReflectionEvent as AgentReflectionEventShape } from "./protocol.generated";
+
+export type ReflectionType = AgentReflectionEventShape["reflection_type"];
+export type ReflectionAction = AgentReflectionEventShape["action"];

@@ -28,6 +28,7 @@ impl ReflectionEventDAO {
         Self { db }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn insert_reflection_event(
         &self,
         event_id: Uuid,
@@ -70,7 +71,7 @@ impl ReflectionEventDAO {
         task_id: Uuid,
     ) -> Result<Vec<ReflectionEventRow>, sqlx::Error> {
         sqlx::query_as::<_, ReflectionEventRow>(
-            "SELECT * FROM reflection_events WHERE task_id = $1 ORDER BY timestamp ASC"
+            "SELECT * FROM reflection_events WHERE task_id = $1 ORDER BY timestamp ASC",
         )
         .bind(task_id)
         .fetch_all(&self.db)
@@ -87,7 +88,7 @@ impl ReflectionEventDAO {
             SELECT * FROM reflection_events
             WHERE task_id = $1 AND event_id < $2
             ORDER BY timestamp DESC LIMIT 1
-            "#
+            "#,
         )
         .bind(task_id)
         .bind(event_id)

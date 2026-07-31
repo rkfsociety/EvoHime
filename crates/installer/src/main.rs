@@ -435,7 +435,9 @@ async fn run_installation_fallible(tx: &mpsc::Sender<ProgressEvent>) -> anyhow::
     //     внутри install_dir.
     let pg_bin_dir = pg_dir.join("bin");
     let pg_data_dir = pg_dir.join("data");
-    if pg_bin_dir.is_dir() && pg_data_dir.is_dir() && postgres::is_running(&pg_bin_dir, postgres::PG_PORT)
+    if pg_bin_dir.is_dir()
+        && pg_data_dir.is_dir()
+        && postgres::is_running(&pg_bin_dir, postgres::PG_PORT)
     {
         stage("Остановка запущенного PostgreSQL...");
         postgres::stop_observed(&pg_bin_dir, &pg_data_dir, |event| {

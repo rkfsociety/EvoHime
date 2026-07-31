@@ -469,8 +469,14 @@ mod tests {
         )
         .expect("model config is valid");
 
-        assert_eq!(config.routes["reviewer_0"].literouter.api_key, "lr_test_key");
-        assert_eq!(config.routes["synthesizer"].literouter.api_key, "lr_test_key");
+        assert_eq!(
+            config.routes["reviewer_0"].literouter.api_key,
+            "lr_test_key"
+        );
+        assert_eq!(
+            config.routes["synthesizer"].literouter.api_key,
+            "lr_test_key"
+        );
     }
 
     #[test]
