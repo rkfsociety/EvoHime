@@ -2,9 +2,9 @@
 
 Last updated: 2026-07-30
 
-## Stage: 7 complete (Stages 1–6 foundations complete; `7.1`–`7.116` complete, including `7.107` worktree-aware multi-checkout agent)
+## Stage 7–8.1 complete (Stages 1–6 foundations complete; `7.1`–`7.116` complete, including `7.107` worktree-aware multi-checkout agent; `8.1` Tree-of-Thoughts bounded planner complete)
 
-Normal tasks use native ReAct tool calling: the model selects a tool, receives its observation, and selects the next action until `assistant.reply`. Tool-level permission approvals remain enabled for protected operations. Pending `filesystem.patch` calls in `Ask` mode carry a bounded typed `approval.required.review`; the browser shows the exact unified diff and only allows apply-once or deny.
+Normal tasks use native ReAct tool calling: the model selects a tool, receives its observation, and selects the next action until `assistant.reply`. Tool-level permission approvals remain enabled for protected operations. Pending `filesystem.patch` calls in `Ask` mode carry a bounded typed `approval.required.review`; the browser shows the exact unified diff and only allows apply-once or deny. Stage 8.1 adds multi-path reasoning: agent generates K candidate plans, scores via unified formula (similarity to prior + tool success rate + complexity + user feedback), prunes to top-N, executes best; includes graceful fallback, durable history with 30-day TTL cleanup, frontend AgentPlanView component, and E2E verification.
 
 **Wave Progress (2026-07-29):**
 - ✅ `7.105` Voice input / TTS — browser Web Speech API input and manual speech synthesis controls

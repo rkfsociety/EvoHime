@@ -202,6 +202,7 @@ See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](d
 | 5 Task orchestration | ✅ Done |
 | 6 Advanced | ✅ Foundations complete |
 | 7 Hardening + Product | ✅ Done; `7.1`–`7.116` complete |
+| 8.1 Tree-of-Thoughts Bounded Planner | ✅ Done; Multi-path reasoning: K candidate plans, unified scoring (similarity + tool success + complexity + feedback), deterministic pruning to top-N, fallback on error, history with 30-day TTL, frontend AgentPlanView, E2E test |
 
 Memory design: [docs/superpowers/specs/2026-07-16-agent-memory-design.md](docs/superpowers/specs/2026-07-16-agent-memory-design.md)
 

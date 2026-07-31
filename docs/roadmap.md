@@ -535,7 +535,7 @@
 
 | # | Задача | Size | Статус | Notes / rationale |
 | --- | --- | --- | --- | --- |
-| 8.1 | Tree-of-Thoughts bounded planner (branch + prune перед выполнением) | L | ⬜ | расширяет native ReAct на случаи с несколькими правдоподобными путями |
+| 8.1 | Tree-of-Thoughts bounded planner (branch + prune перед выполнением) | L | ✅ | protocol `agent.plan` + DAO `crates/storage/src/planning_history.rs` + unified scoring formula (similarity + tool success + complexity + feedback) + deterministic pruning to top-N + fallback on error + history with 30-day TTL + `AgentPlanView` frontend component + E2E test |
 | 8.2 | Self-reflection loop: агент проверяет собственный шаг перед следующим и пересматривает план при ошибке | L | ⬜ | опирается на experience memory (`6.21`) как источник паттернов провала |
 | 8.3 | Явный граф зависимостей задач при декомпозиции (вместо линейного плана) | L | ⬜ | развитие legacy `6.11` план-исполнителя |
 | 8.4 | Meta-cognitive confidence сигнал в ask-gate (шире, чем текущий uncertainty-порог) | M | ⬜ | расширяет `6.20` ask-on-uncertainty |
