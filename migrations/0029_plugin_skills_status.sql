@@ -13,5 +13,5 @@ CREATE TABLE IF NOT EXISTS plugin_skills (
     UNIQUE(operator_id, plugin_id, skill_name)
 );
 
-CREATE INDEX idx_plugin_skills_operator ON plugin_skills(operator_id);
-CREATE INDEX idx_plugin_skills_plugin ON plugin_skills(plugin_id);
+CREATE INDEX IF NOT EXISTS idx_plugin_skills_operator ON plugin_skills(operator_id);
+CREATE INDEX IF NOT EXISTS idx_plugin_skills_plugin ON plugin_skills(plugin_id);

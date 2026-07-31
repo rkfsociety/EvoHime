@@ -39,6 +39,6 @@ CREATE TABLE IF NOT EXISTS thinking_usage (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_thinking_usage_session_id ON thinking_usage(session_id);
-CREATE INDEX idx_thinking_usage_operator_id ON thinking_usage(operator_id);
-CREATE INDEX idx_thinking_usage_created_at ON thinking_usage(created_at);
+CREATE INDEX IF NOT EXISTS idx_thinking_usage_session_id ON thinking_usage(session_id);
+CREATE INDEX IF NOT EXISTS idx_thinking_usage_operator_id ON thinking_usage(operator_id);
+CREATE INDEX IF NOT EXISTS idx_thinking_usage_created_at ON thinking_usage(created_at);

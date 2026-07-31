@@ -1,7 +1,7 @@
 -- 7.108: Cost budgets & spend caps per day/model
 -- Track daily spending limits and consumed tokens per model
 
-CREATE TABLE cost_limits (
+CREATE TABLE IF NOT EXISTS cost_limits (
     id SERIAL PRIMARY KEY,
     model VARCHAR(255) NOT NULL UNIQUE,  -- e.g., "deepseek:free", "gpt-4"
     daily_cap_tokens BIGINT NOT NULL,    -- max tokens per day; 0 = unlimited
@@ -12,7 +12,7 @@ CREATE TABLE cost_limits (
 );
 
 -- Track daily spend (tokens consumed today)
-CREATE TABLE cost_tracking (
+CREATE TABLE IF NOT EXISTS cost_tracking (
     id SERIAL PRIMARY KEY,
     model VARCHAR(255) NOT NULL,
     date DATE NOT NULL,                  -- tracks which day (UTC)
@@ -24,5 +24,5 @@ CREATE TABLE cost_tracking (
 );
 
 -- Index for quick lookup
-CREATE INDEX idx_cost_tracking_model_date ON cost_tracking(model, date);
-CREATE INDEX idx_cost_limits_model ON cost_limits(model);
+CREATE INDEX IF NOT EXISTS idx_cost_tracking_model_date ON cost_tracking(model, date);
+CREATE INDEX IF NOT EXISTS idx_cost_limits_model ON cost_limits(model);

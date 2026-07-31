@@ -17,8 +17,8 @@ CREATE TABLE IF NOT EXISTS installed_plugins (
     UNIQUE(operator_id, name)
 );
 
-CREATE INDEX idx_installed_plugins_operator ON installed_plugins(operator_id);
-CREATE INDEX idx_installed_plugins_status ON installed_plugins(status);
+CREATE INDEX IF NOT EXISTS idx_installed_plugins_operator ON installed_plugins(operator_id);
+CREATE INDEX IF NOT EXISTS idx_installed_plugins_status ON installed_plugins(status);
 
 -- Record when a plugin is uninstalled (soft-delete, keeps history for restore)
 ALTER TABLE installed_plugins ADD COLUMN IF NOT EXISTS uninstalled_at TIMESTAMPTZ;
