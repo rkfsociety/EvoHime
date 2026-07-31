@@ -10,28 +10,25 @@ mod react;
 mod tool_budget;
 mod util;
 
-
 use chrono::{DateTime, Utc};
-use evohime_model_gateway::{
-    providers::ChatMessage, ModelGateway, NativeToolCall,
-};
-use evohime_protocol::{PlanStep, ServerEvent};
+use evohime_model_gateway::{providers::ChatMessage, ModelGateway, NativeToolCall};
+use evohime_protocol::{planning::PlanCandidate, PlanStep, ServerEvent};
+use evohime_storage::planning_history::{insert_planning_history, NewPlanningHistory};
 use evohime_tool_runtime::ToolRegistry;
+use sqlx::PgPool;
 use std::path::PathBuf;
 use thiserror::Error;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
+use crate::planning::{
+    generate_candidate_plans, prune_to_top_n, score_candidate_plans, ExperienceHandle,
+    MockLlmClient, PlanningConfig, PlanningError, ScoringWeights,
+};
+
 #[cfg(test)]
 use context::build_workspace_rules;
 use util::emit;
-use evohime_protocol::planning::PlanCandidate;
-use crate::planning::{
-    generate_candidate_plans, score_candidate_plans, prune_to_top_n, ExperienceHandle,
-    PlanningConfig, PlanningError, ScoringWeights, MockLlmClient,
-};
-use sqlx::PgPool;
-use evohime_storage::planning_history::{insert_planning_history, NewPlanningHistory};
 
 #[derive(Clone)]
 pub struct AgentConfig {
@@ -111,7 +108,10 @@ pub enum AgentError {
 struct SimpleExperienceHandle;
 
 impl ExperienceHandle for SimpleExperienceHandle {
-    fn search_similar(&self, _task_desc: &str) -> impl std::future::Future<Output = Result<f32, PlanningError>> + Send {
+    fn search_similar(
+        &self,
+        _task_desc: &str,
+    ) -> impl std::future::Future<Output = Result<f32, PlanningError>> + Send {
         async move {
             // Return neutral similarity score for now
             Ok(0.5)
@@ -166,15 +166,7 @@ async fn run_planning_phase(
     };
 
     // Try to run the planning phase
-    match run_planning_phase_inner(
-        config,
-        gateway,
-        &planning_config,
-        event_tx,
-        pool,
-    )
-    .await
-    {
+    match run_planning_phase_inner(config, gateway, &planning_config, event_tx, pool).await {
         Ok(context) => context,
         Err(error) => {
             tracing::warn!("planning phase failed, using fallback: {}", error);
@@ -424,13 +416,8 @@ async fn run_agent_loop_inner(
     let resume = resume.unwrap_or_default();
 
     // Execute planning phase before react loop
-    let _planning_context = run_planning_phase(
-        &config,
-        gateway,
-        &event_tx,
-        config.memory_pool.as_ref(),
-    )
-    .await;
+    let _planning_context =
+        run_planning_phase(&config, gateway, &event_tx, config.memory_pool.as_ref()).await;
 
     return react::run_react_loop(
         config,
@@ -448,10 +435,12 @@ const SYSTEM_PROMPT: &str = "You are EvoHime, a helpful AI coding assistant. Fol
 
 #[cfg(test)]
 mod tests {
-    use super::execute::{dependency_batches_pending, is_mutating_tool, tool_input, requires_mutation};
+    use super::context::{build_memory_context, relative_workspace_path};
+    use super::execute::{
+        dependency_batches_pending, is_mutating_tool, requires_mutation, tool_input,
+    };
     use super::parse::{default_plan, parse_plan, REGISTERED_TOOLS};
     use super::plan::{parse_replan_decision, ReplanDecision};
-    use super::context::{relative_workspace_path, build_memory_context};
     use super::util::MODEL_REQUEST_COOLDOWN;
     use super::*;
     use evohime_model_gateway::providers::ChatRole;
@@ -1182,7 +1171,8 @@ mod tests {
 
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let provider = RecordingProvider::new(vec![]);
-        let gateway = evohime_model_gateway::ModelGateway::from_provider(std::sync::Arc::new(provider));
+        let gateway =
+            evohime_model_gateway::ModelGateway::from_provider(std::sync::Arc::new(provider));
 
         let context = run_planning_phase(&config, &gateway, &tx, None).await;
 
@@ -1216,7 +1206,8 @@ mod tests {
 
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let provider = RecordingProvider::new(vec![]);
-        let gateway = evohime_model_gateway::ModelGateway::from_provider(std::sync::Arc::new(provider));
+        let gateway =
+            evohime_model_gateway::ModelGateway::from_provider(std::sync::Arc::new(provider));
 
         let context = run_planning_phase(&config, &gateway, &tx, None).await;
 

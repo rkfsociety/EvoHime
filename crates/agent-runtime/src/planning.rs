@@ -39,7 +39,10 @@ pub enum PlanningError {
 pub trait ExperienceHandle: Send + Sync {
     /// Search for similar tasks in experience memory
     /// Returns similarity score in [0.0–1.0]
-    fn search_similar(&self, task_desc: &str) -> impl std::future::Future<Output = Result<f32, PlanningError>> + Send;
+    fn search_similar(
+        &self,
+        task_desc: &str,
+    ) -> impl std::future::Future<Output = Result<f32, PlanningError>> + Send;
 }
 
 /// Trait for LLM client (to be implemented or mocked)
@@ -289,7 +292,9 @@ mod tests {
     impl ExperienceHandle for MockExperienceHandle {
         async fn search_similar(&self, _task_desc: &str) -> Result<f32, PlanningError> {
             if self.should_fail {
-                Err(PlanningError::ExperienceLookupFailed("mock failure".to_string()))
+                Err(PlanningError::ExperienceLookupFailed(
+                    "mock failure".to_string(),
+                ))
             } else {
                 Ok(self.similarity_score)
             }
@@ -302,7 +307,12 @@ mod tests {
         let client = MockLlmClient { num_to_generate: 5 };
         let experience = MockExperienceHandle::new(0.7);
 
-        let result = rt.block_on(generate_candidate_plans(&client, "test task", 3, &experience));
+        let result = rt.block_on(generate_candidate_plans(
+            &client,
+            "test task",
+            3,
+            &experience,
+        ));
         assert!(result.is_ok());
 
         let plans = result.unwrap();
@@ -320,7 +330,12 @@ mod tests {
         let client = MockLlmClient { num_to_generate: 5 };
         let experience = MockExperienceHandle::new(0.7);
 
-        let result = rt.block_on(generate_candidate_plans(&client, "test task", 0, &experience));
+        let result = rt.block_on(generate_candidate_plans(
+            &client,
+            "test task",
+            0,
+            &experience,
+        ));
         assert!(result.is_ok());
 
         let plans = result.unwrap();
@@ -378,7 +393,8 @@ mod tests {
         let experience = MockExperienceHandle::new(0.7);
         let pool = create_test_pool_lazy();
 
-        let result = score_candidate_plans(&candidates, "test task", &weights, &pool, &experience).await;
+        let result =
+            score_candidate_plans(&candidates, "test task", &weights, &pool, &experience).await;
         assert!(result.is_ok());
 
         let scored = result.unwrap();
@@ -655,20 +671,28 @@ mod tests {
         let experience = MockExperienceHandle::failing();
         let pool = create_test_pool_lazy();
 
-        let result = score_candidate_plans(&candidates, "test task", &weights, &pool, &experience).await;
+        let result =
+            score_candidate_plans(&candidates, "test task", &weights, &pool, &experience).await;
 
         // Should succeed even though experience lookup failed
-        assert!(result.is_ok(), "scoring should not crash when experience lookup fails");
+        assert!(
+            result.is_ok(),
+            "scoring should not crash when experience lookup fails"
+        );
 
         let scored = result.unwrap();
         assert_eq!(scored.len(), 1);
-        assert!(scored[0].1.is_valid(), "score breakdown should be valid even with fallback");
+        assert!(
+            scored[0].1.is_valid(),
+            "score breakdown should be valid even with fallback"
+        );
 
         // Verify that fallback values (0.5) were used
         // With similarity=0.5, tool_success=0.5, complexity=0.3, feedback=0.0:
         // final_score = (0.3*0.5 + 0.3*0.5 + 0.2*(1-0.3) + 0.2*(1+0)/2) / 1.0
         //            = (0.15 + 0.15 + 0.14 + 0.1) / 1.0 = 0.54
-        let expected_score = (0.3 * 0.5 + 0.3 * 0.5 + 0.2 * (1.0 - 0.3) + 0.2 * (1.0 + 0.0) / 2.0) / 1.0;
+        let expected_score =
+            (0.3 * 0.5 + 0.3 * 0.5 + 0.2 * (1.0 - 0.3) + 0.2 * (1.0 + 0.0) / 2.0) / 1.0;
         assert!((scored[0].1.final_score - expected_score).abs() < 0.0001);
     }
 }

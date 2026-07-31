@@ -476,8 +476,8 @@ pub async fn prepare(config: &AppConfig) -> anyhow::Result<StartupInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use evohime_storage::planning_history::{insert_planning_history, NewPlanningHistory};
     use evohime_protocol::planning::{PlanCandidate, ScoreBreakdown};
+    use evohime_storage::planning_history::{insert_planning_history, NewPlanningHistory};
     use uuid::Uuid;
 
     #[tokio::test]
@@ -608,7 +608,10 @@ mod tests {
             .expect("cleanup should succeed");
 
         // Should delete 0 entries
-        assert_eq!(deleted, 0u64, "should not delete entries within retention window");
+        assert_eq!(
+            deleted, 0u64,
+            "should not delete entries within retention window"
+        );
 
         // Verify entry still exists
         let remaining = sqlx::query_scalar::<_, i64>(
@@ -619,7 +622,10 @@ mod tests {
         .await
         .expect("count entries");
 
-        assert_eq!(remaining, 1i64, "should retain entry within retention window");
+        assert_eq!(
+            remaining, 1i64,
+            "should retain entry within retention window"
+        );
     }
 
     #[tokio::test]
@@ -663,6 +669,9 @@ mod tests {
             .expect("task should not panic");
 
         // Should not have ticked since we canceled immediately
-        assert_eq!(iterations, 0, "cleanup should exit cleanly on shutdown signal");
+        assert_eq!(
+            iterations, 0,
+            "cleanup should exit cleanly on shutdown signal"
+        );
     }
 }

@@ -164,7 +164,11 @@ async fn test_e2e_score_candidates() {
         .expect("should score plans");
 
     // Verify all candidates were scored
-    assert_eq!(scored.len(), candidates.len(), "should score all candidates");
+    assert_eq!(
+        scored.len(),
+        candidates.len(),
+        "should score all candidates"
+    );
 
     // Verify all confidence values are valid [0.0–1.0]
     for (idx, (candidate, _breakdown)) in scored.iter().enumerate() {
@@ -265,7 +269,10 @@ async fn test_e2e_prune_to_top_n() {
     );
 
     // Verify score is highest
-    assert_eq!(pruned[0].0.confidence, 0.8, "chosen plan should have highest confidence");
+    assert_eq!(
+        pruned[0].0.confidence, 0.8,
+        "chosen plan should have highest confidence"
+    );
 }
 
 /// Test: Full E2E flow with database persistence
@@ -300,27 +307,16 @@ async fn test_e2e_full_planning_flow_with_history() {
     let experience = MockExperienceHandleForE2E::new(0.7);
     let task_desc = "Deploy production application safely";
 
-    let generated = generate_candidate_plans(
-        &llm,
-        task_desc,
-        config.num_candidates,
-        &experience,
-    )
-    .await
-    .expect("generate candidates");
+    let generated = generate_candidate_plans(&llm, task_desc, config.num_candidates, &experience)
+        .await
+        .expect("generate candidates");
 
     assert_eq!(generated.len(), config.num_candidates);
 
     // Step 2: Score candidates
-    let scored = score_candidate_plans(
-        &generated,
-        task_desc,
-        &config.weights,
-        &pool,
-        &experience,
-    )
-    .await
-    .expect("score candidates");
+    let scored = score_candidate_plans(&generated, task_desc, &config.weights, &pool, &experience)
+        .await
+        .expect("score candidates");
 
     assert_eq!(scored.len(), config.num_candidates);
 
@@ -364,14 +360,20 @@ async fn test_e2e_full_planning_flow_with_history() {
     assert_eq!(inserted.candidates.len(), config.num_candidates);
 
     // Verify reasoning ≤ 512 chars
-    assert!(inserted.reasoning.len() <= 512, "reasoning should be ≤ 512 chars");
+    assert!(
+        inserted.reasoning.len() <= 512,
+        "reasoning should be ≤ 512 chars"
+    );
 
     // Step 5: Retrieve and verify planning_history
     let retrieved_entries = list_planning_by_task(&pool, task_id)
         .await
         .expect("list planning history");
 
-    assert!(!retrieved_entries.is_empty(), "should have at least one history entry");
+    assert!(
+        !retrieved_entries.is_empty(),
+        "should have at least one history entry"
+    );
 
     let first_entry = &retrieved_entries[0];
     assert_eq!(first_entry.task_id, task_id);
@@ -423,7 +425,11 @@ async fn test_e2e_reasoning_truncation() {
         .expect("insert planning history");
 
     // Verify reasoning was truncated
-    assert_eq!(inserted.reasoning.len(), 512, "reasoning should be truncated to 512 chars");
+    assert_eq!(
+        inserted.reasoning.len(),
+        512,
+        "reasoning should be truncated to 512 chars"
+    );
 }
 
 /// Test: All candidates have valid confidence in full flow
