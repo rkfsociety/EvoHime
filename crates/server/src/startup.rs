@@ -489,7 +489,7 @@ mod tests {
 
         // Create test session and task
         let session = sqlx::query_scalar::<_, Uuid>(
-            "INSERT INTO sessions (operator_id) VALUES ('00000000-0000-0000-0000-000000000000'::uuid) RETURNING id",
+            "INSERT INTO sessions (operator_id) VALUES ('00000000-0000-0000-0000-000000000001'::uuid) RETURNING id",
         )
         .fetch_one(&pool)
         .await
@@ -572,7 +572,7 @@ mod tests {
 
         // Create test session and task
         let session = sqlx::query_scalar::<_, Uuid>(
-            "INSERT INTO sessions (operator_id) VALUES ('00000000-0000-0000-0000-000000000000'::uuid) RETURNING id",
+            "INSERT INTO sessions (operator_id) VALUES ('00000000-0000-0000-0000-000000000001'::uuid) RETURNING id",
         )
         .fetch_one(&pool)
         .await
@@ -668,10 +668,11 @@ mod tests {
             .expect("task should complete quickly")
             .expect("task should not panic");
 
-        // Should not have ticked since we canceled immediately
+        // tokio::time::interval fires its first tick immediately, so exactly
+        // one iteration always runs before the loop observes cancellation.
         assert_eq!(
-            iterations, 0,
-            "cleanup should exit cleanly on shutdown signal"
+            iterations, 1,
+            "cleanup should exit cleanly on shutdown signal after the immediate first tick"
         );
     }
 }
