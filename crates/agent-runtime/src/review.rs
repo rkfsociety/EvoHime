@@ -335,6 +335,59 @@ pub async fn run_review_round(
     })
 }
 
+use evohime_storage::{
+    insert_artifact_review, NewArtifactReview, ReviewArtifactKind, ReviewerCommentEntry,
+};
+use sqlx::PgPool;
+use uuid::Uuid;
+
+fn to_storage_kind(kind: ArtifactKind) -> ReviewArtifactKind {
+    match kind {
+        ArtifactKind::Spec => ReviewArtifactKind::Spec,
+        ArtifactKind::Plan => ReviewArtifactKind::Plan,
+    }
+}
+
+/// Runs one review round and persists it to `artifact_reviews`. `round_number`
+/// is 1-based and caller-supplied (the caller tracks how many rounds have run
+/// for this task+artifact_kind so far).
+pub async fn run_and_persist_review_round(
+    pool: &PgPool,
+    gateway: &ModelGateway,
+    config: &ReviewEngineConfig,
+    task_id: Uuid,
+    session_id: Uuid,
+    artifact_kind: ArtifactKind,
+    round_number: i32,
+    content: &str,
+) -> Result<ReviewRoundResult, ReviewEngineError> {
+    let result = run_review_round(gateway, config, artifact_kind, content).await?;
+
+    let entry = NewArtifactReview {
+        task_id,
+        session_id,
+        artifact_kind: to_storage_kind(artifact_kind),
+        round_number,
+        original_content: content.to_string(),
+        reviewer_comments: result
+            .reviewer_comments
+            .iter()
+            .map(|comment| ReviewerCommentEntry {
+                route_name: comment.route_name.clone(),
+                comments: comment.comments.clone(),
+                failed: comment.failed,
+            })
+            .collect(),
+        synthesized_feedback: result.synthesized_feedback.clone(),
+        revised_content: result.revised_content.clone(),
+        self_check_iterations: result.self_check_iterations as i32,
+    };
+
+    insert_artifact_review(pool, entry).await?;
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -577,5 +630,81 @@ mod tests {
 
         assert_eq!(result.self_check_iterations, 0);
         assert_eq!(result.revised_content, "revised once");
+    }
+
+    #[tokio::test]
+    async fn run_and_persist_review_round_writes_a_row() {
+        let Some(pool) = evohime_storage::test_db::connect_integration_pool().await else {
+            eprintln!("skipping run_and_persist_review_round test: database unavailable");
+            return;
+        };
+
+        let session = sqlx::query_scalar::<_, uuid::Uuid>(
+            "INSERT INTO sessions (operator_id) VALUES ('00000000-0000-0000-0000-000000000001'::uuid) RETURNING id",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("create session");
+        let task = sqlx::query_scalar::<_, uuid::Uuid>(
+            "INSERT INTO tasks (session_id, user_message, status) VALUES ($1, 'test', 'running') RETURNING id",
+        )
+        .bind(session)
+        .fetch_one(&pool)
+        .await
+        .expect("create task");
+
+        let gateway = gateway_with_routes(vec![
+            (
+                "reviewer_0",
+                MockProvider::with_tool_call_sequence(
+                    "m",
+                    vec![ChatResult { content: "NO ISSUES".into(), ..Default::default() }],
+                ),
+            ),
+            (
+                "synthesizer",
+                MockProvider::with_tool_call_sequence(
+                    "m",
+                    vec![ChatResult { content: "NO ISSUES".into(), ..Default::default() }],
+                ),
+            ),
+            (
+                "main",
+                MockProvider::with_tool_call_sequence(
+                    "m",
+                    vec![
+                        ChatResult { content: "plan v2".into(), ..Default::default() },
+                        ChatResult {
+                            content: String::new(),
+                            tool_calls: vec![evohime_model_gateway::NativeToolCall {
+                                id: "call_1".into(),
+                                name: "submit_self_check".into(),
+                                arguments: r#"{"complete":true,"content":"plan v2"}"#.into(),
+                            }],
+                            ..Default::default()
+                        },
+                    ],
+                ),
+            ),
+        ]);
+        let config = ReviewEngineConfig {
+            reviewer_routes: vec![ReviewerRoute { route_name: "reviewer_0".into(), model: None }],
+            synthesizer_route: ReviewerRoute { route_name: "synthesizer".into(), model: None },
+            main_route: ReviewerRoute { route_name: "main".into(), model: None },
+            max_self_check_iterations: 3,
+        };
+
+        run_and_persist_review_round(
+            &pool, &gateway, &config, task, session, ArtifactKind::Plan, 1, "plan v1",
+        )
+        .await
+        .expect("round persists");
+
+        let rows = evohime_storage::list_artifact_reviews_by_task(&pool, task)
+            .await
+            .expect("list");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].revised_content, "plan v2");
+        assert_eq!(rows[0].round_number, 1);
     }
 }

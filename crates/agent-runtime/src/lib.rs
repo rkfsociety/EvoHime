@@ -15,7 +15,7 @@ pub use planning::{
     MockLlmClient, PlanningConfig, PlanningError, ScoringWeights,
 };
 pub use review::{
-    run_review_round, ArtifactKind, ReviewEngineConfig, ReviewEngineError, ReviewRoundResult,
-    ReviewerComment, ReviewerRoute,
+    run_and_persist_review_round, run_review_round, ArtifactKind, ReviewEngineConfig,
+    ReviewEngineError, ReviewRoundResult, ReviewerComment, ReviewerRoute,
 };
 pub use subagent::SubagentBudget;
