@@ -10,7 +10,7 @@ pub use agent_loop::{
 };
 pub use llm_telemetry::{LlmCallRecord, LlmTelemetry};
 pub use planning::{
-    generate_candidate_plans, prune_to_top_n, score_candidate_plans, LlmClient, MockLlmClient,
-    PlanningConfig, PlanningError, ScoringWeights,
+    generate_candidate_plans, prune_to_top_n, score_candidate_plans, ExperienceHandle, LlmClient,
+    MockLlmClient, PlanningConfig, PlanningError, ScoringWeights,
 };
 pub use subagent::SubagentBudget;
