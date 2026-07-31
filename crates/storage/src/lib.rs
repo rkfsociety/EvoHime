@@ -18,6 +18,7 @@ pub mod planning_history;
 pub mod plugin_audit;
 pub mod plugin_skills;
 pub mod pool;
+pub mod reflection;
 pub mod restore;
 pub mod scheduled;
 pub mod scopes;
@@ -104,6 +105,7 @@ pub use thinking::{
     get_monthly_thinking_cost, get_or_create_thinking_settings, record_thinking_usage,
     update_thinking_settings, ThinkingSettings, ThinkingUsage,
 };
+pub use reflection::{ReflectionEventDAO, ReflectionEventRow};
 
 #[derive(Debug, Error)]
 pub enum StorageError {
