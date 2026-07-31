@@ -2,6 +2,7 @@ mod agent_loop;
 mod llm_telemetry;
 mod native_tools;
 mod planning;
+mod reflection;
 mod review;
 mod subagent;
 
@@ -19,3 +20,4 @@ pub use review::{
     ReviewEngineError, ReviewRoundResult, ReviewerComment, ReviewerRoute,
 };
 pub use subagent::SubagentBudget;
+pub use reflection::{ReflectionEngine, ToolOutputContext};
