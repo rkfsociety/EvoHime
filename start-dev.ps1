@@ -75,51 +75,85 @@ function Wait-ForHttp([string]$url, [int]$timeoutSeconds = 60) {
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-# Small visible progress window for Stop/Restart from the tray — restarts
-# take several seconds (graceful process stop + relaunch + health checks),
-# and with no feedback it looked like the button did nothing. Mirrors the
-# progress bar in the release Launcher's egui window (crates/launcher).
+# Visible progress window for Stop/Restart from the tray — restarts take
+# several seconds (graceful process stop + relaunch + health checks), and
+# with no feedback it looked like the button did nothing. Unlike a Marquee
+# bar (which just slides back and forth forever and never actually shows
+# how far along things are), this is a real determinate bar driven by a
+# 0-100 percent per stage, animated smoothly toward each new value instead
+# of jumping instantly. Mirrors the progress bar in the release Launcher's
+# egui window (crates/launcher), which is fraction-driven the same way.
 $script:progressForm = $null
 $script:progressLabel = $null
+$script:progressPercentLabel = $null
 $script:progressBar = $null
+$script:progressShown = 0
 
 function Show-RestartProgress([string]$title) {
+  $script:progressShown = 0
+
   $script:progressForm = New-Object System.Windows.Forms.Form
   $script:progressForm.Text = $title
-  $script:progressForm.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedToolWindow
+  $script:progressForm.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedDialog
+  $script:progressForm.MaximizeBox = $false
+  $script:progressForm.MinimizeBox = $false
   $script:progressForm.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
   $script:progressForm.TopMost = $true
   $script:progressForm.ShowInTaskbar = $false
-  $script:progressForm.Width = 360
-  $script:progressForm.Height = 120
+  $script:progressForm.BackColor = [System.Drawing.Color]::FromArgb(255, 246, 247, 251)
+  $script:progressForm.Font = New-Object System.Drawing.Font('Segoe UI', 9.5)
+  $script:progressForm.ClientSize = New-Object System.Drawing.Size(420, 130)
+  if ($script:appBrandIcon) {
+    $script:progressForm.Icon = $script:appBrandIcon
+  }
 
   $script:progressLabel = New-Object System.Windows.Forms.Label
   $script:progressLabel.Text = 'Запускаю...'
   $script:progressLabel.AutoSize = $false
-  $script:progressLabel.Width = 320
-  $script:progressLabel.Height = 24
-  $script:progressLabel.Location = New-Object System.Drawing.Point(16, 16)
+  $script:progressLabel.Font = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Regular)
+  $script:progressLabel.ForeColor = [System.Drawing.Color]::FromArgb(255, 32, 34, 46)
+  $script:progressLabel.Bounds = New-Object System.Drawing.Rectangle(24, 26, 300, 28)
   $script:progressForm.Controls.Add($script:progressLabel)
 
+  $script:progressPercentLabel = New-Object System.Windows.Forms.Label
+  $script:progressPercentLabel.Text = '0%'
+  $script:progressPercentLabel.AutoSize = $false
+  $script:progressPercentLabel.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
+  $script:progressPercentLabel.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 11)
+  $script:progressPercentLabel.ForeColor = [System.Drawing.Color]::FromArgb(255, 90, 95, 235)
+  $script:progressPercentLabel.Bounds = New-Object System.Drawing.Rectangle(324, 26, 72, 28)
+  $script:progressForm.Controls.Add($script:progressPercentLabel)
+
   $script:progressBar = New-Object System.Windows.Forms.ProgressBar
-  $script:progressBar.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
-  $script:progressBar.MarqueeAnimationSpeed = 30
-  $script:progressBar.Width = 320
-  $script:progressBar.Height = 24
-  $script:progressBar.Location = New-Object System.Drawing.Point(16, 48)
+  $script:progressBar.Style = [System.Windows.Forms.ProgressBarStyle]::Continuous
+  $script:progressBar.Minimum = 0
+  $script:progressBar.Maximum = 100
+  $script:progressBar.Value = 0
+  $script:progressBar.Bounds = New-Object System.Drawing.Rectangle(24, 68, 372, 26)
   $script:progressForm.Controls.Add($script:progressBar)
 
   $script:progressForm.Show()
   [System.Windows.Forms.Application]::DoEvents()
 }
 
-function Set-RestartProgress([string]$text) {
+function Set-RestartProgress([string]$text, [int]$percent) {
   if (-not $script:progressForm) {
     return
   }
   $script:progressLabel.Text = $text
-  # Pump the message loop so the label/marquee actually repaint while we
-  # block synchronously on process stop/start/health-check calls below.
+  $target = [Math]::Max(0, [Math]::Min(100, $percent))
+
+  # Animate the fill smoothly toward the target instead of jumping straight
+  # there — pumping the message loop on every step is what makes the bar
+  # (and the rest of the window) actually repaint while we're otherwise
+  # blocked synchronously on process stop/start/health-check calls.
+  while ($script:progressShown -lt $target) {
+    $script:progressShown = [Math]::Min($target, $script:progressShown + 2)
+    $script:progressBar.Value = $script:progressShown
+    $script:progressPercentLabel.Text = "$($script:progressShown)%"
+    [System.Windows.Forms.Application]::DoEvents()
+    Start-Sleep -Milliseconds 8
+  }
   [System.Windows.Forms.Application]::DoEvents()
 }
 
@@ -132,6 +166,7 @@ function Close-RestartProgress([int]$lingerMs = 900) {
   $script:progressForm.Dispose()
   $script:progressForm = $null
   $script:progressLabel = $null
+  $script:progressPercentLabel = $null
   $script:progressBar = $null
 }
 
@@ -496,58 +531,58 @@ $menuStop.Add_Click({
   $script:webRestartEnabled = $false
   $script:workerRestartEnabled = $false
 
-  Set-RestartProgress 'Останавливаю сервер...'
+  Set-RestartProgress 'Останавливаю сервер...' 25
   Stop-Tree $script:serverProcess
-  Set-RestartProgress 'Останавливаю панель...'
+  Set-RestartProgress 'Останавливаю панель...' 55
   Stop-Tree $script:webProcess
-  Set-RestartProgress 'Останавливаю worker...'
+  Set-RestartProgress 'Останавливаю worker...' 85
   Stop-Tree $script:workerProcess
 
-  Set-RestartProgress 'Остановлено'
+  Set-RestartProgress 'Остановлено' 100
   Close-RestartProgress
 })
 $menuRestart.Add_Click({
   Show-RestartProgress 'EvoHime — перезапуск'
 
-  Set-RestartProgress 'Останавливаю сервер...'
+  Set-RestartProgress 'Останавливаю сервер...' 10
   $script:serverRestartEnabled = $true
   $script:serverWasRunning = $false
   Stop-Tree $script:serverProcess
   Wait-ForExit $script:serverProcess
 
-  Set-RestartProgress 'Останавливаю панель...'
+  Set-RestartProgress 'Останавливаю панель...' 25
   $script:webRestartEnabled = $true
   $script:webWasRunning = $false
   Stop-Tree $script:webProcess
   Wait-ForExit $script:webProcess
 
-  Set-RestartProgress 'Останавливаю worker...'
+  Set-RestartProgress 'Останавливаю worker...' 40
   $script:workerRestartEnabled = $true
   $script:workerWasRunning = $false
   Stop-Tree $script:workerProcess
   Wait-ForExit $script:workerProcess
 
-  Set-RestartProgress 'Запускаю сервер...'
+  Set-RestartProgress 'Запускаю сервер...' 55
   $script:serverProcess = Start-ManagedProcess '-Server'
   $script:serverWasRunning = $true
 
-  Set-RestartProgress 'Запускаю панель...'
+  Set-RestartProgress 'Запускаю панель...' 70
   $script:webProcess = Start-ManagedProcess '-Web'
   $script:webWasRunning = $true
 
-  Set-RestartProgress 'Запускаю worker...'
+  Set-RestartProgress 'Запускаю worker...' 82
   $script:workerProcess = Start-ManagedProcess '-Worker'
   $script:workerWasRunning = $true
 
-  Set-RestartProgress 'Проверяю health...'
+  Set-RestartProgress 'Проверяю health...' 92
   $serverHealthy = Get-QuietHealth $serverUrl
   $webHealthy = Get-QuietHealth $webUrl
   $workerHealthy = Get-QuietHealth $workerUrl
 
   if ($serverHealthy -and $webHealthy -and $workerHealthy) {
-    Set-RestartProgress 'Готово'
+    Set-RestartProgress 'Готово' 100
   } else {
-    Set-RestartProgress 'Готово (есть проблемы, см. трей)'
+    Set-RestartProgress 'Готово (есть проблемы, см. трей)' 100
   }
   Close-RestartProgress
 })

@@ -170,6 +170,7 @@ fn main() -> eframe::Result<()> {
                 update_state,
                 restart_progress,
                 was_showing_restart_progress: false,
+                displayed_progress_fraction: 0.0,
                 command_tx,
                 safe_mode,
                 show_confirm_dialog: false,
@@ -1038,6 +1039,10 @@ struct LauncherApp {
     update_state: Arc<Mutex<UpdateState>>,
     restart_progress: Arc<Mutex<Option<RestartProgress>>>,
     was_showing_restart_progress: bool,
+    /// Smoothed value actually drawn for the progress bar — eased toward
+    /// `restart_progress`'s fraction each frame instead of jumping straight
+    /// to it, so the bar visibly fills rather than teleporting between steps.
+    displayed_progress_fraction: f32,
     command_tx: tokio::sync::mpsc::UnboundedSender<LauncherCommand>,
     safe_mode: bool,
     show_confirm_dialog: bool,
@@ -1102,11 +1107,21 @@ impl eframe::App for LauncherApp {
         if let Some(progress) = &current_progress {
             ui.separator();
             ui.label(&progress.label);
+            // Ease toward the target fraction instead of snapping to it —
+            // makes each step-jump (0.1 -> 0.3 -> ...) read as a fill
+            // animation rather than a series of instant teleports.
+            let delta = progress.fraction - self.displayed_progress_fraction;
+            self.displayed_progress_fraction += delta * 0.15;
+            if delta.abs() < 0.002 {
+                self.displayed_progress_fraction = progress.fraction;
+            }
             ui.add(
-                egui::ProgressBar::new(progress.fraction)
+                egui::ProgressBar::new(self.displayed_progress_fraction)
                     .show_percentage()
                     .animate(true),
             );
+        } else {
+            self.displayed_progress_fraction = 0.0;
         }
         ui.separator();
 
@@ -1184,7 +1199,15 @@ impl eframe::App for LauncherApp {
                 });
         }
 
-        ui.ctx().request_repaint_after(Duration::from_millis(500));
+        // Repaint fast enough for the progress-bar easing above to look like
+        // smooth motion while a restart is in flight; back off to the normal
+        // idle cadence otherwise.
+        let repaint_interval = if current_progress.is_some() {
+            Duration::from_millis(30)
+        } else {
+            Duration::from_millis(500)
+        };
+        ui.ctx().request_repaint_after(repaint_interval);
     }
 }
 
