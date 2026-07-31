@@ -741,8 +741,8 @@
 .agentPlanWarning {
   padding: 10px 12px;
   border-radius: 8px;
-  background: rgba(255, 196, 120, 0.1);
-  border: 1px solid rgba(255, 196, 120, 0.3);
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
   color: var(--text-0);
   font-size: 13px;
 }
@@ -750,14 +750,14 @@
 .agentPlanWarning strong {
   display: block;
   margin-bottom: 4px;
-  color: rgba(255, 196, 120, 0.8);
+  color: var(--color-warning-text);
 }
 
 .agentPlanReasoning {
   padding: 10px 12px;
   border-radius: 8px;
-  background: rgba(91, 134, 255, 0.08);
-  border: 1px solid rgba(91, 134, 255, 0.2);
+  background: var(--color-info-bg);
+  border: 1px solid var(--color-info-border);
 }
 
 .agentPlanReasoning strong {
@@ -792,8 +792,8 @@
 }
 
 .agentPlanCandidate.chosen {
-  border-color: rgba(76, 175, 80, 0.4);
-  background: rgba(76, 175, 80, 0.06);
+  border-color: var(--color-success-border);
+  background: var(--color-success-bg);
 }
 
 .agentPlanCandidateHeader {
@@ -822,8 +822,8 @@
   flex-shrink: 0;
   padding: 3px 8px;
   border-radius: 6px;
-  background: rgba(76, 175, 80, 0.2);
-  color: rgba(76, 175, 80, 0.8);
+  background: var(--color-success-badge-bg);
+  color: var(--color-success-text);
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -877,12 +877,16 @@
   border-bottom: none;
 }
 
-.agentPlanScoreBreakdown td {
+.agentPlanScoreBreakdown td,
+.agentPlanScoreBreakdown th {
   padding: 8px 0;
   color: var(--text-1);
+  text-align: left;
+  font-weight: normal;
 }
 
-.agentPlanScoreBreakdown td:first-child {
+.agentPlanScoreBreakdown td:first-child,
+.agentPlanScoreBreakdown th:first-child {
   padding-left: 8px;
 }
 
@@ -930,7 +934,7 @@
 /* Dark mode support (if needed) */
 @media (prefers-color-scheme: dark) {
   .agentPlanCandidate.chosen {
-    border-color: rgba(76, 175, 80, 0.5);
-    background: rgba(76, 175, 80, 0.08);
+    border-color: var(--color-success-border);
+    background: var(--color-success-bg);
   }
 }

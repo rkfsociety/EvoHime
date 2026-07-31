@@ -18,6 +18,16 @@
   --accent-1: #3ed7b2;
   --accent-2: #8fb4ff;
   --danger-0: #ff8f8f;
+  --color-warning-bg: rgba(255, 196, 120, 0.1);
+  --color-warning-border: rgba(255, 196, 120, 0.3);
+  --color-warning-text: rgba(255, 196, 120, 0.8);
+  --color-info-bg: rgba(91, 134, 255, 0.08);
+  --color-info-border: rgba(91, 134, 255, 0.2);
+  --color-info-text: rgba(91, 134, 255, 1);
+  --color-success-border: rgba(76, 175, 80, 0.4);
+  --color-success-bg: rgba(76, 175, 80, 0.06);
+  --color-success-badge-bg: rgba(76, 175, 80, 0.2);
+  --color-success-text: rgba(76, 175, 80, 0.8);
   background:
     radial-gradient(circle at top left, rgba(91, 134, 255, 0.22), transparent 35%),
     radial-gradient(circle at top right, rgba(62, 215, 178, 0.12), transparent 30%),

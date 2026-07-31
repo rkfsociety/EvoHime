@@ -70,31 +70,31 @@ export function AgentPlanView({
                 <table>
                   <tbody>
                     <tr>
-                      <td>Сходство</td>
+                      <th scope="row">Сходство</th>
                       <td className="scoreValue">
                         {formatPercentage(candidate.score_breakdown.similarity_score)}
                       </td>
                     </tr>
                     <tr>
-                      <td>Вероятность успеха инструмента</td>
+                      <th scope="row">Вероятность успеха инструмента</th>
                       <td className="scoreValue">
                         {formatPercentage(candidate.score_breakdown.tool_success_rate)}
                       </td>
                     </tr>
                     <tr>
-                      <td>Штраф за сложность</td>
+                      <th scope="row">Штраф за сложность</th>
                       <td className="scoreValue">
                         {formatPercentage(candidate.score_breakdown.complexity_penalty)}
                       </td>
                     </tr>
                     <tr>
-                      <td>Корректировка по отзывам</td>
+                      <th scope="row">Корректировка по отзывам</th>
                       <td className="scoreValue">
                         {formatPercentage(candidate.score_breakdown.feedback_adjustment)}
                       </td>
                     </tr>
                     <tr className="scoreFinal">
-                      <td>Итоговая оценка</td>
+                      <th scope="row">Итоговая оценка</th>
                       <td className="scoreValue">
                         {formatPercentage(candidate.score_breakdown.final_score)}
                       </td>
