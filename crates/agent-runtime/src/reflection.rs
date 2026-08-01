@@ -2,6 +2,59 @@ use evohime_protocol::{ErrorPattern, ReflectionAction, ReflectionAnalysis};
 
 pub struct ReflectionEngine;
 
+/// Silent-failure markers. The tool runtime reports its own failures in Russian
+/// ("завершился с ошибкой"), so English-only markers would miss them.
+const FAILURE_MARKERS: [&str; 6] = [
+    "failed",
+    "error",
+    "ошиб",
+    "не найден",
+    "не удалось",
+    "traceback",
+];
+
+/// Significant tokens of a failure-pattern phrase: short words ("the", "not", "is")
+/// carry no signal and would make every pattern match every error.
+fn significant_tokens(text: &str) -> Vec<String> {
+    text.to_lowercase()
+        .split(|character: char| !character.is_alphanumeric())
+        .filter(|token| token.chars().count() >= 4)
+        .map(str::to_string)
+        .collect()
+}
+
+/// A remembered failure pattern matches an observation when at least 60% of its
+/// significant tokens occur in the text. Substring equality is useless here:
+/// experience memory stores whole sentences, not literal error strings.
+fn pattern_matches(pattern: &str, haystack_lower: &str) -> bool {
+    let tokens = significant_tokens(pattern);
+    if tokens.is_empty() {
+        return false;
+    }
+    let hits = tokens
+        .iter()
+        .filter(|token| haystack_lower.contains(token.as_str()))
+        .count();
+    hits * 5 >= tokens.len() * 3
+}
+
+fn matched_patterns(
+    known_failure_patterns: &[(String, String, f64)],
+    haystack: &str,
+) -> Vec<ErrorPattern> {
+    let haystack_lower = haystack.to_lowercase();
+    known_failure_patterns
+        .iter()
+        .filter(|(_, pattern_name, _)| pattern_matches(pattern_name, &haystack_lower))
+        .map(|(pattern_id, pattern_name, base_conf)| ErrorPattern {
+            pattern_id: pattern_id.clone(),
+            pattern_name: pattern_name.clone(),
+            confidence: base_conf.clamp(0.0, 1.0),
+            source: "experience_memory".to_string(),
+        })
+        .collect()
+}
+
 #[derive(Debug, Clone)]
 pub struct ToolOutputContext {
     pub tool_name: String,
@@ -16,45 +69,32 @@ impl ReflectionEngine {
         context: &ToolOutputContext,
         known_failure_patterns: Vec<(String, String, f64)>,
     ) -> (ReflectionAnalysis, ReflectionAction) {
-        let mut error_patterns = Vec::new();
+        let error_patterns;
         let mut success_score = 1.0f64;
         let mut reasoning = String::new();
 
         if let Some(err) = &context.tool_error {
             success_score = 0.0;
             reasoning.push_str(&format!("Tool error: {}", err));
-
-            for (pattern_id, pattern_name, base_conf) in &known_failure_patterns {
-                if err.contains(pattern_name) || pattern_name.to_lowercase().contains("error") {
-                    error_patterns.push(ErrorPattern {
-                        pattern_id: pattern_id.clone(),
-                        pattern_name: pattern_name.clone(),
-                        confidence: *base_conf,
-                        source: "experience_memory".to_string(),
-                    });
-                }
-            }
+            error_patterns = matched_patterns(&known_failure_patterns, err);
         } else {
             let output_lower = context.tool_output.to_lowercase();
 
-            if output_lower.contains("failed")
-                || output_lower.contains("error")
-                || output_lower.is_empty()
+            if output_lower.is_empty()
+                || FAILURE_MARKERS
+                    .iter()
+                    .any(|marker| output_lower.contains(marker))
             {
                 success_score *= 0.5;
                 reasoning.push_str("Output contains failure indicators or is empty. ");
             }
 
-            // Check failure patterns against output as well
-            for (pattern_id, pattern_name, base_conf) in &known_failure_patterns {
-                if output_lower.contains(&pattern_name.to_lowercase()) {
-                    error_patterns.push(ErrorPattern {
-                        pattern_id: pattern_id.clone(),
-                        pattern_name: pattern_name.clone(),
-                        confidence: *base_conf,
-                        source: "experience_memory".to_string(),
-                    });
-                }
+            // Check failure patterns against output as well: silent failures never
+            // surface as `tool_error`.
+            error_patterns = matched_patterns(&known_failure_patterns, &context.tool_output);
+            if !error_patterns.is_empty() {
+                success_score *= 0.5;
+                reasoning.push_str("Output matches a remembered failure pattern. ");
             }
 
             if let Some(expected) = &context.expected_outcome {
@@ -87,7 +127,14 @@ impl ReflectionEngine {
             }
         }
 
-        let confidence = if success_score > 0.7 { 0.9 } else { 0.6 };
+        // A remembered pattern is direct evidence about this observation, so it raises
+        // how sure the verdict is (never above the pattern's own confidence).
+        let base_confidence = if success_score > 0.7 { 0.9 } else { 0.6 };
+        let confidence = error_patterns
+            .iter()
+            .map(|pattern| pattern.confidence)
+            .fold(base_confidence, f64::max)
+            .clamp(0.0, 1.0);
 
         let analysis = ReflectionAnalysis {
             success_score: success_score.clamp(0.0, 1.0),
@@ -109,6 +156,47 @@ impl ReflectionEngine {
         };
 
         (analysis, action)
+    }
+
+    /// Short, model-facing hint appended to the tool observation. `None` for
+    /// `Proceed` — a healthy step must not spend context on reflection noise.
+    pub fn recommendation(
+        action: &ReflectionAction,
+        analysis: &ReflectionAnalysis,
+        tool_name: &str,
+    ) -> Option<String> {
+        let patterns = analysis
+            .error_patterns
+            .iter()
+            .map(|pattern| pattern.pattern_name.trim())
+            .filter(|name| !name.is_empty())
+            .take(2)
+            .collect::<Vec<_>>()
+            .join("; ");
+        let known = if patterns.is_empty() {
+            String::new()
+        } else {
+            format!(" Known failure pattern: {patterns}.")
+        };
+        match action {
+            ReflectionAction::Proceed => None,
+            ReflectionAction::RetryTool => Some(format!(
+                "Reflection: `{tool_name}` looks failed (score {:.2}). {}{} Fix the arguments or pick another tool before repeating it.",
+                analysis.success_score, analysis.reasoning.trim(), known
+            )),
+            ReflectionAction::AskUser => Some(format!(
+                "Reflection: `{tool_name}` result is doubtful (score {:.2}). {}{} Verify the result before building on it; ask the user if it stays unclear.",
+                analysis.success_score, analysis.reasoning.trim(), known
+            )),
+            ReflectionAction::RevisePlan => Some(format!(
+                "Reflection: repeated failures around `{tool_name}`. {}{} Stop retrying this approach and revise the plan.",
+                analysis.reasoning.trim(), known
+            )),
+            ReflectionAction::Escalate => Some(format!(
+                "Reflection: `{tool_name}` failed critically. {}{} Report the blocker instead of continuing.",
+                analysis.reasoning.trim(), known
+            )),
+        }
     }
 
     pub fn should_revise_plan(action: &ReflectionAction, consecutive_failures: usize) -> bool {
@@ -138,6 +226,54 @@ mod tests {
         assert_eq!(analysis.success_score, 0.0);
         assert!(!analysis.error_patterns.is_empty());
         assert_eq!(action, ReflectionAction::RetryTool);
+    }
+
+    #[test]
+    fn unrelated_remembered_pattern_does_not_match() {
+        let context = ToolOutputContext {
+            tool_name: "shell.execute".to_string(),
+            tool_input: serde_json::json!({}),
+            tool_output: String::new(),
+            tool_error: Some("connection refused by database".to_string()),
+            expected_outcome: None,
+        };
+
+        let (analysis, _) = ReflectionEngine::analyze_tool_output(
+            &context,
+            vec![(
+                "M1".to_string(),
+                "migration applied before backup existed".to_string(),
+                0.9,
+            )],
+        );
+
+        assert!(analysis.error_patterns.is_empty());
+    }
+
+    #[test]
+    fn remembered_pattern_downgrades_silent_success() {
+        let context = ToolOutputContext {
+            tool_name: "git.commit".to_string(),
+            tool_input: serde_json::json!({}),
+            tool_output: "detached HEAD state, commit is unreachable".to_string(),
+            tool_error: None,
+            expected_outcome: None,
+        };
+
+        let (analysis, action) = ReflectionEngine::analyze_tool_output(
+            &context,
+            vec![(
+                "M2".to_string(),
+                "commit in detached HEAD state becomes unreachable".to_string(),
+                0.85,
+            )],
+        );
+
+        assert_eq!(analysis.error_patterns.len(), 1);
+        assert!(analysis.success_score < 0.8);
+        assert!(analysis.confidence >= 0.85);
+        assert_ne!(action, ReflectionAction::Proceed);
+        assert!(ReflectionEngine::recommendation(&action, &analysis, "git.commit").is_some());
     }
 
     #[test]

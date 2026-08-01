@@ -2,6 +2,7 @@ import type { Dispatch, SetStateAction } from "react";
 import type {
   ActionLoggedEvent,
   AgentPlanEvent,
+  AgentReflectionEvent,
   ApprovalRequiredEvent,
   MemoryAskEvent,
   PlanStep,
@@ -33,6 +34,7 @@ export type ServerEventHandlerContext = {
   setApproval: Dispatch<SetStateAction<ApprovalRequiredEvent | null>>;
   setMemoryAsk: Dispatch<SetStateAction<MemoryAskEvent | null>>;
   setAgentPlan: Dispatch<SetStateAction<AgentPlanDisplay | null>>;
+  setReflections: Dispatch<SetStateAction<Record<string, AgentReflectionEvent[]>>>;
   setActions: Dispatch<SetStateAction<ActionView[]>>;
   setSelectedFileNotice: Dispatch<SetStateAction<string | null>>;
   setGitStatus: Dispatch<SetStateAction<string>>;
@@ -365,6 +367,14 @@ export function applyServerEvent(event: ServerEvent, ctx: ServerEventHandlerCont
         }),
       ]);
       break;
+    case "agent.reflection": {
+      const reflectionEvent = event as AgentReflectionEvent;
+      ctx.setReflections((current) => ({
+        ...current,
+        [reflectionEvent.task_id]: [...(current[reflectionEvent.task_id] ?? []), reflectionEvent],
+      }));
+      break;
+    }
     case "agent.plan.updated":
       ctx.setTasks((current) => {
         const task = current[event.task_id];

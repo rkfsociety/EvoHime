@@ -718,6 +718,77 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn failed_tool_observation_is_reflected_and_hinted() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let demo_file = temp.path().join("context.md");
+        std::fs::write(&demo_file, "# Demo").expect("write demo");
+
+        let provider = RecordingProvider::new(vec![
+            vec![
+                r#"{"type":"tool.call","tool":"filesystem.read","input":{"path":"missing.txt"}}"#
+                    .to_string(),
+            ],
+            vec!["не смог прочитать файл".to_string()],
+        ]);
+        let provider = std::sync::Arc::new(provider);
+        let gateway = evohime_model_gateway::ModelGateway::from_provider(provider.clone());
+        let tools = evohime_tool_runtime::ToolRegistry::bootstrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        run_agent_loop(
+            AgentConfig {
+                task_id: Uuid::new_v4(),
+                session_id: Uuid::new_v4(),
+                operator_id: Uuid::nil(),
+                user_message: "read missing.txt".to_string(),
+                created_at: chrono::Utc::now(),
+                demo_file_path: demo_file,
+                workspace_root: temp.path().to_path_buf(),
+                model_route: "default".to_string(),
+                model: None,
+                planning_model_route: "default".to_string(),
+                planning_model: None,
+                planning_memory_context: None,
+                memory_pool: None,
+                workspace_key: String::new(),
+                is_subagent: false,
+                subagent_depth: 0,
+                subagent_max_steps: None,
+                telemetry: None,
+            },
+            &gateway,
+            &tools,
+            vec![],
+            vec![],
+            tx,
+        )
+        .await
+        .expect("agent completes");
+
+        let mut reflections = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            if let ServerEvent::AgentReflection {
+                analysis, action, ..
+            } = event
+            {
+                reflections.push((analysis, action));
+            }
+        }
+        assert_eq!(reflections.len(), 1, "one reflection per tool observation");
+        let (analysis, action) = &reflections[0];
+        assert!(analysis.success_score < 0.8, "failed read must score low");
+        assert_ne!(*action, evohime_protocol::ReflectionAction::Proceed);
+
+        let calls = provider.calls.lock().expect("calls");
+        assert!(
+            calls.iter().any(|messages| messages
+                .iter()
+                .any(|message| message.content.contains("Reflection:"))),
+            "the reflection hint must reach the next model turn"
+        );
+    }
+
+    #[tokio::test]
     async fn resume_with_saved_plan_skips_planning_call() {
         let temp = tempfile::tempdir().expect("tempdir");
         let demo_file = temp.path().join("context.md");

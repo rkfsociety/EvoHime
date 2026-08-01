@@ -6,7 +6,7 @@ import type {
   ServerEvent,
   SessionBootstrap,
 } from "./protocol";
-import type { ApprovalRequiredEvent, MemoryAskEvent } from "./protocol";
+import type { AgentReflectionEvent, ApprovalRequiredEvent, MemoryAskEvent } from "./protocol";
 import type { TerminalEntry } from "./components/TerminalPanel";
 import { ApprovalModal } from "./components/ApprovalModal";
 import { MemoryAskModal } from "./components/MemoryAskModal";
@@ -15,6 +15,7 @@ import { AgentAvatar } from "./components/AgentAvatar";
 import { AgentBrand } from "./components/AgentBrand";
 import { AgentMark } from "./components/AgentMark";
 import { AgentPlanView } from "./components/AgentPlanView";
+import { ReflectionTimeline } from "./components/ReflectionTimeline";
 import { BootNoticeBanner } from "./components/BootNoticeBanner";
 import { PanelErrorBoundary } from "./components/PanelErrorBoundary";
 import { SettingsModal } from "./components/SettingsModal";
@@ -181,6 +182,7 @@ export function App() {
   const [approval, setApproval] = useState<ApprovalRequiredEvent | null>(null);
   const [memoryAsk, setMemoryAsk] = useState<MemoryAskEvent | null>(null);
   const [agentPlan, setAgentPlan] = useState<AgentPlanDisplay | null>(null);
+  const [reflections, setReflections] = useState<Record<string, AgentReflectionEvent[]>>({});
   const [githubAuth, setGithubAuth] = useState<GithubAuthInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(
     () => new URLSearchParams(window.location.search).get("settings") === "1",
@@ -731,6 +733,7 @@ export function App() {
     setApproval,
     setMemoryAsk,
     setAgentPlan,
+    setReflections,
     setActions,
     setSelectedFileNotice,
     setGitStatus,
@@ -1507,11 +1510,14 @@ export function App() {
                   {line.role === "assistant" ? <MarkdownMessage text={line.text} /> : <pre>{line.text}</pre>}
                 </article>
                 {showToolLines && line.role === "user" && line.taskId ? (
-                  <ChatTraceSummary
-                    traceLines={traceLinesByTask[line.taskId] ?? []}
-                    active={activeTaskId === line.taskId}
-                    userLogin={githubAuth?.login}
-                  />
+                  <>
+                    <ChatTraceSummary
+                      traceLines={traceLinesByTask[line.taskId] ?? []}
+                      active={activeTaskId === line.taskId}
+                      userLogin={githubAuth?.login}
+                    />
+                    <ReflectionTimeline reflections={reflections[line.taskId] ?? []} />
+                  </>
                 ) : null}
               </Fragment>
             ))

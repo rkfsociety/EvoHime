@@ -1,5 +1,6 @@
 use super::context::{build_memory_context, build_workspace_rules_async};
 use super::execute::{execute_single_plan_step, StepOutcome};
+use super::reflection_stage::{ReflectionStage, ReflectionStageInput, ReflectionStageOutput};
 use super::tool_budget::{truncate_tool_result, ToolResultBudget};
 use super::util::{emit, MODEL_REQUEST_COOLDOWN};
 use super::{AgentConfig, AgentError, AgentResumeContext, AgentRunResult};
@@ -7,7 +8,7 @@ use crate::native_tools::{canonical_tool_name, openai_tools_for_registry};
 use chrono::Utc;
 use evohime_model_gateway::providers::{ChatMessage, ChatRole};
 use evohime_model_gateway::ModelGateway;
-use evohime_protocol::{PlanStep, ServerEvent};
+use evohime_protocol::{PlanStep, ReflectionAction, ServerEvent};
 use evohime_tool_runtime::ToolRegistry;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -106,6 +107,7 @@ pub(crate) async fn run_react_loop(
     let mut retries: HashMap<String, usize> = HashMap::new();
     let mut fingerprints = HashSet::new();
     let mut final_message = String::new();
+    let mut consecutive_failures = 0usize;
 
     if let Some(call) = resume.react_pending_call {
         let tool_name = canonical_tool_name(&call.name);
@@ -127,9 +129,23 @@ pub(crate) async fn run_react_loop(
         ))
         .await?;
         if let StepOutcome::Completed { output, .. } = outcome {
+            let bounded =
+                truncate_tool_result(&output, ToolResultBudget::from_env().per_result_chars);
+            let reflection = reflect_on_tool_result(
+                &config,
+                &event_tx,
+                consecutive_failures,
+                &call.id,
+                &plan_step.tool_name,
+                &args,
+                &bounded,
+                None,
+            )
+            .await?;
+            consecutive_failures = next_consecutive_failures(consecutive_failures, &reflection);
             messages.push(ChatMessage::tool_observation(
                 &call.id,
-                truncate_tool_result(&output, ToolResultBudget::from_env().per_result_chars),
+                with_reflection_hint(bounded, reflection.as_ref()),
             ));
         }
         tool_calls += 1;
@@ -248,7 +264,32 @@ pub(crate) async fn run_react_loop(
                         &output,
                         ToolResultBudget::from_env().per_result_chars,
                     );
-                    messages.push(ChatMessage::tool_observation(&call.id, bounded));
+                    let reflection = reflect_on_tool_result(
+                        &config,
+                        &event_tx,
+                        consecutive_failures,
+                        &call.id,
+                        &tool_name,
+                        &args,
+                        &bounded,
+                        None,
+                    )
+                    .await?;
+                    consecutive_failures =
+                        next_consecutive_failures(consecutive_failures, &reflection);
+                    apply_reflection_action(
+                        &config,
+                        &event_tx,
+                        reflection.as_ref(),
+                        &fingerprint,
+                        &mut fingerprints,
+                        &mut retries,
+                        limits.max_retries_per_call,
+                    )?;
+                    messages.push(ChatMessage::tool_observation(
+                        &call.id,
+                        with_reflection_hint(bounded, reflection.as_ref()),
+                    ));
                 }
                 Ok(StepOutcome::SkippedUnsupported { message }) => {
                     messages.push(ChatMessage::tool_observation(&call.id, message));
@@ -267,16 +308,42 @@ pub(crate) async fn run_react_loop(
                     return Err(error);
                 }
                 Err(error) => {
-                    let attempts = retries.entry(fingerprint).or_default();
-                    *attempts += 1;
+                    let attempts = {
+                        let attempts = retries.entry(fingerprint.clone()).or_default();
+                        *attempts += 1;
+                        *attempts
+                    };
+                    let observation = format!(
+                        "tool error (attempt {attempts}/{}): {error}",
+                        limits.max_retries_per_call
+                    );
+                    let reflection = reflect_on_tool_result(
+                        &config,
+                        &event_tx,
+                        consecutive_failures,
+                        &call.id,
+                        &tool_name,
+                        &args,
+                        "",
+                        Some(error.to_string()),
+                    )
+                    .await?;
+                    consecutive_failures =
+                        next_consecutive_failures(consecutive_failures, &reflection);
+                    apply_reflection_action(
+                        &config,
+                        &event_tx,
+                        reflection.as_ref(),
+                        &fingerprint,
+                        &mut fingerprints,
+                        &mut retries,
+                        limits.max_retries_per_call,
+                    )?;
                     messages.push(ChatMessage::tool_observation(
                         &call.id,
-                        format!(
-                            "tool error (attempt {attempts}/{}): {error}",
-                            limits.max_retries_per_call
-                        ),
+                        with_reflection_hint(observation, reflection.as_ref()),
                     ));
-                    if *attempts > limits.max_retries_per_call {
+                    if attempts > limits.max_retries_per_call {
                         return Err(error);
                     }
                 }
@@ -321,6 +388,118 @@ pub(crate) async fn run_react_loop(
         truncated: false,
         thinking: None,
     })
+}
+
+fn reflection_enabled() -> bool {
+    std::env::var("EVOHIME_REFLECTION_ENABLED")
+        .ok()
+        .map(|value| {
+            !matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "0" | "false" | "off" | "no"
+            )
+        })
+        .unwrap_or(true)
+}
+
+/// Judge one tool observation (roadmap 8.2) and publish the verdict. Returns
+/// `None` when reflection is disabled, so the loop keeps its old behaviour.
+#[allow(clippy::too_many_arguments)]
+async fn reflect_on_tool_result(
+    config: &AgentConfig,
+    event_tx: &UnboundedSender<ServerEvent>,
+    consecutive_failures: usize,
+    call_id: &str,
+    tool_name: &str,
+    args: &Value,
+    tool_output: &str,
+    tool_error: Option<String>,
+) -> Result<Option<ReflectionStageOutput>, AgentError> {
+    if !reflection_enabled() {
+        return Ok(None);
+    }
+    let reflection = ReflectionStage::execute(
+        config.memory_pool.as_ref(),
+        ReflectionStageInput {
+            task_id: config.task_id,
+            operator_id: config.operator_id,
+            tool_call_id: call_id.to_string(),
+            tool_name: tool_name.to_string(),
+            tool_input: args.clone(),
+            tool_output: tool_output.to_string(),
+            tool_error,
+            consecutive_failures,
+        },
+    )
+    .await;
+    emit(
+        event_tx,
+        ServerEvent::AgentReflection {
+            task_id: reflection.task_id,
+            timestamp: reflection.timestamp,
+            reflection_type: reflection.reflection_type.clone(),
+            tool_call_id: reflection.tool_call_id,
+            analysis: reflection.analysis.clone(),
+            action: reflection.action.clone(),
+            recommendation: reflection.recommendation.clone(),
+        },
+    )?;
+    Ok(Some(reflection))
+}
+
+/// Act on the reflection verdict: `RetryTool` re-opens the identical call the
+/// duplicate guard would otherwise reject (still bounded by the retry budget),
+/// `RevisePlan`/`Escalate` surface as a status phase for the UI.
+fn apply_reflection_action(
+    config: &AgentConfig,
+    event_tx: &UnboundedSender<ServerEvent>,
+    reflection: Option<&ReflectionStageOutput>,
+    fingerprint: &str,
+    fingerprints: &mut HashSet<String>,
+    retries: &mut HashMap<String, usize>,
+    max_retries_per_call: usize,
+) -> Result<(), AgentError> {
+    let Some(reflection) = reflection else {
+        return Ok(());
+    };
+    match reflection.action {
+        ReflectionAction::RetryTool => {
+            let attempts = retries.entry(fingerprint.to_string()).or_default();
+            if *attempts < max_retries_per_call {
+                *attempts += 1;
+                fingerprints.remove(fingerprint);
+            }
+        }
+        ReflectionAction::RevisePlan | ReflectionAction::Escalate => {
+            emit(
+                event_tx,
+                ServerEvent::AgentStatus {
+                    task_id: config.task_id,
+                    phase: "revising_plan".into(),
+                },
+            )?;
+        }
+        ReflectionAction::Proceed | ReflectionAction::AskUser => {}
+    }
+    Ok(())
+}
+
+/// Reflection resets the streak on a healthy step and extends it otherwise; with
+/// reflection disabled the streak stays where it was.
+fn next_consecutive_failures(current: usize, reflection: &Option<ReflectionStageOutput>) -> usize {
+    match reflection {
+        Some(reflection) if reflection.should_continue => 0,
+        Some(_) => current + 1,
+        None => current,
+    }
+}
+
+/// Append the reflection hint to the observation the model will read next.
+fn with_reflection_hint(observation: String, reflection: Option<&ReflectionStageOutput>) -> String {
+    match reflection.and_then(|reflection| reflection.recommendation.as_deref()) {
+        Some(hint) => format!("{observation}\n\n{hint}"),
+        None => observation,
+    }
 }
 
 fn bounded_messages(messages: &[ChatMessage], max_chars: usize) -> Vec<ChatMessage> {

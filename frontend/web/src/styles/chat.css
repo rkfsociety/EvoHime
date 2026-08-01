@@ -938,3 +938,131 @@
     background: var(--color-success-bg);
   }
 }
+
+/* Self-reflection timeline (roadmap 8.2) */
+.reflectionTimeline {
+  min-width: 0;
+  width: 100%;
+  justify-self: start;
+  margin: 6px auto 0 0;
+  border: 1px solid var(--color-warning-border);
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--color-warning-bg);
+}
+
+.reflectionTimeline summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 16px;
+  color: var(--text-1);
+  cursor: pointer;
+  list-style: none;
+  min-height: 44px;
+}
+
+.reflectionTimeline summary::-webkit-details-marker {
+  display: none;
+}
+
+.reflectionTimeline summary::after {
+  content: "⌄";
+  color: var(--text-2);
+  transition: transform 160ms ease;
+}
+
+.reflectionTimeline[open] summary::after {
+  transform: rotate(180deg);
+}
+
+.reflectionTimelineTitle {
+  font-weight: 600;
+  color: var(--color-warning-text);
+}
+
+.reflectionTimelineMeta {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.reflectionTimelineBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 16px 14px 16px;
+}
+
+.reflectionEntry {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(143, 180, 255, 0.18);
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 13px;
+}
+
+.reflectionEntry.action-revise_plan,
+.reflectionEntry.action-escalate {
+  border-color: var(--color-danger-border, var(--color-warning-border));
+}
+
+.reflectionEntryHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.reflectionAction {
+  font-weight: 600;
+  color: var(--text-0);
+}
+
+.reflectionScore {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-warning-text);
+}
+
+.reflectionTime {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.reflectionReasoning {
+  margin: 6px 0 0 0;
+  color: var(--text-1);
+  overflow-wrap: anywhere;
+}
+
+.reflectionPatterns {
+  margin: 8px 0 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.reflectionPatterns li {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.reflectionPatternName {
+  color: var(--text-0);
+  overflow-wrap: anywhere;
+}
+
+.reflectionPatternMeta {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.reflectionRecommendation {
+  margin: 8px 0 0 0;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}

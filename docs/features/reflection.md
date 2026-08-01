@@ -2,25 +2,31 @@
 
 ## Overview
 
-The self-reflection loop is a quality gate that runs after every tool execution. It analyzes the tool output and decides whether the agent should continue, retry, ask the user, or revise the plan.
+The self-reflection loop is a quality gate that runs after every tool execution in the ReAct loop (`crates/agent-runtime/src/agent_loop/react.rs`). It analyzes the tool output and decides whether the agent should continue, retry, ask the user, or revise the plan.
 
 ## Architecture
 
 ```
-Tool executed
+Tool executed (react loop)
     ↓
-Tool output received
+Observation (output or tool error)
     ↓
-ReflectionEngine.analyze_tool_output()
+ReflectionStage::execute()
+    ├─ load failure_pattern / verification_rule from experience memory (6.21)
+    ├─ ReflectionEngine::analyze_tool_output()  → score 0.0–1.0 + error patterns
+    ├─ 3 failing steps in a row → RevisePlan
+    └─ persist row in reflection_events
     ↓
-Success score 0.0–1.0 + error patterns
+Emit agent.reflection event (WS + session history)
     ↓
-Determine action (Proceed | AskUser | Retry | RevisePlan | Escalate)
-    ↓
-Emit agent.reflection event
-    ↓
-Agent loop responds to action
+React loop applies the action:
+    ├─ hint appended to the tool observation the model reads next
+    ├─ RetryTool re-opens the identical call for the duplicate guard
+    └─ RevisePlan/Escalate emit the `revising_plan` status phase
 ```
+
+Reflection is on by default; `EVOHIME_REFLECTION_ENABLED=0` turns the whole stage
+off and restores the pre-8.2 loop behaviour.
 
 ## Reflection Analysis
 
@@ -28,7 +34,8 @@ Agent loop responds to action
 
 The engine computes a success score (0.0–1.0) based on:
 - **Explicit errors**: Tool.error is set → score = 0.0
-- **Silent failures**: Output is empty or contains "failed"/"error" → score *= 0.5
+- **Silent failures**: Output is empty or contains a failure marker (`failed`, `error`, `ошиб`, `не найден`, `не удалось`, `traceback` — the tool runtime reports its own failures in Russian) → score *= 0.5
+- **Remembered failure pattern matched** → score *= 0.5
 - **Expected outcome mismatch**: Output doesn't contain expected substring → score *= 0.7
 - **Tool-specific heuristics**:
   - `filesystem.read`: empty output → score *= 0.3
@@ -46,13 +53,13 @@ If experience memory contains known failure patterns (from `6.21` learning), the
 
 ## Reflection Actions
 
-| Action | Meaning | Next Step |
+| Action | Meaning | What the loop actually does |
 | --- | --- | --- |
-| `Proceed` | Tool succeeded (score ≥ 0.8) | Continue agent loop normally |
-| `AskUser` | Tool failed but might recover (0.3–0.8) | Emit `approval.required` gate; wait for user |
-| `RetryTool` | Likely transient failure (score < 0.3) | Re-execute the same tool with same params |
-| `RevisePlan` | Systematic failure; plan is wrong | Trigger 8.1 planner to revise plan |
-| `Escalate` | Critical error; abort task | Stop agent loop; report to task runner |
+| `Proceed` | Tool succeeded (score ≥ 0.8) | Continue; no hint is added to the observation |
+| `AskUser` | Doubtful result (0.3–0.8) | Hint tells the model to verify before building on it, and to ask the user if it stays unclear. It is **not** a blocking approval gate — a real ask-gate is 8.4 |
+| `RetryTool` | Likely failure (score < 0.3) | Hint plus the duplicate-call guard is re-opened for that exact call, so one identical retry is allowed within the retry budget |
+| `RevisePlan` | 3 failing steps in a row | Hint tells the model to stop retrying the approach; `agent.status` phase `revising_plan` is emitted. Automatic re-planning through 8.1 is not wired yet |
+| `Escalate` | Critical error | Same as `RevisePlan`; the engine does not produce this verdict yet |
 
 ## Protocol Events
 
@@ -100,12 +107,23 @@ ORDER BY timestamp ASC;
 Run reflection tests:
 
 ```bash
-cargo test reflection --lib
-cargo test --test reflection_integration_test
+cargo test -p evohime-agent-runtime reflection
 ```
+
+Covers the engine, the stage, and `failed_tool_observation_is_reflected_and_hinted`
+(the react loop emits one reflection per observation and the hint reaches the next
+model turn). `reflection_stage_uses_experience_memory_and_persists` needs PostgreSQL
+and skips itself when the database is unavailable.
+
+## Frontend
+
+`ReflectionTimeline.tsx` renders a collapsed "Самопроверка" block under the task
+trace. Only non-`proceed` verdicts are listed — a run where everything went well
+shows nothing.
 
 ## Future (8.3+)
 
-- Reflection history used for plan revision (8.2)
+- Automatic plan revision driven by reflection history (8.1 + 8.3)
+- Meta-cognitive confidence in the ask-gate (8.4)
 - Counterfactual dry-run for high-impact tools (8.5)
 - Active learning: flag uncertain reflections for user review (8.10)
