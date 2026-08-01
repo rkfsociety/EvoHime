@@ -1,4 +1,4 @@
-param(
+﻿param(
   [switch]$InstallPostgres,
   [switch]$ApplyMigrations,
   [switch]$Stop
@@ -35,6 +35,52 @@ function Add-PostgresToPath {
   }
 }
 
+function Get-PostgresZip {
+  # Архив ~310 МБ. Invoke-WebRequest в Windows PowerShell 5.1 перерисовывает
+  # progress bar на каждый чанк и упирается в ~0.2 МБ/с — полчаса молчаливой
+  # загрузки выглядит как зависший запуск. curl.exe (есть в Windows 10+) даёт
+  # реальную скорость канала и умеет докачку по -C -, поэтому он основной путь,
+  # а IWR остаётся запасным — уже с выключенным прогрессом.
+  $expectedSize = $null
+  try {
+    $head = Invoke-WebRequest -Uri $postgresUrl -Method Head -TimeoutSec 30 -UseBasicParsing
+    $expectedSize = [int64]($head.Headers['Content-Length'] | Select-Object -First 1)
+  } catch {
+    $expectedSize = $null
+  }
+
+  if ($expectedSize -and (Test-Path -LiteralPath $postgresZip) -and ((Get-Item -LiteralPath $postgresZip).Length -eq $expectedSize)) {
+    Write-Host 'Архив уже скачан, повторная загрузка не требуется.'
+    return
+  }
+
+  $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+  if ($curl) {
+    & $curl.Source -L --fail --retry 3 --retry-delay 2 -C - -o $postgresZip $postgresUrl
+    if ($LASTEXITCODE -ne 0) {
+      Remove-Item -LiteralPath $postgresZip -Force -ErrorAction SilentlyContinue
+      throw "Не удалось скачать PostgreSQL (curl завершился с кодом $LASTEXITCODE): $postgresUrl"
+    }
+  } else {
+    $previousProgress = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
+    try {
+      Invoke-WebRequest -Uri $postgresUrl -OutFile $postgresZip -UseBasicParsing
+    } finally {
+      $ProgressPreference = $previousProgress
+    }
+  }
+
+  if (-not (Test-Path -LiteralPath $postgresZip)) {
+    throw "Не удалось скачать PostgreSQL: $postgresUrl"
+  }
+  $actualSize = (Get-Item -LiteralPath $postgresZip).Length
+  if ($expectedSize -and $actualSize -ne $expectedSize) {
+    Remove-Item -LiteralPath $postgresZip -Force -ErrorAction SilentlyContinue
+    throw "Архив PostgreSQL скачан не полностью ($actualSize из $expectedSize байт). Запусти запуск ещё раз."
+  }
+}
+
 function Ensure-PortablePostgres {
   New-Item -ItemType Directory -Force -Path $stateRoot | Out-Null
   $psql = Get-PostgresBin 'psql'
@@ -47,13 +93,17 @@ function Ensure-PortablePostgres {
     throw "PostgreSQL не найден. Запусти .\scripts\setup-local.ps1 -InstallPostgres -ApplyMigrations."
   }
 
-  Write-Host "Загрузка portable PostgreSQL 16.14..."
-  Invoke-WebRequest -Uri $postgresUrl -OutFile $postgresZip
+  Write-Host "Загрузка portable PostgreSQL 16.14 (~310 МБ)..."
+  Get-PostgresZip
   $extractRoot = Join-Path $stateRoot 'postgresql-extract'
   if (Test-Path -LiteralPath $extractRoot) {
     Remove-Item -LiteralPath $extractRoot -Recurse -Force
   }
-  Expand-Archive -LiteralPath $postgresZip -DestinationPath $extractRoot -Force
+  Write-Host 'Распаковка архива...'
+  # Expand-Archive в PS 5.1 распаковывает ~40 тысяч файлов дистрибутива минутами;
+  # ZipFile::ExtractToDirectory делает то же самое в разы быстрее.
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  [System.IO.Compression.ZipFile]::ExtractToDirectory($postgresZip, $extractRoot)
   $payload = Get-ChildItem -LiteralPath $extractRoot -Directory | Select-Object -First 1
   if (-not $payload) {
     $payload = Get-Item -LiteralPath $extractRoot
@@ -109,6 +159,28 @@ function Test-PostgresPort {
   }
 }
 
+function Test-PostgresReady {
+  $pgIsReady = Get-PostgresBin 'pg_isready'
+  if ($pgIsReady) {
+    & $pgIsReady -h localhost -p 5432 -q *> $null
+    return $LASTEXITCODE -eq 0
+  }
+
+  # Без pg_isready остаётся проверка порта — она грубее, но лучше, чем ничего.
+  return Test-PostgresPort
+}
+
+function Wait-PostgresReady([int]$timeoutSeconds) {
+  $deadline = [DateTime]::UtcNow.AddSeconds($timeoutSeconds)
+  do {
+    if (Test-PostgresReady) {
+      return $true
+    }
+    Start-Sleep -Milliseconds 500
+  } while ([DateTime]::UtcNow -lt $deadline)
+  return $false
+}
+
 function Start-LocalPostgres {
   $initdb = Get-PostgresBin 'initdb'
   $pgCtl = Get-PostgresBin 'pg_ctl'
@@ -130,15 +202,27 @@ function Start-LocalPostgres {
     }
   }
 
-  if ((Test-PostgresRunning) -or (Test-PostgresPort)) {
+  # Раньше здесь хватало «слушает ли кто-то 5432», и это ловило сокет умирающего
+  # сервера: запуск шёл дальше, а psql тут же падал с «сервер неожиданно закрыл
+  # соединение». Единственный надёжный признак — сервер реально принимает
+  # подключения, это и проверяем (pg_isready), с ожиданием и повтором старта.
+  if (Wait-PostgresReady 3) {
     return
   }
 
-  if (-not (Test-PostgresRunning)) {
+  & $pgCtl -D $postgresData -l $postgresLog -o '"-p 5432"' start
+  if ($LASTEXITCODE -ne 0) {
+    # Типичный случай — остался postmaster.pid от убитого сервера: даём ему
+    # доуйти и пробуем ещё раз, прежде чем сдаваться.
+    Start-Sleep -Seconds 3
     & $pgCtl -D $postgresData -l $postgresLog -o '"-p 5432"' start
     if ($LASTEXITCODE -ne 0) {
       throw "PostgreSQL не запустился. Подробности: $postgresLog"
     }
+  }
+
+  if (-not (Wait-PostgresReady 60)) {
+    throw "PostgreSQL запущен, но не принимает подключения на 5432. Подробности: $postgresLog"
   }
 }
 
@@ -160,6 +244,11 @@ function Ensure-Database {
 function Apply-Migrations {
   $psql = Get-PostgresBin 'psql'
   $env:PGPASSWORD = 'evohime'
+  # Миграции идемпотентные (CREATE ... IF NOT EXISTS), поэтому на повторном
+  # запуске psql забивает stderr сотнями «уже существует, пропускается».
+  # В логе от этого не видно настоящих ошибок — глушим до warning.
+  $previousPgOptions = $env:PGOPTIONS
+  $env:PGOPTIONS = '-c client_min_messages=warning'
   try {
     Get-ChildItem -LiteralPath (Join-Path $root 'migrations') -Filter '*.sql' | Sort-Object Name | ForEach-Object {
       & $psql -h localhost -p 5432 -U evohime -d evohime -v ON_ERROR_STOP=1 -f $_.FullName
@@ -169,6 +258,11 @@ function Apply-Migrations {
     }
   } finally {
     Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
+    if ($null -eq $previousPgOptions) {
+      Remove-Item Env:PGOPTIONS -ErrorAction SilentlyContinue
+    } else {
+      $env:PGOPTIONS = $previousPgOptions
+    }
   }
 }
 

@@ -29,13 +29,82 @@ function Import-DotEnv {
   }
 }
 
+function Get-PowerShellExe {
+  foreach ($name in @('powershell.exe', 'pwsh.exe')) {
+    $command = Get-Command $name -ErrorAction SilentlyContinue
+    if ($command) {
+      return $command.Source
+    }
+  }
+
+  $fallback = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+  if (Test-Path -LiteralPath $fallback) {
+    return $fallback
+  }
+
+  throw 'Не найден PowerShell для запуска дочернего процесса.'
+}
+
+function Get-LauncherLogRoot {
+  $logRoot = Join-Path $root '.launcher-logs'
+  if (-not (Test-Path $logRoot)) {
+    New-Item -ItemType Directory -Path $logRoot | Out-Null
+  }
+  return $logRoot
+}
+
+function Wait-ProcessWithUi([System.Diagnostics.Process]$process) {
+  # Окно прогресса живёт на этом же потоке и рисуется только когда мы качаем
+  # очередь сообщений. Пока подготовка шла синхронным `&`-вызовом (минуты на
+  # скачивание и распаковку PostgreSQL), окно висело белым прямоугольником и не
+  # закрывалось по крестику. Поэтому долгие шаги вынесены в дочерний процесс, а
+  # мы ждём его, не переставая прокачивать UI.
+  while (-not $process.HasExited) {
+    [System.Windows.Forms.Application]::DoEvents()
+    Start-Sleep -Milliseconds 50
+  }
+  # HasExited обновляет состояние сам, а вот Refresh() на уже завершившемся
+  # процессе сбрасывал ExitCode в $null — успешный шаг выглядел как падение
+  # «с кодом .». WaitForExit гарантирует, что код доступен.
+  $process.WaitForExit()
+  [System.Windows.Forms.Application]::DoEvents()
+  return [int]$process.ExitCode
+}
+
+function Get-LogTail([string]$path, [int]$lines = 12) {
+  if (-not (Test-Path -LiteralPath $path)) {
+    return ''
+  }
+  # psql пишет в UTF-8, а Get-Content по умолчанию читает как ANSI (1251) —
+  # в диалоге ошибки была каша вместо текста.
+  return ((Get-Content -LiteralPath $path -Tail $lines -Encoding UTF8 -ErrorAction SilentlyContinue) -join [Environment]::NewLine)
+}
+
 function Invoke-LocalSetup {
   if (-not (Test-Path -LiteralPath $setupScript)) {
     throw "Не найден setup-скрипт: $setupScript"
   }
-  & $setupScript -InstallPostgres -ApplyMigrations
-  if ($LASTEXITCODE -ne 0) {
-    throw "Подготовка локального PostgreSQL завершилась с кодом $LASTEXITCODE."
+
+  $logRoot = Get-LauncherLogRoot
+  $outLog = Join-Path $logRoot 'setup.out.log'
+  $errLog = Join-Path $logRoot 'setup.err.log'
+  $process = Start-Process -WindowStyle Hidden -PassThru -FilePath (Get-PowerShellExe) -ArgumentList @(
+    '-NoProfile',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-File',
+    $setupScript,
+    '-InstallPostgres',
+    '-ApplyMigrations'
+  ) -WorkingDirectory $root -RedirectStandardOutput $outLog -RedirectStandardError $errLog
+
+  $exitCode = Wait-ProcessWithUi $process
+  if ($exitCode -ne 0) {
+    $tail = Get-LogTail $errLog
+    if (-not $tail) {
+      $tail = Get-LogTail $outLog
+    }
+    throw "Подготовка локального PostgreSQL завершилась с кодом $exitCode.`n$tail"
   }
 }
 
@@ -67,6 +136,7 @@ function Wait-ForHttp([string]$url, [int]$timeoutSeconds = 60) {
       }
     } catch {
     }
+    [System.Windows.Forms.Application]::DoEvents()
     Start-Sleep -Milliseconds 500
   } while ([DateTime]::UtcNow -lt $deadline)
   throw "Сервис не ответил за $timeoutSeconds секунд: $url"
@@ -102,7 +172,7 @@ function Show-RestartProgress([string]$title) {
   $script:progressForm.ShowInTaskbar = $false
   $script:progressForm.BackColor = [System.Drawing.Color]::FromArgb(255, 246, 247, 251)
   $script:progressForm.Font = New-Object System.Drawing.Font('Segoe UI', 9.5)
-  $script:progressForm.ClientSize = New-Object System.Drawing.Size(420, 130)
+  $script:progressForm.ClientSize = New-Object System.Drawing.Size(480, 152)
   if ($script:appBrandIcon) {
     $script:progressForm.Icon = $script:appBrandIcon
   }
@@ -112,16 +182,19 @@ function Show-RestartProgress([string]$title) {
   $script:progressLabel.AutoSize = $false
   $script:progressLabel.Font = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Regular)
   $script:progressLabel.ForeColor = [System.Drawing.Color]::FromArgb(255, 32, 34, 46)
-  $script:progressLabel.Bounds = New-Object System.Drawing.Rectangle(24, 26, 300, 28)
+  # Две строки текста: стадии вроде «Готовлю PostgreSQL (первый запуск качает
+  # ~310 МБ)» не влезают в одну и раньше обрезались по нижнему краю.
+  $script:progressLabel.TextAlign = [System.Drawing.ContentAlignment]::TopLeft
+  $script:progressLabel.Bounds = New-Object System.Drawing.Rectangle(24, 24, 356, 48)
   $script:progressForm.Controls.Add($script:progressLabel)
 
   $script:progressPercentLabel = New-Object System.Windows.Forms.Label
   $script:progressPercentLabel.Text = '0%'
   $script:progressPercentLabel.AutoSize = $false
-  $script:progressPercentLabel.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
+  $script:progressPercentLabel.TextAlign = [System.Drawing.ContentAlignment]::TopRight
   $script:progressPercentLabel.Font = New-Object System.Drawing.Font('Segoe UI Semibold', 11)
   $script:progressPercentLabel.ForeColor = [System.Drawing.Color]::FromArgb(255, 90, 95, 235)
-  $script:progressPercentLabel.Bounds = New-Object System.Drawing.Rectangle(324, 26, 72, 28)
+  $script:progressPercentLabel.Bounds = New-Object System.Drawing.Rectangle(384, 24, 72, 26)
   $script:progressForm.Controls.Add($script:progressPercentLabel)
 
   $script:progressBar = New-Object System.Windows.Forms.ProgressBar
@@ -129,7 +202,7 @@ function Show-RestartProgress([string]$title) {
   $script:progressBar.Minimum = 0
   $script:progressBar.Maximum = 100
   $script:progressBar.Value = 0
-  $script:progressBar.Bounds = New-Object System.Drawing.Rectangle(24, 68, 372, 26)
+  $script:progressBar.Bounds = New-Object System.Drawing.Rectangle(24, 88, 432, 26)
   $script:progressForm.Controls.Add($script:progressBar)
 
   $script:progressForm.Show()
@@ -137,7 +210,11 @@ function Show-RestartProgress([string]$title) {
 }
 
 function Set-RestartProgress([string]$text, [int]$percent) {
-  if (-not $script:progressForm) {
+  # Окно можно закрыть крестиком — это не отмена запуска, а «убери с глаз».
+  # Без проверки IsDisposed следующая же стадия падала на уничтоженном
+  # контроле и роняла весь launcher.
+  if (-not $script:progressForm -or $script:progressForm.IsDisposed) {
+    $script:progressForm = $null
     return
   }
   $script:progressLabel.Text = $text
@@ -159,6 +236,13 @@ function Set-RestartProgress([string]$text, [int]$percent) {
 
 function Close-RestartProgress([int]$lingerMs = 900) {
   if (-not $script:progressForm) {
+    return
+  }
+  if ($script:progressForm.IsDisposed) {
+    $script:progressForm = $null
+    $script:progressLabel = $null
+    $script:progressPercentLabel = $null
+    $script:progressBar = $null
     return
   }
   Start-Sleep -Milliseconds $lingerMs
@@ -263,29 +347,8 @@ function Wait-ForExit([System.Diagnostics.Process]$process, [int]$timeoutMs = 15
 }
 
 function Start-ManagedProcess([string]$switchName) {
-  $powershell = $null
-  $powershellCommand = Get-Command powershell.exe -ErrorAction SilentlyContinue
-  if ($powershellCommand) {
-    $powershell = $powershellCommand.Source
-  } else {
-    $pwshCommand = Get-Command pwsh.exe -ErrorAction SilentlyContinue
-    if ($pwshCommand) {
-      $powershell = $pwshCommand.Source
-    }
-  }
-  if (-not $powershell) {
-    $fallback = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    if (Test-Path -LiteralPath $fallback) {
-      $powershell = $fallback
-    }
-  }
-  if (-not $powershell) {
-    throw 'Не найден PowerShell для запуска управляемого процесса.'
-  }
-  $logRoot = Join-Path $root '.launcher-logs'
-  if (-not (Test-Path $logRoot)) {
-    New-Item -ItemType Directory -Path $logRoot | Out-Null
-  }
+  $powershell = Get-PowerShellExe
+  $logRoot = Get-LauncherLogRoot
 
   $name = $switchName.TrimStart('-').ToLowerInvariant()
   return Start-Process -WindowStyle Hidden -PassThru -FilePath $powershell -ArgumentList @(
@@ -445,53 +508,83 @@ if (-not $env:PYTHON_WORKER_URL) {
   $env:PYTHON_WORKER_URL = Get-WorkerBaseUrl
 }
 
-Acquire-LauncherLock
-Stop-PreviousLaunchers
-
-if (-not (Test-PortAvailable 3000)) {
-  throw 'Порт 3000 уже занят процессом, который не принадлежит launcher EvoHime.'
-}
-if (-not (Test-PortAvailable 5173)) {
-  throw 'Порт 5173 уже занят процессом, который не принадлежит launcher EvoHime.'
-}
-if (-not (Test-PortAvailable $workerEndpoint.Port)) {
-  throw "Порт $($workerEndpoint.Port) уже занят процессом, который не принадлежит launcher EvoHime (Python worker)."
-}
-
-Invoke-LocalSetup
-
-if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-  throw 'npm not found in PATH.'
-}
-
-# Fail fast if Python is missing before spawning server/web.
-$null = Get-PythonExe
-
-if (-not (Test-Path (Join-Path $root 'frontend\web\node_modules'))) {
-  Write-Host 'Installing frontend dependencies...'
-  Push-Location (Join-Path $root 'frontend\web')
-  try {
-    & npm install
-  } finally {
-    Pop-Location
-  }
-  if ($LASTEXITCODE -ne 0) {
-    throw 'npm install failed.'
-  }
-}
-
-$script:serverProcess = Start-ManagedProcess '-Server'
-$script:webProcess = Start-ManagedProcess '-Web'
-$script:workerProcess = Start-ManagedProcess '-Worker'
+# Консоль скрыта, а холодный старт занимает минуты (скачивание portable
+# PostgreSQL, initdb, миграции, npm install, cargo build) — без окна прогресса
+# запуск выглядит как «ничего не произошло». Показываем тот же прогресс, что и
+# при Restart из трея, и снимаем его, когда поднялся трей-икон.
+Show-RestartProgress 'EvoHime — запуск'
 try {
-  Wait-ForHttp $serverUrl
-  Wait-ForHttp $webUrl
-  Wait-ForHttp $workerUrl
+  Set-RestartProgress 'Останавливаю прошлые процессы...' 5
+  Acquire-LauncherLock
+  Stop-PreviousLaunchers
+
+  Set-RestartProgress 'Проверяю порты...' 10
+  if (-not (Test-PortAvailable 3000)) {
+    throw 'Порт 3000 уже занят процессом, который не принадлежит launcher EvoHime.'
+  }
+  if (-not (Test-PortAvailable 5173)) {
+    throw 'Порт 5173 уже занят процессом, который не принадлежит launcher EvoHime.'
+  }
+  if (-not (Test-PortAvailable $workerEndpoint.Port)) {
+    throw "Порт $($workerEndpoint.Port) уже занят процессом, который не принадлежит launcher EvoHime (Python worker)."
+  }
+
+  Set-RestartProgress 'Готовлю PostgreSQL (первый запуск, ~310 МБ)...' 20
+  Invoke-LocalSetup
+
+  Set-RestartProgress 'Проверяю окружение...' 45
+  if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+    throw 'npm not found in PATH.'
+  }
+
+  # Fail fast if Python is missing before spawning server/web.
+  $null = Get-PythonExe
+
+  if (-not (Test-Path (Join-Path $root 'frontend\web\node_modules'))) {
+    Set-RestartProgress 'Ставлю зависимости панели (npm install)...' 50
+    Write-Host 'Installing frontend dependencies...'
+    $logRoot = Get-LauncherLogRoot
+    $npmProcess = Start-Process -WindowStyle Hidden -PassThru -FilePath 'cmd.exe' -ArgumentList @('/c', 'npm', 'install') `
+      -WorkingDirectory (Join-Path $root 'frontend\web') `
+      -RedirectStandardOutput (Join-Path $logRoot 'npm-install.out.log') `
+      -RedirectStandardError (Join-Path $logRoot 'npm-install.err.log')
+    $npmExit = Wait-ProcessWithUi $npmProcess
+    if ($npmExit -ne 0) {
+      throw "npm install failed (код $npmExit).`n$(Get-LogTail (Join-Path $logRoot 'npm-install.err.log'))"
+    }
+  }
+
+  Set-RestartProgress 'Запускаю сервер (первая сборка cargo)...' 60
+  $script:serverProcess = Start-ManagedProcess '-Server'
+  Set-RestartProgress 'Запускаю панель...' 70
+  $script:webProcess = Start-ManagedProcess '-Web'
+  Set-RestartProgress 'Запускаю worker...' 78
+  $script:workerProcess = Start-ManagedProcess '-Worker'
+  try {
+    Set-RestartProgress 'Жду сервер...' 85
+    Wait-ForHttp $serverUrl 600
+    Set-RestartProgress 'Жду панель...' 92
+    Wait-ForHttp $webUrl
+    Set-RestartProgress 'Жду worker...' 96
+    Wait-ForHttp $workerUrl
+  } catch {
+    Stop-Tree $script:workerProcess
+    Stop-Tree $script:webProcess
+    Stop-Tree $script:serverProcess
+    Stop-LocalDatabase
+    throw
+  }
+
+  Set-RestartProgress 'Готово' 100
+  Close-RestartProgress 400
 } catch {
-  Stop-Tree $script:workerProcess
-  Stop-Tree $script:webProcess
-  Stop-Tree $script:serverProcess
-  Stop-LocalDatabase
+  Close-RestartProgress 0
+  # Консоль скрыта — без диалога ошибка запуска ушла бы в никуда.
+  [System.Windows.Forms.MessageBox]::Show(
+    "$($_.Exception.Message)`n`nЛоги: $(Join-Path $root '.launcher-logs')",
+    'EvoHime — запуск не удался',
+    [System.Windows.Forms.MessageBoxButtons]::OK,
+    [System.Windows.Forms.MessageBoxIcon]::Error) | Out-Null
   throw
 }
 
