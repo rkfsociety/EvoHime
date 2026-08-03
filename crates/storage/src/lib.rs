@@ -8,6 +8,7 @@ use uuid::Uuid;
 pub mod artifact_reviews;
 pub mod attachments;
 pub mod backup;
+pub mod confidence_audit;
 pub mod cost_limits;
 pub mod installed_plugins;
 pub mod memory;
@@ -28,6 +29,7 @@ pub mod sync;
 pub mod task_worktrees;
 pub mod test_db;
 pub mod thinking;
+pub mod tool_metrics;
 
 pub use artifact_reviews::{
     insert_artifact_review, list_artifact_reviews_by_task, ArtifactReviewRow, NewArtifactReview,
@@ -38,6 +40,10 @@ pub use attachments::{
     list_session_attachments, SessionAttachmentRow,
 };
 pub use backup::{collect_backup, BackupDump};
+pub use confidence_audit::{
+    insert_confidence_audit, list_confidence_audit_for_session, list_confidence_audit_for_task,
+    ConfidenceAuditLog, NewConfidenceAuditLog,
+};
 pub use cost_limits::{
     add_tokens_to_tracking, check_spending_cap, get_cost_limit, get_or_create_cost_limit,
     get_today_consumption, list_cost_limits, update_cost_limit, CostLimitRow, CostLimitUpdate,
@@ -106,6 +112,10 @@ pub use test_db::{
 pub use thinking::{
     get_monthly_thinking_cost, get_or_create_thinking_settings, record_thinking_usage,
     update_thinking_settings, ThinkingSettings, ThinkingUsage,
+};
+pub use tool_metrics::{
+    classify_tool_destructiveness, get_tool_success_rate, get_tools_success_rates,
+    record_tool_execution, ToolExecutionStat, ToolMetricsReliability, ToolSuccessRate,
 };
 
 #[derive(Debug, Error)]

@@ -9,6 +9,12 @@ pub mod reflection_stage;
 mod tool_budget;
 mod util;
 
+// Stage 8.4: Confidence gate modules
+pub mod ask_policy;
+pub mod confidence_gate;
+pub mod model_confidence;
+pub mod risk_engine;
+
 use chrono::{DateTime, Utc};
 use evohime_model_gateway::{providers::ChatMessage, ModelGateway, NativeToolCall};
 use evohime_protocol::{planning::PlanCandidate, PlanStep, ServerEvent};
