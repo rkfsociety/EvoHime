@@ -18,7 +18,9 @@ function ProviderModelPicker({ route, models, onUpdate }: ProviderModelPickerPro
             onUpdate({
               provider,
               base_url: provider === "literouter" ? "https://api.literouter.com/v1" : "https://api.openai.com/v1",
-              model: provider === "literouter" ? "deepseek:free" : "gpt-4o-mini",
+              // No hardcoded model on provider switch — pick from the live list
+              // fetched for the newly selected provider once it loads.
+              model: "",
               billing_mode: provider === "literouter" ? "free" : "paid",
             });
           }}

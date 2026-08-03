@@ -218,7 +218,8 @@ First provider: **LiteRouter** — OpenAI-compatible API.
 MODEL_PROVIDER=literouter
 LITEROUTER_API_KEY=lr_...
 LITEROUTER_BASE_URL=https://api.literouter.com/v1
-LITEROUTER_MODEL=deepseek:free
+# No hardcoded default — pick a model LiteRouter actually serves from GET /api/models
+LITEROUTER_MODEL=
 ```
 
 - Docs: [docs/providers/literouter.md](docs/providers/literouter.md)

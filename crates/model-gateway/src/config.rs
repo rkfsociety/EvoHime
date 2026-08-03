@@ -6,17 +6,11 @@ use std::env;
 /// Default LiteRouter OpenAI-compatible base URL.
 pub const LITEROUTER_DEFAULT_BASE_URL: &str = "https://api.literouter.com/v1";
 
-/// Default free-tier model.
-pub const LITEROUTER_DEFAULT_MODEL: &str = "deepseek:free";
-
 /// Default OpenAI-compatible base URL.
 pub const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 
 /// Default OpenAI-compatible model.
 pub const OPENAI_DEFAULT_MODEL: &str = "gpt-4o-mini";
-
-/// Known LiteRouter free models (non-exhaustive).
-pub const LITEROUTER_FREE_MODELS: &[&str] = &["deepseek:free", "mistral:free", "llama:free"];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiteRouterConfig {
@@ -30,8 +24,7 @@ impl LiteRouterConfig {
         let api_key = env::var("LITEROUTER_API_KEY").unwrap_or_default();
         let base_url = env::var("LITEROUTER_BASE_URL")
             .unwrap_or_else(|_| LITEROUTER_DEFAULT_BASE_URL.to_string());
-        let model =
-            env::var("LITEROUTER_MODEL").unwrap_or_else(|_| LITEROUTER_DEFAULT_MODEL.to_string());
+        let model = env::var("LITEROUTER_MODEL").unwrap_or_default();
 
         Self {
             api_key,
@@ -128,16 +121,6 @@ impl ModelRouteConfig {
         }
     }
 
-    pub fn available_models(&self) -> Vec<String> {
-        match self.provider {
-            ProviderKind::LiteRouter => LITEROUTER_FREE_MODELS
-                .iter()
-                .map(|model| (*model).to_string())
-                .collect(),
-            ProviderKind::OpenAICompatible => Vec::new(),
-            ProviderKind::Mock => Vec::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -209,7 +192,7 @@ fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, Provid
             .unwrap_or(ProviderKind::LiteRouter);
         let model = route.model.unwrap_or_else(|| match provider {
             ProviderKind::OpenAICompatible => OPENAI_DEFAULT_MODEL.to_string(),
-            _ => LITEROUTER_DEFAULT_MODEL.to_string(),
+            _ => String::new(),
         });
         let default_base_url = match provider {
             ProviderKind::OpenAICompatible => OPENAI_DEFAULT_BASE_URL,

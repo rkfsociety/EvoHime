@@ -370,7 +370,6 @@ if ($Server) {
   if (-not $env:DEMO_FILE_PATH) { $env:DEMO_FILE_PATH = 'docs/sample-context.md' }
   if (-not $env:MODEL_PROVIDER) { $env:MODEL_PROVIDER = 'literouter' }
   if (-not $env:LITEROUTER_BASE_URL) { $env:LITEROUTER_BASE_URL = 'https://api.literouter.com/v1' }
-  if (-not $env:LITEROUTER_MODEL) { $env:LITEROUTER_MODEL = 'deepseek:free' }
   if (-not $env:PYTHON_WORKER_URL) { $env:PYTHON_WORKER_URL = 'http://127.0.0.1:8090' }
   Invoke-LocalSetup
 

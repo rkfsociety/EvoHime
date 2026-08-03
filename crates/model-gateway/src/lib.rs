@@ -104,10 +104,7 @@ impl ModelGateway {
                 model: route.literouter.model.clone(),
                 base_url: route.literouter.base_url.clone(),
                 configured: route.configured(),
-                available_models: available_models
-                    .get(name)
-                    .cloned()
-                    .unwrap_or_else(|| route.available_models()),
+                available_models: available_models.get(name).cloned().unwrap_or_default(),
                 billing_mode: if route.provider == ProviderKind::LiteRouter
                     && route.literouter.model.ends_with(":free")
                 {
@@ -128,7 +125,7 @@ impl ModelGateway {
             available_models: available_models
                 .get(&config.default_route)
                 .cloned()
-                .unwrap_or_else(|| default_route.available_models()),
+                .unwrap_or_default(),
             default_route: config.default_route.clone(),
             routes,
         }
