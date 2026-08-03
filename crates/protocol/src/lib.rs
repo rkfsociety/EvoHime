@@ -18,7 +18,27 @@ pub struct PlanStep {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ApprovalReview {
-    UnifiedDiff { path: String, diff: String },
+    UnifiedDiff {
+        path: String,
+        diff: String,
+    },
+    FileWrite {
+        path: String,
+        change: FileChangeKind,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        old_bytes: Option<u64>,
+        new_bytes: u64,
+    },
+    Unavailable {
+        reason: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FileChangeKind {
+    Create,
+    Overwrite,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -168,6 +188,7 @@ pub enum ServerEvent {
         tool_name: String,
         permission: String,
         scope: String,
+        risk_level: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         review: Option<ApprovalReview>,
         created_at: DateTime<Utc>,
@@ -428,6 +449,7 @@ mod tests {
             tool_name: "filesystem.patch".into(),
             permission: "filesystem_write".into(),
             scope: "src/lib.rs".into(),
+            risk_level: "medium".into(),
             review: Some(ApprovalReview::UnifiedDiff {
                 path: "src/lib.rs".into(),
                 diff: "@@ -1 +1 @@\n-old\n+new".into(),
@@ -436,6 +458,7 @@ mod tests {
         };
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json["type"], "approval.required");
+        assert_eq!(json["risk_level"], "medium");
         assert_eq!(json["review"]["kind"], "unified_diff");
         assert_eq!(json["review"]["path"], "src/lib.rs");
         assert_eq!(json["review"]["diff"], "@@ -1 +1 @@\n-old\n+new");
@@ -448,17 +471,70 @@ mod tests {
             }
         ));
 
+        let file_write = ServerEvent::ApprovalRequired {
+            approval_id: Uuid::nil(),
+            task_id: Uuid::nil(),
+            tool_name: "filesystem.write".into(),
+            permission: "filesystem_write".into(),
+            scope: "src/new.rs".into(),
+            risk_level: "medium".into(),
+            review: Some(ApprovalReview::FileWrite {
+                path: "src/new.rs".into(),
+                change: FileChangeKind::Create,
+                old_bytes: None,
+                new_bytes: 42,
+            }),
+            created_at: Utc::now(),
+        };
+        let file_write_json = serde_json::to_value(&file_write).unwrap();
+        assert_eq!(file_write_json["review"]["kind"], "file_write");
+        assert_eq!(file_write_json["review"]["change"], "create");
+        assert_eq!(file_write_json["review"]["new_bytes"], 42);
+        assert!(file_write_json["review"].get("old_bytes").is_none());
+        let decoded_write: ServerEvent = serde_json::from_value(file_write_json).unwrap();
+        assert!(matches!(
+            decoded_write,
+            ServerEvent::ApprovalRequired {
+                review: Some(ApprovalReview::FileWrite {
+                    change: FileChangeKind::Create,
+                    ..
+                }),
+                ..
+            }
+        ));
+
+        let unavailable = ServerEvent::ApprovalRequired {
+            approval_id: Uuid::nil(),
+            task_id: Uuid::nil(),
+            tool_name: "shell.execute".into(),
+            permission: "shell_execute".into(),
+            scope: "workspace".into(),
+            risk_level: "high".into(),
+            review: Some(ApprovalReview::Unavailable {
+                reason: "shell command execution cannot be safely predicted".into(),
+            }),
+            created_at: Utc::now(),
+        };
+        let unavailable_json = serde_json::to_value(&unavailable).unwrap();
+        assert_eq!(unavailable_json["review"]["kind"], "unavailable");
+        assert_eq!(
+            unavailable_json["review"]["reason"],
+            "shell command execution cannot be safely predicted"
+        );
+
         let ordinary = ServerEvent::ApprovalRequired {
             approval_id: Uuid::nil(),
             task_id: Uuid::nil(),
             tool_name: "shell.execute".into(),
             permission: "shell_execute".into(),
             scope: "workspace".into(),
+            risk_level: "high".into(),
             review: None,
             created_at: Utc::now(),
         };
         let ordinary_json = serde_json::to_value(ordinary).unwrap();
         assert!(ordinary_json.get("review").is_none());
+        assert_eq!(ordinary_json["risk_level"], "high");
 
         for command in [
             ClientCommand::ApprovalGranted {

@@ -326,10 +326,31 @@
       },
       "additionalProperties": false
     },
-    "ApprovalRequiredEvent": {
-      "type": "object", "required": ["type", "approval_id", "task_id", "tool_name", "permission", "scope", "created_at"],
+    "FileWriteReview": {
+      "type": "object",
+      "required": ["kind", "path", "change", "new_bytes"],
       "properties": {
-        "type": { "const": "approval.required" }, "approval_id": { "$ref": "#/$defs/Uuid" }, "task_id": { "$ref": "#/$defs/Uuid" }, "tool_name": { "type": "string" }, "permission": { "type": "string" }, "scope": { "type": "string" }, "review": { "$ref": "#/$defs/UnifiedDiffReview" }, "created_at": { "$ref": "#/$defs/DateTime" }
+        "kind": { "const": "file_write" },
+        "path": { "type": "string" },
+        "change": { "type": "string", "enum": ["create", "overwrite"] },
+        "old_bytes": { "type": "integer", "minimum": 0 },
+        "new_bytes": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "UnavailableReview": {
+      "type": "object",
+      "required": ["kind", "reason"],
+      "properties": {
+        "kind": { "const": "unavailable" },
+        "reason": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "ApprovalRequiredEvent": {
+      "type": "object", "required": ["type", "approval_id", "task_id", "tool_name", "permission", "scope", "risk_level", "created_at"],
+      "properties": {
+        "type": { "const": "approval.required" }, "approval_id": { "$ref": "#/$defs/Uuid" }, "task_id": { "$ref": "#/$defs/Uuid" }, "tool_name": { "type": "string" }, "permission": { "type": "string" }, "scope": { "type": "string" }, "risk_level": { "type": "string", "enum": ["none", "low", "medium", "high"] }, "review": { "oneOf": [{ "$ref": "#/$defs/UnifiedDiffReview" }, { "$ref": "#/$defs/FileWriteReview" }, { "$ref": "#/$defs/UnavailableReview" }] }, "created_at": { "$ref": "#/$defs/DateTime" }
       }, "additionalProperties": false
     },
     "MemoryProposedEvent": {
