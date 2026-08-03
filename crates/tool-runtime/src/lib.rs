@@ -1,11 +1,13 @@
 mod cdp;
 mod registry;
+mod risk;
 mod sandbox;
 mod shell_env;
 mod ssrf;
 mod tools;
 
 pub use registry::{ToolContext, ToolError, ToolProgress, ToolRegistry, ToolResult};
+pub use risk::{classify_call_risk, ToolRiskLevel};
 pub use sandbox::WorkspaceSandbox;
 pub use ssrf::{
     allow_private_targets, assert_safe_http_url, effective_host_allowlist, host_allowlist_from_env,
