@@ -1,6 +1,6 @@
 # EvoHime — Дорожная карта
 
-> Обновлено: 2026-07-29 (реконциляция Stage 7 с фактическим кодом и ad-hoc wave-трекингом)
+> Обновлено: 2026-08-03 (Stage 8.3 завершён: E2E тесты, task dependency graphs с batch execution)
 
 ## Обзор
 
@@ -537,7 +537,7 @@
 | --- | --- | --- | --- | --- |
 | 8.1 | Tree-of-Thoughts bounded planner (branch + prune перед выполнением) | L | ✅ | protocol `agent.plan` + DAO `crates/storage/src/planning_history.rs` + unified scoring formula (similarity + tool success + complexity + feedback) + deterministic pruning to top-N + fallback on error + history with 30-day TTL + `AgentPlanView` frontend component + E2E test |
 | 8.2 | Self-reflection loop: агент проверяет собственный шаг перед следующим и пересматривает план при ошибке | L | ✅ | `ReflectionStage` вызывается в ReAct-цикле после каждого наблюдения инструмента (`crates/agent-runtime/src/agent_loop/react.rs`): подтягивает `failure_pattern`/`verification_rule` из experience memory (`6.21`), матчинг по перекрытию значимых токенов (а не подстрокой), пишет строку в `reflection_events`, шлёт `agent.reflection` в WS и добавляет hint в наблюдение для модели; `RetryTool` разблокирует дублирующий вызов в рамках retry-бюджета, 3 провала подряд → `RevisePlan` + фаза `revising_plan`; UI — `ReflectionTimeline.tsx`; выключатель `EVOHIME_REFLECTION_ENABLED=0`. Вне скоупа пункта: блокирующий ask-gate (`8.4`) и автоматический перезапуск планировщика `8.1` |
-| 8.3 | Явный граф зависимостей задач при декомпозиции (вместо линейного плана) | L | ✅ | Kahn O(V+E) topological sort, cycle detection, backward-compat materialization, versioned DB schema, batch computation, React Flow DAG viewer, cumulative failure tracking |
+| 8.3 | Явный граф зависимостей задач при декомпозиции (вместо линейного плана) | L | ✅ | Kahn O(V+E) topological sort, cycle detection, backward-compat materialization (legacy linear plans), versioned DB schema, batch computation via topological depth, React Flow DAG viewer with real-time status, cumulative failure tracking (max 3), 7 E2E integration tests covering linear/diamond/cyclic/complex pipelines |
 | 8.4 | Meta-cognitive confidence сигнал в ask-gate (шире, чем текущий uncertainty-порог) | M | ⬜ | расширяет `6.20` ask-on-uncertainty |
 | 8.5 | Counterfactual dry-run для high-impact tool calls перед approval | M | ⬜ | работает поверх permission engine (`crates/permissions/`) |
 | 8.6 | Аналогичный retrieval: явное переиспользование шагов из похожих прошлых задач | M | ⬜ | расширяет playbook auto-suggest (`7.48`) |
