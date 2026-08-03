@@ -206,6 +206,7 @@ pub(crate) async fn run_task_pipeline(
             )
         })?;
 
+    let effective_workspace_root = workspace_root.clone();
     let agent_config = AgentConfig {
         task_id: task.id,
         session_id,
@@ -373,7 +374,7 @@ pub(crate) async fn run_task_pipeline(
                 approval_id,
                 input,
             })) => {
-                let review = approval_review(&tool, &input);
+                let preview = approval_review(&tool, &input, &effective_workspace_root).await;
                 emit_event(
                     state,
                     session_id,
@@ -394,7 +395,8 @@ pub(crate) async fn run_task_pipeline(
                         tool_name: tool.clone(),
                         permission: permission_name(permission).to_string(),
                         scope: scope.clone(),
-                        review,
+                        risk_level: preview.risk_level,
+                        review: Some(preview.review),
                         created_at: chrono::Utc::now(),
                     },
                 )
