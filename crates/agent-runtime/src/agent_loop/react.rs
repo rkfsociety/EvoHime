@@ -1,3 +1,4 @@
+use super::confidence_emit::emit_confidence_before_tool;
 use super::context::{build_memory_context, build_workspace_rules_async};
 use super::execute::{execute_single_plan_step, StepOutcome};
 use super::reflection_stage::{ReflectionStage, ReflectionStageInput, ReflectionStageOutput};
@@ -237,6 +238,15 @@ pub(crate) async fn run_react_loop(
                     phase: "executing_tools".into(),
                 },
             )?;
+
+            // Stage 8.4: Emit confidence before executing tool
+            let plan_step = PlanStep {
+                id: call.id.clone(),
+                tool_name: tool_name.clone(),
+                description: call.arguments.clone(),
+                depends_on: Vec::new(),
+            };
+            let _ = emit_confidence_before_tool(&config, &event_tx, config.memory_pool.as_ref(), &[plan_step.clone()]).await;
 
             let fingerprint = call_fingerprint(&tool_name, &args);
             if !fingerprints.insert(fingerprint.clone()) {

@@ -12,6 +12,7 @@ mod util;
 // Stage 8.4: Confidence gate modules
 pub mod ask_policy;
 pub mod confidence_compute;
+pub mod confidence_emit;
 pub mod confidence_gate;
 pub mod model_confidence;
 pub mod risk_engine;
