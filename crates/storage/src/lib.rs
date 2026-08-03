@@ -9,6 +9,7 @@ pub mod artifact_reviews;
 pub mod attachments;
 pub mod backup;
 pub mod confidence_audit;
+pub mod confidence_settings;
 pub mod cost_limits;
 pub mod installed_plugins;
 pub mod memory;
@@ -43,6 +44,10 @@ pub use backup::{collect_backup, BackupDump};
 pub use confidence_audit::{
     insert_confidence_audit, list_confidence_audit_for_session, list_confidence_audit_for_task,
     ConfidenceAuditLog, NewConfidenceAuditLog,
+};
+pub use confidence_settings::{
+    get_confidence_thresholds, set_confidence_thresholds, ConfidenceSettingsRow,
+    ConfidenceThresholds, ThresholdPair,
 };
 pub use cost_limits::{
     add_tokens_to_tracking, check_spending_cap, get_cost_limit, get_or_create_cost_limit,

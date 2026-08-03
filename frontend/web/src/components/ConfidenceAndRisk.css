@@ -1,0 +1,148 @@
+.confidence-and-risk {
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  padding: 1rem;
+  font-size: 0.9rem;
+}
+
+.confidence-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.confidence-score {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.confidence-bar-container {
+  flex: 1;
+  height: 24px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  max-width: 200px;
+}
+
+.confidence-bar {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.confidence-percentage {
+  font-weight: bold;
+  min-width: 45px;
+  text-align: right;
+}
+
+.risk-badge {
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  border: 2px solid;
+  font-weight: bold;
+  font-size: 0.85rem;
+  background: transparent;
+  white-space: nowrap;
+}
+
+.signal-breakdown {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.signal-breakdown h4 {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+}
+
+.signals-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+}
+
+.signal-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.5rem;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.signal-label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.25rem;
+}
+
+.signal-value {
+  font-weight: bold;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.signal-reliability {
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  margin-top: 0.25rem;
+  text-transform: uppercase;
+}
+
+.missing-signals {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.missing-signals h4 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.95rem;
+  color: var(--warning);
+}
+
+.missing-signals ul {
+  margin: 0;
+  padding-left: 1.5rem;
+  font-size: 0.85rem;
+}
+
+.missing-signals li {
+  color: var(--text-secondary);
+}
+
+.recommendation {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: var(--bg-tertiary);
+  border-left: 3px solid var(--info);
+  border-radius: 4px;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+@media (prefers-color-scheme: dark) {
+  .confidence-and-risk {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .confidence-bar-container {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .signal-item {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .recommendation {
+    background: rgba(100, 150, 255, 0.1);
+  }
+}

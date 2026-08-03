@@ -3,59 +3,16 @@ use std::sync::Arc;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    Json,
+    Extension, Json,
 };
-use evohime_storage::{list_confidence_audit_for_session, list_confidence_audit_for_task};
-use serde::{Deserialize, Serialize};
+use evohime_storage::{
+    get_confidence_thresholds, list_confidence_audit_for_session, list_confidence_audit_for_task,
+    set_confidence_thresholds, ConfidenceThresholds,
+};
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::app::AppState;
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ConfidenceThresholds {
-    pub version: String,
-    pub risk_none: ThresholdPair,
-    pub risk_low: ThresholdPair,
-    pub risk_medium: ThresholdPair,
-    pub risk_high: ThresholdPair,
-    pub missing_signal_ask_threshold: f32,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ThresholdPair {
-    pub proceed: f32,
-    pub ask: f32,
-    pub require: Option<f32>,
-}
-
-impl Default for ConfidenceThresholds {
-    fn default() -> Self {
-        Self {
-            version: "1".to_string(),
-            risk_none: ThresholdPair {
-                proceed: 0.65,
-                ask: 0.40,
-                require: None,
-            },
-            risk_low: ThresholdPair {
-                proceed: 0.70,
-                ask: 0.45,
-                require: None,
-            },
-            risk_medium: ThresholdPair {
-                proceed: 0.75,
-                ask: 0.50,
-                require: None,
-            },
-            risk_high: ThresholdPair {
-                proceed: 0.85,
-                ask: 0.65,
-                require: Some(0.30),
-            },
-            missing_signal_ask_threshold: 0.5,
-        }
-    }
-}
 
 /// GET /api/confidence/audit?task_id=...
 pub async fn get_confidence_audit_for_task(
@@ -92,16 +49,23 @@ pub async fn get_confidence_audit_for_session(
 }
 
 /// GET /api/settings/confidence-thresholds
-pub async fn get_confidence_thresholds() -> Json<ConfidenceThresholds> {
-    Json(ConfidenceThresholds::default())
+pub async fn get_confidence_thresholds_endpoint(
+    State(state): State<Arc<AppState>>,
+    Extension(identity): Extension<crate::auth::OperatorIdentity>,
+) -> Result<Json<ConfidenceThresholds>, StatusCode> {
+    get_confidence_thresholds(&state.pool, identity.id)
+        .await
+        .map(Json)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 /// PUT /api/settings/confidence-thresholds
-pub async fn update_confidence_thresholds(
+pub async fn update_confidence_thresholds_endpoint(
+    State(state): State<Arc<AppState>>,
+    Extension(identity): Extension<crate::auth::OperatorIdentity>,
     Json(thresholds): Json<ConfidenceThresholds>,
 ) -> Result<Json<ConfidenceThresholds>, StatusCode> {
-    // TODO: Persist to settings table
-    // For now, just validate and return
+    // Validate thresholds
     if thresholds.risk_none.proceed < 0.0
         || thresholds.risk_none.proceed > 1.0
         || thresholds.risk_high.proceed > 1.0
@@ -110,6 +74,10 @@ pub async fn update_confidence_thresholds(
     {
         return Err(StatusCode::BAD_REQUEST);
     }
+
+    set_confidence_thresholds(&state.pool, identity.id, &thresholds)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(thresholds))
 }

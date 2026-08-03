@@ -232,8 +232,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         )
         .route(
             "/api/settings/confidence-thresholds",
-            get(crate::confidence_api::get_confidence_thresholds)
-                .put(crate::confidence_api::update_confidence_thresholds),
+            get(crate::confidence_api::get_confidence_thresholds_endpoint)
+                .put(crate::confidence_api::update_confidence_thresholds_endpoint),
         )
         .route("/ws/:session_id", get(crate::ws::ws_handler))
         .layer(middleware::from_fn_with_state(
