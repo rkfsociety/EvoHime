@@ -29,7 +29,8 @@ export type ServerEvent =
   | MemoryAcceptedEvent
   | MemoryRejectedEvent
   | MemoryUsedEvent
-  | AgentReflectionEvent;
+  | AgentReflectionEvent
+  | AgentConfidenceEvent;
 export type Uuid = string;
 export type DateTime = string;
 export type ClientCommand =
@@ -174,13 +175,25 @@ export interface ApprovalRequiredEvent {
   tool_name: string;
   permission: string;
   scope: string;
-  review?: UnifiedDiffReview;
+  risk_level: "none" | "low" | "medium" | "high";
+  review?: UnifiedDiffReview | FileWriteReview | UnavailableReview;
   created_at: DateTime;
 }
 export interface UnifiedDiffReview {
   kind: "unified_diff";
   path: string;
   diff: string;
+}
+export interface FileWriteReview {
+  kind: "file_write";
+  path: string;
+  change: "create" | "overwrite";
+  old_bytes?: number;
+  new_bytes: number;
+}
+export interface UnavailableReview {
+  kind: "unavailable";
+  reason: string;
 }
 export interface MemoryProposedEvent {
   type: "memory.proposed";
@@ -241,6 +254,34 @@ export interface ErrorPattern {
   pattern_name: string;
   confidence: number;
   source: "experience_memory" | "heuristic";
+}
+export interface AgentConfidenceEvent {
+  type: "agent.confidence";
+  task_id: Uuid;
+  timestamp: DateTime;
+  confidence_version?: string;
+  confidence_score: number;
+  risk_level: "none" | "low" | "medium" | "high";
+  breakdown?: {
+    model?: SignalBreakdown;
+    experience?: SignalBreakdown;
+    tools?: SignalBreakdown;
+    reflection?: SignalBreakdown;
+  };
+  reliability?: {
+    model?: string;
+    experience?: string;
+    tools?: string;
+    reflection?: string;
+  };
+  missing_signals?: string[];
+  recommendation?: "proceed" | "ask" | "require_approval";
+}
+export interface SignalBreakdown {
+  score: number;
+  reliability: string;
+  source?: string | null;
+  details?: string | null;
 }
 export interface UserMessageCommand {
   type: "user.message";

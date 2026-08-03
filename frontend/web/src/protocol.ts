@@ -6,6 +6,8 @@ export type {
   ActionLoggedEvent,
   ApprovalRequiredEvent,
   UnifiedDiffReview,
+  FileWriteReview,
+  UnavailableReview,
   MemoryAskEvent,
   MemoryProposedEvent,
   MemoryAcceptedEvent,
