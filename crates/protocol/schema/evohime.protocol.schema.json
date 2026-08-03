@@ -78,6 +78,7 @@
         ,{ "$ref": "#/$defs/MemoryRejectedEvent" }
         ,{ "$ref": "#/$defs/MemoryUsedEvent" }
         ,{ "$ref": "#/$defs/AgentReflectionEvent" }
+        ,{ "$ref": "#/$defs/AgentConfidenceEvent" }
       ]
     },
     "ClientCommand": {
@@ -437,6 +438,53 @@
           "enum": ["proceed", "ask_user", "retry_tool", "revise_plan", "escalate"]
         },
         "recommendation": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "AgentConfidenceEvent": {
+      "type": "object",
+      "required": ["type", "task_id", "timestamp", "confidence_score", "risk_level", "decision"],
+      "properties": {
+        "type": { "const": "agent.confidence" },
+        "task_id": { "$ref": "#/$defs/Uuid" },
+        "timestamp": { "$ref": "#/$defs/DateTime" },
+        "confidence_version": { "type": "string", "default": "1" },
+        "confidence_score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "risk_level": { "type": "string", "enum": ["none", "low", "medium", "high"] },
+        "breakdown": {
+          "type": "object",
+          "properties": {
+            "model": { "$ref": "#/$defs/SignalBreakdown" },
+            "experience": { "$ref": "#/$defs/SignalBreakdown" },
+            "tools": { "$ref": "#/$defs/SignalBreakdown" },
+            "reflection": { "$ref": "#/$defs/SignalBreakdown" }
+          }
+        },
+        "reliability": {
+          "type": "object",
+          "properties": {
+            "model": { "type": "string" },
+            "experience": { "type": "string" },
+            "tools": { "type": "string" },
+            "reflection": { "type": "string" }
+          }
+        },
+        "missing_signals": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "recommendation": { "type": "string", "enum": ["proceed", "ask", "require_approval"] }
+      },
+      "additionalProperties": false
+    },
+    "SignalBreakdown": {
+      "type": "object",
+      "required": ["score", "reliability"],
+      "properties": {
+        "score": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "reliability": { "type": "string" },
+        "source": { "type": ["string", "null"] },
+        "details": { "type": ["string", "null"] }
       },
       "additionalProperties": false
     },

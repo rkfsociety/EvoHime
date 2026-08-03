@@ -216,6 +216,19 @@ pub enum ServerEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         recommendation: Option<String>,
     },
+    #[serde(rename = "agent.confidence")]
+    AgentConfidence {
+        task_id: Uuid,
+        timestamp: DateTime<Utc>,
+        #[serde(default)]
+        confidence_version: String,
+        confidence_score: f32,
+        risk_level: String,
+        breakdown: serde_json::Value,
+        reliability: serde_json::Value,
+        missing_signals: Vec<String>,
+        recommendation: String, // "proceed" | "ask" | "require_approval"
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
