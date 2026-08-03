@@ -2,9 +2,29 @@ import { useEffect, useState } from "react";
 import type { ApprovalRequiredEvent } from "../protocol";
 import { DiffViewer } from "./DiffViewer";
 import { useModalA11y } from "../hooks/useModalA11y";
-import { canRememberApprovalPath, isPatchReview } from "../lib/approval-review";
+import {
+  canRememberApprovalPath,
+  isFileWriteReview,
+  isPatchReview,
+  isUnavailableReview,
+} from "../lib/approval-review";
 import { ConfidenceAndRisk } from "./ConfidenceAndRisk";
 import { ForceApproveModal } from "./ForceApproveModal";
+
+const RISK_LABELS: Record<string, string> = {
+  none: "Риск отсутствует",
+  low: "Низкий риск",
+  medium: "Средний риск",
+  high: "Высокий риск",
+};
+
+function RiskBadge({ level }: { level: string }) {
+  return (
+    <span className={`approvalRiskBadge approvalRiskBadge--${level}`}>
+      {RISK_LABELS[level] ?? level}
+    </span>
+  );
+}
 
 export function ApprovalModal({
   request,
@@ -39,6 +59,8 @@ export function ApprovalModal({
 
   const patchReview = isPatchReview(request);
   const canRememberPath = canRememberApprovalPath(request);
+  const fileWriteReview = isFileWriteReview(request) ? request : null;
+  const unavailableReview = isUnavailableReview(request) ? request : null;
   const isHighRisk = confidenceData?.risk_level === "High";
 
   return (
@@ -62,7 +84,7 @@ export function ApprovalModal({
         ) : (
           <>
             <p>
-              Инструмент: <strong>{request.tool_name}</strong>
+              Инструмент: <strong>{request.tool_name}</strong> <RiskBadge level={request.risk_level} />
             </p>
             <p>
               Разрешение: <strong>{request.permission}</strong>
@@ -70,6 +92,25 @@ export function ApprovalModal({
             <p className="approvalScope">
               Область: <code>{request.scope}</code>
             </p>
+            {fileWriteReview ? (
+              <div className="approvalPreview">
+                <p>
+                  {fileWriteReview.review.change === "create" ? "Будет создан файл" : "Будет перезаписан файл"}:{" "}
+                  <code>{fileWriteReview.review.path}</code>
+                </p>
+                <p className="approvalPreviewMeta">
+                  Новый размер: {fileWriteReview.review.new_bytes} байт
+                  {fileWriteReview.review.old_bytes != null
+                    ? ` (текущий: ${fileWriteReview.review.old_bytes} байт)`
+                    : ""}
+                </p>
+              </div>
+            ) : null}
+            {unavailableReview ? (
+              <p className="approvalPreviewUnavailable">
+                Предпросмотр недоступен: {unavailableReview.review.reason}
+              </p>
+            ) : null}
             {confidenceData ? (
               <div style={{ marginTop: "1rem", padding: "1rem", borderTop: "1px solid var(--border)" }}>
                 <ConfidenceAndRisk
