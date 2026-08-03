@@ -9,7 +9,6 @@ use evohime_storage::{
     get_confidence_thresholds, list_confidence_audit_for_session, list_confidence_audit_for_task,
     set_confidence_thresholds, ConfidenceThresholds,
 };
-use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::app::AppState;

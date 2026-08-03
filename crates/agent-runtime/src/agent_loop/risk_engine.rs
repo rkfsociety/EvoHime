@@ -77,6 +77,7 @@ pub fn determine_risk_level(plan_steps: &[PlanStep]) -> RiskLevel {
     max_risk
 }
 
+#[allow(dead_code)]
 fn is_safe_write_path(path: &str) -> bool {
     let safe_patterns = [
         ".evohime/",      // Local cache/logs
@@ -100,6 +101,7 @@ fn is_safe_write_path(path: &str) -> bool {
     false
 }
 
+#[allow(dead_code)]
 fn is_dangerous_shell_command(cmd: &str) -> bool {
     let dangerous_patterns = [
         "rm -rf",

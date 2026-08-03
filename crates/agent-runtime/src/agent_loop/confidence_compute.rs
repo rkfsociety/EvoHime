@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use super::confidence_gate::{compute_confidence, ConfidenceComputeResult};
 use super::model_confidence::{ConfidenceReliability, ModelConfidenceSignal};
-use super::risk_engine::{determine_risk_level, RiskLevel};
+use super::risk_engine::determine_risk_level;
 use evohime_protocol::PlanStep;
 
 fn tool_metrics_reliability_to_confidence(
@@ -28,7 +28,7 @@ pub async fn compute_plan_confidence(
     _task_id: Uuid,
 ) -> ConfidenceComputeResult {
     // 1. Determine risk level from planned steps
-    let risk_level = determine_risk_level(plan_steps);
+    let _risk_level = determine_risk_level(plan_steps);
 
     // 2. Get tool success rates
     let tool_names: Vec<String> = plan_steps

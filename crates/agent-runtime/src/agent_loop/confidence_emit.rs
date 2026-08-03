@@ -1,7 +1,6 @@
 use chrono::Utc;
 use evohime_protocol::ServerEvent;
 use tokio::sync::mpsc::UnboundedSender;
-use uuid::Uuid;
 
 use super::confidence_compute::compute_plan_confidence;
 use super::confidence_gate::ConfidenceComputeResult;
