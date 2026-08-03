@@ -36,7 +36,9 @@ pub async fn build_executable_plan(
 
     match validate_and_sort_graph(&dep_map) {
         Ok(graph) => {
-            // Graph is valid; materialize sequential dependencies for backward compat
+            // Check if this is a legacy linear plan (all steps have no dependencies)
+            let is_legacy_linear = response.steps.iter().all(|s| s.depends_on.is_empty());
+
             let mut ordered_steps = Vec::new();
             for (idx, step_id) in graph.topological_order.iter().enumerate() {
                 let mut step = response.steps.iter().find(|s| &s.id == step_id)
@@ -45,11 +47,10 @@ pub async fn build_executable_plan(
                         format!("step {} in topological order not found", step_id)
                     ))?;
 
-                // BLOCKER #1 FIX: Materialize implicit sequential deps
-                // If step has no dependencies (empty depends_on), it should depend on
-                // the immediately previous step to maintain sequential order.
-                // This handles both legacy linear plans and cyclic fallback.
-                if step.depends_on.is_empty() && idx > 0 {
+                // BLOCKER #1 FIX: Materialize implicit sequential deps ONLY for legacy linear plans
+                // If plan has explicit dependencies, keep them as-is.
+                // Only materialize for backward compat when ALL steps have empty depends_on.
+                if is_legacy_linear && step.depends_on.is_empty() && idx > 0 {
                     step.depends_on = vec![graph.topological_order[idx - 1].clone()];
                 }
 

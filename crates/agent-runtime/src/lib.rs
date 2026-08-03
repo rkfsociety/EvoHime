@@ -8,6 +8,7 @@ pub mod reflection;
 mod review;
 mod subagent;
 
+pub use agent_loop::graph_executor::{compute_execution_batches, ExecutionBatches, ExecutorError};
 pub use agent_loop::reflection_stage::{
     ReflectionStage, ReflectionStageInput, ReflectionStageOutput,
 };
