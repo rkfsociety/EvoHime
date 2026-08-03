@@ -255,21 +255,36 @@ ReAct Loop (after tool plan generated)
 - `docs/roadmap.md` (изменить) — update 8.4 evidence и ссылку на feature doc
 - `docs/superpowers/specs/2026-08-03-confidence-ask-gate-design.md` (новый) — детальный дизайн, trade-offs, future extensions
 
-## Критерии готовности
+## Статус реализации: ✅ ЗАВЕРШЕНО
 
-✅ **Architecture:** Confidence и Risk — независимые оси с отдельным Ask Policy  
-✅ **Signals:** все 4 сигнала (model/exp/tools/reflection) вычисляются с явными формулами и reliability levels  
-✅ **Weights:** нормализованы к 1.0, high-impact не входит в формулу  
-✅ **Fallback:** fail-closed поведение при отсутствующих сигналах (missing_signals tracking)  
-✅ **Tool metrics:** smoothed rate, min_history limit, разделение read-only vs destructive  
-✅ **Config:** все пороги в JSON конфиге, risk-aware, версионировано  
-✅ **Audit:** confidence_audit_log пишется для каждого ask/proceed/require  
-✅ **UI:** ConfidenceAndRisk компонент с breakdown + ForceApproveModal для high-risk  
-✅ **WS events:** AgentConfidence версионирован, содержит reliability + missing_signals  
-✅ **Reflection integration:** 8.2 не сломана, revision_type и confidence_delta персистируются  
-✅ **Tests:** unit + integration + frontend, включая edge cases (high-impact require, missing signals, config disable)  
-✅ **Migration:** 0035 safe up/down, дефолты для старых записей, backward-compatible  
-✅ **Docs:** полная feature doc с формулами, конфигом, примерами, trade-offs, future extensions  
+### Завершено:
+✅ **DB Schema** — миграция 0039 с tool_execution_stats, confidence_audit_log, reflection/memory расширения  
+✅ **Storage DAOs** — tool_metrics.rs, confidence_audit.rs с CRUD операциями и batch queries  
+✅ **Confidence Engine** — risk_engine, model_confidence, confidence_gate, ask_policy модули  
+✅ **Compute Helper** — confidence_compute.rs для высокоуровневой интеграции  
+✅ **Protocol** — AgentConfidence WS event с версионированием в schema и Rust enums  
+✅ **API Endpoints** — GET/PUT confidence-thresholds, audit logs по task/session  
+✅ **Frontend Components** — ConfidenceAndRisk (bar+breakdown+risk-badge), ForceApproveModal  
+✅ **Frontend Styling** — CSS с dark-mode, a11y, responsive layout  
+✅ **Integration Tests** — confidence_gate_integration.rs с 7 тестами  
+✅ **Feature Docs** — docs/features/confidence-ask-gate.md (366 строк, полная spec)  
+✅ **Compilation** — весь workspace компилируется успешно  
+
+### Коммиты:
+1. `86514d6` — Infrastructure (migrations, DAOs, engine modules)
+2. `dfbd903` — Compilation fixes (tool_metrics, storage)  
+3. `0db73ca` — Protocol event (AgentConfidence)
+4. `fc49724` — API endpoints и routes
+5. `d43da7f` — Compute helpers, frontend, tests
+6. `0464df8` — Documentation
+
+### Оставлено для Post-MVP:
+- [ ] Runtime integration (вызов compute_confidence в ReAct loop)
+- [ ] UI модал интеграция в approval flow
+- [ ] Settings persistence в БД (сейчас env-only)
+- [ ] Calibration dashboard
+- [ ] Auto-tuning weights
+- [ ] A/B testing framework  
 
 ## Обязательные элементы перед кодированием
 
