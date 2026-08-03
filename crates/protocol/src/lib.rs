@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 pub mod planning;
 
-pub use planning::{PlanCandidate, ScoreBreakdown};
+pub use planning::{PlanCandidate, PlanGenerationResponse, ScoreBreakdown};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PlanStep {

@@ -1,5 +1,14 @@
 use serde::{Deserialize, Serialize};
 
+/// LLM response for plan generation with dependency structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlanGenerationResponse {
+    pub plan_title: String,
+    pub reasoning: String,
+    // Uses crate::PlanStep which has depends_on field
+    pub steps: Vec<crate::PlanStep>,
+}
+
 /// Represents a single candidate plan with its evaluation metrics
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PlanCandidate {

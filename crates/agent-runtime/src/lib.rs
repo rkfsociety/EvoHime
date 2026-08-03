@@ -2,6 +2,7 @@ mod agent_loop;
 mod llm_telemetry;
 mod native_tools;
 mod planning;
+pub mod plan_generation;
 pub mod planning_graph;
 pub mod reflection;
 mod review;
