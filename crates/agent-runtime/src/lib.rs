@@ -1,4 +1,4 @@
-mod agent_loop;
+pub mod agent_loop;
 mod llm_telemetry;
 mod native_tools;
 mod planning;

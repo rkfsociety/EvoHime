@@ -160,8 +160,8 @@ mod tests {
         );
 
         // Should have significant penalties applied
-        let raw = 0.35 * 0.8 + 0.25 * 0.7 + 0.25 * 0.6 + 0.15 * 0.5;
-        let penalized = raw - 0.15 - 0.1 - 0.1 - 0.15;
+        let raw: f32 = 0.35 * 0.8 + 0.25 * 0.7 + 0.25 * 0.6 + 0.15 * 0.5;
+        let penalized: f32 = raw - 0.15 - 0.1 - 0.1 - 0.15;
         assert!((result.confidence_score - penalized.clamp(0.0, 1.0)).abs() < 0.01);
     }
 }
