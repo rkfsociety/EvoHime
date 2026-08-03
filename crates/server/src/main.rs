@@ -3,6 +3,7 @@ mod api_error;
 mod app;
 mod attachments_api;
 mod auth;
+mod confidence_api;
 mod cors;
 mod features;
 mod github_api;

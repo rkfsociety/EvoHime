@@ -221,6 +221,20 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             get(crate::permissions_api::list_mcp_servers)
                 .put(crate::permissions_api::update_mcp_servers),
         )
+        // Stage 8.4: Confidence gate endpoints
+        .route(
+            "/api/confidence/audit/task/:task_id",
+            get(crate::confidence_api::get_confidence_audit_for_task),
+        )
+        .route(
+            "/api/confidence/audit/session/:session_id",
+            get(crate::confidence_api::get_confidence_audit_for_session),
+        )
+        .route(
+            "/api/settings/confidence-thresholds",
+            get(crate::confidence_api::get_confidence_thresholds)
+                .put(crate::confidence_api::update_confidence_thresholds),
+        )
         .route("/ws/:session_id", get(crate::ws::ws_handler))
         .layer(middleware::from_fn_with_state(
             state.clone(),
