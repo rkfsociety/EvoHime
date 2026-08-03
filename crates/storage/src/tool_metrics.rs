@@ -1,9 +1,9 @@
-use sqlx::PgPool;
+use sqlx::{PgPool, FromRow};
 use uuid::Uuid;
 use chrono::{DateTime, Utc, Duration};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct ToolExecutionStat {
     pub id: i64,
     pub tool_name: String,
@@ -13,6 +13,7 @@ pub struct ToolExecutionStat {
     pub task_id: Uuid,
     pub workspace_path: Option<String>,
     pub created_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
 }
 
@@ -75,22 +76,22 @@ pub async fn get_tool_success_rate(
 ) -> Result<ToolSuccessRate, sqlx::Error> {
     let cutoff_date = Utc::now() - Duration::days(days_lookback);
 
-    let row = sqlx::query!(
+    let row: (Option<i64>, Option<i64>) = sqlx::query_as(
         r#"
         SELECT
-            COUNT(*) FILTER (WHERE success = true) as success_count,
-            COUNT(*) as total_count
+            COUNT(*) FILTER (WHERE success = true)::bigint,
+            COUNT(*)::bigint
         FROM tool_execution_stats
         WHERE tool_name = $1 AND created_at > $2
-        "#,
-        tool_name,
-        cutoff_date
+        "#
     )
+    .bind(tool_name)
+    .bind(cutoff_date)
     .fetch_one(pool)
     .await?;
 
-    let success_count = row.success_count.unwrap_or(0);
-    let total_count = row.total_count.unwrap_or(0);
+    let success_count = row.0.unwrap_or(0);
+    let total_count = row.1.unwrap_or(0);
 
     let smoothed_rate = ((success_count + 1) as f32) / ((total_count + 2) as f32);
     let reliability = if total_count >= MIN_HISTORY_FOR_RELIABLE {
@@ -122,19 +123,26 @@ pub async fn get_tools_success_rates(
 
     let cutoff_date = Utc::now() - Duration::days(days_lookback);
 
-    let rows = sqlx::query!(
+    #[derive(FromRow)]
+    struct RowData {
+        tool_name: String,
+        success_count: Option<i64>,
+        total_count: Option<i64>,
+    }
+
+    let rows = sqlx::query_as::<_, RowData>(
         r#"
         SELECT
             tool_name,
-            COUNT(*) FILTER (WHERE success = true) as success_count,
-            COUNT(*) as total_count
+            COUNT(*) FILTER (WHERE success = true)::bigint as success_count,
+            COUNT(*)::bigint as total_count
         FROM tool_execution_stats
         WHERE tool_name = ANY($1) AND created_at > $2
         GROUP BY tool_name
-        "#,
-        tool_names,
-        cutoff_date
+        "#
     )
+    .bind(tool_names)
+    .bind(cutoff_date)
     .fetch_all(pool)
     .await?;
 
@@ -165,7 +173,7 @@ pub async fn get_tools_success_rates(
 }
 
 /// Classify tool as read-only vs destructive
-pub fn classify_tool_destructiveness(tool_name: &str, operation_type: Option<&str>) -> bool {
+pub fn classify_tool_destructiveness(tool_name: &str, _operation_type: Option<&str>) -> bool {
     let read_only = [
         "filesystem.read",
         "filesystem.search",

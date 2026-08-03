@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
 use crate::agent_loop::model_confidence::{ConfidenceReliability, ModelConfidenceSignal};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

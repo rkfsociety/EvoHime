@@ -1,4 +1,4 @@
-use crate::protocol::PlanStep;
+use evohime_protocol::PlanStep;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -41,23 +41,8 @@ pub fn determine_risk_level(plan_steps: &[PlanStep]) -> RiskLevel {
             "browser.session.read" | "browser.session.screenshot" => RiskLevel::None,
             "memory.search" => RiskLevel::None,
 
-            // Safe writes → Low
-            "filesystem.write" => {
-                // Check if path suggests safe location
-                if let Some(args) = &step.tool_params {
-                    if let Ok(path) = args.get("path").and_then(|p| p.as_str()) {
-                        if is_safe_write_path(path) {
-                            RiskLevel::Low
-                        } else {
-                            RiskLevel::Medium
-                        }
-                    } else {
-                        RiskLevel::Medium
-                    }
-                } else {
-                    RiskLevel::Medium
-                }
-            }
+            // Safe writes → Low (conservative: no params available, assume Medium)
+            "filesystem.write" => RiskLevel::Medium,
 
             // Code modifications → Medium
             "filesystem.patch" => RiskLevel::Medium,
@@ -67,23 +52,8 @@ pub fn determine_risk_level(plan_steps: &[PlanStep]) -> RiskLevel {
             "git.push" => RiskLevel::High,
             "git.pull" => RiskLevel::Low, // Pull is generally safe but can introduce changes
 
-            // Shell is dangerous → High
-            "shell.execute" => {
-                // Check for dangerous patterns
-                if let Some(args) = &step.tool_params {
-                    if let Ok(cmd) = args.get("command").and_then(|c| c.as_str()) {
-                        if is_dangerous_shell_command(cmd) {
-                            RiskLevel::High
-                        } else {
-                            RiskLevel::Medium
-                        }
-                    } else {
-                        RiskLevel::High
-                    }
-                } else {
-                    RiskLevel::High
-                }
-            }
+            // Shell is dangerous → High (conservative: no params to analyze)
+            "shell.execute" => RiskLevel::High,
 
             // MCP calls and other tools
             "mcp.call" => RiskLevel::Medium,
