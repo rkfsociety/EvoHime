@@ -122,7 +122,7 @@ pub async fn stage_and_switch(
                 .connect(dsn)
                 .await
                 .map_err(|err| UpdateError::Io(std::io::Error::other(err.to_string())))?;
-            apply_migrations(&pool, &migrations_dir).await?;
+            apply_migrations(&pool, &migrations_dir, progress).await?;
         }
     }
 
