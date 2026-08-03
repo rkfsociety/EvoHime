@@ -14,6 +14,7 @@ pub mod memory;
 pub mod metrics_snapshots;
 pub mod operators;
 pub mod permission_audit;
+pub mod planning_graph;
 pub mod planning_history;
 pub mod plugin_audit;
 pub mod plugin_skills;
