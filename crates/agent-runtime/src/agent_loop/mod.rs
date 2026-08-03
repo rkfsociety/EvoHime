@@ -2,6 +2,7 @@
 
 mod context;
 mod execute;
+pub mod graph_executor;
 mod parse;
 mod react;
 pub mod reflection_stage;
