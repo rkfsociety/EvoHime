@@ -100,6 +100,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Test artifact downloads
         run: cargo test -p evohime-artifacts
+      - name: Test native core skeleton
+        run: cargo test -p evohime-core -p evohime-local-storage -p evohime-supervisor
       - name: Test install-owned process cleanup
         run: "cargo test -p evohime-win-support --test process_snapshot_windows"
       - name: Test installer ACL recovery

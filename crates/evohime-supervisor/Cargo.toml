@@ -1,0 +1,11 @@
+[package]
+name = "evohime-supervisor"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "evohime-supervisor"
+path = "src/main.rs"
+
+[dependencies]
+

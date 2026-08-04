@@ -16,5 +16,8 @@ members = [
   "crates/installer",
   "crates/artifacts",
   "crates/updater",
+  "crates/evohime-core",
+  "crates/evohime-local-storage",
+  "crates/evohime-supervisor",
 ]
 resolver = "2"

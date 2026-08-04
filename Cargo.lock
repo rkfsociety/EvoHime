@@ -1575,6 +1575,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "evohime-core"
+version = "0.1.0"
+
+[[package]]
 name = "evohime-evals"
 version = "0.1.0"
 dependencies = [
@@ -1637,6 +1641,10 @@ dependencies = [
  "windows",
  "zip",
 ]
+
+[[package]]
+name = "evohime-local-storage"
+version = "0.1.0"
 
 [[package]]
 name = "evohime-memory"
@@ -1762,6 +1770,10 @@ dependencies = [
  "tokio",
  "uuid",
 ]
+
+[[package]]
+name = "evohime-supervisor"
+version = "0.1.0"
 
 [[package]]
 name = "evohime-task-engine"
