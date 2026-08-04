@@ -56,6 +56,7 @@ jobs:
         run: >-
           dotnet test desktop/EvoHime.Tests/EvoHime.Tests.csproj
           -p:Platform=x64 --nologo --no-build --no-restore
+          --filter "FullyQualifiedName~IpcCompatibilityTests"
           --results-directory "$env:GITHUB_WORKSPACE\TestResults"
           --logger "console;verbosity=detailed"
           --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type mini

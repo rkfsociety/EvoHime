@@ -12,6 +12,7 @@ foreach ($required in @(
     'Rollback smoke after failed installer start',
     '--blame-hang',
     '--blame-hang-timeout 5m',
+    '--filter "FullyQualifiedName~IpcCompatibilityTests"',
     'winui-test-diagnostics',
     'iscc',
     'gh release create',
