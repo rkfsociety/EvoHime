@@ -4,6 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.IO;
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace EvoHime.Tests;
 
@@ -89,5 +90,27 @@ public sealed class IpcCompatibilityTests
         Assert.IsTrue(state.ApplyEvent(new CoreEventEnvelope(4, "task", "task.started", [])));
         Assert.IsFalse(state.ApplyEvent(new CoreEventEnvelope(4, "task", "task.started", [])));
         Assert.AreEqual((ulong)4, state.LastSequence);
+    }
+
+    [TestMethod]
+    public async Task WorkspaceSettingsRoundTripAndRecoverFromCorruptJson()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "evohime-settings-" + Guid.NewGuid().ToString("N"));
+        var settings = new WorkspaceSettings(Path.Combine(root, "settings.json"));
+        try
+        {
+            await settings.SaveWorkspaceAsync("C:\\Projects\\demo");
+            Assert.AreEqual("C:\\Projects\\demo", await settings.LoadWorkspaceAsync());
+
+            await File.WriteAllTextAsync(settings.FilePath, "not-json");
+            Assert.IsNull(await settings.LoadWorkspaceAsync());
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
     }
 }

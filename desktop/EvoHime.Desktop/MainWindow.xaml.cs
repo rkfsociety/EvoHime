@@ -9,6 +9,7 @@ public partial class MainWindow : Window
 {
     private readonly CoreIpcClient _ipc = new("evohime-core-v1");
     private readonly NativeShellState _state = new();
+    private readonly WorkspaceSettings _settings = new();
     private CancellationTokenSource? _eventCts;
     private string? _activeTaskId;
     private int _reconnectAttempt;
@@ -18,6 +19,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         _state.SelectWorkspace(Environment.CurrentDirectory);
         WorkspacePathText.Text = $"Workspace: {_state.WorkspacePath}";
+        _ = RestoreWorkspaceAsync();
     }
 
     private async void ChooseWorkspaceButton_Click(object sender, RoutedEventArgs e)
@@ -32,8 +34,21 @@ public partial class MainWindow : Window
         }
 
         _state.SelectWorkspace(folder.Path);
+        await _settings.SaveWorkspaceAsync(folder.Path);
         WorkspacePathText.Text = $"Workspace: {_state.WorkspacePath}";
         ConnectionStatus.Text = "Workspace выбран.";
+    }
+
+    private async Task RestoreWorkspaceAsync()
+    {
+        var savedPath = await _settings.LoadWorkspaceAsync();
+        if (savedPath is null || !Directory.Exists(savedPath))
+        {
+            return;
+        }
+
+        _state.SelectWorkspace(savedPath);
+        WorkspacePathText.Text = $"Workspace: {_state.WorkspacePath}";
     }
 
     private async void StartButton_Click(object sender, RoutedEventArgs e)
