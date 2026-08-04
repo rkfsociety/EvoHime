@@ -19,5 +19,6 @@ members = [
   "crates/evohime-core",
   "crates/evohime-local-storage",
   "crates/evohime-supervisor",
+  "crates/desktop-ipc",
 ]
 resolver = "2"

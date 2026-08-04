@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package evohime.desktop.v1;
+
+message ProtocolVersion {
+  uint32 major = 1;
+  uint32 minor = 2;
+}
+
+message Handshake {
+  ProtocolVersion protocol = 1;
+  string client_id = 2;
+}
+
+message ReplayEvents {
+  uint64 after_sequence = 1;
+}
+
+message CommandEnvelope {
+  ProtocolVersion protocol = 1;
+  string request_id = 2;
+  oneof command {
+    Handshake handshake = 10;
+    ReplayEvents replay_events = 11;
+  }
+}
+
+message Ready {
+  ProtocolVersion protocol = 1;
+  string core_version = 2;
+}
+
+message EventEnvelope {
+  ProtocolVersion protocol = 1;
+  uint64 sequence_id = 2;
+  string task_id = 3;
+  oneof event {
+    Ready ready = 10;
+  }
+}
