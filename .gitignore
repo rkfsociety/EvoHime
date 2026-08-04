@@ -1,5 +1,6 @@
 target/
 artifacts/
+.evohime-native/
 desktop/**/bin/
 desktop/**/obj/
 node_modules/
