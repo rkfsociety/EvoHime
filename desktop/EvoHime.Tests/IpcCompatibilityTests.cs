@@ -90,6 +90,41 @@ public sealed class IpcCompatibilityTests
     }
 
     [TestMethod]
+    public void ResolveApprovalEnvelopeCarriesDecision()
+    {
+        var payload = ProtocolEnvelope.ResolveApproval("approval-1", true);
+        using var input = new CodedInputStream(payload);
+        var nested = Array.Empty<byte>();
+        while (!input.IsAtEnd)
+        {
+            var tag = input.ReadTag();
+            if ((tag >> 3) == 14)
+            {
+                nested = input.ReadBytes().ToByteArray();
+                break;
+            }
+            input.SkipLastField();
+        }
+
+        using var command = new CodedInputStream(nested);
+        var approvalId = string.Empty;
+        var granted = false;
+        while (!command.IsAtEnd)
+        {
+            var tag = command.ReadTag();
+            switch (tag >> 3)
+            {
+                case 1: approvalId = command.ReadString(); break;
+                case 2: granted = command.ReadBool(); break;
+                default: command.SkipLastField(); break;
+            }
+        }
+
+        Assert.AreEqual("approval-1", approvalId);
+        Assert.IsTrue(granted);
+    }
+
+    [TestMethod]
     public void EventEnvelopeRoundTripsSequenceAndPayload()
     {
         using var buffer = new MemoryStream();

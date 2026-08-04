@@ -17,17 +17,25 @@ async fn main() {
             std::process::exit(1);
         }
     };
+    let tools = std::sync::Arc::new(evohime_tool_runtime::ToolRegistry::bootstrap());
+    let approvals = evohime_core::ApprovalCoordinator::default();
     let executor = evohime_model_gateway::ModelGateway::try_from_env()
         .ok()
         .map(|gateway| {
-            std::sync::Arc::new(evohime_core::ToolAgent::new(
+            std::sync::Arc::new(evohime_core::ToolAgent::new_with_approvals(
                 std::sync::Arc::new(gateway),
-                std::sync::Arc::new(evohime_tool_runtime::ToolRegistry::bootstrap()),
+                tools.clone(),
+                approvals.clone(),
             )) as std::sync::Arc<dyn evohime_core::TaskExecutor>
         });
     let (coordinator, _events) =
         evohime_core::TaskCoordinator::new_with_journal(256, executor, journal.clone());
-    let bridge = evohime_core::IpcBridge::with_coordinator(journal, coordinator);
+    let bridge = evohime_core::IpcBridge::with_coordinator_and_approvals(
+        journal,
+        coordinator,
+        approvals,
+        tools,
+    );
     let logger = match evohime_core::StructuredLogger::open(data_dir.join("logs/core.jsonl")) {
         Ok(logger) => std::sync::Arc::new(logger),
         Err(error) => {

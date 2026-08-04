@@ -366,6 +366,65 @@ impl ToolRegistry {
         }
     }
 
+    pub async fn execute_after_approval(
+        &self,
+        ctx: &ToolContext,
+        name: &str,
+        input: Value,
+        approval_id: Uuid,
+        cancellation: CancellationToken,
+    ) -> Result<ToolResult, ToolError> {
+        let granted = self
+            .permissions
+            .approval(approval_id)
+            .await
+            .map(|(_, state)| state == evohime_permissions::ApprovalState::Granted)
+            .unwrap_or(false);
+        if !granted {
+            return Err(ToolError::Execution("approval is not granted".to_string()));
+        }
+        let definition = self
+            .tools
+            .get(name)
+            .ok_or_else(|| ToolError::UnknownTool(name.to_string()))?;
+        let execution = async {
+            match name {
+            tools::filesystem::NAME => tools::filesystem::execute(ctx, input).await,
+            tools::write::NAME => tools::write::execute(ctx, input).await,
+            tools::patch::NAME => tools::patch::execute(ctx, input).await,
+            tools::search::NAME => tools::search::execute(ctx, input).await,
+            tools::list::NAME => tools::list::execute(ctx, input).await,
+            tools::shell::NAME => tools::shell::execute(ctx, input, cancellation.clone()).await,
+            tools::git::STATUS_NAME => tools::git::status(ctx, input).await,
+            tools::git::DIFF_NAME => tools::git::diff(ctx, input).await,
+            tools::git::COMMIT_NAME => tools::git::commit(ctx, input).await,
+            tools::git::PULL_NAME => tools::git::pull(ctx, input).await,
+            tools::git::PUSH_NAME => tools::git::push(ctx, input).await,
+            tools::mcp::NAME => tools::mcp::execute(ctx, input).await,
+            tools::memory::NAME => tools::memory::execute(ctx, input).await,
+            tools::worker::NAME => tools::worker::execute(ctx, input).await,
+            tools::agent::NAME => tools::agent::execute(ctx, input).await,
+            tools::browser::OPEN_NAME => tools::browser::open(ctx, input).await,
+            tools::browser::EXTRACT_NAME => tools::browser::extract(ctx, input).await,
+            tools::browser_session::NAVIGATE_NAME => tools::browser_session::navigate(ctx, input).await,
+            tools::browser_session::READ_NAME => tools::browser_session::read(ctx, input).await,
+            tools::browser_session::CLICK_NAME => tools::browser_session::click(ctx, input).await,
+            tools::browser_session::SCREENSHOT_NAME => tools::browser_session::screenshot(ctx, input).await,
+            tools::browser_session::TYPE_NAME => tools::browser_session::type_text(ctx, input).await,
+            tools::browser_session::CLOSE_NAME => tools::browser_session::close(ctx, input).await,
+            tools::http::NAME => tools::http::fetch(ctx, input).await,
+                _ => Err(ToolError::UnknownTool(name.to_string())),
+            }
+        };
+        tokio::select! {
+            _ = cancellation.cancelled() => Err(ToolError::Execution("tool cancelled".to_string())),
+            result = tokio::time::timeout(definition.timeout, execution) => match result {
+                Ok(result) => result,
+                Err(_) => Err(ToolError::TimedOut(definition.timeout)),
+            },
+        }
+    }
+
     pub async fn execute_cancellable(
         &self,
         ctx: &ToolContext,

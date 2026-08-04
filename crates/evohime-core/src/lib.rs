@@ -48,7 +48,7 @@ use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use futures_util::future::BoxFuture;
 use futures_util::StreamExt;
 use serde::Serialize;
-use tokio::sync::{broadcast, mpsc, Mutex};
+use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,6 +82,14 @@ pub enum CoreEvent {
         tool_name: String,
         output: String,
     },
+    ApprovalRequired {
+        task_id: String,
+        approval_id: String,
+        tool_name: String,
+        permission: String,
+        scope: String,
+        input: serde_json::Value,
+    },
     TaskCompleted {
         task_id: String,
         final_message: String,
@@ -113,6 +121,7 @@ impl EventJournal {
             | CoreEvent::AssistantDelta { task_id, .. }
             | CoreEvent::ToolStarted { task_id, .. }
             | CoreEvent::ToolOutput { task_id, .. }
+            | CoreEvent::ApprovalRequired { task_id, .. }
             | CoreEvent::TaskCompleted { task_id, .. }
             | CoreEvent::TaskFailed { task_id, .. }
             | CoreEvent::TaskStopped { task_id } => task_id,
@@ -122,6 +131,7 @@ impl EventJournal {
             CoreEvent::AssistantDelta { .. } => "agent.message.delta",
             CoreEvent::ToolStarted { .. } => "tool.started",
             CoreEvent::ToolOutput { .. } => "tool.output",
+            CoreEvent::ApprovalRequired { .. } => "approval.required",
             CoreEvent::TaskCompleted { .. } => "task.completed",
             CoreEvent::TaskFailed { .. } => "task.failed",
             CoreEvent::TaskStopped { .. } => "task.stopped",
@@ -147,6 +157,28 @@ pub enum AgentRunError {
     Provider(#[from] ProviderError),
     #[error("agent execution was cancelled")]
     Cancelled,
+}
+
+#[derive(Clone, Default)]
+pub struct ApprovalCoordinator {
+    pending: Arc<Mutex<HashMap<uuid::Uuid, oneshot::Sender<bool>>>>,
+}
+
+impl ApprovalCoordinator {
+    pub async fn register(&self, approval_id: uuid::Uuid) -> oneshot::Receiver<bool> {
+        let (sender, receiver) = oneshot::channel();
+        self.pending.lock().await.insert(approval_id, sender);
+        receiver
+    }
+
+    pub async fn resolve(&self, approval_id: uuid::Uuid, granted: bool) -> bool {
+        self.pending
+            .lock()
+            .await
+            .remove(&approval_id)
+            .map(|sender| sender.send(granted).is_ok())
+            .unwrap_or(false)
+    }
 }
 
 pub trait TaskExecutor: Send + Sync {
@@ -248,14 +280,24 @@ pub struct ToolAgent {
     gateway: Arc<ModelGateway>,
     tools: Arc<ToolRegistry>,
     max_iterations: usize,
+    approvals: ApprovalCoordinator,
 }
 
 impl ToolAgent {
     pub fn new(gateway: Arc<ModelGateway>, tools: Arc<ToolRegistry>) -> Self {
+        Self::new_with_approvals(gateway, tools, ApprovalCoordinator::default())
+    }
+
+    pub fn new_with_approvals(
+        gateway: Arc<ModelGateway>,
+        tools: Arc<ToolRegistry>,
+        approvals: ApprovalCoordinator,
+    ) -> Self {
         Self {
             gateway,
             tools,
             max_iterations: 8,
+            approvals,
         }
     }
 
@@ -335,6 +377,41 @@ impl ToolAgent {
                     result = self.tools.execute_with_cancellation(&context, &call.name, input, cancellation.clone()) => result,
                 } {
                     Ok(result) => result.output,
+                    Err(evohime_tool_runtime::ToolError::NeedsApproval {
+                        tool,
+                        permission,
+                        scope,
+                        approval_id,
+                        input,
+                    }) => {
+                        let receiver = self.approvals.register(approval_id).await;
+                        let _ = events.send(CoreEvent::ApprovalRequired {
+                            task_id: task_id.clone(),
+                            approval_id: approval_id.to_string(),
+                            tool_name: tool.clone(),
+                            permission: format!("{permission:?}"),
+                            scope,
+                            input: input.clone(),
+                        });
+                        let granted = tokio::select! {
+                            _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
+                            result = receiver => result.unwrap_or(false),
+                        };
+                        if !granted {
+                            "approval denied".to_string()
+                        } else {
+                            match self.tools.execute_after_approval(
+                                &context,
+                                &tool,
+                                input,
+                                approval_id,
+                                cancellation.clone(),
+                            ).await {
+                                Ok(result) => result.output,
+                                Err(error) => error.to_string(),
+                            }
+                        }
+                    }
                     Err(error) => error.to_string(),
                 };
                 let _ = events.send(CoreEvent::ToolOutput {
@@ -384,6 +461,7 @@ impl TaskExecutor for ToolAgent {
             gateway: Arc::clone(&self.gateway),
             tools: Arc::clone(&self.tools),
             max_iterations: self.max_iterations,
+            approvals: self.approvals.clone(),
         };
         Box::pin(async move {
             agent
@@ -544,6 +622,17 @@ mod tests {
     use tokio_util::sync::CancellationToken;
 
     struct NeverExecutor;
+
+    #[tokio::test]
+    async fn approval_coordinator_resolves_pending_request_once() {
+        let coordinator = super::ApprovalCoordinator::default();
+        let approval_id = uuid::Uuid::new_v4();
+        let receiver = coordinator.register(approval_id).await;
+
+        assert!(coordinator.resolve(approval_id, true).await);
+        assert!(!coordinator.resolve(approval_id, false).await);
+        assert!(receiver.await.expect("approval response"));
+    }
 
     impl TaskExecutor for NeverExecutor {
         fn execute(

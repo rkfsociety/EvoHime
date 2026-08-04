@@ -2,7 +2,9 @@ use evohime_desktop_ipc::{generated, transport, FrameError};
 use prost::Message;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use crate::{CoreCommand, EventJournal, TaskCoordinator};
+use crate::{ApprovalCoordinator, CoreCommand, EventJournal, TaskCoordinator};
+use evohime_tool_runtime::ToolRegistry;
+use std::sync::Arc;
 
 const PROTOCOL_MAJOR: u32 = 1;
 const PROTOCOL_MINOR: u32 = 0;
@@ -18,6 +20,8 @@ pub enum IpcBridgeError {
 pub struct IpcBridge {
     journal: EventJournal,
     coordinator: Option<TaskCoordinator>,
+    approvals: Option<ApprovalCoordinator>,
+    tools: Option<Arc<ToolRegistry>>,
 }
 
 impl IpcBridge {
@@ -25,6 +29,8 @@ impl IpcBridge {
         Self {
             journal,
             coordinator: None,
+            approvals: None,
+            tools: None,
         }
     }
 
@@ -32,6 +38,22 @@ impl IpcBridge {
         Self {
             journal,
             coordinator: Some(coordinator),
+            approvals: None,
+            tools: None,
+        }
+    }
+
+    pub fn with_coordinator_and_approvals(
+        journal: EventJournal,
+        coordinator: TaskCoordinator,
+        approvals: ApprovalCoordinator,
+        tools: Arc<ToolRegistry>,
+    ) -> Self {
+        Self {
+            journal,
+            coordinator: Some(coordinator),
+            approvals: Some(approvals),
+            tools: Some(tools),
         }
     }
 
@@ -107,6 +129,20 @@ impl IpcBridge {
                         })
                         .await
                         .map_err(|error| FrameError::Io(error.to_string()))?;
+                }
+            }
+            Some(generated::command_envelope::Command::ResolveApproval(resolve)) => {
+                let approval_id = uuid::Uuid::parse_str(&resolve.approval_id)
+                    .map_err(|error| FrameError::Io(format!("invalid approval id: {error}")))?;
+                if let (Some(approvals), Some(tools)) = (&self.approvals, &self.tools) {
+                    if tools
+                        .permissions()
+                        .resolve(approval_id, resolve.granted)
+                        .await
+                        .is_some()
+                    {
+                        let _ = approvals.resolve(approval_id, resolve.granted).await;
+                    }
                 }
             }
             None => {}

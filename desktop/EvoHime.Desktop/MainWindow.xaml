@@ -25,11 +25,19 @@
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />
         <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
       </Grid.RowDefinitions>
       <TextBox x:Name="PromptBox" Header="Задача" PlaceholderText="Что нужно сделать?" AcceptsReturn="True" TextWrapping="Wrap" />
       <ScrollViewer Grid.Row="1" MaxHeight="360">
         <TextBlock x:Name="EventLog" TextWrapping="Wrap" />
       </ScrollViewer>
+      <StackPanel x:Name="ApprovalPanel" Grid.Row="2" Spacing="8" Visibility="Collapsed">
+        <TextBlock x:Name="ApprovalText" TextWrapping="Wrap" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Content="Разрешить" Click="ApproveButton_Click" />
+          <Button Content="Отклонить" Click="DenyButton_Click" />
+        </StackPanel>
+      </StackPanel>
     </Grid>
     <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="12">
       <Button x:Name="StartButton" Content="Запустить" Click="StartButton_Click" />

@@ -2,6 +2,7 @@ using Microsoft.UI.Xaml;
 using EvoHime.Desktop.Services;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
+using System.Text.Json;
 
 namespace EvoHime.Desktop;
 
@@ -15,6 +16,7 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _eventCts;
     private string? _activeTaskId;
     private int _reconnectAttempt;
+    private string? _pendingApprovalId;
 
     public MainWindow()
     {
@@ -134,6 +136,10 @@ public partial class MainWindow : Window
                         {
                             var text = NativeEventFormatter.Format(envelope);
                             _ = DispatcherQueue.TryEnqueue(() => EventLog.Text += text + Environment.NewLine);
+                            if (envelope.EventType == "approval.required")
+                            {
+                                ShowApproval(envelope);
+                            }
                             if (envelope.TaskId == _activeTaskId)
                             {
                                 var notification = envelope.EventType switch
@@ -174,4 +180,50 @@ public partial class MainWindow : Window
 
     private void SetConnectionStatus(string text) =>
         _ = DispatcherQueue.TryEnqueue(() => ConnectionStatus.Text = text);
+
+    private void ShowApproval(CoreEventEnvelope envelope)
+    {
+        try
+        {
+            using var json = JsonDocument.Parse(envelope.Payload);
+            var root = json.RootElement;
+            _pendingApprovalId = root.GetProperty("approval_id").GetString();
+            var tool = root.GetProperty("tool_name").GetString() ?? "tool";
+            var permission = root.GetProperty("permission").GetString() ?? "permission";
+            var scope = root.GetProperty("scope").GetString() ?? "workspace";
+            _ = DispatcherQueue.TryEnqueue(() =>
+            {
+                ApprovalText.Text = $"Требуется разрешение: {tool} · {permission} · {scope}";
+                ApprovalPanel.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
+            });
+        }
+        catch (JsonException)
+        {
+            SetConnectionStatus("Получен повреждённый approval-запрос.");
+        }
+    }
+
+    private async void ApproveButton_Click(object sender, RoutedEventArgs e) => await ResolveApprovalAsync(true);
+
+    private async void DenyButton_Click(object sender, RoutedEventArgs e) => await ResolveApprovalAsync(false);
+
+    private async Task ResolveApprovalAsync(bool granted)
+    {
+        var approvalId = _pendingApprovalId;
+        if (string.IsNullOrWhiteSpace(approvalId))
+        {
+            return;
+        }
+
+        try
+        {
+            await _ipc.ResolveApprovalAsync(approvalId, granted, CancellationToken.None);
+            _pendingApprovalId = null;
+            ApprovalPanel.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
+        }
+        catch (Exception error)
+        {
+            SetConnectionStatus($"Ошибка approval: {error.Message}");
+        }
+    }
 }

@@ -26,6 +26,11 @@ message StopTask {
   string task_id = 1;
 }
 
+message ResolveApproval {
+  string approval_id = 1;
+  bool granted = 2;
+}
+
 message CommandEnvelope {
   ProtocolVersion protocol = 1;
   string request_id = 2;
@@ -34,6 +39,7 @@ message CommandEnvelope {
     ReplayEvents replay_events = 11;
     StartTask start_task = 12;
     StopTask stop_task = 13;
+    ResolveApproval resolve_approval = 14;
   }
 }
 

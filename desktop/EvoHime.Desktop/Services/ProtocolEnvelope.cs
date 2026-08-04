@@ -75,6 +75,14 @@ public static class ProtocolEnvelope
         output.WriteString(taskId);
     });
 
+    public static byte[] ResolveApproval(string approvalId, bool granted) => TaskCommand(14, output =>
+    {
+        output.WriteTag(1, WireFormat.WireType.LengthDelimited);
+        output.WriteString(approvalId);
+        output.WriteTag(2, WireFormat.WireType.Varint);
+        output.WriteBool(granted);
+    });
+
     public static CoreEventEnvelope ReadEvent(ReadOnlySpan<byte> payload)
     {
         using var input = new CodedInputStream(payload.ToArray());
