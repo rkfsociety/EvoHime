@@ -9,8 +9,18 @@
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
-    <TextBlock Text="EvoHime" FontSize="28" />
-    <TextBlock x:Name="ConnectionStatus" Grid.Row="1" Text="Не подключено" />
+    <Grid ColumnSpacing="16">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+      <StackPanel Spacing="4">
+        <TextBlock Text="EvoHime" FontSize="28" />
+        <TextBlock x:Name="ConnectionStatus" Text="Не подключено" />
+      </StackPanel>
+      <Button Grid.Column="1" x:Name="ChooseWorkspaceButton" Content="Выбрать workspace" Click="ChooseWorkspaceButton_Click" />
+    </Grid>
+    <TextBlock x:Name="WorkspacePathText" Grid.Row="1" Text="Workspace: не выбран" TextTrimming="CharacterEllipsis" />
     <Grid Grid.Row="2" RowSpacing="12">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto" />

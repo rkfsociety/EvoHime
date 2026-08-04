@@ -1,18 +1,39 @@
 using Microsoft.UI.Xaml;
 using EvoHime.Desktop.Services;
+using Windows.Storage.Pickers;
+using WinRT.Interop;
 
 namespace EvoHime.Desktop;
 
 public partial class MainWindow : Window
 {
     private readonly CoreIpcClient _ipc = new("evohime-core-v1");
+    private readonly NativeShellState _state = new();
     private CancellationTokenSource? _eventCts;
     private string? _activeTaskId;
-    private ulong _lastSequence;
+    private int _reconnectAttempt;
 
     public MainWindow()
     {
         InitializeComponent();
+        _state.SelectWorkspace(Environment.CurrentDirectory);
+        WorkspacePathText.Text = $"Workspace: {_state.WorkspacePath}";
+    }
+
+    private async void ChooseWorkspaceButton_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new FolderPicker();
+        picker.FileTypeFilter.Add("*");
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+        var folder = await picker.PickSingleFolderAsync();
+        if (folder is null)
+        {
+            return;
+        }
+
+        _state.SelectWorkspace(folder.Path);
+        WorkspacePathText.Text = $"Workspace: {_state.WorkspacePath}";
+        ConnectionStatus.Text = "Workspace выбран.";
     }
 
     private async void StartButton_Click(object sender, RoutedEventArgs e)
@@ -27,6 +48,7 @@ public partial class MainWindow : Window
         try
         {
             await _ipc.ConnectAndHandshakeAsync(CancellationToken.None);
+            _reconnectAttempt = 0;
             _activeTaskId = Guid.NewGuid().ToString("N");
             await _ipc.StartTaskAsync(_activeTaskId, prompt, CancellationToken.None);
             ConnectionStatus.Text = $"Задача {_activeTaskId}: выполняется";
@@ -72,28 +94,48 @@ public partial class MainWindow : Window
 
     private async Task PumpEventsAsync(CancellationToken cancellationToken)
     {
-        try
+        while (!cancellationToken.IsCancellationRequested && _activeTaskId is not null)
         {
-            while (!cancellationToken.IsCancellationRequested && _activeTaskId is not null)
+            try
             {
-                _lastSequence = await _ipc.ReadReplayAsync(
-                    _lastSequence,
+                if (!_ipc.IsConnected)
+                {
+                    SetConnectionStatus("Восстановление IPC...");
+                    await _ipc.ConnectAndHandshakeAsync(cancellationToken);
+                    _reconnectAttempt = 0;
+                }
+
+                await _ipc.ReadReplayAsync(
+                    _state.LastSequence,
                     envelope =>
                     {
-                        var text = $"[{envelope.SequenceId}] {envelope.EventType}";
-                        _ = DispatcherQueue.TryEnqueue(() => EventLog.Text += text + Environment.NewLine);
+                        if (_state.ApplyEvent(envelope))
+                        {
+                            var text = $"[{envelope.SequenceId}] {envelope.EventType}";
+                            _ = DispatcherQueue.TryEnqueue(() => EventLog.Text += text + Environment.NewLine);
+                        }
                         return Task.CompletedTask;
                     },
                     cancellationToken);
+                SetConnectionStatus("Подключено");
                 await Task.Delay(300, cancellationToken);
             }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (Exception error)
-        {
-            _ = DispatcherQueue.TryEnqueue(() => ConnectionStatus.Text = $"Поток событий остановлен: {error.Message}");
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception error)
+            {
+                await _ipc.DisposeAsync();
+                _reconnectAttempt = Math.Min(_reconnectAttempt + 1, 6);
+                SetConnectionStatus($"IPC отключён, переподключение: {error.Message}");
+                await Task.Delay(
+                    TimeSpan.FromMilliseconds(250 * Math.Pow(2, _reconnectAttempt)),
+                    cancellationToken);
+            }
         }
     }
+
+    private void SetConnectionStatus(string text) =>
+        _ = DispatcherQueue.TryEnqueue(() => ConnectionStatus.Text = text);
 }

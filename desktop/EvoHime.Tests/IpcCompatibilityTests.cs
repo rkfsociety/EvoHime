@@ -78,4 +78,16 @@ public sealed class IpcCompatibilityTests
         Assert.AreEqual("task.completed", envelope.EventType);
         CollectionAssert.AreEqual("done"u8.ToArray(), envelope.Payload);
     }
+
+    [TestMethod]
+    public void ShellStateKeepsWorkspaceAndIgnoresDuplicateEvents()
+    {
+        var state = new NativeShellState();
+        state.SelectWorkspace(".");
+
+        Assert.AreEqual(Path.GetFullPath("."), state.WorkspacePath);
+        Assert.IsTrue(state.ApplyEvent(new CoreEventEnvelope(4, "task", "task.started", [])));
+        Assert.IsFalse(state.ApplyEvent(new CoreEventEnvelope(4, "task", "task.started", [])));
+        Assert.AreEqual((ulong)4, state.LastSequence);
+    }
 }
