@@ -217,10 +217,10 @@ public sealed class IpcCompatibilityTests
     [TestMethod]
     public void UpdateServiceComparesClientVersions()
     {
-        Assert.AreEqual("0.0.0001", UpdateService.CurrentVersion);
-        Assert.IsTrue(UpdateService.IsNewerVersion("v0.0.0002", "0.0.0001"));
-        Assert.IsFalse(UpdateService.IsNewerVersion("v0.0.0001", "0.0.0001"));
-        Assert.IsFalse(UpdateService.IsNewerVersion("not-a-version", "0.0.0001"));
+        Assert.AreEqual("0.0.000032", UpdateService.CurrentVersion);
+        Assert.IsTrue(UpdateService.IsNewerVersion("v0.0.000033", "0.0.000032"));
+        Assert.IsFalse(UpdateService.IsNewerVersion("v0.0.000032", "0.0.000032"));
+        Assert.IsFalse(UpdateService.IsNewerVersion("not-a-version", "0.0.000032"));
     }
 
     [TestMethod]

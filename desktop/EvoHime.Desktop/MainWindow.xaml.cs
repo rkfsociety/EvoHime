@@ -34,10 +34,56 @@ public partial class MainWindow : Window
     {
         var root = new Grid
         {
-            Padding = new Thickness(32),
-            RowSpacing = 16,
+            Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["NightBackgroundBrush"],
         };
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(248) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var navigation = new StackPanel
+        {
+            Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["SurfaceBrush"],
+            Padding = new Thickness(18, 24, 14, 18),
+            Spacing = 8,
+        };
+        navigation.Children.Add(new TextBlock
+        {
+            Text = "ЕВА",
+            FontSize = 24,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextBrush"],
+            Margin = new Thickness(4, 0, 0, 18),
+        });
+        foreach (var item in ShellNavigationCatalog.Items)
+        {
+            var button = new Button
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Background = item.Title == "Новый чат"
+                    ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["SurfaceRaisedBrush"]
+                    : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextBrush"],
+                Content = $"{item.Glyph}   {item.Title}",
+                Tag = item.Description,
+            };
+            navigation.Children.Add(button);
+        }
+        var projectLabel = new TextBlock
+        {
+            Text = "РАБОЧИЕ ПРОСТРАНСТВА",
+            FontSize = 11,
+            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["MutedTextBrush"],
+            Margin = new Thickness(5, 22, 0, 2),
+        };
+        navigation.Children.Add(projectLabel);
+        navigation.Children.Add(new TextBlock
+        {
+            Text = "⌂  Текущий workspace",
+            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["MutedTextBrush"],
+            Padding = new Thickness(4, 8, 4, 8),
+        });
+        root.Children.Add(navigation);
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -63,10 +109,12 @@ public partial class MainWindow : Window
         header.Children.Add(title);
         Grid.SetColumn(actions, 1);
         header.Children.Add(actions);
+        Grid.SetColumn(header, 1);
         root.Children.Add(header);
 
         WorkspacePathText = new TextBlock { Text = "Workspace: не выбран" };
         Grid.SetRow(WorkspacePathText, 1);
+        Grid.SetColumn(WorkspacePathText, 1);
         root.Children.Add(WorkspacePathText);
 
         var taskArea = new Grid { RowSpacing = 12 };
@@ -100,6 +148,7 @@ public partial class MainWindow : Window
         Grid.SetRow(ApprovalPanel, 2);
         taskArea.Children.Add(ApprovalPanel);
         Grid.SetRow(taskArea, 2);
+        Grid.SetColumn(taskArea, 1);
         root.Children.Add(taskArea);
 
         var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
@@ -110,6 +159,7 @@ public partial class MainWindow : Window
         controls.Children.Add(StartButton);
         controls.Children.Add(StopButton);
         Grid.SetRow(controls, 3);
+        Grid.SetColumn(controls, 1);
         root.Children.Add(controls);
 
         Content = root;
