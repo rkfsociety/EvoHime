@@ -95,7 +95,7 @@ impl Drop for SingleInstance {
 struct JobObject(HANDLE);
 
 pub fn recover_pending_update(state_dir: &Path) -> io::Result<bool> {
-    Ok(evohime_update_transaction::UpdateTransaction::recover(state_dir)?.recovered)
+    Ok(evohime_tx::UpdateTransaction::recover(state_dir)?.recovered)
 }
 
 fn update_state_dir() -> PathBuf {
@@ -200,7 +200,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::recover_pending_update;
-    use evohime_update_transaction::UpdateTransaction;
+    use evohime_tx::UpdateTransaction;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 

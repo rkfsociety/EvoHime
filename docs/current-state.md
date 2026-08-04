@@ -13,6 +13,7 @@ EvoHime — локальный Windows-клиент для coding-agent зада
 - `EvoHime.exe` — WinUI 3 интерфейс;
 - `evohime-core.exe` — Rust agent loop, model gateway, tools, permissions, approvals и SQLite;
 - `evohime-supervisor.exe` — single-instance mutex, Job Object, restart и диагностика;
+- `evohime-transaction.exe` — скрытый transaction worker для backup, commit и rollback обновлений;
 - versioned protobuf over Windows named pipe — единственный UI/Core transport;
 - `%LOCALAPPDATA%\EvoHime` — локальные данные и JSONL-логи.
 
@@ -27,6 +28,7 @@ Core и supervisor — внутренние компоненты установ�
 - единый Inno Setup installer с одним desktop shortcut;
 - установленный клиент сам поднимает supervisor и Core;
 - автообнаружение GitHub Release, SHA-256 проверка installer и upgrade smoke в CI;
+- автоматический rollback при ошибке установщика и recovery незавершённой транзакции перед запуском Core;
 - release retention: сохраняется только последний стабильный `vX.Y.Z` release/tag;
 - имя агента «Ева» передаётся в system context Core.
 
@@ -34,8 +36,8 @@ Core и supervisor — внутренние компоненты установ�
 
 1. Files, Editor, Git и controlled Terminal;
 2. diff/command preview в approval UI;
-3. Credential Manager/DPAPI, расширенный backup/restore и crash recovery;
-4. rollback после неуспешного upgrade и дальнейшая проверка установочного UX.
+3. Credential Manager/DPAPI, расширенный backup/restore и crash recovery UI;
+4. дальнейшая проверка установочного UX на чистой Windows 11.
 
 ## Граница продукта
 

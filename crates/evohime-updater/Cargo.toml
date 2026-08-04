@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "evohime_update_transaction"
+name = "evohime_tx"
 path = "src/lib.rs"
 
 [[bin]]

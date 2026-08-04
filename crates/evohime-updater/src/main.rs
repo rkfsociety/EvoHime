@@ -8,7 +8,7 @@ fn main() -> ExitCode {
     }
 
     match parse_worker_args(&args[1..]).and_then(|(installer, install_dir, state_dir)| {
-        evohime_update_transaction::run_update(&installer, &install_dir, &state_dir)
+        evohime_tx::run_update(&installer, &install_dir, &state_dir)
             .map_err(|error| error.to_string())
     }) {
         Ok(()) => ExitCode::SUCCESS,
@@ -20,8 +20,10 @@ fn main() -> ExitCode {
 }
 
 fn spawn_worker(args: &[String]) -> ExitCode {
-    let worker =
-        std::env::temp_dir().join(format!("evohime-transaction-{}-worker.exe", std::process::id()));
+    let worker = std::env::temp_dir().join(format!(
+        "evohime-transaction-{}-worker.exe",
+        std::process::id()
+    ));
     let current = match std::env::current_exe() {
         Ok(path) => path,
         Err(error) => return report_error(error),

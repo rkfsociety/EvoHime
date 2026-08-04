@@ -35,9 +35,9 @@
 | Package, smoke build, CI и единый installer | ✅ Завершён | `9b3430c` |
 | Workspace, persistence, tray, notifications, replay | ✅ Завершён | `a43aaac`–`0246f05` |
 | Approval round-trip через native IPC | ✅ Завершён | `87c5b39` |
-| Автообновление, SHA-256 installer verification и upgrade smoke | ✅ Завершён | текущий release hardening |
+| Автообновление, SHA-256 verification, upgrade smoke и rollback recovery | ✅ Завершён | `edaa8ec` |
 | Files, Editor, Git, Terminal | ⬜ Следующий этап | — |
-| Credentials, backup/restore, update/MSIX | ⬜ Запланирован | — |
+| Credentials, расширенный backup/restore, update/MSIX | ⬜ Запланирован | — |
 
 ## Acceptance criteria
 
@@ -46,5 +46,5 @@
 - перезапуск core не теряет завершённые события;
 - отмена задачи завершает дочерние процессы;
 - опасные операции требуют approval и показывают preview;
-- обновление восстанавливает данные из pre-upgrade backup;
+- обновление восстанавливает компоненты из pre-upgrade backup при ошибке и после аварийного завершения;
 - core tests работают без UI-сессии, WinUI smoke — на Windows CI.

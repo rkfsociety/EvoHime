@@ -4,7 +4,7 @@
 
 **Goal:** Сделать обновление Евы транзакционным: при ошибке, аварийном завершении или незавершённой предыдущей установке автоматически восстанавливать рабочую версию.
 
-**Architecture:** Отдельный Rust-компонент `evohime-updater.exe` создаёт backup фиксированного набора файлов, атомарно записывает журнал транзакции, запускает Inno Setup и выполняет commit либо rollback. Supervisor перед запуском Core вызывает recovery того же журнала, поэтому восстановление работает и после внезапного завершения updater.
+**Architecture:** Отдельный Rust-компонент `evohime-transaction.exe` создаёт backup фиксированного набора файлов, атомарно записывает журнал транзакции, запускает Inno Setup и выполняет commit либо rollback. Supervisor перед запуском Core вызывает recovery того же журнала, поэтому восстановление работает и после внезапного завершения transaction worker.
 
 **Tech Stack:** Rust workspace, serde/serde_json, Windows process API через `std::process::Command`, WinUI 3/C#, Inno Setup, PowerShell CI smoke tests.
 
@@ -112,4 +112,3 @@
 - [ ] **Step 3: Run `git diff --check`, remove `target/`, `artifacts/`, `bin/`, `obj/`.**
 - [ ] **Step 4: Update canonical docs with rollback status.**
 - [ ] **Step 5: Commit**: `git commit -m "docs: mark update rollback release ready"`.
-
