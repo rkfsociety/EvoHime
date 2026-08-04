@@ -162,4 +162,16 @@ public sealed class IpcCompatibilityTests
         Assert.AreEqual("первая втор…", text);
         Assert.IsTrue(text.Length <= 12);
     }
+
+    [TestMethod]
+    public void TimelineFormatterIncludesUsefulEventDetails()
+    {
+        var envelope = new CoreEventEnvelope(
+            8,
+            "task",
+            "tool.output",
+            System.Text.Encoding.UTF8.GetBytes("{\"tool_name\":\"filesystem.search\",\"output\":\"found\"}"));
+
+        Assert.AreEqual("[8] tool.output · filesystem.search: found", NativeEventFormatter.Format(envelope));
+    }
 }

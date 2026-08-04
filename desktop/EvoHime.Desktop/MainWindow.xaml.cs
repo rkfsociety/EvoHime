@@ -132,7 +132,7 @@ public partial class MainWindow : Window
                     {
                         if (_state.ApplyEvent(envelope))
                         {
-                            var text = $"[{envelope.SequenceId}] {envelope.EventType}";
+                            var text = NativeEventFormatter.Format(envelope);
                             _ = DispatcherQueue.TryEnqueue(() => EventLog.Text += text + Environment.NewLine);
                             if (envelope.TaskId == _activeTaskId)
                             {
