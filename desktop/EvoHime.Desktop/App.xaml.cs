@@ -5,7 +5,7 @@ namespace EvoHime.Desktop;
 
 public partial class App : Application
 {
-    private Window? _window;
+    private MainWindow? _window;
     private TrayIconService? _tray;
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
@@ -16,5 +16,6 @@ public partial class App : Application
         _tray = new TrayIconService(
             show: () => _window.Activate(),
             exit: () => _window.Close());
+        _window.NotificationRequested += (title, message) => _tray?.ShowNotification(title, message);
     }
 }

@@ -9,12 +9,34 @@ public enum TrayMenuCommand : uint
     Exit = 2,
 }
 
+public static class TrayNotificationText
+{
+    public static string Normalize(string text, int maxLength)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        if (maxLength < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxLength));
+        }
+
+        var normalized = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        if (normalized.Length <= maxLength)
+        {
+            return normalized;
+        }
+
+        return normalized[..Math.Max(0, maxLength - 1)] + "…";
+    }
+}
+
 public sealed class TrayIconService : IDisposable
 {
     private const uint NifMessage = 0x00000001;
     private const uint NifIcon = 0x00000002;
     private const uint NifTip = 0x00000004;
+    private const uint NifInfo = 0x00000010;
     private const uint NimAdd = 0x00000000;
+    private const uint NimModify = 0x00000001;
     private const uint NimDelete = 0x00000002;
     private const uint WmApp = 0x8000;
     private const uint WmRButtonUp = 0x0205;
@@ -120,6 +142,26 @@ public sealed class TrayIconService : IDisposable
         }
     }
 
+    public void ShowNotification(string title, string message)
+    {
+        if (_disposed || _windowHandle == 0)
+        {
+            return;
+        }
+
+        var data = new NotifyIconData
+        {
+            Size = (uint)Marshal.SizeOf<NotifyIconData>(),
+            WindowHandle = _windowHandle,
+            Id = _iconId,
+            Flags = NifInfo,
+            Info = TrayNotificationText.Normalize(message, 255),
+            InfoTitle = TrayNotificationText.Normalize(title, 63),
+            InfoFlags = 1,
+        };
+        ShellNotifyIcon(NimModify, ref data);
+    }
+
     private nint WindowProc(nint window, uint message, nint wParam, nint lParam)
     {
         if (message == _callbackMessage)
@@ -217,6 +259,14 @@ public sealed class TrayIconService : IDisposable
         public nint IconHandle;
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
         public string Tip;
+        public uint State;
+        public uint StateMask;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
+        public string Info;
+        public uint TimeoutOrVersion;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
+        public string InfoTitle;
+        public uint InfoFlags;
     }
 
     [StructLayout(LayoutKind.Sequential)]

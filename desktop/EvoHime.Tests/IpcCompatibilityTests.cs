@@ -120,4 +120,13 @@ public sealed class IpcCompatibilityTests
         Assert.AreEqual(1u, (uint)TrayMenuCommand.Show);
         Assert.AreEqual(2u, (uint)TrayMenuCommand.Exit);
     }
+
+    [TestMethod]
+    public void TrayNotificationTextIsSingleLineAndBounded()
+    {
+        var text = TrayNotificationText.Normalize("первая\nвторая\r\nтретья", 12);
+
+        Assert.AreEqual("первая втор…", text);
+        Assert.IsTrue(text.Length <= 12);
+    }
 }
