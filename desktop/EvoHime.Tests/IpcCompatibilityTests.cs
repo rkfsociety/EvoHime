@@ -113,4 +113,11 @@ public sealed class IpcCompatibilityTests
             }
         }
     }
+
+    [TestMethod]
+    public void TrayCommandsHaveStableIds()
+    {
+        Assert.AreEqual(1u, (uint)TrayMenuCommand.Show);
+        Assert.AreEqual(2u, (uint)TrayMenuCommand.Exit);
+    }
 }
