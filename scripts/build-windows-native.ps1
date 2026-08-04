@@ -81,7 +81,8 @@ if (Test-Path -LiteralPath $uiStaged) {
         Copy-Item -LiteralPath $item.FullName -Destination $destination -Force -Recurse
     }
 }
-if (-not (Test-Path -LiteralPath (Join-Path $uiStaged $appPriName))) {
+if (-not (Test-Path -LiteralPath (Join-Path $resolvedOutput $appPriName)) -and
+    -not (Test-Path -LiteralPath (Join-Path $uiStaged $appPriName))) {
     $appPri = Get-ChildItem -LiteralPath (Join-Path $repoRoot 'desktop\EvoHime.Desktop\bin') -Filter $appPriName -File -Recurse |
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1

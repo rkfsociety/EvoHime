@@ -20,6 +20,7 @@ if (Test-Path -LiteralPath $packageRoot) {
 }
 New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
 Set-Content -LiteralPath (Join-Path $packageRoot 'EvoHime.exe') -Value 'ui'
+Set-Content -LiteralPath (Join-Path $packageRoot 'EvoHime.Desktop.pri') -Value 'ui-resources'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-core.exe') -Value 'core'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-supervisor.exe') -Value 'supervisor'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-transaction.exe') -Value 'updater'
