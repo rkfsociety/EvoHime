@@ -1,4 +1,6 @@
 target/
+desktop/**/bin/
+desktop/**/obj/
 node_modules/
 dist/
 frontend/web/dist/
