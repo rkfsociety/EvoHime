@@ -8,7 +8,7 @@ foreach ($required in @(
     'actions/upload-artifact@v4',
     'installer/EvoHime.iss',
     'EvoHime-Setup.exe',
-    '-Version $version',
+    '-Version $env:RELEASE_VERSION',
     'Rollback smoke after failed installer start',
     '--blame-hang',
     '--blame-hang-timeout 5m',
@@ -18,6 +18,9 @@ foreach ($required in @(
     'winui-test-diagnostics',
     'iscc',
     'gh release create',
+    'Determine release from project version',
+    'RELEASE_VERSION',
+    'should_release',
     'contents: write'
 )) {
     if ($workflow -notmatch [regex]::Escape($required)) {
@@ -25,12 +28,12 @@ foreach ($required in @(
     }
 }
 
-if ($workflow -notmatch 'refs/tags/v') {
-    throw 'GitHub workflow must publish releases only for v* tags.'
+if ($workflow -match "tags: \['v\*'\]") {
+    throw 'GitHub workflow must not require manually pushed version tags.'
 }
 
-if ($workflow -notmatch 'needs: \[rust-native, windows-check\]') {
-    throw 'Native package build must depend on all CI checks.'
+if ($workflow -notmatch 'needs: \[rust-native, windows-check, prepare-release\]') {
+    throw 'Native package build must depend on all CI checks and release decision.'
 }
 
 $buildIndex = $workflow.IndexOf('Build native package after CI checks')
