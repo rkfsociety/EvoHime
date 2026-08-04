@@ -34,6 +34,8 @@ message EventEnvelope {
   ProtocolVersion protocol = 1;
   uint64 sequence_id = 2;
   string task_id = 3;
+  string event_type = 4;
+  bytes payload = 5;
   oneof event {
     Ready ready = 10;
   }

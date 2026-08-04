@@ -16,6 +16,8 @@ evohime-model-gateway = { path = "../model-gateway" }
 evohime-tool-runtime = { path = "../tool-runtime" }
 evohime-permissions = { path = "../permissions" }
 evohime-local-storage = { path = "../evohime-local-storage" }
+evohime-desktop-ipc = { path = "../desktop-ipc" }
+prost = "0.14"
 futures-util = "0.3"
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }

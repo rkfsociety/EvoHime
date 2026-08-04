@@ -1578,11 +1578,13 @@ dependencies = [
 name = "evohime-core"
 version = "0.1.0"
 dependencies = [
+ "evohime-desktop-ipc",
  "evohime-local-storage",
  "evohime-model-gateway",
  "evohime-permissions",
  "evohime-tool-runtime",
  "futures-util",
+ "prost 0.14.4",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

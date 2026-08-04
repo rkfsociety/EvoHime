@@ -1,5 +1,8 @@
 pub struct CoreVersion;
 
+mod ipc_bridge;
+pub use ipc_bridge::{IpcBridge, IpcBridgeError};
+
 impl CoreVersion {
     pub const fn current() -> &'static str {
         env!("CARGO_PKG_VERSION")
