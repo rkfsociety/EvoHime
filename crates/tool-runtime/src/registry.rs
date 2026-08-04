@@ -264,7 +264,7 @@ impl ToolRegistry {
             .await
     }
 
-    async fn execute_with_cancellation(
+    pub async fn execute_with_cancellation(
         &self,
         ctx: &ToolContext,
         name: &str,

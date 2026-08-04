@@ -13,8 +13,10 @@ use evohime_model_gateway::{
     ModelGateway, ToolSpec,
 };
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
+use futures_util::future::BoxFuture;
 use futures_util::StreamExt;
-use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
+use tokio::sync::{broadcast, mpsc, Mutex};
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoreCommand {
@@ -58,6 +60,18 @@ pub enum CoreEvent {
 pub enum AgentRunError {
     #[error("model request failed: {0}")]
     Provider(#[from] ProviderError),
+    #[error("agent execution was cancelled")]
+    Cancelled,
+}
+
+pub trait TaskExecutor: Send + Sync {
+    fn execute(
+        &self,
+        task_id: String,
+        prompt: String,
+        cancellation: CancellationToken,
+        events: broadcast::Sender<CoreEvent>,
+    ) -> BoxFuture<'static, Result<String, AgentRunError>>;
 }
 
 pub struct ModelAgent {
@@ -75,11 +89,25 @@ impl ModelAgent {
         prompt: impl Into<String>,
         events: &broadcast::Sender<CoreEvent>,
     ) -> Result<String, AgentRunError> {
+        self.run_once_with_cancellation(task_id, prompt, events, CancellationToken::new())
+            .await
+    }
+
+    async fn run_once_with_cancellation(
+        &self,
+        task_id: impl Into<String>,
+        prompt: impl Into<String>,
+        events: &broadcast::Sender<CoreEvent>,
+        cancellation: CancellationToken,
+    ) -> Result<String, AgentRunError> {
         let task_id = task_id.into();
         let messages = [ChatMessage::text(ChatRole::User, prompt)];
         let mut stream = self.gateway.stream_chat(&messages);
         let mut final_message = String::new();
-        while let Some(item) = stream.next().await {
+        while let Some(item) = tokio::select! {
+            _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
+            item = stream.next() => item,
+        } {
             match item? {
                 evohime_model_gateway::ChatStreamItem::Delta(content) => {
                     final_message.push_str(&content);
@@ -97,6 +125,25 @@ impl ModelAgent {
             final_message: final_message.clone(),
         });
         Ok(final_message)
+    }
+}
+
+impl TaskExecutor for ModelAgent {
+    fn execute(
+        &self,
+        task_id: String,
+        prompt: String,
+        cancellation: CancellationToken,
+        events: broadcast::Sender<CoreEvent>,
+    ) -> BoxFuture<'static, Result<String, AgentRunError>> {
+        let agent = Self {
+            gateway: Arc::clone(&self.gateway),
+        };
+        Box::pin(async move {
+            agent
+                .run_once_with_cancellation(task_id, prompt, &events, cancellation)
+                .await
+        })
     }
 }
 
@@ -122,6 +169,24 @@ impl ToolAgent {
         workspace_root: impl Into<std::path::PathBuf>,
         events: &broadcast::Sender<CoreEvent>,
     ) -> Result<String, AgentRunError> {
+        self.run_once_with_cancellation(
+            task_id,
+            prompt,
+            workspace_root,
+            events,
+            CancellationToken::new(),
+        )
+        .await
+    }
+
+    async fn run_once_with_cancellation(
+        &self,
+        task_id: impl Into<String>,
+        prompt: impl Into<String>,
+        workspace_root: impl Into<std::path::PathBuf>,
+        events: &broadcast::Sender<CoreEvent>,
+        cancellation: CancellationToken,
+    ) -> Result<String, AgentRunError> {
         let task_id = task_id.into();
         let task_uuid = uuid::Uuid::parse_str(&task_id).unwrap_or_else(|_| uuid::Uuid::new_v4());
         let context = ToolContext {
@@ -145,10 +210,10 @@ impl ToolAgent {
         let mut messages = vec![ChatMessage::text(ChatRole::User, prompt)];
 
         for _ in 0..self.max_iterations {
-            let result = self
-                .gateway
-                .chat_with_tools_for_route("default", None, &messages, &specs)
-                .await?;
+            let result = tokio::select! {
+                _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
+                result = self.gateway.chat_with_tools_for_route("default", None, &messages, &specs) => result?,
+            };
             if result.tool_calls.is_empty() {
                 let _ = events.send(CoreEvent::TaskCompleted {
                     task_id,
@@ -168,7 +233,10 @@ impl ToolAgent {
                 });
                 let input = serde_json::from_str(&call.arguments)
                     .unwrap_or_else(|_| serde_json::Value::Null);
-                let output = match self.tools.execute(&context, &call.name, input).await {
+                let output = match tokio::select! {
+                    _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
+                    result = self.tools.execute_with_cancellation(&context, &call.name, input, cancellation.clone()) => result,
+                } {
                     Ok(result) => result.output,
                     Err(error) => error.to_string(),
                 };
@@ -190,23 +258,59 @@ impl ToolAgent {
     }
 }
 
+impl TaskExecutor for ToolAgent {
+    fn execute(
+        &self,
+        task_id: String,
+        prompt: String,
+        cancellation: CancellationToken,
+        events: broadcast::Sender<CoreEvent>,
+    ) -> BoxFuture<'static, Result<String, AgentRunError>> {
+        let agent = Self {
+            gateway: Arc::clone(&self.gateway),
+            tools: Arc::clone(&self.tools),
+            max_iterations: self.max_iterations,
+        };
+        Box::pin(async move {
+            agent
+                .run_once_with_cancellation(
+                    task_id,
+                    prompt,
+                    std::env::current_dir().unwrap_or_default(),
+                    &events,
+                    cancellation,
+                )
+                .await
+        })
+    }
+}
+
 #[derive(Clone)]
 pub struct TaskCoordinator {
     commands: mpsc::Sender<CoreCommand>,
 }
 
 struct CoordinatorState {
-    tasks: HashMap<String, oneshot::Sender<()>>,
+    tasks: HashMap<String, CancellationToken>,
     events: broadcast::Sender<CoreEvent>,
+    executor: Option<Arc<dyn TaskExecutor>>,
 }
 
 impl TaskCoordinator {
     pub fn new(buffer: usize) -> (Self, broadcast::Receiver<CoreEvent>) {
+        Self::new_with_executor(buffer, None)
+    }
+
+    pub fn new_with_executor(
+        buffer: usize,
+        executor: Option<Arc<dyn TaskExecutor>>,
+    ) -> (Self, broadcast::Receiver<CoreEvent>) {
         let (commands, mut command_rx) = mpsc::channel(buffer.max(1));
         let (events, event_rx) = broadcast::channel(buffer.max(1));
         let state = Arc::new(Mutex::new(CoordinatorState {
             tasks: HashMap::new(),
             events,
+            executor,
         }));
         let worker_state = Arc::clone(&state);
         tokio::spawn(async move {
@@ -227,27 +331,59 @@ impl TaskCoordinator {
     async fn handle_command(state: Arc<Mutex<CoordinatorState>>, command: CoreCommand) {
         match command {
             CoreCommand::StartTask { task_id, prompt } => {
-                let (stop_tx, mut stop_rx) = oneshot::channel();
+                let cancellation = CancellationToken::new();
                 let mut state_guard = state.lock().await;
-                if state_guard.tasks.insert(task_id.clone(), stop_tx).is_some() {
+                if state_guard
+                    .tasks
+                    .insert(task_id.clone(), cancellation.clone())
+                    .is_some()
+                {
                     return;
                 }
                 let _ = state_guard.events.send(CoreEvent::TaskStarted {
                     task_id: task_id.clone(),
-                    prompt,
+                    prompt: prompt.clone(),
                 });
+                let events = state_guard.events.clone();
+                let executor = state_guard.executor.clone();
                 drop(state_guard);
                 tokio::spawn(async move {
-                    let _ = (&mut stop_rx).await;
+                    let result = match executor {
+                        Some(executor) => {
+                            executor
+                                .execute(
+                                    task_id.clone(),
+                                    prompt,
+                                    cancellation.clone(),
+                                    events.clone(),
+                                )
+                                .await
+                        }
+                        None => {
+                            cancellation.cancelled().await;
+                            Err(AgentRunError::Cancelled)
+                        }
+                    };
                     let mut state_guard = state.lock().await;
                     state_guard.tasks.remove(&task_id);
-                    let _ = state_guard.events.send(CoreEvent::TaskStopped { task_id });
+                    match result {
+                        Err(AgentRunError::Cancelled) => {
+                            let _ = state_guard.events.send(CoreEvent::TaskStopped { task_id });
+                        }
+                        Err(error) => {
+                            let _ = state_guard.events.send(CoreEvent::TaskFailed {
+                                task_id,
+                                error: error.to_string(),
+                            });
+                        }
+                        Ok(_) => {}
+                    }
                 });
             }
             CoreCommand::StopTask { task_id } => {
                 let mut state_guard = state.lock().await;
-                if let Some(stop_tx) = state_guard.tasks.remove(&task_id) {
-                    let _ = stop_tx.send(());
+                if let Some(cancellation) = state_guard.tasks.remove(&task_id) {
+                    cancellation.cancel();
                 }
             }
         }
@@ -256,12 +392,34 @@ impl TaskCoordinator {
 
 #[cfg(test)]
 mod tests {
-    use super::{CoreCommand, CoreEvent, CoreVersion, ModelAgent, TaskCoordinator, ToolAgent};
+    use super::{
+        AgentRunError, CoreCommand, CoreEvent, CoreVersion, ModelAgent, TaskCoordinator,
+        TaskExecutor, ToolAgent,
+    };
     use evohime_model_gateway::{
         providers::mock::MockProvider, ChatResult, ModelGateway, NativeToolCall,
     };
     use evohime_tool_runtime::ToolRegistry;
+    use futures_util::future::BoxFuture;
     use std::sync::Arc;
+    use tokio_util::sync::CancellationToken;
+
+    struct NeverExecutor;
+
+    impl TaskExecutor for NeverExecutor {
+        fn execute(
+            &self,
+            _task_id: String,
+            _prompt: String,
+            cancellation: CancellationToken,
+            _events: tokio::sync::broadcast::Sender<CoreEvent>,
+        ) -> BoxFuture<'static, Result<String, AgentRunError>> {
+            Box::pin(async move {
+                cancellation.cancelled().await;
+                Err(AgentRunError::Cancelled)
+            })
+        }
+    }
 
     #[test]
     fn core_exposes_version() {
@@ -295,6 +453,35 @@ mod tests {
             events.recv().await.expect("stopped event"),
             CoreEvent::TaskStopped {
                 task_id: "task-1".into()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn stop_cancels_an_active_executor() {
+        let (coordinator, mut events) =
+            TaskCoordinator::new_with_executor(8, Some(Arc::new(NeverExecutor)));
+        coordinator
+            .dispatch(CoreCommand::StartTask {
+                task_id: "task-cancel".into(),
+                prompt: "wait".into(),
+            })
+            .await
+            .expect("start dispatches");
+        assert!(matches!(
+            events.recv().await,
+            Ok(CoreEvent::TaskStarted { .. })
+        ));
+        coordinator
+            .dispatch(CoreCommand::StopTask {
+                task_id: "task-cancel".into(),
+            })
+            .await
+            .expect("stop dispatches");
+        assert_eq!(
+            events.recv().await.expect("stopped event"),
+            CoreEvent::TaskStopped {
+                task_id: "task-cancel".into()
             }
         );
     }
