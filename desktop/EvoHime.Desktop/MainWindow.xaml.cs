@@ -94,12 +94,15 @@ public partial class MainWindow : Window
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        var title = new StackPanel { Spacing = 4 };
-        title.Children.Add(new TextBlock { Text = "EvoHime · Ева", FontSize = 28 });
+        var title = new StackPanel { Spacing = 4, Margin = new Thickness(28, 22, 0, 12) };
+        title.Children.Add(new TextBlock { Text = "Добрый вечер, Роман", FontSize = 27, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ThemeBrush("TextBrush", 244, 242, 250) });
+        title.Children.Add(new TextBlock { Text = "Ева готова помочь с текущим workspace", FontSize = 13, Foreground = ThemeBrush("MutedTextBrush", 146, 152, 173) });
         ConnectionStatus = new TextBlock { Text = "Не подключено" };
         title.Children.Add(ConnectionStatus);
 
-        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Margin = new Thickness(0, 22, 24, 12) };
+        actions.Children.Add(new TextBox { PlaceholderText = "Поиск по workspace", Width = 190, Height = 36, VerticalAlignment = VerticalAlignment.Top, VerticalContentAlignment = VerticalAlignment.Center });
+        actions.Children.Add(new Button { Content = "◌" });
         UpdateStatusText = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
         UpdateButton = new Button { Content = "Обновить", Visibility = Visibility.Collapsed };
         UpdateButton.Click += UpdateButton_Click;
@@ -123,7 +126,7 @@ public partial class MainWindow : Window
         Grid.SetColumn(WorkspacePathText, 1);
         root.Children.Add(WorkspacePathText);
 
-        var taskArea = new Grid { RowSpacing = 12 };
+        var taskArea = new Grid { RowSpacing = 12, Margin = new Thickness(28, 8, 28, 20) };
         taskArea.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         taskArea.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         taskArea.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -135,9 +138,21 @@ public partial class MainWindow : Window
             TextWrapping = TextWrapping.Wrap,
         };
         taskArea.Children.Add(PromptBox);
+        var welcome = new StackPanel { Spacing = 12, Margin = new Thickness(0, 42, 0, 22) };
+        welcome.Children.Add(new TextBlock { Text = "Чем займёмся?", FontSize = 32, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ThemeBrush("TextBrush", 244, 242, 250) });
+        welcome.Children.Add(new TextBlock { Text = "Опиши задачу — Ева покажет план, запросит разрешения и будет вести журнал выполнения.", Foreground = ThemeBrush("MutedTextBrush", 146, 152, 173), FontSize = 15 });
+        var suggestions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        foreach (var suggestion in new[] { "Проверить проект", "Найти проблему", "Объяснить код" })
+        {
+            suggestions.Children.Add(new Button { Content = suggestion, Foreground = ThemeBrush("TealBrush", 89, 216, 200), Background = ThemeBrush("SurfaceRaisedBrush", 34, 38, 53) });
+        }
+        welcome.Children.Add(suggestions);
+        Grid.SetRow(welcome, 1);
+        taskArea.Children.Add(welcome);
         EventLog = new TextBlock { TextWrapping = TextWrapping.Wrap };
-        var log = new ScrollViewer { MaxHeight = 360, Content = EventLog };
+        var log = new ScrollViewer { MaxHeight = 190, Content = EventLog };
         Grid.SetRow(log, 1);
+        log.VerticalAlignment = VerticalAlignment.Bottom;
         taskArea.Children.Add(log);
 
         ApprovalPanel = new StackPanel { Spacing = 8, Visibility = Visibility.Collapsed };
@@ -157,7 +172,7 @@ public partial class MainWindow : Window
         Grid.SetColumn(taskArea, 1);
         root.Children.Add(taskArea);
 
-        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
+        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Margin = new Thickness(28, 0, 28, 14) };
         StartButton = new Button { Content = "Запустить" };
         StartButton.Click += StartButton_Click;
         StopButton = new Button { Content = "Stop", IsEnabled = false };
