@@ -8,6 +8,7 @@ impl CoreVersion {
 
 use std::{collections::HashMap, sync::Arc};
 
+use evohime_local_storage::{EventRecord, LocalDatabase, StorageError};
 use evohime_model_gateway::{
     providers::{ChatMessage, ChatRole, ProviderError},
     ModelGateway, ToolSpec,
@@ -15,6 +16,7 @@ use evohime_model_gateway::{
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use futures_util::future::BoxFuture;
 use futures_util::StreamExt;
+use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
 
@@ -24,7 +26,7 @@ pub enum CoreCommand {
     StopTask { task_id: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum CoreEvent {
     TaskStarted {
         task_id: String,
@@ -54,6 +56,52 @@ pub enum CoreEvent {
     TaskStopped {
         task_id: String,
     },
+}
+
+#[derive(Clone)]
+pub struct EventJournal {
+    database: Arc<Mutex<LocalDatabase>>,
+}
+
+impl EventJournal {
+    pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, StorageError> {
+        Ok(Self {
+            database: Arc::new(Mutex::new(LocalDatabase::open(path)?)),
+        })
+    }
+
+    pub async fn record(&self, event: &CoreEvent) -> Result<i64, StorageError> {
+        let task_id = match event {
+            CoreEvent::TaskStarted { task_id, .. }
+            | CoreEvent::AssistantDelta { task_id, .. }
+            | CoreEvent::ToolStarted { task_id, .. }
+            | CoreEvent::ToolOutput { task_id, .. }
+            | CoreEvent::TaskCompleted { task_id, .. }
+            | CoreEvent::TaskFailed { task_id, .. }
+            | CoreEvent::TaskStopped { task_id } => task_id,
+        };
+        let event_type = match event {
+            CoreEvent::TaskStarted { .. } => "task.started",
+            CoreEvent::AssistantDelta { .. } => "agent.message.delta",
+            CoreEvent::ToolStarted { .. } => "tool.started",
+            CoreEvent::ToolOutput { .. } => "tool.output",
+            CoreEvent::TaskCompleted { .. } => "task.completed",
+            CoreEvent::TaskFailed { .. } => "task.failed",
+            CoreEvent::TaskStopped { .. } => "task.stopped",
+        };
+        let payload = serde_json::to_vec(event).expect("core events serialize");
+        let database = self.database.lock().await;
+        database.append_event(task_id, event_type, &payload)
+    }
+
+    pub async fn replay(
+        &self,
+        after_sequence: i64,
+        limit: usize,
+    ) -> Result<Vec<EventRecord>, StorageError> {
+        let database = self.database.lock().await;
+        database.read_events_after(after_sequence, limit)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -298,20 +346,44 @@ struct CoordinatorState {
 
 impl TaskCoordinator {
     pub fn new(buffer: usize) -> (Self, broadcast::Receiver<CoreEvent>) {
-        Self::new_with_executor(buffer, None)
+        Self::build(buffer, None, None)
     }
 
     pub fn new_with_executor(
         buffer: usize,
         executor: Option<Arc<dyn TaskExecutor>>,
     ) -> (Self, broadcast::Receiver<CoreEvent>) {
+        Self::build(buffer, executor, None)
+    }
+
+    pub fn new_with_journal(
+        buffer: usize,
+        executor: Option<Arc<dyn TaskExecutor>>,
+        journal: EventJournal,
+    ) -> (Self, broadcast::Receiver<CoreEvent>) {
+        Self::build(buffer, executor, Some(journal))
+    }
+
+    fn build(
+        buffer: usize,
+        executor: Option<Arc<dyn TaskExecutor>>,
+        journal: Option<EventJournal>,
+    ) -> (Self, broadcast::Receiver<CoreEvent>) {
         let (commands, mut command_rx) = mpsc::channel(buffer.max(1));
         let (events, event_rx) = broadcast::channel(buffer.max(1));
         let state = Arc::new(Mutex::new(CoordinatorState {
             tasks: HashMap::new(),
-            events,
+            events: events.clone(),
             executor,
         }));
+        if let Some(journal) = journal {
+            let mut journal_receiver = events.subscribe();
+            tokio::spawn(async move {
+                while let Ok(event) = journal_receiver.recv().await {
+                    let _ = journal.record(&event).await;
+                }
+            });
+        }
         let worker_state = Arc::clone(&state);
         tokio::spawn(async move {
             while let Some(command) = command_rx.recv().await {
@@ -393,8 +465,8 @@ impl TaskCoordinator {
 #[cfg(test)]
 mod tests {
     use super::{
-        AgentRunError, CoreCommand, CoreEvent, CoreVersion, ModelAgent, TaskCoordinator,
-        TaskExecutor, ToolAgent,
+        AgentRunError, CoreCommand, CoreEvent, CoreVersion, EventJournal, ModelAgent,
+        TaskCoordinator, TaskExecutor, ToolAgent,
     };
     use evohime_model_gateway::{
         providers::mock::MockProvider, ChatResult, ModelGateway, NativeToolCall,
@@ -568,5 +640,70 @@ mod tests {
             matches!(receiver.recv().await, Ok(CoreEvent::TaskCompleted { final_message, .. }) if final_message == "found it")
         );
         let _ = std::fs::remove_dir_all(workspace);
+    }
+
+    #[tokio::test]
+    async fn journals_core_events_and_replays_after_a_sequence() {
+        let path =
+            std::env::temp_dir().join(format!("evohime-core-journal-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let first = journal
+            .record(&CoreEvent::TaskStarted {
+                task_id: "task-journal".into(),
+                prompt: "persist me".into(),
+            })
+            .await
+            .expect("event records");
+        journal
+            .record(&CoreEvent::TaskCompleted {
+                task_id: "task-journal".into(),
+                final_message: "done".into(),
+            })
+            .await
+            .expect("second event records");
+        let replay = journal.replay(first, 10).await.expect("events replay");
+        assert_eq!(replay.len(), 1);
+        assert_eq!(replay[0].event_type, "task.completed");
+        assert_eq!(replay[0].task_id, "task-journal");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn coordinator_journal_captures_lifecycle_events() {
+        let path = std::env::temp_dir().join(format!(
+            "evohime-core-coordinator-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let (coordinator, mut events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        coordinator
+            .dispatch(CoreCommand::StartTask {
+                task_id: "task-persisted".into(),
+                prompt: "persist lifecycle".into(),
+            })
+            .await
+            .expect("start dispatches");
+        let _ = events.recv().await.expect("started event");
+        coordinator
+            .dispatch(CoreCommand::StopTask {
+                task_id: "task-persisted".into(),
+            })
+            .await
+            .expect("stop dispatches");
+        let _ = events.recv().await.expect("stopped event");
+        let mut replay = Vec::new();
+        for _ in 0..20 {
+            replay = journal.replay(0, 10).await.expect("replay works");
+            if replay.len() >= 2 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(replay.len(), 2);
+        assert_eq!(replay[0].event_type, "task.started");
+        assert_eq!(replay[1].event_type, "task.stopped");
+        let _ = std::fs::remove_file(path);
     }
 }

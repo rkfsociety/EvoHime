@@ -22,6 +22,15 @@ pub struct LocalDatabase {
     connection: Connection,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventRecord {
+    pub sequence_id: i64,
+    pub task_id: String,
+    pub event_type: String,
+    pub payload: Vec<u8>,
+    pub created_at: String,
+}
+
 impl LocalDatabase {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
         let path = path.as_ref().to_path_buf();
@@ -67,6 +76,40 @@ impl LocalDatabase {
             .is_some())
     }
 
+    pub fn append_event(
+        &self,
+        task_id: &str,
+        event_type: &str,
+        payload: &[u8],
+    ) -> Result<i64, StorageError> {
+        self.connection.execute(
+            "INSERT INTO events(task_id, event_type, payload) VALUES (?1, ?2, ?3)",
+            rusqlite::params![task_id, event_type, payload],
+        )?;
+        Ok(self.connection.last_insert_rowid())
+    }
+
+    pub fn read_events_after(
+        &self,
+        after_sequence: i64,
+        limit: usize,
+    ) -> Result<Vec<EventRecord>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT sequence_id, task_id, event_type, payload, created_at
+             FROM events WHERE sequence_id > ?1 ORDER BY sequence_id LIMIT ?2",
+        )?;
+        let rows = statement.query_map(rusqlite::params![after_sequence, limit as i64], |row| {
+            Ok(EventRecord {
+                sequence_id: row.get(0)?,
+                task_id: row.get(1)?,
+                event_type: row.get(2)?,
+                payload: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     fn read_schema_version(connection: &Connection) -> Result<u32, rusqlite::Error> {
         connection.query_row("PRAGMA user_version", [], |row| row.get(0))
     }
@@ -96,13 +139,13 @@ mod tests {
     use super::{LocalDatabase, SCHEMA_VERSION};
     use std::path::PathBuf;
 
-    fn temp_database_path() -> PathBuf {
-        std::env::temp_dir().join(format!("evohime-test-{}.db", std::process::id()))
+    fn temp_database_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("evohime-test-{name}-{}.db", std::process::id()))
     }
 
     #[test]
     fn creates_schema_and_reports_version() {
-        let path = temp_database_path();
+        let path = temp_database_path("schema");
         let _ = std::fs::remove_file(&path);
         let database = LocalDatabase::open(&path).expect("database opens");
         assert_eq!(
@@ -116,7 +159,7 @@ mod tests {
 
     #[test]
     fn backs_up_existing_database_before_migration() {
-        let path = temp_database_path();
+        let path = temp_database_path("backup");
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("db.bak"));
         {
@@ -129,5 +172,24 @@ mod tests {
         assert!(path.with_extension("db.bak").exists());
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("db.bak"));
+    }
+
+    #[test]
+    fn appends_and_replays_events_by_sequence() {
+        let path = temp_database_path("events");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        let first = database
+            .append_event("task-1", "task.started", b"one")
+            .expect("first event");
+        let second = database
+            .append_event("task-1", "task.completed", b"two")
+            .expect("second event");
+        let events = database.read_events_after(first, 10).expect("events read");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].sequence_id, second);
+        assert_eq!(events[0].payload, b"two");
+        drop(database);
+        let _ = std::fs::remove_file(path);
     }
 }
