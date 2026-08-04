@@ -50,6 +50,16 @@ cargo check -p evohime-supervisor
 ```
 
 Для native-задач используй только Windows launcher, Rust native crates, WinUI tests и native packaging scripts.
+Веб-панель и Vite больше не являются частью продукта и не должны возвращаться в инструкции, запуск или архитектуру.
+
+Если native-сборка останавливается на `prost-build` или другом crate, сначала проверь доступ Cargo к crates.io:
+
+```powershell
+Resolve-DnsName index.crates.io
+Test-NetConnection index.crates.io -Port 443
+```
+
+NuGet и crates.io — независимые источники: успешный `dotnet restore` не означает, что Rust-сборка сможет обновить registry.
 
 ## IPC
 
@@ -78,5 +88,6 @@ cargo check -p evohime-supervisor
 ## Документы
 
 - `docs/superpowers/specs/2026-08-04-native-windows-agent-design.md` — архитектура;
-- `docs/superpowers/plans/2026-08-04-native-windows-agent.md` — implementation plan;
+- `docs/superpowers/plans/2026-08-04-native-windows-agent.md` — архитектурный implementation plan;
+- `docs/superpowers/plans/2026-08-04-evohime-shell.md` — актуальный план визуальной native-оболочки;
 - `docs/architecture.md` — deployment/runtime overview.
