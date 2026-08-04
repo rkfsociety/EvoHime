@@ -2,8 +2,12 @@ using EvoHime.Desktop.Services;
 using Google.Protobuf;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.IO;
+using System.Net;
+using System.Net.Http;
 using System;
 using System.Collections.Generic;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace EvoHime.Tests;
@@ -208,5 +212,40 @@ public sealed class IpcCompatibilityTests
             System.Text.Encoding.UTF8.GetBytes("{\"tool_name\":\"filesystem.search\",\"output\":\"found\"}"));
 
         Assert.AreEqual("[8] tool.output · filesystem.search: found", NativeEventFormatter.Format(envelope));
+    }
+
+    [TestMethod]
+    public void UpdateServiceComparesClientVersions()
+    {
+        Assert.AreEqual("0.0.0001", UpdateService.CurrentVersion);
+        Assert.IsTrue(UpdateService.IsNewerVersion("v0.0.0002", "0.0.0001"));
+        Assert.IsFalse(UpdateService.IsNewerVersion("v0.0.0001", "0.0.0001"));
+        Assert.IsFalse(UpdateService.IsNewerVersion("not-a-version", "0.0.0001"));
+    }
+
+    [TestMethod]
+    public async Task UpdateServiceReadsReleaseDigestBeforeOfferingInstaller()
+    {
+        const string digest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        using var http = new HttpClient(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                $$"""{"tag_name":"v0.0.0002","assets":[{"name":"EvoHime-Setup.exe","browser_download_url":"https://example.invalid/EvoHime-Setup.exe","digest":"{{digest}}"}]}""",
+                Encoding.UTF8,
+                "application/json"),
+        }));
+        var service = new UpdateService(http);
+
+        var update = await service.CheckLatestAsync("0.0.0001", CancellationToken.None);
+
+        Assert.IsNotNull(update);
+        Assert.AreEqual("0.0.0002", update.Version);
+        Assert.AreEqual(digest["sha256:".Length..], update.Sha256);
+    }
+
+    private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(responseFactory(request));
     }
 }

@@ -24,7 +24,7 @@
 2. Native shell — task workspace, replay/reconnect, tray and notifications. Завершён.
 3. Agent workflow — streaming, approvals, cancellation, checkpoints and diff review. В работе: streaming, cancellation и approval round-trip завершены; checkpoints и diff review впереди.
 4. Developer tools — files, editor, Git and controlled terminal. Следующий этап.
-5. Product hardening — credentials, backup/restore, installer, update and crash recovery. Запланирован.
+5. Product hardening — credentials, backup/restore, installer, update and crash recovery. В работе.
 6. Release cleanup — единый installer, retention релизов, диагностика и чистый native CI. В работе.
 
 ## Текущий статус native-перехода
@@ -35,6 +35,7 @@
 | Package, smoke build, CI и единый installer | ✅ Завершён | `9b3430c` |
 | Workspace, persistence, tray, notifications, replay | ✅ Завершён | `a43aaac`–`0246f05` |
 | Approval round-trip через native IPC | ✅ Завершён | `87c5b39` |
+| Автообновление, SHA-256 installer verification и upgrade smoke | ✅ Завершён | текущий release hardening |
 | Files, Editor, Git, Terminal | ⬜ Следующий этап | — |
 | Credentials, backup/restore, update/MSIX | ⬜ Запланирован | — |
 

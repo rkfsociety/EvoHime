@@ -8,6 +8,7 @@ foreach ($required in @(
     'actions/upload-artifact@v4',
     'installer/EvoHime.iss',
     'EvoHime-Setup.exe',
+    '-Version $version',
     'iscc',
     'gh release create',
     'contents: write'

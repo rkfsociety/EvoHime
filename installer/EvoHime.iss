@@ -1,5 +1,7 @@
 #define AppName "EvoHime"
-#define AppVersion "0.0.0001"
+#ifndef AppVersion
+  #define AppVersion "0.0.0001"
+#endif
 #define AppPublisher "EvoHime"
 #define AppExeName "EvoHime.exe"
 #ifndef SourceDir
@@ -22,6 +24,9 @@ SolidCompression=yes
 PrivilegesRequired=lowest
 UninstallDisplayName={#AppName}
 WizardStyle=modern
+CloseApplications=yes
+RestartApplications=no
+CloseApplicationsFilter=EvoHime.exe
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

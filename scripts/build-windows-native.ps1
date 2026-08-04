@@ -3,6 +3,8 @@ param(
     [string]$OutputPath = (Join-Path $PSScriptRoot '..\artifacts\native\windows-x64'),
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
+    [ValidatePattern('^\d+\.\d+\.\d+$')]
+    [string]$Version = '0.0.0001',
     [switch]$SkipBuild
 )
 
@@ -17,6 +19,7 @@ $outputCandidate = if ([System.IO.Path]::IsPathRooted($OutputPath)) {
 }
 $resolvedOutput = [System.IO.Path]::GetFullPath($outputCandidate)
 $manifest = New-NativePackageManifest -Architecture 'x64' -OsMinimum 'Windows 11 22H2'
+$assemblyVersion = "$Version.0"
 
 if (-not $SkipBuild) {
     $dotnet = Get-DotNetExecutable
@@ -29,6 +32,8 @@ if (-not $SkipBuild) {
             'publish', 'desktop\EvoHime.Desktop\EvoHime.Desktop.csproj',
             '-c', $Configuration, '-r', 'win-x64', '--self-contained', 'false',
             '-p:Platform=x64', '-p:WindowsPackageType=None', '-p:EnableMsixTooling=false',
+            "-p:Version=$Version", "-p:InformationalVersion=$Version",
+            "-p:AssemblyVersion=$assemblyVersion", "-p:FileVersion=$assemblyVersion",
             '-o', (Join-Path $resolvedOutput 'ui')
         )
     }

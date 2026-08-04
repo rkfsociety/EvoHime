@@ -60,7 +60,9 @@ jobs:
           toolchain: stable-x86_64-pc-windows-msvc
       - name: Build native package after CI checks
         shell: pwsh
-        run: ./scripts/build-windows-native.ps1 -OutputPath "$env:GITHUB_WORKSPACE\native-package"
+        run: |
+          $version = if ($env:GITHUB_REF_NAME -like 'v*') { $env:GITHUB_REF_NAME.Substring(1) } else { '0.0.0001' }
+          ./scripts/build-windows-native.ps1 -OutputPath "$env:GITHUB_WORKSPACE\native-package" -Version $version
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress --yes
@@ -69,8 +71,22 @@ jobs:
         run: |
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
           if (-not (Test-Path -LiteralPath $iscc)) { throw "ISCC not found: $iscc" }
-          & $iscc "/O$env:GITHUB_WORKSPACE\installer-output" "/DSourceDir=$env:GITHUB_WORKSPACE\native-package" installer/EvoHime.iss
+          $version = if ($env:GITHUB_REF_NAME -like 'v*') { $env:GITHUB_REF_NAME.Substring(1) } else { '0.0.0001' }
+          & $iscc "/O$env:GITHUB_WORKSPACE\installer-output" "/DAppVersion=$version" "/DSourceDir=$env:GITHUB_WORKSPACE\native-package" installer/EvoHime.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install and upgrade smoke
+        shell: pwsh
+        run: |
+          $installPath = Join-Path $env:RUNNER_TEMP 'EvoHime-install-smoke'
+          $setup = Join-Path $env:GITHUB_WORKSPACE 'installer-output\EvoHime-Setup.exe'
+          & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installPath"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($component in @('EvoHime.exe', 'evohime-core.exe', 'evohime-supervisor.exe')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $installPath $component))) { throw "Installed component missing: $component" }
+          }
+          & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installPath"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path -LiteralPath (Join-Path $installPath 'EvoHime.exe'))) { throw 'Upgrade removed the client executable.' }
       - name: Upload single installer
         uses: actions/upload-artifact@v4
         with:

@@ -18,7 +18,11 @@
         <TextBlock Text="EvoHime · Ева" FontSize="28" />
         <TextBlock x:Name="ConnectionStatus" Text="Не подключено" />
       </StackPanel>
-      <Button Grid.Column="1" x:Name="ChooseWorkspaceButton" Content="Выбрать workspace" Click="ChooseWorkspaceButton_Click" />
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+        <TextBlock x:Name="UpdateStatusText" VerticalAlignment="Center" />
+        <Button x:Name="UpdateButton" Content="Обновить" Click="UpdateButton_Click" Visibility="Collapsed" />
+        <Button x:Name="ChooseWorkspaceButton" Content="Выбрать workspace" Click="ChooseWorkspaceButton_Click" />
+      </StackPanel>
     </Grid>
     <TextBlock x:Name="WorkspacePathText" Grid.Row="1" Text="Workspace: не выбран" TextTrimming="CharacterEllipsis" />
     <Grid Grid.Row="2" RowSpacing="12">

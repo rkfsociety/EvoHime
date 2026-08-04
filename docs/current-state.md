@@ -25,6 +25,8 @@ Core и supervisor — внутренние компоненты установ�
 - streamed task timeline, cancellation и approval round-trip;
 - native package smoke tests и Windows CI;
 - единый Inno Setup installer с одним desktop shortcut;
+- установленный клиент сам поднимает supervisor и Core;
+- автообнаружение GitHub Release, SHA-256 проверка installer и upgrade smoke в CI;
 - release retention: сохраняется только последний стабильный `vX.Y.Z` release/tag;
 - имя агента «Ева» передаётся в system context Core.
 
@@ -32,8 +34,8 @@ Core и supervisor — внутренние компоненты установ�
 
 1. Files, Editor, Git и controlled Terminal;
 2. diff/command preview в approval UI;
-3. Credential Manager/DPAPI, backup/restore и crash recovery;
-4. update/rollback и дальнейшая проверка установочного UX.
+3. Credential Manager/DPAPI, расширенный backup/restore и crash recovery;
+4. rollback после неуспешного upgrade и дальнейшая проверка установочного UX.
 
 ## Граница продукта
 

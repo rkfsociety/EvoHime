@@ -19,6 +19,7 @@
 | Единый installer и CI build after checks | ✅ | `9b3430c` |
 | Имя агента «Ева» и версия `0.0.0001` | ✅ | `775b20b` |
 | Retention: только последний стабильный release/tag | ✅ | `dadcbf6` |
+| Автообнаружение обновления, SHA-256 проверка и upgrade smoke | ✅ | release hardening |
 
 ## Ближайшая работа
 
@@ -35,7 +36,7 @@
 - Windows Credential Manager/DPAPI для provider keys;
 - backup/restore SQLite и migration recovery;
 - crash recovery и диагностика из UI;
-- update/rollback установщика;
+- rollback установщика после неуспешного upgrade;
 - проверка upgrade path на чистой Windows 11 22H2+.
 
 ### 3. Native quality

@@ -9,10 +9,12 @@ namespace EvoHime.Desktop;
 public partial class MainWindow : Window
 {
     public event Action<string, string>? NotificationRequested;
+    public event Action? UpdateReadyToInstall;
 
     private readonly CoreIpcClient _ipc = new("evohime-core-v1");
     private readonly NativeShellState _state = new();
     private readonly WorkspaceSettings _settings = new();
+    private readonly UpdateService _updates = new();
     private CancellationTokenSource? _eventCts;
     private string? _activeTaskId;
     private int _reconnectAttempt;
@@ -24,6 +26,7 @@ public partial class MainWindow : Window
         _state.SelectWorkspace(Environment.CurrentDirectory);
         WorkspacePathText.Text = $"Workspace: {_state.WorkspacePath}";
         _ = RestoreWorkspaceAsync();
+        _ = CheckForUpdatesAsync();
     }
 
     private async void ChooseWorkspaceButton_Click(object sender, RoutedEventArgs e)
@@ -180,6 +183,54 @@ public partial class MainWindow : Window
 
     private void SetConnectionStatus(string text) =>
         _ = DispatcherQueue.TryEnqueue(() => ConnectionStatus.Text = text);
+
+    private async Task CheckForUpdatesAsync()
+    {
+        try
+        {
+            var update = await _updates.CheckLatestAsync(UpdateService.CurrentVersion, CancellationToken.None);
+            if (update is null)
+            {
+                return;
+            }
+
+            _availableUpdate = update;
+            _ = DispatcherQueue.TryEnqueue(() =>
+            {
+                UpdateStatusText.Text = $"Доступна Ева {update.Version}";
+                UpdateButton.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
+            });
+        }
+        catch (Exception error) when (error is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            SetConnectionStatus("Проверка обновлений недоступна.");
+        }
+    }
+
+    private UpdateInfo? _availableUpdate;
+
+    private async void UpdateButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_availableUpdate is null)
+        {
+            return;
+        }
+
+        try
+        {
+            UpdateButton.IsEnabled = false;
+            UpdateStatusText.Text = "Загрузка обновления...";
+            var installer = await _updates.DownloadInstallerAsync(_availableUpdate, CancellationToken.None);
+            UpdateService.LaunchInstaller(installer);
+            UpdateReadyToInstall?.Invoke();
+        }
+        catch (Exception error)
+        {
+            UpdateButton.IsEnabled = true;
+            UpdateStatusText.Text = "Обновление не установлено.";
+            SetConnectionStatus($"Ошибка обновления: {error.Message}");
+        }
+    }
 
     private void ShowApproval(CoreEventEnvelope envelope)
     {
