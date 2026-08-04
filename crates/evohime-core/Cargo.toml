@@ -11,7 +11,7 @@ name = "evohime-core"
 path = "src/main.rs"
 
 [dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync"] }
 evohime-model-gateway = { path = "../model-gateway" }
 evohime-tool-runtime = { path = "../tool-runtime" }
 evohime-permissions = { path = "../permissions" }

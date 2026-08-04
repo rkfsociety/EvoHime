@@ -3,6 +3,27 @@ pub struct CoreVersion;
 mod ipc_bridge;
 pub use ipc_bridge::{IpcBridge, IpcBridgeError};
 
+#[cfg(windows)]
+pub async fn run_windows_pipe(
+    pipe_name: &str,
+    database_path: impl AsRef<std::path::Path>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use tokio::io::split;
+    use tokio::net::windows::named_pipe::ServerOptions;
+
+    let bridge = IpcBridge::new(EventJournal::open(database_path)?);
+    loop {
+        let server = ServerOptions::new().create(pipe_name)?;
+        server.connect().await?;
+        let (mut reader, mut writer) = split(server);
+        loop {
+            if bridge.process_once(&mut reader, &mut writer).await.is_err() {
+                break;
+            }
+        }
+    }
+}
+
 impl CoreVersion {
     pub const fn current() -> &'static str {
         env!("CARGO_PKG_VERSION")
