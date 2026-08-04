@@ -1,6 +1,6 @@
 #define AppName "EvoHime"
 #ifndef AppVersion
-  #define AppVersion "0.0.000030"
+  #define AppVersion "0.0.000031"
 #endif
 #define AppPublisher "EvoHime"
 #define AppExeName "EvoHime.exe"
@@ -32,7 +32,7 @@ CloseApplicationsFilter=EvoHime.exe
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autodesktop}\EvoHime"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"
+Name: "{autodesktop}\EvoHime"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 0
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Запустить EvoHime"; Flags: nowait postinstall skipifsilent

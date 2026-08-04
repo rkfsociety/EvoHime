@@ -4,7 +4,7 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.0.000030',
+    [string]$Version = '0.0.000031',
     [switch]$SkipBuild
 )
 
@@ -30,7 +30,7 @@ if (-not $SkipBuild) {
         )
         Invoke-NativeCommand -Executable $dotnet -Arguments @(
             'publish', 'desktop\EvoHime.Desktop\EvoHime.Desktop.csproj',
-            '-c', $Configuration, '-r', 'win-x64', '--self-contained', 'false',
+            '-c', $Configuration, '-r', 'win-x64', '--self-contained', 'true',
             '-p:Platform=x64', '-p:WindowsPackageType=None', '-p:EnableMsixTooling=false',
             "-p:Version=$Version", "-p:InformationalVersion=$Version",
             "-p:AssemblyVersion=$assemblyVersion", "-p:FileVersion=$assemblyVersion",
@@ -65,10 +65,20 @@ foreach ($component in $required) {
     }
 }
 
-$uiStaged = Join-Path $resolvedOutput 'ui\EvoHime.Desktop.exe'
+$uiStaged = Join-Path $resolvedOutput 'ui'
 $uiPackaged = Join-Path $resolvedOutput 'EvoHime.exe'
 if (Test-Path -LiteralPath $uiStaged) {
-    Copy-Item -LiteralPath $uiStaged -Destination $uiPackaged -Force
+    foreach ($item in Get-ChildItem -LiteralPath $uiStaged -Force) {
+        $name = if ($item.Name -eq 'EvoHime.Desktop.exe') {
+            'EvoHime.exe'
+        } elseif ($item.Name -in @('EvoHime.Desktop.deps.json', 'EvoHime.Desktop.runtimeconfig.json')) {
+            'EvoHime' + $item.Name.Substring('EvoHime.Desktop'.Length)
+        } else {
+            $item.Name
+        }
+        $destination = Join-Path $resolvedOutput $name
+        Copy-Item -LiteralPath $item.FullName -Destination $destination -Force -Recurse
+    }
 }
 if (-not (Test-Path -LiteralPath $uiPackaged)) {
     throw "Native-компонент не найден: $uiPackaged"

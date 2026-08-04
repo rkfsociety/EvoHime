@@ -144,7 +144,7 @@ jobs:
           $setup = Join-Path $env:GITHUB_WORKSPACE 'installer-output\EvoHime-Setup.exe'
           & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installPath"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($component in @('EvoHime.exe', 'evohime-core.exe', 'evohime-supervisor.exe')) {
+          foreach ($component in @('EvoHime.exe', 'EvoHime.runtimeconfig.json', 'EvoHime.deps.json', 'evohime-core.exe', 'evohime-supervisor.exe')) {
             if (-not (Test-Path -LiteralPath (Join-Path $installPath $component))) { throw "Installed component missing: $component" }
           }
           & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installPath"

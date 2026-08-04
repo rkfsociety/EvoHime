@@ -9,6 +9,7 @@ foreach ($required in @(
     'installer/EvoHime.iss',
     'EvoHime-Setup.exe',
     '-Version $env:RELEASE_VERSION',
+    'EvoHime.runtimeconfig.json',
     'Rollback smoke after failed installer start',
     '--blame-hang',
     '--blame-hang-timeout 5m',
@@ -47,6 +48,13 @@ if ($workflow -match 'path: native-package\s*$' -or $workflow -match 'evohime-na
 }
 
 $installer = Get-Content -Raw (Join-Path $PSScriptRoot '..\installer\EvoHime.iss')
+$buildScript = Get-Content -Raw (Join-Path $PSScriptRoot 'build-windows-native.ps1')
+if ($buildScript -notmatch '--self-contained.*true') {
+    throw 'The WinUI publish must be self-contained.'
+}
+if ($installer -notmatch 'IconFilename:') {
+    throw 'The desktop shortcut must define an icon.'
+}
 if (($installer | Select-String -Pattern '\{autodesktop\}' -AllMatches).Matches.Count -ne 1) {
     throw 'The installer must create exactly one desktop shortcut.'
 }
