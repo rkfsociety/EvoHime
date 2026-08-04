@@ -10,6 +10,9 @@ foreach ($required in @(
     'EvoHime-Setup.exe',
     '-Version $version',
     'Rollback smoke after failed installer start',
+    '--blame-hang',
+    '--blame-hang-timeout 5m',
+    'winui-test-diagnostics',
     'iscc',
     'gh release create',
     'contents: write'

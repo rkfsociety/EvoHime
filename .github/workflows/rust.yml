@@ -44,9 +44,28 @@ jobs:
       - name: Test package manifest and idempotent staging
         shell: pwsh
         run: ./scripts/native-package.tests.ps1
-      - name: Test WinUI shell
+      - name: Restore WinUI shell
         shell: pwsh
-        run: dotnet test desktop/EvoHime.Tests/EvoHime.Tests.csproj -p:Platform=x64 --nologo
+        run: dotnet restore desktop/EvoHime.Tests/EvoHime.Tests.csproj --nologo
+      - name: Build WinUI shell
+        shell: pwsh
+        run: dotnet build desktop/EvoHime.Tests/EvoHime.Tests.csproj -p:Platform=x64 --nologo --no-restore
+      - name: Test WinUI shell with hang diagnostics
+        timeout-minutes: 10
+        shell: pwsh
+        run: >-
+          dotnet test desktop/EvoHime.Tests/EvoHime.Tests.csproj
+          -p:Platform=x64 --nologo --no-build --no-restore
+          --results-directory "$env:GITHUB_WORKSPACE\TestResults"
+          --logger "console;verbosity=detailed"
+          --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type mini
+      - name: Upload WinUI hang diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: winui-test-diagnostics
+          path: TestResults
+          if-no-files-found: ignore
 
   build-native:
     needs: [rust-native, windows-check]
