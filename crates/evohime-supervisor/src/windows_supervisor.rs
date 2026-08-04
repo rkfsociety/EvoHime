@@ -223,7 +223,10 @@ mod tests {
         fs::write(install.join("EvoHime.exe"), "interrupted").unwrap();
 
         assert!(recover_pending_update(&state).unwrap());
-        assert_eq!(fs::read_to_string(install.join("EvoHime.exe")).unwrap(), "old:EvoHime.exe");
+        assert_eq!(
+            fs::read_to_string(install.join("EvoHime.exe")).unwrap(),
+            "old:EvoHime.exe"
+        );
         assert!(!transaction.state_path().exists());
         fs::remove_dir_all(root).unwrap();
     }

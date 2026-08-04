@@ -38,7 +38,10 @@ pub fn verify_installation(install_dir: &Path) -> io::Result<()> {
         if !path.is_file() {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
-                format!("required installed component is missing: {}", path.display()),
+                format!(
+                    "required installed component is missing: {}",
+                    path.display()
+                ),
             ));
         }
     }
@@ -47,14 +50,17 @@ pub fn verify_installation(install_dir: &Path) -> io::Result<()> {
 
 pub fn run_update(installer: &Path, install_dir: &Path, state_dir: &Path) -> io::Result<()> {
     validate_absolute(installer, "installer path")?;
-    if !installer.is_file() {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("installer does not exist: {}", installer.display()),
-        ));
-    }
     let _ = UpdateTransaction::recover(state_dir)?;
     let transaction = UpdateTransaction::prepare(install_dir, state_dir)?;
+    if !installer.is_file() {
+        return rollback_after_failure(
+            transaction,
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("installer does not exist: {}", installer.display()),
+            ),
+        );
+    }
     let status = Command::new(installer)
         .args([
             "/VERYSILENT",
@@ -101,7 +107,10 @@ impl UpdateTransaction {
         if !install_dir.is_dir() {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
-                format!("install directory does not exist: {}", install_dir.display()),
+                format!(
+                    "install directory does not exist: {}",
+                    install_dir.display()
+                ),
             ));
         }
         fs::create_dir_all(state_dir)?;
@@ -197,7 +206,10 @@ impl UpdateTransaction {
             if !source.is_file() {
                 return Err(io::Error::new(
                     io::ErrorKind::NotFound,
-                    format!("required installed component is missing: {}", source.display()),
+                    format!(
+                        "required installed component is missing: {}",
+                        source.display()
+                    ),
                 ));
             }
             fs::copy(&source, self.backup_dir.join(component))?;
@@ -303,7 +315,10 @@ mod tests {
         transaction.rollback().unwrap();
 
         for component in UpdateTransaction::COMPONENTS {
-            assert_eq!(fs::read_to_string(install.join(component)).unwrap(), format!("old:{component}"));
+            assert_eq!(
+                fs::read_to_string(install.join(component)).unwrap(),
+                format!("old:{component}")
+            );
         }
         assert!(!transaction.state_path().exists());
         fs::remove_dir_all(root).unwrap();
@@ -321,7 +336,10 @@ mod tests {
         let result = UpdateTransaction::recover(&state).unwrap();
 
         assert!(result.recovered);
-        assert_eq!(fs::read_to_string(install.join("EvoHime.exe")).unwrap(), "old:EvoHime.exe");
+        assert_eq!(
+            fs::read_to_string(install.join("EvoHime.exe")).unwrap(),
+            "old:EvoHime.exe"
+        );
         assert!(!transaction.state_path().exists());
         fs::remove_dir_all(root).unwrap();
     }

@@ -18,6 +18,7 @@ function New-NativePackageManifest {
             ui         = 'EvoHime.exe'
             core       = 'evohime-core.exe'
             supervisor = 'evohime-supervisor.exe'
+            updater    = 'evohime-transaction.exe'
         }
     }
 }

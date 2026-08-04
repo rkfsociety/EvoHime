@@ -9,6 +9,7 @@ foreach ($required in @(
     'installer/EvoHime.iss',
     'EvoHime-Setup.exe',
     '-Version $version',
+    'Rollback smoke after failed installer start',
     'iscc',
     'gh release create',
     'contents: write'

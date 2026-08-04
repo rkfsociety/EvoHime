@@ -20,10 +20,8 @@ fn main() -> ExitCode {
 }
 
 fn spawn_worker(args: &[String]) -> ExitCode {
-    let worker = std::env::temp_dir().join(format!(
-        "evohime-updater-{}-worker.exe",
-        std::process::id()
-    ));
+    let worker =
+        std::env::temp_dir().join(format!("evohime-transaction-{}-worker.exe", std::process::id()));
     let current = match std::env::current_exe() {
         Ok(path) => path,
         Err(error) => return report_error(error),
@@ -31,10 +29,7 @@ fn spawn_worker(args: &[String]) -> ExitCode {
     if let Err(error) = std::fs::copy(&current, &worker) {
         return report_error(error);
     }
-    let result = Command::new(&worker)
-        .arg("--worker")
-        .args(args)
-        .spawn();
+    let result = Command::new(&worker).arg("--worker").args(args).spawn();
     if let Err(error) = result {
         let _ = std::fs::remove_file(&worker);
         return report_error(error);

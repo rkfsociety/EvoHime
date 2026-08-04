@@ -97,12 +97,30 @@ public sealed class UpdateService
         }
     }
 
-    public static Process LaunchInstaller(string installerPath) =>
-        Process.Start(new ProcessStartInfo
+    public static Process LaunchUpdater(string installerPath, string installDirectory)
+    {
+        var updaterPath = Path.Combine(AppContext.BaseDirectory, "evohime-transaction.exe");
+        if (!File.Exists(updaterPath))
         {
-            FileName = installerPath,
-            UseShellExecute = true,
-        }) ?? throw new InvalidOperationException("Не удалось запустить установщик обновления.");
+            throw new FileNotFoundException("Компонент обновления не найден.", updaterPath);
+        }
+
+        var stateDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "EvoHime", "update-state");
+        return Process.Start(new ProcessStartInfo
+        {
+            FileName = updaterPath,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            ArgumentList =
+            {
+                "--installer", installerPath,
+                "--install-dir", installDirectory,
+                "--state-dir", stateDirectory,
+            },
+        }) ?? throw new InvalidOperationException("Не удалось запустить обновление Евы.");
+    }
 
     private static bool TryParseVersion(string value, out Version version)
     {

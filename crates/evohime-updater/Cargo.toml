@@ -8,7 +8,7 @@ name = "evohime_update_transaction"
 path = "src/lib.rs"
 
 [[bin]]
-name = "evohime-updater"
+name = "evohime-transaction"
 path = "src/main.rs"
 
 [dependencies]

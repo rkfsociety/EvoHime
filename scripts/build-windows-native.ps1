@@ -26,7 +26,7 @@ if (-not $SkipBuild) {
     Push-Location $repoRoot
     try {
         Invoke-NativeCommand -Executable 'cargo' -Arguments @(
-            'build', '--locked', '--release', '-p', 'evohime-core', '-p', 'evohime-supervisor'
+            'build', '--locked', '--release', '-p', 'evohime-core', '-p', 'evohime-supervisor', '-p', 'evohime-updater'
         )
         Invoke-NativeCommand -Executable $dotnet -Arguments @(
             'publish', 'desktop\EvoHime.Desktop\EvoHime.Desktop.csproj',
@@ -46,7 +46,8 @@ New-Item -ItemType Directory -Force -Path $resolvedOutput | Out-Null
 $cargoTarget = Join-Path $repoRoot 'target\release'
 $required = @(
     'evohime-core.exe',
-    'evohime-supervisor.exe'
+    'evohime-supervisor.exe',
+    'evohime-transaction.exe'
 )
 
 foreach ($component in $required) {

@@ -221,8 +221,9 @@ public partial class MainWindow : Window
             UpdateButton.IsEnabled = false;
             UpdateStatusText.Text = "Загрузка обновления...";
             var installer = await _updates.DownloadInstallerAsync(_availableUpdate, CancellationToken.None);
-            UpdateService.LaunchInstaller(installer);
             UpdateReadyToInstall?.Invoke();
+            await Task.Delay(250);
+            UpdateService.LaunchUpdater(installer, AppContext.BaseDirectory);
         }
         catch (Exception error)
         {
