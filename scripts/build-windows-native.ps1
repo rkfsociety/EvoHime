@@ -4,7 +4,7 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.0.0001',
+    [string]$Version = '0.0.000030',
     [switch]$SkipBuild
 )
 
