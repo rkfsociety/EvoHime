@@ -1,5 +1,7 @@
 # EvoHime
 
+Пользовательское короткое имя агента — **Ева**. Обращения «Ева» и «EvoHime» означают одного и того же агента.
+
 Нативный Windows-агент без браузерной панели. Приложение состоит из WinUI 3 UI, Rust core и supervisor; состояние хранится локально в SQLite, обмен идёт через версионируемый named pipe IPC.
 
 ## Требования
@@ -26,12 +28,12 @@
 .\scripts\build-windows-native.ps1
 ```
 
-Результат находится в `artifacts/native/windows-x64` и содержит только `EvoHime.Desktop.exe`, `evohime-core.exe`, `evohime-supervisor.exe` и manifest.
+Для релиза GitHub Actions собирает единственный пользовательский файл `EvoHime-Setup.exe`. После установки создаётся один ярлык `EvoHime`, запускающий `EvoHime.exe`; Core и supervisor являются внутренними служебными компонентами.
 
 ## Архитектура
 
 ```text
-EvoHime.Desktop.exe
+EvoHime.exe
         │ versioned named pipe
 evohime-core.exe ── SQLite + model gateway + tools
         ▲

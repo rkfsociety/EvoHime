@@ -1,4 +1,5 @@
 target/
+artifacts/
 desktop/**/bin/
 desktop/**/obj/
 node_modules/

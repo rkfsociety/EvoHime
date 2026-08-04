@@ -15,7 +15,7 @@
         <ColumnDefinition Width="Auto" />
       </Grid.ColumnDefinitions>
       <StackPanel Spacing="4">
-        <TextBlock Text="EvoHime" FontSize="28" />
+        <TextBlock Text="EvoHime · Ева" FontSize="28" />
         <TextBlock x:Name="ConnectionStatus" Text="Не подключено" />
       </StackPanel>
       <Button Grid.Column="1" x:Name="ChooseWorkspaceButton" Content="Выбрать workspace" Click="ChooseWorkspaceButton_Click" />

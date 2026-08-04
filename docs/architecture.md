@@ -1,9 +1,10 @@
 # EvoHime — native Windows architecture
 
 EvoHime — локальное Windows-приложение. Браузер, HTTP/REST, WebSocket, PostgreSQL и Python worker не являются runtime-зависимостями продукта.
+Пользовательское короткое имя агента — «Ева».
 
 ```text
-EvoHime.Desktop.exe       WinUI 3 UI
+EvoHime.exe               WinUI 3 UI (пользовательский запуск)
         │ desktop-ipc-v1 / named pipe
 evohime-core.exe          agent loop, model gateway, tools, SQLite
         ▲

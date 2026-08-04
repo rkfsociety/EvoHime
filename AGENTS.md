@@ -11,7 +11,7 @@ EvoHime — новый native Windows AI-agent. Поддерживаемый п�
 ## Архитектура
 
 ```text
-EvoHime.Desktop.exe       WinUI 3 UI
+EvoHime.exe               WinUI 3 UI (пользовательский запуск)
         │ named pipe, desktop-ipc-v1
 evohime-core.exe           Rust agent runtime, tools, SQLite
         ▲

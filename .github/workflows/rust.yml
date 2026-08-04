@@ -2,7 +2,16 @@ name: Native Windows
 
 on:
   push:
+    branches: [main]
+    tags: ['v*']
   pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-windows-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   rust-native:
@@ -17,7 +26,7 @@ jobs:
       - name: Check supervisor
         run: cargo check --locked -p evohime-supervisor
 
-  windows-native:
+  windows-check:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,14 +36,42 @@ jobs:
       - name: Test package manifest and idempotent staging
         shell: pwsh
         run: ./scripts/native-package.tests.ps1
-      - name: Build native package
-        shell: pwsh
-        run: ./scripts/build-windows-native.ps1 -OutputPath "$env:GITHUB_WORKSPACE\native-package"
       - name: Test WinUI shell
         shell: pwsh
         run: dotnet test desktop/EvoHime.Tests/EvoHime.Tests.csproj -p:Platform=x64 --nologo
-      - name: Upload native package
+
+  build-native:
+    needs: [rust-native, windows-check]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+      - name: Build native package after CI checks
+        shell: pwsh
+        run: ./scripts/build-windows-native.ps1 -OutputPath "$env:GITHUB_WORKSPACE\native-package"
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
+      - name: Build single Windows installer
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc)) { throw "ISCC not found: $iscc" }
+          & $iscc "/O$env:GITHUB_WORKSPACE\installer-output" "/DSourceDir=$env:GITHUB_WORKSPACE\native-package" installer/EvoHime.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload single installer
         uses: actions/upload-artifact@v4
         with:
-          name: evohime-native-windows-x64
-          path: native-package
+          name: evohime-windows-installer
+          path: installer-output\EvoHime-Setup.exe
+          if-no-files-found: error
+      - name: Publish GitHub Release for version tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" "installer-output\EvoHime-Setup.exe" --generate-notes --title "EvoHime ${{ github.ref_name }}"

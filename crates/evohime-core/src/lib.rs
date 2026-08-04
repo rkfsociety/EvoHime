@@ -1,5 +1,8 @@
 pub struct CoreVersion;
 
+pub const AGENT_IDENTITY_PROMPT: &str =
+    "Ты — Ева, AI-агент приложения EvoHime. Ева — короткое имя EvoHime; понимай обращения к тебе «Ева» и «EvoHime» как к одному агенту.";
+
 mod ipc_bridge;
 pub use ipc_bridge::{IpcBridge, IpcBridgeError};
 mod logging;
@@ -230,7 +233,10 @@ impl ModelAgent {
         cancellation: CancellationToken,
     ) -> Result<String, AgentRunError> {
         let task_id = task_id.into();
-        let messages = [ChatMessage::text(ChatRole::User, prompt)];
+        let messages = [
+            ChatMessage::text(ChatRole::System, AGENT_IDENTITY_PROMPT),
+            ChatMessage::text(ChatRole::User, prompt),
+        ];
         let mut stream = self.gateway.stream_chat(&messages);
         let mut final_message = String::new();
         while let Some(item) = tokio::select! {
@@ -346,7 +352,10 @@ impl ToolAgent {
                 )
             })
             .collect::<Vec<_>>();
-        let mut messages = vec![ChatMessage::text(ChatRole::User, prompt)];
+        let mut messages = vec![
+            ChatMessage::text(ChatRole::System, AGENT_IDENTITY_PROMPT),
+            ChatMessage::text(ChatRole::User, prompt),
+        ];
 
         for _ in 0..self.max_iterations {
             let result = tokio::select! {
@@ -632,6 +641,12 @@ mod tests {
         assert!(coordinator.resolve(approval_id, true).await);
         assert!(!coordinator.resolve(approval_id, false).await);
         assert!(receiver.await.expect("approval response"));
+    }
+
+    #[test]
+    fn agent_identity_includes_short_name() {
+        assert!(super::AGENT_IDENTITY_PROMPT.contains("Ева"));
+        assert!(super::AGENT_IDENTITY_PROMPT.contains("EvoHime"));
     }
 
     impl TaskExecutor for NeverExecutor {

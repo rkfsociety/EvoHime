@@ -15,7 +15,7 @@ function New-NativePackageManifest {
         os_minimum   = $OsMinimum
         protocol     = 'desktop-ipc-v1'
         components   = [pscustomobject]@{
-            ui         = 'EvoHime.Desktop.exe'
+            ui         = 'EvoHime.exe'
             core       = 'evohime-core.exe'
             supervisor = 'evohime-supervisor.exe'
         }

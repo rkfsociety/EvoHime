@@ -60,7 +60,7 @@ foreach ($component in $required) {
 }
 
 $uiStaged = Join-Path $resolvedOutput 'ui\EvoHime.Desktop.exe'
-$uiPackaged = Join-Path $resolvedOutput 'EvoHime.Desktop.exe'
+$uiPackaged = Join-Path $resolvedOutput 'EvoHime.exe'
 if (Test-Path -LiteralPath $uiStaged) {
     Copy-Item -LiteralPath $uiStaged -Destination $uiPackaged -Force
 }
