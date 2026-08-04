@@ -1578,6 +1578,9 @@ dependencies = [
 name = "evohime-core"
 version = "0.1.0"
 dependencies = [
+ "evohime-model-gateway",
+ "futures-util",
+ "thiserror 2.0.18",
  "tokio",
 ]
 

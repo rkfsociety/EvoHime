@@ -8,6 +8,11 @@ impl CoreVersion {
 
 use std::{collections::HashMap, sync::Arc};
 
+use evohime_model_gateway::{
+    providers::{ChatMessage, ChatRole, ProviderError},
+    ModelGateway,
+};
+use futures_util::StreamExt;
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,8 +23,71 @@ pub enum CoreCommand {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoreEvent {
-    TaskStarted { task_id: String, prompt: String },
-    TaskStopped { task_id: String },
+    TaskStarted {
+        task_id: String,
+        prompt: String,
+    },
+    AssistantDelta {
+        task_id: String,
+        content: String,
+    },
+    TaskCompleted {
+        task_id: String,
+        final_message: String,
+    },
+    TaskFailed {
+        task_id: String,
+        error: String,
+    },
+    TaskStopped {
+        task_id: String,
+    },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum AgentRunError {
+    #[error("model request failed: {0}")]
+    Provider(#[from] ProviderError),
+}
+
+pub struct ModelAgent {
+    gateway: Arc<ModelGateway>,
+}
+
+impl ModelAgent {
+    pub fn new(gateway: Arc<ModelGateway>) -> Self {
+        Self { gateway }
+    }
+
+    pub async fn run_once(
+        &self,
+        task_id: impl Into<String>,
+        prompt: impl Into<String>,
+        events: &broadcast::Sender<CoreEvent>,
+    ) -> Result<String, AgentRunError> {
+        let task_id = task_id.into();
+        let messages = [ChatMessage::text(ChatRole::User, prompt)];
+        let mut stream = self.gateway.stream_chat(&messages);
+        let mut final_message = String::new();
+        while let Some(item) = stream.next().await {
+            match item? {
+                evohime_model_gateway::ChatStreamItem::Delta(content) => {
+                    final_message.push_str(&content);
+                    let _ = events.send(CoreEvent::AssistantDelta {
+                        task_id: task_id.clone(),
+                        content,
+                    });
+                }
+                evohime_model_gateway::ChatStreamItem::Thinking(_)
+                | evohime_model_gateway::ChatStreamItem::Usage(_) => {}
+            }
+        }
+        let _ = events.send(CoreEvent::TaskCompleted {
+            task_id,
+            final_message: final_message.clone(),
+        });
+        Ok(final_message)
+    }
 }
 
 #[derive(Clone)]
@@ -88,7 +156,9 @@ impl TaskCoordinator {
 
 #[cfg(test)]
 mod tests {
-    use super::{CoreCommand, CoreEvent, CoreVersion, TaskCoordinator};
+    use super::{CoreCommand, CoreEvent, CoreVersion, ModelAgent, TaskCoordinator};
+    use evohime_model_gateway::{providers::mock::MockProvider, ModelGateway};
+    use std::sync::Arc;
 
     #[test]
     fn core_exposes_version() {
@@ -122,6 +192,42 @@ mod tests {
             events.recv().await.expect("stopped event"),
             CoreEvent::TaskStopped {
                 task_id: "task-1".into()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn streams_a_model_response_as_core_events() {
+        let gateway = ModelGateway::from_provider(Arc::new(MockProvider::new(
+            "mock",
+            vec!["hello ".into(), "from core".into()],
+        )));
+        let agent = ModelAgent::new(Arc::new(gateway));
+        let (events, mut receiver) = tokio::sync::broadcast::channel(8);
+        let result = agent
+            .run_once("task-2", "say hello", &events)
+            .await
+            .expect("mock model succeeds");
+        assert_eq!(result, "hello from core");
+        assert_eq!(
+            receiver.recv().await.expect("first delta"),
+            CoreEvent::AssistantDelta {
+                task_id: "task-2".into(),
+                content: "hello ".into()
+            }
+        );
+        assert_eq!(
+            receiver.recv().await.expect("second delta"),
+            CoreEvent::AssistantDelta {
+                task_id: "task-2".into(),
+                content: "from core".into()
+            }
+        );
+        assert_eq!(
+            receiver.recv().await.expect("completed event"),
+            CoreEvent::TaskCompleted {
+                task_id: "task-2".into(),
+                final_message: "hello from core".into()
             }
         );
     }
