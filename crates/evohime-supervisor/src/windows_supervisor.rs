@@ -10,6 +10,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use std::path::Path;
+
 use tokio::{
     process::Command,
     time::{sleep, Duration},
@@ -92,6 +94,21 @@ impl Drop for SingleInstance {
 
 struct JobObject(HANDLE);
 
+pub fn recover_pending_update(state_dir: &Path) -> io::Result<bool> {
+    Ok(evohime_update_transaction::UpdateTransaction::recover(state_dir)?.recovered)
+}
+
+fn update_state_dir() -> PathBuf {
+    std::env::var_os("EVOHIME_UPDATE_STATE_DIR")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("LOCALAPPDATA")
+                .map(PathBuf::from)
+                .map(|path| path.join("EvoHime/update-state"))
+        })
+        .unwrap_or_else(|| PathBuf::from(".evohime/update-state"))
+}
+
 impl JobObject {
     fn create() -> io::Result<Self> {
         let handle = unsafe { CreateJobObjectW(ptr::null(), ptr::null()) };
@@ -135,6 +152,23 @@ impl Drop for JobObject {
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let _instance = SingleInstance::acquire("Local\\EvoHime.Supervisor")?;
     let logger = SupervisorLogger::open()?;
+    let state_dir = update_state_dir();
+    match recover_pending_update(&state_dir) {
+        Ok(true) => {
+            let _ = logger.write(
+                "update.recovered",
+                json!({"state_dir": state_dir.display().to_string()}),
+            );
+        }
+        Ok(false) => {}
+        Err(error) => {
+            let _ = logger.write(
+                "update.recovery_failed",
+                json!({"state_dir": state_dir.display().to_string(), "error": error.to_string()}),
+            );
+            return Err(error.into());
+        }
+    }
     let core_exe = std::env::var_os("EVOHIME_CORE_EXE")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("evohime-core.exe"));
@@ -160,5 +194,37 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         restarts += 1;
         let _ = logger.write("core.restart", json!({"restart": restarts}));
         sleep(Duration::from_millis(250 * u64::from(restarts))).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::recover_pending_update;
+    use evohime_update_transaction::UpdateTransaction;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn recovers_pending_update_before_core_start() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-supervisor-recovery-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let install = root.join("install");
+        let state = root.join("state");
+        fs::create_dir_all(&install).unwrap();
+        for component in UpdateTransaction::COMPONENTS {
+            fs::write(install.join(component), format!("old:{component}")).unwrap();
+        }
+        let transaction = UpdateTransaction::prepare(&install, &state).unwrap();
+        fs::write(install.join("EvoHime.exe"), "interrupted").unwrap();
+
+        assert!(recover_pending_update(&state).unwrap());
+        assert_eq!(fs::read_to_string(install.join("EvoHime.exe")).unwrap(), "old:EvoHime.exe");
+        assert!(!transaction.state_path().exists());
+        fs::remove_dir_all(root).unwrap();
     }
 }
