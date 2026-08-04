@@ -41,6 +41,13 @@ public sealed class CoreIpcClient
     public Task StartTaskAsync(string taskId, string prompt, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.StartTask(taskId, prompt), cancellationToken);
 
+    public Task StartTaskAsync(
+        string taskId,
+        string prompt,
+        string workspacePath,
+        CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.StartTask(taskId, prompt, workspacePath), cancellationToken);
+
     public Task StopTaskAsync(string taskId, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.StopTask(taskId), cancellationToken);
 

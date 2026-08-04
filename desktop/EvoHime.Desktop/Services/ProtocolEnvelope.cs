@@ -54,12 +54,19 @@ public static class ProtocolEnvelope
         return buffer.ToArray();
     }
 
-    public static byte[] StartTask(string taskId, string prompt) => TaskCommand(12, output =>
+    public static byte[] StartTask(string taskId, string prompt) => StartTask(taskId, prompt, string.Empty);
+
+    public static byte[] StartTask(string taskId, string prompt, string workspacePath) => TaskCommand(12, output =>
     {
         output.WriteTag(1, WireFormat.WireType.LengthDelimited);
         output.WriteString(taskId);
         output.WriteTag(2, WireFormat.WireType.LengthDelimited);
         output.WriteString(prompt);
+        if (!string.IsNullOrWhiteSpace(workspacePath))
+        {
+            output.WriteTag(3, WireFormat.WireType.LengthDelimited);
+            output.WriteString(workspacePath);
+        }
     });
 
     public static byte[] StopTask(string taskId) => TaskCommand(13, output =>

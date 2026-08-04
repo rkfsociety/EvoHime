@@ -37,7 +37,7 @@ impl CoreVersion {
     }
 }
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use evohime_local_storage::{EventRecord, LocalDatabase, StorageError};
 use evohime_model_gateway::{
@@ -53,8 +53,14 @@ use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoreCommand {
-    StartTask { task_id: String, prompt: String },
-    StopTask { task_id: String },
+    StartTask {
+        task_id: String,
+        prompt: String,
+        workspace_root: Option<PathBuf>,
+    },
+    StopTask {
+        task_id: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -151,6 +157,18 @@ pub trait TaskExecutor: Send + Sync {
         cancellation: CancellationToken,
         events: broadcast::Sender<CoreEvent>,
     ) -> BoxFuture<'static, Result<String, AgentRunError>>;
+
+    fn execute_in_workspace(
+        &self,
+        task_id: String,
+        prompt: String,
+        workspace_root: PathBuf,
+        cancellation: CancellationToken,
+        events: broadcast::Sender<CoreEvent>,
+    ) -> BoxFuture<'static, Result<String, AgentRunError>> {
+        let _ = workspace_root;
+        self.execute(task_id, prompt, cancellation, events)
+    }
 }
 
 pub struct ModelAgent {
@@ -345,6 +363,23 @@ impl TaskExecutor for ToolAgent {
         cancellation: CancellationToken,
         events: broadcast::Sender<CoreEvent>,
     ) -> BoxFuture<'static, Result<String, AgentRunError>> {
+        self.execute_in_workspace(
+            task_id,
+            prompt,
+            std::env::current_dir().unwrap_or_default(),
+            cancellation,
+            events,
+        )
+    }
+
+    fn execute_in_workspace(
+        &self,
+        task_id: String,
+        prompt: String,
+        workspace_root: PathBuf,
+        cancellation: CancellationToken,
+        events: broadcast::Sender<CoreEvent>,
+    ) -> BoxFuture<'static, Result<String, AgentRunError>> {
         let agent = Self {
             gateway: Arc::clone(&self.gateway),
             tools: Arc::clone(&self.tools),
@@ -352,13 +387,7 @@ impl TaskExecutor for ToolAgent {
         };
         Box::pin(async move {
             agent
-                .run_once_with_cancellation(
-                    task_id,
-                    prompt,
-                    std::env::current_dir().unwrap_or_default(),
-                    &events,
-                    cancellation,
-                )
+                .run_once_with_cancellation(task_id, prompt, workspace_root, &events, cancellation)
                 .await
         })
     }
@@ -433,7 +462,11 @@ impl TaskCoordinator {
 
     async fn handle_command(state: Arc<Mutex<CoordinatorState>>, command: CoreCommand) {
         match command {
-            CoreCommand::StartTask { task_id, prompt } => {
+            CoreCommand::StartTask {
+                task_id,
+                prompt,
+                workspace_root,
+            } => {
                 let cancellation = CancellationToken::new();
                 let mut state_guard = state.lock().await;
                 if state_guard
@@ -454,9 +487,12 @@ impl TaskCoordinator {
                     let result = match executor {
                         Some(executor) => {
                             executor
-                                .execute(
+                                .execute_in_workspace(
                                     task_id.clone(),
                                     prompt,
+                                    workspace_root.unwrap_or_else(|| {
+                                        std::env::current_dir().unwrap_or_default()
+                                    }),
                                     cancellation.clone(),
                                     events.clone(),
                                 )
@@ -536,6 +572,7 @@ mod tests {
             .dispatch(CoreCommand::StartTask {
                 task_id: "task-1".into(),
                 prompt: "hello".into(),
+                workspace_root: None,
             })
             .await
             .expect("start dispatches");
@@ -568,6 +605,7 @@ mod tests {
             .dispatch(CoreCommand::StartTask {
                 task_id: "task-cancel".into(),
                 prompt: "wait".into(),
+                workspace_root: None,
             })
             .await
             .expect("start dispatches");
@@ -713,6 +751,7 @@ mod tests {
             .dispatch(CoreCommand::StartTask {
                 task_id: "task-persisted".into(),
                 prompt: "persist lifecycle".into(),
+                workspace_root: None,
             })
             .await
             .expect("start dispatches");

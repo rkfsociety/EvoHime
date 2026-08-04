@@ -67,7 +67,11 @@ public partial class MainWindow : Window
             await _ipc.ConnectAndHandshakeAsync(CancellationToken.None);
             _reconnectAttempt = 0;
             _activeTaskId = Guid.NewGuid().ToString("N");
-            await _ipc.StartTaskAsync(_activeTaskId, prompt, CancellationToken.None);
+            await _ipc.StartTaskAsync(
+                _activeTaskId,
+                prompt,
+                _state.WorkspacePath ?? Environment.CurrentDirectory,
+                CancellationToken.None);
             ConnectionStatus.Text = $"Задача {_activeTaskId}: выполняется";
             _eventCts = new CancellationTokenSource();
             _ = PumpEventsAsync(_eventCts.Token);

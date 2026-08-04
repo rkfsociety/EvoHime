@@ -57,6 +57,39 @@ public sealed class IpcCompatibilityTests
     }
 
     [TestMethod]
+    public void StartTaskEnvelopeCarriesWorkspacePath()
+    {
+        var payload = ProtocolEnvelope.StartTask("task", "prompt", "C:\\Projects\\demo");
+        using var input = new CodedInputStream(payload);
+        var nested = new List<byte>();
+        while (!input.IsAtEnd)
+        {
+            var tag = input.ReadTag();
+            if ((tag >> 3) == 12)
+            {
+                nested.AddRange(input.ReadBytes().ToByteArray());
+                break;
+            }
+            input.SkipLastField();
+        }
+
+        using var command = new CodedInputStream(nested.ToArray());
+        var workspace = string.Empty;
+        while (!command.IsAtEnd)
+        {
+            var tag = command.ReadTag();
+            if ((tag >> 3) == 3)
+            {
+                workspace = command.ReadString();
+                break;
+            }
+            command.SkipLastField();
+        }
+
+        Assert.AreEqual("C:\\Projects\\demo", workspace);
+    }
+
+    [TestMethod]
     public void EventEnvelopeRoundTripsSequenceAndPayload()
     {
         using var buffer = new MemoryStream();

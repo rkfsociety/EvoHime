@@ -19,6 +19,7 @@ message ReplayEvents {
 message StartTask {
   string task_id = 1;
   string prompt = 2;
+  string workspace_path = 3;
 }
 
 message StopTask {

@@ -92,6 +92,8 @@ impl IpcBridge {
                         .dispatch(CoreCommand::StartTask {
                             task_id: start.task_id,
                             prompt: start.prompt,
+                            workspace_root: (!start.workspace_path.is_empty())
+                                .then(|| std::path::PathBuf::from(start.workspace_path)),
                         })
                         .await
                         .map_err(|error| FrameError::Io(error.to_string()))?;
