@@ -183,6 +183,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$env:RELEASE_TAG" "installer-output\EvoHime-Setup.exe" --generate-notes --title "EvoHime $env:RELEASE_TAG"
+      - name: Remove old releases after publication
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/cleanup-github-releases.ps1 -KeepCount 1
 
   cleanup-releases:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

@@ -19,6 +19,8 @@ foreach ($required in @(
     'winui-test-diagnostics',
     'iscc',
     'gh release create',
+    'Remove old releases after publication',
+    'cleanup-github-releases.ps1 -KeepCount 1',
     'Determine release from project version',
     'RELEASE_VERSION',
     'should_release',
