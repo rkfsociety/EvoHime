@@ -123,8 +123,14 @@ jobs:
           }
           $before = (Get-FileHash (Join-Path $rollbackPath 'EvoHime.exe')).Hash
           $updater = Join-Path $env:GITHUB_WORKSPACE 'native-package\evohime-transaction.exe'
-          & $updater --worker --installer (Join-Path $rollbackPath 'missing-installer.exe') --install-dir $rollbackPath --state-dir $statePath
-          if ($LASTEXITCODE -eq 0) { throw 'Failed installer must return a non-zero exit code.' }
+          $failedInstaller = Join-Path $rollbackPath 'missing-installer.exe'
+          $process = Start-Process -FilePath $updater -ArgumentList @(
+            '--worker',
+            '--installer', $failedInstaller,
+            '--install-dir', $rollbackPath,
+            '--state-dir', $statePath
+          ) -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -eq 0) { throw 'Failed installer must return a non-zero exit code.' }
           $after = (Get-FileHash (Join-Path $rollbackPath 'EvoHime.exe')).Hash
           if ($before -ne $after) { throw 'Rollback did not restore the previous client.' }
           if (Test-Path -LiteralPath (Join-Path $statePath 'transaction.json')) { throw 'Rollback left a transaction journal.' }
