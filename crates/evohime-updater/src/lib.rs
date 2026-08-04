@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -28,6 +29,62 @@ pub struct UpdateTransaction {
     install_dir: PathBuf,
     backup_dir: PathBuf,
     state_path: PathBuf,
+}
+
+pub fn verify_installation(install_dir: &Path) -> io::Result<()> {
+    validate_absolute(install_dir, "install directory")?;
+    for component in UpdateTransaction::COMPONENTS {
+        let path = install_dir.join(component);
+        if !path.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("required installed component is missing: {}", path.display()),
+            ));
+        }
+    }
+    Ok(())
+}
+
+pub fn run_update(installer: &Path, install_dir: &Path, state_dir: &Path) -> io::Result<()> {
+    validate_absolute(installer, "installer path")?;
+    if !installer.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("installer does not exist: {}", installer.display()),
+        ));
+    }
+    let _ = UpdateTransaction::recover(state_dir)?;
+    let transaction = UpdateTransaction::prepare(install_dir, state_dir)?;
+    let status = Command::new(installer)
+        .args([
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/CLOSEAPPLICATIONS",
+        ])
+        .arg(format!("/DIR={}", install_dir.display()))
+        .status();
+
+    match status {
+        Ok(status) if status.success() => match verify_installation(install_dir) {
+            Ok(()) => transaction.commit(),
+            Err(error) => rollback_after_failure(transaction, error),
+        },
+        Ok(status) => rollback_after_failure(
+            transaction,
+            io::Error::other(format!("installer exited with status {status}")),
+        ),
+        Err(error) => rollback_after_failure(transaction, error),
+    }
+}
+
+fn rollback_after_failure(transaction: UpdateTransaction, failure: io::Error) -> io::Result<()> {
+    match transaction.rollback() {
+        Ok(()) => Err(failure),
+        Err(rollback_error) => Err(io::Error::other(format!(
+            "update failed: {failure}; rollback failed: {rollback_error}"
+        ))),
+    }
 }
 
 impl UpdateTransaction {
@@ -195,7 +252,7 @@ fn timestamp_nanos() -> u128 {
 
 #[cfg(test)]
 mod tests {
-    use super::UpdateTransaction;
+    use super::{verify_installation, UpdateTransaction};
     use std::fs;
     use std::path::Path;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -266,6 +323,18 @@ mod tests {
         assert!(result.recovered);
         assert_eq!(fs::read_to_string(install.join("EvoHime.exe")).unwrap(), "old:EvoHime.exe");
         assert!(!transaction.state_path().exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn verify_installation_rejects_missing_component() {
+        let root = temp_dir("verify");
+        write_components(&root, "installed");
+        fs::remove_file(root.join("evohime-supervisor.exe")).unwrap();
+
+        let error = verify_installation(&root).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
         fs::remove_dir_all(root).unwrap();
     }
 }
