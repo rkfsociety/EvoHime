@@ -1,5 +1,5 @@
 #define AppName "EvoHime"
-#define AppVersion "0.1.0"
+#define AppVersion "0.0.0001"
 #define AppPublisher "EvoHime"
 #define AppExeName "EvoHime.exe"
 #ifndef SourceDir
