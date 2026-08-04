@@ -30,11 +30,11 @@ foreach ($release in $obsolete) {
 }
 
 $keptTags = @($versioned | Select-Object -First $KeepCount | ForEach-Object tagName)
-$tags = @(gh api --repo $env:GITHUB_REPOSITORY --paginate 'repos/{owner}/{repo}/tags?per_page=100' --jq '.[].name')
+$tags = @(gh api --paginate "repos/$env:GITHUB_REPOSITORY/tags?per_page=100" --jq '.[].name')
 foreach ($tag in $tags) {
     if ($tag -match '^v\d+\.\d+\.\d+$' -and $keptTags -notcontains $tag -and $obsolete.tagName -notcontains $tag) {
         Write-Host "Deleting orphaned version tag $tag"
-        gh api --repo $env:GITHUB_REPOSITORY --method DELETE "repos/{owner}/{repo}/git/refs/tags/$tag"
+        gh api --method DELETE "repos/$env:GITHUB_REPOSITORY/git/refs/tags/$tag"
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to delete tag $tag."
         }
