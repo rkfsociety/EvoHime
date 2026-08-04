@@ -83,6 +83,16 @@ Before destructive migrations or application upgrades, the supervisor creates a 
 - Treat model output, memory and repository text as untrusted data.
 - Recover the UI from a core restart without losing completed task events.
 
+## Decisions from implementation review
+
+- **IPC compatibility:** the protocol package gets golden protobuf fixtures, current/previous-version compatibility tests and an end-to-end reconnect/replay test. The core rejects unsupported major versions with a structured error; additive minor-version fields are ignored by older clients.
+- **Long migrations:** schema and data migrations run at startup before the core reports ready. They are transactional where SQLite permits it, idempotent, checkpointed for long data passes and accompanied by a progress event shown by the UI. There is no background migration that competes with normal task execution in the first release. A backup is created before an upgrade migration.
+- **Instance policy:** one UI instance and one core per Windows user data directory. A second launch forwards its project/open request to the primary instance through the named pipe, focuses the existing window and exits. The lock uses a named Windows mutex; the core also verifies the owner PID and pipe identity.
+- **Diagnostics:** rolling structured JSONL logs live under `%LOCALAPPDATA%\\EvoHime\\logs`; the supervisor writes only startup, crash and update failures to Windows Event Log. The UI provides `Export diagnostics`, producing a redacted archive with logs, versions, protocol status, migration status and recent task metadata, never secrets or source contents by default.
+- **Supported OS:** the product target is Windows 11 22H2 or newer, x64 in the first release. The selected Windows App SDK version is verified against this floor during CI and packaging; Windows 10 support is not promised unless a later compatibility pass proves it without weakening the native design.
+- **SQLite scale:** indexes cover project/task ownership, event sequence, task status and timestamps. The event journal uses periodic checkpoints and retention/compaction for completed tasks; active tasks are never compacted. Full task export remains available before cleanup, and large project indexing is kept outside the event journal.
+- **Key protection:** Windows account protection through Credential Manager/DPAPI is the default. A master-password vault is out of the first-release scope because it adds unlock, recovery and migration failure modes; it can be added later as an explicit opt-in security layer for shared machines.
+
 ## User experience
 
 The first stable shell contains:
@@ -135,4 +145,3 @@ Remove obsolete browser frontend, PostgreSQL-specific startup, legacy HTTP/WS as
 - App upgrade can restore data from the pre-upgrade backup.
 - UI and core can evolve independently through the versioned IPC contract.
 - Core tests run without a Windows UI session; UI smoke tests run on supported Windows environments.
-
