@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using EvoHime.Desktop.Services;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
@@ -9,6 +10,11 @@ namespace EvoHime.Desktop;
 
 public partial class MainWindow : Window
 {
+    private static Brush ThemeBrush(string key, byte r, byte g, byte b) =>
+        Application.Current.Resources.TryGetValue(key, out var value) && value is Brush brush
+            ? brush
+            : new SolidColorBrush(Windows.UI.Color.FromArgb(255, r, g, b));
+
     public event Action<string, string>? NotificationRequested;
     public event Action? UpdateReadyToInstall;
 
@@ -34,7 +40,7 @@ public partial class MainWindow : Window
     {
         var root = new Grid
         {
-            Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["NightBackgroundBrush"],
+            Background = ThemeBrush("NightBackgroundBrush", 17, 19, 27),
         };
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(248) });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -42,7 +48,7 @@ public partial class MainWindow : Window
 
         var navigation = new StackPanel
         {
-            Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["SurfaceBrush"],
+            Background = ThemeBrush("SurfaceBrush", 25, 28, 39),
             Padding = new Thickness(18, 24, 14, 18),
             Spacing = 8,
         };
@@ -51,7 +57,7 @@ public partial class MainWindow : Window
             Text = "ЕВА",
             FontSize = 24,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextBrush"],
+            Foreground = ThemeBrush("TextBrush", 244, 242, 250),
             Margin = new Thickness(4, 0, 0, 18),
         });
         foreach (var item in ShellNavigationCatalog.Items)
@@ -61,9 +67,9 @@ public partial class MainWindow : Window
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 HorizontalContentAlignment = HorizontalAlignment.Left,
                 Background = item.Title == "Новый чат"
-                    ? (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["SurfaceRaisedBrush"]
-                    : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),
-                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextBrush"],
+                    ? ThemeBrush("SurfaceRaisedBrush", 34, 38, 53)
+                    : new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                Foreground = ThemeBrush("TextBrush", 244, 242, 250),
                 Content = $"{item.Glyph}   {item.Title}",
                 Tag = item.Description,
             };
@@ -73,14 +79,14 @@ public partial class MainWindow : Window
         {
             Text = "РАБОЧИЕ ПРОСТРАНСТВА",
             FontSize = 11,
-            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["MutedTextBrush"],
+            Foreground = ThemeBrush("MutedTextBrush", 146, 152, 173),
             Margin = new Thickness(5, 22, 0, 2),
         };
         navigation.Children.Add(projectLabel);
         navigation.Children.Add(new TextBlock
         {
             Text = "⌂  Текущий workspace",
-            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["MutedTextBrush"],
+            Foreground = ThemeBrush("MutedTextBrush", 146, 152, 173),
             Padding = new Thickness(4, 8, 4, 8),
         });
         root.Children.Add(navigation);
