@@ -1579,9 +1579,13 @@ name = "evohime-core"
 version = "0.1.0"
 dependencies = [
  "evohime-model-gateway",
+ "evohime-permissions",
+ "evohime-tool-runtime",
  "futures-util",
+ "serde_json",
  "thiserror 2.0.18",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

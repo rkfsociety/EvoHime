@@ -10,8 +10,9 @@ use std::{collections::HashMap, sync::Arc};
 
 use evohime_model_gateway::{
     providers::{ChatMessage, ChatRole, ProviderError},
-    ModelGateway,
+    ModelGateway, ToolSpec,
 };
+use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use futures_util::StreamExt;
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 
@@ -30,6 +31,15 @@ pub enum CoreEvent {
     AssistantDelta {
         task_id: String,
         content: String,
+    },
+    ToolStarted {
+        task_id: String,
+        tool_name: String,
+    },
+    ToolOutput {
+        task_id: String,
+        tool_name: String,
+        output: String,
     },
     TaskCompleted {
         task_id: String,
@@ -87,6 +97,96 @@ impl ModelAgent {
             final_message: final_message.clone(),
         });
         Ok(final_message)
+    }
+}
+
+pub struct ToolAgent {
+    gateway: Arc<ModelGateway>,
+    tools: Arc<ToolRegistry>,
+    max_iterations: usize,
+}
+
+impl ToolAgent {
+    pub fn new(gateway: Arc<ModelGateway>, tools: Arc<ToolRegistry>) -> Self {
+        Self {
+            gateway,
+            tools,
+            max_iterations: 8,
+        }
+    }
+
+    pub async fn run_once(
+        &self,
+        task_id: impl Into<String>,
+        prompt: impl Into<String>,
+        workspace_root: impl Into<std::path::PathBuf>,
+        events: &broadcast::Sender<CoreEvent>,
+    ) -> Result<String, AgentRunError> {
+        let task_id = task_id.into();
+        let task_uuid = uuid::Uuid::parse_str(&task_id).unwrap_or_else(|_| uuid::Uuid::new_v4());
+        let context = ToolContext {
+            workspace_root: workspace_root.into(),
+            task_id: task_uuid,
+            session_id: None,
+            progress_tx: None,
+        };
+        let specs = self
+            .tools
+            .list()
+            .into_iter()
+            .map(|tool| {
+                ToolSpec::function(
+                    tool.name,
+                    tool.description,
+                    serde_json::json!({"type": "object", "additionalProperties": true}),
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut messages = vec![ChatMessage::text(ChatRole::User, prompt)];
+
+        for _ in 0..self.max_iterations {
+            let result = self
+                .gateway
+                .chat_with_tools_for_route("default", None, &messages, &specs)
+                .await?;
+            if result.tool_calls.is_empty() {
+                let _ = events.send(CoreEvent::TaskCompleted {
+                    task_id,
+                    final_message: result.content.clone(),
+                });
+                return Ok(result.content);
+            }
+
+            messages.push(ChatMessage::assistant_tool_calls(
+                result.content,
+                result.tool_calls.clone(),
+            ));
+            for call in result.tool_calls {
+                let _ = events.send(CoreEvent::ToolStarted {
+                    task_id: task_id.clone(),
+                    tool_name: call.name.clone(),
+                });
+                let input = serde_json::from_str(&call.arguments)
+                    .unwrap_or_else(|_| serde_json::Value::Null);
+                let output = match self.tools.execute(&context, &call.name, input).await {
+                    Ok(result) => result.output,
+                    Err(error) => error.to_string(),
+                };
+                let _ = events.send(CoreEvent::ToolOutput {
+                    task_id: task_id.clone(),
+                    tool_name: call.name,
+                    output: output.clone(),
+                });
+                messages.push(ChatMessage::tool_observation(call.id, output));
+            }
+        }
+
+        let message = "agent exceeded the tool iteration limit".to_string();
+        let _ = events.send(CoreEvent::TaskFailed {
+            task_id,
+            error: message.clone(),
+        });
+        Ok(message)
     }
 }
 
@@ -156,8 +256,11 @@ impl TaskCoordinator {
 
 #[cfg(test)]
 mod tests {
-    use super::{CoreCommand, CoreEvent, CoreVersion, ModelAgent, TaskCoordinator};
-    use evohime_model_gateway::{providers::mock::MockProvider, ModelGateway};
+    use super::{CoreCommand, CoreEvent, CoreVersion, ModelAgent, TaskCoordinator, ToolAgent};
+    use evohime_model_gateway::{
+        providers::mock::MockProvider, ChatResult, ModelGateway, NativeToolCall,
+    };
+    use evohime_tool_runtime::ToolRegistry;
     use std::sync::Arc;
 
     #[test]
@@ -230,5 +333,53 @@ mod tests {
                 final_message: "hello from core".into()
             }
         );
+    }
+
+    #[tokio::test]
+    async fn executes_a_safe_filesystem_tool_and_returns_to_the_model() {
+        let workspace =
+            std::env::temp_dir().join(format!("evohime-core-tool-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&workspace);
+        std::fs::write(workspace.join("needle.txt"), "needle in a file").expect("fixture writes");
+        let provider = MockProvider::with_tool_call_sequence(
+            "mock",
+            vec![
+                ChatResult {
+                    content: String::new(),
+                    thinking: None,
+                    tool_calls: vec![NativeToolCall {
+                        id: "call-1".into(),
+                        name: "filesystem.search".into(),
+                        arguments: r#"{"query":"needle"}"#.into(),
+                    }],
+                    usage: None,
+                },
+                ChatResult {
+                    content: "found it".into(),
+                    ..ChatResult::default()
+                },
+            ],
+        );
+        let agent = ToolAgent::new(
+            Arc::new(ModelGateway::from_provider(Arc::new(provider))),
+            Arc::new(ToolRegistry::bootstrap()),
+        );
+        let (events, mut receiver) = tokio::sync::broadcast::channel(16);
+        let result = agent
+            .run_once("task-tools", "find needle", &workspace, &events)
+            .await
+            .expect("tool loop succeeds");
+        assert_eq!(result, "found it");
+        assert!(matches!(
+            receiver.recv().await,
+            Ok(CoreEvent::ToolStarted { .. })
+        ));
+        assert!(
+            matches!(receiver.recv().await, Ok(CoreEvent::ToolOutput { output, .. }) if output.contains("needle"))
+        );
+        assert!(
+            matches!(receiver.recv().await, Ok(CoreEvent::TaskCompleted { final_message, .. }) if final_message == "found it")
+        );
+        let _ = std::fs::remove_dir_all(workspace);
     }
 }
