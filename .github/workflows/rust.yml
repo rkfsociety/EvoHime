@@ -5,6 +5,14 @@ on:
     branches: [main]
     tags: ['v*']
   pull_request:
+  workflow_dispatch:
+    inputs:
+      keep_count:
+        description: 'Сколько последних стабильных релизов оставить (по умолчанию только текущий)'
+        required: false
+        default: '1'
+  schedule:
+    - cron: '17 3 * * 0'
 
 permissions:
   contents: read
@@ -75,3 +83,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "${{ github.ref_name }}" "installer-output\EvoHime-Setup.exe" --generate-notes --title "EvoHime ${{ github.ref_name }}"
+
+  cleanup-releases:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      KEEP_COUNT: ${{ inputs.keep_count || '1' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove old releases and version tags
+        shell: pwsh
+        run: ./scripts/cleanup-github-releases.ps1 -KeepCount ([int]$env:KEEP_COUNT)
