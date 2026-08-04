@@ -2,50 +2,22 @@
     x:Class="EvoHime.Desktop.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-  <Grid Padding="32" RowSpacing="16">
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" />
-    </Grid.RowDefinitions>
-    <Grid ColumnSpacing="16">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="Auto" />
-      </Grid.ColumnDefinitions>
-      <StackPanel Spacing="4">
-        <TextBlock Text="EvoHime · Ева" FontSize="28" />
-        <TextBlock x:Name="ConnectionStatus" Text="Не подключено" />
-      </StackPanel>
-      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-        <TextBlock x:Name="UpdateStatusText" VerticalAlignment="Center" />
-        <Button x:Name="UpdateButton" Content="Обновить" Click="UpdateButton_Click" Visibility="Collapsed" />
-        <Button x:Name="ChooseWorkspaceButton" Content="Выбрать workspace" Click="ChooseWorkspaceButton_Click" />
-      </StackPanel>
-    </Grid>
-    <TextBlock x:Name="WorkspacePathText" Grid.Row="1" Text="Workspace: не выбран" TextTrimming="CharacterEllipsis" />
-    <Grid Grid.Row="2" RowSpacing="12">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto" />
-        <RowDefinition Height="*" />
-        <RowDefinition Height="Auto" />
-      </Grid.RowDefinitions>
-      <TextBox x:Name="PromptBox" Header="Задача" PlaceholderText="Что нужно сделать?" AcceptsReturn="True" TextWrapping="Wrap" />
-      <ScrollViewer Grid.Row="1" MaxHeight="360">
-        <TextBlock x:Name="EventLog" TextWrapping="Wrap" />
-      </ScrollViewer>
-      <StackPanel x:Name="ApprovalPanel" Grid.Row="2" Spacing="8" Visibility="Collapsed">
-        <TextBlock x:Name="ApprovalText" TextWrapping="Wrap" />
-        <StackPanel Orientation="Horizontal" Spacing="8">
-          <Button Content="Разрешить" Click="ApproveButton_Click" />
-          <Button Content="Отклонить" Click="DenyButton_Click" />
-        </StackPanel>
-      </StackPanel>
-    </Grid>
-    <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="12">
-      <Button x:Name="StartButton" Content="Запустить" Click="StartButton_Click" />
-      <Button x:Name="StopButton" Content="Stop" Click="StopButton_Click" IsEnabled="False" />
+  <StackPanel>
+    <TextBlock x:Name="ConnectionStatus" />
+    <TextBlock x:Name="UpdateStatusText" />
+    <Button x:Name="UpdateButton" />
+    <Button x:Name="ChooseWorkspaceButton" />
+    <TextBlock x:Name="WorkspacePathText" />
+    <TextBox x:Name="PromptBox" />
+    <ScrollViewer>
+      <TextBlock x:Name="EventLog" />
+    </ScrollViewer>
+    <StackPanel x:Name="ApprovalPanel">
+      <TextBlock x:Name="ApprovalText" />
+      <Button />
+      <Button />
     </StackPanel>
-  </Grid>
+    <Button x:Name="StartButton" />
+    <Button x:Name="StopButton" />
+  </StackPanel>
 </Window>

@@ -303,7 +303,7 @@ public sealed class TrayIconService : IDisposable
     [DllImport("user32.dll")]
     private static extern nint DefWindowProc(nint window, uint message, nint wParam, nint lParam);
 
-    [DllImport("shell32.dll", SetLastError = true)]
+    [DllImport("shell32.dll", EntryPoint = "Shell_NotifyIcon", SetLastError = true)]
     private static extern bool ShellNotifyIcon(uint message, ref NotifyIconData data);
 
     [DllImport("user32.dll")]

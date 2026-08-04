@@ -4,14 +4,17 @@
     <TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.22621.0</TargetPlatformMinVersion>
     <RootNamespace>EvoHime.Desktop</RootNamespace>
-    <Version>0.0.000031</Version>
-    <AssemblyVersion>0.0.0.31</AssemblyVersion>
-    <FileVersion>0.0.0.31</FileVersion>
-    <InformationalVersion>0.0.000031</InformationalVersion>
+    <Version>0.0.000032</Version>
+    <AssemblyVersion>0.0.0.32</AssemblyVersion>
+    <FileVersion>0.0.0.32</FileVersion>
+    <InformationalVersion>0.0.000032</InformationalVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Platforms>x64</Platforms>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <EnableMsixTooling>true</EnableMsixTooling>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <WindowsAppSdkUndockedRegFreeWinRTInitialize>true</WindowsAppSdkUndockedRegFreeWinRTInitialize>
     <DefaultLanguage>en-US</DefaultLanguage>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

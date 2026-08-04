@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using EvoHime.Desktop.Services;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
@@ -22,11 +23,96 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
-        InitializeComponent();
+        BuildUi();
         _state.SelectWorkspace(Environment.CurrentDirectory);
         WorkspacePathText.Text = $"Workspace: {_state.WorkspacePath}";
         _ = RestoreWorkspaceAsync();
         _ = CheckForUpdatesAsync();
+    }
+
+    private void BuildUi()
+    {
+        var root = new Grid
+        {
+            Padding = new Thickness(32),
+            RowSpacing = 16,
+        };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var title = new StackPanel { Spacing = 4 };
+        title.Children.Add(new TextBlock { Text = "EvoHime · Ева", FontSize = 28 });
+        ConnectionStatus = new TextBlock { Text = "Не подключено" };
+        title.Children.Add(ConnectionStatus);
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        UpdateStatusText = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
+        UpdateButton = new Button { Content = "Обновить", Visibility = Visibility.Collapsed };
+        UpdateButton.Click += UpdateButton_Click;
+        ChooseWorkspaceButton = new Button { Content = "Выбрать workspace" };
+        ChooseWorkspaceButton.Click += ChooseWorkspaceButton_Click;
+        actions.Children.Add(UpdateStatusText);
+        actions.Children.Add(UpdateButton);
+        actions.Children.Add(ChooseWorkspaceButton);
+
+        var header = new Grid { ColumnSpacing = 16 };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.Children.Add(title);
+        Grid.SetColumn(actions, 1);
+        header.Children.Add(actions);
+        root.Children.Add(header);
+
+        WorkspacePathText = new TextBlock { Text = "Workspace: не выбран" };
+        Grid.SetRow(WorkspacePathText, 1);
+        root.Children.Add(WorkspacePathText);
+
+        var taskArea = new Grid { RowSpacing = 12 };
+        taskArea.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        taskArea.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        taskArea.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        PromptBox = new TextBox
+        {
+            Header = "Задача",
+            PlaceholderText = "Что нужно сделать?",
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+        };
+        taskArea.Children.Add(PromptBox);
+        EventLog = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        var log = new ScrollViewer { MaxHeight = 360, Content = EventLog };
+        Grid.SetRow(log, 1);
+        taskArea.Children.Add(log);
+
+        ApprovalPanel = new StackPanel { Spacing = 8, Visibility = Visibility.Collapsed };
+        ApprovalText = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        ApprovalPanel.Children.Add(ApprovalText);
+        var approvalActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var approve = new Button { Content = "Разрешить" };
+        approve.Click += ApproveButton_Click;
+        var deny = new Button { Content = "Отклонить" };
+        deny.Click += DenyButton_Click;
+        approvalActions.Children.Add(approve);
+        approvalActions.Children.Add(deny);
+        ApprovalPanel.Children.Add(approvalActions);
+        Grid.SetRow(ApprovalPanel, 2);
+        taskArea.Children.Add(ApprovalPanel);
+        Grid.SetRow(taskArea, 2);
+        root.Children.Add(taskArea);
+
+        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
+        StartButton = new Button { Content = "Запустить" };
+        StartButton.Click += StartButton_Click;
+        StopButton = new Button { Content = "Stop", IsEnabled = false };
+        StopButton.Click += StopButton_Click;
+        controls.Children.Add(StartButton);
+        controls.Children.Add(StopButton);
+        Grid.SetRow(controls, 3);
+        root.Children.Add(controls);
+
+        Content = root;
     }
 
     private async void ChooseWorkspaceButton_Click(object sender, RoutedEventArgs e)

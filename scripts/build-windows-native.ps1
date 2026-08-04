@@ -4,7 +4,7 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.0.000031',
+    [string]$Version = '0.0.000032',
     [switch]$SkipBuild
 )
 
@@ -67,6 +67,7 @@ foreach ($component in $required) {
 
 $uiStaged = Join-Path $resolvedOutput 'ui'
 $uiPackaged = Join-Path $resolvedOutput 'EvoHime.exe'
+$appPriName = 'EvoHime.Desktop.pri'
 if (Test-Path -LiteralPath $uiStaged) {
     foreach ($item in Get-ChildItem -LiteralPath $uiStaged -Force) {
         $name = if ($item.Name -eq 'EvoHime.Desktop.exe') {
@@ -80,8 +81,21 @@ if (Test-Path -LiteralPath $uiStaged) {
         Copy-Item -LiteralPath $item.FullName -Destination $destination -Force -Recurse
     }
 }
+if (-not (Test-Path -LiteralPath (Join-Path $uiStaged $appPriName))) {
+    $appPri = Get-ChildItem -LiteralPath (Join-Path $repoRoot 'desktop\EvoHime.Desktop\bin') -Filter $appPriName -File -Recurse |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if ($appPri -eq $null) {
+        throw "Ресурсный PRI-файл WinUI не найден: $appPriName"
+    }
+    Copy-Item -LiteralPath $appPri.FullName -Destination (Join-Path $uiStaged $appPriName) -Force
+    Copy-Item -LiteralPath $appPri.FullName -Destination (Join-Path $resolvedOutput $appPriName) -Force
+}
 if (-not (Test-Path -LiteralPath $uiPackaged)) {
     throw "Native-компонент не найден: $uiPackaged"
+}
+if (-not (Test-Path -LiteralPath (Join-Path $resolvedOutput $appPriName))) {
+    throw "Native-компонент не найден: $(Join-Path $resolvedOutput $appPriName)"
 }
 if (Test-Path -LiteralPath (Join-Path $resolvedOutput 'ui')) {
     Remove-Item -LiteralPath (Join-Path $resolvedOutput 'ui') -Recurse -Force
