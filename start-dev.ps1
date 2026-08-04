@@ -18,7 +18,7 @@ if (-not $SkipBuild) {
 }
 
 $supervisorPath = Join-Path $packagePath 'evohime-supervisor.exe'
-$uiPath = Join-Path $packagePath 'EvoHime.Desktop.exe'
+$uiPath = Join-Path $packagePath 'EvoHime.exe'
 foreach ($path in @($supervisorPath, $uiPath)) {
     if (-not (Test-Path -LiteralPath $path)) {
         throw "Native-компонент не найден: $path"

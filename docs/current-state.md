@@ -2,28 +2,39 @@
 
 Обновлено: 2026-08-04.
 
-## Native foundation
+## Продукт
 
-Готовы базовые части нового Windows-приложения:
+EvoHime — локальный Windows-клиент для coding-agent задач. Пользовательское имя агента — **Ева**. Первая версия — `0.0.0001`.
 
-- WinUI 3 shell и native solution;
-- Rust `evohime-core` с model gateway, tool loop, cancellation и lifecycle events;
-- SQLite schema bootstrap, transactional migration, backup и event replay;
-- versioned named-pipe IPC между C# UI и Rust core;
-- supervisor с single-instance mutex, Job Object и restart budget;
-- структурированные JSONL-логи core/supervisor;
-- native package builder и smoke-тест staging;
-- WinUI compatibility/smoke tests.
+Пользователь получает один `EvoHime-Setup.exe`. После установки на рабочем столе появляется один ярлык `EvoHime`, запускающий `EvoHime.exe`.
 
-Последние проверенные результаты: core 9/9, desktop IPC 7/7, local storage 4/4, WinUI 7/7, native package build — успешно.
+## Runtime
 
-## Product boundary
+- `EvoHime.exe` — WinUI 3 интерфейс;
+- `evohime-core.exe` — Rust agent loop, model gateway, tools, permissions, approvals и SQLite;
+- `evohime-supervisor.exe` — single-instance mutex, Job Object, restart и диагностика;
+- versioned protobuf over Windows named pipe — единственный UI/Core transport;
+- `%LOCALAPPDATA%\EvoHime` — локальные данные и JSONL-логи.
 
-Старый browser/PostgreSQL runtime удалён из поддерживаемого запуска. `start-dev.ps1` собирает и запускает только native package через supervisor. Веб-клиент и старые setup/codegen scripts больше не являются частью репозитория.
+Core и supervisor — внутренние компоненты установки, не отдельные пользовательские продукты.
 
-## Следующие шаги
+## Готово
 
-1. Завершить удаление старых server/launcher/worker workspace members.
-2. Добавить native project picker, reconnect UI и tray/notifications.
-3. Добавить provider settings, credential storage и backup/restore UI.
-4. Собрать MSIX/portable release с update/rollback.
+- native foundation: Core, SQLite, IPC, supervisor, event replay и diagnostics;
+- WinUI workspace picker, persistence, tray, notifications и reconnect;
+- streamed task timeline, cancellation и approval round-trip;
+- native package smoke tests и Windows CI;
+- единый Inno Setup installer с одним desktop shortcut;
+- release retention: сохраняется только последний стабильный `vX.Y.Z` release/tag;
+- имя агента «Ева» передаётся в system context Core.
+
+## Следующий этап
+
+1. Files, Editor, Git и controlled Terminal;
+2. diff/command preview в approval UI;
+3. Credential Manager/DPAPI, backup/restore и crash recovery;
+4. update/rollback и дальнейшая проверка установочного UX.
+
+## Граница продукта
+
+Пользовательский продукт ограничен `EvoHime-Setup.exe`, `EvoHime.exe`, локальным Core, supervisor и данными в профиле Windows. Исследовательские и экспериментальные каталоги не входят в установочный runtime.

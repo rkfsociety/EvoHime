@@ -1,11 +1,19 @@
-# EvoHime Documentation
+# Документация EvoHime
 
-| Документ | Описание |
-| --- | --- |
-| [current-state.md](current-state.md) | Актуальный статус реализации и точка правды |
-| [roadmap.md](roadmap.md) | Дорожная карта по этапам и milestone'ам |
-| [development-plan.md](development-plan.md) | Детальный план развития и критерии готовности |
-| [architecture.md](architecture.md) | Архитектура компонентов и потоков |
-| [providers/README.md](providers/README.md) | Индекс провайдеров |
-| [providers/literouter.md](providers/literouter.md) | LiteRouter как первый LLM-провайдер |
-| [../AGENTS.md](../AGENTS.md) | Гайд для AI-агентов |
+## Канонические документы
+
+- `README.md` — установка, запуск разработки и пользовательский релиз;
+- `docs/architecture.md` — native Windows architecture и IPC;
+- `docs/current-state.md` — фактическое текущее состояние;
+- `docs/development-plan.md` — текущий план реализации;
+- `AGENTS.md` — правила работы с репозиторием;
+- `SECURITY.md` — security boundary локального клиента;
+- `docs/providers/literouter.md` — настройка model provider для Core.
+
+## Пользовательская модель
+
+Продукт — один локальный Windows EXE-клиент. Пользователь скачивает `EvoHime-Setup.exe`, устанавливает приложение и запускает один ярлык `EvoHime`. Короткое имя агента — **Ева**. `evohime-core.exe` и `evohime-supervisor.exe` являются скрытыми внутренними компонентами runtime.
+
+## Рабочие правила
+
+Для разработки используйте `.\start-dev.ps1`, native package tests, WinUI tests и Windows CI. Установщик и пользовательский запуск работают через `EvoHime.exe`.

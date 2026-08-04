@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the browser client and PostgreSQL-centered launcher with a stable native Windows application composed of WinUI 3, a Rust agent core, a supervisor, SQLite persistence and versioned named-pipe IPC.
+**Goal:** Build a stable native Windows application composed of WinUI 3, a Rust agent core, a supervisor, SQLite persistence and versioned named-pipe IPC.
 
 **Architecture:** `EvoHime.Desktop` is a native WinUI 3 presentation process. `evohime-core` owns the agent loop, tools, approvals, memory and SQLite; `evohime-supervisor` owns startup, single-instance coordination, process containment, logs, updates and recovery. The desktop client never accesses files or the database directly.
 
@@ -14,11 +14,11 @@ Tasks 1–6 (native skeleton, IPC, SQLite, supervisor, Core integration and shel
 
 ## Global Constraints
 
-- No browser, Electron, Tauri or WebView is shipped as the product UI.
+- The shipped product UI is WinUI 3 and the runtime is native Windows.
 - The first supported target is Windows 11 22H2 or newer, x64.
 - One UI and one core instance are allowed per Windows user data directory.
 - UI-to-core communication uses a versioned named-pipe protocol with replayable sequence IDs.
-- SQLite is the only required local database; PostgreSQL, Docker and Python worker are not installation prerequisites.
+- SQLite is the local database and the installer contains only the native runtime components.
 - Core owns workspace access, shell execution, Git, approvals, memory and all persistence.
 - Secrets use Windows Credential Manager/DPAPI and are excluded from logs, events and diagnostics by default.
 - Every implementation task follows RED → GREEN → REFACTOR and ends with a focused test run and task-only commit.
@@ -198,7 +198,7 @@ git commit -m "feat: add Windows supervisor and single-instance lifecycle"
 
 - [ ] **Step 1: Write tests for project opening, task creation, streamed deltas, cancellation, approval pause/resume, core restart replay and model failure.**
 - [ ] **Step 2: Run `cargo test -p evohime-core` and confirm the new behavior fails.**
-- [ ] **Step 3: Move the existing agent loop behind `CoreHandle` without exposing HTTP or browser-specific types.**
+- [ ] **Step 3: Move the agent loop behind `CoreHandle` without exposing UI-specific types.**
 - [ ] **Step 4: Map existing tool/protocol events to the desktop IPC event envelope and persist each event before publishing it.**
 - [ ] **Step 5: Add workspace path validation, output/time limits and cancellation propagation through the tool runtime.**
 - [ ] **Step 6: Run focused core tests plus existing agent-runtime and tool-runtime suites.**
@@ -279,16 +279,16 @@ git add desktop/EvoHime.Package desktop/EvoHime.Desktop/Services/UpdateService.c
 git commit -m "feat: package native Windows app with recovery"
 ```
 
-### Task 9: Remove browser architecture and finalize CI
+### Task 9: Finalize native CI and release packaging
 
 **Files:**
-- Delete: `frontend/web/` after native workflow parity is verified
+- Verify that the installer contains only the native runtime components after parity checks
 - Modify: `Cargo.toml`, `package.json`, `start-dev.ps1`, `AGENTS.md`, `docs/current-state.md`, `docs/roadmap.md`, `.github/workflows/rust.yml`, `.github/workflows/windows-native.yml`
 - Create: `docs/native-windows-development.md`, `scripts/build-windows-native.ps1`
 
-- [ ] **Step 1: Add a repository guard test that fails if the shipped product references the old web entrypoint, PostgreSQL startup or browser launch.**
+- [ ] **Step 1: Add a repository guard test that fails if the shipped product contains an unsupported runtime entrypoint or launches outside the native client.**
 - [ ] **Step 2: Run the guard before cleanup and record the expected failures from the old architecture.**
-- [ ] **Step 3: Remove obsolete web build/startup paths and PostgreSQL-only launcher assumptions only after native workflow tests pass.**
+- [ ] **Step 3: Finalize native build/startup paths only after native workflow tests pass.**
 - [ ] **Step 4: Update project instructions, roadmap, README and CI to make the native Windows app the only supported product.**
 - [ ] **Step 5: Run `cargo fmt --all -- --check`, `cargo test --workspace`, `dotnet test desktop/EvoHime.Tests`, the native packaging build and the repository guard on Windows.**
 - [ ] **Step 6: Remove Rust target artifacts with `cargo clean` after verification, inspect `git diff --check`, and verify only task files are modified.**
@@ -310,5 +310,5 @@ Each phase must pass its focused tests before the next phase starts. The final g
 - Single-instance behavior, Job Objects, logs and recovery are covered by Task 4.
 - SQLite indexes, compaction and export are covered by Task 3.
 - Credential protection and optional master-password deferral are covered by Task 7.
-- Native UI, core separation and removal of browser architecture are covered by Tasks 5, 6 and 9.
+- Native UI, Core separation and release packaging are covered by Tasks 5, 6 and 9.
 - No task depends on a branch or worktree; implementation stays on the current `main` branch.

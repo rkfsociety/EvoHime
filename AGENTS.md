@@ -1,6 +1,6 @@
 # EvoHime — Agent Guide
 
-EvoHime — новый native Windows AI-agent. Поддерживаемый продукт — WinUI 3 desktop application; браузерный клиент, Electron, Tauri, WebView, PostgreSQL и Python worker в продуктовый контур не входят.
+EvoHime — локальный native Windows AI-agent. Поддерживаемый продукт — WinUI 3 desktop application с Rust Core, SQLite и Windows supervisor.
 
 ## Общение
 
@@ -49,7 +49,7 @@ cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc
 cargo check -p evohime-supervisor
 ```
 
-Не запускай старый web stack, `cargo run -p evohime-server`, PostgreSQL setup, `npm run dev` или Docker compose для native-задач.
+Для native-задач используй только Windows launcher, Rust native crates, WinUI tests и native packaging scripts.
 
 ## IPC
 
@@ -66,7 +66,7 @@ cargo check -p evohime-supervisor
 
 ## Правила разработки
 
-1. Не возвращай web UI или HTTP/WS как обязательный runtime-контур.
+1. Не выноси runtime-состояние из native Core в UI.
 2. Не добавляй бизнес-логику в WinUI: UI отображает состояние IPC.
 3. Новые Rust-функции и исправления покрывай тестами.
 4. Соблюдай sandbox, таймауты, отмену и approval для опасных инструментов.

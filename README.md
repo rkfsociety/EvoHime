@@ -2,7 +2,7 @@
 
 Первая версия Windows-клиента — `0.0.0001`. Пользовательское короткое имя агента — **Ева**. Обращения «Ева» и «EvoHime» означают одного и того же агента.
 
-Нативный Windows-агент без браузерной панели. Приложение состоит из WinUI 3 UI, Rust core и supervisor; состояние хранится локально в SQLite, обмен идёт через версионируемый named pipe IPC.
+Локальный Windows-агент. Приложение состоит из WinUI 3 UI, Rust core и supervisor; состояние хранится локально в SQLite, обмен идёт через версионируемый named pipe IPC.
 
 ## Требования
 
@@ -41,7 +41,7 @@ evohime-core.exe ── SQLite + model gateway + tools
 evohime-supervisor.exe ── mutex + Job Object + restart + logs
 ```
 
-Данные и JSONL-логи пользователя хранятся в `%LOCALAPPDATA%\EvoHime`. Веб-клиент, PostgreSQL, Docker и Python worker не являются частью продукта.
+Данные и JSONL-логи пользователя хранятся в `%LOCALAPPDATA%\EvoHime`.
 
 ## Проверки
 

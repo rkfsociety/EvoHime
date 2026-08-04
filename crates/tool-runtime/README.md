@@ -1,15 +1,7 @@
-# tool-runtime
+# evohime-tool-runtime
 
-Tool registry and execution runtime.
+Локальный runtime инструментов для `evohime-core`.
 
-Implemented tools:
+Поддерживаемые инструменты включают `filesystem.read`, `filesystem.write`, `filesystem.patch`, `filesystem.search`, `shell.execute`, Git, MCP и дополнительные browser/http adapters. Все вызовы проходят через workspace sandbox, permissions, cancellation, timeout и approval gate.
 
-- `filesystem.read`
-- `filesystem.write`
-- `filesystem.patch`
-- `filesystem.search` — ripgrep when available, recursive walk fallback otherwise (`engine` in structured result)
-- `shell.execute`
-- `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push`
-- `mcp.call`
-
-All tools run through the registry and workspace sandbox. Permission checks, approval resumption, and task orchestration now work through the browser runtime; stage 6 will add more tools and management UI rather than finish the existing base.
+Runtime не является веб-сервисом и не зависит от browser UI. WinUI только отображает события Core; бизнес-логика инструментов остаётся в Rust.

@@ -1,80 +1,42 @@
-# Security Policy
+# Политика безопасности EvoHime
 
-**EvoHime** — локальный single-tenant инструмент для AI-агентов. Документация по безопасности находится в [`docs/security/threat-model.md`](docs/security/threat-model.md).
+EvoHime — локальный single-user Windows-клиент. Пользовательский интерфейс не открывает сетевой порт: WinUI общается с Rust Core через защищённый versioned Windows named pipe.
 
-## Краткое резюме
+## Защищаемые границы
 
-### Что защищено
-- ✅ Локальная аутентификация (token-based HTTP + WebSocket)
-- ✅ SSRF-блокировка для `browser.open` и `mcp.call`
-- ✅ Path traversal protection в файловых инструментах
-- ✅ Shell injection mitigation через env scrubbing
-- ✅ Secret encryption в `app_settings` (AES-256-GCM)
-- ✅ Plugin quarantine с risk-scan гейтом
-- ✅ Permission audit trail (PostgreSQL)
-- ✅ Secure default (localhost-only, CORS allowlist, no auto-resume mutating tasks)
+- workspace path проверяется Core и ограничивается выбранным workspace;
+- опасные tools требуют approval через UI;
+- shell-команды получают таймаут, cancellation и ограничения вывода;
+- дочерние процессы находятся в Windows Job Object и завершаются вместе с Core;
+- SQLite и event journal принадлежат только Core;
+- provider credentials хранятся через Windows Credential Manager/DPAPI и не попадают в логи;
+- JSONL diagnostics редактируют секреты;
+- IPC использует major/minor compatibility и bounded frames;
+- supervisor ограничивает single-instance запуск и восстанавливает Core после сбоя.
 
-### Что не защищено
-- ❌ Compromised local machine (вне scope)
-- ❌ LLM prompt injection (inherent risk)
-- ❌ Supply chain vulnerabilities (dependencies update, but no guarantee)
-- ❌ Multi-tenant scenarios (не поддерживается, не рекомендуется)
+## Ограничения
 
----
+- скомпрометированная локальная Windows-машина вне scope;
+- prompt injection из текста репозитория и внешних данных остаётся риском модели;
+- сетевые model providers могут видеть отправленный им контекст согласно их политике;
+- multi-user, SaaS и server deployment не поддерживаются;
+- MCP и внешние сетевые tools требуют отдельного permission/approval контроля.
 
-## Threat Model
+## Данные и диагностика
 
-Для полного анализа угроз, миграций и рекомендаций смотрите [`docs/security/threat-model.md`](docs/security/threat-model.md).
+Локальные данные находятся в `%LOCALAPPDATA%\EvoHime`. Перед миграциями и обновлениями должен создаваться backup. Для диагностики используйте JSONL-логи Core/supervisor и штатный export diagnostics; не прикладывайте секреты, API keys или исходники целиком.
 
-Основной принцип: **trust boundary между оператором и агентом не пересекается**. Агент — инструмент, не враг.
+## Сообщение об уязвимости
 
----
+Не создавайте публичный issue с рабочим exploit. Отправьте описание, сценарий воспроизведения и, если возможно, безопасный PoC на `romankuzminvital@gmail.com`.
 
-## Reporting Security Issues
+## Проверки перед релизом
 
-Если вы обнаружили уязвимость:
-
-1. **Не создавайте public issue** в GitHub
-2. **Пишите на email:** romankuzminvital@gmail.com
-3. **Укажите:** описание, сценарий, если возможно — POC
-
-Мы проверим и выпустим patch, спасибо за ответственное раскрытие.
-
----
-
-## Deployment Recommendations
-
-### Локальный режим (по умолчанию)
-```bash
-# Безопасно — слушает только localhost
-./start-dev.ps1
+```powershell
+.\scripts\native-workflow.tests.ps1
+.\scripts\native-package.tests.ps1
+cargo test --locked -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc
+dotnet test desktop\EvoHime.Tests\EvoHime.Tests.csproj -p:Platform=x64
 ```
 
-### Если нужен сетевой доступ
-```bash
-# ⚠️ Требует явного auth token
-BIND_ADDR=0.0.0.0:3000 EVOHIME_API_TOKEN=very-strong-random-token ./target/release/evohime-server
-```
-
-### Рекомендации
-- Используйте `EVOHIME_API_TOKEN` (сложный random string, ≥32 chars)
-- Включите HTTPS в production (stage 8.E: `--tls` опция)
-- Ограничьте доступ на firewall level
-- Регулярно обновляйте dependencies
-- Читайте threat model при архитектурных изменениях
-
----
-
-## Known Issues & Roadmap
-
-- **Keychain integration (7.7 TODO):** Secrets хранятся в памяти; production может использовать OS keychain (Stage 8 upgrade)
-- **Project index persistence (7.57):** Пока нет on-disk кэша; медленный поиск на больших проектах (Stage 8.E)
-- **TLS support (8.E):** Coming soon для non-localhost deployments
-
----
-
-## References
-
-- [Threat Model](docs/security/threat-model.md) — Полный анализ
-- [Roadmap § Stage 7](docs/roadmap.md#этап-7--hardening-product--scale) — Security & Reliability пункты
-- [Development Plan](docs/development-plan.md) — Архитектура
+Релизный установщик собирается только отдельным job после успешных CI-проверок.

@@ -4,16 +4,15 @@
 
 ## Цель
 
-Переписать EvoHime как стабильное локальное Windows-приложение для работы с coding agents. Веб-панель, браузерный клиент, PostgreSQL и обратная совместимость со старой архитектурой не являются ограничениями: это новый продукт, использующий текущий репозиторий как источник уже проверенных идей и алгоритмов.
+Создать EvoHime как стабильное локальное Windows-приложение для работы с coding agents. Продукт использует WinUI 3, Rust Core, SQLite, supervisor и versioned named-pipe IPC.
 
 ## Не входит в цель
 
-- web-панель и запуск интерфейса в браузере;
-- Electron, Tauri и WebView как основа интерфейса;
+- смешивание UI и Core в одном неуправляемом процессе;
+- обязательные внешние сервисы для локального запуска;
 - multi-tenant, SaaS, серверная регистрация пользователей;
-- сохранение старого HTTP/WS API ради совместимости;
-- PostgreSQL, Docker и обязательный Python worker в локальной установке;
-- перенос всех старых frontend-компонентов без пересмотра UX.
+- серверная регистрация пользователей и multi-tenant deployment;
+- перенос функций без проверки native UX и безопасности.
 
 ## Архитектура
 
@@ -117,7 +116,7 @@ Create the native solution, supervisor, Rust core process, SQLite bootstrap, nam
 
 ### Phase 2 — Native shell
 
-Implement project selection, task list, window state, reconnect/replay, tray and native notifications. No old web frontend is embedded.
+Implement project selection, task list, window state, reconnect/replay, tray and native notifications.
 
 ### Phase 3 — Agent workflow
 
@@ -133,11 +132,11 @@ Implement memory, project index, provider settings, backup/restore, installer, u
 
 ### Phase 6 — Cleanup
 
-Remove obsolete browser frontend, PostgreSQL-specific startup, legacy HTTP/WS assumptions and stale browser-only documentation. Update CI and project instructions to the native Windows architecture.
+Finalize the native installer, release workflow, diagnostics and project documentation.
 
 ## Acceptance criteria
 
-- App starts from a desktop shortcut without opening a browser or console window.
+- App starts from a desktop shortcut with a native window and hidden supervisor process.
 - A user can select a repository, start a task, receive streamed events and review the result.
 - Core restart does not lose persisted task state or completed events.
 - A cancelled task leaves no child shell process running.

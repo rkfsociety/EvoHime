@@ -2,7 +2,7 @@
 
 ## Цель
 
-Создать стабильный локальный Windows AI-agent без браузерной панели и обязательных внешних сервисов. Пользователь запускает desktop app, выбирает workspace, запускает задачу и получает поток событий через named pipe.
+Создать стабильный локальный Windows AI-agent. Пользователь запускает desktop app, выбирает workspace, запускает задачу и получает поток событий через named pipe.
 
 Первая версия клиента: `0.0.0001`.
 
@@ -25,14 +25,14 @@
 3. Agent workflow — streaming, approvals, cancellation, checkpoints and diff review. В работе: streaming, cancellation и approval round-trip завершены; checkpoints и diff review впереди.
 4. Developer tools — files, editor, Git and controlled terminal. Следующий этап.
 5. Product hardening — credentials, backup/restore, installer, update and crash recovery. Запланирован.
-6. Cleanup — старый web/PostgreSQL/server runtime удалён из поддерживаемого workspace и CI; архивные исходники удаляются отдельным безопасным проходом. В работе.
+6. Release cleanup — единый installer, retention релизов, диагностика и чистый native CI. В работе.
 
 ## Текущий статус native-перехода
 
 | Блок | Статус | Последнее подтверждение |
 | --- | --- | --- |
 | Foundation: Core, SQLite, IPC, supervisor, diagnostics | ✅ Завершён | `e270efd`–`463e11b` |
-| Package, smoke build, CI и отказ от web runtime | ✅ Завершён | `fb5e00e`–`8b84ad9` |
+| Package, smoke build, CI и единый installer | ✅ Завершён | `9b3430c` |
 | Workspace, persistence, tray, notifications, replay | ✅ Завершён | `a43aaac`–`0246f05` |
 | Approval round-trip через native IPC | ✅ Завершён | `87c5b39` |
 | Files, Editor, Git, Terminal | ⬜ Следующий этап | — |
