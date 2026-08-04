@@ -38,6 +38,12 @@ public sealed class CoreIpcClient
     public Task RequestReplayAsync(ulong afterSequence, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.Replay(afterSequence), cancellationToken);
 
+    public Task StartTaskAsync(string taskId, string prompt, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.StartTask(taskId, prompt), cancellationToken);
+
+    public Task StopTaskAsync(string taskId, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.StopTask(taskId), cancellationToken);
+
     public async Task<CoreEventEnvelope> ReadEventAsync(CancellationToken cancellationToken)
     {
         var pipe = GetConnectedPipe();

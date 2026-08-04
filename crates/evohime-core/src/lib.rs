@@ -6,12 +6,11 @@ pub use ipc_bridge::{IpcBridge, IpcBridgeError};
 #[cfg(windows)]
 pub async fn run_windows_pipe(
     pipe_name: &str,
-    database_path: impl AsRef<std::path::Path>,
+    bridge: IpcBridge,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use tokio::io::split;
     use tokio::net::windows::named_pipe::ServerOptions;
 
-    let bridge = IpcBridge::new(EventJournal::open(database_path)?);
     loop {
         let server = ServerOptions::new().create(pipe_name)?;
         server.connect().await?;

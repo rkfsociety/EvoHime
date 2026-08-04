@@ -16,12 +16,23 @@ message ReplayEvents {
   uint64 after_sequence = 1;
 }
 
+message StartTask {
+  string task_id = 1;
+  string prompt = 2;
+}
+
+message StopTask {
+  string task_id = 1;
+}
+
 message CommandEnvelope {
   ProtocolVersion protocol = 1;
   string request_id = 2;
   oneof command {
     Handshake handshake = 10;
     ReplayEvents replay_events = 11;
+    StartTask start_task = 12;
+    StopTask stop_task = 13;
   }
 }
 

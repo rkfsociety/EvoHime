@@ -54,6 +54,20 @@ public static class ProtocolEnvelope
         return buffer.ToArray();
     }
 
+    public static byte[] StartTask(string taskId, string prompt) => TaskCommand(12, output =>
+    {
+        output.WriteTag(1, WireFormat.WireType.LengthDelimited);
+        output.WriteString(taskId);
+        output.WriteTag(2, WireFormat.WireType.LengthDelimited);
+        output.WriteString(prompt);
+    });
+
+    public static byte[] StopTask(string taskId) => TaskCommand(13, output =>
+    {
+        output.WriteTag(1, WireFormat.WireType.LengthDelimited);
+        output.WriteString(taskId);
+    });
+
     public static CoreEventEnvelope ReadEvent(ReadOnlySpan<byte> payload)
     {
         using var input = new CodedInputStream(payload.ToArray());
@@ -102,5 +116,24 @@ public static class ProtocolEnvelope
             protocol.Flush();
         }
         output.WriteBytes(ByteString.CopyFrom(nested.ToArray()));
+    }
+
+    private static byte[] TaskCommand(uint field, Action<CodedOutputStream> writeNested)
+    {
+        using var buffer = new MemoryStream();
+        using var output = new CodedOutputStream(buffer, leaveOpen: true);
+        WriteProtocol(output);
+        output.WriteTag(2, WireFormat.WireType.LengthDelimited);
+        output.WriteString(Guid.NewGuid().ToString("N"));
+        output.WriteTag((int)field, WireFormat.WireType.LengthDelimited);
+        using var nested = new MemoryStream();
+        using (var command = new CodedOutputStream(nested, leaveOpen: true))
+        {
+            writeNested(command);
+            command.Flush();
+        }
+        output.WriteBytes(ByteString.CopyFrom(nested.ToArray()));
+        output.Flush();
+        return buffer.ToArray();
     }
 }

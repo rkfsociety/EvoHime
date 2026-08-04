@@ -2,7 +2,7 @@ use evohime_desktop_ipc::{generated, transport, FrameError};
 use prost::Message;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use crate::EventJournal;
+use crate::{CoreCommand, EventJournal, TaskCoordinator};
 
 const PROTOCOL_MAJOR: u32 = 1;
 const PROTOCOL_MINOR: u32 = 0;
@@ -17,11 +17,22 @@ pub enum IpcBridgeError {
 
 pub struct IpcBridge {
     journal: EventJournal,
+    coordinator: Option<TaskCoordinator>,
 }
 
 impl IpcBridge {
     pub fn new(journal: EventJournal) -> Self {
-        Self { journal }
+        Self {
+            journal,
+            coordinator: None,
+        }
+    }
+
+    pub fn with_coordinator(journal: EventJournal, coordinator: TaskCoordinator) -> Self {
+        Self {
+            journal,
+            coordinator: Some(coordinator),
+        }
     }
 
     pub async fn process_once<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
@@ -62,6 +73,27 @@ impl IpcBridge {
                         event: None,
                     };
                     transport::write_frame(writer, &event.encode_to_vec()).await?;
+                }
+            }
+            Some(generated::command_envelope::Command::StartTask(start)) => {
+                if let Some(coordinator) = &self.coordinator {
+                    coordinator
+                        .dispatch(CoreCommand::StartTask {
+                            task_id: start.task_id,
+                            prompt: start.prompt,
+                        })
+                        .await
+                        .map_err(|error| FrameError::Io(error.to_string()))?;
+                }
+            }
+            Some(generated::command_envelope::Command::StopTask(stop)) => {
+                if let Some(coordinator) = &self.coordinator {
+                    coordinator
+                        .dispatch(CoreCommand::StopTask {
+                            task_id: stop.task_id,
+                        })
+                        .await
+                        .map_err(|error| FrameError::Io(error.to_string()))?;
                 }
             }
             None => {}
