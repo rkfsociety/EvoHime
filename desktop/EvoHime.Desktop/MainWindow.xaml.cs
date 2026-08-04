@@ -7,6 +7,8 @@ namespace EvoHime.Desktop;
 
 public partial class MainWindow : Window
 {
+    public event Action<string, string>? NotificationRequested;
+
     private readonly CoreIpcClient _ipc = new("evohime-core-v1");
     private readonly NativeShellState _state = new();
     private readonly WorkspaceSettings _settings = new();
@@ -128,6 +130,21 @@ public partial class MainWindow : Window
                         {
                             var text = $"[{envelope.SequenceId}] {envelope.EventType}";
                             _ = DispatcherQueue.TryEnqueue(() => EventLog.Text += text + Environment.NewLine);
+                            if (envelope.TaskId == _activeTaskId)
+                            {
+                                var notification = envelope.EventType switch
+                                {
+                                    "task.completed" => ("Задача завершена", "EvoHime завершила задачу."),
+                                    "task.failed" => ("Задача завершилась с ошибкой", "Проверьте журнал событий EvoHime."),
+                                    "task.stopped" => ("Задача остановлена", "Выполнение остановлено пользователем."),
+                                    _ => ((string Title, string Message)?)null,
+                                };
+                                if (notification is not null)
+                                {
+                                    _ = DispatcherQueue.TryEnqueue(() =>
+                                        NotificationRequested?.Invoke(notification.Value.Title, notification.Value.Message));
+                                }
+                            }
                         }
                         return Task.CompletedTask;
                     },
