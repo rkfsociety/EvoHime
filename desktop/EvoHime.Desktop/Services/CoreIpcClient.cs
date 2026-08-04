@@ -44,6 +44,29 @@ public sealed class CoreIpcClient
     public Task StopTaskAsync(string taskId, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.StopTask(taskId), cancellationToken);
 
+    public async Task<ulong> ReadReplayAsync(
+        ulong afterSequence,
+        Func<CoreEventEnvelope, Task> onEvent,
+        CancellationToken cancellationToken)
+    {
+        await RequestReplayAsync(afterSequence, cancellationToken);
+        var lastSequence = afterSequence;
+        while (true)
+        {
+            var envelope = await ReadEventAsync(cancellationToken);
+            if (envelope.EventType == "replay.end")
+            {
+                return Math.Max(lastSequence, envelope.SequenceId);
+            }
+            if (envelope.EventType == "core.ready")
+            {
+                continue;
+            }
+            lastSequence = Math.Max(lastSequence, envelope.SequenceId);
+            await onEvent(envelope);
+        }
+    }
+
     public async Task<CoreEventEnvelope> ReadEventAsync(CancellationToken cancellationToken)
     {
         var pipe = GetConnectedPipe();

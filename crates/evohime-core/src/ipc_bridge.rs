@@ -58,12 +58,14 @@ impl IpcBridge {
                 transport::write_frame(writer, &event.encode_to_vec()).await?;
             }
             Some(generated::command_envelope::Command::ReplayEvents(replay)) => {
+                let mut last_sequence = replay.after_sequence;
                 for record in self
                     .journal
                     .replay(replay.after_sequence as i64, 1_000)
                     .await
                     .map_err(|error| FrameError::Io(error.to_string()))?
                 {
+                    last_sequence = record.sequence_id as u64;
                     let event = generated::EventEnvelope {
                         protocol: Some(protocol()),
                         sequence_id: record.sequence_id as u64,
@@ -74,6 +76,15 @@ impl IpcBridge {
                     };
                     transport::write_frame(writer, &event.encode_to_vec()).await?;
                 }
+                let end = generated::EventEnvelope {
+                    protocol: Some(protocol()),
+                    sequence_id: last_sequence,
+                    task_id: String::new(),
+                    event_type: "replay.end".into(),
+                    payload: Vec::new(),
+                    event: None,
+                };
+                transport::write_frame(writer, &end.encode_to_vec()).await?;
             }
             Some(generated::command_envelope::Command::StartTask(start)) => {
                 if let Some(coordinator) = &self.coordinator {

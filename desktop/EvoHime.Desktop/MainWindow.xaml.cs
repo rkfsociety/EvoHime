@@ -6,7 +6,9 @@ namespace EvoHime.Desktop;
 public partial class MainWindow : Window
 {
     private readonly CoreIpcClient _ipc = new("evohime-core-v1");
+    private CancellationTokenSource? _eventCts;
     private string? _activeTaskId;
+    private ulong _lastSequence;
 
     public MainWindow()
     {
@@ -28,6 +30,8 @@ public partial class MainWindow : Window
             _activeTaskId = Guid.NewGuid().ToString("N");
             await _ipc.StartTaskAsync(_activeTaskId, prompt, CancellationToken.None);
             ConnectionStatus.Text = $"Задача {_activeTaskId}: выполняется";
+            _eventCts = new CancellationTokenSource();
+            _ = PumpEventsAsync(_eventCts.Token);
             StartButton.IsEnabled = false;
             StopButton.IsEnabled = true;
         }
@@ -56,10 +60,40 @@ public partial class MainWindow : Window
         }
         finally
         {
+            _eventCts?.Cancel();
+            _eventCts?.Dispose();
+            _eventCts = null;
             _activeTaskId = null;
             StartButton.IsEnabled = true;
             StopButton.IsEnabled = false;
             await _ipc.DisposeAsync();
+        }
+    }
+
+    private async Task PumpEventsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested && _activeTaskId is not null)
+            {
+                _lastSequence = await _ipc.ReadReplayAsync(
+                    _lastSequence,
+                    envelope =>
+                    {
+                        var text = $"[{envelope.SequenceId}] {envelope.EventType}";
+                        _ = DispatcherQueue.TryEnqueue(() => EventLog.Text += text + Environment.NewLine);
+                        return Task.CompletedTask;
+                    },
+                    cancellationToken);
+                await Task.Delay(300, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception error)
+        {
+            _ = DispatcherQueue.TryEnqueue(() => ConnectionStatus.Text = $"Поток событий остановлен: {error.Message}");
         }
     }
 }
