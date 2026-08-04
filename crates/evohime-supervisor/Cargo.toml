@@ -8,4 +8,7 @@ name = "evohime-supervisor"
 path = "src/main.rs"
 
 [dependencies]
+tokio = { version = "1", features = ["macros", "process", "rt-multi-thread", "signal", "time"] }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading"] }
