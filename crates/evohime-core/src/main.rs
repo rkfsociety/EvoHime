@@ -28,7 +28,19 @@ async fn main() {
     let (coordinator, _events) =
         evohime_core::TaskCoordinator::new_with_journal(256, executor, journal.clone());
     let bridge = evohime_core::IpcBridge::with_coordinator(journal, coordinator);
-    if let Err(error) = evohime_core::run_windows_pipe(&pipe_name, bridge).await {
+    let logger = match evohime_core::StructuredLogger::open(data_dir.join("logs/core.jsonl")) {
+        Ok(logger) => std::sync::Arc::new(logger),
+        Err(error) => {
+            eprintln!("evohime-core logging failed: {error}");
+            std::process::exit(1);
+        }
+    };
+    let _ = logger.write(
+        "info",
+        "core.started",
+        serde_json::json!({"pipe": pipe_name, "protocol_major": 1, "protocol_minor": 0}),
+    );
+    if let Err(error) = evohime_core::run_windows_pipe(&pipe_name, bridge, logger).await {
         eprintln!("evohime-core failed: {error}");
         std::process::exit(1);
     }
