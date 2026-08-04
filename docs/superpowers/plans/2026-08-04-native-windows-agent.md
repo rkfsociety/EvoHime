@@ -8,6 +8,10 @@
 
 **Tech Stack:** WinUI 3/C#; Rust; Tokio; protobuf; Windows named pipes; SQLite through `sqlx`; Windows Job Objects; MSTest; Cargo tests; Windows CI and MSIX packaging.
 
+## Execution status
+
+Tasks 1–6 (native skeleton, IPC, SQLite, supervisor, Core integration and shell) выполнены. Approval round-trip из Task 5/6 завершён коммитом `87c5b39` и проверен тестами. Task 7 — текущий следующий блок: Files, Editor, Git, controlled Terminal и approval preview/diff surfaces. Оставшиеся checkbox-пункты ниже — исходный пошаговый чек-лист спецификации; актуальная сводка статусов находится здесь и в `docs/development-plan.md`.
+
 ## Global Constraints
 
 - No browser, Electron, Tauri or WebView is shipped as the product UI.

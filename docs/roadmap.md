@@ -2,7 +2,20 @@
 
 > Этот документ содержит историческую web-first дорожную карту. Поддерживаемая продуктовая архитектура с 2026-08-04 — native Windows; актуальный план находится в `docs/development-plan.md`, архитектура — в `docs/architecture.md`.
 
-> Обновлено: 2026-08-03 (Stage 8.3 завершён: E2E тесты, task dependency graphs с batch execution)
+> Обновлено: 2026-08-04. Ниже сохранена историческая web-first дорожная карта. Текущий native-план и его фактический статус указаны в разделе Native transition status и в `docs/development-plan.md`.
+
+## Native transition status
+
+| Native блок | Статус |
+| --- | --- |
+| Foundation: Rust Core, SQLite, versioned named-pipe IPC, supervisor, diagnostics | ✅ Завершён |
+| WinUI shell: workspace, persistence, tray, notifications, reconnect/replay | ✅ Завершён |
+| Agent workflow: streaming, cancellation, approval round-trip | ✅ Завершён |
+| Native package, smoke build, Windows CI, removal of web product runtime | ✅ Завершён |
+| Files, Editor, Git, controlled Terminal | ⬜ Следующий этап |
+| Credentials, backup/restore, update/MSIX | ⬜ Запланирован |
+
+Последний native-коммит: `87c5b39` (`feat: add native approval round-trip`).
 
 ## Обзор
 
