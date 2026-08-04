@@ -1,4 +1,14 @@
-use std::{ffi::OsStr, io, mem::size_of, os::windows::ffi::OsStrExt, path::PathBuf, ptr};
+use serde_json::json;
+use std::{
+    ffi::OsStr,
+    io,
+    mem::size_of,
+    os::windows::ffi::OsStrExt,
+    path::PathBuf,
+    ptr,
+    sync::Mutex,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use tokio::{
     process::Command,
@@ -15,6 +25,46 @@ use windows_sys::Win32::{
 };
 
 struct SingleInstance(HANDLE);
+
+struct SupervisorLogger(Mutex<std::io::BufWriter<std::fs::File>>);
+
+impl SupervisorLogger {
+    fn open() -> io::Result<Self> {
+        let dir = std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(".evohime"))
+            .join("EvoHime/logs");
+        std::fs::create_dir_all(&dir)?;
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("supervisor.jsonl"))?;
+        Ok(Self(Mutex::new(std::io::BufWriter::new(file))))
+    }
+
+    fn write(&self, event: &str, fields: serde_json::Value) -> io::Result<()> {
+        let timestamp_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let mut file = self
+            .0
+            .lock()
+            .map_err(|_| io::Error::other("supervisor logger lock poisoned"))?;
+        serde_json::to_writer(
+            &mut *file,
+            &json!({
+                "timestamp_ms": timestamp_ms,
+                "level": "info",
+                "event": event,
+                "fields": fields,
+            }),
+        )?;
+        use std::io::Write;
+        file.write_all(b"\n")?;
+        file.flush()
+    }
+}
 
 impl SingleInstance {
     fn acquire(name: &str) -> io::Result<Self> {
@@ -84,6 +134,7 @@ impl Drop for JobObject {
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let _instance = SingleInstance::acquire("Local\\EvoHime.Supervisor")?;
+    let logger = SupervisorLogger::open()?;
     let core_exe = std::env::var_os("EVOHIME_CORE_EXE")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("evohime-core.exe"));
@@ -94,14 +145,20 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut restarts = 0;
 
     loop {
+        let _ = logger.write("core.spawn", json!({"restart": restarts}));
         let job = JobObject::create()?;
         let mut child = Command::new(&core_exe).kill_on_drop(true).spawn()?;
         job.assign(&child)?;
         let status = child.wait().await?;
+        let _ = logger.write(
+            "core.exit",
+            json!({"success": status.success(), "code": status.code()}),
+        );
         if status.success() || restarts >= max_restarts {
             return Ok(());
         }
         restarts += 1;
+        let _ = logger.write("core.restart", json!({"restart": restarts}));
         sleep(Duration::from_millis(250 * u64::from(restarts))).await;
     }
 }

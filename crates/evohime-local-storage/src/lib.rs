@@ -1,5 +1,6 @@
 use std::{
     fs,
+    io::{BufWriter, Write},
     path::{Path, PathBuf},
 };
 
@@ -13,6 +14,8 @@ pub enum StorageError {
     Io(#[from] std::io::Error),
     #[error("SQLite operation failed: {0}")]
     Sqlite(#[from] rusqlite::Error),
+    #[error("JSON operation failed: {0}")]
+    Json(#[from] serde_json::Error),
     #[error("unsupported database schema version {0}")]
     UnsupportedSchema(u32),
 }
@@ -98,7 +101,8 @@ impl LocalDatabase {
             "SELECT sequence_id, task_id, event_type, payload, created_at
              FROM events WHERE sequence_id > ?1 ORDER BY sequence_id LIMIT ?2",
         )?;
-        let rows = statement.query_map(rusqlite::params![after_sequence, limit as i64], |row| {
+        let limit = limit.min(i64::MAX as usize) as i64;
+        let rows = statement.query_map(rusqlite::params![after_sequence, limit], |row| {
             Ok(EventRecord {
                 sequence_id: row.get(0)?,
                 task_id: row.get(1)?,
@@ -108,6 +112,31 @@ impl LocalDatabase {
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn export_events_jsonl(&self, output: impl AsRef<Path>) -> Result<(), StorageError> {
+        if let Some(parent) = output.as_ref().parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let file = fs::File::create(output)?;
+        let mut writer = BufWriter::new(file);
+        for event in self.read_events_after(0, usize::MAX)? {
+            let payload = serde_json::from_slice::<serde_json::Value>(&event.payload)
+                .unwrap_or_else(|_| serde_json::json!({"raw_bytes": event.payload}));
+            serde_json::to_writer(
+                &mut writer,
+                &serde_json::json!({
+                    "sequence_id": event.sequence_id,
+                    "task_id": event.task_id,
+                    "event_type": event.event_type,
+                    "payload": payload,
+                    "created_at": event.created_at,
+                }),
+            )?;
+            writer.write_all(b"\n")?;
+        }
+        writer.flush()?;
+        Ok(())
     }
 
     fn read_schema_version(connection: &Connection) -> Result<u32, rusqlite::Error> {
@@ -191,5 +220,26 @@ mod tests {
         assert_eq!(events[0].payload, b"two");
         drop(database);
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn exports_events_as_jsonl() {
+        let path = temp_database_path("export");
+        let output = path.with_extension("jsonl");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&output);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        database
+            .append_event("task-export", "task.started", br#"{"ok":true}"#)
+            .expect("event writes");
+        database
+            .export_events_jsonl(&output)
+            .expect("export writes");
+        let content = std::fs::read_to_string(&output).expect("export reads");
+        let record: serde_json::Value = serde_json::from_str(content.trim()).expect("valid JSON");
+        assert_eq!(record["task_id"], "task-export");
+        assert_eq!(record["payload"]["ok"], true);
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(output);
     }
 }
