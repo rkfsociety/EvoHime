@@ -39,17 +39,23 @@ if (-not $SkipBuild) {
 
 New-Item -ItemType Directory -Force -Path $resolvedOutput | Out-Null
 $cargoTarget = Join-Path $repoRoot 'target\release'
-$required = @{
-    (Join-Path $cargoTarget 'evohime-core.exe')       = (Join-Path $resolvedOutput 'evohime-core.exe')
-    (Join-Path $cargoTarget 'evohime-supervisor.exe') = (Join-Path $resolvedOutput 'evohime-supervisor.exe')
-}
+$required = @(
+    'evohime-core.exe',
+    'evohime-supervisor.exe'
+)
 
-foreach ($source in $required.Keys) {
+foreach ($component in $required) {
+    $destination = Join-Path $resolvedOutput $component
+    $source = if (Test-Path -LiteralPath $destination) {
+        $destination
+    } else {
+        Join-Path $cargoTarget $component
+    }
     if (-not (Test-Path -LiteralPath $source)) {
         throw "Native-компонент не найден: $source"
     }
-    if ($source -ne $required[$source]) {
-        Copy-Item -LiteralPath $source -Destination $required[$source] -Force
+    if ($source -ne $destination) {
+        Copy-Item -LiteralPath $source -Destination $destination -Force
     }
 }
 

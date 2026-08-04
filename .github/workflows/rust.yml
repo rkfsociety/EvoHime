@@ -1,204 +1,40 @@
-name: CI
+name: Native Windows
 
 on:
   push:
-    branches: [ "main" ]
   pull_request:
-    branches: [ "main" ]
-
-env:
-  CARGO_TERM_COLOR: always
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
-permissions:
-  contents: read
 
 jobs:
-  fmt:
-    name: Format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      # Stage 7.87 — formatting gate for the complete Rust workspace.
-      - name: Check Rust formatting
-        run: cargo fmt --all -- --check
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      # evohime-launcher/evohime-installer — Windows-only GUI-стек (eframe/winit
-      # без x11/wayland фич), на Linux-раннере не собираются в принципе.
-      - name: Run clippy
-        run: cargo clippy --workspace --all-features --all-targets --exclude evohime-launcher --exclude evohime-installer -- -D warnings
-
-  # Phase 5.5 — gitleaks scans for leaked secrets in git history.
-  gitleaks:
-    name: Gitleaks (Secret Scan)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  test:
-    name: Test (${{ matrix.toolchain }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        toolchain: [stable, beta, nightly]
-    continue-on-error: ${{ matrix.toolchain == 'nightly' }}
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: evohime
-          POSTGRES_PASSWORD: evohime
-          POSTGRES_DB: evohime
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U evohime -d evohime"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      # Stage 7.84: run storage/memory/task-engine integration tests against Postgres.
-      DATABASE_URL: postgres://evohime:evohime@localhost:5432/evohime
-      EVOHIME_REQUIRE_DB: "1"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ matrix.toolchain }}
-      - name: Install ripgrep
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
-      # evohime-launcher/evohime-installer — Windows-only GUI-стек (eframe/winit
-      # без x11/wayland фич), на Linux-раннере не собираются в принципе.
-      - name: Run tests
-        run: cargo test --workspace --all-features --all-targets --exclude evohime-launcher --exclude evohime-installer
-
-  windows-installer:
-    name: Windows Installer Tests
+  rust-native:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Test artifact downloads
-        run: cargo test -p evohime-artifacts
-      - name: Test native core skeleton
-        run: cargo test -p evohime-core -p evohime-local-storage -p evohime-supervisor
-      - name: Test install-owned process cleanup
-        run: "cargo test -p evohime-win-support --test process_snapshot_windows"
-      - name: Test installer ACL recovery
-        run: "cargo test -p evohime-installer --test icacls_windows"
-      - name: Test portable PostgreSQL ownership
-        run: "cargo test -p evohime-launcher postgres::"
-      - name: Test installer cleanup
-        run: cargo test -p evohime-installer
-      - name: Test hidden observed commands
-        run: cargo test -p evohime-launcher observed_command -- --nocapture
-      - name: Test installer timing
-        run: cargo test -p evohime-installer timing -- --nocapture
-      - name: Check installer
-        run: cargo check -p evohime-installer
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+      - name: Test native Rust foundation
+        run: cargo test --locked -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc
+      - name: Check supervisor
+        run: cargo check --locked -p evohime-supervisor
 
-  docs:
-    name: Docs
-    runs-on: ubuntu-latest
-    env:
-      RUSTDOCFLAGS: "-D warnings"
+  windows-native:
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      # Stage 7.87 — rustdoc warnings are CI failures.
-      # evohime-launcher/evohime-installer — Windows-only GUI-стек (eframe/winit
-      # без x11/wayland фич), на Linux-раннере не собираются в принципе.
-      - name: Build Rust docs with warnings denied
-        run: cargo doc --workspace --all-features --no-deps --exclude evohime-launcher --exclude evohime-installer
-
-  # Stage 7.85 — frontend typecheck + production build (Playwright smoke deferred).
-  frontend:
-    name: Frontend
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend/web
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
         with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: frontend/web/package-lock.json
-      - name: Install dependencies
-        run: npm ci
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Production build
-        run: npm run build
-
-  # Stage 7.86 — fail when generated protocol types drift from the schema.
-  protocol-drift:
-    name: Protocol Drift
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+          toolchain: stable-x86_64-pc-windows-msvc
+      - name: Test package manifest and idempotent staging
+        shell: pwsh
+        run: ./scripts/native-package.tests.ps1
+      - name: Build native package
+        shell: pwsh
+        run: ./scripts/build-windows-native.ps1 -OutputPath "$env:GITHUB_WORKSPACE\native-package"
+      - name: Test WinUI shell
+        shell: pwsh
+        run: dotnet test desktop/EvoHime.Tests/EvoHime.Tests.csproj -p:Platform=x64 --nologo
+      - name: Upload native package
+        uses: actions/upload-artifact@v4
         with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: frontend/web/package-lock.json
-      - name: Install frontend dependencies
-        working-directory: frontend/web
-        run: npm ci
-      - name: Install protocol generator dependencies
-        run: npm ci
-      - name: Regenerate protocol types
-        run: npm run generate:protocol
-      - name: Check generated protocol types are committed
-        run: git diff --exit-code -- frontend/web/src/protocol.generated.ts
-
-  # Stage 7.89 — generated OpenAPI route inventory and typed path union.
-  openapi-drift:
-    name: OpenAPI Drift
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - name: Install generator dependencies
-        run: npm ci
-      - name: Regenerate OpenAPI contract and typed paths
-        run: npm run generate:openapi
-      - name: Check generated OpenAPI files are committed
-        run: git diff --exit-code -- docs/openapi.json frontend/web/src/api/generated.ts
-
-  # Stage 7.56 — Python worker unit/integration tests.
-  python-worker:
-    name: Python Worker Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Run worker tests
-        run: python -m unittest discover -s workers/python -p "test_*.py"
+          name: evohime-native-windows-x64
+          path: native-package

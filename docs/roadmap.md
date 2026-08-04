@@ -1,5 +1,7 @@
 # EvoHime — Дорожная карта
 
+> Этот документ содержит историческую web-first дорожную карту. Поддерживаемая продуктовая архитектура с 2026-08-04 — native Windows; актуальный план находится в `docs/development-plan.md`, архитектура — в `docs/architecture.md`.
+
 > Обновлено: 2026-08-03 (Stage 8.3 завершён: E2E тесты, task dependency graphs с batch execution)
 
 ## Обзор

@@ -1,75 +1,37 @@
-# EvoHime Architecture
+# EvoHime — native Windows architecture
 
-Web-first AI-agent platform. Browser is the only client.
-
-## Components
+EvoHime — локальное Windows-приложение. Браузер, HTTP/REST, WebSocket, PostgreSQL и Python worker не являются runtime-зависимостями продукта.
 
 ```text
-Browser
-   │
-   ├── HTTP API
-   └── WebSocket
-          │
-          ▼
-EvoHime Server (crates/server)
-├── Agent Runtime (crates/agent-runtime)
-├── Task Engine (crates/task-engine)
-├── Model Gateway (crates/model-gateway) — route-based LiteRouter / OpenAI-compatible + mock
-├── Tool Runtime (crates/tool-runtime)
-├── Permission Engine (crates/permissions)
-├── Project Index (crates/project-index) — stage 6
-├── Protocol (crates/protocol)
-└── Storage (crates/storage)
+EvoHime.Desktop.exe       WinUI 3 UI
+        │ desktop-ipc-v1 / named pipe
+evohime-core.exe          agent loop, model gateway, tools, SQLite
+        ▲
+evohime-supervisor.exe    mutex, Job Object, restart, JSONL diagnostics
 ```
 
-## End-to-end foundation
+UI не выполняет shell-команды и не открывает базу. Core владеет workspace, инструментами, моделью и локальным состоянием. Supervisor запускает core в Job Object и завершает дочернее дерево при остановке.
 
-```text
-User message
-  → POST /api/sessions + WS /ws/:session_id
-  → task-engine creates task
-  → agent-runtime loads history and runs the agent loop
-  → tool-runtime executes sandboxed tools
-  → approval flow and task lifecycle events
-  → events persisted in PostgreSQL
-  → browser renders chat, tasks, actions, files, editor, terminal, and git views
+## IPC
+
+Контракт находится в `crates/desktop-ipc/proto/evohime.desktop.proto`.
+
+- major-версия несовместима, minor-расширения совместимы;
+- фреймы ограничены 4 MiB;
+- события имеют монотонный `sequence_id`;
+- UI может запросить replay после последнего sequence ID;
+- cancellation передаётся отдельной командой `StopTask`.
+
+## Данные и восстановление
+
+SQLite находится в `%LOCALAPPDATA%\EvoHime` либо в `EVOHIME_DATA_DIR`. Миграции выполняются транзакционно; перед изменением схемы создаётся `.db.bak`. Журнал событий экспортируется в JSONL. Логи core и supervisor пишутся в `%LOCALAPPDATA%\EvoHime\logs`.
+
+## Packaging
+
+```powershell
+.\scripts\build-windows-native.ps1
 ```
 
-## Protocol
+Пакет x64 для Windows 11 22H2+ содержит WinUI UI, core, supervisor и `evohime.manifest.json`. Smoke-тест проверяет отсутствие web/PostgreSQL компонентов и повторяемость staging.
 
-Single JSON Schema drives Rust enums and generated TypeScript types:
-
-- Schema: `crates/protocol/schema/evohime.protocol.schema.json`
-- Rust: `crates/protocol/src/lib.rs`
-- TypeScript: `frontend/web/src/protocol.generated.ts`
-
-Regenerate TS types:
-
-```bash
-npm run generate:protocol
-```
-
-## Deployment
-
-The supported deployment path is the native Windows launcher. It starts the
-portable PostgreSQL process, Rust server, and Vite frontend directly on the
-host.
-
-- Web UI: http://localhost:5173
-- API: http://localhost:3000
-
-## Roadmap
-
-| Stage | Scope | Status |
-| --- | --- | --- |
-| 1 | Monorepo, server, web UI, PostgreSQL, WebSocket protocol | ✅ Done |
-| 2 | Chat with model, streaming, sessions/history | ✅ Done |
-| 3 | Filesystem/shell tools, terminal, permissions | ✅ Complete |
-| 4 | Monaco editor, file tree, Git diff | ✅ Complete |
-| 5 | Task planning, parallel tools, cancel/resume | ✅ Complete |
-| 6 | Project index, MCP, multi-model, Python workers | ✅ Foundations complete |
-| 7 | Hardening, product, reliability and security | ✅ Complete |
-
-- [development-plan.md](development-plan.md) — полный план
-- [roadmap.md](roadmap.md) — дорожная карта с milestones
-- [current-state.md](current-state.md) — текущий статус
+Подробное решение: `docs/superpowers/specs/2026-08-04-native-windows-agent-design.md`.

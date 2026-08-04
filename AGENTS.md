@@ -1,244 +1,82 @@
 # EvoHime — Agent Guide
 
-Web-first AI-agent platform. **Browser only** — no Electron, desktop, or mobile clients.
+EvoHime — новый native Windows AI-agent. Поддерживаемый продукт — WinUI 3 desktop application; браузерный клиент, Electron, Tauri, WebView, PostgreSQL и Python worker в продуктовый контур не входят.
 
-## Communication
+## Общение
 
 - Отвечай только на русском языке.
-- Поддерживай образ аниме-девочки в женском роде.
-- Общайся в цундере-манере, допускай колкий и жёсткий тон, но без откровенной токсичности, унижений и оскорблений.
-- Не показывай пользователю промежуточные технические детали разработки без необходимости; делай работу самостоятельно и сообщай краткий итог.
+- Обращайся к пользователю «хозяин».
+- Используй женский род; допускается лёгкая цундере-манера без оскорблений.
 
-## Stack
-
-| Layer | Tech |
-| --- | --- |
-| Frontend | React + TypeScript + Vite (`frontend/web/`) |
-| Backend | Rust / Axum (`crates/server/`) |
-| Real-time | WebSocket |
-| API | HTTP/REST |
-| Database | PostgreSQL (`migrations/`, `crates/storage/`) |
-| ML workers | Python (`workers/python/`) — stage 6 |
-| Deploy | Native Windows launcher + Dev Container/Compose |
-
-## Architecture
+## Архитектура
 
 ```text
-Browser
-   ├── HTTP API
-   └── WebSocket
-          ▼
-EvoHime Server (crates/server)
-├── agent-runtime/     — agent orchestration
-├── task-engine/       — task lifecycle
-├── model-gateway/     — LiteRouter + mock LLM providers
-├── tool-runtime/      — tool registry + execution
-├── permissions/       — scoped permissions + approval audit (P2)
-├── memory/            — redact / dedupe / conflict / admit (6.18)
-├── project-index/     — workspace text search
-├── protocol/          — shared event schema
-└── storage/           — PostgreSQL access (incl. memory_items)
+EvoHime.Desktop.exe       WinUI 3 UI
+        │ named pipe, desktop-ipc-v1
+evohime-core.exe           Rust agent runtime, tools, SQLite
+        ▲
+evohime-supervisor.exe    mutex, Job Object, lifecycle, recovery, logs
 ```
 
-## Current state (Stages 1–6 ✅; Stage 7 in progress)
+UI не обращается к workspace, SQLite или model provider напрямую. Core — единственный владелец состояния и выполнения инструментов. Supervisor запускает core, ограничивает дерево процессов Job Object и восстанавливает core после аварийного завершения.
 
-Vertical slice works end-to-end:
+## Требования
 
-```text
-User message
-  → POST /api/sessions
-  → WS /ws/:session_id
-  → task-engine creates task
-  → agent-runtime loads history and runs the agent loop
-  → tool-runtime executes sandboxed tools
-  → events persisted in PostgreSQL
-  → browser shows chat + event timeline
-```
+- Windows 11 22H2+, x64;
+- .NET SDK 10;
+- Rust MSVC toolchain.
 
-### Implemented
+## Команды
 
-- Monorepo with modular crates (incl. `evohime-memory`)
-- HTTP: health, sessions, files, git, models, permissions, tools, MCP, GitHub PRs, worker jobs, OpenAPI, feature flags
-- WebSocket: typed event protocol + approvals
-- Tools: filesystem, shell, Git, browser, MCP call (sandboxed)
-- Agent loop: native ReAct tool call → observation → next action; bounded iterations with checkpoints and pause/resume
-- Frontend shell split (`6.13`): `types` / `api` / `lib` / `hooks` / `panels`
-- Panels: Chat, Settings (Worker + Metrics), Tasks (deep), Actions (deep), Terminal, Files, Editor, Git, Plugins, Pull Requests (detail/diff/checks/create), Sites, Scheduled, Memory
-- Structured memory: `memory_items` + admit/retrieve/extract/experience/feedback + hybrid embeddings (`6.16`–`6.25`, optional remote neural); legacy notes are migrate-only
-- Workers: health/stall reliability + `text.summarize` / `text.chunk` / `text.similarity` / `text.entities`
-- Native launcher + GitHub auth via local `gh`
-- CI: Rust format/Clippy/docs, protocol and OpenAPI drift, frontend typecheck/build, Python worker tests, PostgreSQL integration tests
-
-### Incomplete / next
-
-- **Stage 7** Hardening + Product — Waves A–D ✅; Wave E `7.84`–`7.98` ✅; `7.99`–`7.116` ✅ — **Stage 7 полностью завершён**. Cloud sync включает owner-only `/api/sync/status|push|pull`, историю `sync_runs` с direction, `EVOHIME_SYNC_URL`/`EVOHIME_SYNC_TOKEN`, идемпотентный restore (`restore_backup` + CLI `evohime-import`) и авто-push (`EVOHIME_SYNC_AUTO_MINUTES`); **First implementation wave Phase 1–5** ✅. Phase 3 даёт backend feature enforcement для Sites/Scheduled/OTLP (403 Forbidden при отключённом feature), сгенерированный OpenAPI-контракт из 98 операций и CI drift check (`openapi-drift`); Phase 4 — graceful shutdown, bounded session bus cleanup, integration harness и E2E database persistence; Phase 5 — API-key encryption (AES-256-GCM), gitleaks, secure headers, plugin trust/risk/integrity и frontend code splitting. Также завершены voice input / TTS (`7.105`), apply-once diff review для `filesystem.patch` с typed `approval.required.review` и лимитом 128 KiB (`7.106`), worktree-aware multi-checkout agent — параллельные задачи изолируются в detached-HEAD git worktree и мёржатся обратно (`7.107`), extended reasoning (`7.111`), semantic project search (`7.112`), plugin audit trail (`7.113`), OTLP metrics trends (`7.114`), frontend performance (`7.115`) и session recovery (`7.116`). Дальнейшая работа — кандидаты Stage 8 (см. `docs/roadmap.md` § Stage 8).
-- **Stage 8.1** ✅ Tree-of-Thoughts bounded planner
-- **Stage 8.2** ✅ Self-reflection loop: `ReflectionStage` runs in the ReAct loop after every tool observation — success_score + failure patterns pulled from experience memory (`6.21`), verdict persisted to `reflection_events`, `agent.reflection` emitted over WS, hint appended to the observation the model reads next; `retry_tool` re-opens the duplicate-call guard within the retry budget, 3 failures in a row switch to `revise_plan`. UI: `ReflectionTimeline.tsx`. Off switch: `EVOHIME_REFLECTION_ENABLED=0`. Not part of this item: blocking ask-gate (`8.4`), automatic re-planning through `8.1`. See `docs/features/reflection.md`.
-- **Stage 8.3** ✅ Task Dependency Graphs: `PlanStep.depends_on` populated during generation (LLM structured output), validated via Kahn O(V+E) algorithm (cycle detection, missing deps), materialized to sequential for backward compat (empty → depends on prior step), stored with execution state in dedicated DB tables (`task_execution_graphs`, `task_execution_steps`), executed via topological-sort-based batching with cumulative failure strategy (max 3 total), frontend DAG viewer (React Flow) with real-time WebSocket status updates. See `docs/features/task-dependency-graphs.md`.
-- **Stage 8.4** ✅ Meta-cognitive Confidence Ask-Gate: 4-signal confidence aggregation (model 35%, experience 25%, tool stats 25%, reflection 15%) + risk-aware ask/require decision thresholds (None 0.65, Low 0.70, Medium 0.75, High 0.85); risk levels (None, Low, Medium, High) determined by planned tool operations; model confidence extracted from logprobs/thinking with reliability levels (high/medium/low/very_low) and penalties applied; tool success rates smoothed with Beta-binomial prior from DB stats; experience alignment via top-3 playbook retrieval; reflection confidence computed from revision history decay; missing signals enforcement (≥2 missing → ask); Database: `tool_execution_stats`, `confidence_audit_log`, `confidence_settings` (operator-scoped thresholds); API: `/api/confidence/audit/{task,session}`, `/api/settings/confidence-thresholds`; WS event: `agent.confidence` (version, breakdown, reliability, missing_signals, recommendation); Frontend: `ConfidenceAndRisk` component (bar + breakdown grid + risk badge) + `ForceApproveModal` (high-risk override with reason + confirmation); integrated into `ApprovalModal` with live fetch of confidence data on approval request. See `docs/features/confidence-ask-gate.md`.
-- **Stage 8.5** ✅ Counterfactual Dry-Run: extends the existing synchronous `ApprovalReview` preview instead of adding a parallel subsystem; `crates/tool-runtime/src/risk.rs` classifies each resolved tool call (`ToolRiskLevel` None/Low/Medium/High, e.g. `http.fetch` is `None` since it's GET-only, unknown tools default to `Medium`); `filesystem.write` gets an exact create/overwrite + byte-size prediction via the same `WorkspaceSandbox` real execution uses; every other tool (`shell.execute`, `git.push`, `git.commit`, `mcp.call`, ...) reports an honest `Unavailable{reason}` instead of a guessed prediction; `risk_level` added to the `approval.required` WS event; no new DB table, endpoint, cache, or feature flag. Verified end-to-end against a live LiteRouter model (`filesystem.write` create + `shell.execute` unavailable both rendered correctly in `ApprovalModal`). See `docs/superpowers/specs/2026-08-03-stage-8-5-counterfactual-dryrun-design.md`.
-- Sites, Scheduled, OTLP и Cloud sync имеют gates через `EVOHIME_FEATURE_*` и `/api/features`
-- `7.92` уже покрыт существующим Prometheus `/metrics` из `7.24`; `7.93`–`7.99` ✅; `7.100` ✅ — `browser.session.*` tools с persistent CDP-вкладкой на задачу (`EVOHIME_BROWSER_CDP_URL`); `7.101` ✅ — eval harness `evohime-evals`: golden tasks против реального agent loop; CI — mock, `--live --judge` — реальный провайдер + LLM-вердикты; `7.102` ✅ — trust scores в каталоге плагинов, UI-бейджи, risk-scan гейт установки и `.evohime/plugins.lock.json` + `/api/plugins/integrity`; `7.103` wave 1 ✅ — обучение на провалах: `extract_failure_candidates` (≤2 урока `failure_pattern`/`verification_rule`, confidence cap 0.6 — только Ask, без auto-promote), `FAILURE_EXTRACT_PROMPT` в post-task extract; wave 2 ✅ — эскалация повторов: `FeedbackSignal::Repeated` поднимает confidence (жёсткий кап 0.6, auto-promote по-прежнему невозможен) и importance (без верхнего капа) существующей experience-записи при повторном admit-дубликате `failure_pattern`/`verification_rule` в статусе `Candidate`; retrieval даёт этим двум kind'ам дополнительный бонус ранжирования над `success_pattern`/`playbook`; `7.104` ✅ — mobile-responsive shell: сайдбар и трейс задачи схлопываются в off-canvas дравер через CSS media query `≤768px` (гамбургер в topBar, общий backdrop, закрытие по Escape/клику вне/выбору пункта сайдбара), touch-таргеты (`sendButton`, пункты сайдбара, `traceToggle`/`traceClose`) увеличены до ≥44px на мобильном; десктопная раскладка (grid 280px+main+320px) не тронута
-
-## WebSocket events
-
-```text
-session.created
-task.started
-agent.message.delta
-agent.plan.updated
-tool.started
-tool.output
-tool.output.delta
-tool.completed
-task.completed
-task.failed
-```
-
-Also: `file.changed`, `git.diff.changed`, task status/step events, action log events, `approval.required` / grant / deny (wired), `agent.plan`, `agent.thinking`, `agent.reflection`.
-
-## Protocol workflow
-
-1. Edit schema: `crates/protocol/schema/evohime.protocol.schema.json`
-2. Update Rust enums: `crates/protocol/src/lib.rs`
-3. Regenerate TS: `npm run generate:protocol` → `frontend/web/src/protocol.generated.ts`
-4. Re-export from: `frontend/web/src/protocol.ts`
-
-**Never edit `protocol.generated.ts` by hand.**
-
-## Tools
-
-Implemented: `filesystem.read`, `filesystem.write`, `filesystem.patch`, `filesystem.search`, `shell.execute`, `git.status`, `git.diff`, `git.commit`, `git.pull`, `git.push`, `browser.open`, `browser.extract`, `browser.session.navigate|read|click|type|screenshot|close` (persistent CDP tab per task; needs `EVOHIME_BROWSER_CDP_URL`), `mcp.call`, `memory.search`
-
-Each tool must have: unique name, description, JSON Schema input, required permissions, timeout, cancellation, structured result, execution log.
-
-## Coding rules
-
-1. **No business logic in frontend** — UI renders server events only
-2. **Strict typing** — Rust + TypeScript, shared schema
-3. **Modular crates** — one concern per crate
-4. **Minimize diff scope** — don't touch unrelated code
-5. **Tests** for core logic and tools
-6. **Structured logs** via `tracing`
-7. **DB migrations** in `migrations/`
-8. **Error handling** — server must not crash on bad input
-9. **Resource limits** — timeouts on tools
-10. **Security** — sandbox filesystem and shell operations
-11. **Commit continuously** — after finishing any coding task, completed change, or other finished work, make a git commit immediately without waiting to be asked. **Push only on explicit user request** — never push unless the user asks.
-12. **Рабочая ветка** — разработка в этом репозитории всегда выполняется прямо в текущей `main`; отдельные ветки и worktree не создавать.
-13. **Keep CI current** — when changing Rust workspace members, dependencies, lint rules, or test expectations, update `.github/workflows/rust.yml` in the same change and keep the workflow aligned with the codebase.
-14. **Fix missing tools first** — if a required tool or command is not available in `PATH`, install or configure it before claiming a backend/frontend check passed.
-
-15. **Clean build artifacts** - after a build or verification, remove the workspace `target/` directory and any temporary Rust target/toolchain installed for that check when they are no longer needed for the next step; do not delete artifacts still required by an active process or subsequent verification.
-
-## Environment
-
-Если обязательный инструмент разработки отсутствует в `PATH`, агент должен сначала установить или настроить его, а затем продолжить работу. Нельзя считать проверку выполненной, пока нужный инструмент не был реально запущен. Для Rust это включает установку/настройку toolchain, если `cargo` или `rustc` отсутствуют.
-
-```env
-DATABASE_URL=postgres://evohime:evohime@localhost:5432/evohime
-BIND_ADDR=127.0.0.1:3000
-# To listen on all interfaces: BIND_ADDR=0.0.0.0:3000 and set EVOHIME_API_TOKEN
-# Optional local API auth (Stage 7.1). When set, HTTP/WS require Bearer token.
-# When unset, only loopback clients are allowed (non-loopback → 401).
-# EVOHIME_API_TOKEN=dev-local-token
-# Optional: comma-separated CORS origins (default: localhost Vite + :3000)
-# EVOHIME_CORS_ORIGINS=http://127.0.0.1:5173,http://localhost:5173
-# Experimental feature flags (default enabled; set to 0/false to disable)
-# EVOHIME_FEATURE_SITES=1
-# EVOHIME_FEATURE_SCHEDULED=1
-# EVOHIME_FEATURE_OTLP=1
-# EVOHIME_CORS_PERMISSIVE=1
-WORKSPACE_ROOT=.
-DEMO_FILE_PATH=docs/sample-context.md
-```
-
-## Commands
-
-```bash
-# Native Windows local stack WITH tray icons (обязательный способ «запустить»)
+```powershell
+# Сборка и запуск native приложения
 .\start-dev.ps1
 
-# Cross-platform development stack (Docker required)
-docker compose -f .devcontainer/docker-compose.yml up -d
+# Запуск уже собранного native-пакета
+.\start-dev.ps1 -SkipBuild
 
-# One-shot setup only
-.\scripts\setup-local.ps1 -InstallPostgres -ApplyMigrations
+# Сборка переносимого native-пакета
+.\scripts\build-windows-native.ps1
 
-# Backend / frontend in isolation (only when debugging a single process)
-.\start-dev.ps1 -Server
-.\start-dev.ps1 -Web
-.\start-dev.ps1 -Worker
+# Smoke manifest и идемпотентность staging
+& (Join-Path $PSHOME 'pwsh.exe') -NoProfile -File scripts\native-package.tests.ps1
 
-# Backend
-cargo run -p evohime-server
-cargo test
+# WinUI tests
+& 'C:\Program Files\dotnet\dotnet.exe' test desktop\EvoHime.Tests\EvoHime.Tests.csproj -p:Platform=x64
 
-# Backup/export sessions and structured memory
-cargo run -p evohime-storage --bin evohime-export -- --output .evohime/backup.json
-
-# Restore a backup (idempotent; default operator local-owner)
-cargo run -p evohime-storage --bin evohime-import -- --input .evohime/backup.json --operator-name local-owner
-
-# Golden-task eval report (regression harness, no network/LLM)
-cargo run -p evohime-evals --bin evohime-eval
-# Against the real provider, with LLM-as-judge for rubric tasks
-cargo run -p evohime-evals --bin evohime-eval -- --live --judge
-
-# Frontend
-cd frontend/web && npm install && npm run dev
-
-# Protocol types
-npm run generate:protocol
+# Rust native foundation
+cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc
+cargo check -p evohime-supervisor
 ```
 
-**Запуск приложения:** всегда `.\start-dev.ps1` (трей). Не заменяй его парой `cargo run` + `npm run dev`, когда пользователь просит запустить стек.
+Не запускай старый web stack, `cargo run -p evohime-server`, PostgreSQL setup, `npm run dev` или Docker compose для native-задач.
 
-## Roadmap
+## IPC
 
-See [docs/development-plan.md](docs/development-plan.md) and [docs/roadmap.md](docs/roadmap.md).
+Протокол редактируется в `crates/desktop-ipc/proto/evohime.desktop.proto`. Rust transport и C# envelope должны сохранять совместимость major-версии, sequence replay и bounded frame size. Изменение протокола требует обновить обе стороны и compatibility tests.
 
-| Stage | Status |
-| --- | --- |
-| 1 Foundation | ✅ Done |
-| 2 Chat with model (LiteRouter) | ✅ Done |
-| 3 Tools + shell | ✅ Done |
-| 4 Editor + Git | ✅ Done |
-| 5 Task orchestration | ✅ Done |
-| 6 Advanced | ✅ Foundations complete |
-| 7 Hardening + Product | ✅ Done; `7.1`–`7.116` complete |
-| 8.1 Tree-of-Thoughts Bounded Planner | ✅ Done; Multi-path reasoning: K candidate plans, unified scoring (similarity + tool success + complexity + feedback), deterministic pruning to top-N, fallback on error, history with 30-day TTL, frontend AgentPlanView, E2E test |
+## Данные и диагностика
 
-Memory design: [docs/superpowers/specs/2026-07-16-agent-memory-design.md](docs/superpowers/specs/2026-07-16-agent-memory-design.md)
+- SQLite и backup: `%LOCALAPPDATA%\EvoHime` или `EVOHIME_DATA_DIR`;
+- core log: `%LOCALAPPDATA%\EvoHime\logs\core.jsonl`;
+- supervisor log: `%LOCALAPPDATA%\EvoHime\logs\supervisor.jsonl`;
+- экспорт событий — JSONL через `LocalDatabase::export_events_jsonl`.
 
-## LLM Provider — LiteRouter
+Миграции SQLite выполняются транзакционно; перед изменением схемы создаётся backup. Секреты должны храниться через Windows Credential Manager/DPAPI, а не в исходниках или логах.
 
-First provider: **LiteRouter** — OpenAI-compatible API.
+## Правила разработки
 
-```env
-MODEL_PROVIDER=literouter
-LITEROUTER_API_KEY=lr_...
-LITEROUTER_BASE_URL=https://api.literouter.com/v1
-# No hardcoded default — pick a model LiteRouter actually serves from GET /api/models
-LITEROUTER_MODEL=
-```
+1. Не возвращай web UI или HTTP/WS как обязательный runtime-контур.
+2. Не добавляй бизнес-логику в WinUI: UI отображает состояние IPC.
+3. Новые Rust-функции и исправления покрывай тестами.
+4. Соблюдай sandbox, таймауты, отмену и approval для опасных инструментов.
+5. Перед заявлением о готовности запускай свежие проверки и проверяй `git diff --check`.
+6. После изменений создавай task-only git-коммит в текущей ветке `main`.
+7. Push выполняй только по прямому запросу пользователя.
+8. После сборки очищай `target/`, `bin/`, `obj/` и временные package artifacts, если они больше не нужны.
 
-- Docs: [docs/providers/literouter.md](docs/providers/literouter.md)
-- Code: `crates/model-gateway/src/providers/literouter.rs`
+## Документы
 
-## Key files
-
-| File | Purpose |
-| --- | --- |
-| `crates/server/src/main.rs` | Server entrypoint (bootstrap + bind) |
-| `crates/server/src/routes.rs` | HTTP router assembly |
-| `crates/server/src/task/` | Task pipeline / steps / memory |
-| `crates/agent-runtime/src/agent_loop/` | Agent orchestration (ReAct / execute / context / protocol parsing) |
-| `crates/memory/` | Memory admit service (redact/dedupe/conflict) |
-| `crates/storage/src/memory.rs` | `memory_items` CRUD |
-| `crates/tool-runtime/src/tools/` | filesystem, shell, Git, browser, MCP |
-| `frontend/web/src/app.tsx` | Workspace shell |
-| `frontend/web/src/panels/` | Extracted panels |
-| `migrations/0013_memory_items.sql` | Structured memory schema |
-| `crates/model-gateway/src/providers/literouter.rs` | LiteRouter provider |
-| `start-dev.ps1` | Local development launcher |
+- `docs/superpowers/specs/2026-08-04-native-windows-agent-design.md` — архитектура;
+- `docs/superpowers/plans/2026-08-04-native-windows-agent.md` — implementation plan;
+- `docs/architecture.md` — deployment/runtime overview.
