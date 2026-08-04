@@ -50,13 +50,18 @@ jobs:
       - name: Build WinUI shell
         shell: pwsh
         run: dotnet build desktop/EvoHime.Tests/EvoHime.Tests.csproj -p:Platform=x64 --nologo --no-restore
+      - name: Restore IPC tests
+        shell: pwsh
+        run: dotnet restore desktop/EvoHime.IpcTests/EvoHime.IpcTests.csproj --nologo
+      - name: Build IPC tests
+        shell: pwsh
+        run: dotnet build desktop/EvoHime.IpcTests/EvoHime.IpcTests.csproj --nologo --no-restore
       - name: Test WinUI shell with hang diagnostics
         timeout-minutes: 10
         shell: pwsh
         run: >-
-          dotnet test desktop/EvoHime.Tests/EvoHime.Tests.csproj
-          -p:Platform=x64 --nologo --no-build --no-restore
-          --filter "FullyQualifiedName~IpcCompatibilityTests"
+          dotnet test desktop/EvoHime.IpcTests/EvoHime.IpcTests.csproj
+          --nologo --no-build --no-restore
           --results-directory "$env:GITHUB_WORKSPACE\TestResults"
           --logger "console;verbosity=detailed"
           --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type mini
