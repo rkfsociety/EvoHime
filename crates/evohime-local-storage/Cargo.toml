@@ -7,4 +7,5 @@ edition = "2021"
 path = "src/lib.rs"
 
 [dependencies]
-
+rusqlite = { version = "0.32.1", features = ["bundled"] }
+thiserror = "2"

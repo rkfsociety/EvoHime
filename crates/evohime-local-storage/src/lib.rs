@@ -1,1 +1,133 @@
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
+use rusqlite::{Connection, OptionalExtension};
+
+pub const SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, thiserror::Error)]
+pub enum StorageError {
+    #[error("storage I/O failed: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("SQLite operation failed: {0}")]
+    Sqlite(#[from] rusqlite::Error),
+    #[error("unsupported database schema version {0}")]
+    UnsupportedSchema(u32),
+}
+
+pub struct LocalDatabase {
+    path: PathBuf,
+    connection: Connection,
+}
+
+impl LocalDatabase {
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
+        let path = path.as_ref().to_path_buf();
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            fs::create_dir_all(parent)?;
+        }
+        let existed = path.exists();
+        let connection = Connection::open(&path)?;
+        connection.pragma_update(None, "foreign_keys", true)?;
+        let version = Self::read_schema_version(&connection)?;
+        if version > SCHEMA_VERSION {
+            return Err(StorageError::UnsupportedSchema(version));
+        }
+        if version < SCHEMA_VERSION {
+            if existed {
+                fs::copy(&path, path.with_extension("db.bak"))?;
+            }
+            Self::migrate(&connection, version)?;
+        }
+        Ok(Self { path, connection })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn schema_version(&self) -> Result<u32, StorageError> {
+        Ok(Self::read_schema_version(&self.connection)?)
+    }
+
+    pub fn has_events_table(&self) -> Result<bool, StorageError> {
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'events' LIMIT 1",
+                [],
+                |row| row.get::<_, i32>(0),
+            )
+            .optional()?
+            .is_some())
+    }
+
+    fn read_schema_version(connection: &Connection) -> Result<u32, rusqlite::Error> {
+        connection.query_row("PRAGMA user_version", [], |row| row.get(0))
+    }
+
+    fn migrate(connection: &Connection, current: u32) -> Result<(), StorageError> {
+        let transaction = connection.unchecked_transaction()?;
+        if current < 1 {
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS events (
+                    sequence_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    payload BLOB NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                );
+                CREATE INDEX IF NOT EXISTS idx_events_task_sequence ON events(task_id, sequence_id);
+                PRAGMA user_version = 1;",
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LocalDatabase, SCHEMA_VERSION};
+    use std::path::PathBuf;
+
+    fn temp_database_path() -> PathBuf {
+        std::env::temp_dir().join(format!("evohime-test-{}.db", std::process::id()))
+    }
+
+    #[test]
+    fn creates_schema_and_reports_version() {
+        let path = temp_database_path();
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        assert_eq!(
+            database.schema_version().expect("version reads"),
+            SCHEMA_VERSION
+        );
+        assert!(database.has_events_table().expect("table exists"));
+        drop(database);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn backs_up_existing_database_before_migration() {
+        let path = temp_database_path();
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db.bak"));
+        {
+            let connection = rusqlite::Connection::open(&path).expect("legacy database opens");
+            connection
+                .pragma_update(None, "user_version", 0_u32)
+                .expect("legacy version writes");
+        }
+        let _database = LocalDatabase::open(&path).expect("database migrates");
+        assert!(path.with_extension("db.bak").exists());
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db.bak"));
+    }
+}
