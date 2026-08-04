@@ -29,13 +29,52 @@ public sealed class CoreIpcClient
 
     public bool IsConnected => _pipe?.IsConnected == true;
 
+    public async Task ConnectAndHandshakeAsync(CancellationToken cancellationToken)
+    {
+        await ConnectAsync(cancellationToken);
+        await SendPayloadAsync(ProtocolEnvelope.Handshake(), cancellationToken);
+    }
+
+    public Task RequestReplayAsync(ulong afterSequence, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.Replay(afterSequence), cancellationToken);
+
+    public async Task<CoreEventEnvelope> ReadEventAsync(CancellationToken cancellationToken)
+    {
+        var pipe = GetConnectedPipe();
+        var prefix = new byte[sizeof(uint)];
+        await ReadExactlyAsync(pipe, prefix, cancellationToken);
+        var length = BitConverter.ToUInt32(prefix, 0);
+        var frame = new byte[sizeof(uint) + checked((int)length)];
+        prefix.CopyTo(frame, 0);
+        await ReadExactlyAsync(pipe, frame.AsMemory(sizeof(uint)), cancellationToken);
+        return ProtocolEnvelope.ReadEvent(FrameCodec.Decode(frame));
+    }
+
     public async Task SendAsync(IMessage message, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(message);
+        await SendPayloadAsync(message.ToByteArray(), cancellationToken);
+    }
+
+    private async Task SendPayloadAsync(byte[] payload, CancellationToken cancellationToken)
+    {
         var pipe = GetConnectedPipe();
-        var frame = FrameCodec.Encode(message.ToByteArray());
+        var frame = FrameCodec.Encode(payload);
         await pipe.WriteAsync(frame, cancellationToken);
         await pipe.FlushAsync(cancellationToken);
+    }
+
+    private static async Task ReadExactlyAsync(Stream stream, Memory<byte> buffer, CancellationToken cancellationToken)
+    {
+        while (!buffer.IsEmpty)
+        {
+            var read = await stream.ReadAsync(buffer, cancellationToken);
+            if (read == 0)
+            {
+                throw new EndOfStreamException("Core IPC pipe closed before the frame completed.");
+            }
+            buffer = buffer[read..];
+        }
     }
 
     private NamedPipeClientStream GetConnectedPipe() =>
