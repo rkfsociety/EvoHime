@@ -161,7 +161,7 @@ git commit -m "feat: add SQLite local storage and event journal"
 - Create: `crates/evohime-supervisor/src/mutex.rs`, `process_tree.rs`, `logging.rs`, `readiness.rs`, `diagnostics.rs`
 - Create: `crates/evohime-supervisor/tests/single_instance_windows.rs`, `process_tree_windows.rs`
 - Create: `desktop/EvoHime.Desktop/Services/SupervisorClient.cs`
-- Modify: `crates/evohime-supervisor/src/main.rs`, `crates/win-support/`, `.github/workflows/windows-native.yml`
+- Modify: `crates/evohime-supervisor/src/main.rs`, `.github/workflows/rust.yml`
 
 **Interfaces:**
 - `SupervisorCommand::OpenProject(PathBuf) | Focus | Shutdown | ExportDiagnostics`
@@ -178,7 +178,7 @@ git commit -m "feat: add SQLite local storage and event journal"
 - [ ] **Step 8: Commit.**
 
 ```powershell
-git add crates/evohime-supervisor crates/win-support desktop/EvoHime.Desktop/Services/SupervisorClient.cs .github/workflows/windows-native.yml
+git add crates/evohime-supervisor desktop/EvoHime.Desktop/Services/SupervisorClient.cs .github/workflows/rust.yml
 git commit -m "feat: add Windows supervisor and single-instance lifecycle"
 ```
 
