@@ -21,6 +21,7 @@ public partial class MainWindow : Window
     public event Action? UpdateReadyToInstall;
 
     private readonly CoreIpcClient _ipc = new("evohime-core-v1");
+    private readonly SemaphoreSlim _ipcRequestGate = new(1, 1);
     private readonly NativeShellState _state = new();
     private readonly WorkspaceSettings _settings = new();
     private readonly UpdateService _updates = new();
@@ -35,19 +36,19 @@ public partial class MainWindow : Window
     private readonly ProviderSettingsService _providerSettings = new();
     private TextBox? _providerBox;
     private TextBox? _baseUrlBox;
-    private TextBox? _modelBox;
     private PasswordBox? _apiKeyBox;
     private TextBlock? _settingsSaveStatus;
     private ComboBox? _modelModeBox;
     private ComboBox? _modelSelector;
+    private string _configuredModel = string.Empty;
 
     public MainWindow()
     {
         BuildUi();
         _state.SelectWorkspace(Environment.CurrentDirectory);
         WorkspacePathText.Text = $"Workspace: {_state.WorkspacePath}";
-        _ = RestoreWorkspaceAsync();
         _ = LoadModelConfigAsync();
+        _ = RestoreWorkspaceAsync();
         _ = CheckForUpdatesAsync();
     }
 
@@ -250,11 +251,12 @@ public partial class MainWindow : Window
         composerActions.Children.Add(accessButton);
         _modelButton = new Button
         {
-            Content = "Загрузка модели...",
+            Content = "Модель не выбрана",
             Foreground = text,
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
             Padding = new Thickness(6, 5, 6, 5),
         };
+        _modelButton.Click += ModelButton_Click;
         Grid.SetColumn(_modelButton, 3);
         composerActions.Children.Add(_modelButton);
         var microphoneButton = new Button
@@ -311,6 +313,11 @@ public partial class MainWindow : Window
         Grid.SetColumn(_settingsView, 1);
         _settingsView.Visibility = Visibility.Collapsed;
         root.Children.Add(_settingsView);
+        var providerSettings = _providerSettings.Load();
+        if (!string.IsNullOrWhiteSpace(providerSettings.Model))
+        {
+            _modelButton.Content = $"{providerSettings.Provider}: {providerSettings.Model}  Среднее⌄";
+        }
         Content = root;
     }
 
@@ -342,11 +349,11 @@ public partial class MainWindow : Window
         var providerSettings = _providerSettings.Load();
         _providerBox = new TextBox { Header = "Провайдер", Text = providerSettings.Provider, IsReadOnly = true };
         _baseUrlBox = new TextBox { Header = "Base URL", Text = providerSettings.BaseUrl };
-        _modelBox = new TextBox { Header = "Модель", PlaceholderText = "например, deepseek:free", Text = providerSettings.Model };
+        _configuredModel = providerSettings.Model;
         _apiKeyBox = new PasswordBox { Header = "API-ключ", PlaceholderText = "Введите ключ провайдера" };
         _apiKeyBox.Password = providerSettings.ApiKey;
         _modelModeBox = new ComboBox { Header = "Режим каталога", ItemsSource = new[] { "Бесплатные", "Платные" }, SelectedIndex = 0 };
-        _modelSelector = new ComboBox { Header = "Модель от провайдера", PlaceholderText = "Загрузите список моделей" };
+        _modelSelector = new ComboBox { Header = "Модель", PlaceholderText = "Загрузка списка моделей..." };
         _modelModeBox.SelectionChanged += (_, _) =>
         {
             if (_modelModeBox.SelectedIndex >= 0)
@@ -356,9 +363,9 @@ public partial class MainWindow : Window
         };
         _modelSelector.SelectionChanged += (_, _) =>
         {
-            if (_modelSelector.SelectedItem is string model && _modelBox is not null)
+            if (_modelSelector.SelectedItem is string model)
             {
-                _modelBox.Text = model;
+                _configuredModel = model;
             }
         };
         var saveProvider = new Button { Content = "Сохранить настройки провайдера", Margin = new Thickness(0, 8, 0, 0) };
@@ -369,7 +376,6 @@ public partial class MainWindow : Window
         providerForm.Children.Add(_baseUrlBox);
         providerForm.Children.Add(_modelModeBox);
         providerForm.Children.Add(_modelSelector);
-        providerForm.Children.Add(_modelBox);
         providerForm.Children.Add(_apiKeyBox);
         providerForm.Children.Add(new TextBlock { Text = "Ключ хранится в профиле Windows через DPAPI и не записывается в репозиторий.", FontSize = 11, Foreground = muted, TextWrapping = TextWrapping.Wrap });
         providerForm.Children.Add(saveProvider);
@@ -497,17 +503,23 @@ public partial class MainWindow : Window
 
     private async void SaveProviderSettings_Click(object sender, RoutedEventArgs e)
     {
-        if (_providerBox is null || _baseUrlBox is null || _modelBox is null || _apiKeyBox is null)
+        if (_providerBox is null || _baseUrlBox is null || _modelSelector is null || _apiKeyBox is null)
         {
             return;
         }
 
         try
         {
+            var selectedModel = _modelSelector.SelectedItem as string;
+            if (string.IsNullOrWhiteSpace(selectedModel))
+            {
+                throw new InvalidOperationException("Сначала выберите модель из списка.");
+            }
+
             _providerSettings.Save(new ProviderSettings(
                 _providerBox.Text.Trim(),
                 _baseUrlBox.Text.Trim(),
-                _modelBox.Text.Trim(),
+                selectedModel,
                 _apiKeyBox.Password));
             if (_settingsSaveStatus is not null)
             {
@@ -541,19 +553,48 @@ public partial class MainWindow : Window
 
     private async Task<bool> LoadModelCatalogAsync(string mode)
     {
+        await _ipcRequestGate.WaitAsync();
+        try
+        {
+            return await LoadModelCatalogCoreAsync(mode);
+        }
+        finally
+        {
+            _ipcRequestGate.Release();
+        }
+    }
+
+    private void ModelButton_Click(object sender, RoutedEventArgs e)
+    {
+        ShowSettingsView();
+        if (_modelSelector is not null)
+        {
+            _modelSelector.Focus(FocusState.Programmatic);
+            _modelSelector.IsDropDownOpen = true;
+        }
+    }
+
+    private async Task<bool> LoadModelCatalogCoreAsync(string mode)
+    {
         if (_modelSelector is null)
         {
             return false;
         }
 
+        StartupDiagnostics.Write($"Model catalog: start mode={mode}");
         try
         {
             if (!_ipc.IsConnected)
             {
+                StartupDiagnostics.Write("Model catalog: connecting to Core");
                 await ConnectToCoreWithRetryAsync(CancellationToken.None);
             }
-            await _ipc.RequestModelCatalogAsync(mode, CancellationToken.None);
-            var response = await _ipc.ReadEventAsync(CancellationToken.None);
+
+            StartupDiagnostics.Write("Model catalog: request sent");
+            using var requestTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            await _ipc.RequestModelCatalogAsync(mode, requestTimeout.Token);
+            var response = await _ipc.ReadEventAsync(requestTimeout.Token);
+            StartupDiagnostics.Write($"Model catalog: response event={response.EventType}, bytes={response.Payload.Length}");
             if (response.EventType != "model.catalog")
             {
                 throw new InvalidOperationException("Core не вернул каталог моделей.");
@@ -570,19 +611,25 @@ public partial class MainWindow : Window
                 {
                     _modelSelector.Items.Add(model);
                 }
-                if (_modelBox is not null && models.Contains(_modelBox.Text))
+                if (!string.IsNullOrWhiteSpace(_configuredModel) && models.Contains(_configuredModel))
                 {
-                    _modelSelector.SelectedItem = _modelBox.Text;
+                    _modelSelector.SelectedItem = _configuredModel;
+                }
+                else if (models.Count > 0)
+                {
+                    _modelSelector.SelectedIndex = 0;
                 }
                 if (models.Count == 0 && _settingsSaveStatus is not null)
                 {
                     _settingsSaveStatus.Text = "Провайдер не вернул модели для выбранного режима.";
                 }
             });
+            StartupDiagnostics.Write($"Model catalog: parsed count={models.Count}");
             return models.Count > 0;
         }
-        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException)
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
         {
+            StartupDiagnostics.Write($"Model catalog failed: {error.GetType().Name}: {error.Message}");
             _ = DispatcherQueue.TryEnqueue(() =>
             {
                 if (_settingsSaveStatus is not null)
@@ -843,12 +890,33 @@ public partial class MainWindow : Window
 
     private async Task LoadModelConfigAsync()
     {
+        await _ipcRequestGate.WaitAsync();
         try
         {
-            await _ipc.ConnectAndHandshakeAsync(CancellationToken.None);
-            _ = await _ipc.ReadEventAsync(CancellationToken.None);
-            await _ipc.RequestModelConfigAsync(CancellationToken.None);
-            var response = await _ipc.ReadEventAsync(CancellationToken.None);
+            await LoadModelConfigCoreAsync();
+        }
+        finally
+        {
+            _ipcRequestGate.Release();
+        }
+    }
+
+    private async Task LoadModelConfigCoreAsync()
+    {
+        StartupDiagnostics.Write("Model config: start");
+        try
+        {
+            using var requestTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            if (!_ipc.IsConnected)
+            {
+                StartupDiagnostics.Write("Model config: connecting to Core");
+                await ConnectToCoreWithRetryAsync(requestTimeout.Token);
+            }
+
+            StartupDiagnostics.Write("Model config: request sent");
+            await _ipc.RequestModelConfigAsync(requestTimeout.Token);
+            var response = await _ipc.ReadEventAsync(requestTimeout.Token);
+            StartupDiagnostics.Write($"Model config: response event={response.EventType}, bytes={response.Payload.Length}");
             if (response.EventType != "model.config")
             {
                 throw new InvalidOperationException("Core не вернул конфигурацию модели.");
@@ -874,9 +942,11 @@ public partial class MainWindow : Window
                     _modelButton.Content = label;
                 }
             });
+            StartupDiagnostics.Write("Model config: completed");
         }
-        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException)
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
         {
+            StartupDiagnostics.Write($"Model config failed: {error.GetType().Name}: {error.Message}");
             _ = DispatcherQueue.TryEnqueue(() =>
             {
                 if (_modelButton is not null)

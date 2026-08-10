@@ -52,7 +52,7 @@ $required = @(
 
 foreach ($component in $required) {
     $destination = Join-Path $resolvedOutput $component
-    $source = if (Test-Path -LiteralPath $destination) {
+    $source = if ($SkipBuild) {
         $destination
     } else {
         Join-Path $cargoTarget $component
