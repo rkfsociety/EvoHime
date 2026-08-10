@@ -220,6 +220,33 @@ public sealed class IpcCompatibilityTests
     }
 
     [TestMethod]
+    public void ProjectCatalogKeepsChatsUnderTheirProject()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "evohime-projects-" + Guid.NewGuid().ToString("N"));
+        var catalogPath = Path.Combine(root, "projects.json");
+        try
+        {
+            var service = new ProjectCatalogService(catalogPath);
+            var catalog = service.Load();
+            var project = service.EnsureProject(catalog, Path.Combine(root, "Demo"));
+            var chat = service.AddChat(project, "Проверить проект");
+            service.Save(catalog);
+
+            var loaded = service.Load();
+            Assert.AreEqual(1, loaded.Projects.Count);
+            Assert.AreEqual(project.Path, loaded.Projects[0].Path);
+            Assert.AreEqual(chat.Title, loaded.Projects[0].Chats[0].Title);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [TestMethod]
     public void TrayCommandsHaveStableIds()
     {
         Assert.AreEqual(1u, (uint)TrayMenuCommand.Show);

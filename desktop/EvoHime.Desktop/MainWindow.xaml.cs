@@ -30,6 +30,11 @@ public partial class MainWindow : Window
     private readonly NativeShellState _state = new();
     private readonly WorkspaceSettings _settings = new();
     private readonly UpdateService _updates = new();
+    private readonly ProjectCatalogService _projectCatalogService = new();
+    private ProjectCatalog _projectCatalog = new();
+    private StackPanel? _projectListPanel;
+    private string? _activeProjectId;
+    private string? _activeChatId;
     private CancellationTokenSource? _eventCts;
     private string? _activeTaskId;
     private int _reconnectAttempt;
@@ -54,6 +59,8 @@ public partial class MainWindow : Window
     {
         BuildUi();
         _state.SelectWorkspace(Environment.CurrentDirectory);
+        _projectCatalog = _projectCatalogService.Load();
+        EnsureActiveProject(_state.WorkspacePath);
         WorkspacePathText.Text = $"Workspace: {_state.WorkspacePath}";
         _ = LoadModelConfigAsync();
         _ = RestoreWorkspaceAsync();
@@ -93,6 +100,7 @@ public partial class MainWindow : Window
         {
             PromptBox.Text = string.Empty;
             EventLog.Text = string.Empty;
+            _activeChatId = null;
             ConnectionStatus.Text = "●  Готова";
         };
         Grid.SetRow(newChat, 1);
@@ -119,8 +127,15 @@ public partial class MainWindow : Window
         Grid.SetRow(navItems, 2);
         sidebar.Children.Add(navItems);
         var workspaceInfo = new StackPanel { Spacing = 5 };
-        workspaceInfo.Children.Add(new TextBlock { Text = "РАБОЧИЕ ПРОСТРАНСТВА", FontSize = 11, Foreground = muted });
-        workspaceInfo.Children.Add(new TextBlock { Text = "⌂  Текущий workspace", Foreground = muted, Padding = new Thickness(4, 8, 4, 8) });
+        workspaceInfo.Children.Add(new TextBlock { Text = "ПРОЕКТЫ", FontSize = 11, Foreground = muted });
+        _projectListPanel = new StackPanel { Spacing = 2 };
+        var projectScroll = new ScrollViewer
+        {
+            Content = _projectListPanel,
+            MaxHeight = 260,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+        workspaceInfo.Children.Add(projectScroll);
         Grid.SetRow(workspaceInfo, 3);
         sidebar.Children.Add(workspaceInfo);
         Grid.SetColumn(sidebar, 0);
@@ -524,6 +539,7 @@ public partial class MainWindow : Window
 
         _state.SelectWorkspace(folder.Path);
         await _settings.SaveWorkspaceAsync(folder.Path);
+        EnsureActiveProject(folder.Path);
         WorkspacePathText.Text = $"Workspace: {folder.Path}";
         if (_settingsWorkspaceText is not null)
         {
@@ -593,6 +609,88 @@ public partial class MainWindow : Window
             _ipcRequestGate.Release();
         }
     }
+
+    private void EnsureActiveProject(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        var project = _projectCatalogService.EnsureProject(_projectCatalog, path);
+        _activeProjectId = project.Id;
+        _projectCatalogService.Save(_projectCatalog);
+        RefreshProjectSidebar();
+    }
+
+    private void RefreshProjectSidebar()
+    {
+        if (_projectListPanel is null)
+        {
+            return;
+        }
+
+        _projectListPanel.Children.Clear();
+        foreach (var project in _projectCatalog.Projects)
+        {
+            var projectButton = new Button
+            {
+                Content = $"{(project.Id == _activeProjectId ? "●" : "⌂")}  {project.Name}",
+                Tag = project,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Background = project.Id == _activeProjectId
+                    ? ThemeBrush("SurfaceRaisedBrush", 34, 38, 53)
+                    : new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                Padding = new Thickness(4, 6, 4, 6),
+            };
+            projectButton.Click += (_, _) => SelectProject(project);
+            _projectListPanel.Children.Add(projectButton);
+
+            foreach (var chat in project.Chats.Take(8))
+            {
+                var chatButton = new Button
+                {
+                    Content = $"   ·  {chat.Title}",
+                    Tag = chat,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Left,
+                    Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                    Foreground = ThemeBrush("MutedTextBrush", 146, 152, 173),
+                    Padding = new Thickness(12, 4, 4, 4),
+                };
+                chatButton.Click += (_, _) => SelectChat(project, chat);
+                _projectListPanel.Children.Add(chatButton);
+            }
+        }
+    }
+
+    private async void SelectProject(ProjectEntry project)
+    {
+        _activeProjectId = project.Id;
+        _activeChatId = null;
+        _state.SelectWorkspace(project.Path);
+        await _settings.SaveWorkspaceAsync(project.Path);
+        WorkspacePathText.Text = $"Workspace: {_state.WorkspacePath}";
+        RefreshProjectSidebar();
+        ShowHomeView();
+        ConnectionStatus.Text = $"Проект: {project.Name}";
+    }
+
+    private void SelectChat(ProjectEntry project, ChatEntry chat)
+    {
+        _activeProjectId = project.Id;
+        _activeChatId = chat.Id;
+        _state.SelectWorkspace(project.Path);
+        WorkspacePathText.Text = $"Workspace: {_state.WorkspacePath}";
+        RefreshProjectSidebar();
+        ShowHomeView();
+        EventLog.Text = $"Чат «{chat.Title}» выбран. Новые события появятся здесь.";
+        ConnectionStatus.Text = $"Проект: {project.Name} · чат: {chat.Title}";
+    }
+
+    private ProjectEntry? ActiveProject() =>
+        _projectCatalog.Projects.FirstOrDefault(project => project.Id == _activeProjectId);
 
     private async void ModelButton_Click(object sender, RoutedEventArgs e)
     {
@@ -1047,6 +1145,7 @@ public partial class MainWindow : Window
 
         _state.SelectWorkspace(folder.Path);
         await _settings.SaveWorkspaceAsync(folder.Path);
+        EnsureActiveProject(folder.Path);
         WorkspacePathText.Text = $"Workspace: {_state.WorkspacePath}";
         ConnectionStatus.Text = "Workspace выбран.";
     }
@@ -1060,6 +1159,7 @@ public partial class MainWindow : Window
         }
 
         _state.SelectWorkspace(savedPath);
+        EnsureActiveProject(savedPath);
         WorkspacePathText.Text = $"Workspace: {_state.WorkspacePath}";
     }
 
@@ -1081,6 +1181,16 @@ public partial class MainWindow : Window
             _reconnectAttempt = 0;
             _activeTaskId = Guid.NewGuid().ToString("N");
             var workspacePath = _state.WorkspacePath ?? Environment.CurrentDirectory;
+            EnsureActiveProject(workspacePath);
+            var activeProject = ActiveProject();
+            if (activeProject is not null && _activeChatId is null)
+            {
+                var title = prompt.Replace("\r", " ").Replace("\n", " ").Trim();
+                var chat = _projectCatalogService.AddChat(activeProject, title.Length > 56 ? $"{title[..56]}…" : title);
+                _activeChatId = chat.Id;
+                _projectCatalogService.Save(_projectCatalog);
+                RefreshProjectSidebar();
+            }
             var attachmentPaths = await CopyAttachmentsToWorkspaceAsync(workspacePath, _activeTaskId);
             var taskPrompt = prompt;
             if (attachmentPaths.Count > 0)
