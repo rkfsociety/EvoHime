@@ -9,6 +9,40 @@ $packagePath = Join-Path $root '.evohime-native\windows-x64'
 $buildScript = Join-Path $root 'scripts\build-windows-native.ps1'
 $dataPath = Join-Path $root '.evohime-native\data'
 
+function Import-ModelEnvironment {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    $allowedKeys = @(
+        'MODEL_PROVIDER',
+        'MODEL_DEFAULT_ROUTE',
+        'MODEL_ROUTES_JSON',
+        'LITEROUTER_API_KEY',
+        'LITEROUTER_BASE_URL',
+        'LITEROUTER_MODEL',
+        'OPENAI_API_KEY',
+        'OPENAI_BASE_URL',
+        'OPENAI_MODEL'
+    )
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        if ($line -match '^\s*([A-Za-z0-9_]+)\s*=\s*(.*)\s*$' -and $allowedKeys -contains $Matches[1]) {
+            $value = $Matches[2].Trim()
+            if (($value.StartsWith('"') -and $value.EndsWith('"')) -or
+                ($value.StartsWith("'") -and $value.EndsWith("'"))) {
+                $value = $value.Substring(1, $value.Length - 2)
+            }
+            [Environment]::SetEnvironmentVariable($Matches[1], $value, 'Process')
+        }
+    }
+}
+
+# Локальные ключи и выбранная модель передаются только дочерним native-процессам;
+# сам .env не попадает в репозиторий и не копируется в пакет.
+Import-ModelEnvironment (Join-Path $root '.env')
+
 if (-not $SkipBuild) {
     # Запускаем сборщик в текущем PowerShell-процессе. Вложенный pwsh ломает
     # запуск из некоторых оболочек Windows и не даёт полезной диагностики.
