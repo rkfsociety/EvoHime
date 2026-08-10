@@ -39,6 +39,11 @@ public partial class App : Application
             throw;
         }
     }
+
+    public bool RestartCore()
+    {
+        return _supervisor?.Restart() == true;
+    }
 }
 
 internal static class StartupDiagnostics

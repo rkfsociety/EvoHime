@@ -47,6 +47,12 @@ public sealed class SupervisorProcessService : IDisposable
         return _process is not null;
     }
 
+    public bool Restart()
+    {
+        Dispose();
+        return Start();
+    }
+
     public void Dispose()
     {
         if (_process is null)

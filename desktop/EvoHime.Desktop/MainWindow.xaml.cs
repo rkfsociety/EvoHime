@@ -495,7 +495,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void SaveProviderSettings_Click(object sender, RoutedEventArgs e)
+    private async void SaveProviderSettings_Click(object sender, RoutedEventArgs e)
     {
         if (_providerBox is null || _baseUrlBox is null || _modelBox is null || _apiKeyBox is null)
         {
@@ -511,11 +511,26 @@ public partial class MainWindow : Window
                 _apiKeyBox.Password));
             if (_settingsSaveStatus is not null)
             {
-                _settingsSaveStatus.Text = "Сохранено. Перезапустите Еву, чтобы Core применил новую конфигурацию.";
+                _settingsSaveStatus.Text = "Сохранено. Загружаю модели...";
                 _settingsSaveStatus.Foreground = ThemeBrush("TealBrush", 255, 59, 95);
             }
+
+            if (Application.Current is not App app || !app.RestartCore())
+            {
+                throw new InvalidOperationException("Не удалось перезапустить Core для применения ключа.");
+            }
+
+            await _ipc.DisposeAsync();
+            var modelsLoaded = await LoadModelCatalogAsync(_modelModeBox?.SelectedIndex == 1 ? "paid" : "free");
+            await LoadModelConfigAsync();
+            if (_settingsSaveStatus is not null)
+            {
+                _settingsSaveStatus.Text = modelsLoaded
+                    ? "Сохранено. Модели загружены."
+                    : "Ключ сохранён, но провайдер не вернул каталог моделей.";
+            }
         }
-        catch (Exception error) when (error is IOException or CryptographicException)
+        catch (Exception error) when (error is IOException or CryptographicException or InvalidOperationException)
         {
             if (_settingsSaveStatus is not null)
             {
@@ -524,19 +539,18 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task LoadModelCatalogAsync(string mode)
+    private async Task<bool> LoadModelCatalogAsync(string mode)
     {
         if (_modelSelector is null)
         {
-            return;
+            return false;
         }
 
         try
         {
             if (!_ipc.IsConnected)
             {
-                await _ipc.ConnectAndHandshakeAsync(CancellationToken.None);
-                _ = await _ipc.ReadEventAsync(CancellationToken.None);
+                await ConnectToCoreWithRetryAsync(CancellationToken.None);
             }
             await _ipc.RequestModelCatalogAsync(mode, CancellationToken.None);
             var response = await _ipc.ReadEventAsync(CancellationToken.None);
@@ -565,6 +579,7 @@ public partial class MainWindow : Window
                     _settingsSaveStatus.Text = "Провайдер не вернул модели для выбранного режима.";
                 }
             });
+            return models.Count > 0;
         }
         catch (Exception error) when (error is IOException or InvalidOperationException or JsonException)
         {
@@ -575,7 +590,40 @@ public partial class MainWindow : Window
                     _settingsSaveStatus.Text = $"Не удалось получить список моделей: {error.Message}";
                 }
             });
+            return false;
         }
+    }
+
+    private async Task ConnectToCoreWithRetryAsync(CancellationToken cancellationToken)
+    {
+        Exception? lastError = null;
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            try
+            {
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(TimeSpan.FromSeconds(1));
+                await _ipc.ConnectAndHandshakeAsync(timeout.Token);
+                var ready = await _ipc.ReadEventAsync(timeout.Token);
+                if (ready.EventType != "core.ready")
+                {
+                    throw new InvalidOperationException("Core не подтвердил готовность.");
+                }
+
+                return;
+            }
+            catch (Exception error) when (error is IOException or InvalidOperationException or OperationCanceledException)
+            {
+                lastError = error;
+                await _ipc.DisposeAsync();
+                if (attempt < 19)
+                {
+                    await Task.Delay(250, cancellationToken);
+                }
+            }
+        }
+
+        throw new IOException("Core не стал доступен после перезапуска.", lastError);
     }
 
     private void BuildUiLegacy()
