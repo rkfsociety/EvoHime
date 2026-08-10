@@ -19,8 +19,19 @@ async fn main() {
     };
     let tools = std::sync::Arc::new(evohime_tool_runtime::ToolRegistry::bootstrap());
     let approvals = evohime_core::ApprovalCoordinator::default();
-    let executor = evohime_model_gateway::ModelGateway::try_from_env()
-        .ok()
+    let model_config = evohime_model_gateway::ModelGatewayConfig::from_env().ok();
+    let model_snapshot = model_config.as_ref().and_then(|config| {
+        config.routes.get(&config.default_route).map(|route| {
+            evohime_core::ModelConfigSnapshot {
+                provider: route.provider.as_str().to_string(),
+                route: config.default_route.clone(),
+                model: route.literouter.model.clone(),
+                configured: route.configured(),
+            }
+        })
+    });
+    let executor = model_config
+        .and_then(|config| evohime_model_gateway::ModelGateway::from_config(&config).ok())
         .map(|gateway| {
             std::sync::Arc::new(evohime_core::ToolAgent::new_with_approvals(
                 std::sync::Arc::new(gateway),
@@ -35,6 +46,7 @@ async fn main() {
         coordinator,
         approvals,
         tools,
+        model_snapshot,
     );
     let logger = match evohime_core::StructuredLogger::open(data_dir.join("logs/core.jsonl")) {
         Ok(logger) => std::sync::Arc::new(logger),

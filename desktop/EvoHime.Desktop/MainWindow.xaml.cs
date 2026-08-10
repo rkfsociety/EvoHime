@@ -26,6 +26,7 @@ public partial class MainWindow : Window
     private string? _activeTaskId;
     private int _reconnectAttempt;
     private string? _pendingApprovalId;
+    private Button? _modelButton;
 
     public MainWindow()
     {
@@ -33,6 +34,7 @@ public partial class MainWindow : Window
         _state.SelectWorkspace(Environment.CurrentDirectory);
         WorkspacePathText.Text = $"Workspace: {_state.WorkspacePath}";
         _ = RestoreWorkspaceAsync();
+        _ = LoadModelConfigAsync();
         _ = CheckForUpdatesAsync();
     }
 
@@ -229,15 +231,15 @@ public partial class MainWindow : Window
         };
         Grid.SetColumn(accessButton, 1);
         composerActions.Children.Add(accessButton);
-        var modelButton = new Button
+        _modelButton = new Button
         {
-            Content = "5.6 Luna  Среднее⌄",
+            Content = "Загрузка модели...",
             Foreground = text,
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
             Padding = new Thickness(6, 5, 6, 5),
         };
-        Grid.SetColumn(modelButton, 3);
-        composerActions.Children.Add(modelButton);
+        Grid.SetColumn(_modelButton, 3);
+        composerActions.Children.Add(_modelButton);
         var microphoneButton = new Button
         {
             Content = "♩",
@@ -480,7 +482,10 @@ public partial class MainWindow : Window
 
         try
         {
-            await _ipc.ConnectAndHandshakeAsync(CancellationToken.None);
+            if (!_ipc.IsConnected)
+            {
+                await _ipc.ConnectAndHandshakeAsync(CancellationToken.None);
+            }
             _reconnectAttempt = 0;
             _activeTaskId = Guid.NewGuid().ToString("N");
             await _ipc.StartTaskAsync(
@@ -498,6 +503,52 @@ public partial class MainWindow : Window
         {
             ConnectionStatus.Text = $"Ошибка IPC: {error.Message}";
             await _ipc.DisposeAsync();
+        }
+    }
+
+    private async Task LoadModelConfigAsync()
+    {
+        try
+        {
+            await _ipc.ConnectAndHandshakeAsync(CancellationToken.None);
+            _ = await _ipc.ReadEventAsync(CancellationToken.None);
+            await _ipc.RequestModelConfigAsync(CancellationToken.None);
+            var response = await _ipc.ReadEventAsync(CancellationToken.None);
+            if (response.EventType != "model.config")
+            {
+                throw new InvalidOperationException("Core не вернул конфигурацию модели.");
+            }
+
+            using var json = JsonDocument.Parse(response.Payload);
+            var root = json.RootElement;
+            var provider = root.TryGetProperty("provider", out var providerValue)
+                ? providerValue.GetString()
+                : null;
+            var model = root.TryGetProperty("model", out var modelValue)
+                ? modelValue.GetString()
+                : null;
+            var configured = root.TryGetProperty("configured", out var configuredValue)
+                && configuredValue.GetBoolean();
+            var label = configured && !string.IsNullOrWhiteSpace(model)
+                ? $"{provider}: {model}  Среднее⌄"
+                : "Провайдер не настроен";
+            _ = DispatcherQueue.TryEnqueue(() =>
+            {
+                if (_modelButton is not null)
+                {
+                    _modelButton.Content = label;
+                }
+            });
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException)
+        {
+            _ = DispatcherQueue.TryEnqueue(() =>
+            {
+                if (_modelButton is not null)
+                {
+                    _modelButton.Content = "Модель недоступна";
+                }
+            });
         }
     }
 

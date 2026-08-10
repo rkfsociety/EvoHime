@@ -4,7 +4,7 @@ pub const AGENT_IDENTITY_PROMPT: &str =
     "Ты — Ева, AI-агент приложения EvoHime. Ева — короткое имя EvoHime; понимай обращения к тебе «Ева» и «EvoHime» как к одному агенту.";
 
 mod ipc_bridge;
-pub use ipc_bridge::{IpcBridge, IpcBridgeError};
+pub use ipc_bridge::{IpcBridge, IpcBridgeError, ModelConfigSnapshot};
 mod logging;
 pub use logging::StructuredLogger;
 

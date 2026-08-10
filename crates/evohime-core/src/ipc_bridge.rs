@@ -1,5 +1,6 @@
 use evohime_desktop_ipc::{generated, transport, FrameError};
 use prost::Message;
+use serde::Serialize;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::{ApprovalCoordinator, CoreCommand, EventJournal, TaskCoordinator};
@@ -17,11 +18,20 @@ pub enum IpcBridgeError {
     Protobuf(#[from] prost::DecodeError),
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ModelConfigSnapshot {
+    pub provider: String,
+    pub route: String,
+    pub model: String,
+    pub configured: bool,
+}
+
 pub struct IpcBridge {
     journal: EventJournal,
     coordinator: Option<TaskCoordinator>,
     approvals: Option<ApprovalCoordinator>,
     tools: Option<Arc<ToolRegistry>>,
+    model_config: Option<ModelConfigSnapshot>,
 }
 
 impl IpcBridge {
@@ -31,6 +41,7 @@ impl IpcBridge {
             coordinator: None,
             approvals: None,
             tools: None,
+            model_config: None,
         }
     }
 
@@ -40,6 +51,7 @@ impl IpcBridge {
             coordinator: Some(coordinator),
             approvals: None,
             tools: None,
+            model_config: None,
         }
     }
 
@@ -48,12 +60,14 @@ impl IpcBridge {
         coordinator: TaskCoordinator,
         approvals: ApprovalCoordinator,
         tools: Arc<ToolRegistry>,
+        model_config: Option<ModelConfigSnapshot>,
     ) -> Self {
         Self {
             journal,
             coordinator: Some(coordinator),
             approvals: Some(approvals),
             tools: Some(tools),
+            model_config,
         }
     }
 
@@ -107,6 +121,18 @@ impl IpcBridge {
                     event: None,
                 };
                 transport::write_frame(writer, &end.encode_to_vec()).await?;
+            }
+            Some(generated::command_envelope::Command::ModelConfig(_)) => {
+                let payload = serde_json::to_vec(&self.model_config).unwrap_or_else(|_| b"null".to_vec());
+                let event = generated::EventEnvelope {
+                    protocol: Some(protocol()),
+                    sequence_id: 0,
+                    task_id: String::new(),
+                    event_type: "model.config".into(),
+                    payload,
+                    event: None,
+                };
+                transport::write_frame(writer, &event.encode_to_vec()).await?;
             }
             Some(generated::command_envelope::Command::StartTask(start)) => {
                 if let Some(coordinator) = &self.coordinator {

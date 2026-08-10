@@ -16,6 +16,8 @@ message ReplayEvents {
   uint64 after_sequence = 1;
 }
 
+message ModelConfigRequest {}
+
 message StartTask {
   string task_id = 1;
   string prompt = 2;
@@ -40,6 +42,7 @@ message CommandEnvelope {
     StartTask start_task = 12;
     StopTask stop_task = 13;
     ResolveApproval resolve_approval = 14;
+    ModelConfigRequest model_config = 15;
   }
 }
 
