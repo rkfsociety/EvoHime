@@ -14,7 +14,11 @@ if errorlevel 1 (
 echo [EvoHime] Сборка и запуск native-агента...
 echo [EvoHime] Это окно останется открытым, пока работает агент.
 echo [EvoHime] Для завершения сначала закройте приложение, затем введите exit.
-pwsh.exe -NoProfile -ExecutionPolicy Bypass -NoExit -File "%~dp0start-dev.ps1" %*
+if /I "%~1"=="-SkipBuild" (
+    pwsh.exe -NoProfile -ExecutionPolicy Bypass -NoExit -File "%~dp0start-dev.ps1" -SkipBuild
+) else (
+    pwsh.exe -NoProfile -ExecutionPolicy Bypass -NoExit -Command "& '%~dp0scripts\build-windows-native.ps1' -OutputPath '%~dp0.evohime-native\windows-x64' -Configuration Debug; if (`$LASTEXITCODE -eq 0) { & '%~dp0start-dev.ps1' -SkipBuild } else { Write-Error 'Сборка native-агента завершилась с ошибкой.' }"
+)
 set "exitCode=%errorlevel%"
 
 endlocal & exit /b %exitCode%
