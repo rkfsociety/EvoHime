@@ -20,6 +20,7 @@ public sealed class ChatEntry
     public string Id { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public DateTimeOffset UpdatedAt { get; set; }
+    public bool Archived { get; set; }
 }
 
 public sealed class ProjectCatalogService
@@ -129,4 +130,15 @@ public sealed class ProjectCatalogService
 
     public bool RemoveProject(ProjectCatalog catalog, ProjectEntry project) =>
         catalog.Projects.Remove(project);
+
+    public bool ArchiveChat(ProjectEntry project, ChatEntry chat)
+    {
+        if (!project.Chats.Contains(chat))
+        {
+            return false;
+        }
+
+        chat.Archived = true;
+        return true;
+    }
 }

@@ -236,6 +236,9 @@ public sealed class IpcCompatibilityTests
             Assert.AreEqual(1, loaded.Projects.Count);
             Assert.AreEqual(project.Path, loaded.Projects[0].Path);
             Assert.AreEqual(chat.Title, loaded.Projects[0].Chats[0].Title);
+            Assert.IsTrue(service.ArchiveChat(loaded.Projects[0], loaded.Projects[0].Chats[0]));
+            service.Save(loaded);
+            Assert.IsTrue(service.Load().Projects[0].Chats[0].Archived);
             Assert.IsTrue(service.RemoveProject(loaded, loaded.Projects[0]));
             service.Save(loaded);
             Assert.AreEqual(0, service.Load().Projects.Count);

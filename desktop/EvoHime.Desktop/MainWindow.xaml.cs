@@ -673,8 +673,11 @@ public partial class MainWindow : Window
             projectRow.Children.Add(deleteButton);
             _projectListPanel.Children.Add(projectRow);
 
-            foreach (var chat in project.Chats.Take(8))
+            foreach (var chat in project.Chats.Where(chat => !chat.Archived).Take(8))
             {
+                var chatRow = new Grid { ColumnSpacing = 2 };
+                chatRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                chatRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 var chatButton = new Button
                 {
                     Content = $"   ·  {chat.Title}",
@@ -686,9 +689,41 @@ public partial class MainWindow : Window
                     Padding = new Thickness(12, 4, 4, 4),
                 };
                 chatButton.Click += (_, _) => SelectChat(project, chat);
-                _projectListPanel.Children.Add(chatButton);
+                chatRow.Children.Add(chatButton);
+                var archiveButton = new Button
+                {
+                    Content = "▣",
+                    Width = 28,
+                    Padding = new Thickness(0),
+                    Visibility = Visibility.Collapsed,
+                    Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                    Foreground = ThemeBrush("MutedTextBrush", 146, 152, 173),
+                };
+                ToolTipService.SetToolTip(archiveButton, "Архивировать чат");
+                archiveButton.Click += async (_, _) => await ArchiveChatAsync(project, chat);
+                Grid.SetColumn(archiveButton, 1);
+                chatRow.Children.Add(archiveButton);
+                chatRow.PointerEntered += (_, _) => archiveButton.Visibility = Visibility.Visible;
+                chatRow.PointerExited += (_, _) => archiveButton.Visibility = Visibility.Collapsed;
+                _projectListPanel.Children.Add(chatRow);
             }
         }
+    }
+
+    private Task ArchiveChatAsync(ProjectEntry project, ChatEntry chat)
+    {
+        if (_projectCatalogService.ArchiveChat(project, chat))
+        {
+            _projectCatalogService.Save(_projectCatalog);
+            if (_activeChatId == chat.Id)
+            {
+                _activeChatId = null;
+                EventLog.Text = string.Empty;
+                ConnectionStatus.Text = $"Проект: {project.Name}";
+            }
+            RefreshProjectSidebar();
+        }
+        return Task.CompletedTask;
     }
 
     private async Task DeleteProjectAsync(ProjectEntry project)
