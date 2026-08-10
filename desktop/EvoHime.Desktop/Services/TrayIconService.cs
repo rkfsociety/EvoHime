@@ -52,6 +52,8 @@ public sealed class TrayIconService : IDisposable
     private readonly string _className = $"EvoHime.Tray.{Guid.NewGuid():N}";
     private readonly uint _callbackMessage = WmApp + 17;
     private readonly uint _iconId = 1;
+    private nint _iconHandle;
+    private bool _ownsIconHandle;
     private nint _windowHandle;
     private ushort _classAtom;
     private bool _disposed;
@@ -67,12 +69,15 @@ public sealed class TrayIconService : IDisposable
         }
 
         var instance = GetModuleHandle(null);
+        _iconHandle = LoadAgentIcon();
         var windowClass = new WndClassEx
         {
             Size = (uint)Marshal.SizeOf<WndClassEx>(),
             WindowProc = _windowProc,
             Instance = instance,
             ClassName = _className,
+            Icon = _iconHandle,
+            SmallIcon = _iconHandle,
         };
         _classAtom = RegisterClassEx(ref windowClass);
         if (_classAtom == 0)
@@ -105,7 +110,7 @@ public sealed class TrayIconService : IDisposable
             Id = _iconId,
             Flags = NifMessage | NifIcon | NifTip,
             CallbackMessage = _callbackMessage,
-            IconHandle = LoadIcon(0, (nint)32512),
+            IconHandle = _iconHandle,
             Tip = "EvoHime",
         };
         if (!ShellNotifyIcon(NimAdd, ref iconData))
@@ -139,6 +144,12 @@ public sealed class TrayIconService : IDisposable
         {
             UnregisterClass(_className, GetModuleHandle(null));
             _classAtom = 0;
+        }
+        if (_ownsIconHandle && _iconHandle != 0)
+        {
+            DestroyIcon(_iconHandle);
+            _iconHandle = 0;
+            _ownsIconHandle = false;
         }
     }
 
@@ -227,6 +238,22 @@ public sealed class TrayIconService : IDisposable
         }
     }
 
+    private nint LoadAgentIcon()
+    {
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "evohime-agent.ico");
+        if (File.Exists(iconPath))
+        {
+            var icon = LoadImage(0, iconPath, ImageIcon, 0, 0, LoadFromFile | DefaultSize);
+            if (icon != 0)
+            {
+                _ownsIconHandle = true;
+                return icon;
+            }
+        }
+
+        return LoadIcon(0, (nint)32512);
+    }
+
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate nint WndProc(nint window, uint message, nint wParam, nint lParam);
 
@@ -308,6 +335,22 @@ public sealed class TrayIconService : IDisposable
 
     [DllImport("user32.dll")]
     private static extern nint LoadIcon(nint instance, nint resource);
+
+    private const uint ImageIcon = 1;
+    private const uint LoadFromFile = 0x00000010;
+    private const uint DefaultSize = 0x00000040;
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern nint LoadImage(
+        nint instance,
+        string name,
+        uint imageType,
+        int width,
+        int height,
+        uint loadOptions);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool DestroyIcon(nint icon);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern nint CreatePopupMenu();
