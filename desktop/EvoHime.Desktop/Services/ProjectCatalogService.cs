@@ -126,4 +126,7 @@ public sealed class ProjectCatalogService
         project.Chats.Insert(0, chat);
         return chat;
     }
+
+    public bool RemoveProject(ProjectCatalog catalog, ProjectEntry project) =>
+        catalog.Projects.Remove(project);
 }

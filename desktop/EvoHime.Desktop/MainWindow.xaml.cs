@@ -642,6 +642,9 @@ public partial class MainWindow : Window
         _projectListPanel.Children.Clear();
         foreach (var project in _projectCatalog.Projects)
         {
+            var projectRow = new Grid { ColumnSpacing = 2 };
+            projectRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            projectRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var projectButton = new Button
             {
                 Content = $"{(project.Id == _activeProjectId ? "●" : "⌂")}  {project.Name}",
@@ -654,7 +657,21 @@ public partial class MainWindow : Window
                 Padding = new Thickness(4, 6, 4, 6),
             };
             projectButton.Click += (_, _) => SelectProject(project);
-            _projectListPanel.Children.Add(projectButton);
+            projectRow.Children.Add(projectButton);
+            var deleteButton = new Button
+            {
+                Content = "×",
+                Tag = project,
+                Width = 28,
+                Padding = new Thickness(0),
+                Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                Foreground = ThemeBrush("MutedTextBrush", 146, 152, 173),
+            };
+            ToolTipService.SetToolTip(deleteButton, "Удалить проект из списка");
+            deleteButton.Click += async (_, _) => await DeleteProjectAsync(project);
+            Grid.SetColumn(deleteButton, 1);
+            projectRow.Children.Add(deleteButton);
+            _projectListPanel.Children.Add(projectRow);
 
             foreach (var chat in project.Chats.Take(8))
             {
@@ -672,6 +689,44 @@ public partial class MainWindow : Window
                 _projectListPanel.Children.Add(chatButton);
             }
         }
+    }
+
+    private async Task DeleteProjectAsync(ProjectEntry project)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = $"Удалить проект «{project.Name}»?",
+            Content = "Проект и его чаты будут убраны из списка EvoHime. Файлы workspace на диске не удаляются.",
+            PrimaryButtonText = "Удалить",
+            CloseButtonText = "Отмена",
+            XamlRoot = ((FrameworkElement)Content).XamlRoot,
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        _projectCatalogService.RemoveProject(_projectCatalog, project);
+        _projectCatalogService.Save(_projectCatalog);
+        if (project.Id == _activeProjectId)
+        {
+            _activeProjectId = null;
+            _activeChatId = null;
+            var nextProject = _projectCatalog.Projects.FirstOrDefault();
+            if (nextProject is not null)
+            {
+                _activeProjectId = nextProject.Id;
+                _state.SelectWorkspace(nextProject.Path);
+                await _settings.SaveWorkspaceAsync(nextProject.Path);
+                WorkspacePathText.Text = $"Workspace: {_state.WorkspacePath}";
+                ConnectionStatus.Text = $"Проект: {nextProject.Name}";
+            }
+            else
+            {
+                ConnectionStatus.Text = "Проекты отсутствуют. Выберите workspace.";
+            }
+        }
+        RefreshProjectSidebar();
     }
 
     private async void SelectProject(ProjectEntry project)
