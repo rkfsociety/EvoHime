@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -27,7 +28,9 @@ public partial class MainWindow : Window
     private int _reconnectAttempt;
     private string? _pendingApprovalId;
     private Button? _modelButton;
-    private SettingsWindow? _settingsWindow;
+    private Grid? _homeContent;
+    private Grid? _settingsView;
+    private TextBlock? _settingsWorkspaceText;
 
     public MainWindow()
     {
@@ -91,7 +94,7 @@ public partial class MainWindow : Window
             };
             if (item.Title == "Настройки")
             {
-                button.Click += (_, _) => OpenSettingsWindow();
+                button.Click += (_, _) => ShowSettingsView();
             }
             navItems.Children.Add(button);
         }
@@ -294,7 +297,158 @@ public partial class MainWindow : Window
         content.Children.Add(footer);
         Grid.SetColumn(content, 1);
         root.Children.Add(content);
+        _homeContent = content;
+        _settingsView = BuildSettingsView();
+        Grid.SetColumn(_settingsView, 1);
+        _settingsView.Visibility = Visibility.Collapsed;
+        root.Children.Add(_settingsView);
         Content = root;
+    }
+
+    private Grid BuildSettingsView()
+    {
+        var text = ThemeBrush("TextBrush", 247, 244, 245);
+        var muted = ThemeBrush("MutedTextBrush", 143, 146, 157);
+        var surface = ThemeBrush("SurfaceBrush", 16, 20, 27);
+        var raised = ThemeBrush("SurfaceRaisedBrush", 23, 28, 37);
+        var view = new Grid { Margin = new Thickness(30, 24, 30, 22) };
+        view.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        view.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        view.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var header = new Grid { Margin = new Thickness(0, 0, 0, 22) };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var title = new StackPanel { Spacing = 5 };
+        title.Children.Add(new TextBlock { Text = "Настройки", FontSize = 28, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = text });
+        title.Children.Add(new TextBlock { Text = "Конфигурация локального агента Евы", FontSize = 14, Foreground = muted });
+        header.Children.Add(title);
+        var back = new Button { Content = "←  Вернуться к чату" };
+        back.Click += (_, _) => ShowHomeView();
+        Grid.SetColumn(back, 1);
+        header.Children.Add(back);
+        view.Children.Add(header);
+
+        var sections = new StackPanel { Spacing = 14 };
+        var modelLabel = _modelButton?.Content?.ToString() ?? "Модель недоступна";
+        sections.Children.Add(CreateSettingsSection(
+            "Модель и провайдер",
+            "Активная конфигурация приходит от Core через IPC.",
+            new TextBlock { Text = modelLabel, FontSize = 16, Foreground = ThemeBrush("TealBrush", 255, 59, 95) },
+            raised));
+
+        _settingsWorkspaceText = new TextBlock
+        {
+            Text = _state.WorkspacePath ?? "Workspace не выбран",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = text,
+            FontSize = 14,
+        };
+        var chooseWorkspace = new Button { Content = "Изменить workspace", Margin = new Thickness(0, 12, 0, 0) };
+        chooseWorkspace.Click += ChooseSettingsWorkspace_Click;
+        sections.Children.Add(CreateSettingsSection(
+            "Рабочее пространство",
+            "Папка, в которой Ева выполняет задачи.",
+            new StackPanel { Children = { _settingsWorkspaceText, chooseWorkspace } },
+            surface));
+
+        var dataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "EvoHime");
+        var runtime = new StackPanel { Spacing = 7 };
+        runtime.Children.Add(CreateSettingsStatusLine("Core", "Внутренний процесс агента", "Запускается вместе с клиентом", text, muted));
+        runtime.Children.Add(CreateSettingsStatusLine("IPC", "Связь с Core", "Versioned named pipe", text, muted));
+        runtime.Children.Add(CreateSettingsStatusLine("Данные", "Локальное хранилище", dataDirectory, text, muted));
+        var diagnostics = new Button { Content = "Открыть папку диагностики", Margin = new Thickness(0, 8, 0, 0) };
+        diagnostics.Click += (_, _) =>
+        {
+            var logs = Path.Combine(dataDirectory, "logs");
+            Directory.CreateDirectory(logs);
+            Process.Start(new ProcessStartInfo { FileName = "explorer.exe", Arguments = $"\"{logs}\"", UseShellExecute = true });
+        };
+        runtime.Children.Add(diagnostics);
+        sections.Children.Add(CreateSettingsSection("Состояние и диагностика", "Служебная информация приложения.", runtime, raised));
+
+        var scroll = new ScrollViewer { Content = sections, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Grid.SetRow(scroll, 1);
+        view.Children.Add(scroll);
+        Grid.SetRow(view, 0);
+        return view;
+    }
+
+    private static Border CreateSettingsSection(string title, string description, UIElement content, Brush background) =>
+        new()
+        {
+            Background = background,
+            BorderBrush = ThemeBrush("BorderBrush", 68, 32, 43),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(18),
+            Child = new StackPanel
+            {
+                Spacing = 7,
+                Children =
+                {
+                    new TextBlock { Text = title, FontSize = 16, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ThemeBrush("TextBrush", 247, 244, 245) },
+                    new TextBlock { Text = description, FontSize = 12, Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157) },
+                    content,
+                },
+            },
+        };
+
+    private static StackPanel CreateSettingsStatusLine(string title, string description, string value, Brush text, Brush muted)
+    {
+        var line = new Grid { ColumnSpacing = 12 };
+        line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        line.Children.Add(new StackPanel
+        {
+            Children =
+            {
+                new TextBlock { Text = title, Foreground = text, FontSize = 13 },
+                new TextBlock { Text = description, Foreground = muted, FontSize = 11 },
+            },
+        });
+        var valueText = new TextBlock { Text = value, Foreground = muted, FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 360, VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(valueText, 1);
+        line.Children.Add(valueText);
+        return new StackPanel { Children = { line } };
+    }
+
+    private void ShowSettingsView()
+    {
+        if (_homeContent is not null && _settingsView is not null)
+        {
+            _homeContent.Visibility = Visibility.Collapsed;
+            _settingsView.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void ShowHomeView()
+    {
+        if (_homeContent is not null && _settingsView is not null)
+        {
+            _settingsView.Visibility = Visibility.Collapsed;
+            _homeContent.Visibility = Visibility.Visible;
+        }
+    }
+
+    private async void ChooseSettingsWorkspace_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new FolderPicker();
+        picker.FileTypeFilter.Add("*");
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+        var folder = await picker.PickSingleFolderAsync();
+        if (folder is null)
+        {
+            return;
+        }
+
+        _state.SelectWorkspace(folder.Path);
+        await _settings.SaveWorkspaceAsync(folder.Path);
+        WorkspacePathText.Text = $"Workspace: {folder.Path}";
+        if (_settingsWorkspaceText is not null)
+        {
+            _settingsWorkspaceText.Text = folder.Path;
+        }
     }
 
     private void BuildUiLegacy()
@@ -511,26 +665,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OpenSettingsWindow()
-    {
-        if (_settingsWindow is not null)
-        {
-            _settingsWindow.Activate();
-            return;
-        }
-
-        _settingsWindow = new SettingsWindow(
-            _state.WorkspacePath ?? "Workspace не выбран",
-            _modelButton?.Content?.ToString() ?? "Модель недоступна");
-        _settingsWindow.WorkspaceChanged += path =>
-        {
-            _state.SelectWorkspace(path);
-            WorkspacePathText.Text = $"Workspace: {path}";
-            ConnectionStatus.Text = "●  Workspace обновлён";
-        };
-        _settingsWindow.Closed += (_, _) => _settingsWindow = null;
-        _settingsWindow.Activate();
-    }
 
     private async Task LoadModelConfigAsync()
     {
