@@ -194,8 +194,8 @@ public partial class MainWindow : Window
             Height = 32,
             Padding = new Thickness(0),
             CornerRadius = new CornerRadius(16),
-            Background = ThemeBrush("MutedTextBrush", 146, 152, 173),
-            Foreground = ThemeBrush("NightBackgroundBrush", 17, 19, 27),
+            Background = ThemeBrush("TealBrush", 255, 59, 95),
+            Foreground = ThemeBrush("TextBrush", 247, 244, 245),
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
         };
