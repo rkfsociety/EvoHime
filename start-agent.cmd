@@ -12,7 +12,9 @@ if errorlevel 1 (
 )
 
 echo [EvoHime] Сборка и запуск native-агента...
-pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0start-dev.ps1" %*
+echo [EvoHime] Это окно останется открытым, пока работает агент.
+echo [EvoHime] Для завершения сначала закройте приложение, затем введите exit.
+pwsh.exe -NoProfile -ExecutionPolicy Bypass -NoExit -File "%~dp0start-dev.ps1" %*
 set "exitCode=%errorlevel%"
 
 endlocal & exit /b %exitCode%
