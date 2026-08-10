@@ -38,6 +38,162 @@ public partial class MainWindow : Window
 
     private void BuildUi()
     {
+        var text = ThemeBrush("TextBrush", 244, 242, 250);
+        var muted = ThemeBrush("MutedTextBrush", 146, 152, 173);
+        var surface = ThemeBrush("SurfaceBrush", 25, 28, 39);
+        var raised = ThemeBrush("SurfaceRaisedBrush", 34, 38, 53);
+        var root = new Grid { Background = ThemeBrush("NightBackgroundBrush", 17, 19, 27) };
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(248) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var sidebar = new Grid { Background = surface, Padding = new Thickness(18, 24, 14, 18) };
+        sidebar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        sidebar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        sidebar.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        sidebar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var brand = new StackPanel { Spacing = 2, Margin = new Thickness(4, 0, 0, 24) };
+        brand.Children.Add(new TextBlock { Text = "ЕВА", FontSize = 25, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = text });
+        brand.Children.Add(new TextBlock { Text = "локальный AI-агент", FontSize = 12, Foreground = muted });
+        sidebar.Children.Add(brand);
+
+        var newChat = new Button
+        {
+            Content = "+   Новый чат",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Background = ThemeBrush("PurpleBrush", 167, 139, 250),
+            Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
+            Margin = new Thickness(0, 0, 0, 18),
+        };
+        newChat.Click += (_, _) =>
+        {
+            PromptBox.Text = string.Empty;
+            EventLog.Text = string.Empty;
+            ConnectionStatus.Text = "●  Готова";
+        };
+        Grid.SetRow(newChat, 1);
+        sidebar.Children.Add(newChat);
+
+        var navItems = new StackPanel { Spacing = 4 };
+        foreach (var item in ShellNavigationCatalog.Items.Where(item => item.Title != "Новый чат"))
+        {
+            var button = new Button
+            {
+                Content = $"{item.Glyph}   {item.Title}",
+                Tag = item.Description,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Background = item.Title == "Пульс" ? raised : new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                Foreground = text,
+            };
+            navItems.Children.Add(button);
+        }
+        Grid.SetRow(navItems, 2);
+        sidebar.Children.Add(navItems);
+        var workspaceInfo = new StackPanel { Spacing = 5 };
+        workspaceInfo.Children.Add(new TextBlock { Text = "РАБОЧИЕ ПРОСТРАНСТВА", FontSize = 11, Foreground = muted });
+        workspaceInfo.Children.Add(new TextBlock { Text = "⌂  Текущий workspace", Foreground = muted, Padding = new Thickness(4, 8, 4, 8) });
+        Grid.SetRow(workspaceInfo, 3);
+        sidebar.Children.Add(workspaceInfo);
+        Grid.SetColumn(sidebar, 0);
+        root.Children.Add(sidebar);
+
+        var content = new Grid { Margin = new Thickness(30, 24, 30, 22) };
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var title = new StackPanel { Spacing = 5 };
+        title.Children.Add(new TextBlock { Text = "Добрый вечер, хозяин", FontSize = 28, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = text });
+        title.Children.Add(new TextBlock { Text = "Опишите задачу — Ева разберётся и покажет, что делает.", FontSize = 14, Foreground = muted });
+        var status = new Border { Background = raised, CornerRadius = new CornerRadius(12), Padding = new Thickness(10, 5, 10, 5), VerticalAlignment = VerticalAlignment.Top };
+        ConnectionStatus = new TextBlock { Text = "●  Готова", Foreground = ThemeBrush("TealBrush", 89, 216, 200), FontSize = 12 };
+        status.Child = ConnectionStatus;
+        var header = new Grid { ColumnSpacing = 20, Margin = new Thickness(0, 0, 0, 22) };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.Children.Add(title);
+        Grid.SetColumn(status, 1);
+        header.Children.Add(status);
+        content.Children.Add(header);
+
+        var work = new Grid { RowSpacing = 14 };
+        work.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        work.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        work.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var workspaceBar = new Grid { ColumnSpacing = 12, Margin = new Thickness(0, 0, 0, 4) };
+        workspaceBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        workspaceBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        WorkspacePathText = new TextBlock { Text = "Workspace: не выбран", Foreground = muted, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+        workspaceBar.Children.Add(WorkspacePathText);
+        ChooseWorkspaceButton = new Button { Content = "Выбрать workspace" };
+        ChooseWorkspaceButton.Click += ChooseWorkspaceButton_Click;
+        Grid.SetColumn(ChooseWorkspaceButton, 1);
+        workspaceBar.Children.Add(ChooseWorkspaceButton);
+        work.Children.Add(workspaceBar);
+
+        var card = new Border { Background = surface, BorderBrush = ThemeBrush("BorderBrush", 48, 53, 72), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(14), Padding = new Thickness(22) };
+        var cardGrid = new Grid { RowSpacing = 14 };
+        cardGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        cardGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        cardGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var intro = new StackPanel { Spacing = 8 };
+        intro.Children.Add(new TextBlock { Text = "Чем займёмся?", FontSize = 23, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = text });
+        intro.Children.Add(new TextBlock { Text = "Изучу проект, найду проблему, изменю файлы или объясню код.", FontSize = 14, Foreground = muted });
+        cardGrid.Children.Add(intro);
+        EventLog = new TextBlock
+        {
+            Text = "Здесь появится план и журнал выполнения задачи.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = muted,
+            FontSize = 13,
+        };
+        var log = new ScrollViewer { Content = EventLog, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Grid.SetRow(log, 1);
+        cardGrid.Children.Add(log);
+        PromptBox = new TextBox { PlaceholderText = "Напишите задачу для Евы...", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 74, MaxHeight = 150 };
+        Grid.SetRow(PromptBox, 2);
+        cardGrid.Children.Add(PromptBox);
+        card.Child = cardGrid;
+        Grid.SetRow(card, 1);
+        work.Children.Add(card);
+
+        ApprovalPanel = new StackPanel { Spacing = 8, Visibility = Visibility.Collapsed, Background = raised, Padding = new Thickness(14) };
+        ApprovalText = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = text };
+        ApprovalPanel.Children.Add(ApprovalText);
+        var approvalActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var approve = new Button { Content = "Разрешить" };
+        approve.Click += ApproveButton_Click;
+        var deny = new Button { Content = "Отклонить" };
+        deny.Click += DenyButton_Click;
+        approvalActions.Children.Add(approve);
+        approvalActions.Children.Add(deny);
+        ApprovalPanel.Children.Add(approvalActions);
+        Grid.SetRow(ApprovalPanel, 2);
+        work.Children.Add(ApprovalPanel);
+        Grid.SetRow(work, 1);
+        content.Children.Add(work);
+
+        var footer = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 14, 0, 0) };
+        UpdateStatusText = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Foreground = muted, FontSize = 12 };
+        UpdateButton = new Button { Content = "Обновить", Visibility = Visibility.Collapsed };
+        UpdateButton.Click += UpdateButton_Click;
+        StopButton = new Button { Content = "Остановить", IsEnabled = false };
+        StopButton.Click += StopButton_Click;
+        StartButton = new Button { Content = "Запустить задачу", Padding = new Thickness(18, 10, 18, 10) };
+        StartButton.Click += StartButton_Click;
+        footer.Children.Add(UpdateStatusText);
+        footer.Children.Add(UpdateButton);
+        footer.Children.Add(StopButton);
+        footer.Children.Add(StartButton);
+        Grid.SetRow(footer, 2);
+        content.Children.Add(footer);
+        Grid.SetColumn(content, 1);
+        root.Children.Add(content);
+        Content = root;
+    }
+
+    private void BuildUiLegacy()
+    {
         var root = new Grid
         {
             Background = ThemeBrush("NightBackgroundBrush", 17, 19, 27),
