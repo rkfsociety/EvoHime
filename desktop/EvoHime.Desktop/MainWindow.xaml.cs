@@ -594,14 +594,105 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ModelButton_Click(object sender, RoutedEventArgs e)
+    private async void ModelButton_Click(object sender, RoutedEventArgs e)
     {
-        ShowSettingsView();
-        if (_modelSelector is not null)
+        var selector = new ComboBox
         {
-            _modelSelector.Focus(FocusState.Programmatic);
-            _modelSelector.IsDropDownOpen = true;
+            Width = 440,
+            PlaceholderText = "Загрузка моделей...",
+        };
+        var dialog = new ContentDialog
+        {
+            Title = "Выберите модель",
+            Content = selector,
+            PrimaryButtonText = "Выбрать",
+            CloseButtonText = "Отмена",
+            IsPrimaryButtonEnabled = false,
+            XamlRoot = ((FrameworkElement)Content).XamlRoot,
+        };
+
+        var loadTask = FetchComposerModelsAsync();
+        var dialogTask = dialog.ShowAsync().AsTask();
+        try
+        {
+            var models = await loadTask;
+            foreach (var availableModel in models)
+            {
+                selector.Items.Add(availableModel);
+            }
+            var currentModel = _providerSettings.Load().Model;
+            selector.SelectedItem = models.Contains(currentModel) ? currentModel : models.FirstOrDefault();
+            selector.PlaceholderText = models.Count == 0 ? "Модели не найдены" : "Выберите модель";
+            dialog.IsPrimaryButtonEnabled = models.Count > 0;
         }
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+        {
+            selector.PlaceholderText = $"Не удалось загрузить модели: {error.Message}";
+        }
+
+        if (await dialogTask == ContentDialogResult.Primary && selector.SelectedItem is string model)
+        {
+            await ApplyComposerModelAsync(model);
+        }
+    }
+
+    private async Task<List<string>> FetchComposerModelsAsync()
+    {
+        await _ipcRequestGate.WaitAsync();
+        try
+        {
+            if (!_ipc.IsConnected)
+            {
+                await ConnectToCoreWithRetryAsync(CancellationToken.None);
+            }
+
+            var models = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var mode in new[] { "free", "paid" })
+            {
+                using var requestTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                await _ipc.RequestModelCatalogAsync(mode, requestTimeout.Token);
+                var response = await _ipc.ReadEventAsync(requestTimeout.Token);
+                if (response.EventType != "model.catalog")
+                {
+                    throw new InvalidOperationException("Core не вернул каталог моделей.");
+                }
+
+                using var json = JsonDocument.Parse(response.Payload);
+                if (json.RootElement.TryGetProperty("models", out var modelsValue))
+                {
+                    foreach (var model in modelsValue.EnumerateArray()
+                                 .Select(item => item.GetString())
+                                 .Where(item => !string.IsNullOrWhiteSpace(item)))
+                    {
+                        models.Add(model!);
+                    }
+                }
+            }
+            return models.OrderBy(model => model, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+        finally
+        {
+            _ipcRequestGate.Release();
+        }
+    }
+
+    private async Task ApplyComposerModelAsync(string model)
+    {
+        var settings = _providerSettings.Load();
+        _providerSettings.Save(settings with { Model = model });
+        if (Application.Current is not App app || !app.RestartCore())
+        {
+            throw new InvalidOperationException("Не удалось перезапустить Core для применения модели.");
+        }
+
+        await _ipc.DisposeAsync();
+        if (_modelButton is not null)
+        {
+            _modelButton.Content = $"{settings.Provider}: {model} ⌄";
+        }
+        ConnectionStatus.Text = "Модель обновляется...";
+        await LoadModelConfigAsync();
+        ConnectionStatus.Text = $"Модель: {model}";
     }
 
     private void PromptBox_KeyDown(object sender, KeyRoutedEventArgs e)
