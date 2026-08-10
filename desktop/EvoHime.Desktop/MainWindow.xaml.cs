@@ -162,6 +162,21 @@ public partial class MainWindow : Window
             Padding = new Thickness(0),
             Foreground = text,
         };
+        var transparent = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        foreach (var resourceKey in new[]
+        {
+            "TextControlBackground",
+            "TextControlBackgroundFocused",
+            "TextControlBackgroundPointerOver",
+            "TextControlBackgroundDisabled",
+            "TextControlBorderBrush",
+            "TextControlBorderBrushFocused",
+            "TextControlBorderBrushPointerOver",
+        })
+        {
+            PromptBox.Resources[resourceKey] = transparent;
+        }
+        PromptBox.Resources["TextControlPlaceholderForeground"] = muted;
         StartButton = new Button
         {
             Content = "↑",
