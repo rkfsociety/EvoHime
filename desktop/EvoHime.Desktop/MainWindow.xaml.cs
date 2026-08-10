@@ -107,7 +107,8 @@ public partial class MainWindow : Window
         sidebar.Children.Add(newChat);
 
         var navItems = new StackPanel { Spacing = 4 };
-        foreach (var item in ShellNavigationCatalog.Items.Where(item => item.Title != "Новый чат"))
+        _projectListPanel = new StackPanel { Spacing = 2 };
+        foreach (var item in ShellNavigationCatalog.Items.Where(item => item.Title is not ("Новый чат" or "Проекты" or "Настройки")))
         {
             var button = new Button
             {
@@ -124,18 +125,36 @@ public partial class MainWindow : Window
             }
             navItems.Children.Add(button);
         }
-        Grid.SetRow(navItems, 2);
-        sidebar.Children.Add(navItems);
-        var workspaceInfo = new StackPanel { Spacing = 5 };
-        workspaceInfo.Children.Add(new TextBlock { Text = "ПРОЕКТЫ", FontSize = 11, Foreground = muted });
-        _projectListPanel = new StackPanel { Spacing = 2 };
-        var projectScroll = new ScrollViewer
+        navItems.Children.Add(new TextBlock
+        {
+            Text = "ПРОЕКТЫ",
+            FontSize = 11,
+            Foreground = muted,
+            Margin = new Thickness(4, 18, 0, 2),
+        });
+        navItems.Children.Add(new ScrollViewer
         {
             Content = _projectListPanel,
             MaxHeight = 260,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        });
+        var settingsItem = ShellNavigationCatalog.Items.First(item => item.Title == "Настройки");
+        var settingsButton = new Button
+        {
+            Content = $"{settingsItem.Glyph}   {settingsItem.Title}",
+            Tag = settingsItem.Description,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            Foreground = text,
         };
-        workspaceInfo.Children.Add(projectScroll);
+        settingsButton.Click += (_, _) => ShowSettingsView();
+        navItems.Children.Add(settingsButton);
+        Grid.SetRow(navItems, 2);
+        sidebar.Children.Add(navItems);
+        var workspaceInfo = new StackPanel { Spacing = 5 };
+        workspaceInfo.Children.Add(new TextBlock { Text = "РАБОЧЕЕ ПРОСТРАНСТВО", FontSize = 11, Foreground = muted });
+        workspaceInfo.Children.Add(new TextBlock { Text = "⌂  Текущий проект", Foreground = muted, Padding = new Thickness(4, 8, 4, 8) });
         Grid.SetRow(workspaceInfo, 3);
         sidebar.Children.Add(workspaceInfo);
         Grid.SetColumn(sidebar, 0);
