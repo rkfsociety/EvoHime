@@ -83,6 +83,12 @@ public static class ProtocolEnvelope
         output.WriteString(mode);
     });
 
+    public static byte[] PermissionMode(string mode) => TaskCommand(17, output =>
+    {
+        output.WriteTag(1, WireFormat.WireType.LengthDelimited);
+        output.WriteString(mode);
+    });
+
     public static byte[] ResolveApproval(string approvalId, bool granted) => TaskCommand(14, output =>
     {
         output.WriteTag(1, WireFormat.WireType.LengthDelimited);

@@ -129,6 +129,39 @@ public sealed class IpcCompatibilityTests
     }
 
     [TestMethod]
+    public void PermissionModeEnvelopeCarriesMode()
+    {
+        var payload = ProtocolEnvelope.PermissionMode("read_only");
+        using var input = new CodedInputStream(payload);
+        var nested = Array.Empty<byte>();
+        while (!input.IsAtEnd)
+        {
+            var tag = input.ReadTag();
+            if ((tag >> 3) == 17)
+            {
+                nested = input.ReadBytes().ToByteArray();
+                break;
+            }
+            input.SkipLastField();
+        }
+
+        using var command = new CodedInputStream(nested);
+        var mode = string.Empty;
+        while (!command.IsAtEnd)
+        {
+            var tag = command.ReadTag();
+            if ((tag >> 3) == 1)
+            {
+                mode = command.ReadString();
+                break;
+            }
+            command.SkipLastField();
+        }
+
+        Assert.AreEqual("read_only", mode);
+    }
+
+    [TestMethod]
     public void EventEnvelopeRoundTripsSequenceAndPayload()
     {
         using var buffer = new MemoryStream();

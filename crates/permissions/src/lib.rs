@@ -187,6 +187,22 @@ impl PermissionEngine {
         self.modes.write().await.insert(permission, mode);
     }
 
+    pub async fn set_all_modes(&self, mode: PermissionMode) {
+        let mut modes = self.modes.write().await;
+        for permission in [
+            Permission::FilesystemRead,
+            Permission::FilesystemWrite,
+            Permission::ShellExecute,
+            Permission::GitRead,
+            Permission::GitWrite,
+            Permission::BrowserAccess,
+            Permission::McpCall,
+            Permission::MemorySearch,
+        ] {
+            modes.insert(permission, mode);
+        }
+    }
+
     pub async fn set_session_mode(
         &self,
         session_id: Uuid,

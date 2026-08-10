@@ -22,6 +22,10 @@ message ModelCatalogRequest {
   string mode = 1;
 }
 
+message PermissionModeRequest {
+  string mode = 1;
+}
+
 message StartTask {
   string task_id = 1;
   string prompt = 2;
@@ -48,6 +52,7 @@ message CommandEnvelope {
     ResolveApproval resolve_approval = 14;
     ModelConfigRequest model_config = 15;
     ModelCatalogRequest model_catalog = 16;
+    PermissionModeRequest permission_mode = 17;
   }
 }
 

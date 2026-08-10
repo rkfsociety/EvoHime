@@ -6,6 +6,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use crate::{ApprovalCoordinator, CoreCommand, EventJournal, TaskCoordinator};
 use evohime_model_gateway::ModelGatewayConfig;
 use evohime_tool_runtime::ToolRegistry;
+use evohime_permissions::{Permission, PermissionMode};
 use std::sync::Arc;
 
 const PROTOCOL_MAJOR: u32 = 1;
@@ -186,6 +187,26 @@ impl IpcBridge {
                     event: None,
                 };
                 transport::write_frame(writer, &event.encode_to_vec()).await?;
+            }
+            Some(generated::command_envelope::Command::PermissionMode(request)) => {
+                if let Some(tools) = &self.tools {
+                    let mode = match request.mode.as_str() {
+                        "full" => PermissionMode::Allow,
+                        "read_only" => PermissionMode::Deny,
+                        _ => PermissionMode::Ask,
+                    };
+                    tools.permissions().set_all_modes(mode).await;
+                    if request.mode == "read_only" {
+                        tools
+                            .permissions()
+                            .set_mode(Permission::FilesystemRead, PermissionMode::Allow)
+                            .await;
+                        tools
+                            .permissions()
+                            .set_mode(Permission::GitRead, PermissionMode::Allow)
+                            .await;
+                    }
+                }
             }
             Some(generated::command_envelope::Command::StartTask(start)) => {
                 if let Some(coordinator) = &self.coordinator {

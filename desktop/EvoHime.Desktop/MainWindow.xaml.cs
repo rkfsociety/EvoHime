@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using EvoHime.Desktop.Services;
 using Windows.Storage.Pickers;
+using Windows.Storage;
 using WinRT.Interop;
 using System.Text.Json;
 
@@ -41,6 +42,9 @@ public partial class MainWindow : Window
     private ComboBox? _modelModeBox;
     private ComboBox? _modelSelector;
     private string _configuredModel = string.Empty;
+    private readonly List<StorageFile> _attachments = [];
+    private TextBlock? _attachmentsText;
+    private string _permissionMode = "ask";
 
     public MainWindow()
     {
@@ -231,7 +235,17 @@ public partial class MainWindow : Window
         var composerGrid = new Grid { RowSpacing = 8 };
         composerGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         composerGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        composerGrid.Children.Add(PromptBox);
+        var composerBody = new StackPanel { Spacing = 4 };
+        composerBody.Children.Add(PromptBox);
+        _attachmentsText = new TextBlock
+        {
+            Visibility = Visibility.Collapsed,
+            Foreground = muted,
+            FontSize = 11,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+        composerBody.Children.Add(_attachmentsText);
+        composerGrid.Children.Add(composerBody);
         var composerActions = new Grid { ColumnSpacing = 8 };
         composerActions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         composerActions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -239,10 +253,20 @@ public partial class MainWindow : Window
         composerActions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         composerActions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         composerActions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        composerActions.Children.Add(new TextBlock { Text = "+", FontSize = 22, Foreground = muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 3, 0) });
+        var attachButton = new Button
+        {
+            Content = "+",
+            FontSize = 22,
+            Foreground = muted,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            Padding = new Thickness(3, 0, 3, 0),
+        };
+        ToolTipService.SetToolTip(attachButton, "Добавить файлы");
+        attachButton.Click += AttachFiles_Click;
+        composerActions.Children.Add(attachButton);
         var accessButton = new Button
         {
-            Content = "◉  Полный доступ",
+            Content = "◉  С подтверждением",
             Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 239, 133, 80)),
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
             Padding = new Thickness(4, 5, 6, 5),
@@ -256,6 +280,7 @@ public partial class MainWindow : Window
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
             Padding = new Thickness(6, 5, 6, 5),
         };
+        accessButton.Click += AccessButton_Click;
         _modelButton.Click += ModelButton_Click;
         Grid.SetColumn(_modelButton, 3);
         composerActions.Children.Add(_modelButton);
@@ -574,6 +599,79 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void AttachFiles_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new FileOpenPicker();
+        picker.FileTypeFilter.Add("*");
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+        var files = await picker.PickMultipleFilesAsync();
+        if (files is null || files.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var file in files)
+        {
+            if (_attachments.All(item => !string.Equals(item.Path, file.Path, StringComparison.OrdinalIgnoreCase)))
+            {
+                _attachments.Add(file);
+            }
+        }
+        UpdateAttachmentsText();
+    }
+
+    private void UpdateAttachmentsText()
+    {
+        if (_attachmentsText is null)
+        {
+            return;
+        }
+
+        _attachmentsText.Text = _attachments.Count == 0
+            ? string.Empty
+            : $"Прикреплено файлов: {_attachments.Count} · {string.Join(", ", _attachments.Select(file => file.Name))}";
+        _attachmentsText.Visibility = _attachments.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void AccessButton_Click(object sender, RoutedEventArgs e)
+    {
+        var menu = new MenuFlyout();
+        var button = sender as Button;
+        AddPermissionMenuItem(menu, button, "ask", "◉  С подтверждением");
+        AddPermissionMenuItem(menu, button, "read_only", "◌  Только чтение");
+        AddPermissionMenuItem(menu, button, "full", "⚡  Полный доступ");
+        menu.ShowAt((FrameworkElement)sender);
+    }
+
+    private void AddPermissionMenuItem(MenuFlyout menu, Button? button, string mode, string label)
+    {
+        var item = new MenuFlyoutItem { Text = label };
+        item.Click += async (_, _) =>
+        {
+            _permissionMode = mode;
+            if (button is not null)
+            {
+                button.Content = label;
+            }
+            try
+            {
+                if (!_ipc.IsConnected)
+                {
+                    await _ipc.ConnectAndHandshakeAsync(CancellationToken.None);
+                    _ = await _ipc.ReadEventAsync(CancellationToken.None);
+                }
+                await _ipc.SetPermissionModeAsync(mode, CancellationToken.None);
+                ConnectionStatus.Text = $"Режим: {label.Replace("◉  ", "").Replace("◌  ", "").Replace("⚡  ", "")}";
+            }
+            catch (Exception error)
+            {
+                ConnectionStatus.Text = $"Не удалось применить режим: {error.Message}";
+            }
+        };
+        menu.Items.Add(item);
+    }
+
+
     private async Task<bool> LoadModelCatalogCoreAsync(string mode)
     {
         if (_modelSelector is null)
@@ -869,11 +967,20 @@ public partial class MainWindow : Window
             }
             _reconnectAttempt = 0;
             _activeTaskId = Guid.NewGuid().ToString("N");
+            var workspacePath = _state.WorkspacePath ?? Environment.CurrentDirectory;
+            var attachmentPaths = await CopyAttachmentsToWorkspaceAsync(workspacePath, _activeTaskId);
+            var taskPrompt = prompt;
+            if (attachmentPaths.Count > 0)
+            {
+                taskPrompt += $"\n\nПрикреплённые файлы находятся в workspace по путям:\n- {string.Join("\n- ", attachmentPaths)}\nИзучи их как часть задачи.";
+            }
             await _ipc.StartTaskAsync(
                 _activeTaskId,
-                prompt,
-                _state.WorkspacePath ?? Environment.CurrentDirectory,
+                taskPrompt,
+                workspacePath,
                 CancellationToken.None);
+            _attachments.Clear();
+            UpdateAttachmentsText();
             ConnectionStatus.Text = $"Задача {_activeTaskId}: выполняется";
             _eventCts = new CancellationTokenSource();
             _ = PumpEventsAsync(_eventCts.Token);
@@ -899,6 +1006,35 @@ public partial class MainWindow : Window
         {
             _ipcRequestGate.Release();
         }
+    }
+
+    private async Task<List<string>> CopyAttachmentsToWorkspaceAsync(string workspacePath, string taskId)
+    {
+        var copiedPaths = new List<string>();
+        if (_attachments.Count == 0)
+        {
+            return copiedPaths;
+        }
+
+        var attachmentDirectory = Path.Combine(workspacePath, ".evohime", "attachments", taskId);
+        Directory.CreateDirectory(attachmentDirectory);
+        foreach (var file in _attachments)
+        {
+            var destination = Path.Combine(attachmentDirectory, Path.GetFileName(file.Name));
+            var suffix = 1;
+            while (File.Exists(destination))
+            {
+                destination = Path.Combine(
+                    attachmentDirectory,
+                    $"{Path.GetFileNameWithoutExtension(file.Name)}-{suffix++}{Path.GetExtension(file.Name)}");
+            }
+
+            await using var source = File.OpenRead(file.Path);
+            await using var target = File.Create(destination);
+            await source.CopyToAsync(target);
+            copiedPaths.Add(Path.GetRelativePath(workspacePath, destination));
+        }
+        return copiedPaths;
     }
 
     private async Task LoadModelConfigCoreAsync()
