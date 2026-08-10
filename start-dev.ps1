@@ -10,16 +10,18 @@ $buildScript = Join-Path $root 'scripts\build-windows-native.ps1'
 $dataPath = Join-Path $root '.evohime-native\data'
 
 if (-not $SkipBuild) {
-    & (Join-Path $PSHOME 'pwsh.exe') -NoProfile -File $buildScript `
-        -OutputPath $packagePath -Configuration Debug
+    # Запускаем сборщик в текущем PowerShell-процессе. Вложенный pwsh ломает
+    # запуск из некоторых оболочек Windows и не даёт полезной диагностики.
+    & $buildScript -OutputPath $packagePath -Configuration Debug
     if ($LASTEXITCODE -ne 0) {
         throw "Native-сборка завершилась с кодом $LASTEXITCODE"
     }
 }
 
-$supervisorPath = Join-Path $packagePath 'evohime-supervisor.exe'
 $uiPath = Join-Path $packagePath 'EvoHime.exe'
-foreach ($path in @($supervisorPath, $uiPath)) {
+$corePath = Join-Path $packagePath 'evohime-core.exe'
+$supervisorPath = Join-Path $packagePath 'evohime-supervisor.exe'
+foreach ($path in @($uiPath, $corePath, $supervisorPath)) {
     if (-not (Test-Path -LiteralPath $path)) {
         throw "Native-компонент не найден: $path"
     }
@@ -28,23 +30,19 @@ New-Item -ItemType Directory -Force -Path $dataPath | Out-Null
 
 $previousCoreExe = $env:EVOHIME_CORE_EXE
 $previousDataDir = $env:EVOHIME_DATA_DIR
-$env:EVOHIME_CORE_EXE = Join-Path $packagePath 'evohime-core.exe'
+$env:EVOHIME_CORE_EXE = $corePath
 $env:EVOHIME_DATA_DIR = $dataPath
-$supervisor = $null
 $ui = $null
 
 try {
-    $supervisor = Start-Process -FilePath $supervisorPath -WorkingDirectory $packagePath -WindowStyle Hidden -PassThru
+    # EvoHime.exe сам запускает supervisor, а supervisor — Core. Это сохраняет
+    # один владелец жизненного цикла и не создаёт второй supervisor из launcher.
     $ui = Start-Process -FilePath $uiPath -WorkingDirectory $packagePath -PassThru
     $ui.WaitForExit()
 }
 finally {
     if ($ui -and -not $ui.HasExited) {
         $ui.Kill()
-    }
-    if ($supervisor -and -not $supervisor.HasExited) {
-        $supervisor.Kill()
-        $supervisor.WaitForExit()
     }
     if ($null -eq $previousCoreExe) {
         Remove-Item Env:EVOHIME_CORE_EXE -ErrorAction SilentlyContinue

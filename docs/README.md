@@ -18,4 +18,4 @@
 
 Для разработки используйте `.\start-dev.ps1`, native package tests, WinUI tests и Windows CI. Установщик и пользовательский запуск работают через `EvoHime.exe`.
 
-Веб-панель полностью выведена из продукта. `start-dev.ps1` — это native launcher: он собирает пакет, запускает скрытый supervisor и открывает WinUI-клиент `EvoHime.exe`. `-SkipBuild` допустим только при наличии готового `.evohime-native\windows-x64`.
+Веб-панель полностью выведена из продукта. `start-dev.ps1` — это native launcher: он собирает пакет и открывает WinUI-клиент `EvoHime.exe`; клиент сам запускает единственный скрытый supervisor, а supervisor — Core. `-SkipBuild` допустим только при наличии готового `.evohime-native\windows-x64`.
