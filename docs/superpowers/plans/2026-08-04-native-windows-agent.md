@@ -283,7 +283,7 @@ git commit -m "feat: package native Windows app with recovery"
 
 **Files:**
 - Verify that the installer contains only the native runtime components after parity checks
-- Modify: `Cargo.toml`, `package.json`, `start-dev.ps1`, `AGENTS.md`, `docs/current-state.md`, `docs/roadmap.md`, `.github/workflows/rust.yml`, `.github/workflows/windows-native.yml`
+- Modify: `Cargo.toml`, `start-dev.ps1`, `AGENTS.md`, `docs/current-state.md`, `docs/roadmap.md`, `.github/workflows/rust.yml`
 - Create: `docs/native-windows-development.md`, `scripts/build-windows-native.ps1`
 
 - [ ] **Step 1: Add a repository guard test that fails if the shipped product contains an unsupported runtime entrypoint or launches outside the native client.**

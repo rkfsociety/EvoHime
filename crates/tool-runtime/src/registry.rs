@@ -171,12 +171,6 @@ impl ToolRegistry {
             timeout: tools::memory::TIMEOUT,
         });
         registry.register(ToolDefinition {
-            name: tools::worker::NAME,
-            description: tools::worker::DESCRIPTION,
-            permissions: tools::worker::PERMISSIONS,
-            timeout: tools::worker::TIMEOUT,
-        });
-        registry.register(ToolDefinition {
             name: tools::browser::OPEN_NAME,
             description: tools::browser::OPEN_DESCRIPTION,
             permissions: tools::browser::OPEN_PERMISSIONS,
@@ -332,7 +326,6 @@ impl ToolRegistry {
                 tools::git::PUSH_NAME => tools::git::push(ctx, input).await,
                 tools::mcp::NAME => tools::mcp::execute(ctx, input).await,
                 tools::memory::NAME => tools::memory::execute(ctx, input).await,
-                tools::worker::NAME => tools::worker::execute(ctx, input).await,
                 tools::agent::NAME => tools::agent::execute(ctx, input).await,
                 tools::browser::OPEN_NAME => tools::browser::open(ctx, input).await,
                 tools::browser::EXTRACT_NAME => tools::browser::extract(ctx, input).await,
@@ -402,7 +395,6 @@ impl ToolRegistry {
             tools::git::PUSH_NAME => tools::git::push(ctx, input).await,
             tools::mcp::NAME => tools::mcp::execute(ctx, input).await,
             tools::memory::NAME => tools::memory::execute(ctx, input).await,
-            tools::worker::NAME => tools::worker::execute(ctx, input).await,
             tools::agent::NAME => tools::agent::execute(ctx, input).await,
             tools::browser::OPEN_NAME => tools::browser::open(ctx, input).await,
             tools::browser::EXTRACT_NAME => tools::browser::extract(ctx, input).await,
@@ -491,7 +483,7 @@ mod tests {
     fn bootstrap_registers_filesystem_read() {
         let registry = ToolRegistry::bootstrap();
         let tools = registry.list();
-        assert_eq!(tools.len(), 24);
+        assert_eq!(tools.len(), 23);
         assert_eq!(tools[0].name, "agent.run");
         assert_eq!(tools[1].name, "browser.extract");
         assert_eq!(tools[2].name, "browser.open");
@@ -515,7 +507,6 @@ mod tests {
         assert_eq!(tools[20].name, "mcp.call");
         assert_eq!(tools[21].name, "memory.search");
         assert_eq!(tools[22].name, "shell.execute");
-        assert_eq!(tools[23].name, "worker.run");
     }
 
     #[tokio::test]

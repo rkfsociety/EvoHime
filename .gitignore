@@ -5,11 +5,8 @@ desktop/**/bin/
 desktop/**/obj/
 node_modules/
 dist/
-frontend/web/dist/
-frontend/web/node_modules/
 .env
 .DS_Store
 *.log
 *.tsbuildinfo
-workers/python/__pycache__/
 .superpowers/

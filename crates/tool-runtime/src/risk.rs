@@ -20,15 +20,15 @@ impl ToolRiskLevel {
 }
 
 /// Classifies a resolved tool call (name + actual JSON input) by risk tier.
-/// Distinct from `agent-runtime`'s plan-level `RiskLevel`, which scores a
-/// whole plan before any step has concrete parameters.
+/// This is evaluated after a concrete tool call has been resolved, before
+/// execution begins.
 pub fn classify_call_risk(tool_name: &str, _input: &Value) -> ToolRiskLevel {
     match tool_name {
         "filesystem.read" | "filesystem.search" | "filesystem.list" | "git.status"
         | "git.diff" | "browser.open" | "browser.extract" | "browser.session.read"
         | "browser.session.screenshot" | "memory.search" | "http.fetch" => ToolRiskLevel::None,
 
-        "git.pull" | "browser.session.navigate" | "worker.run" => ToolRiskLevel::Low,
+        "git.pull" | "browser.session.navigate" => ToolRiskLevel::Low,
 
         "filesystem.write" | "filesystem.patch" | "git.commit" | "mcp.call"
         | "browser.session.click" | "browser.session.type" | "agent.run" => {
@@ -79,7 +79,7 @@ mod tests {
 
     #[test]
     fn classifies_low_risk_tools() {
-        for tool in ["git.pull", "browser.session.navigate", "worker.run"] {
+        for tool in ["git.pull", "browser.session.navigate"] {
             assert_eq!(classify_call_risk(tool, &json!({})), ToolRiskLevel::Low);
         }
     }
