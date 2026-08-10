@@ -150,9 +150,85 @@ public partial class MainWindow : Window
         var log = new ScrollViewer { Content = EventLog, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         Grid.SetRow(log, 1);
         cardGrid.Children.Add(log);
-        PromptBox = new TextBox { PlaceholderText = "Напишите задачу для Евы...", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 74, MaxHeight = 150 };
-        Grid.SetRow(PromptBox, 2);
-        cardGrid.Children.Add(PromptBox);
+        PromptBox = new TextBox
+        {
+            PlaceholderText = "Поручите что угодно",
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            MinHeight = 44,
+            MaxHeight = 110,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
+            Foreground = text,
+        };
+        StartButton = new Button
+        {
+            Content = "↑",
+            Width = 32,
+            Height = 32,
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(16),
+            Background = ThemeBrush("MutedTextBrush", 146, 152, 173),
+            Foreground = ThemeBrush("NightBackgroundBrush", 17, 19, 27),
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+        };
+        StartButton.Click += StartButton_Click;
+        var composer = new Border
+        {
+            Background = ThemeBrush("SurfaceRaisedBrush", 31, 34, 43),
+            BorderBrush = ThemeBrush("BorderBrush", 48, 53, 72),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(16),
+            Padding = new Thickness(14, 10, 10, 10),
+        };
+        var composerGrid = new Grid { RowSpacing = 8 };
+        composerGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        composerGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        composerGrid.Children.Add(PromptBox);
+        var composerActions = new Grid { ColumnSpacing = 8 };
+        composerActions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        composerActions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        composerActions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        composerActions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        composerActions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        composerActions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        composerActions.Children.Add(new TextBlock { Text = "+", FontSize = 22, Foreground = muted, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 3, 0) });
+        var accessButton = new Button
+        {
+            Content = "◉  Полный доступ",
+            Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 239, 133, 80)),
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            Padding = new Thickness(4, 5, 6, 5),
+        };
+        Grid.SetColumn(accessButton, 1);
+        composerActions.Children.Add(accessButton);
+        var modelButton = new Button
+        {
+            Content = "5.6 Luna  Среднее⌄",
+            Foreground = text,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            Padding = new Thickness(6, 5, 6, 5),
+        };
+        Grid.SetColumn(modelButton, 3);
+        composerActions.Children.Add(modelButton);
+        var microphoneButton = new Button
+        {
+            Content = "♩",
+            Foreground = text,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            Padding = new Thickness(7, 5, 7, 5),
+        };
+        Grid.SetColumn(microphoneButton, 4);
+        composerActions.Children.Add(microphoneButton);
+        Grid.SetColumn(StartButton, 5);
+        composerActions.Children.Add(StartButton);
+        Grid.SetRow(composerActions, 1);
+        composerGrid.Children.Add(composerActions);
+        composer.Child = composerGrid;
+        Grid.SetRow(composer, 2);
+        cardGrid.Children.Add(composer);
         card.Child = cardGrid;
         Grid.SetRow(card, 1);
         work.Children.Add(card);
@@ -179,12 +255,9 @@ public partial class MainWindow : Window
         UpdateButton.Click += UpdateButton_Click;
         StopButton = new Button { Content = "Остановить", IsEnabled = false };
         StopButton.Click += StopButton_Click;
-        StartButton = new Button { Content = "Запустить задачу", Padding = new Thickness(18, 10, 18, 10) };
-        StartButton.Click += StartButton_Click;
         footer.Children.Add(UpdateStatusText);
         footer.Children.Add(UpdateButton);
         footer.Children.Add(StopButton);
-        footer.Children.Add(StartButton);
         Grid.SetRow(footer, 2);
         content.Children.Add(footer);
         Grid.SetColumn(content, 1);
