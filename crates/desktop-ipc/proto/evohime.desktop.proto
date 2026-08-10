@@ -18,6 +18,10 @@ message ReplayEvents {
 
 message ModelConfigRequest {}
 
+message ModelCatalogRequest {
+  string mode = 1;
+}
+
 message StartTask {
   string task_id = 1;
   string prompt = 2;
@@ -43,6 +47,7 @@ message CommandEnvelope {
     StopTask stop_task = 13;
     ResolveApproval resolve_approval = 14;
     ModelConfigRequest model_config = 15;
+    ModelCatalogRequest model_catalog = 16;
   }
 }
 

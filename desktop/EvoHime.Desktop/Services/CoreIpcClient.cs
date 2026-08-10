@@ -54,6 +54,9 @@ public sealed class CoreIpcClient
     public Task RequestModelConfigAsync(CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.ModelConfig(), cancellationToken);
 
+    public Task RequestModelCatalogAsync(string mode, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.ModelCatalog(mode), cancellationToken);
+
     public Task ResolveApprovalAsync(string approvalId, bool granted, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.ResolveApproval(approvalId, granted), cancellationToken);
 

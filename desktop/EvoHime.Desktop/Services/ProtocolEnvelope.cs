@@ -77,6 +77,12 @@ public static class ProtocolEnvelope
 
     public static byte[] ModelConfig() => TaskCommand(15, _ => { });
 
+    public static byte[] ModelCatalog(string mode) => TaskCommand(16, output =>
+    {
+        output.WriteTag(1, WireFormat.WireType.LengthDelimited);
+        output.WriteString(mode);
+    });
+
     public static byte[] ResolveApproval(string approvalId, bool granted) => TaskCommand(14, output =>
     {
         output.WriteTag(1, WireFormat.WireType.LengthDelimited);

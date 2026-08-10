@@ -38,6 +38,8 @@ public partial class MainWindow : Window
     private TextBox? _modelBox;
     private PasswordBox? _apiKeyBox;
     private TextBlock? _settingsSaveStatus;
+    private ComboBox? _modelModeBox;
+    private ComboBox? _modelSelector;
 
     public MainWindow()
     {
@@ -343,12 +345,30 @@ public partial class MainWindow : Window
         _modelBox = new TextBox { Header = "Модель", PlaceholderText = "например, deepseek:free", Text = providerSettings.Model };
         _apiKeyBox = new PasswordBox { Header = "API-ключ", PlaceholderText = "Введите ключ провайдера" };
         _apiKeyBox.Password = providerSettings.ApiKey;
+        _modelModeBox = new ComboBox { Header = "Режим каталога", ItemsSource = new[] { "Бесплатные", "Платные" }, SelectedIndex = 0 };
+        _modelSelector = new ComboBox { Header = "Модель от провайдера", PlaceholderText = "Загрузите список моделей" };
+        _modelModeBox.SelectionChanged += (_, _) =>
+        {
+            if (_modelModeBox.SelectedIndex >= 0)
+            {
+                _ = LoadModelCatalogAsync(_modelModeBox.SelectedIndex == 0 ? "free" : "paid");
+            }
+        };
+        _modelSelector.SelectionChanged += (_, _) =>
+        {
+            if (_modelSelector.SelectedItem is string model && _modelBox is not null)
+            {
+                _modelBox.Text = model;
+            }
+        };
         var saveProvider = new Button { Content = "Сохранить настройки провайдера", Margin = new Thickness(0, 8, 0, 0) };
         saveProvider.Click += SaveProviderSettings_Click;
         _settingsSaveStatus = new TextBlock { FontSize = 12, Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157), TextWrapping = TextWrapping.Wrap };
         var providerForm = new StackPanel { Spacing = 10 };
         providerForm.Children.Add(_providerBox);
         providerForm.Children.Add(_baseUrlBox);
+        providerForm.Children.Add(_modelModeBox);
+        providerForm.Children.Add(_modelSelector);
         providerForm.Children.Add(_modelBox);
         providerForm.Children.Add(_apiKeyBox);
         providerForm.Children.Add(new TextBlock { Text = "Ключ хранится в профиле Windows через DPAPI и не записывается в репозиторий.", FontSize = 11, Foreground = muted, TextWrapping = TextWrapping.Wrap });
@@ -442,6 +462,7 @@ public partial class MainWindow : Window
         {
             _homeContent.Visibility = Visibility.Collapsed;
             _settingsView.Visibility = Visibility.Visible;
+            _ = LoadModelCatalogAsync(_modelModeBox?.SelectedIndex == 1 ? "paid" : "free");
         }
     }
 
@@ -500,6 +521,60 @@ public partial class MainWindow : Window
             {
                 _settingsSaveStatus.Text = $"Не удалось сохранить настройки: {error.Message}";
             }
+        }
+    }
+
+    private async Task LoadModelCatalogAsync(string mode)
+    {
+        if (_modelSelector is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (!_ipc.IsConnected)
+            {
+                await _ipc.ConnectAndHandshakeAsync(CancellationToken.None);
+                _ = await _ipc.ReadEventAsync(CancellationToken.None);
+            }
+            await _ipc.RequestModelCatalogAsync(mode, CancellationToken.None);
+            var response = await _ipc.ReadEventAsync(CancellationToken.None);
+            if (response.EventType != "model.catalog")
+            {
+                throw new InvalidOperationException("Core не вернул каталог моделей.");
+            }
+
+            using var json = JsonDocument.Parse(response.Payload);
+            var models = json.RootElement.TryGetProperty("models", out var modelsValue)
+                ? modelsValue.EnumerateArray().Select(item => item.GetString()).Where(item => !string.IsNullOrWhiteSpace(item)).Cast<string>().ToList()
+                : [];
+            _ = DispatcherQueue.TryEnqueue(() =>
+            {
+                _modelSelector.Items.Clear();
+                foreach (var model in models)
+                {
+                    _modelSelector.Items.Add(model);
+                }
+                if (_modelBox is not null && models.Contains(_modelBox.Text))
+                {
+                    _modelSelector.SelectedItem = _modelBox.Text;
+                }
+                if (models.Count == 0 && _settingsSaveStatus is not null)
+                {
+                    _settingsSaveStatus.Text = "Провайдер не вернул модели для выбранного режима.";
+                }
+            });
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException)
+        {
+            _ = DispatcherQueue.TryEnqueue(() =>
+            {
+                if (_settingsSaveStatus is not null)
+                {
+                    _settingsSaveStatus.Text = $"Не удалось получить список моделей: {error.Message}";
+                }
+            });
         }
     }
 

@@ -4,6 +4,7 @@ use serde::Serialize;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::{ApprovalCoordinator, CoreCommand, EventJournal, TaskCoordinator};
+use evohime_model_gateway::ModelGatewayConfig;
 use evohime_tool_runtime::ToolRegistry;
 use std::sync::Arc;
 
@@ -32,6 +33,7 @@ pub struct IpcBridge {
     approvals: Option<ApprovalCoordinator>,
     tools: Option<Arc<ToolRegistry>>,
     model_config: Option<ModelConfigSnapshot>,
+    gateway_config: Option<ModelGatewayConfig>,
 }
 
 impl IpcBridge {
@@ -42,6 +44,7 @@ impl IpcBridge {
             approvals: None,
             tools: None,
             model_config: None,
+            gateway_config: None,
         }
     }
 
@@ -52,6 +55,7 @@ impl IpcBridge {
             approvals: None,
             tools: None,
             model_config: None,
+            gateway_config: None,
         }
     }
 
@@ -61,6 +65,7 @@ impl IpcBridge {
         approvals: ApprovalCoordinator,
         tools: Arc<ToolRegistry>,
         model_config: Option<ModelConfigSnapshot>,
+        gateway_config: Option<ModelGatewayConfig>,
     ) -> Self {
         Self {
             journal,
@@ -68,6 +73,7 @@ impl IpcBridge {
             approvals: Some(approvals),
             tools: Some(tools),
             model_config,
+            gateway_config,
         }
     }
 
@@ -130,6 +136,53 @@ impl IpcBridge {
                     task_id: String::new(),
                     event_type: "model.config".into(),
                     payload,
+                    event: None,
+                };
+                transport::write_frame(writer, &event.encode_to_vec()).await?;
+            }
+            Some(generated::command_envelope::Command::ModelCatalog(request)) => {
+                let mode = if request.mode == "paid" { "paid" } else { "free" };
+                let result = self
+                    .gateway_config
+                    .as_ref()
+                    .and_then(|config| config.routes.get(&config.default_route))
+                    .map(|route| async move {
+                        evohime_model_gateway::fetch_available_models(route)
+                            .await
+                            .map(|models| {
+                                models
+                                    .into_iter()
+                                    .filter(|model| {
+                                        if mode == "free" {
+                                            model.ends_with(":free")
+                                        } else {
+                                            !model.ends_with(":free")
+                                        }
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                    });
+                let (models, error) = match result {
+                    Some(request) => request.await,
+                    None => Err(evohime_model_gateway::providers::ProviderError::Config(
+                        "provider is not configured".into(),
+                    )),
+                }
+                .map_or_else(
+                    |error| (Vec::new(), Some(error.to_string())),
+                    |models| (models, None),
+                );
+                let payload = serde_json::json!({
+                    "mode": mode,
+                    "models": models,
+                    "error": error,
+                });
+                let event = generated::EventEnvelope {
+                    protocol: Some(protocol()),
+                    sequence_id: 0,
+                    task_id: String::new(),
+                    event_type: "model.catalog".into(),
+                    payload: serde_json::to_vec(&payload).unwrap_or_default(),
                     event: None,
                 };
                 transport::write_frame(writer, &event.encode_to_vec()).await?;

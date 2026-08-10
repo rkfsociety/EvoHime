@@ -30,6 +30,7 @@ async fn main() {
             }
         })
     });
+    let gateway_config = model_config.clone();
     let executor = model_config
         .and_then(|config| evohime_model_gateway::ModelGateway::from_config(&config).ok())
         .map(|gateway| {
@@ -47,6 +48,7 @@ async fn main() {
         approvals,
         tools,
         model_snapshot,
+        gateway_config,
     );
     let logger = match evohime_core::StructuredLogger::open(data_dir.join("logs/core.jsonl")) {
         Ok(logger) => std::sync::Arc::new(logger),

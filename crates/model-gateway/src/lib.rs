@@ -14,7 +14,7 @@ pub use crate::tools::{
     ChatResult, ChatStreamItem, FunctionSpec, LlmUsage, NativeToolCall, ToolSpec,
 };
 use async_stream::stream;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 
 /// Entry point for chat completions.
@@ -45,6 +45,65 @@ pub struct ModelRouteResponse {
     pub billing_mode: String,
     /// Wave 3B: Provider supports extended thinking
     pub supports_thinking: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProviderModelsResponse {
+    data: Vec<ProviderModelEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProviderModelEntry {
+    id: String,
+}
+
+/// Fetches the provider's current model catalog without exposing the API key
+/// to the desktop UI. The provider API is OpenAI-compatible and returns
+/// `{ "data": [{ "id": "..." }] }`.
+pub async fn fetch_available_models(
+    route: &ModelRouteConfig,
+) -> Result<Vec<String>, ProviderError> {
+    if route.provider == ProviderKind::Mock {
+        return Ok(route
+            .literouter
+            .model
+            .is_empty()
+            .then(Vec::new)
+            .unwrap_or_else(|| vec![route.literouter.model.clone()]));
+    }
+    if route.literouter.api_key.is_empty() {
+        return Err(ProviderError::Config("provider API key is not configured".into()));
+    }
+
+    let url = format!(
+        "{}/models",
+        route.literouter.base_url.trim_end_matches('/')
+    );
+    let response = reqwest::Client::new()
+        .get(url)
+        .bearer_auth(&route.literouter.api_key)
+        .send()
+        .await
+        .map_err(|error| ProviderError::Http(error.to_string()))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(ProviderError::Api(format!("{status}: {body}")));
+    }
+
+    let payload = response
+        .json::<ProviderModelsResponse>()
+        .await
+        .map_err(|error| ProviderError::Api(error.to_string()))?;
+    let mut models: Vec<_> = payload
+        .data
+        .into_iter()
+        .map(|model| model.id)
+        .filter(|model| !model.trim().is_empty())
+        .collect();
+    models.sort_unstable();
+    models.dedup();
+    Ok(models)
 }
 
 impl ModelGateway {
