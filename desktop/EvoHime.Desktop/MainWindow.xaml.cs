@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -31,6 +32,12 @@ public partial class MainWindow : Window
     private Grid? _homeContent;
     private Grid? _settingsView;
     private TextBlock? _settingsWorkspaceText;
+    private readonly ProviderSettingsService _providerSettings = new();
+    private TextBox? _providerBox;
+    private TextBox? _baseUrlBox;
+    private TextBox? _modelBox;
+    private PasswordBox? _apiKeyBox;
+    private TextBlock? _settingsSaveStatus;
 
     public MainWindow()
     {
@@ -330,11 +337,27 @@ public partial class MainWindow : Window
         view.Children.Add(header);
 
         var sections = new StackPanel { Spacing = 14 };
-        var modelLabel = _modelButton?.Content?.ToString() ?? "Модель недоступна";
+        var providerSettings = _providerSettings.Load();
+        _providerBox = new TextBox { Header = "Провайдер", Text = providerSettings.Provider, IsReadOnly = true };
+        _baseUrlBox = new TextBox { Header = "Base URL", Text = providerSettings.BaseUrl };
+        _modelBox = new TextBox { Header = "Модель", PlaceholderText = "например, deepseek:free", Text = providerSettings.Model };
+        _apiKeyBox = new PasswordBox { Header = "API-ключ", PlaceholderText = "Введите ключ провайдера" };
+        _apiKeyBox.Password = providerSettings.ApiKey;
+        var saveProvider = new Button { Content = "Сохранить настройки провайдера", Margin = new Thickness(0, 8, 0, 0) };
+        saveProvider.Click += SaveProviderSettings_Click;
+        _settingsSaveStatus = new TextBlock { FontSize = 12, Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157), TextWrapping = TextWrapping.Wrap };
+        var providerForm = new StackPanel { Spacing = 10 };
+        providerForm.Children.Add(_providerBox);
+        providerForm.Children.Add(_baseUrlBox);
+        providerForm.Children.Add(_modelBox);
+        providerForm.Children.Add(_apiKeyBox);
+        providerForm.Children.Add(new TextBlock { Text = "Ключ хранится в профиле Windows через DPAPI и не записывается в репозиторий.", FontSize = 11, Foreground = muted, TextWrapping = TextWrapping.Wrap });
+        providerForm.Children.Add(saveProvider);
+        providerForm.Children.Add(_settingsSaveStatus);
         sections.Children.Add(CreateSettingsSection(
             "Модель и провайдер",
-            "Активная конфигурация приходит от Core через IPC.",
-            new TextBlock { Text = modelLabel, FontSize = 16, Foreground = ThemeBrush("TealBrush", 255, 59, 95) },
+            "Параметры LiteRouter или другого OpenAI-compatible провайдера.",
+            providerForm,
             raised));
 
         _settingsWorkspaceText = new TextBlock
@@ -448,6 +471,35 @@ public partial class MainWindow : Window
         if (_settingsWorkspaceText is not null)
         {
             _settingsWorkspaceText.Text = folder.Path;
+        }
+    }
+
+    private void SaveProviderSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if (_providerBox is null || _baseUrlBox is null || _modelBox is null || _apiKeyBox is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _providerSettings.Save(new ProviderSettings(
+                _providerBox.Text.Trim(),
+                _baseUrlBox.Text.Trim(),
+                _modelBox.Text.Trim(),
+                _apiKeyBox.Password));
+            if (_settingsSaveStatus is not null)
+            {
+                _settingsSaveStatus.Text = "Сохранено. Перезапустите Еву, чтобы Core применил новую конфигурацию.";
+                _settingsSaveStatus.Foreground = ThemeBrush("TealBrush", 255, 59, 95);
+            }
+        }
+        catch (Exception error) when (error is IOException or CryptographicException)
+        {
+            if (_settingsSaveStatus is not null)
+            {
+                _settingsSaveStatus.Text = $"Не удалось сохранить настройки: {error.Message}";
+            }
         }
     }
 

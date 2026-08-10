@@ -27,6 +27,7 @@ public sealed class SupervisorProcessService : IDisposable
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "EvoHime");
         Directory.CreateDirectory(dataDirectory);
+        var providerSettings = new ProviderSettingsService().Load();
         _process = Process.Start(new ProcessStartInfo
         {
             FileName = supervisorPath,
@@ -37,6 +38,10 @@ public sealed class SupervisorProcessService : IDisposable
             {
                 ["EVOHIME_CORE_EXE"] = corePath,
                 ["EVOHIME_DATA_DIR"] = dataDirectory,
+                ["MODEL_PROVIDER"] = providerSettings.Provider,
+                ["LITEROUTER_BASE_URL"] = providerSettings.BaseUrl,
+                ["LITEROUTER_MODEL"] = providerSettings.Model,
+                ["LITEROUTER_API_KEY"] = providerSettings.ApiKey,
             },
         });
         return _process is not null;
