@@ -176,6 +176,16 @@ public partial class MainWindow : Window
         {
             PromptBox.Resources[resourceKey] = transparent;
         }
+        foreach (var resourceKey in new[]
+        {
+            "TextControlForeground",
+            "TextControlForegroundFocused",
+            "TextControlForegroundPointerOver",
+            "TextControlForegroundDisabled",
+        })
+        {
+            PromptBox.Resources[resourceKey] = text;
+        }
         PromptBox.Resources["TextControlPlaceholderForeground"] = muted;
         StartButton = new Button
         {
