@@ -3,9 +3,13 @@ using System.Security.Cryptography;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Input;
 using EvoHime.Desktop.Services;
 using Windows.Storage.Pickers;
 using Windows.Storage;
+using Windows.System;
+using Windows.UI.Core;
+using Microsoft.UI.Input;
 using WinRT.Interop;
 using System.Text.Json;
 
@@ -211,6 +215,7 @@ public partial class MainWindow : Window
             PromptBox.Resources[resourceKey] = text;
         }
         PromptBox.Resources["TextControlPlaceholderForeground"] = muted;
+        PromptBox.KeyDown += PromptBox_KeyDown;
         StartButton = new Button
         {
             Content = "↑",
@@ -341,7 +346,7 @@ public partial class MainWindow : Window
         var providerSettings = _providerSettings.Load();
         if (!string.IsNullOrWhiteSpace(providerSettings.Model))
         {
-            _modelButton.Content = $"{providerSettings.Provider}: {providerSettings.Model}  Среднее⌄";
+            _modelButton.Content = $"{providerSettings.Provider}: {providerSettings.Model} ⌄";
         }
         Content = root;
     }
@@ -597,6 +602,23 @@ public partial class MainWindow : Window
             _modelSelector.Focus(FocusState.Programmatic);
             _modelSelector.IsDropDownOpen = true;
         }
+    }
+
+    private void PromptBox_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key != VirtualKey.Enter)
+        {
+            return;
+        }
+
+        var shiftState = InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Shift);
+        if ((shiftState & CoreVirtualKeyStates.Down) != 0)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        StartButton_Click(sender, e);
     }
 
     private async void AttachFiles_Click(object sender, RoutedEventArgs e)
@@ -1069,7 +1091,7 @@ public partial class MainWindow : Window
             var configured = root.TryGetProperty("configured", out var configuredValue)
                 && configuredValue.GetBoolean();
             var label = configured && !string.IsNullOrWhiteSpace(model)
-                ? $"{provider}: {model}  Среднее⌄"
+                ? $"{provider}: {model} ⌄"
                 : "Провайдер не настроен";
             _ = DispatcherQueue.TryEnqueue(() =>
             {
