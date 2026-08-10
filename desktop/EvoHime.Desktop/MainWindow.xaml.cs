@@ -272,7 +272,6 @@ public partial class MainWindow : Window
         composerActions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         composerActions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         composerActions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        composerActions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var attachButton = new Button
         {
             Content = "+",
@@ -304,16 +303,7 @@ public partial class MainWindow : Window
         _modelButton.Click += ModelButton_Click;
         Grid.SetColumn(_modelButton, 3);
         composerActions.Children.Add(_modelButton);
-        var microphoneButton = new Button
-        {
-            Content = "♩",
-            Foreground = text,
-            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-            Padding = new Thickness(7, 5, 7, 5),
-        };
-        Grid.SetColumn(microphoneButton, 4);
-        composerActions.Children.Add(microphoneButton);
-        Grid.SetColumn(StartButton, 5);
+        Grid.SetColumn(StartButton, 4);
         composerActions.Children.Add(StartButton);
         Grid.SetRow(composerActions, 1);
         composerGrid.Children.Add(composerActions);
