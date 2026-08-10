@@ -28,7 +28,7 @@ fn finds_and_terminates_only_processes_executing_inside_install_tree() {
     let system_cmd = std::path::PathBuf::from(system_root)
         .join("System32")
         .join("cmd.exe");
-    let installed_cmd = bin_dir.join("evohime-server.exe");
+    let installed_cmd = bin_dir.join("evohime-core.exe");
     std::fs::copy(&system_cmd, &installed_cmd).unwrap();
 
     let mut inside = ChildGuard(spawn_waiting_cmd(&installed_cmd));

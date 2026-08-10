@@ -1,9 +1,8 @@
-"""Small HTTP job worker used by EvoHime's heavier processing tasks.
+"""Small local job worker used by EvoHime's heavier processing tasks.
 
-The worker deliberately uses only the Python standard library so it can run in
-the local launcher and in a minimal container. Jobs are durable for the
-process lifetime only; PostgreSQL-backed persistence belongs to the Rust
-server, while this service owns execution and status reporting.
+The worker deliberately uses only the Python standard library. Jobs are
+durable for the process lifetime only; persistence belongs to the native Rust
+Core, while this service owns execution and status reporting.
 
 Schema validation: uses JSON Schema from workers/schemas/worker-tasks.schema.json
 as the single source of truth for all task payload validation.

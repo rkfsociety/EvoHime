@@ -35,7 +35,7 @@ Tasks 1–6 (native skeleton, IPC, SQLite, supervisor, Core integration and shel
 | Core | `crates/evohime-core/src/` | Agent task commands, event journal, tool/permission integration and readiness |
 | Local storage | `crates/evohime-local-storage/src/`, `crates/evohime-local-storage/migrations/` | SQLite connection, migrations, checkpoints, retention and diagnostics metadata |
 | Supervisor | `crates/evohime-supervisor/src/` | Mutex, core process lifecycle, Job Objects, logs, recovery and shutdown |
-| Packaging | `desktop/EvoHime.Package/`, `crates/installer/` | MSIX/package metadata, bundled binaries, upgrade backup and rollback |
+| Packaging | `installer/EvoHime.iss`, `scripts/build-windows-native.ps1`, `crates/evohime-updater/` | Native package metadata, bundled binaries, upgrade backup and rollback |
 | CI | `.github/workflows/windows-native.yml`, `.github/workflows/rust.yml` | Rust, C#, IPC compatibility, Windows smoke and package checks |
 
 ### Task 1: Toolchain and native solution skeleton
@@ -264,7 +264,7 @@ git commit -m "feat: add native developer workflow surfaces"
 - Create: `desktop/EvoHime.Desktop/Services/UpdateService.cs`
 - Create: `crates/evohime-supervisor/src/backup.rs`, `update.rs`
 - Create: `desktop/EvoHime.Tests/UpgradeRecoveryTests.cs`
-- Modify: `crates/installer/`, `.github/workflows/windows-native.yml`, `README.md`
+- Modify: `installer/EvoHime.iss`, `.github/workflows/rust.yml`, `README.md`
 
 - [ ] **Step 1: Write tests for backup-before-migration, interrupted upgrade rollback, package file completeness and diagnostics export.**
 - [ ] **Step 2: Run packaging tests and confirm they fail before package metadata and recovery code exist.**
@@ -275,7 +275,7 @@ git commit -m "feat: add native developer workflow surfaces"
 - [ ] **Step 7: Commit.**
 
 ```powershell
-git add desktop/EvoHime.Package desktop/EvoHime.Desktop/Services/UpdateService.cs crates/evohime-supervisor crates/installer .github/workflows/windows-native.yml README.md
+git add installer/EvoHime.iss desktop/EvoHime.Desktop/Services/UpdateService.cs crates/evohime-supervisor crates/evohime-updater .github/workflows/rust.yml README.md
 git commit -m "feat: package native Windows app with recovery"
 ```
 

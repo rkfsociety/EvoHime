@@ -29,6 +29,8 @@
 
 ## Текущий статус native-перехода
 
+Legacy web UI, browser launcher, HTTP server и PostgreSQL persistence удалены. Дальнейшая разработка выполняется только для WinUI 3 + Rust Core + SQLite + named-pipe IPC.
+
 | Блок | Статус | Последнее подтверждение |
 | --- | --- | --- |
 | Foundation: Core, SQLite, IPC, supervisor, diagnostics | ✅ Завершён | `e270efd`–`463e11b` |

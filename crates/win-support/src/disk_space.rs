@@ -1,6 +1,6 @@
 //! Проверка свободного места на диске через `GetDiskFreeSpaceExW` — нужна
-//! Installer'у перед распаковкой PostgreSQL/Python/релиза и Launcher'у перед
-//! каждым обновлением (раздел X плана: предупреждение при <1 ГБ свободно).
+//! Native installer'у перед распаковкой релиза и transaction worker'у перед
+//! обновлением (предупреждение при <1 ГБ свободно).
 
 #[cfg(windows)]
 use std::path::Path;
@@ -13,7 +13,7 @@ pub enum DiskSpaceError {
 
 /// Возвращает количество свободных байт, доступных текущему пользователю
 /// на диске, где расположен `path` (учитывает дисковые квоты — как и
-/// нужно, поскольку Installer/Launcher всегда работают от имени обычного
+/// нужно, поскольку native installer/transaction worker работают от имени обычного
 /// пользователя, без прав администратора).
 #[cfg(windows)]
 pub fn free_bytes_available(path: &Path) -> Result<u64, DiskSpaceError> {

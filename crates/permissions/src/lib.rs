@@ -129,7 +129,7 @@ pub struct PermissionEngine {
     path_grants: Arc<RwLock<Vec<StoredPathGrant>>>,
     approvals: Arc<RwLock<HashMap<Uuid, ApprovalRecord>>>,
     audit: Arc<RwLock<Vec<ApprovalAuditEntry>>>,
-    /// Optional durable sink (server writes PostgreSQL).
+    /// Optional durable sink for Core's local SQLite event journal.
     audit_tx: Arc<RwLock<Option<mpsc::UnboundedSender<ApprovalAuditEntry>>>>,
 }
 

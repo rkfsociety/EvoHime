@@ -42,3 +42,5 @@ Core и supervisor — внутренние компоненты установ�
 ## Граница продукта
 
 Пользовательский продукт ограничен `EvoHime-Setup.exe`, `EvoHime.exe`, локальным Core, supervisor и данными в профиле Windows. Исследовательские и экспериментальные каталоги не входят в установочный runtime.
+
+Legacy web UI, HTTP server, browser launcher, PostgreSQL migrations и React-компоненты удалены из репозитория. Native UI и versioned named-pipe IPC — единственный пользовательский интерфейс и transport boundary.

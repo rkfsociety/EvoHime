@@ -114,7 +114,7 @@ class JobServiceTests(unittest.TestCase):
     def test_entities_extracts_urls_emails_paths_tickets(self):
         result = extract_entities(
             "Ping roman@example.com about EVOHIME-42 at https://example.com/docs "
-            "and check ./crates/server/src/main.rs again https://example.com/docs"
+            "and check ./crates/evohime-core/src/main.rs again https://example.com/docs"
         )
         self.assertEqual(result["emails"], ["roman@example.com"])
         self.assertEqual(result["tickets"], ["EVOHIME-42"])
