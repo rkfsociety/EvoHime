@@ -1,6 +1,0 @@
-48538c4 protocol: add PlanCandidate, ScoreBreakdown, AgentPlan event (8.1)
- .../protocol/schema/evohime.protocol.schema.json   |  39 +++
- crates/protocol/src/lib.rs                         |  72 ++++++
- crates/protocol/src/planning.rs                    | 279 +++++++++++++++++++++
- frontend/web/src/protocol.generated.ts             |  21 ++
- 4 files changed, 411 insertions(+)
