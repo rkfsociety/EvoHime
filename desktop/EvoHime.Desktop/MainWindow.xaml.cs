@@ -27,6 +27,7 @@ public partial class MainWindow : Window
     private int _reconnectAttempt;
     private string? _pendingApprovalId;
     private Button? _modelButton;
+    private SettingsWindow? _settingsWindow;
 
     public MainWindow()
     {
@@ -88,6 +89,10 @@ public partial class MainWindow : Window
                 Background = item.Title == "Пульс" ? raised : new SolidColorBrush(Microsoft.UI.Colors.Transparent),
                 Foreground = text,
             };
+            if (item.Title == "Настройки")
+            {
+                button.Click += (_, _) => OpenSettingsWindow();
+            }
             navItems.Children.Add(button);
         }
         Grid.SetRow(navItems, 2);
@@ -504,6 +509,27 @@ public partial class MainWindow : Window
             ConnectionStatus.Text = $"Ошибка IPC: {error.Message}";
             await _ipc.DisposeAsync();
         }
+    }
+
+    private void OpenSettingsWindow()
+    {
+        if (_settingsWindow is not null)
+        {
+            _settingsWindow.Activate();
+            return;
+        }
+
+        _settingsWindow = new SettingsWindow(
+            _state.WorkspacePath ?? "Workspace не выбран",
+            _modelButton?.Content?.ToString() ?? "Модель недоступна");
+        _settingsWindow.WorkspaceChanged += path =>
+        {
+            _state.SelectWorkspace(path);
+            WorkspacePathText.Text = $"Workspace: {path}";
+            ConnectionStatus.Text = "●  Workspace обновлён";
+        };
+        _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+        _settingsWindow.Activate();
     }
 
     private async Task LoadModelConfigAsync()
