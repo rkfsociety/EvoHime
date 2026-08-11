@@ -341,6 +341,12 @@ impl IpcBridge {
                     .await?;
                 self.write_response(writer, "build.applied", result).await?;
             }
+            Some(generated::command_envelope::Command::PrepareBuild(request)) => {
+                let result = self
+                    .dispatch_prepare_build(request.project_id, request.proposal_json)
+                    .await?;
+                self.write_response(writer, "build.prepared", result).await?;
+            }
             Some(generated::command_envelope::Command::StartTask(start)) => {
                 if let Some(coordinator) = &self.coordinator {
                     coordinator
@@ -676,6 +682,31 @@ impl IpcBridge {
             .dispatch(CoreCommand::ApplyApprovedBuild {
                 project_id,
                 approved_build_json,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_prepare_build(
+        &self,
+        project_id: String,
+        proposal_json: Vec<u8>,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::PrepareBuild {
+                project_id,
+                proposal_json,
                 reply,
             })
             .await

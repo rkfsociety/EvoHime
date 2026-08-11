@@ -124,6 +124,12 @@ public sealed class CoreIpcClient
     public Task RequestTaskPlanSpecAsync(string projectId, string taskId, uint maxChars, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.GetTaskPlanSpec(projectId, taskId, maxChars), cancellationToken);
 
+    public Task PrepareBuildAsync(string projectId, byte[] proposalJson, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.PrepareBuild(projectId, proposalJson), cancellationToken);
+
+    public Task ApplyApprovedBuildAsync(string projectId, byte[] approvedBuildJson, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.ApplyApprovedBuild(projectId, approvedBuildJson), cancellationToken);
+
     public async Task<ulong> ReadReplayAsync(
         ulong afterSequence,
         Func<CoreEventEnvelope, Task> onEvent,

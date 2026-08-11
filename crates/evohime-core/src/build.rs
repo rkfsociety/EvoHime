@@ -32,6 +32,12 @@ pub struct ApprovedBuild {
     pub changes: Vec<BuildChange>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BuildProposal {
+    pub scope: BuildScope,
+    pub changes: Vec<BuildChange>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum BuildError {
     #[error("workspace operation failed: {0}")]
@@ -46,6 +52,41 @@ pub enum BuildError {
     ContentConflict { path: String, expected: String, current: String },
     #[error("invalid workspace path {0}")]
     InvalidPath(String),
+}
+
+pub fn prepare_build(
+    root: impl AsRef<Path>,
+    proposal: &BuildProposal,
+) -> Result<ApprovedBuild, BuildError> {
+    let root = root.as_ref().canonicalize()?;
+    let manifest = build_manifest(&root, 500, 2 * 1024 * 1024)?;
+    let mut changes = proposal.changes.clone();
+    for change in &mut changes {
+        let path = safe_path(&root, &change.relative_path)?;
+        if change.expected_content_hash.is_none() && path.exists() {
+            change.expected_content_hash = Some(content_hash(&fs::read(path)?));
+        }
+    }
+    let proposed = changes
+        .iter()
+        .map(|change| ProposedChange {
+            relative_path: change.relative_path.clone(),
+            bytes_changed: change.content.as_deref().map(str::len).unwrap_or(0),
+            creates: change.content.is_some() && !root.join(&change.relative_path).exists(),
+            deletes: change.delete,
+        })
+        .collect::<Vec<_>>();
+    if let Some(violation) = validate_build_scope(&proposal.scope, &proposed).first() {
+        return Err(BuildError::ScopeViolation(format!("{}: {}", violation.path, violation.reason)));
+    }
+    let mut approved = ApprovedBuild {
+        intent_hash: String::new(),
+        expected_workspace_hash: manifest.workspace_hash,
+        scope: proposal.scope.clone(),
+        changes,
+    };
+    approved.intent_hash = calculate_intent_hash(&approved.scope, &approved.changes);
+    Ok(approved)
 }
 
 pub fn calculate_intent_hash(scope: &BuildScope, changes: &[BuildChange]) -> String {
@@ -159,7 +200,7 @@ fn safe_path(root: &Path, relative_path: &str) -> Result<PathBuf, BuildError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_approved_build, calculate_intent_hash, restore_snapshot, ApprovedBuild, BuildChange};
+    use super::{apply_approved_build, calculate_intent_hash, prepare_build, restore_snapshot, ApprovedBuild, BuildChange, BuildProposal};
     use crate::{scope::BuildScope, workspace::build_manifest};
     use std::{fs, path::PathBuf};
 
@@ -221,6 +262,27 @@ mod tests {
         assert!(apply_approved_build(&root, &build).is_err());
         build.intent_hash = calculate_intent_hash(&build.scope, &build.changes);
         assert!(apply_approved_build(&root, &build).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn prepare_build_does_not_write_and_binds_current_content_hash() {
+        let root = root("prepare");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src/lib.rs"), "old").unwrap();
+        let proposal = BuildProposal {
+            scope: scope(),
+            changes: vec![BuildChange {
+                relative_path: "src/lib.rs".into(),
+                content: Some("new".into()),
+                expected_content_hash: None,
+                delete: false,
+            }],
+        };
+        let approved = prepare_build(&root, &proposal).unwrap();
+        assert_eq!(fs::read_to_string(root.join("src/lib.rs")).unwrap(), "old");
+        assert_eq!(approved.changes[0].expected_content_hash, Some(crate::workspace::content_hash(b"old")));
         fs::remove_dir_all(root).unwrap();
     }
 }

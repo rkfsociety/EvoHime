@@ -1012,6 +1012,9 @@ public partial class MainWindow : Window
         var planSpec = new Button { Content = "Plan/Spec", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
         planSpec.Click += async (_, _) => await RequestTaskPlanSpecAsync(task);
         actions.Children.Add(planSpec);
+        var build = new Button { Content = "Build preview", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
+        build.Click += async (_, _) => await PrepareBuildDialogAsync(task);
+        actions.Children.Add(build);
         var subtask = new Button { Content = "Подзадача", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
         subtask.Click += async (_, _) => await CreateTaskDialogAsync(task.Id);
         actions.Children.Add(subtask);
@@ -1332,6 +1335,109 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task PrepareBuildDialogAsync(TaskDto task)
+    {
+        var project = ActiveProject();
+        if (project is null || _taskWorkspaceStatus is null)
+        {
+            return;
+        }
+
+        var relativePath = new TextBox { Header = "Разрешённый относительный путь", Text = "src/README.md" };
+        var newContent = new TextBox { Header = "Новое содержимое", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 150 };
+        var proposalDialog = new ContentDialog
+        {
+            Title = $"Build preview: {task.Title}",
+            Content = new StackPanel { Spacing = 10, Children = { relativePath, newContent } },
+            PrimaryButtonText = "Подготовить diff",
+            CloseButtonText = "Отмена",
+            XamlRoot = ((FrameworkElement)Content).XamlRoot,
+        };
+        if (await proposalDialog.ShowAsync() != ContentDialogResult.Primary || string.IsNullOrWhiteSpace(relativePath.Text))
+        {
+            return;
+        }
+
+        var normalizedPath = relativePath.Text.Trim().Replace('\\', '/');
+        var directory = Path.GetDirectoryName(normalizedPath)?.Replace('\\', '/') ?? string.Empty;
+        var extension = Path.GetExtension(normalizedPath).TrimStart('.');
+        var proposal = new BuildProposalDto(
+            new BuildScopeDto(
+                string.IsNullOrWhiteSpace(directory) ? [] : [directory],
+                [],
+                [string.IsNullOrWhiteSpace(extension) ? "txt" : extension],
+                1,
+                Math.Max(1, newContent.Text.Length),
+                false,
+                false),
+            [new BuildChangeDto(normalizedPath, newContent.Text, null, false)]);
+        var proposalJson = JsonSerializer.SerializeToUtf8Bytes(proposal);
+
+        try
+        {
+            byte[] approvedJson;
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                await EnsureCoreProjectAsync(project);
+                await _ipc.PrepareBuildAsync(project.Id, proposalJson, CancellationToken.None);
+                var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                if (response.EventType != "build.prepared")
+                {
+                    throw new InvalidOperationException("Core не подготовил Build proposal.");
+                }
+                approvedJson = response.Payload;
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+
+            using var approved = JsonDocument.Parse(approvedJson);
+            var intentHash = approved.RootElement.GetProperty("intent_hash").GetString();
+            var baseline = approved.RootElement.GetProperty("expected_workspace_hash").GetString();
+            var changes = approved.RootElement.GetProperty("changes");
+            var change = changes.GetArrayLength() == 0 ? "нет изменений" : changes[0].GetProperty("relative_path").GetString();
+            var approvalDialog = new ContentDialog
+            {
+                Title = "Подтвердить bounded Build",
+                Content = new TextBlock
+                {
+                    Text = $"Файл: {change}\nBaseline: {baseline}\nIntent hash: {intentHash}\n\nИзменение ограничено одним текстовым файлом. Запись ещё не выполнялась.",
+                    TextWrapping = TextWrapping.Wrap,
+                },
+                PrimaryButtonText = "Одобрить и применить",
+                CloseButtonText = "Отмена",
+                XamlRoot = ((FrameworkElement)Content).XamlRoot,
+            };
+            if (await approvalDialog.ShowAsync() != ContentDialogResult.Primary)
+            {
+                _taskWorkspaceStatus.Text = "Build отменён до записи файлов.";
+                return;
+            }
+
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                await _ipc.ApplyApprovedBuildAsync(project.Id, approvedJson, CancellationToken.None);
+                var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                if (response.EventType != "build.applied")
+                {
+                    throw new InvalidOperationException("Core не подтвердил Build.");
+                }
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+            _taskWorkspaceStatus.Text = $"Build применён с approval intent {intentHash}. Snapshot сохранён в ответе Core.";
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+        {
+            _taskWorkspaceStatus.Text = $"Build не применён: {error.Message}";
+        }
+    }
+
     private async Task RequestNextReadyTaskAsync()
     {
         var project = ActiveProject();
@@ -1555,6 +1661,25 @@ public partial class MainWindow : Window
         [property: JsonPropertyName("edges")] List<TaskEdgeDto> Edges);
 
     private sealed record TaskChoice(string Id, string Label);
+
+    private sealed record BuildProposalDto(
+        [property: JsonPropertyName("scope")] BuildScopeDto Scope,
+        [property: JsonPropertyName("changes")] BuildChangeDto[] Changes);
+
+    private sealed record BuildScopeDto(
+        [property: JsonPropertyName("allowed_paths")] string[] AllowedPaths,
+        [property: JsonPropertyName("protected_paths")] string[] ProtectedPaths,
+        [property: JsonPropertyName("allowed_file_types")] string[] AllowedFileTypes,
+        [property: JsonPropertyName("max_files_changed")] int MaxFilesChanged,
+        [property: JsonPropertyName("max_bytes_changed")] int MaxBytesChanged,
+        [property: JsonPropertyName("allow_create")] bool AllowCreate,
+        [property: JsonPropertyName("allow_delete")] bool AllowDelete);
+
+    private sealed record BuildChangeDto(
+        [property: JsonPropertyName("relative_path")] string RelativePath,
+        [property: JsonPropertyName("content")] string? Content,
+        [property: JsonPropertyName("expected_content_hash")] string? ExpectedContentHash,
+        [property: JsonPropertyName("delete")] bool Delete);
 
     private sealed record TaskDto(
         [property: JsonPropertyName("id")] string Id,

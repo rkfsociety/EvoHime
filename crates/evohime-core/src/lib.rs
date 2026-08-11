@@ -565,6 +565,11 @@ pub enum CoreCommand {
         approved_build_json: Vec<u8>,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    PrepareBuild {
+        project_id: String,
+        proposal_json: Vec<u8>,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1813,6 +1818,28 @@ impl TaskCoordinator {
                     let snapshot = crate::build::apply_approved_build(&project.workspace_path, &approved)
                         .map_err(|error| error.to_string())?;
                     serde_json::to_vec(&snapshot).map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::PrepareBuild {
+                project_id,
+                proposal_json,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let project = journal
+                        .get_project(&project_id)
+                        .await
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "project not found".to_string())?;
+                    let proposal = serde_json::from_slice::<crate::build::BuildProposal>(&proposal_json)
+                        .map_err(|error| format!("invalid build proposal: {error}"))?;
+                    let approved = crate::build::prepare_build(&project.workspace_path, &proposal)
+                        .map_err(|error| error.to_string())?;
+                    serde_json::to_vec(&approved).map_err(|error| error.to_string())
                 }
                 .await;
                 let _ = reply.send(result);

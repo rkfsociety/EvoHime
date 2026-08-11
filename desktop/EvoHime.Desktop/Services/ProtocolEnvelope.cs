@@ -210,6 +210,20 @@ public static class ProtocolEnvelope
         output.WriteUInt32(maxChars);
     });
 
+    public static byte[] PrepareBuild(string projectId, byte[] proposalJson) => TaskCommand(29, output =>
+    {
+        WriteString(output, 1, projectId);
+        output.WriteTag(2, WireFormat.WireType.LengthDelimited);
+        output.WriteBytes(ByteString.CopyFrom(proposalJson));
+    });
+
+    public static byte[] ApplyApprovedBuild(string projectId, byte[] approvedBuildJson) => TaskCommand(28, output =>
+    {
+        WriteString(output, 1, projectId);
+        output.WriteTag(2, WireFormat.WireType.LengthDelimited);
+        output.WriteBytes(ByteString.CopyFrom(approvedBuildJson));
+    });
+
     public static CoreEventEnvelope ReadEvent(ReadOnlySpan<byte> payload)
     {
         using var input = new CodedInputStream(payload.ToArray());
