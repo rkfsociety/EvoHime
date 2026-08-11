@@ -18,7 +18,12 @@
 6. На approval, failure, scope drift или превышении бюджета выполнение останавливается.
 7. После перезапуска Core состояние восстанавливается через SQLite и IPC replay.
 
-MVP первой поставки — этапы 0a, 0b, 1 и минимальная часть 2: локальный task workspace, редактируемый граф, ручной Plan/Build с утверждённым scope, базовый context assembler и truthful native UI. Этапы 3–9 относятся к последующим релизам; research, memory, child roles, schedules и внешние каналы не блокируют получение обратной связи по MVP.
+Границы поставки разделены явно:
+
+- **MVP-1 / Feedback build** — этапы 0a + 1: пустой локальный task workspace, ручное редактирование task graph и truthful native UI. Автоматический runner и полноценный recovery не блокируют первый feedback.
+- **MVP-2 / Agentic build** — минимальный этап 0b + read-only Plan и ограниченный Build из этапа 2. Unknown effects блокируются или требуют approval; расширенный replay/effects recovery остаётся этапом 0c.
+
+Этапы 3–9 относятся к последующим релизам; research, полная memory, child roles, schedules и внешние каналы не блокируют MVP-1.
 
 ## 2. Границы, которые не меняются
 
@@ -48,53 +53,63 @@ MVP первой поставки — этапы 0a, 0b, 1 и минимальн
 
 ### 4.1. Задачи и граф
 
-В SQLite добавить транзакционные сущности `projects`, `work_items`, `work_item_edges`, `work_item_events`, `work_item_tags`, `work_item_research`, `run_checkpoints` и `evidence`.
+В SQLite добавить транзакционные сущности `projects`, `work_items`, `work_item_edges`, `work_item_events`, `work_item_tags`, `work_item_research`, `runs`, `run_checkpoints`, `evidence` и bounded command deduplication.
 
 `work_item` хранит parent, title, description, immutable source/PRD reference, priority, estimate, complexity, acceptance criteria, explicit non-goals, tag/workstream, status, `version`, attempt count и последний error. Статусы: `backlog`, `ready`, `in_progress`, `blocked`, `waiting_approval`, `done`, `cancelled`, `failed`.
 
-Граф должен атомарно проверять отсутствующие ссылки, запрещать циклы и сериализовать изменения через Core command queue. Параллельные обновления используют optimistic locking по `version`; конфликт возвращается UI как diagnosable conflict, а не разрешается скрытым last-write-wins.
+`work_items.parent_id` означает только decomposition hierarchy. Dependency graph использует `work_item_edges.from_work_item_id`, `to_work_item_id`, `kind`; направление `from → to` означает «from зависит от to». Граф атомарно проверяет отсутствующие ссылки и циклы, а изменения сериализуются через Core command queue. Read-only запросы могут выполняться параллельно с write queue, но получают согласованный snapshot.
 
-`next_ready` детерминирован: сначала все зависимости должны быть `done`, затем применяются `priority DESC`, `created_at ASC`, `work_item_id ASC`; сохраняется `selection_reason`. Эти правила общие для UI, runner и replay.
+Параллельные изменения используют optimistic locking по `version`. Конфликт возвращает UI `expected_version`, `current_version`, last event и diff; UI предлагает `reload and retry` или ручной merge. Force overwrite не является default и требует отдельного подтверждения/audit.
+
+`next_ready` детерминирован: готовой считается только задача, у которой все dependency edges указывают на `done`; `backlog`, `ready`, `in_progress`, `blocked`, `waiting_approval`, `failed` и `cancelled` зависимости блокируют выбор. Затем применяются `priority DESC`, `created_at ASC`, `work_item_id ASC`; сохраняется `selection_reason`. Эти правила общие для UI, runner и replay.
 
 Минимальный storage-контракт:
 
 ```sql
 work_items(id, project_id, parent_id, title, description, source_ref,
-           acceptance_criteria, non_goals, status, priority, version, created_at)
-work_item_edges(parent_id, child_id, kind, PRIMARY KEY(parent_id, child_id))
+           acceptance_criteria, non_goals, status, priority, estimate,
+           complexity, attempt_count, version, created_at)
+work_item_edges(from_work_item_id, to_work_item_id, kind,
+                PRIMARY KEY(from_work_item_id, to_work_item_id, kind))
 run_checkpoints(run_id, checkpoint_id, stage, node_id, attempt, input_hash,
                  state_json, pending_effects_json, committed_at)
 ```
+
+Все persistent domain IDs — UUIDv7, генерируются только Core и immutable. Import не принимает внешний ID как authoritative; внешние идентификаторы хранятся в `source_ref`. Export сохраняет IDs, а collision при import разрешается новым Core ID с mapping.
 
 Все переходы статуса сохраняют append-only events и являются идемпотентными.
 
 ### 4.2. Запуск и workflow
 
-Каждый run имеет immutable `policy_snapshot_id`, `role_snapshot`, `skill_snapshot`, `model_route_snapshot`, `task_id`, `run_id`, checkpoint, budget, tool calls, diff, evidence, approval state и stop reason. Состояния разделены:
+Каждый run имеет immutable canonical snapshots (`policy_snapshot`, `role_snapshot`, `skill_snapshot`, `model_route_snapshot`), `task_id`, `run_id`, checkpoint, budget, tool calls, diff, evidence, approval state и stop reason. Каждый snapshot содержит canonical serialized effective representation, `schema_version` и hash; одного ID текущей конфигурации недостаточно для forensic replay. Состояния разделены:
 
 ```text
 RunStatus: queued | running | paused | waiting_approval | completed | failed | cancelled
-LifecycleStage: define | plan | build | verify | review | ship
+LifecycleStage: define/spec | plan | build | verify | review | ship
 StopReason: failure | scope_drift | unexpected_diff | approval_required |
              budget_exhausted | timeout | cancellation | ambiguous_acceptance |
              dependency_blocked | recovery_unknown_effect
 ApprovalState: none | pending | approved | rejected | expired
 ```
 
-`RunEffect` отделяет внешние side effects от SQLite-транзакций:
+`RunEffect` отделяет внешние side effects от SQLite-транзакций. В MVP используется минимальная модель:
 
 ```text
 run_effect { effect_id, run_id, node_id, kind, idempotency_key,
              immutable_intent_hash, state, started_at, completed_at,
-             result_hash, reconciliation_state }
-state: prepared → executing → succeeded | failed | unknown
+             result_hash }
+state: prepared → executing → completed(success | failure)
 ```
 
-Checkpoint durable только после commit SQLite transaction. После crash Core сначала reconciles `unknown` effects и только затем возобновляет run; retry по умолчанию запрещён. Runner владеет lease (`lease_id`, `lease_expires_at`, `heartbeat_at`, `generation`) и проходит атомарные состояния `READY → CLAIMED → RUNNING`.
+После crash outcome started effect может стать `unknown`; в MVP-2 он сразу переводит run в `BLOCKED` или `WAITING_APPROVAL`, без blind retry. Полный type-specific reconciliation, verifier и `reconciliation_state` относятся к 0c. Checkpoint durable только после commit SQLite transaction.
+
+Recovery и resume разделены: `RECOVERING → RECONCILING → RESUMABLE | BLOCKED | WAITING_APPROVAL | FAILED`; только `RESUMABLE → RUNNING`. Runner lease (`lease_id`, `lease_expires_at`, `heartbeat_at`, `generation`) и extended replay относятся к 0c.
 
 Workflow graph поддерживает typed inputs/outputs, условия, retries, timeout, cancellation, human approval, subgraph и bounded loop. Автоматический loop выполняет только одну ограниченную итерацию за раз и останавливается при failure, scope change, неожиданном diff, неоднозначном acceptance criteria или budget limit.
 
-Для первой реализации workflow graph статический: он фиксируется до выполнения run; динамические изменения откладываются после MVP. `run_policy` задаёт численные `max_iterations`, wall-clock timeout, token budget, tool-call budget и bounded output.
+Task graph и workflow graph — разные сущности. Task graph выбирает work item; workflow graph описывает typed execution nodes для одного run/work item. Node может ссылаться на `work_item_id`, но не владеет decomposition edges; work item может иметь один versioned workflow definition. Для MVP workflow graph не нужен: он статический и вводится в этапе 3, а изменение зафиксированного graph требует cancel/pause, новой graph version и нового run.
+
+`run_policy` задаёт численные `max_iterations`, wall-clock timeout, token budget, tool-call budget и bounded output. В MVP-2 лимиты щадящие и явно отображаются; строгие budgets включаются после проверки корректности.
 
 `ApprovalRequest` разрешает immutable intent, а не абстрактное действие:
 
@@ -104,7 +119,9 @@ approval { approval_id, run_id, effect_id, requested_action, risk_class,
            decision, decided_at, decided_by }
 ```
 
-`Evidence` является структурированной сущностью: `evidence_id`, `run_id`, `work_item_id`, `kind`, `source`, `command`, `exit_code`, `artifact_hash`, `summary`, `captured_at`. Допустимые виды: `test_result`, `diff`, `build`, `lint`, `screenshot`, `citation`, `manual_review`.
+`Evidence` является структурированной сущностью: `evidence_id`, `run_id`, `work_item_id`, `kind`, `source`, `producer`, `command`, `exit_code`, `artifact_hash`, `input_hash`, `baseline_hash`, `verification_status`, `verifier`, `summary`, `captured_at`. Evidence бывает `claimed` или `verified`; сообщение модели «tests passed» не считается verified без фактического command/exit code. Допустимые виды: `test_result`, `diff`, `build`, `lint`, `screenshot`, `citation`, `manual_review`.
+
+IPC mutating commands используют durable bounded deduplication: `(request_id, client/session identity) → command_hash → committed_result`. Повтор того же запроса возвращает тот же результат; тот же `request_id` с другим payload — protocol error. MVP IPC surface: `CreateTask`, `UpdateTask`, `AddEdge`, `RemoveEdge`, `GetGraph`, `StartRun`, `StopRun`, `ResumeRun` и соответствующие events/acks.
 
 ### 4.3. Роли и skills
 
@@ -128,13 +145,13 @@ Run сохраняет `RoleRef`, `SkillRef`, их version/hash и effective per
 
 ### 4.4. Память и research
 
-Память разделяется на profile/preferences, project facts, decisions, task history и ephemeral run context с TTL. Уже в этапе 0a хранится общий append-only provenance для tool call, diff, approval, research и decision; этап 6 добавляет extraction, retrieval и memory UX. Текущие факты — производное представление с version и confidence (`0..1` плюс reason/source event). В v1 lexical search обязателен, vector search опционален и отключаем на слабом/offline-профиле.
+Память разделяется на profile/preferences, project facts, decisions, task history и ephemeral run context с TTL. Уже в этапе 0a хранится общий append-only provenance для tool call, diff, approval, research и decision; этап 6 добавляет extraction, retrieval и memory UX. Memory v1 ограничивается derived facts без confidence, lexical search и ссылками на primary event; entity/temporal signals, vector search, compression и сложный ranking относятся к memory v2.
 
 Research сохраняет source kind, URL/path, title, fetched-at, hash, redacted excerpt ограниченного размера, citations, freshness/TTL и связь с work item. Раздельно учитываются web, локальные документы и workspace. Research не имеет отдельного privileged network path: fetch/search проходят через общий capability/policy/effect layer с allowlist, audit, cancellation и budget. Непроверенный текст не становится trusted prompt-контекстом без разрешения policy; conflict между memory и research решается по source priority и freshness, результат фиксируется в provenance.
 
 ### 4.5. Capability и provider
 
-Capability registry описывает tools, skills, MCP, модели, каналы, triggers и external agents через manifest с checksum/source/version, permissions, allowed domains и input/output schema. Policy snapshot хранит `policy_version`, `effective_permissions_hash` и выбранные ограничения. Provider profiles: `local-first`, `balanced`, `cloud-research`, `offline`; run также сохраняет `requested_route`, `resolved_provider`, `resolved_model`, `route_policy_version` и `fallback_chain`. Для каждого запроса учитываются capability, context size, privacy class, latency/price budget и доступность.
+Capability registry описывает tools, skills, MCP, модели, каналы, triggers и external agents через manifest с checksum/source/version, permissions, allowed domains и input/output schema. Policy snapshot хранит canonical effective policy, `policy_version`, `schema_version`, `effective_permissions_hash` и выбранные ограничения. Provider profiles: `local-first`, `balanced`, `cloud-research`, `offline`; run также сохраняет `requested_route`, `resolved_provider`, `resolved_model`, `route_policy_version` и `fallback_chain`. Для каждого запроса учитываются capability, context size, privacy class, latency/price budget и доступность.
 
 ## 5. Единый порядок поставки
 
@@ -142,10 +159,10 @@ Capability registry описывает tools, skills, MCP, модели, кан�
 
 Зависимости: существующие IPC/SQLite foundations.
 
-- Создать транзакционные миграции для projects, task graph, basic CRUD/events, run, checkpoint и lightweight provenance.
+- Создать транзакционные миграции для projects, task graph, basic CRUD/events, lightweight run record и provenance; статусы 0a ограничить `backlog`, `ready`, `in_progress`, `done`.
 - Ввести минимальные `RoleRef`, `SkillRef`, `PolicySnapshot`, `ModelRouteSnapshot` и immutable source references.
 - Зафиксировать SQLite WAL, transaction boundaries, optimistic version и единый Core command queue.
-- Определить protobuf envelope с `request_id`, `core_instance_id`, `session_epoch`, `event_sequence`, `capabilities` и bounded frame.
+- Определить protobuf envelope с `request_id`, client/session identity, `core_instance_id`, `session_epoch`, `event_sequence`, `capabilities` и bounded frame; oversized payload отклоняется с диагностикой, chunking откладывается.
 - Добавить backup перед миграцией, rollback и unknown-field fixtures: reader tolerates unknown fields, новые enum values имеют `UNKNOWN`, breaking semantics получают новую message/command version.
 - Для миграций сохранить forward-compatible правило: новые nullable/defaulted поля не ломают старый Core, destructive schema changes идут отдельной миграцией с compatibility window и backup.
 
@@ -156,23 +173,32 @@ message TaskCrudRequest { string request_id = 1; string project_id = 2; string e
 message CheckpointResume { string run_id = 1; string checkpoint_id = 2; string policy_snapshot_id = 3; }
 ```
 
-Выход: после обычного restart сохраняются task graph, events, immutable snapshots и базовый run record. Это минимальный фундамент MVP, не весь recovery platform.
+Выход: после обычного restart сохраняются task graph, events, immutable snapshots и базовый run record. Это минимальный фундамент MVP-1, не recovery platform.
 
-Проверки: Rust migration/transaction tests, WAL recovery, optimistic conflict, unknown fields, basic IPC reconnect, malformed requests, `cargo fmt --all -- --check`.
+Проверки: Rust migration/transaction tests, rollback при сбое миграции, WAL recovery, optimistic conflict, command deduplication, unknown fields, basic IPC reconnect, malformed requests, `cargo fmt --all -- --check`.
 
-### Этап 0b — replay, effects и supervisor recovery (P0)
+Exit criteria 0a: повторный запуск миграций идемпотентен; rollback возвращает backup при искусственном сбое; CRUD и reconnect проходят на чистой и существующей БД; повторный `request_id` возвращает прежний результат, другой payload даёт protocol error.
 
-- Добавить durable checkpoints, `RunEffect`, idempotency keys, replay/resync, lease/ownership, cancellation token, timeout и bounded output.
-- Зафиксировать checkpoint/reconciliation protocol: `prepared → executing → unknown`, recovery конфликтов и запрет blind retry.
-- Реализовать supervisor health-ping, heartbeat, generation, Job Object cleanup и recovery без дублей.
-- Определить event ordering: duplicate event игнорируется, gap вызывает replay/resync, stale aggregate update игнорируется, потеря replay window приводит к full snapshot.
-- Реализовать typed envelope, negotiated `protocol_version + capabilities` и привязку replay buffer к `core_instance_id/session_epoch`.
+### Этап 0b — минимальный durable recovery (P0, MVP-2)
 
-Выход: после kill/restart Core восстанавливает graph, status и последний durable checkpoint, а незавершённые внешние effects переходят в reconciliation/approval без двойного запуска.
+- Добавить durable checkpoints, минимальный `RunEffect`, idempotency keys, cancellation token, timeout и bounded output.
+- После kill/restart восстанавливать graph, status и последний durable checkpoint; started effect с неизвестным outcome сразу переводить в `BLOCKED` или `WAITING_APPROVAL`, без blind retry.
+- Реализовать базовый supervisor health-ping и Job Object cleanup для MVP-2; сложные generation/lease и full replay остаются 0c.
 
-Проверки: Rust tests migrations, cycles, races двух runners, lease expiry, replay/gap/resync, effect reconciliation, cancellation, rollback; C# compatibility tests; supervisor crash harness.
+Выход: после kill/restart Core восстанавливает graph, status и последний durable checkpoint; unknown effects не запускаются повторно и видимы пользователю как blocked/approval.
 
-Exit criteria этапов: 0a — повторный запуск миграций идемпотентен, базовый task CRUD и reconnect проходят на чистой и существующей БД; 0b — kill в каждой точке effect protocol не создаёт второй effect, lease конфликт блокируется, replay gap приводит к resync/full snapshot.
+Проверки: kill-9 в каждой точке checkpoint/effect protocol, unknown → blocked/approval, cancellation, rollback, supervisor cleanup и C# compatibility smoke.
+
+Exit criteria 0b: kill-9 не создаёт второй effect; checkpoint восстанавливается ≤ 5 s на reference workstation; unknown effect не возобновляется автоматически; UI показывает `RECOVERING`, затем `BLOCKED`/`WAITING_APPROVAL`.
+
+### Этап 0c — расширенный replay, protocol и effect recovery (P0/P1)
+
+- Добавить negotiated `protocol_version + capabilities`, backward compatibility matrix и bounded durable command/event replay.
+- Реализовать `RECOVERING → RECONCILING → RESUMABLE | BLOCKED | WAITING_APPROVAL | FAILED`, leases/generation, partial-gap replay/resync/full snapshot и type-specific effect verifiers.
+- Логировать reconciliation в audit: effect id, globally unique idempotency key, verifier, evidence и решение.
+- Провести отдельный protocol design review и kill-9 model tests до production implementation.
+
+Exit criteria 0c: partial gap корректно восстанавливается или приводит к full snapshot; старый клиент проходит compatibility fixtures; ни один verifier не делает blind retry.
 
 ### Этап 1 — Plan/Task Core и task workspace (P0)
 
@@ -184,18 +210,19 @@ Exit criteria этапов: 0a — повторный запуск миграц�
 
 Проверки: parser diagnostics, malformed PRD, duplicate import, cycle/missing dependency, concurrent update, deterministic `next_ready`, UI IPC smoke и truthful blocked/ready states.
 
-Milestone после этапа 1: пользователь уже видит и вручную редактирует task graph, может менять зависимости, выбирать `next_ready` задачу и запускать ручное действие без lifecycle automation. На этом milestone собирается первая обратная связь по MVP.
+MVP-1 milestone после этапа 1: пользователь видит пустой task workspace, вручную создаёт/импортирует задачи, редактирует decomposition/dependencies, выбирает `next_ready` и запускает ручное действие без автоматического runner. Feedback собирается через UI useful/not useful, локальные logs и короткий task-flow опрос; успех — graph edit/reconnect без необъяснимых blocked states.
 
 ### Этап 2 — Plan/Build lifecycle, context и snapshots (P0)
 
-- Разделить `/spec`, `/plan`, `/build`, `/test`, `/review`, `/ship`; Plan read-only, Build — только утверждённый scope.
-- Добавить context assembler: task, acceptance criteria, non-goals, выбранные references, memory, research и budget; workspace не попадает целиком скрыто. Порядок элементов стабилен, redaction policy явна, конфликт memory/research записывается.
-- Реализовать сессии, compaction, workspace snapshot/diff, preview изменений, rollback и восстановление после ошибки. Snapshot не включает SQLite и не обещает rollback внешних effects.
-- Ввести lifecycle mutation matrix и machine-readable scope: `allowed_paths`, `allowed_operations`, `expected_outputs`, `protected_paths`, `max_files_changed`, `acceptance_criteria`.
-- Approval: read-only без approval; writes в заранее одобренном bounded scope пакетируются; новый approval нужен при первом mutation set, scope drift, sensitive file, unexpected diff и перед delivery/commit. Approval hash привязан к immutable intent/diff.
-- До этапа 3 использовать research stub с пустым результатом, чтобы Plan/Build был рабочим без сети.
+- В MVP-2 оставить read-only `/plan` и `/spec`, Build только по ограниченному списку разрешённых текстовых файлов и один approval на весь bounded Build; полный lifecycle mutation matrix, compaction и сложный rollback расширяются после feedback.
+- Добавить context assembler из task, acceptance criteria, non-goals, локальных workspace references и ручных подсказок пользователя. Research stub пустой, но Plan/Build полностью offline и не зависит от research.
+- Snapshot минимален и связан с run: `snapshot { id, run_id, workspace_hash, diff[], created_at }`; snapshot+diff атомарны. Он не включает SQLite и не откатывает external effects. UI явно показывает эту границу.
+- Для workspace использовать manifest + content hashes; ограничить snapshot размером и текстовыми файлами MVP. Запись требует `expected_content_hash`; mismatch даёт workspace conflict, а не overwrite. Git diff/rollback — отдельный ограниченный Core tool, auto-commit/push не входят.
+- Полный machine-readable scope включает `allowed_paths`, `allowed_operations`, `expected_outputs`, `protected_paths`, `max_files_changed`, `max_bytes_changed`, `allow_create`, `allow_delete`, `allow_rename`, `allowed_file_types`, `baseline_snapshot_id`, `acceptance_criteria`.
+- Approval UI показывает diff, files, path/risk/budget/timeout и immutable `intent_hash = hash(command + diff + scope + risk_class + effective_permissions_hash)`. Batch approval разрешает однотипные операции в bounded scope; force mode требует explicit confirmation и audit.
+- Добавить UI policy panel для allowed paths, budgets и timeout; конфигурация сохраняется Core, а не WinUI.
 
-Проверки: plan не пишет, build не выходит за scope, stage mutation matrix, prompt/context budget ограничен, redaction/order deterministic, snapshot rollback восстанавливает workspace, reconnect не теряет lifecycle, approval hash mismatch блокирует выполнение.
+Проверки: plan не пишет, build не выходит за scope, offline Plan/Build, expected hash conflict, prompt/context budget ограничен, redaction/order deterministic, snapshot rollback восстанавливает только workspace, reconnect не теряет lifecycle, approval hash mismatch блокирует выполнение.
 
 ### Этап 3 — Research и typed workflow graph (P0)
 
@@ -219,7 +246,7 @@ approval: none
 
 ### Этап 4 — Skills, roles и capability registry (P0/P1)
 
-- Добавить registry/parser/validator определений Role/Skill и deterministic matcher по intent, файлам, языкам, lifecycle stage и project rules.
+- Для MVP достаточно `RoleRef`, `SkillRef`, `allowed_tools` и `risk_class`; полный registry/parser/validator и deterministic matcher по intent, файлам, языкам, lifecycle stage и project rules реализовать здесь.
 - UI показывает выбранные role/skill, version, причины, risk, tools и acceptance criteria; пользователь может закрепить или заменить выбор.
 - Ввести lifecycle snapshot: активная definition immutable в рамках run; skill не расширяет permissions и не меняет context order.
 - Поддержать skill/capability manifest, effective permissions, allowed domains и разделение инструкций, MCP и исполняемых расширений.
@@ -241,8 +268,8 @@ approval: none
 
 - Добавить memory domain/API: create, list, search, update, archive, forget и provenance inspection.
 - Интегрировать extraction фактов и решений после run только по policy; пользователь подтверждает важные записи.
-- Реализовать scoped retrieval project/task/workspace, lexical search и опциональный vector hybrid search, recency, confidence, entity/temporal signals и ссылки на первичное событие.
-- Добавить compression старых traces, TTL для ephemeral context, privacy labels, export/delete и redaction; export/delete требуют approval и audit.
+- В Memory v1 реализовать scoped retrieval project/task/workspace, lexical search, derived facts без confidence и ссылки на первичное событие. Vector search, recency ranking, confidence, entity/temporal signals и сложный hybrid search — memory v2.
+- Добавить TTL для ephemeral context, privacy labels, export/delete и redaction; export/delete требуют approval и audit. Compression и расширенная retention automation — после измерения роста данных.
 
 Проверки: scope isolation, stale/conflicting facts, delete/forget, migration rollback, no secret leakage, retrieval relevance fixtures и offline operation.
 
@@ -282,17 +309,18 @@ approval: none
 
 ```mermaid
 flowchart LR
-  A["0a Storage + IPC foundation"] --> B["0b Replay + recovery"]
-  B --> C["1 Task workspace"]
-  C --> D["MVP feedback milestone"]
-  D --> E["2 Plan/Build + context"]
-  E --> F["3 Research + workflow"]
-  F --> G["4 Skills + roles"]
-  G --> H["5 Runner + routing"]
-  H --> I["6 Memory + RAG"]
-  I --> J["7 Evals + Doctor"]
-  J --> K["8 Child roles + editor"]
-  K --> L["9 Schedules + channels"]
+  A["0a Storage + IPC foundation"] --> B["1 Task workspace"]
+  B --> C["MVP-1 feedback"]
+  C --> D["0b Minimal durable recovery"]
+  D --> E["2 Agentic Plan/Build"]
+  E --> F["0c Extended recovery"]
+  E --> G["3 Research + workflow"]
+  G --> H["4 Skills + roles"]
+  H --> I["5 Runner + routing"]
+  I --> J["6 Memory v1"]
+  J --> K["7 Evals + Doctor"]
+  K --> L["8 Child roles + editor"]
+  L --> M["9 Schedules + channels"]
 ```
 
 ## 6. Native UI-поставка
@@ -305,7 +333,9 @@ MVP UI ограничен Projects/Tasks, task detail/graph и Plan/Build compos
 
 WinUI не хранит state, не читает SQLite/workspace, не запускает installer и не принимает решение о permissions. Все данные, команды и ошибки приходят через IPC.
 
-Минимальные сообщения ошибок: `Blocked: требуется permission на protected path; выберите scope или отмените run`, `Degraded: Core работает, но provider недоступен; доступен offline fallback`, `Error: checkpoint повреждён; выполнение остановлено, откройте Core Doctor`, `Waiting approval: показан immutable diff и hash intent`.
+Reducer UI хранит только `last_known_good_snapshot` и последний `event_sequence` для reconnect/resync; это cache представления, а не authoritative state. Для long-running commands Core публикует progress, log summary и heartbeat events, чтобы UI не выглядел зависшим.
+
+Минимальные сообщения ошибок: `Blocked: защищённый path <path> требует permission; выберите scope или отмените run`, `Degraded: Core работает, но provider недоступен; доступен offline fallback`, `Error: checkpoint повреждён; выполнение остановлено, откройте Core Doctor`, `Waiting approval: показан immutable diff и hash intent`. Секреты и токены в сообщениях запрещены.
 
 ## 7. Безопасность и отказоустойчивость
 
@@ -315,14 +345,20 @@ WinUI не хранит state, не читает SQLite/workspace, не запу
 | --- | --- | --- |
 | `read` | чтение workspace, локальный поиск | bounded output, audit, без approval |
 | `write` | изменение разрешённых файлов | immutable scope, preview, пакетный approval |
+| `memory_write` | сохранение факта/решения | policy, user confirm для важных записей, audit |
+| `research_write` | сохранение research/evidence | source hash, redaction, rate limit, audit |
 | `dangerous` | shell, install, protected path | explicit approval, timeout, audit, cancellation |
 | `external` | network, GitHub, delivery | allowlist, policy, visible intent, approval |
 
 - Каждая опасная операция получает approval, timeout, cancellation, bounded output и redacted audit record.
+- Default tool policy: чтение файлов и `git diff/status` — `read`; запись разрешённых текстовых файлов — `write`; memory/research persistence — `memory_write`/`research_write`; shell, install и `git reset/clean` — `dangerous`; HTTP, GitHub, commit/push и delivery — `external`. Все external requests rate-limited и полностью audit-ируются после redaction.
 - Path traversal, archive escape, изменённый manifest, неподписанный package и недопустимый domain отклоняются до выполнения.
 - Child processes принадлежат supervisor Job Object; restart/recovery не создаёт дублей. При recovery Core атомарно claims lease; конфликт владельцев переводится в blocked/reconciliation, а не запускает второй runner.
 - Migration всегда транзакционная и предваряется backup; corrupted state переводит систему в диагностируемый blocked state.
 - Research, memory, logs и traces очищают секреты, токены, полный чувствительный context и prompt injection payloads.
+- Credential rotation обрабатывается через явное удаление/повторную авторизацию в Credential Manager/DPAPI; старые токены не копируются в traces. Child roles получают отдельный filesystem/network sandbox.
+- Retention contract: immutable forever — identity, approval intent hash и provenance links; compactable — event summaries, old traces и derived views; disposable — expired ephemeral context и redacted temporary payloads; referenced objects удаляются только после проверки replay/evidence references. WAL, audit и checkpoints очищаются по retention policy, не нарушая recovery window.
+- Graceful shutdown/update — отдельная IPC-команда `shutdown`: Core запрещает новые effects, flush/checkpoint-ит состояние и сообщает Supervisor готовность к завершению; forcible kill проходит через recovery contract.
 - Commit/push, публикация и внешние connector actions остаются отдельными явно разрешёнными действиями.
 
 ## 8. Общий quality gate каждого этапа
@@ -346,22 +382,38 @@ WinUI не хранит state, не читает SQLite/workspace, не запу
 | Unknown effect | retry не выполняется без reconciliation | recovery integration test |
 | `next_ready` tie-break | UI и Core выбирают одну задачу | deterministic unit test |
 
-Для task graph и `next_ready` добавить benchmark на 10 000 задач. Для этапов настроить automated regression в CI: Rust tests, .NET tests, IPC fixtures, packaging smoke и security fixtures. Каждый этап оформляется отдельным task-only commit в текущей `main`; это development rule, а не продуктовый контракт. Нельзя считать плановую функцию реализованной до появления теста и evidence в trace.
+Для task graph и `next_ready` добавить benchmark на 500 задач и stress test на 10 000. Для этапов настроить automated regression в CI: Rust tests, .NET tests, IPC fixtures, packaging smoke и security fixtures. Каждый этап оформляется отдельным task-only commit в текущей `main`; это development rule, а не продуктовый контракт. Нельзя считать плановую функцию реализованной до появления теста и evidence в trace.
 
-К каждому этапу прилагаются краткие обновления glossary/FAQ. Термины `bounded loop`, `provenance`, `capability registry`, `checkpoint`, `reconciliation` должны быть определены рядом с доменным контрактом.
+MVP acceptance tests:
+
+| Сценарий | Core acceptance | UI smoke |
+| --- | --- | --- |
+| Создание задачи | Core создаёт UUIDv7, version=1, event записан | карточка появляется после event |
+| Dependency graph | missing/cycle отклонены атомарно | направление edge и конфликт видимы |
+| Reconnect | dedup повторяет committed result | last-known snapshot resync-ится |
+| `next_ready` | 500 задач выбираются детерминированно ≤ 100 ms p95 | selection reason отображён |
+| MVP feedback | импорт/ручное редактирование сохраняют исходный PRD | Empty/Ready/Blocked truthful |
+
+Benchmark на 10 000 задач остаётся stress test; основная target-метрика — 500 задач, плюс memory usage и throughput. CI включает integration tests Core ↔ Supervisor ↔ IPC/UI smoke, migration rollback, partial failure, zombie process cleanup и kill-9 harness.
+
+К каждому этапу прилагаются краткие обновления glossary/FAQ. Базовый glossary: `bounded loop` — итерация с численными limits и stop reason; `provenance` — append-only связь факта с первичным событием; `capability registry` — policy-описание доступных tools/providers; `checkpoint` — durable committed run state; `reconciliation` — проверка outcome unknown effect без blind retry.
 
 ## 9. Risk register и operational policy
 
 | Риск | Вероятность | Влияние | Митигация |
 | --- | --- | --- | --- |
-| Этап 0 становится бесконечным | высокая | критическое | разделение 0a/0b, MVP milestone, фиксированные exit criteria |
+| Этап 0 становится бесконечным | высокая | критическое | MVP-1 после 0a+1, timeboxed 0a/0b, перенос расширенного recovery в 0c |
 | IPC Rust/C# несовместим | средняя | высокое | mini-spec, negotiated capabilities, fixtures в CI |
 | Двойной side effect после crash | средняя | критическое | RunEffect, idempotency key, unknown/reconciliation, approval |
 | SQLite растёт без контроля | средняя | среднее | WAL, archive/vacuum, TTL и retention policy |
 | WinUI сложнее MVP | средняя | высокое | ограниченный MVP UI, текстовые критерии и visual smoke |
 | Offline provider недоступен | средняя | высокое | visible fallback, Core Doctor, no silent cloud route |
 
-Начальные измеримые targets для MVP: p95 IPC command round-trip ≤ 100 ms без model call; reconnect/resync ≤ 2 s при доступном Core; recovery после supervisor restart ≤ 5 s до truthful state; `next_ready` для 10 000 задач ≤ 250 ms на reference workstation. Targets измеряются benchmark/smoke-тестами и пересматриваются только отдельным решением.
+Hard deadline: 0a и 0b должны иметь timeboxed implementation window; по истечении deadline незавершённые extended recovery features переносятся в 0c, а MVP-1 не блокируется.
+
+Начальные измеримые targets для MVP: p95 IPC command round-trip ≤ 100 ms без model call; reconnect/resync ≤ 2 s при доступном Core; minimal recovery после supervisor restart ≤ 5 s до truthful state; `next_ready` для 500 задач ≤ 100 ms p95; 10 000 задач — только stress test ≤ 250 ms; SQLite для 10 000 tasks + 1 000 runs — retention target фиксируется benchmark-ом до implementation и не растёт без bounded policy. Targets измеряются benchmark/smoke-тестами и пересматриваются только отдельным решением.
+
+Обновление Core: перед запуском новой версии Supervisor делает backup, Core применяет forward-compatible migrations, показывает preview/progress и при ошибке восстанавливает backup; destructive migration требует отдельного migration wizard. Старый Core остаётся совместимым в пределах compatibility window.
 
 ## 10. Что сознательно не переносится
 
@@ -388,4 +440,4 @@ WinUI не хранит state, не читает SQLite/workspace, не запу
 
 ## 12. Порядок после этой сводки
 
-Сначала реализовать Этапы 0a и 0b, затем Этап 1 и MVP milestone с ручным task workspace. После обратной связи добавить минимальный Plan/Build и context assembler из этапа 2. Затем последовательно добавить research/workflow, skills, bounded loop/routing, memory, evals, child roles и только после стабилизации — schedules и внешние каналы.
+Сначала реализовать 0a и Этап 1 параллельными потоками backend/UI, затем провести MVP-1 feedback. После этого добавить минимальный 0b и Agentic Plan/Build из этапа 2; расширенный recovery 0c и research/workflow могут разрабатываться параллельно через общий context/IPC contract. Далее последовательно стабилизировать skills, bounded loop/routing, memory, evals, child roles и только после этого — schedules и внешние каналы.
