@@ -1188,7 +1188,12 @@ impl TaskCoordinator {
                 tokio::spawn(async move {
                     let result = match executor {
                         Some(executor) => match timeout(
-                            Duration::from_secs(60),
+                            Duration::from_secs(
+                                std::env::var("EVOHIME_TASK_TIMEOUT_SECONDS")
+                                    .ok()
+                                    .and_then(|value| value.parse().ok())
+                                    .unwrap_or(60),
+                            ),
                             executor.execute_in_workspace(
                                 task_id.clone(),
                                 prompt,

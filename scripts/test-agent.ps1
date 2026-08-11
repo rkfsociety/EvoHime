@@ -58,6 +58,7 @@ if ($Model) {
 
 New-Item -ItemType Directory -Force -Path $dataPath | Out-Null
 $env:EVOHIME_DATA_DIR = $dataPath
+$env:EVOHIME_TASK_TIMEOUT_SECONDS = '300'
 
 Push-Location $root
 try {
