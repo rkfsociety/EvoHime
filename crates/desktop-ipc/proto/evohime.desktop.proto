@@ -7,6 +7,14 @@ message ProtocolVersion {
   uint32 minor = 2;
 }
 
+// Additive negotiation fixture. Existing Handshake envelopes continue to
+// carry the same capability list; this message gives newer peers a bounded
+// standalone offer without changing legacy message layouts.
+message ProtocolOffer {
+  ProtocolVersion protocol = 1;
+  repeated string capabilities = 2;
+}
+
 message Handshake {
   ProtocolVersion protocol = 1;
   string client_id = 2;
