@@ -1250,7 +1250,7 @@ public partial class MainWindow : Window
                 using var json = JsonDocument.Parse(response.Payload);
                 var events = json.RootElement.GetProperty("events");
                 var labels = events.EnumerateArray()
-                    .Select(item => $"{item.GetProperty("event_type").GetString()} ({item.GetProperty("created_at").GetString()})")
+                    .Select(FormatHistoryEvent)
                     .ToArray();
                 _taskWorkspaceStatus.Text = labels.Length == 0
                     ? $"История задачи «{task.Title}» пуста."
@@ -1265,6 +1265,27 @@ public partial class MainWindow : Window
         {
             _taskWorkspaceStatus.Text = $"Не удалось загрузить историю: {error.Message}";
         }
+    }
+
+    private static string FormatHistoryEvent(JsonElement item)
+    {
+        var eventType = item.GetProperty("event_type").GetString() ?? "event";
+        var createdAt = item.GetProperty("created_at").GetString() ?? string.Empty;
+        if (eventType == "build.applied")
+        {
+            try
+            {
+                var bytes = item.GetProperty("payload").EnumerateArray().Select(value => value.GetByte()).ToArray();
+                using var payload = JsonDocument.Parse(bytes);
+                var root = payload.RootElement;
+                return $"Build applied: run {root.GetProperty("run_id").GetString()}, snapshot {root.GetProperty("snapshot_id").GetString()}, diff {root.GetProperty("diff_count").GetInt32()} ({createdAt})";
+            }
+            catch (JsonException)
+            {
+                return $"{eventType} ({createdAt})";
+            }
+        }
+        return $"{eventType} ({createdAt})";
     }
 
     private async Task RequestTaskContextAsync(TaskDto task)
@@ -1437,7 +1458,7 @@ public partial class MainWindow : Window
             try
             {
                 var runId = $"build-{task.Id}-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}";
-                await _ipc.ApplyApprovedBuildAsync(project.Id, runId, approvedJson, CancellationToken.None);
+                await _ipc.ApplyApprovedBuildAsync(project.Id, runId, task.Id, approvedJson, CancellationToken.None);
                 var response = await _ipc.ReadEventAsync(CancellationToken.None);
                 if (response.EventType != "build.applied")
                 {

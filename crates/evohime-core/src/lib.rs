@@ -563,6 +563,7 @@ pub enum CoreCommand {
     ApplyApprovedBuild {
         project_id: String,
         run_id: String,
+        task_id: String,
         approved_build_json: Vec<u8>,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
@@ -1825,6 +1826,7 @@ impl TaskCoordinator {
             CoreCommand::ApplyApprovedBuild {
                 project_id,
                 run_id,
+                task_id,
                 approved_build_json,
                 reply,
             } => {
@@ -1851,10 +1853,12 @@ impl TaskCoordinator {
                         "intent_hash": approved.intent_hash,
                         "effective_permissions_hash": approved.effective_permissions_hash,
                         "workspace_hash": snapshot.baseline_workspace_hash,
+                        "diff_count": snapshot.diff.len(),
                     }))
                     .map_err(|error| error.to_string())?;
+                    let audit_subject = if task_id.is_empty() { &run_id } else { &task_id };
                     journal
-                        .record_audit(&run_id, "build.applied", &audit_payload)
+                        .record_audit(audit_subject, "build.applied", &audit_payload)
                         .await
                         .map_err(|error| error.to_string())?;
                     Ok(payload)
