@@ -18,6 +18,7 @@ fn build_agent_system_prompt(workspace: &std::path::Path, tool_names: &[String])
 - Не проси пользователя прислать структуру проекта, путь или команды, если workspace уже указан.\n\
 - Не утверждай, что изучила файл или выполнила действие, пока соответствующий инструмент не вернул результат.\n\
 - Для чтения используй безопасные read-only инструменты. Перед изменениями и опасными действиями учитывай approval.\n\
+- Если пользователь просит исправить, изменить или реализовать код, обязательно внеси изменение через filesystem.patch или filesystem.write; для просьбы о проверке запусти соответствующий тест/сборку, а для просьбы о commit вызови git.commit. Не выдавай план за результат.\n\
 - После исследования дай отчёт: что обнаружено, какие файлы проверены, какие проблемы найдены и что предлагается сделать дальше.\n\n\
 Доступные инструменты в этой сессии:\n{}",
         workspace.display(),
@@ -750,6 +751,17 @@ impl ToolAgent {
                     messages.push(ChatMessage::text(ChatRole::Assistant, result.content));
                     messages.push(ChatMessage::text(ChatRole::User, continuation));
                     continue;
+                }
+                if !missing.is_empty() {
+                    let message = format!(
+                        "Задача не завершена: не выполнены обязательные результаты: {}.",
+                        missing.join(", ")
+                    );
+                    let _ = events.send(CoreEvent::TaskFailed {
+                        task_id,
+                        error: message.clone(),
+                    });
+                    return Ok(message);
                 }
                 let final_message = strip_legacy_function_blocks(&result.content);
                 let _ = events.send(CoreEvent::TaskCompleted {
