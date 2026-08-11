@@ -58,6 +58,10 @@ public partial class MainWindow : Window
     private Grid? _settingsView;
     private Grid? _scheduledView;
     private Grid? _pluginsView;
+    private StackPanel? _pluginsList;
+    private TextBox? _pluginSearch;
+    private TextBlock? _pluginStatus;
+    private readonly PluginCatalogService _pluginCatalogService = new();
     private TextBlock? _settingsWorkspaceText;
     private readonly ProviderSettingsService _providerSettings = new();
     private TextBox? _providerBox;
@@ -812,25 +816,119 @@ public partial class MainWindow : Window
     {
         var view = BuildShellPage(
             "Плагины",
-            "Инструменты, которыми Ева пользуется в рабочем пространстве.");
-        var content = new StackPanel { Spacing = 10 };
-        foreach (var plugin in new[]
+            "Каталог плагинов GitHub для расширения Евы.");
+        var content = new Grid { RowSpacing = 12 };
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        var searchBar = new Grid { ColumnSpacing = 8 };
+        searchBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        searchBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        _pluginSearch = new TextBox { PlaceholderText = "Поиск плагинов на GitHub", Text = "agent plugin" };
+        _pluginSearch.KeyDown += (_, args) =>
         {
-            ("Файловая система", "Чтение, поиск и изменение файлов workspace", "Подключён"),
-            ("Командная строка", "Запуск проверок и сборок проекта", "Подключён"),
-            ("Git", "Проверка состояния и создание коммитов", "Подключён"),
-        })
-        {
-            content.Children.Add(CreateSettingsSection(
-                plugin.Item1,
-                plugin.Item2,
-                new TextBlock { Text = plugin.Item3, Foreground = ThemeBrush("TealBrush", 89, 216, 200) },
-                ThemeBrush("SurfaceRaisedBrush", 23, 28, 37)));
-        }
-        var scroll = new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-        Grid.SetRow(scroll, 1);
-        view.Children.Add(scroll);
+            if (args.Key == VirtualKey.Enter)
+            {
+                _ = RefreshPluginsAsync();
+            }
+        };
+        searchBar.Children.Add(_pluginSearch);
+        var refresh = new Button { Content = "Обновить" };
+        refresh.Click += (_, _) => _ = RefreshPluginsAsync();
+        Grid.SetColumn(refresh, 1);
+        searchBar.Children.Add(refresh);
+        content.Children.Add(searchBar);
+        _pluginStatus = new TextBlock { Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157), TextWrapping = TextWrapping.Wrap };
+        Grid.SetRow(_pluginStatus, 1);
+        content.Children.Add(_pluginStatus);
+        _pluginsList = new StackPanel { Spacing = 10 };
+        var scroll = new ScrollViewer { Content = _pluginsList, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Grid.SetRow(scroll, 2);
+        content.Children.Add(scroll);
+        Grid.SetRow(content, 1);
+        view.Children.Add(content);
+        _ = RefreshPluginsAsync();
         return view;
+    }
+
+    private async Task RefreshPluginsAsync()
+    {
+        if (_pluginsList is null || _pluginStatus is null)
+        {
+            return;
+        }
+
+        _pluginStatus.Text = "Загружаю каталог GitHub…";
+        _pluginsList.Children.Clear();
+        try
+        {
+            var plugins = await _pluginCatalogService.SearchAsync(_pluginSearch?.Text ?? "agent plugin");
+            _pluginStatus.Text = $"Найдено плагинов: {plugins.Count}. Установка сохраняет репозиторий в {_pluginCatalogService.PluginsDirectory}.";
+            foreach (var plugin in plugins)
+            {
+                _pluginsList.Children.Add(BuildPluginCard(plugin));
+            }
+            if (plugins.Count == 0)
+            {
+                _pluginsList.Children.Add(new TextBlock { Text = "GitHub не вернул репозитории по этому запросу.", Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157) });
+            }
+        }
+        catch (Exception error)
+        {
+            _pluginStatus.Text = $"Не удалось загрузить каталог GitHub: {error.Message}";
+        }
+    }
+
+    private Border BuildPluginCard(GitHubPlugin plugin)
+    {
+        var content = new Grid { ColumnSpacing = 12 };
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var details = new StackPanel { Spacing = 4 };
+        var title = new TextBlock { Text = plugin.FullName, FontSize = 15, Foreground = ThemeBrush("TextBrush", 247, 244, 245) };
+        title.PointerPressed += (_, _) => OpenExternalUrl(plugin.HtmlUrl);
+        details.Children.Add(title);
+        details.Children.Add(new TextBlock { Text = string.IsNullOrWhiteSpace(plugin.Description) ? "Описание отсутствует." : plugin.Description, Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157), TextWrapping = TextWrapping.Wrap });
+        details.Children.Add(new TextBlock { Text = $"★ {plugin.Stars:N0}  ·  GitHub", Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157), FontSize = 11 });
+        content.Children.Add(details);
+        var action = new Button { Content = plugin.Installed ? "Удалить" : "Установить" };
+        action.Click += async (_, _) =>
+        {
+            action.IsEnabled = false;
+            try
+            {
+                if (plugin.Installed)
+                {
+                    _pluginCatalogService.Uninstall(plugin);
+                }
+                else
+                {
+                    await _pluginCatalogService.InstallAsync(plugin);
+                }
+                await RefreshPluginsAsync();
+            }
+            catch (Exception error)
+            {
+                if (_pluginStatus is not null) _pluginStatus.Text = $"Операция с {plugin.FullName} не выполнена: {error.Message}";
+                action.IsEnabled = true;
+            }
+        };
+        Grid.SetColumn(action, 1);
+        content.Children.Add(action);
+        return new Border
+        {
+            Background = ThemeBrush("SurfaceRaisedBrush", 23, 28, 37),
+            BorderBrush = ThemeBrush("BorderBrush", 68, 32, 43),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(14),
+            Child = content,
+        };
+    }
+
+    private static void OpenExternalUrl(string url)
+    {
+        Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
     }
 
     private Grid BuildShellPage(string titleText, string subtitle)
