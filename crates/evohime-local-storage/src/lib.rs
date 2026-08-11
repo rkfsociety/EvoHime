@@ -7,6 +7,8 @@ use std::{
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+pub mod memory_store;
+pub mod reconciliation_verifier;
 pub mod research_store;
 
 pub const SCHEMA_VERSION: u32 = 6;

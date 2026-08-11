@@ -499,14 +499,17 @@ use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
+pub mod audit;
 pub mod build;
 pub mod child_roles;
+pub mod child_runtime;
 pub mod doctor;
 pub mod memory_domain;
 pub mod observability;
 pub mod plan;
 pub mod prd;
 pub mod research;
+pub mod research_pipeline;
 pub mod scope;
 pub mod workflow;
 pub mod workflow_runner;

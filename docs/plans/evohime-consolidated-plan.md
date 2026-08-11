@@ -217,9 +217,10 @@ Exit criteria 0b: kill-9 не создаёт второй effect; checkpoint в�
 
 ### Этап 0c — расширенный replay, protocol и effect recovery (P0/P1)
 
-- Статус реализации на 2026-08-12: **в работе**. Первый bounded Build-срез закрывает single-owner lease, heartbeat, generation claim и snapshot-based reconciliation; protocol replay/resync и type-specific verifiers остаются.
+- Статус реализации на 2026-08-12: **в работе**. Первый bounded Build-срез закрывает single-owner lease, heartbeat, generation claim, snapshot-based reconciliation и type-specific verifiers; protocol replay/resync остаётся.
 - [x] Добавить durable `run_leases` с owner, generation, heartbeat и expiry; второй владелец не может claim-нуть активный run.
 - [x] Для bounded Build добавить reconciliation verifier по durable snapshot: подтверждённый outcome получает `run.reconciliation.completed`, неподтверждённый остаётся blocked, blind retry не выполняется.
+- [x] Добавить bounded type-specific verifiers для file/database/process outcomes с generation checks и состояниями confirmed/unconfirmed/blocked без blind retry.
 - [x] Добавить bounded `ResyncRequest`, additive replay-gap/full-snapshot envelopes и защиту размера resync payload.
 - Добавить negotiated `protocol_version + capabilities`, backward compatibility matrix и bounded durable command/event replay.
 - Реализовать `RECOVERING → RECONCILING → RESUMABLE | BLOCKED | WAITING_APPROVAL | FAILED`, leases/generation, partial-gap replay/resync/full snapshot и type-specific effect verifiers.
@@ -261,6 +262,7 @@ MVP-1 milestone после этапа 1: пользователь видит п�
 - [x] Добавить migration-neutral research evidence storage contract с provenance, TTL, bounded SQL payload и delete/list API.
 - [x] Добавить typed static workflow graph contract с input/output types, retry/timeout/cancellation/approval и deterministic validation; dynamic edits отложены.
 - [x] Добавить deterministic workflow runner contract с topological order и безопасными решениями retry/timeout/cancellation/approval; реальные side effects отложены.
+- [x] Добавить bounded research pipeline policy с network/domain allowlist, budgets, cancellation и citation/source integrity; реальный HTTP capability layer остаётся.
 - Реализовать сначала статический workflow graph с typed input/output, condition, retry, timeout, cancellation, approval и subgraph. Dynamic graph edits отложить.
 - Реализовать research pipeline: запрос → разрешённый HTTP/search → извлечение → краткое резюме → citations → сохранение.
 - Evidence хранит redacted/plain excerpt с max bytes, fetched-at, TTL/freshness, source hash и approval/provenance link.
@@ -303,6 +305,7 @@ approval: none
 ### Этап 6 — Memory v1 и RAG для локального workspace (P1)
 
 - [x] Добавить bounded Memory v1 domain contract со scoped retrieval, lexical search, TTL, privacy labels, provenance и forget/archive; persistence wiring и extraction policy остаются.
+- [x] Добавить bounded memory persistence contract с scoped search, provenance, TTL, redaction, archive/forget и параметризованным SQL; migration wiring и extraction policy остаются.
 - Добавить memory domain/API: create, list, search, update, archive, forget и provenance inspection.
 - Интегрировать extraction фактов и решений после run только по policy; пользователь подтверждает важные записи.
 - В Memory v1 реализовать scoped retrieval project/task/workspace, lexical search, derived facts без confidence и ссылки на первичное событие. Vector search, recency ranking, confidence, entity/temporal signals и сложный hybrid search — memory v2.
@@ -316,6 +319,7 @@ approval: none
 - [x] Добавить bounded hooks/observability contract с redaction, deterministic JSON, policy decisions и сохранением порядка context.
 - [x] Добавить bounded Core Doctor contract с actionable статусами storage/pipe/provider/recovery/permissions без выдачи секретов.
 - [x] Добавить bounded scheduler state contract для lifecycle, lease/heartbeat, retry/backoff и recovery decisions; wiring в supervisor runtime остаётся.
+- [x] Добавить bounded local audit trail contract для approvals, tool calls, budgets, failures, diffs и evidence с redaction и deterministic JSONL; runtime wiring остаётся.
 - Evals для skill selection, allowlist, plan quality, IPC compatibility, cancellation, replay, citations, memory retrieval, routing и UI truthfulness.
 - Hooks `before_context`, `before_tool`, `after_tool`, `before_commit`, `after_task` только наблюдают или отклоняют по policy, не получают секреты и не могут менять порядок context.
 - Локальный JSONL/SQLite audit trail: versions, tool calls, approvals, durations, failures, budgets, diffs и evidence.
@@ -327,6 +331,7 @@ approval: none
 ### Этап 8 — Child roles, handoff и native workflow editor (P1/P2)
 
 - [x] Добавить bounded child-role и handoff contract с урезанным payload, redaction, лимитами и deterministic JSON; runtime delegation и UI editor остаются.
+- [x] Добавить bounded child delegation runtime policy с read-only capabilities, reduced context, report validation и запретом nested/elevated mutation; orchestration и UI editor остаются.
 - Разрешить дочерние read-only задачи для onboarding, code search, threat-model review, test-plan review и документации.
 - Child получает урезанный context и `child_task_id`, не имеет write, shell, commit, install или network mutation tools.
 - Child не может создавать нового child, передавать elevated permissions через handoff или превышать фиксированный `max_output_bytes`.
