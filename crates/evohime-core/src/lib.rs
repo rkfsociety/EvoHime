@@ -203,6 +203,22 @@ fn parse_natural_tool_intent(content: &str, iteration: usize) -> Option<NativeTo
     })
 }
 
+fn strip_legacy_function_blocks(content: &str) -> String {
+    let mut cleaned = String::with_capacity(content.len());
+    let mut cursor = 0;
+    while let Some(relative_start) = content[cursor..].find("<function_calls>") {
+        let start = cursor + relative_start;
+        cleaned.push_str(&content[cursor..start]);
+        let block_start = start + "<function_calls>".len();
+        let Some(relative_end) = content[block_start..].find("</function_calls>") else {
+            break;
+        };
+        cursor = block_start + relative_end + "</function_calls>".len();
+    }
+    cleaned.push_str(&content[cursor..]);
+    cleaned.trim().to_string()
+}
+
 mod ipc_bridge;
 pub use ipc_bridge::{IpcBridge, IpcBridgeError, ModelConfigSnapshot};
 mod logging;
@@ -667,11 +683,12 @@ impl ToolAgent {
                 }
             }
             if tool_calls.is_empty() {
+                let final_message = strip_legacy_function_blocks(&result.content);
                 let _ = events.send(CoreEvent::TaskCompleted {
                     task_id,
-                    final_message: result.content.clone(),
+                    final_message: final_message.clone(),
                 });
-                return Ok(result.content);
+                return Ok(final_message);
             }
 
             messages.push(ChatMessage::assistant_tool_calls(
@@ -1064,6 +1081,14 @@ mod tests {
                 task_id: "task-1".into()
             }
         );
+    }
+
+    #[test]
+    fn strips_legacy_function_blocks_from_user_facing_message() {
+        let message = super::strip_legacy_function_blocks(
+            "Готово.\n<function_calls><invoke name=\"filesystem.read\" /></function_calls>",
+        );
+        assert_eq!(message, "Готово.");
     }
 
     #[tokio::test]
