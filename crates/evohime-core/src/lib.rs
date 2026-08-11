@@ -777,6 +777,16 @@ impl EventJournal {
         database.save_snapshot(id, run_id, workspace_hash, payload)
     }
 
+    pub async fn record_audit(
+        &self,
+        subject_id: &str,
+        event_type: &str,
+        payload: &[u8],
+    ) -> Result<i64, StorageError> {
+        let database = self.database.lock().await;
+        database.append_event(subject_id, event_type, payload)
+    }
+
     pub async fn task_history(
         &self,
         task_id: &str,
@@ -1835,6 +1845,17 @@ impl TaskCoordinator {
                         .save_snapshot(&snapshot.id, &run_id, &snapshot.baseline_workspace_hash, &payload)
                         .await
                         .map_err(|error| error.to_string())?;
+                    let audit_payload = serde_json::to_vec(&serde_json::json!({
+                        "run_id": run_id,
+                        "snapshot_id": snapshot.id,
+                        "intent_hash": approved.intent_hash,
+                        "workspace_hash": snapshot.baseline_workspace_hash,
+                    }))
+                    .map_err(|error| error.to_string())?;
+                    journal
+                        .record_audit(&run_id, "build.applied", &audit_payload)
+                        .await
+                        .map_err(|error| error.to_string())?;
                     Ok(payload)
                 }
                 .await;
@@ -1857,7 +1878,19 @@ impl TaskCoordinator {
                         .map_err(|error| format!("invalid build proposal: {error}"))?;
                     let approved = crate::build::prepare_build(&project.workspace_path, &proposal)
                         .map_err(|error| error.to_string())?;
-                    serde_json::to_vec(&approved).map_err(|error| error.to_string())
+                    let payload = serde_json::to_vec(&approved).map_err(|error| error.to_string())?;
+                    let audit_subject = format!("proposal-{}", approved.intent_hash);
+                    let audit_payload = serde_json::to_vec(&serde_json::json!({
+                        "intent_hash": approved.intent_hash,
+                        "expected_workspace_hash": approved.expected_workspace_hash,
+                        "change_count": approved.changes.len(),
+                    }))
+                    .map_err(|error| error.to_string())?;
+                    journal
+                        .record_audit(&audit_subject, "build.approval_prepared", &audit_payload)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    Ok(payload)
                 }
                 .await;
                 let _ = reply.send(result);
@@ -2192,6 +2225,17 @@ mod tests {
         assert_eq!(replay.len(), 1);
         assert_eq!(replay[0].event_type, "task.completed");
         assert_eq!(replay[0].task_id, "task-journal");
+        journal
+            .record_audit("run-journal", "build.applied", br#"{"snapshot_id":"snap-1"}"#)
+            .await
+            .expect("audit records");
+        let audit = journal
+            .task_history("run-journal", 10)
+            .await
+            .expect("audit reads");
+        assert_eq!(audit.len(), 1);
+        assert_eq!(audit[0].event_type, "build.applied");
+        assert_eq!(audit[0].payload, br#"{"snapshot_id":"snap-1"}"#);
         let _ = std::fs::remove_file(path);
     }
 
