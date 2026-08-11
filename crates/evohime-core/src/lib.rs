@@ -607,9 +607,11 @@ impl ToolAgent {
                         }),
                     );
                     // Legacy models often print an entire future plan in one
-                    // response. Execute the first new, valid safe call and
-                    // ask the model for the next step after its observation.
-                    if let Some(call) = parsed_legacy_calls.into_iter().find(|call| {
+                    // response. Execute every new, valid safe call from that
+                    // plan before asking the model for its next observation.
+                    // Unsafe calls are excluded by the parser; the directory
+                    // read below is also invalid for the filesystem tool.
+                    for call in parsed_legacy_calls.into_iter().filter(|call| {
                         let invalid_directory_read = call.name == "filesystem.read"
                             && serde_json::from_str::<serde_json::Value>(&call.arguments)
                                 .ok()
