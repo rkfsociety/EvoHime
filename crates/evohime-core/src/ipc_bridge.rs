@@ -93,6 +93,8 @@ impl IpcBridge {
                     task_id: String::new(),
                     event_type: "core.ready".into(),
                     payload: Vec::new(),
+                    core_instance_id: String::new(),
+                    session_epoch: 0,
                     event: Some(generated::event_envelope::Event::Ready(generated::Ready {
                         protocol: Some(protocol()),
                         core_version: env!("CARGO_PKG_VERSION").into(),
@@ -115,6 +117,8 @@ impl IpcBridge {
                         task_id: record.task_id,
                         event_type: record.event_type,
                         payload: record.payload,
+                        core_instance_id: String::new(),
+                        session_epoch: 0,
                         event: None,
                     };
                     transport::write_frame(writer, &event.encode_to_vec()).await?;
@@ -125,6 +129,8 @@ impl IpcBridge {
                     task_id: String::new(),
                     event_type: "replay.end".into(),
                     payload: Vec::new(),
+                    core_instance_id: String::new(),
+                    session_epoch: 0,
                     event: None,
                 };
                 transport::write_frame(writer, &end.encode_to_vec()).await?;
@@ -137,6 +143,8 @@ impl IpcBridge {
                     task_id: String::new(),
                     event_type: "model.config".into(),
                     payload,
+                    core_instance_id: String::new(),
+                    session_epoch: 0,
                     event: None,
                 };
                 transport::write_frame(writer, &event.encode_to_vec()).await?;
@@ -184,6 +192,8 @@ impl IpcBridge {
                     task_id: String::new(),
                     event_type: "model.catalog".into(),
                     payload: serde_json::to_vec(&payload).unwrap_or_default(),
+                    core_instance_id: String::new(),
+                    session_epoch: 0,
                     event: None,
                 };
                 transport::write_frame(writer, &event.encode_to_vec()).await?;
@@ -282,6 +292,9 @@ mod tests {
         let command = generated::CommandEnvelope {
             protocol: Some(protocol()),
             request_id: "request-1".into(),
+            client_id: "test-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
             command: Some(generated::command_envelope::Command::ReplayEvents(
                 generated::ReplayEvents { after_sequence: 0 },
             )),

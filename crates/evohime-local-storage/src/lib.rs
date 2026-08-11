@@ -6,7 +6,7 @@ use std::{
 
 use rusqlite::{Connection, OptionalExtension};
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -18,6 +18,20 @@ pub enum StorageError {
     Json(#[from] serde_json::Error),
     #[error("unsupported database schema version {0}")]
     UnsupportedSchema(u32),
+    #[error(
+        "optimistic version conflict for {entity} {id}: expected {expected}, current {current}"
+    )]
+    VersionConflict {
+        entity: &'static str,
+        id: String,
+        expected: i64,
+        current: i64,
+    },
+    #[error("request {client_id}/{request_id} was already used with another command")]
+    DeduplicationConflict {
+        client_id: String,
+        request_id: String,
+    },
 }
 
 pub struct LocalDatabase {
@@ -32,6 +46,33 @@ pub struct EventRecord {
     pub event_type: String,
     pub payload: Vec<u8>,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectRecord {
+    pub id: String,
+    pub title: String,
+    pub workspace_path: String,
+    pub source_ref: Option<String>,
+    pub version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkItemRecord {
+    pub id: String,
+    pub project_id: String,
+    pub parent_id: Option<String>,
+    pub title: String,
+    pub description: String,
+    pub source_ref: Option<String>,
+    pub acceptance_criteria: String,
+    pub non_goals: String,
+    pub status: String,
+    pub priority: i64,
+    pub estimate: Option<i64>,
+    pub complexity: Option<String>,
+    pub attempt_count: i64,
+    pub version: i64,
 }
 
 impl LocalDatabase {
@@ -56,6 +97,7 @@ impl LocalDatabase {
             }
             Self::migrate(&connection, version)?;
         }
+        connection.pragma_update(None, "journal_mode", "WAL")?;
         Ok(Self { path, connection })
     }
 
@@ -77,6 +119,162 @@ impl LocalDatabase {
             )
             .optional()?
             .is_some())
+    }
+
+    pub fn create_project(
+        &self,
+        id: &str,
+        title: &str,
+        workspace_path: &str,
+        source_ref: Option<&str>,
+    ) -> Result<ProjectRecord, StorageError> {
+        self.connection.execute(
+            "INSERT INTO projects(id, title, workspace_path, source_ref) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![id, title, workspace_path, source_ref],
+        )?;
+        self.get_project(id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+    }
+
+    pub fn get_project(&self, id: &str) -> Result<Option<ProjectRecord>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, title, workspace_path, source_ref, version FROM projects WHERE id = ?1",
+        )?;
+        Ok(statement
+            .query_row([id], |row| {
+                Ok(ProjectRecord {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    workspace_path: row.get(2)?,
+                    source_ref: row.get(3)?,
+                    version: row.get(4)?,
+                })
+            })
+            .optional()?)
+    }
+
+    pub fn create_work_item(&self, item: &WorkItemRecord) -> Result<WorkItemRecord, StorageError> {
+        self.connection.execute(
+            "INSERT INTO work_items(id, project_id, parent_id, title, description, source_ref,
+             acceptance_criteria, non_goals, status, priority, estimate, complexity, attempt_count)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            rusqlite::params![
+                item.id,
+                item.project_id,
+                item.parent_id,
+                item.title,
+                item.description,
+                item.source_ref,
+                item.acceptance_criteria,
+                item.non_goals,
+                item.status,
+                item.priority,
+                item.estimate,
+                item.complexity,
+                item.attempt_count
+            ],
+        )?;
+        self.get_work_item(&item.id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+    }
+
+    pub fn get_work_item(&self, id: &str) -> Result<Option<WorkItemRecord>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, project_id, parent_id, title, description, source_ref,
+             acceptance_criteria, non_goals, status, priority, estimate, complexity,
+             attempt_count, version FROM work_items WHERE id = ?1",
+        )?;
+        Ok(statement
+            .query_row([id], |row| {
+                Ok(WorkItemRecord {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    parent_id: row.get(2)?,
+                    title: row.get(3)?,
+                    description: row.get(4)?,
+                    source_ref: row.get(5)?,
+                    acceptance_criteria: row.get(6)?,
+                    non_goals: row.get(7)?,
+                    status: row.get(8)?,
+                    priority: row.get(9)?,
+                    estimate: row.get(10)?,
+                    complexity: row.get(11)?,
+                    attempt_count: row.get(12)?,
+                    version: row.get(13)?,
+                })
+            })
+            .optional()?)
+    }
+
+    pub fn update_work_item_status(
+        &self,
+        id: &str,
+        expected_version: i64,
+        status: &str,
+    ) -> Result<WorkItemRecord, StorageError> {
+        let changed = self.connection.execute(
+            "UPDATE work_items SET status = ?1, version = version + 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE id = ?2 AND version = ?3",
+            rusqlite::params![status, id, expected_version],
+        )?;
+        if changed == 0 {
+            let current = self
+                .get_work_item(id)?
+                .map(|item| item.version)
+                .unwrap_or(-1);
+            return Err(StorageError::VersionConflict {
+                entity: "work_item",
+                id: id.into(),
+                expected: expected_version,
+                current,
+            });
+        }
+        self.get_work_item(id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+    }
+
+    pub fn add_dependency(
+        &self,
+        from_id: &str,
+        to_id: &str,
+        kind: &str,
+    ) -> Result<(), StorageError> {
+        if from_id == to_id {
+            return Err(rusqlite::Error::InvalidQuery.into());
+        }
+        self.connection.execute(
+            "INSERT INTO work_item_edges(from_work_item_id, to_work_item_id, kind) VALUES (?1, ?2, ?3)",
+            rusqlite::params![from_id, to_id, kind],
+        )?;
+        Ok(())
+    }
+
+    pub fn record_deduplicated(
+        &self,
+        client_id: &str,
+        request_id: &str,
+        command_hash: &str,
+        result: &[u8],
+    ) -> Result<Option<Vec<u8>>, StorageError> {
+        let existing = self.connection.query_row(
+            "SELECT command_hash, result FROM command_dedup WHERE client_id = ?1 AND request_id = ?2",
+            rusqlite::params![client_id, request_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        ).optional()?;
+        if let Some((stored_hash, stored_result)) = existing {
+            if stored_hash == command_hash {
+                return Ok(Some(stored_result));
+            }
+            return Err(StorageError::DeduplicationConflict {
+                client_id: client_id.into(),
+                request_id: request_id.into(),
+            });
+        }
+        self.connection.execute(
+            "INSERT INTO command_dedup(client_id, request_id, command_hash, result) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![client_id, request_id, command_hash, result],
+        )?;
+        Ok(None)
     }
 
     pub fn append_event(
@@ -158,6 +356,46 @@ impl LocalDatabase {
                 PRAGMA user_version = 1;",
             )?;
         }
+        if current < 2 {
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS projects (
+                    id TEXT PRIMARY KEY, title TEXT NOT NULL, workspace_path TEXT NOT NULL,
+                    source_ref TEXT, version INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                );
+                CREATE TABLE IF NOT EXISTS work_items (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), parent_id TEXT REFERENCES work_items(id),
+                    title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', source_ref TEXT,
+                    acceptance_criteria TEXT NOT NULL DEFAULT '', non_goals TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL CHECK(status IN ('backlog','ready','in_progress','done')),
+                    priority INTEGER NOT NULL DEFAULT 0, estimate INTEGER, complexity TEXT,
+                    attempt_count INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                );
+                CREATE TABLE IF NOT EXISTS work_item_edges (
+                    from_work_item_id TEXT NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+                    to_work_item_id TEXT NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+                    kind TEXT NOT NULL, PRIMARY KEY(from_work_item_id, to_work_item_id, kind)
+                );
+                CREATE TABLE IF NOT EXISTS provenance (
+                    id TEXT PRIMARY KEY, kind TEXT NOT NULL, source TEXT NOT NULL,
+                    payload BLOB NOT NULL, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                );
+                CREATE TABLE IF NOT EXISTS runs (
+                    id TEXT PRIMARY KEY, work_item_id TEXT NOT NULL REFERENCES work_items(id),
+                    status TEXT NOT NULL, policy_snapshot BLOB NOT NULL, role_snapshot BLOB NOT NULL,
+                    skill_snapshot BLOB NOT NULL, model_route_snapshot BLOB NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                );
+                CREATE TABLE IF NOT EXISTS command_dedup (
+                    client_id TEXT NOT NULL, request_id TEXT NOT NULL, command_hash TEXT NOT NULL,
+                    result BLOB NOT NULL, created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                    PRIMARY KEY(client_id, request_id)
+                );
+                PRAGMA user_version = 2;",
+            )?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -165,7 +403,7 @@ impl LocalDatabase {
 
 #[cfg(test)]
 mod tests {
-    use super::{LocalDatabase, SCHEMA_VERSION};
+    use super::{LocalDatabase, StorageError, WorkItemRecord, SCHEMA_VERSION};
     use std::path::PathBuf;
 
     fn temp_database_path(name: &str) -> PathBuf {
@@ -241,5 +479,68 @@ mod tests {
         assert_eq!(record["payload"]["ok"], true);
         let _ = std::fs::remove_file(path);
         let _ = std::fs::remove_file(output);
+    }
+
+    #[test]
+    fn creates_and_updates_task_with_optimistic_version() {
+        let path = temp_database_path("tasks");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        database
+            .create_project("project-1", "Demo", "C:\\Projects\\demo", None)
+            .expect("project creates");
+        let item = WorkItemRecord {
+            id: "work-1".into(),
+            project_id: "project-1".into(),
+            parent_id: None,
+            title: "First task".into(),
+            description: "desc".into(),
+            source_ref: Some("prd:1".into()),
+            acceptance_criteria: "tests pass".into(),
+            non_goals: "no UI".into(),
+            status: "backlog".into(),
+            priority: 10,
+            estimate: Some(2),
+            complexity: Some("small".into()),
+            attempt_count: 0,
+            version: 1,
+        };
+        let created = database.create_work_item(&item).expect("task creates");
+        let updated = database
+            .update_work_item_status(&created.id, 1, "ready")
+            .expect("task updates");
+        assert_eq!(updated.status, "ready");
+        assert_eq!(updated.version, 2);
+        assert!(matches!(
+            database.update_work_item_status(&created.id, 1, "done"),
+            Err(StorageError::VersionConflict { .. })
+        ));
+        drop(database);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn deduplicates_same_request_and_rejects_reused_request_id() {
+        let path = temp_database_path("dedup");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        assert_eq!(
+            database
+                .record_deduplicated("client", "request", "hash", b"ok")
+                .expect("first write"),
+            None
+        );
+        assert_eq!(
+            database
+                .record_deduplicated("client", "request", "hash", b"different")
+                .expect("replay"),
+            Some(b"ok".to_vec())
+        );
+        assert!(matches!(
+            database.record_deduplicated("client", "request", "other", b"bad"),
+            Err(StorageError::DeduplicationConflict { .. })
+        ));
+        drop(database);
+        let _ = std::fs::remove_file(path);
     }
 }

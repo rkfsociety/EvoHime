@@ -10,6 +10,10 @@ message ProtocolVersion {
 message Handshake {
   ProtocolVersion protocol = 1;
   string client_id = 2;
+  string session_id = 3;
+  uint64 session_epoch = 4;
+  uint64 last_event_sequence = 5;
+  repeated string capabilities = 6;
 }
 
 message ReplayEvents {
@@ -44,6 +48,9 @@ message ResolveApproval {
 message CommandEnvelope {
   ProtocolVersion protocol = 1;
   string request_id = 2;
+  string client_id = 3;
+  string core_instance_id = 4;
+  uint64 session_epoch = 5;
   oneof command {
     Handshake handshake = 10;
     ReplayEvents replay_events = 11;
@@ -67,6 +74,8 @@ message EventEnvelope {
   string task_id = 3;
   string event_type = 4;
   bytes payload = 5;
+  string core_instance_id = 6;
+  uint64 session_epoch = 7;
   oneof event {
     Ready ready = 10;
   }

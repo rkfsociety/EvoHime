@@ -157,6 +157,16 @@ Capability registry описывает tools, skills, MCP, модели, кан�
 
 ### Этап 0a — минимальные storage и restart foundation (P0)
 
+Статус реализации на 2026-08-11: **в работе**. Выполнено в текущем срезе:
+
+- [x] Schema v2 с `projects`, `work_items`, dependency edges, `provenance`, `runs` и bounded `command_dedup`.
+- [x] SQLite WAL, backup перед миграцией, идемпотентная миграция и optimistic `version` для изменения статуса work item.
+- [x] Базовый CRUD project/work item, self-dependency guard, append-only event replay API и deduplication по `(client_id, request_id)`.
+- [x] Additive IPC contract fields for `client_id`, `core_instance_id`, `session_epoch`, `event_sequence` and capability list without removing old fields.
+- [x] Targeted Rust tests: 7 IPC и 6 local-storage тестов.
+
+Остаётся для полного закрытия 0a: wiring task CRUD/dedup and runtime session metadata in Core command queue and IPC handlers, rollback при искусственном сбое миграции, unknown-field/enum compatibility fixtures, reconnect/malformed-command tests и durable immutable role/skill/policy/model snapshots.
+
 Зависимости: существующие IPC/SQLite foundations.
 
 - Создать транзакционные миграции для projects, task graph, basic CRUD/events, lightweight run record и provenance; статусы 0a ограничить `backlog`, `ready`, `in_progress`, `done`.
