@@ -478,6 +478,7 @@ pub mod prd;
 pub mod plan;
 pub mod scope;
 pub mod workspace;
+pub mod build;
 
 pub enum CoreCommand {
     StartTask {
@@ -557,6 +558,11 @@ pub enum CoreCommand {
         project_id: String,
         task_id: String,
         max_chars: usize,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    ApplyApprovedBuild {
+        project_id: String,
+        approved_build_json: Vec<u8>,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
 }
@@ -1785,6 +1791,28 @@ impl TaskCoordinator {
                         max_chars.min(32 * 1024),
                     );
                     serde_json::to_vec(&plan).map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::ApplyApprovedBuild {
+                project_id,
+                approved_build_json,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let project = journal
+                        .get_project(&project_id)
+                        .await
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "project not found".to_string())?;
+                    let approved = serde_json::from_slice::<crate::build::ApprovedBuild>(&approved_build_json)
+                        .map_err(|error| format!("invalid approved build: {error}"))?;
+                    let snapshot = crate::build::apply_approved_build(&project.workspace_path, &approved)
+                        .map_err(|error| error.to_string())?;
+                    serde_json::to_vec(&snapshot).map_err(|error| error.to_string())
                 }
                 .await;
                 let _ = reply.send(result);

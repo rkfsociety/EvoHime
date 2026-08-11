@@ -1,7 +1,7 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Component, Path};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BuildScope {
     pub allowed_paths: Vec<String>,
     pub protected_paths: Vec<String>,
@@ -12,7 +12,7 @@ pub struct BuildScope {
     pub allow_delete: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProposedChange {
     pub relative_path: String,
     pub bytes_changed: usize,

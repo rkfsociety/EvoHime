@@ -54,7 +54,7 @@ pub fn build_manifest(
         entries.push(ManifestEntry {
             relative_path,
             bytes: content.len(),
-            content_hash: fnv1a_hex(&content),
+            content_hash: content_hash(&content),
         });
     }
     let canonical = entries
@@ -63,7 +63,7 @@ pub fn build_manifest(
         .collect::<String>();
     Ok(WorkspaceManifest {
         entries,
-        workspace_hash: fnv1a_hex(canonical.as_bytes()),
+        workspace_hash: content_hash(canonical.as_bytes()),
         total_bytes,
     })
 }
@@ -113,7 +113,7 @@ fn collect_paths(root: &Path, paths: &mut Vec<PathBuf>) -> std::io::Result<()> {
     Ok(())
 }
 
-fn fnv1a_hex(bytes: &[u8]) -> String {
+pub fn content_hash(bytes: &[u8]) -> String {
     let mut hash = 0xcbf29ce484222325_u64;
     for byte in bytes {
         hash ^= u64::from(*byte);
