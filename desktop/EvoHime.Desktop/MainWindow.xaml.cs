@@ -190,18 +190,6 @@ public partial class MainWindow : Window
             MaxHeight = 260,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         });
-        var settingsItem = ShellNavigationCatalog.Items.First(item => item.Title == "Настройки");
-        var settingsButton = new Button
-        {
-            Content = $"{settingsItem.Glyph}   {settingsItem.Title}",
-            Tag = settingsItem.Description,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = HorizontalAlignment.Left,
-            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-            Foreground = text,
-        };
-        settingsButton.Click += (_, _) => ShowSettingsView();
-        navItems.Children.Add(settingsButton);
         Grid.SetRow(navItems, 2);
         sidebar.Children.Add(navItems);
         var workspaceInfo = new StackPanel { Spacing = 5, Margin = new Thickness(0, 14, 0, 0) };
@@ -911,6 +899,13 @@ public partial class MainWindow : Window
         }
 
         var project = _projectCatalogService.EnsureProject(_projectCatalog, path);
+        if (project is null)
+        {
+            _activeProjectId = null;
+            _activeChatId = null;
+            RefreshProjectSidebar();
+            return;
+        }
         _activeProjectId = project.Id;
         if (!_newChatRequested && _activeChatId is null)
         {

@@ -253,6 +253,32 @@ public sealed class IpcCompatibilityTests
     }
 
     [TestMethod]
+    public void ProjectCatalogIgnoresNativePackageDirectory()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "evohime-native-project-" + Guid.NewGuid().ToString("N"));
+        var catalogPath = Path.Combine(root, "projects.json");
+        try
+        {
+            var service = new ProjectCatalogService(catalogPath);
+            var catalog = service.Load();
+
+            Assert.IsTrue(ProjectCatalogService.IsTechnicalProjectPath(
+                Path.Combine(root, ".evohime-native", "windows-x64")));
+            Assert.IsNull(service.EnsureProject(
+                catalog,
+                Path.Combine(root, ".evohime-native", "windows-x64")));
+            Assert.AreEqual(0, catalog.Projects.Count);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [TestMethod]
     public void TrayCommandsHaveStableIds()
     {
         Assert.AreEqual(1u, (uint)TrayMenuCommand.Show);

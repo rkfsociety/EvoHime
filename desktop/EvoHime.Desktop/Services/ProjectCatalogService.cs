@@ -57,6 +57,9 @@ public sealed class ProjectCatalogService
             var catalog = JsonSerializer.Deserialize<ProjectCatalog>(File.ReadAllText(FilePath), _jsonOptions)
                 ?? new ProjectCatalog();
             catalog.Projects ??= [];
+            catalog.Projects = catalog.Projects
+                .Where(project => !IsTechnicalProjectPath(project.Path))
+                .ToList();
             foreach (var project in catalog.Projects)
             {
                 project.Chats ??= [];
@@ -96,8 +99,27 @@ public sealed class ProjectCatalogService
         }
     }
 
-    public ProjectEntry EnsureProject(ProjectCatalog catalog, string path)
+    public static bool IsTechnicalProjectPath(string path)
     {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        var fullPath = Path.GetFullPath(path)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return fullPath
+            .Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries)
+            .Any(part => string.Equals(part, ".evohime-native", StringComparison.OrdinalIgnoreCase));
+    }
+
+    public ProjectEntry? EnsureProject(ProjectCatalog catalog, string path)
+    {
+        if (IsTechnicalProjectPath(path))
+        {
+            return null;
+        }
+
         var fullPath = System.IO.Path.GetFullPath(path);
         var project = catalog.Projects.FirstOrDefault(item =>
             string.Equals(item.Path, fullPath, StringComparison.OrdinalIgnoreCase));
