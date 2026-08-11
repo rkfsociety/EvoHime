@@ -317,6 +317,12 @@ impl IpcBridge {
                     .await?;
                 self.write_response(writer, "prd.imported", result).await?;
             }
+            Some(generated::command_envelope::Command::GetTaskHistory(request)) => {
+                let result = self
+                    .dispatch_get_task_history(request.task_id, request.limit as usize)
+                    .await?;
+                self.write_response(writer, "task.history", result).await?;
+            }
             Some(generated::command_envelope::Command::StartTask(start)) => {
                 if let Some(coordinator) = &self.coordinator {
                     coordinator
@@ -548,6 +554,31 @@ impl IpcBridge {
                 origin: request.origin,
                 version: request.version,
                 source_text: request.source_text,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_get_task_history(
+        &self,
+        task_id: String,
+        limit: usize,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::GetTaskHistory {
+                task_id,
+                limit,
                 reply,
             })
             .await

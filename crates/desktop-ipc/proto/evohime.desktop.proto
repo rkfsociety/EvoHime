@@ -89,6 +89,11 @@ message ImportPrd {
   string source_text = 5;
 }
 
+message GetTaskHistory {
+  string task_id = 1;
+  uint32 limit = 2;
+}
+
 message StartTask {
   string task_id = 1;
   string prompt = 2;
@@ -126,6 +131,7 @@ message CommandEnvelope {
     GetTaskGraph get_task_graph = 22;
     NextReadyTask next_ready_task = 23;
     ImportPrd import_prd = 24;
+    GetTaskHistory get_task_history = 25;
   }
 }
 

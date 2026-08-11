@@ -626,6 +626,30 @@ impl LocalDatabase {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    pub fn read_task_events(
+        &self,
+        task_id: &str,
+        limit: usize,
+    ) -> Result<Vec<EventRecord>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT sequence_id, task_id, event_type, payload, created_at
+             FROM events WHERE task_id = ?1 ORDER BY sequence_id DESC LIMIT ?2",
+        )?;
+        let limit = limit.min(i64::MAX as usize) as i64;
+        let rows = statement.query_map(rusqlite::params![task_id, limit], |row| {
+            Ok(EventRecord {
+                sequence_id: row.get(0)?,
+                task_id: row.get(1)?,
+                event_type: row.get(2)?,
+                payload: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+        let mut events = rows.collect::<Result<Vec<_>, _>>()?;
+        events.reverse();
+        Ok(events)
+    }
+
     pub fn export_events_jsonl(&self, output: impl AsRef<Path>) -> Result<(), StorageError> {
         if let Some(parent) = output.as_ref().parent() {
             fs::create_dir_all(parent)?;
@@ -803,6 +827,10 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].sequence_id, second);
         assert_eq!(events[0].payload, b"two");
+        let task_events = database.read_task_events("task-1", 10).expect("task events read");
+        assert_eq!(task_events.len(), 2);
+        assert_eq!(task_events[0].sequence_id, first);
+        assert_eq!(task_events[1].sequence_id, second);
         drop(database);
         let _ = std::fs::remove_file(path);
     }

@@ -539,6 +539,11 @@ pub enum CoreCommand {
         source_text: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    GetTaskHistory {
+        task_id: String,
+        limit: usize,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -716,6 +721,15 @@ impl EventJournal {
             source_text,
             tasks,
         )
+    }
+
+    pub async fn task_history(
+        &self,
+        task_id: &str,
+        limit: usize,
+    ) -> Result<Vec<EventRecord>, StorageError> {
+        let database = self.database.lock().await;
+        database.read_task_events(task_id, limit)
     }
 
     pub async fn record_deduplicated(
@@ -1636,6 +1650,29 @@ impl TaskCoordinator {
                         .await
                         .map_err(|error| error.to_string())?;
                     Ok(result)
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::GetTaskHistory { task_id, limit, reply } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let events = journal
+                        .task_history(&task_id, limit.min(100))
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    serde_json::to_vec(&serde_json::json!({
+                        "task_id": task_id,
+                        "events": events.into_iter().map(|event| serde_json::json!({
+                            "sequence_id": event.sequence_id,
+                            "event_type": event.event_type,
+                            "created_at": event.created_at,
+                            "payload": serde_json::from_slice::<serde_json::Value>(&event.payload)
+                                .unwrap_or_else(|_| serde_json::json!({"raw_bytes": event.payload})),
+                        })).collect::<Vec<_>>(),
+                    }))
+                    .map_err(|error| error.to_string())
                 }
                 .await;
                 let _ = reply.send(result);

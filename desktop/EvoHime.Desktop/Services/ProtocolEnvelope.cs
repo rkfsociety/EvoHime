@@ -157,6 +157,14 @@ public static class ProtocolEnvelope
         output.WriteString(status);
     });
 
+    public static byte[] GetTaskHistory(string taskId, uint limit = 20) => TaskCommand(25, output =>
+    {
+        output.WriteTag(1, WireFormat.WireType.LengthDelimited);
+        output.WriteString(taskId);
+        output.WriteTag(2, WireFormat.WireType.Varint);
+        output.WriteUInt32(limit);
+    });
+
     public static CoreEventEnvelope ReadEvent(ReadOnlySpan<byte> payload)
     {
         using var input = new CodedInputStream(payload.ToArray());

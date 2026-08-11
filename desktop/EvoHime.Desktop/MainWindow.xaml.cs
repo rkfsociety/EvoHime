@@ -966,6 +966,9 @@ public partial class MainWindow : Window
         AddTaskStatusButton(actions, "В работу", task, "in_progress");
         AddTaskStatusButton(actions, "Выполнена", task, "done");
         AddTaskStatusButton(actions, "Отложить", task, "backlog");
+        var history = new Button { Content = "История", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
+        history.Click += async (_, _) => await RequestTaskHistoryAsync(task);
+        actions.Children.Add(history);
         details.Children.Add(actions);
         return new Border
         {
@@ -1017,6 +1020,44 @@ public partial class MainWindow : Window
         catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
         {
             _taskWorkspaceStatus.Text = $"Переход задачи не выполнен: {error.Message}";
+        }
+    }
+
+    private async Task RequestTaskHistoryAsync(TaskDto task)
+    {
+        if (_taskWorkspaceStatus is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                await _ipc.RequestTaskHistoryAsync(task.Id, 20, CancellationToken.None);
+                var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                if (response.EventType != "task.history")
+                {
+                    throw new InvalidOperationException("Core не вернул историю задачи.");
+                }
+                using var json = JsonDocument.Parse(response.Payload);
+                var events = json.RootElement.GetProperty("events");
+                var labels = events.EnumerateArray()
+                    .Select(item => $"{item.GetProperty("event_type").GetString()} ({item.GetProperty("created_at").GetString()})")
+                    .ToArray();
+                _taskWorkspaceStatus.Text = labels.Length == 0
+                    ? $"История задачи «{task.Title}» пуста."
+                    : $"История «{task.Title}»: {string.Join(" → ", labels)}";
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+        {
+            _taskWorkspaceStatus.Text = $"Не удалось загрузить историю: {error.Message}";
         }
     }
 
