@@ -3,6 +3,59 @@ pub struct CoreVersion;
 pub const AGENT_IDENTITY_PROMPT: &str =
     "Ты — Ева, AI-агент приложения EvoHime. Ева — короткое имя EvoHime; понимай обращения к тебе «Ева» и «EvoHime» как к одному агенту.";
 
+fn build_agent_system_prompt(workspace: &std::path::Path, tool_names: &[String]) -> String {
+    format!(
+        "{AGENT_IDENTITY_PROMPT}\n\n\
+Ты работаешь автономно внутри уже выбранного рабочего пространства.\n\
+Текущий workspace: {}\n\
+Этот путь доступен инструментам как их корневая папка; не проси пользователя сообщать его повторно.\n\n\
+Правила выполнения:\n\
+- Выполняй задачу самостоятельно и используй инструменты, когда они нужны для фактической проверки.\n\
+- Если пользователь просит изучить, проверить, найти или объяснить проект, сначала вызови filesystem.list с path точкой (.).\n\
+- Затем прочитай подходящие manifest-файлы и документацию (например Cargo.toml, *.csproj, package.json, README и архитектурные документы), а для поиска по коду используй filesystem.search.\n\
+- Не проси пользователя прислать структуру проекта, путь или команды, если workspace уже указан.\n\
+- Не утверждай, что изучила файл или выполнила действие, пока соответствующий инструмент не вернул результат.\n\
+- Для чтения используй безопасные read-only инструменты. Перед изменениями и опасными действиями учитывай approval.\n\
+- После исследования дай отчёт: что обнаружено, какие файлы проверены, какие проблемы найдены и что предлагается сделать дальше.\n\n\
+Доступные инструменты в этой сессии:\n{}",
+        workspace.display(),
+        tool_names
+            .iter()
+            .map(|name| format!("- {name}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    )
+}
+
+fn tool_parameters(name: &str) -> serde_json::Value {
+    match name {
+        "filesystem.list" => serde_json::json!({
+            "type": "object",
+            "properties": { "path": { "type": "string", "description": "Workspace-relative directory, usually ." } }
+        }),
+        "filesystem.read" => serde_json::json!({
+            "type": "object",
+            "properties": { "path": { "type": "string", "description": "Workspace-relative UTF-8 file path" } },
+            "required": ["path"]
+        }),
+        "filesystem.search" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string", "description": "Text or pattern to search for" },
+                "path": { "type": "string", "description": "Optional workspace-relative directory" },
+                "glob": { "type": "string", "description": "Optional file glob" },
+                "limit": { "type": "integer", "minimum": 1, "maximum": 200 }
+            },
+            "required": ["query"]
+        }),
+        "git.diff" => serde_json::json!({
+            "type": "object",
+            "properties": { "path": { "type": "string", "description": "Optional workspace-relative path" } }
+        }),
+        _ => serde_json::json!({ "type": "object", "additionalProperties": true }),
+    }
+}
+
 mod ipc_bridge;
 pub use ipc_bridge::{IpcBridge, IpcBridgeError, ModelConfigSnapshot};
 mod logging;
@@ -359,24 +412,25 @@ impl ToolAgent {
             .list()
             .into_iter()
             .map(|tool| {
+                let name = tool.name.to_string();
                 ToolSpec::function(
-                    tool.name,
+                    name,
                     tool.description,
-                    serde_json::json!({"type": "object", "additionalProperties": true}),
+                    tool_parameters(tool.name),
                 )
             })
             .collect::<Vec<_>>();
-        let mut messages = vec![
-            ChatMessage::text(ChatRole::System, AGENT_IDENTITY_PROMPT),
-            ChatMessage::text(ChatRole::User, prompt),
-        ];
-
-        let system_prompt = AGENT_IDENTITY_PROMPT.to_string();
-        let user_prompt = messages[1].content.clone();
         let tool_names = specs
             .iter()
             .map(|spec| spec.function.name.clone())
             .collect::<Vec<_>>();
+        let system_prompt = build_agent_system_prompt(&context.workspace_root, &tool_names);
+        let mut messages = vec![
+            ChatMessage::text(ChatRole::System, system_prompt.clone()),
+            ChatMessage::text(ChatRole::User, prompt),
+        ];
+
+        let user_prompt = messages[1].content.clone();
         let context_text = format!("{system_prompt}\n{user_prompt}\n{}", tool_names.join("\n"));
         let _ = events.send(CoreEvent::ModelContext {
             task_id: task_id.clone(),
@@ -682,6 +736,17 @@ mod tests {
     fn agent_identity_includes_short_name() {
         assert!(super::AGENT_IDENTITY_PROMPT.contains("Ева"));
         assert!(super::AGENT_IDENTITY_PROMPT.contains("EvoHime"));
+    }
+
+    #[test]
+    fn agent_system_prompt_explains_workspace_research_flow() {
+        let prompt = super::build_agent_system_prompt(
+            std::path::Path::new(r"C:\Projects\demo"),
+            &["filesystem.list".into(), "filesystem.read".into()],
+        );
+        assert!(prompt.contains(r"C:\Projects\demo"));
+        assert!(prompt.contains("filesystem.list"));
+        assert!(prompt.contains("Не проси пользователя прислать структуру"));
     }
 
     impl TaskExecutor for NeverExecutor {
