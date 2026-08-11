@@ -530,13 +530,27 @@ public partial class MainWindow : Window
         var traceLayout = new Grid { RowSpacing = 10 };
         traceLayout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         traceLayout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        traceLayout.Children.Add(new TextBlock
+        var traceHeader = new Grid { ColumnSpacing = 8 };
+        traceHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        traceHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        traceHeader.Children.Add(new TextBlock
         {
             Text = "Трейс выполнения",
             FontSize = 18,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             Foreground = text,
         });
+        var copyTraceButton = new Button
+        {
+            Content = "Копировать",
+            FontSize = 11,
+            Padding = new Thickness(6, 4, 6, 4),
+        };
+        ToolTipService.SetToolTip(copyTraceButton, "Скопировать trace");
+        copyTraceButton.Click += (_, _) => CopyTrace();
+        Grid.SetColumn(copyTraceButton, 1);
+        traceHeader.Children.Add(copyTraceButton);
+        traceLayout.Children.Add(traceHeader);
         _tracePanel = new StackPanel { Spacing = 8 };
         _traceScroll = new ScrollViewer
         {
@@ -1290,6 +1304,23 @@ public partial class MainWindow : Window
 
         CopyConversationMessage(string.Join(Environment.NewLine + Environment.NewLine, lines));
         ConnectionStatus.Text = lines.Count == 0 ? "Чат пока пуст" : "Весь чат скопирован";
+    }
+
+    private void CopyTrace()
+    {
+        if (_tracePanel is null)
+        {
+            return;
+        }
+
+        var lines = _tracePanel.Children
+            .OfType<Border>()
+            .Select(item => (item.Child as TextBlock)?.Text)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Cast<string>()
+            .ToList();
+        CopyConversationMessage(string.Join(Environment.NewLine + Environment.NewLine, lines));
+        ConnectionStatus.Text = lines.Count == 0 ? "Trace пока пуст" : "Trace скопирован";
     }
 
     private void OpenTraceFolder()
