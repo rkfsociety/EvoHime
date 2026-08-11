@@ -1015,6 +1015,9 @@ public partial class MainWindow : Window
         var history = new Button { Content = "История", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
         history.Click += async (_, _) => await RequestTaskHistoryAsync(task);
         actions.Children.Add(history);
+        var rollback = new Button { Content = "Rollback", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
+        rollback.Click += async (_, _) => await RestoreLatestSnapshotAsync(task);
+        actions.Children.Add(rollback);
         var context = new Button { Content = "Контекст", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
         context.Click += async (_, _) => await RequestTaskContextAsync(task);
         actions.Children.Add(context);
@@ -1299,6 +1302,71 @@ public partial class MainWindow : Window
             }
         }
         return $"{eventType} ({createdAt})";
+    }
+
+    private async Task RestoreLatestSnapshotAsync(TaskDto task)
+    {
+        var project = ActiveProject();
+        if (project is null || _taskWorkspaceStatus is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                await EnsureCoreProjectAsync(project);
+                await _ipc.RequestTaskSnapshotAsync(project.Id, task.Id, CancellationToken.None);
+                var snapshotResponse = await _ipc.ReadEventAsync(CancellationToken.None);
+                if (snapshotResponse.EventType != "task.snapshot")
+                {
+                    throw new InvalidOperationException("Core не вернул snapshot задачи.");
+                }
+                using var snapshotJson = JsonDocument.Parse(snapshotResponse.Payload);
+                var snapshotRoot = snapshotJson.RootElement;
+                var snapshotId = snapshotRoot.GetProperty("id").GetString();
+                var snapshot = snapshotRoot.GetProperty("snapshot");
+                var diff = snapshot.TryGetProperty("diff", out var diffValue)
+                    ? string.Join("\n", diffValue.EnumerateArray().Select(item =>
+                        $"{item.GetProperty("operation").GetString()}: {item.GetProperty("relative_path").GetString()}"))
+                    : "diff отсутствует";
+                var dialog = new ContentDialog
+                {
+                    Title = "Подтвердить rollback snapshot",
+                    Content = new TextBlock
+                    {
+                        Text = $"Snapshot: {snapshotId}\nRun: {snapshotRoot.GetProperty("run_id").GetString()}\nWorkspace hash: {snapshotRoot.GetProperty("workspace_hash").GetString()}\n\nИзменения будут восстановлены только для файлов snapshot.\n{diff}",
+                        TextWrapping = TextWrapping.Wrap,
+                    },
+                    PrimaryButtonText = "Одобрить rollback",
+                    CloseButtonText = "Отмена",
+                    XamlRoot = ((FrameworkElement)Content).XamlRoot,
+                };
+                if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                {
+                    _taskWorkspaceStatus.Text = "Rollback отменён до изменения workspace.";
+                    return;
+                }
+
+                await _ipc.RestoreTaskSnapshotAsync(project.Id, task.Id, snapshotId ?? string.Empty, CancellationToken.None);
+                var restored = await _ipc.ReadEventAsync(CancellationToken.None);
+                if (restored.EventType != "snapshot.restored")
+                {
+                    throw new InvalidOperationException("Core не подтвердил rollback snapshot.");
+                }
+                _taskWorkspaceStatus.Text = $"Snapshot {snapshotId} восстановлен с approval и записан в audit.";
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+        {
+            _taskWorkspaceStatus.Text = $"Rollback не выполнен: {error.Message}";
+        }
     }
 
     private async Task RequestTaskContextAsync(TaskDto task)

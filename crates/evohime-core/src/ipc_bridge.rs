@@ -352,6 +352,18 @@ impl IpcBridge {
                     .await?;
                 self.write_response(writer, "build.prepared", result).await?;
             }
+            Some(generated::command_envelope::Command::GetTaskSnapshot(request)) => {
+                let result = self
+                    .dispatch_get_task_snapshot(request.project_id, request.task_id)
+                    .await?;
+                self.write_response(writer, "task.snapshot", result).await?;
+            }
+            Some(generated::command_envelope::Command::RestoreTaskSnapshot(request)) => {
+                let result = self
+                    .dispatch_restore_task_snapshot(request.project_id, request.task_id, request.snapshot_id)
+                    .await?;
+                self.write_response(writer, "snapshot.restored", result).await?;
+            }
             Some(generated::command_envelope::Command::StartTask(start)) => {
                 if let Some(coordinator) = &self.coordinator {
                     coordinator
@@ -718,6 +730,49 @@ impl IpcBridge {
                 proposal_json,
                 reply,
             })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_get_task_snapshot(
+        &self,
+        project_id: String,
+        task_id: String,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::GetTaskSnapshot { project_id, task_id, reply })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_restore_task_snapshot(
+        &self,
+        project_id: String,
+        task_id: String,
+        snapshot_id: String,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::RestoreTaskSnapshot { project_id, task_id, snapshot_id, reply })
             .await
             .map_err(|error| FrameError::Io(error.to_string()))?;
         response

@@ -226,6 +226,19 @@ public static class ProtocolEnvelope
         WriteString(output, 4, taskId);
     });
 
+    public static byte[] GetTaskSnapshot(string projectId, string taskId) => TaskCommand(30, output =>
+    {
+        WriteString(output, 1, projectId);
+        WriteString(output, 2, taskId);
+    });
+
+    public static byte[] RestoreTaskSnapshot(string projectId, string taskId, string snapshotId) => TaskCommand(31, output =>
+    {
+        WriteString(output, 1, projectId);
+        WriteString(output, 2, taskId);
+        WriteString(output, 3, snapshotId);
+    });
+
     public static CoreEventEnvelope ReadEvent(ReadOnlySpan<byte> payload)
     {
         using var input = new CodedInputStream(payload.ToArray());

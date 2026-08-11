@@ -561,6 +561,17 @@ pub enum CoreCommand {
         max_chars: usize,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    GetTaskSnapshot {
+        project_id: String,
+        task_id: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    RestoreTaskSnapshot {
+        project_id: String,
+        task_id: String,
+        snapshot_id: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     ApplyApprovedBuild {
         project_id: String,
         run_id: String,
@@ -777,6 +788,30 @@ impl EventJournal {
     ) -> Result<evohime_local_storage::SnapshotRecord, StorageError> {
         let database = self.database.lock().await;
         database.save_snapshot(id, run_id, workspace_hash, payload)
+    }
+
+    pub async fn latest_snapshot_for_task(
+        &self,
+        task_id: &str,
+    ) -> Result<Option<evohime_local_storage::SnapshotRecord>, StorageError> {
+        let database = self.database.lock().await;
+        database.latest_snapshot_for_task(task_id)
+    }
+
+    pub async fn get_snapshot(
+        &self,
+        snapshot_id: &str,
+    ) -> Result<Option<evohime_local_storage::SnapshotRecord>, StorageError> {
+        let database = self.database.lock().await;
+        database.get_snapshot(snapshot_id)
+    }
+
+    pub async fn get_run(
+        &self,
+        run_id: &str,
+    ) -> Result<Option<evohime_local_storage::RunRecord>, StorageError> {
+        let database = self.database.lock().await;
+        database.get_run(run_id)
     }
 
     pub async fn begin_build_effect(
@@ -1895,6 +1930,91 @@ impl TaskCoordinator {
                         max_chars.min(32 * 1024),
                     );
                     serde_json::to_vec(&plan).map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::GetTaskSnapshot { project_id, task_id, reply } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let task = journal
+                        .get_work_item(&task_id)
+                        .await
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "task not found".to_string())?;
+                    if task.project_id != project_id {
+                        return Err("task does not belong to project".to_string());
+                    }
+                    let snapshot = journal
+                        .latest_snapshot_for_task(&task_id)
+                        .await
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "snapshot not found".to_string())?;
+                    let snapshot_json = serde_json::from_slice::<serde_json::Value>(&snapshot.payload)
+                        .map_err(|error| error.to_string())?;
+                    serde_json::to_vec(&serde_json::json!({
+                        "id": snapshot.id,
+                        "run_id": snapshot.run_id,
+                        "workspace_hash": snapshot.workspace_hash,
+                        "created_at": snapshot.created_at,
+                        "snapshot": snapshot_json,
+                    }))
+                    .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::RestoreTaskSnapshot { project_id, task_id, snapshot_id, reply } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let project = journal
+                        .get_project(&project_id)
+                        .await
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "project not found".to_string())?;
+                    let task = journal
+                        .get_work_item(&task_id)
+                        .await
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "task not found".to_string())?;
+                    if task.project_id != project_id {
+                        return Err("task does not belong to project".to_string());
+                    }
+                    let snapshot = journal
+                        .get_snapshot(&snapshot_id)
+                        .await
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "snapshot not found".to_string())?;
+                    let run = journal
+                        .get_run(&snapshot.run_id)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    if run.as_ref().map(|run| run.work_item_id.as_str()) != Some(task_id.as_str()) {
+                        return Err("snapshot ownership could not be verified".to_string());
+                    }
+                    let run_id = snapshot.run_id.clone();
+                    let workspace_snapshot = serde_json::from_slice::<crate::build::WorkspaceSnapshot>(&snapshot.payload)
+                        .map_err(|error| format!("invalid snapshot: {error}"))?;
+                    crate::build::restore_snapshot(&project.workspace_path, &workspace_snapshot)
+                        .map_err(|error| error.to_string())?;
+                    let audit_payload = serde_json::to_vec(&serde_json::json!({
+                        "task_id": task_id,
+                        "snapshot_id": snapshot_id,
+                        "run_id": run_id,
+                        "operation": "workspace_restore",
+                    }))
+                    .map_err(|error| error.to_string())?;
+                    journal
+                        .record_audit(&task_id, "snapshot.rollback.applied", &audit_payload)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    Ok(serde_json::to_vec(&serde_json::json!({
+                        "snapshot_id": snapshot_id,
+                        "restored": true,
+                    }))
+                    .map_err(|error| error.to_string())?)
                 }
                 .await;
                 let _ = reply.send(result);

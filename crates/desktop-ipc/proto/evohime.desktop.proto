@@ -118,6 +118,17 @@ message PrepareBuild {
   bytes proposal_json = 2;
 }
 
+message GetTaskSnapshot {
+  string project_id = 1;
+  string task_id = 2;
+}
+
+message RestoreTaskSnapshot {
+  string project_id = 1;
+  string task_id = 2;
+  string snapshot_id = 3;
+}
+
 message StartTask {
   string task_id = 1;
   string prompt = 2;
@@ -160,6 +171,8 @@ message CommandEnvelope {
     GetTaskPlanSpec get_task_plan_spec = 27;
     ApplyApprovedBuild apply_approved_build = 28;
     PrepareBuild prepare_build = 29;
+    GetTaskSnapshot get_task_snapshot = 30;
+    RestoreTaskSnapshot restore_task_snapshot = 31;
   }
 }
 

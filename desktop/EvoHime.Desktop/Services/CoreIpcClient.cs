@@ -130,6 +130,12 @@ public sealed class CoreIpcClient
     public Task ApplyApprovedBuildAsync(string projectId, string runId, string taskId, byte[] approvedBuildJson, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.ApplyApprovedBuild(projectId, runId, taskId, approvedBuildJson), cancellationToken);
 
+    public Task RequestTaskSnapshotAsync(string projectId, string taskId, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.GetTaskSnapshot(projectId, taskId), cancellationToken);
+
+    public Task RestoreTaskSnapshotAsync(string projectId, string taskId, string snapshotId, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.RestoreTaskSnapshot(projectId, taskId, snapshotId), cancellationToken);
+
     public async Task<ulong> ReadReplayAsync(
         ulong afterSequence,
         Func<CoreEventEnvelope, Task> onEvent,

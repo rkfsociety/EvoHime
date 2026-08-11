@@ -396,6 +396,22 @@ impl LocalDatabase {
             .optional()?)
     }
 
+    pub fn latest_snapshot_for_task(&self, task_id: &str) -> Result<Option<SnapshotRecord>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT s.id, s.run_id, s.workspace_hash, s.payload, s.created_at
+             FROM snapshots s JOIN runs r ON r.id = s.run_id
+             WHERE r.work_item_id = ?1 ORDER BY s.created_at DESC, s.id DESC LIMIT 1",
+        )?;
+        Ok(statement
+            .query_row([task_id], |row| {
+                Ok(SnapshotRecord {
+                    id: row.get(0)?, run_id: row.get(1)?, workspace_hash: row.get(2)?,
+                    payload: row.get(3)?, created_at: row.get(4)?,
+                })
+            })
+            .optional()?)
+    }
+
     pub fn get_work_item(&self, id: &str) -> Result<Option<WorkItemRecord>, StorageError> {
         let mut statement = self.connection.prepare(
             "SELECT id, project_id, parent_id, title, description, source_ref,
