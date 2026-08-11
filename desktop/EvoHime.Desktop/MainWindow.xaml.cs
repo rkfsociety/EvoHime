@@ -58,6 +58,9 @@ public partial class MainWindow : Window
     private TextBlock? _githubProfileText;
     private TextBlock? _githubProfileStatus;
     private Button? _githubProfileButton;
+    private StackPanel? _conversationPanel;
+    private ScrollViewer? _conversationScroll;
+    private TextBlock? _streamingAssistantText;
 
     public MainWindow()
     {
@@ -104,7 +107,7 @@ public partial class MainWindow : Window
         newChat.Click += (_, _) =>
         {
             PromptBox.Text = string.Empty;
-            EventLog.Text = string.Empty;
+            ClearConversation();
             _activeChatId = null;
             ConnectionStatus.Text = "●  Готова";
         };
@@ -263,16 +266,17 @@ public partial class MainWindow : Window
         intro.Children.Add(new TextBlock { Text = "Чем займёмся?", FontSize = 23, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = text });
         intro.Children.Add(new TextBlock { Text = "Изучу проект, найду проблему, изменю файлы или объясню код.", FontSize = 14, Foreground = muted });
         cardGrid.Children.Add(intro);
-        EventLog = new TextBlock
+        _conversationPanel = new StackPanel { Spacing = 14 };
+        _conversationScroll = new ScrollViewer
         {
-            Text = "Здесь появится план и журнал выполнения задачи.",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = muted,
-            FontSize = 13,
+            Content = _conversationPanel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Padding = new Thickness(2, 4, 8, 8),
         };
-        var log = new ScrollViewer { Content = EventLog, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-        Grid.SetRow(log, 1);
-        cardGrid.Children.Add(log);
+        Grid.SetRow(_conversationScroll, 1);
+        cardGrid.Children.Add(_conversationScroll);
+        AddConversationMessage("Ева", "Привет, хозяин. Опиши задачу — я разберусь и покажу, что делаю.", false);
         PromptBox = new TextBox
         {
             PlaceholderText = "Поручите что угодно",
@@ -849,7 +853,7 @@ public partial class MainWindow : Window
             if (_activeChatId == chat.Id)
             {
                 _activeChatId = null;
-                EventLog.Text = string.Empty;
+                ClearConversation();
                 ConnectionStatus.Text = $"Проект: {project.Name}";
             }
             RefreshProjectSidebar();
@@ -915,7 +919,8 @@ public partial class MainWindow : Window
         WorkspacePathText.Text = $"Workspace: {_state.WorkspacePath}";
         RefreshProjectSidebar();
         ShowHomeView();
-        EventLog.Text = $"Чат «{chat.Title}» выбран. Новые события появятся здесь.";
+        ClearConversation();
+        AddConversationActivity($"Чат «{chat.Title}» выбран · новые сообщения появятся здесь");
         ConnectionStatus.Text = $"Проект: {project.Name} · чат: {chat.Title}";
     }
 
@@ -1039,6 +1044,153 @@ public partial class MainWindow : Window
         e.Handled = true;
         StartButton_Click(sender, e);
     }
+
+    private void ClearConversation()
+    {
+        if (_conversationPanel is null)
+        {
+            return;
+        }
+
+        _conversationPanel.Children.Clear();
+        _streamingAssistantText = null;
+        AddConversationMessage("Ева", "Привет, хозяин. Опиши задачу — я разберусь и покажу, что делаю.", false);
+    }
+
+    private void AddConversationMessage(string speaker, string message, bool isUser)
+    {
+        if (_conversationPanel is null)
+        {
+            return;
+        }
+
+        var text = ThemeBrush("TextBrush", 244, 242, 250);
+        var bubble = new StackPanel { Spacing = 6 };
+        bubble.Children.Add(new TextBlock
+        {
+            Text = speaker,
+            FontSize = 12,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = isUser ? ThemeBrush("TealBrush", 89, 216, 200) : ThemeBrush("PurpleBrush", 167, 139, 250),
+        });
+        var body = new TextBlock
+        {
+            Text = message,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 14,
+            Foreground = text,
+        };
+        bubble.Children.Add(body);
+        _conversationPanel.Children.Add(new Border
+        {
+            Child = bubble,
+            MaxWidth = 820,
+            Padding = new Thickness(16, 12, 16, 13),
+            CornerRadius = isUser ? new CornerRadius(14, 14, 4, 14) : new CornerRadius(14),
+            Background = isUser ? ThemeBrush("PurpleBrush", 62, 53, 91) : ThemeBrush("SurfaceRaisedBrush", 34, 38, 53),
+            BorderBrush = ThemeBrush("BorderBrush", 48, 53, 72),
+            BorderThickness = new Thickness(1),
+            HorizontalAlignment = isUser ? HorizontalAlignment.Right : HorizontalAlignment.Left,
+        });
+        ScrollConversationToBottom();
+        if (!isUser)
+        {
+            _streamingAssistantText = body;
+        }
+    }
+
+    private void AddConversationActivity(string message)
+    {
+        if (_conversationPanel is null)
+        {
+            return;
+        }
+
+        _streamingAssistantText = null;
+        _conversationPanel.Children.Add(new Border
+        {
+            Background = ThemeBrush("SurfaceBrush", 25, 28, 39),
+            BorderBrush = ThemeBrush("BorderBrush", 48, 53, 72),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(12, 8, 12, 8),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Child = new TextBlock
+            {
+                Text = $"·  {message}",
+                FontSize = 12,
+                Foreground = ThemeBrush("MutedTextBrush", 146, 152, 173),
+                TextWrapping = TextWrapping.Wrap,
+            },
+        });
+        ScrollConversationToBottom();
+    }
+
+    private void AppendAssistantDelta(string content)
+    {
+        if (string.IsNullOrEmpty(content))
+        {
+            return;
+        }
+
+        if (_streamingAssistantText is null)
+        {
+            AddConversationMessage("Ева", content, false);
+        }
+        else
+        {
+            _streamingAssistantText.Text += content;
+            ScrollConversationToBottom();
+        }
+    }
+
+    private void RenderConversationEvent(CoreEventEnvelope envelope)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(envelope.Payload);
+            var root = document.RootElement;
+            switch (envelope.EventType)
+            {
+                case "agent.message.delta":
+                    AppendAssistantDelta(PayloadString(root, "content"));
+                    break;
+                case "tool.started":
+                    AddConversationActivity($"Ева использует инструмент: {PayloadString(root, "tool_name")}");
+                    break;
+                case "tool.output":
+                    AddConversationActivity($"Инструмент завершён: {PayloadString(root, "tool_name")}");
+                    break;
+                case "task.completed":
+                    var finalMessage = PayloadString(root, "final_message");
+                    if (!string.IsNullOrWhiteSpace(finalMessage) && _streamingAssistantText is null)
+                    {
+                        AddConversationMessage("Ева", finalMessage, false);
+                    }
+                    AddConversationActivity("Задача завершена");
+                    _streamingAssistantText = null;
+                    break;
+                case "task.failed":
+                    AddConversationMessage("Ева", $"Задача завершилась с ошибкой: {PayloadString(root, "error")}", false);
+                    _streamingAssistantText = null;
+                    break;
+                case "task.stopped":
+                    AddConversationActivity("Задача остановлена");
+                    _streamingAssistantText = null;
+                    break;
+            }
+        }
+        catch (JsonException)
+        {
+            AddConversationActivity(NativeEventFormatter.Format(envelope));
+        }
+    }
+
+    private static string PayloadString(JsonElement root, string property) =>
+        root.TryGetProperty(property, out var value) ? value.GetString() ?? string.Empty : string.Empty;
+
+    private void ScrollConversationToBottom() =>
+        _ = DispatcherQueue.TryEnqueue(() => _conversationScroll?.ChangeView(null, double.MaxValue, null));
 
     private async void AttachFiles_Click(object sender, RoutedEventArgs e)
     {
@@ -1402,6 +1554,11 @@ public partial class MainWindow : Window
             return;
         }
 
+        AddConversationMessage("Вы", prompt, true);
+        PromptBox.Text = string.Empty;
+        _streamingAssistantText = null;
+        AddConversationActivity("Ева подключается к Core…");
+
         try
         {
             if (!_ipc.IsConnected)
@@ -1443,6 +1600,7 @@ public partial class MainWindow : Window
         catch (Exception error)
         {
             ConnectionStatus.Text = $"Ошибка IPC: {error.Message}";
+            AddConversationMessage("Ева", $"Не удалось начать задачу: {error.Message}", false);
             await _ipc.DisposeAsync();
         }
     }
@@ -1593,8 +1751,7 @@ public partial class MainWindow : Window
                     {
                         if (_state.ApplyEvent(envelope))
                         {
-                            var text = NativeEventFormatter.Format(envelope);
-                            _ = DispatcherQueue.TryEnqueue(() => EventLog.Text += text + Environment.NewLine);
+                            _ = DispatcherQueue.TryEnqueue(() => RenderConversationEvent(envelope));
                             if (envelope.EventType == "approval.required")
                             {
                                 ShowApproval(envelope);
