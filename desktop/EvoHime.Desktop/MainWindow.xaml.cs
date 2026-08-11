@@ -3,6 +3,8 @@ using System.Security.Cryptography;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Windowing;
+using Microsoft.UI;
 using XamlArcSegment = Microsoft.UI.Xaml.Media.ArcSegment;
 using XamlEllipse = Microsoft.UI.Xaml.Shapes.Ellipse;
 using XamlPathFigure = Microsoft.UI.Xaml.Media.PathFigure;
@@ -74,6 +76,8 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
+        Title = "ЕВА — локальный AI-агент";
+        ConfigureAgentTitleBar();
         BuildUi();
         _state.SelectWorkspace(Environment.CurrentDirectory);
         _projectCatalog = _projectCatalogService.Load();
@@ -83,6 +87,31 @@ public partial class MainWindow : Window
         _ = RestoreWorkspaceAsync();
         _ = CheckForUpdatesAsync();
         _ = RefreshGitHubProfileAsync();
+    }
+
+    private void ConfigureAgentTitleBar()
+    {
+        var hwnd = WindowNative.GetWindowHandle(this);
+        var windowId = Win32Interop.GetWindowIdFromWindow(hwnd);
+        var appWindow = AppWindow.GetFromWindowId(windowId);
+        appWindow.Title = Title;
+
+        if (!AppWindowTitleBar.IsCustomizationSupported())
+        {
+            return;
+        }
+
+        var titleBar = appWindow.TitleBar;
+        titleBar.BackgroundColor = Windows.UI.Color.FromArgb(255, 9, 11, 16);
+        titleBar.ForegroundColor = Windows.UI.Color.FromArgb(255, 247, 244, 245);
+        titleBar.InactiveBackgroundColor = Windows.UI.Color.FromArgb(255, 16, 20, 27);
+        titleBar.InactiveForegroundColor = Windows.UI.Color.FromArgb(255, 143, 146, 157);
+        titleBar.ButtonBackgroundColor = Windows.UI.Color.FromArgb(255, 9, 11, 16);
+        titleBar.ButtonForegroundColor = Windows.UI.Color.FromArgb(255, 247, 244, 245);
+        titleBar.ButtonHoverBackgroundColor = Windows.UI.Color.FromArgb(255, 227, 38, 79);
+        titleBar.ButtonHoverForegroundColor = Windows.UI.Color.FromArgb(255, 255, 255, 255);
+        titleBar.ButtonPressedBackgroundColor = Windows.UI.Color.FromArgb(255, 170, 24, 56);
+        titleBar.ButtonPressedForegroundColor = Windows.UI.Color.FromArgb(255, 255, 255, 255);
     }
 
     private void BuildUi()
