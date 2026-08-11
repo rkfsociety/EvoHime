@@ -211,7 +211,7 @@ impl CoreVersion {
 }
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::{self, OpenOptions},
     io::Write,
     path::PathBuf,
@@ -568,6 +568,7 @@ impl ToolAgent {
             context_limit_tokens: 128_000,
         });
 
+        let mut legacy_seen = HashSet::new();
         for iteration in 0..self.max_iterations {
             write_model_trace(
                 "model.request",
@@ -606,9 +607,19 @@ impl ToolAgent {
                         }),
                     );
                     // Legacy models often print an entire future plan in one
-                    // response. Execute only the first safe call and ask the
-                    // model for the next step after its observation.
-                    tool_calls.push(parsed_legacy_calls[0].clone());
+                    // response. Execute the first new, valid safe call and
+                    // ask the model for the next step after its observation.
+                    if let Some(call) = parsed_legacy_calls.into_iter().find(|call| {
+                        let invalid_directory_read = call.name == "filesystem.read"
+                            && serde_json::from_str::<serde_json::Value>(&call.arguments)
+                                .ok()
+                                .and_then(|value| value.get("path").and_then(|path| path.as_str()).map(str::to_string))
+                                .is_some_and(|path| path == ".");
+                        let key = format!("{}:{}", call.name, call.arguments);
+                        !invalid_directory_read && legacy_seen.insert(key)
+                    }) {
+                        tool_calls.push(call);
+                    }
                 }
             }
             if tool_calls.is_empty() {
