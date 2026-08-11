@@ -274,6 +274,23 @@ fn parse_tagged_tool_call(content: &str, iteration: usize) -> Option<NativeToolC
     })
 }
 
+fn parse_plain_tool_call(content: &str, iteration: usize) -> Option<NativeToolCall> {
+    let name = ["filesystem.list", "filesystem.read", "filesystem.search", "git.status", "git.diff"]
+        .iter()
+        .find(|candidate| content.lines().any(|line| line.trim() == **candidate))
+        .copied()?;
+    let (key, value) = content
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .map(|(key, value)| (key.trim(), value.trim()))
+        .find(|(key, _)| matches!(*key, "path" | "query"))?;
+    Some(NativeToolCall {
+        id: format!("plain-{iteration}"),
+        name: name.to_string(),
+        arguments: serde_json::json!({ key: value }).to_string(),
+    })
+}
+
 fn strip_legacy_function_blocks(content: &str) -> String {
     let mut cleaned = String::with_capacity(content.len());
     let mut cursor = 0;
@@ -811,6 +828,18 @@ impl ToolAgent {
                     tool_calls.push(call);
                 }
             }
+            if tool_calls.is_empty() {
+                if let Some(call) = parse_plain_tool_call(&result.content, iteration) {
+                    write_model_trace(
+                        "plain.tool_call.parsed",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "tool_call": call
+                        }),
+                    );
+                    tool_calls.push(call);
+                }
+            }
             tool_calls.retain(|call| {
                 seen_tool_calls.insert(format!("{}:{}", call.name, call.arguments))
             });
@@ -1299,6 +1328,10 @@ mod tests {
         )
         .expect("tool code call");
         assert_eq!(code_call.name, "filesystem.read");
+        let plain_call = super::parse_plain_tool_call("filesystem.read\npath: README.md", 7)
+            .expect("plain tool call");
+        assert_eq!(plain_call.name, "filesystem.read");
+        assert_eq!(plain_call.arguments, r#"{"path":"README.md"}"#);
     }
 
     #[tokio::test]
