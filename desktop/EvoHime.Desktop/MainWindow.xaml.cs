@@ -3326,12 +3326,19 @@ public partial class MainWindow : Window
                     _reconnectAttempt = 0;
                 }
 
+                var recoveryBlocked = false;
+                SetConnectionStatus("RECOVERING: replay durable state...");
                 await _ipc.ReadReplayAsync(
                     _state.LastSequence,
                     envelope =>
                     {
                         if (_state.ApplyEvent(envelope))
                         {
+                            if (envelope.EventType == "run.recovery.blocked")
+                            {
+                                recoveryBlocked = true;
+                                SetConnectionStatus("BLOCKED: unknown effect остановлен после recovery");
+                            }
                             if (envelope.TaskId == _activeTaskId)
                             {
                                 _ = DispatcherQueue.TryEnqueue(() => RenderConversationEvent(envelope));
@@ -3340,7 +3347,7 @@ public partial class MainWindow : Window
                             {
                                 ShowApproval(envelope);
                             }
-                            if (envelope.TaskId == _activeTaskId)
+                            if (envelope.TaskId == _activeTaskId || envelope.EventType == "run.recovery.blocked")
                             {
                                 var notification = envelope.EventType switch
                                 {
@@ -3360,7 +3367,9 @@ public partial class MainWindow : Window
                         return Task.CompletedTask;
                     },
                     cancellationToken);
-                SetConnectionStatus("Подключено");
+                SetConnectionStatus(recoveryBlocked
+                    ? "BLOCKED: recovery требует проверки"
+                    : "Подключено");
                 await Task.Delay(300, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
