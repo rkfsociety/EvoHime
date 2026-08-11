@@ -916,9 +916,12 @@ public partial class MainWindow : Window
                 {
                     _taskList.Children.Add(BuildTaskCard(task, graph.Edges));
                 }
+                var graphText = string.Join(", ", graph.Edges.Select(edge => $"{edge.FromTaskId} → {edge.ToTaskId}"));
                 _taskWorkspaceStatus.Text = graph.Tasks.Count == 0
                     ? "В проекте пока нет задач. Импортируйте PRD или создайте задачу через Core."
-                    : $"Задач: {graph.Tasks.Count} · Связей: {graph.Edges.Count}";
+                    : graph.Edges.Count == 0
+                        ? $"Задач: {graph.Tasks.Count} · Связей нет"
+                        : $"Задач: {graph.Tasks.Count} · Связей: {graph.Edges.Count} · Граф: {graphText}";
             }
             finally
             {
@@ -958,6 +961,12 @@ public partial class MainWindow : Window
         {
             details.Children.Add(new TextBlock { Text = $"Критерии: {task.AcceptanceCriteria}", Foreground = muted, TextWrapping = TextWrapping.Wrap, FontSize = 12 });
         }
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 5, 0, 0) };
+        AddTaskStatusButton(actions, "Готова", task, "ready");
+        AddTaskStatusButton(actions, "В работу", task, "in_progress");
+        AddTaskStatusButton(actions, "Выполнена", task, "done");
+        AddTaskStatusButton(actions, "Отложить", task, "backlog");
+        details.Children.Add(actions);
         return new Border
         {
             Background = ThemeBrush("SurfaceRaisedBrush", 23, 28, 37),
@@ -967,6 +976,48 @@ public partial class MainWindow : Window
             Padding = new Thickness(14),
             Child = details,
         };
+    }
+
+    private void AddTaskStatusButton(Panel panel, string title, TaskDto task, string status)
+    {
+        var button = new Button { Content = title, Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
+        button.Click += async (_, _) =>
+        {
+            button.IsEnabled = false;
+            await SetTaskStatusAsync(task, status);
+        };
+        panel.Children.Add(button);
+    }
+
+    private async Task SetTaskStatusAsync(TaskDto task, string status)
+    {
+        if (_taskWorkspaceStatus is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                await _ipc.UpdateTaskStatusAsync(task.Id, task.Version, status, CancellationToken.None);
+                var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                if (response.EventType != "task.status_updated")
+                {
+                    throw new InvalidOperationException("Core не подтвердил переход статуса.");
+                }
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+            await LoadTaskWorkspaceAsync();
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+        {
+            _taskWorkspaceStatus.Text = $"Переход задачи не выполнен: {error.Message}";
+        }
     }
 
     private async Task RequestNextReadyTaskAsync()
@@ -1083,7 +1134,8 @@ public partial class MainWindow : Window
         [property: JsonPropertyName("description")] string Description,
         [property: JsonPropertyName("acceptance_criteria")] string AcceptanceCriteria,
         [property: JsonPropertyName("status")] string Status,
-        [property: JsonPropertyName("priority")] long Priority);
+        [property: JsonPropertyName("priority")] long Priority,
+        [property: JsonPropertyName("version")] long Version);
 
     private sealed record TaskEdgeDto(
         [property: JsonPropertyName("from_task_id")] string FromTaskId,

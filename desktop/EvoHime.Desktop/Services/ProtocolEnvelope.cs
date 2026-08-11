@@ -147,6 +147,16 @@ public static class ProtocolEnvelope
         }
     });
 
+    public static byte[] UpdateTaskStatus(string taskId, long expectedVersion, string status) => TaskCommand(20, output =>
+    {
+        output.WriteTag(1, WireFormat.WireType.LengthDelimited);
+        output.WriteString(taskId);
+        output.WriteTag(2, WireFormat.WireType.Varint);
+        output.WriteInt64(expectedVersion);
+        output.WriteTag(3, WireFormat.WireType.LengthDelimited);
+        output.WriteString(status);
+    });
+
     public static CoreEventEnvelope ReadEvent(ReadOnlySpan<byte> payload)
     {
         using var input = new CodedInputStream(payload.ToArray());

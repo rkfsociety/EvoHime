@@ -89,6 +89,15 @@ public sealed class CoreIpcClient
             ProtocolEnvelope.CreateProject(projectId, title, workspacePath),
             cancellationToken);
 
+    public Task UpdateTaskStatusAsync(
+        string taskId,
+        long expectedVersion,
+        string status,
+        CancellationToken cancellationToken) =>
+        SendPayloadAsync(
+            ProtocolEnvelope.UpdateTaskStatus(taskId, expectedVersion, status),
+            cancellationToken);
+
     public async Task<ulong> ReadReplayAsync(
         ulong afterSequence,
         Func<CoreEventEnvelope, Task> onEvent,
