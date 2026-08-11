@@ -36,6 +36,7 @@ public partial class MainWindow : Window
     private StackPanel? _projectListPanel;
     private string? _activeProjectId;
     private string? _activeChatId;
+    private bool _newChatRequested;
     private CancellationTokenSource? _eventCts;
     private string? _activeTaskId;
     private int _reconnectAttempt;
@@ -109,6 +110,7 @@ public partial class MainWindow : Window
             PromptBox.Text = string.Empty;
             ClearConversation();
             _activeChatId = null;
+            _newChatRequested = true;
             ConnectionStatus.Text = "●  Готова";
         };
         Grid.SetRow(newChat, 1);
@@ -765,6 +767,10 @@ public partial class MainWindow : Window
 
         var project = _projectCatalogService.EnsureProject(_projectCatalog, path);
         _activeProjectId = project.Id;
+        if (!_newChatRequested && _activeChatId is null)
+        {
+            _activeChatId = project.Chats.FirstOrDefault(chat => !chat.Archived)?.Id;
+        }
         _projectCatalogService.Save(_projectCatalog);
         RefreshProjectSidebar();
     }
@@ -855,6 +861,7 @@ public partial class MainWindow : Window
             if (_activeChatId == chat.Id)
             {
                 _activeChatId = null;
+                _newChatRequested = true;
                 ClearConversation();
                 ConnectionStatus.Text = $"Проект: {project.Name}";
             }
@@ -884,6 +891,7 @@ public partial class MainWindow : Window
         {
             _activeProjectId = null;
             _activeChatId = null;
+            _newChatRequested = true;
             var nextProject = _projectCatalog.Projects.FirstOrDefault();
             if (nextProject is not null)
             {
@@ -905,6 +913,7 @@ public partial class MainWindow : Window
     {
         _activeProjectId = project.Id;
         _activeChatId = null;
+        _newChatRequested = true;
         _state.SelectWorkspace(project.Path);
         await _settings.SaveWorkspaceAsync(project.Path);
         WorkspacePathText.Text = $"Workspace: {_state.WorkspacePath}";
@@ -917,6 +926,7 @@ public partial class MainWindow : Window
     {
         _activeProjectId = project.Id;
         _activeChatId = chat.Id;
+        _newChatRequested = false;
         _state.SelectWorkspace(project.Path);
         WorkspacePathText.Text = $"Workspace: {_state.WorkspacePath}";
         RefreshProjectSidebar();
@@ -1577,6 +1587,7 @@ public partial class MainWindow : Window
                 var title = prompt.Replace("\r", " ").Replace("\n", " ").Trim();
                 var chat = _projectCatalogService.AddChat(activeProject, title.Length > 56 ? $"{title[..56]}…" : title);
                 _activeChatId = chat.Id;
+                _newChatRequested = false;
                 _projectCatalogService.Save(_projectCatalog);
                 RefreshProjectSidebar();
             }
