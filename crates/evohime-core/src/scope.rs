@@ -15,6 +15,8 @@ pub struct BuildScope {
     pub allow_rename: bool,
     pub baseline_snapshot_id: Option<String>,
     pub acceptance_criteria: String,
+    pub risk_class: String,
+    pub timeout_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,6 +36,12 @@ pub struct ScopeViolation {
 
 pub fn validate_build_scope(scope: &BuildScope, changes: &[ProposedChange]) -> Vec<ScopeViolation> {
     let mut violations = Vec::new();
+    if !matches!(scope.risk_class.as_str(), "low" | "medium" | "high") {
+        violations.push(ScopeViolation { path: String::new(), reason: "risk_class is invalid".into() });
+    }
+    if scope.timeout_ms == 0 || scope.timeout_ms > 300_000 {
+        violations.push(ScopeViolation { path: String::new(), reason: "timeout_ms is outside bounded policy".into() });
+    }
     if changes.len() > scope.max_files_changed {
         violations.push(ScopeViolation {
             path: String::new(),
@@ -97,6 +105,8 @@ mod tests {
             allow_rename: false,
             baseline_snapshot_id: None,
             acceptance_criteria: "tests pass".into(),
+            risk_class: "medium".into(),
+            timeout_ms: 30_000,
         }
     }
 
@@ -134,5 +144,15 @@ mod tests {
             deletes: true,
         }]);
         assert!(violations.iter().any(|item| item.reason == "operation is not allowed"));
+    }
+
+    #[test]
+    fn rejects_unbounded_risk_and_timeout_policy() {
+        let mut invalid = scope();
+        invalid.risk_class = "unknown".into();
+        invalid.timeout_ms = 0;
+        let violations = validate_build_scope(&invalid, &[]);
+        assert!(violations.iter().any(|item| item.reason == "risk_class is invalid"));
+        assert!(violations.iter().any(|item| item.reason == "timeout_ms is outside bounded policy"));
     }
 }

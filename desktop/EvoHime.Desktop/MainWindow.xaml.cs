@@ -1476,7 +1476,9 @@ public partial class MainWindow : Window
                 false,
                 false,
                 null,
-                task.AcceptanceCriteria),
+                task.AcceptanceCriteria,
+                "medium",
+                30000),
             [new BuildChangeDto(normalizedPath, newContent.Text, null, false)]);
         var proposalJson = JsonSerializer.SerializeToUtf8Bytes(proposal);
 
@@ -1517,12 +1519,14 @@ public partial class MainWindow : Window
             var allowDelete = scope.GetProperty("allow_delete").GetBoolean();
             var allowRename = scope.GetProperty("allow_rename").GetBoolean();
             var acceptanceCriteria = scope.GetProperty("acceptance_criteria").GetString();
+            var riskClass = scope.GetProperty("risk_class").GetString();
+            var timeoutMs = scope.GetProperty("timeout_ms").GetInt64();
             var approvalDialog = new ContentDialog
             {
                 Title = "Подтвердить bounded Build",
                 Content = new TextBlock
                 {
-                    Text = $"Файл: {change}\nОперации: {allowedOperations}\nОжидаемый output: {expectedOutputs}\nAllowed paths: {allowedPaths}\nТипы файлов: {allowedTypes}\nЛимит файлов: {maxFiles}\nЛимит байт: {maxBytes}\nСоздание: {(allowCreate ? "разрешено" : "запрещено")} · удаление: {(allowDelete ? "разрешено" : "запрещено")} · rename: {(allowRename ? "разрешено" : "запрещено")}\nAcceptance criteria: {acceptanceCriteria}\nBaseline: {baseline}\nEffective permissions hash: {effectivePermissionsHash}\nIntent hash: {intentHash}\n\nЗапись ещё не выполнялась.",
+                    Text = $"Файл: {change}\nОперации: {allowedOperations}\nОжидаемый output: {expectedOutputs}\nAllowed paths: {allowedPaths}\nТипы файлов: {allowedTypes}\nЛимит файлов: {maxFiles}\nЛимит байт: {maxBytes}\nСоздание: {(allowCreate ? "разрешено" : "запрещено")} · удаление: {(allowDelete ? "разрешено" : "запрещено")} · rename: {(allowRename ? "разрешено" : "запрещено")}\nRisk: {riskClass} · timeout: {timeoutMs} ms\nAcceptance criteria: {acceptanceCriteria}\nBaseline: {baseline}\nEffective permissions hash: {effectivePermissionsHash}\nIntent hash: {intentHash}\n\nЗапись ещё не выполнялась.",
                     TextWrapping = TextWrapping.Wrap,
                 },
                 PrimaryButtonText = "Одобрить и применить",
@@ -1798,7 +1802,9 @@ public partial class MainWindow : Window
         [property: JsonPropertyName("allow_delete")] bool AllowDelete,
         [property: JsonPropertyName("allow_rename")] bool AllowRename,
         [property: JsonPropertyName("baseline_snapshot_id")] string? BaselineSnapshotId,
-        [property: JsonPropertyName("acceptance_criteria")] string AcceptanceCriteria);
+        [property: JsonPropertyName("acceptance_criteria")] string AcceptanceCriteria,
+        [property: JsonPropertyName("risk_class")] string RiskClass,
+        [property: JsonPropertyName("timeout_ms")] int TimeoutMs);
 
     private sealed record BuildChangeDto(
         [property: JsonPropertyName("relative_path")] string RelativePath,

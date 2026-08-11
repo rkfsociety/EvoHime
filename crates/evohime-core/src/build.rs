@@ -1,6 +1,6 @@
 use crate::{scope::{validate_build_scope, BuildScope, ProposedChange}, workspace::{build_manifest, content_hash}};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::{Component, Path, PathBuf}};
+use std::{fs, path::{Component, Path, PathBuf}, time::{Duration, Instant}};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BuildChange {
@@ -63,6 +63,8 @@ pub enum BuildError {
     ContentConflict { path: String, expected: String, current: String },
     #[error("invalid workspace path {0}")]
     InvalidPath(String),
+    #[error("bounded build timeout exceeded")]
+    TimedOut,
 }
 
 pub fn prepare_build(
@@ -209,7 +211,8 @@ pub fn apply_approved_build(
         });
     }
 
-    if let Err(error) = apply_changes(&root, build) {
+    let deadline = Instant::now() + Duration::from_millis(build.scope.timeout_ms);
+    if let Err(error) = apply_changes(&root, build, deadline) {
         let _ = restore_snapshot(&root, &snapshot);
         return Err(error);
     }
@@ -229,8 +232,11 @@ pub fn restore_snapshot(root: impl AsRef<Path>, snapshot: &WorkspaceSnapshot) ->
     Ok(())
 }
 
-fn apply_changes(root: &Path, build: &ApprovedBuild) -> Result<(), BuildError> {
+fn apply_changes(root: &Path, build: &ApprovedBuild, deadline: Instant) -> Result<(), BuildError> {
     for change in &build.changes {
+        if Instant::now() >= deadline {
+            return Err(BuildError::TimedOut);
+        }
         let path = safe_path(root, &change.relative_path)?;
         if change.delete {
             if path.exists() {
@@ -244,6 +250,9 @@ fn apply_changes(root: &Path, build: &ApprovedBuild) -> Result<(), BuildError> {
                 )));
             }
             fs::write(path, content)?;
+        }
+        if Instant::now() >= deadline {
+            return Err(BuildError::TimedOut);
         }
     }
     Ok(())
@@ -282,6 +291,8 @@ mod tests {
             allow_rename: false,
             baseline_snapshot_id: None,
             acceptance_criteria: "tests pass".into(),
+            risk_class: "medium".into(),
+            timeout_ms: 30_000,
         }
     }
 
