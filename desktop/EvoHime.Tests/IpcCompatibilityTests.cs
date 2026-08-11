@@ -129,6 +129,43 @@ public sealed class IpcCompatibilityTests
     }
 
     [TestMethod]
+    public void ImportPrdEnvelopeCarriesSourceMetadataAndText()
+    {
+        var payload = ProtocolEnvelope.ImportPrd(
+            "import-1",
+            "project-1",
+            "prd.md",
+            "v2",
+            "# Plan\n\n## Task");
+        using var input = new CodedInputStream(payload);
+        var nested = Array.Empty<byte>();
+        while (!input.IsAtEnd)
+        {
+            var tag = input.ReadTag();
+            if ((tag >> 3) == 24)
+            {
+                nested = input.ReadBytes().ToByteArray();
+                break;
+            }
+            input.SkipLastField();
+        }
+
+        using var command = new CodedInputStream(nested);
+        var values = new Dictionary<int, string>();
+        while (!command.IsAtEnd)
+        {
+            var tag = command.ReadTag();
+            values[(int)(tag >> 3)] = command.ReadString();
+        }
+
+        Assert.AreEqual("import-1", values[1]);
+        Assert.AreEqual("project-1", values[2]);
+        Assert.AreEqual("prd.md", values[3]);
+        Assert.AreEqual("v2", values[4]);
+        Assert.AreEqual("# Plan\n\n## Task", values[5]);
+    }
+
+    [TestMethod]
     public void PermissionModeEnvelopeCarriesMode()
     {
         var payload = ProtocolEnvelope.PermissionMode("read_only");

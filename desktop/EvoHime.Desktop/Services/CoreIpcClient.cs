@@ -63,6 +63,23 @@ public sealed class CoreIpcClient
     public Task ResolveApprovalAsync(string approvalId, bool granted, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.ResolveApproval(approvalId, granted), cancellationToken);
 
+    public Task RequestTaskGraphAsync(string projectId, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.GetTaskGraph(projectId), cancellationToken);
+
+    public Task RequestNextReadyTaskAsync(string projectId, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.NextReadyTask(projectId), cancellationToken);
+
+    public Task ImportPrdAsync(
+        string importId,
+        string projectId,
+        string origin,
+        string version,
+        string sourceText,
+        CancellationToken cancellationToken) =>
+        SendPayloadAsync(
+            ProtocolEnvelope.ImportPrd(importId, projectId, origin, version, sourceText),
+            cancellationToken);
+
     public async Task<ulong> ReadReplayAsync(
         ulong afterSequence,
         Func<CoreEventEnvelope, Task> onEvent,

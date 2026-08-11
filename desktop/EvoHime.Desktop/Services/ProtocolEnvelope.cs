@@ -97,6 +97,37 @@ public static class ProtocolEnvelope
         output.WriteBool(granted);
     });
 
+    public static byte[] GetTaskGraph(string projectId) => TaskCommand(22, output =>
+    {
+        output.WriteTag(1, WireFormat.WireType.LengthDelimited);
+        output.WriteString(projectId);
+    });
+
+    public static byte[] NextReadyTask(string projectId) => TaskCommand(23, output =>
+    {
+        output.WriteTag(1, WireFormat.WireType.LengthDelimited);
+        output.WriteString(projectId);
+    });
+
+    public static byte[] ImportPrd(
+        string importId,
+        string projectId,
+        string origin,
+        string version,
+        string sourceText) => TaskCommand(24, output =>
+    {
+        output.WriteTag(1, WireFormat.WireType.LengthDelimited);
+        output.WriteString(importId);
+        output.WriteTag(2, WireFormat.WireType.LengthDelimited);
+        output.WriteString(projectId);
+        output.WriteTag(3, WireFormat.WireType.LengthDelimited);
+        output.WriteString(origin);
+        output.WriteTag(4, WireFormat.WireType.LengthDelimited);
+        output.WriteString(version);
+        output.WriteTag(5, WireFormat.WireType.LengthDelimited);
+        output.WriteString(sourceText);
+    });
+
     public static CoreEventEnvelope ReadEvent(ReadOnlySpan<byte> payload)
     {
         using var input = new CodedInputStream(payload.ToArray());

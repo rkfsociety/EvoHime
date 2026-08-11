@@ -220,8 +220,8 @@ Exit criteria 0c: partial gap корректно восстанавливает�
 
 ### Этап 1 — Plan/Task Core и task workspace (P0)
 
-- Добавить безопасный импорт PRD/Markdown с сохранением исходного текста, версии и происхождения каждой задачи.
-- Реализовать ручное создание, decomposition, complexity analysis, dependency graph и `next_ready`.
+- [x] Добавить безопасный импорт PRD/Markdown с сохранением исходного текста, версии и происхождения каждой задачи.
+- Реализовать ручное создание, decomposition, complexity analysis; [x] dependency graph и `next_ready`.
 - В WinUI показать Projects/Tasks: ready, blocked, done, граф, карточку, подзадачи, acceptance criteria и event history.
 - Добавить действия Следующая задача, Разблокировать, Отложить, Запустить, Остановить, Повторить и Отметить готовой; Core подтверждает каждый переход.
 - Не менять файлы только из-за импорта PRD.
