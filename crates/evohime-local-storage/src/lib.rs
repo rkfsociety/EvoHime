@@ -33,6 +33,8 @@ pub enum StorageError {
         client_id: String,
         request_id: String,
     },
+    #[error("adding dependency {from_id} -> {to_id} would create a cycle")]
+    DependencyCycle { from_id: String, to_id: String },
 }
 
 pub struct LocalDatabase {
@@ -58,7 +60,7 @@ pub struct ProjectRecord {
     pub version: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkItemRecord {
     pub id: String,
     pub project_id: String,
@@ -265,6 +267,88 @@ impl LocalDatabase {
             .optional()?)
     }
 
+    pub fn list_work_items(&self, project_id: &str) -> Result<Vec<WorkItemRecord>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, project_id, parent_id, title, description, source_ref,
+             acceptance_criteria, non_goals, status, priority, estimate, complexity,
+             attempt_count, version FROM work_items
+             WHERE project_id = ?1 ORDER BY priority DESC, id ASC",
+        )?;
+        let rows = statement.query_map([project_id], |row| {
+            Ok(WorkItemRecord {
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                parent_id: row.get(2)?,
+                title: row.get(3)?,
+                description: row.get(4)?,
+                source_ref: row.get(5)?,
+                acceptance_criteria: row.get(6)?,
+                non_goals: row.get(7)?,
+                status: row.get(8)?,
+                priority: row.get(9)?,
+                estimate: row.get(10)?,
+                complexity: row.get(11)?,
+                attempt_count: row.get(12)?,
+                version: row.get(13)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn list_dependencies(
+        &self,
+        project_id: &str,
+    ) -> Result<Vec<(String, String, String)>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT e.from_work_item_id, e.to_work_item_id, e.kind
+             FROM work_item_edges e
+             JOIN work_items f ON f.id = e.from_work_item_id
+             WHERE f.project_id = ?1
+             ORDER BY e.from_work_item_id ASC, e.to_work_item_id ASC, e.kind ASC",
+        )?;
+        let rows = statement.query_map([project_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn next_ready(&self, project_id: &str) -> Result<Option<WorkItemRecord>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT w.id, w.project_id, w.parent_id, w.title, w.description, w.source_ref,
+             w.acceptance_criteria, w.non_goals, w.status, w.priority, w.estimate, w.complexity,
+             w.attempt_count, w.version
+             FROM work_items w
+             WHERE w.project_id = ?1 AND w.status IN ('backlog', 'ready')
+             AND NOT EXISTS (
+                 SELECT 1 FROM work_item_edges e
+                 JOIN work_items dependency ON dependency.id = e.to_work_item_id
+                 WHERE e.from_work_item_id = w.id AND dependency.status <> 'done'
+             )
+             ORDER BY CASE WHEN w.status = 'ready' THEN 0 ELSE 1 END,
+                      w.priority DESC, w.id ASC LIMIT 1",
+        )?;
+        Ok(statement
+            .query_row([project_id], |row| {
+                Ok(WorkItemRecord {
+                    id: row.get(0)?,
+                    project_id: row.get(1)?,
+                    parent_id: row.get(2)?,
+                    title: row.get(3)?,
+                    description: row.get(4)?,
+                    source_ref: row.get(5)?,
+                    acceptance_criteria: row.get(6)?,
+                    non_goals: row.get(7)?,
+                    status: row.get(8)?,
+                    priority: row.get(9)?,
+                    estimate: row.get(10)?,
+                    complexity: row.get(11)?,
+                    attempt_count: row.get(12)?,
+                    version: row.get(13)?,
+                })
+            })
+            .optional()?)
+    }
+
     pub fn update_work_item_status(
         &self,
         id: &str,
@@ -299,7 +383,28 @@ impl LocalDatabase {
         kind: &str,
     ) -> Result<(), StorageError> {
         if from_id == to_id {
-            return Err(rusqlite::Error::InvalidQuery.into());
+            return Err(StorageError::DependencyCycle {
+                from_id: from_id.into(),
+                to_id: to_id.into(),
+            });
+        }
+        let mut pending = vec![to_id.to_owned()];
+        let mut visited = std::collections::HashSet::new();
+        while let Some(current) = pending.pop() {
+            if !visited.insert(current.clone()) {
+                continue;
+            }
+            if current == from_id {
+                return Err(StorageError::DependencyCycle {
+                    from_id: from_id.into(),
+                    to_id: to_id.into(),
+                });
+            }
+            let mut statement = self.connection.prepare(
+                "SELECT to_work_item_id FROM work_item_edges WHERE from_work_item_id = ?1",
+            )?;
+            let rows = statement.query_map([current], |row| row.get::<_, String>(0))?;
+            pending.extend(rows.collect::<Result<Vec<_>, _>>()?);
         }
         self.connection.execute(
             "INSERT INTO work_item_edges(from_work_item_id, to_work_item_id, kind) VALUES (?1, ?2, ?3)",
@@ -678,6 +783,52 @@ mod tests {
             database.update_work_item_status(&created.id, 1, "done"),
             Err(StorageError::VersionConflict { .. })
         ));
+        drop(database);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn lists_graph_rejects_cycles_and_selects_next_ready_deterministically() {
+        let path = temp_database_path("task-graph");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        database
+            .create_project("project-graph", "Graph", "C:\\Projects\\graph", None)
+            .expect("project creates");
+        for (id, title, status, priority) in [
+            ("task-a", "A", "ready", 1),
+            ("task-b", "B", "ready", 10),
+            ("task-c", "C", "done", 100),
+        ] {
+            database
+                .create_work_item(&WorkItemRecord {
+                    id: id.into(),
+                    project_id: "project-graph".into(),
+                    parent_id: None,
+                    title: title.into(),
+                    description: String::new(),
+                    source_ref: None,
+                    acceptance_criteria: String::new(),
+                    non_goals: String::new(),
+                    status: status.into(),
+                    priority,
+                    estimate: None,
+                    complexity: None,
+                    attempt_count: 0,
+                    version: 1,
+                })
+                .expect("task creates");
+        }
+        database
+            .add_dependency("task-a", "task-c", "blocks")
+            .expect("dependency creates");
+        assert!(matches!(
+            database.add_dependency("task-c", "task-a", "blocks"),
+            Err(StorageError::DependencyCycle { .. })
+        ));
+        assert_eq!(database.list_work_items("project-graph").unwrap().len(), 3);
+        assert_eq!(database.list_dependencies("project-graph").unwrap().len(), 1);
+        assert_eq!(database.next_ready("project-graph").unwrap().unwrap().id, "task-b");
         drop(database);
         let _ = std::fs::remove_file(path);
     }

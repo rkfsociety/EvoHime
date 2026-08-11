@@ -518,6 +518,14 @@ pub enum CoreCommand {
         kind: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    GetTaskGraph {
+        project_id: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    NextReadyTask {
+        project_id: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -656,6 +664,25 @@ impl EventJournal {
     ) -> Result<(), StorageError> {
         let database = self.database.lock().await;
         database.add_dependency(from_id, to_id, kind)
+    }
+
+    pub async fn list_task_graph(
+        &self,
+        project_id: &str,
+    ) -> Result<(Vec<WorkItemRecord>, Vec<(String, String, String)>), StorageError> {
+        let database = self.database.lock().await;
+        Ok((
+            database.list_work_items(project_id)?,
+            database.list_dependencies(project_id)?,
+        ))
+    }
+
+    pub async fn next_ready_task(
+        &self,
+        project_id: &str,
+    ) -> Result<Option<WorkItemRecord>, StorageError> {
+        let database = self.database.lock().await;
+        database.next_ready(project_id)
     }
 
     pub async fn record_deduplicated(
@@ -1471,6 +1498,45 @@ impl TaskCoordinator {
                         .await
                         .map_err(|error| error.to_string())?;
                     Ok(result)
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::GetTaskGraph { project_id, reply } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let (tasks, edges) = journal
+                        .list_task_graph(&project_id)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    serde_json::to_vec(&serde_json::json!({
+                        "project_id": project_id,
+                        "tasks": tasks,
+                        "edges": edges.into_iter().map(|(from, to, kind)| serde_json::json!({
+                            "from_task_id": from,
+                            "to_task_id": to,
+                            "kind": kind,
+                        })).collect::<Vec<_>>(),
+                    }))
+                    .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::NextReadyTask { project_id, reply } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let task = journal
+                        .next_ready_task(&project_id)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    serde_json::to_vec(&serde_json::json!({
+                        "project_id": project_id,
+                        "task": task,
+                    }))
+                    .map_err(|error| error.to_string())
                 }
                 .await;
                 let _ = reply.send(result);

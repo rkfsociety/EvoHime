@@ -298,6 +298,14 @@ impl IpcBridge {
                     .await?;
                 self.write_response(writer, "task.edge_added", result).await?;
             }
+            Some(generated::command_envelope::Command::GetTaskGraph(request)) => {
+                let result = self.dispatch_get_task_graph(request.project_id).await?;
+                self.write_response(writer, "task.graph", result).await?;
+            }
+            Some(generated::command_envelope::Command::NextReadyTask(request)) => {
+                let result = self.dispatch_next_ready_task(request.project_id).await?;
+                self.write_response(writer, "task.next_ready", result).await?;
+            }
             Some(generated::command_envelope::Command::StartTask(start)) => {
                 if let Some(coordinator) = &self.coordinator {
                     coordinator
@@ -458,6 +466,46 @@ impl IpcBridge {
                 kind,
                 reply,
             })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_get_task_graph(
+        &self,
+        project_id: String,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::GetTaskGraph { project_id, reply })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_next_ready_task(
+        &self,
+        project_id: String,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::NextReadyTask { project_id, reply })
             .await
             .map_err(|error| FrameError::Io(error.to_string()))?;
         response

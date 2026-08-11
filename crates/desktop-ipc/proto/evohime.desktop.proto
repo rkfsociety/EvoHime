@@ -73,6 +73,14 @@ message AddTaskEdge {
   string kind = 3;
 }
 
+message GetTaskGraph {
+  string project_id = 1;
+}
+
+message NextReadyTask {
+  string project_id = 1;
+}
+
 message StartTask {
   string task_id = 1;
   string prompt = 2;
@@ -107,6 +115,8 @@ message CommandEnvelope {
     CreateTask create_task = 19;
     UpdateTaskStatus update_task_status = 20;
     AddTaskEdge add_task_edge = 21;
+    GetTaskGraph get_task_graph = 22;
+    NextReadyTask next_ready_task = 23;
   }
 }
 
