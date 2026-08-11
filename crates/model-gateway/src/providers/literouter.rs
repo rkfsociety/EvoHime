@@ -10,7 +10,11 @@ use futures_util::StreamExt;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
-use std::time::Duration;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use tokio::sync::Mutex;
 
 /// LiteRouter — OpenAI-compatible provider.
 ///
@@ -20,6 +24,7 @@ pub struct LiteRouterProvider {
     config: LiteRouterConfig,
     client: Client,
     retry: RetryPolicy,
+    request_gate: Arc<Mutex<Option<Instant>>>,
 }
 
 impl LiteRouterProvider {
@@ -44,6 +49,7 @@ impl LiteRouterProvider {
             config,
             client,
             retry,
+            request_gate: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -89,6 +95,7 @@ impl LiteRouterProvider {
         stream: bool,
         thinking: Option<ThinkingConfig>,
     ) -> Result<reqwest::Response, ProviderError> {
+        self.wait_for_request_slot().await;
         let body = ChatCompletionRequest {
             model: model.to_string(),
             messages: messages.iter().map(ApiMessage::from_chat_message).collect(),
@@ -121,8 +128,16 @@ impl LiteRouterProvider {
                     let status = response.status();
                     let retry_after = parse_retry_after_seconds(response.headers());
                     let text = response.text().await.unwrap_or_default();
-                    if is_retryable_status(status) && attempt < self.retry.max_retries {
-                        let delay = compute_backoff(attempt, &self.retry, retry_after);
+                    let rate_limited = status == reqwest::StatusCode::FORBIDDEN
+                        && text.to_ascii_lowercase().contains("rate limit");
+                    if (is_retryable_status(status) || rate_limited)
+                        && attempt < self.retry.max_retries
+                    {
+                        let delay = if rate_limited {
+                            Duration::from_secs(5)
+                        } else {
+                            compute_backoff(attempt, &self.retry, retry_after)
+                        };
                         tokio::time::sleep(delay).await;
                         attempt = attempt.saturating_add(1);
                         continue;
@@ -140,6 +155,18 @@ impl LiteRouterProvider {
                 }
             }
         }
+    }
+
+    async fn wait_for_request_slot(&self) {
+        const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(5);
+        let mut last_request = self.request_gate.lock().await;
+        if let Some(previous) = *last_request {
+            let elapsed = previous.elapsed();
+            if elapsed < MIN_REQUEST_INTERVAL {
+                tokio::time::sleep(MIN_REQUEST_INTERVAL - elapsed).await;
+            }
+        }
+        *last_request = Some(Instant::now());
     }
 }
 
@@ -165,6 +192,7 @@ impl ModelProvider for LiteRouterProvider {
             config: self.config.clone(),
             client: self.client.clone(),
             retry: self.retry.clone(),
+            request_gate: Arc::clone(&self.request_gate),
         };
         let request_messages = messages.to_vec();
         let model = model.to_string();
@@ -220,6 +248,7 @@ impl ModelProvider for LiteRouterProvider {
             config: self.config.clone(),
             client: self.client.clone(),
             retry: self.retry.clone(),
+            request_gate: Arc::clone(&self.request_gate),
         };
         let request_messages = messages.to_vec();
         let tools = tools.map(|t| t.to_vec());
@@ -275,6 +304,7 @@ impl ModelProvider for LiteRouterProvider {
             config: self.config.clone(),
             client: self.client.clone(),
             retry: self.retry.clone(),
+            request_gate: Arc::clone(&self.request_gate),
         };
         let model = model
             .filter(|value| !value.trim().is_empty())
