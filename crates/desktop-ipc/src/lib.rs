@@ -5,6 +5,10 @@ pub mod transport;
 
 pub const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
 
+pub fn normalize_task_status(value: i32) -> generated::TaskStatus {
+    generated::TaskStatus::try_from(value).unwrap_or(generated::TaskStatus::Unknown)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProtocolVersion {
     pub major: u32,
@@ -67,6 +71,7 @@ pub fn decode_frame(frame: &[u8]) -> Result<&[u8], FrameError> {
 #[cfg(test)]
 mod tests {
     use crate::generated;
+    use crate::normalize_task_status;
     use super::{
         decode_frame, encode_frame, transport, FrameError, ProtocolVersion, MAX_FRAME_BYTES,
     };
@@ -168,5 +173,30 @@ mod tests {
         let decoded = generated::CommandEnvelope::decode(encoded.as_slice())
             .expect("unknown field is ignored");
         assert_eq!(decoded.request_id, "request");
+    }
+
+    #[test]
+    fn unknown_task_status_maps_to_unknown() {
+        use prost::Message;
+
+        let task = generated::CreateTask {
+            task_id: "task".into(),
+            project_id: "project".into(),
+            parent_id: String::new(),
+            title: "Task".into(),
+            description: String::new(),
+            source_ref: String::new(),
+            acceptance_criteria: String::new(),
+            non_goals: String::new(),
+            status: String::new(),
+            priority: 0,
+            estimate: 0,
+            complexity: String::new(),
+            status_code: 99,
+        };
+        let decoded = generated::CreateTask::decode(task.encode_to_vec().as_slice())
+            .expect("task decodes");
+        assert_eq!(decoded.status_code, 99);
+        assert_eq!(normalize_task_status(decoded.status_code), generated::TaskStatus::Unknown);
     }
 }

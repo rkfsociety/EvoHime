@@ -30,6 +30,14 @@ message PermissionModeRequest {
   string mode = 1;
 }
 
+enum TaskStatus {
+  TASK_STATUS_UNKNOWN = 0;
+  TASK_STATUS_BACKLOG = 1;
+  TASK_STATUS_READY = 2;
+  TASK_STATUS_IN_PROGRESS = 3;
+  TASK_STATUS_DONE = 4;
+}
+
 message CreateProject {
   string project_id = 1;
   string title = 2;
@@ -50,6 +58,7 @@ message CreateTask {
   int64 priority = 10;
   int64 estimate = 11;
   string complexity = 12;
+  TaskStatus status_code = 13;
 }
 
 message UpdateTaskStatus {

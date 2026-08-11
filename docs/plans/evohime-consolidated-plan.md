@@ -169,9 +169,10 @@ Capability registry описывает tools, skills, MCP, модели, кан�
 - [x] Compatibility fixtures cover legacy envelopes and ignored additive protobuf fields.
 - [x] Migration failure restores the pre-migration backup; immutable run snapshots persist policy, role, skill and model-route bytes.
 - [x] Malformed command rejection and reconnect replay-after-sequence tests are covered.
-- [x] Targeted Rust tests: 21 Core, 9 IPC и 8 local-storage тестов; UI tests 20/20.
+- [x] Versioned `TaskStatus` enum has explicit `UNKNOWN`; unknown numeric values normalize safely.
+- [x] Targeted Rust tests: 21 Core, 10 IPC и 8 local-storage тестов; UI tests 20/20.
 
-Остаётся для полного закрытия 0a: enum compatibility fixture вместе с versioned enum contract; затем можно закрыть этап 0a после финального review storage/IPC boundaries.
+Остаётся для полного закрытия 0a: выделить typed `RoleRef`, `SkillRef`, `PolicySnapshot` и `ModelRouteSnapshot` из opaque run snapshot bytes; затем провести финальный review storage/IPC boundaries.
 
 Зависимости: существующие IPC/SQLite foundations.
 
