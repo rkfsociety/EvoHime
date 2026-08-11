@@ -3,6 +3,7 @@ param(
     [Parameter(Mandatory = $true, Position = 0)]
     [string]$Prompt,
     [string]$Workspace = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
+    [string]$Model,
     [switch]$NoBuild,
     [switch]$ApproveWrites
 )
@@ -50,6 +51,9 @@ if (Test-Path -LiteralPath $settingsPath) {
     catch {
         Write-Verbose "Не удалось прочитать provider-settings.bin: $($_.Exception.Message)"
     }
+}
+if ($Model) {
+    $env:LITEROUTER_MODEL = $Model
 }
 
 New-Item -ItemType Directory -Force -Path $dataPath | Out-Null

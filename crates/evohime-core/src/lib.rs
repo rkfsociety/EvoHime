@@ -219,6 +219,47 @@ fn strip_legacy_function_blocks(content: &str) -> String {
     cleaned.trim().to_string()
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+struct DeliveryRequirements {
+    mutation: bool,
+    verification: bool,
+    commit: bool,
+}
+
+impl DeliveryRequirements {
+    fn from_prompt(prompt: &str) -> Self {
+        let prompt = prompt.to_lowercase();
+        Self {
+            mutation: ["исправ", "измен", "добав", "реализ", "сделай", "улучш"]
+                .iter()
+                .any(|marker| prompt.contains(marker)),
+            verification: ["проверь", "провер", "тест", "test", "собери", "запусти"]
+                .iter()
+                .any(|marker| prompt.contains(marker)),
+            commit: prompt.contains("коммит") || prompt.contains("commit"),
+        }
+    }
+
+    fn missing(
+        self,
+        mutation_done: bool,
+        verification_done: bool,
+        commit_done: bool,
+    ) -> Vec<&'static str> {
+        let mut missing = Vec::new();
+        if self.mutation && !mutation_done {
+            missing.push("внести изменение");
+        }
+        if self.verification && !verification_done {
+            missing.push("проверить результат");
+        }
+        if self.commit && !commit_done {
+            missing.push("создать commit");
+        }
+        missing
+    }
+}
+
 mod ipc_bridge;
 pub use ipc_bridge::{IpcBridge, IpcBridgeError, ModelConfigSnapshot};
 mod logging;
@@ -603,6 +644,7 @@ impl ToolAgent {
 
         let user_prompt = messages[1].content.clone();
         let context_text = format!("{system_prompt}\n{user_prompt}\n{}", tool_names.join("\n"));
+        let delivery_requirements = DeliveryRequirements::from_prompt(&user_prompt);
         let _ = events.send(CoreEvent::ModelContext {
             task_id: task_id.clone(),
             workspace_path: context.workspace_root.display().to_string(),
@@ -615,6 +657,9 @@ impl ToolAgent {
         });
 
         let mut legacy_seen = HashSet::new();
+        let mut mutation_done = false;
+        let mut verification_done = false;
+        let mut commit_done = false;
         for iteration in 0..self.max_iterations {
             write_model_trace(
                 "model.request",
@@ -683,6 +728,25 @@ impl ToolAgent {
                 }
             }
             if tool_calls.is_empty() {
+                let missing =
+                    delivery_requirements.missing(mutation_done, verification_done, commit_done);
+                if !missing.is_empty() && iteration + 1 < self.max_iterations {
+                    let continuation = format!(
+                        "Задача ещё не завершена. Обязательные результаты не выполнены: {}. Не заканчивай ответ описанием плана. Немедленно продолжи через доступные инструменты и после этого верни итог.",
+                        missing.join(", ")
+                    );
+                    write_model_trace(
+                        "task.delivery_gate",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "missing": missing,
+                            "continuation": continuation
+                        }),
+                    );
+                    messages.push(ChatMessage::text(ChatRole::Assistant, result.content));
+                    messages.push(ChatMessage::text(ChatRole::User, continuation));
+                    continue;
+                }
                 let final_message = strip_legacy_function_blocks(&result.content);
                 let _ = events.send(CoreEvent::TaskCompleted {
                     task_id,
@@ -696,6 +760,16 @@ impl ToolAgent {
                 tool_calls.clone(),
             ));
             for call in tool_calls {
+                mutation_done |=
+                    matches!(call.name.as_str(), "filesystem.write" | "filesystem.patch");
+                commit_done |= call.name == "git.commit";
+                if call.name == "shell.execute" {
+                    let arguments = call.arguments.to_lowercase();
+                    verification_done |= arguments.contains("test")
+                        || arguments.contains("check")
+                        || arguments.contains("build")
+                        || arguments.contains("собер");
+                }
                 let _ = events.send(CoreEvent::ToolStarted {
                     task_id: task_id.clone(),
                     tool_name: call.name.clone(),
@@ -1089,6 +1163,20 @@ mod tests {
             "Готово.\n<function_calls><invoke name=\"filesystem.read\" /></function_calls>",
         );
         assert_eq!(message, "Готово.");
+    }
+
+    #[test]
+    fn detects_delivery_requirements_from_change_request() {
+        let requirements = super::DeliveryRequirements::from_prompt(
+            "исправь код, проверь cargo test и создай commit",
+        );
+        assert!(requirements.mutation);
+        assert!(requirements.verification);
+        assert!(requirements.commit);
+        assert_eq!(
+            requirements.missing(false, true, false),
+            vec!["внести изменение", "создать commit"]
+        );
     }
 
     #[tokio::test]
