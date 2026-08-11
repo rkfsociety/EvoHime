@@ -893,7 +893,7 @@ impl ToolAgent {
                     delivery_requirements.missing(mutation_done, verification_done, commit_done);
                 if !missing.is_empty() && iteration + 1 < self.max_iterations {
                     let continuation = format!(
-                        "Задача ещё не завершена. Обязательные результаты не выполнены: {}. Не заканчивай ответ описанием плана. Немедленно продолжи через доступные инструменты и после этого верни итог.",
+                        "Задача ещё не завершена. Обязательные результаты не выполнены: {}. Не пиши план и не заверши ответ текстом. Немедленно вызови нужный инструмент: для изменения — filesystem.patch или filesystem.write, для проверки — shell.execute с тестом/сборкой, для commit — git.commit. Выполни следующий шаг прямо сейчас.",
                         missing.join(", ")
                     );
                     write_model_trace(
