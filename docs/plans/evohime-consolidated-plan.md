@@ -247,17 +247,3 @@ WinUI не хранит state, не читает SQLite/workspace, не запу
 ## 11. Порядок после этой сводки
 
 Сначала реализовать Этап 0 и Этап 1 как фундамент: без устойчивого task graph, checkpoint/replay и ручного task workspace остальные идеи останутся временными обходами. Затем последовательно добавить lifecycle/context, research/workflow, skills, bounded loop/routing, memory, evals, child roles и только после стабилизации — schedules и внешние каналы.
-
-Исходные планы, объединённые этим документом:
-
-- `2026-08-11-eva-agency-agents-and-skills-plan.md`
-- `2026-08-11-eva-agency-agents-inspired-improvements.md`
-- `2026-08-11-eva-dify-inspired-improvements.md`
-- `2026-08-11-eva-langchain-inspired-improvements.md`
-- `2026-08-11-eva-mem0-inspired-memory.md`
-- `2026-08-11-eva-mem0-langgraph-inspired-improvements.md`
-- `2026-08-11-eva-opencode-inspired-improvements.md`
-- `2026-08-11-eva-openhands-agent-reach-improvements.md`
-- `2026-08-11-eva-openhands-inspired-improvements.md`
-- `2026-08-11-eva-task-master-inspired-improvements.md`
-- `2026-08-11-eva-taskmaster-openjarvis-plan.md`
