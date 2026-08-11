@@ -1006,6 +1006,9 @@ public partial class MainWindow : Window
         var history = new Button { Content = "История", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
         history.Click += async (_, _) => await RequestTaskHistoryAsync(task);
         actions.Children.Add(history);
+        var context = new Button { Content = "Контекст", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
+        context.Click += async (_, _) => await RequestTaskContextAsync(task);
+        actions.Children.Add(context);
         var subtask = new Button { Content = "Подзадача", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
         subtask.Click += async (_, _) => await CreateTaskDialogAsync(task.Id);
         actions.Children.Add(subtask);
@@ -1255,6 +1258,41 @@ public partial class MainWindow : Window
         catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
         {
             _taskWorkspaceStatus.Text = $"Не удалось загрузить историю: {error.Message}";
+        }
+    }
+
+    private async Task RequestTaskContextAsync(TaskDto task)
+    {
+        var project = ActiveProject();
+        if (project is null || _taskWorkspaceStatus is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                await _ipc.RequestTaskContextAsync(project.Id, task.Id, 4096, CancellationToken.None);
+                var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                if (response.EventType != "task.context")
+                {
+                    throw new InvalidOperationException("Core не вернул task context.");
+                }
+                using var json = JsonDocument.Parse(response.Payload);
+                var hash = json.RootElement.GetProperty("workspace_hash").GetString();
+                var context = json.RootElement.GetProperty("context").GetString() ?? string.Empty;
+                _taskWorkspaceStatus.Text = $"Context hash: {hash}\n{context}";
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+        {
+            _taskWorkspaceStatus.Text = $"Не удалось собрать context: {error.Message}";
         }
     }
 

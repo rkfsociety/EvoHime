@@ -475,6 +475,7 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 pub mod prd;
+pub mod workspace;
 
 pub enum CoreCommand {
     StartTask {
@@ -542,6 +543,12 @@ pub enum CoreCommand {
     GetTaskHistory {
         task_id: String,
         limit: usize,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    GetTaskContext {
+        project_id: String,
+        task_id: String,
+        max_chars: usize,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
 }
@@ -654,6 +661,22 @@ impl EventJournal {
     ) -> Result<evohime_local_storage::ProjectRecord, StorageError> {
         let database = self.database.lock().await;
         database.create_project(id, title, workspace_path, source_ref)
+    }
+
+    pub async fn get_project(
+        &self,
+        id: &str,
+    ) -> Result<Option<evohime_local_storage::ProjectRecord>, StorageError> {
+        let database = self.database.lock().await;
+        database.get_project(id)
+    }
+
+    pub async fn get_work_item(
+        &self,
+        id: &str,
+    ) -> Result<Option<WorkItemRecord>, StorageError> {
+        let database = self.database.lock().await;
+        database.get_work_item(id)
     }
 
     pub async fn create_work_item(
@@ -1671,6 +1694,57 @@ impl TaskCoordinator {
                             "payload": serde_json::from_slice::<serde_json::Value>(&event.payload)
                                 .unwrap_or_else(|_| serde_json::json!({"raw_bytes": event.payload})),
                         })).collect::<Vec<_>>(),
+                    }))
+                    .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::GetTaskContext {
+                project_id,
+                task_id,
+                max_chars,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let project = journal
+                        .get_project(&project_id)
+                        .await
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "project not found".to_string())?;
+                    let task = journal
+                        .get_work_item(&task_id)
+                        .await
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "task not found".to_string())?;
+                    if task.project_id != project_id {
+                        return Err("task does not belong to project".to_string());
+                    }
+                    let manifest = crate::workspace::build_manifest(&project.workspace_path, 500, 2 * 1024 * 1024)
+                        .map_err(|error| error.to_string())?;
+                    let references = manifest
+                        .entries
+                        .iter()
+                        .map(|entry| entry.relative_path.clone())
+                        .collect::<Vec<_>>();
+                    let context = crate::workspace::assemble_context(
+                        crate::workspace::ContextInput {
+                            title: &task.title,
+                            description: &task.description,
+                            acceptance_criteria: &task.acceptance_criteria,
+                            non_goals: &task.non_goals,
+                            references: &references,
+                        },
+                        max_chars.min(32 * 1024),
+                    );
+                    serde_json::to_vec(&serde_json::json!({
+                        "project_id": project_id,
+                        "task_id": task_id,
+                        "workspace_hash": manifest.workspace_hash,
+                        "manifest": manifest,
+                        "context": context,
                     }))
                     .map_err(|error| error.to_string())
                 }

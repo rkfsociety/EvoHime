@@ -94,6 +94,12 @@ message GetTaskHistory {
   uint32 limit = 2;
 }
 
+message GetTaskContext {
+  string project_id = 1;
+  string task_id = 2;
+  uint32 max_chars = 3;
+}
+
 message StartTask {
   string task_id = 1;
   string prompt = 2;
@@ -132,6 +138,7 @@ message CommandEnvelope {
     NextReadyTask next_ready_task = 23;
     ImportPrd import_prd = 24;
     GetTaskHistory get_task_history = 25;
+    GetTaskContext get_task_context = 26;
   }
 }
 
