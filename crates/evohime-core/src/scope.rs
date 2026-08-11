@@ -4,17 +4,23 @@ use std::path::{Component, Path};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BuildScope {
     pub allowed_paths: Vec<String>,
+    pub allowed_operations: Vec<String>,
+    pub expected_outputs: Vec<String>,
     pub protected_paths: Vec<String>,
     pub allowed_file_types: Vec<String>,
     pub max_files_changed: usize,
     pub max_bytes_changed: usize,
     pub allow_create: bool,
     pub allow_delete: bool,
+    pub allow_rename: bool,
+    pub baseline_snapshot_id: Option<String>,
+    pub acceptance_criteria: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProposedChange {
     pub relative_path: String,
+    pub operation: String,
     pub bytes_changed: usize,
     pub creates: bool,
     pub deletes: bool,
@@ -43,6 +49,11 @@ pub fn validate_build_scope(scope: &BuildScope, changes: &[ProposedChange]) -> V
     }
     for change in changes {
         let normalized = change.relative_path.replace('\\', "/");
+        if !scope.allowed_operations.is_empty()
+            && !scope.allowed_operations.iter().any(|operation| operation == &change.operation)
+        {
+            violations.push(ScopeViolation { path: normalized.clone(), reason: "operation is not allowed".into() });
+        }
         let path = Path::new(&normalized);
         if path.components().any(|component| matches!(component, Component::ParentDir | Component::RootDir | Component::Prefix(_))) {
             violations.push(ScopeViolation { path: normalized.clone(), reason: "path escapes workspace".into() });
@@ -75,12 +86,17 @@ mod tests {
     fn scope() -> BuildScope {
         BuildScope {
             allowed_paths: vec!["src".into()],
+            allowed_operations: vec!["write".into()],
+            expected_outputs: vec!["updated source".into()],
             protected_paths: vec!["src/generated".into()],
             allowed_file_types: vec!["rs".into()],
             max_files_changed: 2,
             max_bytes_changed: 100,
             allow_create: false,
             allow_delete: false,
+            allow_rename: false,
+            baseline_snapshot_id: None,
+            acceptance_criteria: "tests pass".into(),
         }
     }
 
@@ -88,6 +104,7 @@ mod tests {
     fn rejects_escape_protected_type_and_mutation_violations() {
         let violations = validate_build_scope(&scope(), &[ProposedChange {
             relative_path: "../Cargo.toml".into(),
+            operation: "create".into(),
             bytes_changed: 1,
             creates: true,
             deletes: false,
@@ -99,10 +116,23 @@ mod tests {
     fn accepts_bounded_allowed_text_change() {
         let violations = validate_build_scope(&scope(), &[ProposedChange {
             relative_path: "src/lib.rs".into(),
+            operation: "write".into(),
             bytes_changed: 10,
             creates: false,
             deletes: false,
         }]);
         assert!(violations.is_empty());
+    }
+
+    #[test]
+    fn rejects_operation_outside_effective_scope() {
+        let violations = validate_build_scope(&scope(), &[ProposedChange {
+            relative_path: "src/lib.rs".into(),
+            operation: "delete".into(),
+            bytes_changed: 0,
+            creates: false,
+            deletes: true,
+        }]);
+        assert!(violations.iter().any(|item| item.reason == "operation is not allowed"));
     }
 }

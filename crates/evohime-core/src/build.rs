@@ -72,6 +72,13 @@ pub fn prepare_build(
         .iter()
         .map(|change| ProposedChange {
             relative_path: change.relative_path.clone(),
+            operation: if change.delete {
+                "delete".into()
+            } else if change.content.is_some() && !root.join(&change.relative_path).exists() {
+                "create".into()
+            } else {
+                "write".into()
+            },
             bytes_changed: change.content.as_deref().map(str::len).unwrap_or(0),
             creates: change.content.is_some() && !root.join(&change.relative_path).exists(),
             deletes: change.delete,
@@ -125,6 +132,13 @@ pub fn apply_approved_build(
         .iter()
         .map(|change| ProposedChange {
             relative_path: change.relative_path.clone(),
+            operation: if change.delete {
+                "delete".into()
+            } else if change.content.is_some() && !root.join(&change.relative_path).exists() {
+                "create".into()
+            } else {
+                "write".into()
+            },
             bytes_changed: change.content.as_deref().map(str::len).unwrap_or(0),
             creates: change.content.is_some() && !root.join(&change.relative_path).exists(),
             deletes: change.delete,
@@ -222,12 +236,17 @@ mod tests {
     fn scope() -> BuildScope {
         BuildScope {
             allowed_paths: vec!["src".into()],
+            allowed_operations: vec!["write".into()],
+            expected_outputs: vec!["updated source".into()],
             protected_paths: vec![],
             allowed_file_types: vec!["rs".into()],
             max_files_changed: 1,
             max_bytes_changed: 100,
             allow_create: false,
             allow_delete: false,
+            allow_rename: false,
+            baseline_snapshot_id: None,
+            acceptance_criteria: "tests pass".into(),
         }
     }
 

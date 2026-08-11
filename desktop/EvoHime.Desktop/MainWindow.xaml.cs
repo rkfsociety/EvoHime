@@ -1364,12 +1364,17 @@ public partial class MainWindow : Window
         var proposal = new BuildProposalDto(
             new BuildScopeDto(
                 string.IsNullOrWhiteSpace(directory) ? [] : [directory],
+                ["write"],
+                ["updated source"],
                 [],
                 [string.IsNullOrWhiteSpace(extension) ? "txt" : extension],
                 1,
                 Math.Max(1, newContent.Text.Length),
                 false,
-                false),
+                false,
+                false,
+                null,
+                task.AcceptanceCriteria),
             [new BuildChangeDto(normalizedPath, newContent.Text, null, false)]);
         var proposalJson = JsonSerializer.SerializeToUtf8Bytes(proposal);
 
@@ -1401,17 +1406,21 @@ public partial class MainWindow : Window
             var change = changes.GetArrayLength() == 0 ? "нет изменений" : changes[0].GetProperty("relative_path").GetString();
             var scope = approved.RootElement.GetProperty("scope");
             var allowedPaths = string.Join(", ", scope.GetProperty("allowed_paths").EnumerateArray().Select(item => item.GetString()));
+            var allowedOperations = string.Join(", ", scope.GetProperty("allowed_operations").EnumerateArray().Select(item => item.GetString()));
+            var expectedOutputs = string.Join(", ", scope.GetProperty("expected_outputs").EnumerateArray().Select(item => item.GetString()));
             var allowedTypes = string.Join(", ", scope.GetProperty("allowed_file_types").EnumerateArray().Select(item => item.GetString()));
             var maxFiles = scope.GetProperty("max_files_changed").GetInt64();
             var maxBytes = scope.GetProperty("max_bytes_changed").GetInt64();
             var allowCreate = scope.GetProperty("allow_create").GetBoolean();
             var allowDelete = scope.GetProperty("allow_delete").GetBoolean();
+            var allowRename = scope.GetProperty("allow_rename").GetBoolean();
+            var acceptanceCriteria = scope.GetProperty("acceptance_criteria").GetString();
             var approvalDialog = new ContentDialog
             {
                 Title = "Подтвердить bounded Build",
                 Content = new TextBlock
                 {
-                    Text = $"Файл: {change}\nAllowed paths: {allowedPaths}\nТипы файлов: {allowedTypes}\nЛимит файлов: {maxFiles}\nЛимит байт: {maxBytes}\nСоздание: {(allowCreate ? "разрешено" : "запрещено")} · удаление: {(allowDelete ? "разрешено" : "запрещено")}\nBaseline: {baseline}\nEffective permissions hash: {effectivePermissionsHash}\nIntent hash: {intentHash}\n\nЗапись ещё не выполнялась.",
+                    Text = $"Файл: {change}\nОперации: {allowedOperations}\nОжидаемый output: {expectedOutputs}\nAllowed paths: {allowedPaths}\nТипы файлов: {allowedTypes}\nЛимит файлов: {maxFiles}\nЛимит байт: {maxBytes}\nСоздание: {(allowCreate ? "разрешено" : "запрещено")} · удаление: {(allowDelete ? "разрешено" : "запрещено")} · rename: {(allowRename ? "разрешено" : "запрещено")}\nAcceptance criteria: {acceptanceCriteria}\nBaseline: {baseline}\nEffective permissions hash: {effectivePermissionsHash}\nIntent hash: {intentHash}\n\nЗапись ещё не выполнялась.",
                     TextWrapping = TextWrapping.Wrap,
                 },
                 PrimaryButtonText = "Одобрить и применить",
@@ -1677,12 +1686,17 @@ public partial class MainWindow : Window
 
     private sealed record BuildScopeDto(
         [property: JsonPropertyName("allowed_paths")] string[] AllowedPaths,
+        [property: JsonPropertyName("allowed_operations")] string[] AllowedOperations,
+        [property: JsonPropertyName("expected_outputs")] string[] ExpectedOutputs,
         [property: JsonPropertyName("protected_paths")] string[] ProtectedPaths,
         [property: JsonPropertyName("allowed_file_types")] string[] AllowedFileTypes,
         [property: JsonPropertyName("max_files_changed")] int MaxFilesChanged,
         [property: JsonPropertyName("max_bytes_changed")] int MaxBytesChanged,
         [property: JsonPropertyName("allow_create")] bool AllowCreate,
-        [property: JsonPropertyName("allow_delete")] bool AllowDelete);
+        [property: JsonPropertyName("allow_delete")] bool AllowDelete,
+        [property: JsonPropertyName("allow_rename")] bool AllowRename,
+        [property: JsonPropertyName("baseline_snapshot_id")] string? BaselineSnapshotId,
+        [property: JsonPropertyName("acceptance_criteria")] string AcceptanceCriteria);
 
     private sealed record BuildChangeDto(
         [property: JsonPropertyName("relative_path")] string RelativePath,
