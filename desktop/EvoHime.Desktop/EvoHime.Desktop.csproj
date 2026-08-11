@@ -9,6 +9,7 @@
     <FileVersion>0.0.0.32</FileVersion>
     <InformationalVersion>0.0.000032</InformationalVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\evohime-agent.ico</ApplicationIcon>
     <Platforms>x64</Platforms>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <EnableMsixTooling>true</EnableMsixTooling>
