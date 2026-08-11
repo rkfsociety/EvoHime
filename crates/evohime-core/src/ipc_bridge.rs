@@ -128,6 +128,80 @@ impl IpcBridge {
                 };
                 transport::write_frame(writer, &event.encode_to_vec()).await?;
             }
+            Some(generated::command_envelope::Command::ResyncRequest(request)) => {
+                evohime_desktop_ipc::validate_resync_request(&request)
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                let limit = if request.max_events == 0 {
+                    evohime_desktop_ipc::DEFAULT_RESYNC_MAX_EVENTS
+                } else {
+                    request.max_events
+                } as usize;
+                let records = self
+                    .journal
+                    .replay(request.after_sequence as i64, limit)
+                    .await
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                let last_sequence = records
+                    .last()
+                    .map(|record| record.sequence_id as u64)
+                    .unwrap_or(request.after_sequence);
+                if request.include_full_snapshot {
+                    let snapshot_json = serde_json::to_vec(&serde_json::json!({
+                        "after_sequence": request.after_sequence,
+                        "last_sequence": last_sequence,
+                        "events": records.iter().map(|record| serde_json::json!({
+                            "sequence_id": record.sequence_id,
+                            "task_id": record.task_id,
+                            "event_type": record.event_type,
+                            "payload": record.payload,
+                            "created_at": record.created_at,
+                        })).collect::<Vec<_>>(),
+                    }))
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                    let snapshot = generated::FullSnapshot {
+                        sequence_id: last_sequence,
+                        snapshot_json,
+                    };
+                    evohime_desktop_ipc::validate_full_snapshot(&snapshot)
+                        .map_err(|error| FrameError::Io(error.to_string()))?;
+                    let event = generated::EventEnvelope {
+                        protocol: Some(protocol()),
+                        sequence_id: last_sequence,
+                        task_id: String::new(),
+                        event_type: "replay.full_snapshot".into(),
+                        payload: Vec::new(),
+                        core_instance_id: self.core_instance_id.clone(),
+                        session_epoch: self.session_epoch,
+                        event: Some(generated::event_envelope::Event::FullSnapshot(snapshot)),
+                    };
+                    transport::write_frame(writer, &event.encode_to_vec()).await?;
+                } else {
+                    for record in records {
+                        let event = generated::EventEnvelope {
+                            protocol: Some(protocol()),
+                            sequence_id: record.sequence_id as u64,
+                            task_id: record.task_id,
+                            event_type: record.event_type,
+                            payload: record.payload,
+                            core_instance_id: self.core_instance_id.clone(),
+                            session_epoch: self.session_epoch,
+                            event: None,
+                        };
+                        transport::write_frame(writer, &event.encode_to_vec()).await?;
+                    }
+                }
+                let end = generated::EventEnvelope {
+                    protocol: Some(protocol()),
+                    sequence_id: last_sequence,
+                    task_id: String::new(),
+                    event_type: "resync.end".into(),
+                    payload: Vec::new(),
+                    core_instance_id: self.core_instance_id.clone(),
+                    session_epoch: self.session_epoch,
+                    event: None,
+                };
+                transport::write_frame(writer, &end.encode_to_vec()).await?;
+            }
             Some(generated::command_envelope::Command::ReplayEvents(replay)) => {
                 let mut last_sequence = replay.after_sequence;
                 for record in self

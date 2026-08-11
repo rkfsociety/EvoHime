@@ -20,6 +20,14 @@ message ReplayEvents {
   uint64 after_sequence = 1;
 }
 
+// Additive bounded replay request. A zero max_events means the receiver uses
+// its bounded default; values above the receiver limit must be rejected.
+message ResyncRequest {
+  uint64 after_sequence = 1;
+  uint32 max_events = 2;
+  bool include_full_snapshot = 3;
+}
+
 message ModelConfigRequest {}
 
 message ModelCatalogRequest {
@@ -185,6 +193,7 @@ message CommandEnvelope {
     RestoreTaskSnapshot restore_task_snapshot = 31;
     GetBuildPolicy get_build_policy = 32;
     SaveBuildPolicy save_build_policy = 33;
+    ResyncRequest resync_request = 34;
   }
 }
 
@@ -203,5 +212,23 @@ message EventEnvelope {
   uint64 session_epoch = 7;
   oneof event {
     Ready ready = 10;
+    ReplayGap replay_gap = 11;
+    FullSnapshot full_snapshot = 12;
   }
+}
+
+// The server emits this when the requested sequence is no longer retained.
+// It is a diagnostic and does not contain unbounded event data.
+message ReplayGap {
+  uint64 requested_after_sequence = 1;
+  uint64 earliest_available_sequence = 2;
+  uint64 latest_available_sequence = 3;
+  string reason = 4;
+}
+
+// Snapshot bytes are bounded by the desktop IPC frame limit. The receiver
+// must reject a snapshot that does not fit before attempting to apply it.
+message FullSnapshot {
+  uint64 sequence_id = 1;
+  bytes snapshot_json = 2;
 }

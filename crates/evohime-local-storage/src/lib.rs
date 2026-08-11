@@ -217,6 +217,28 @@ pub struct RunReconciliationRecord {
     pub reconciled_at: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiagnosticsTableCount {
+    pub table: String,
+    pub rows: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiagnosticsEventCount {
+    pub event_type: String,
+    pub rows: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiagnosticsSummary {
+    pub table_counts: Vec<DiagnosticsTableCount>,
+    pub event_counts: Vec<DiagnosticsEventCount>,
+    pub total_events: i64,
+    pub event_types_truncated: bool,
+}
+
+pub const MAX_DIAGNOSTICS_EVENT_TYPES: usize = 128;
+
 impl LocalDatabase {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
         Self::open_internal(path.as_ref(), false)
@@ -1175,6 +1197,70 @@ impl LocalDatabase {
         Ok(())
     }
 
+    /// Returns a bounded, read-only health/retention summary.
+    ///
+    /// The table list is fixed to the schema owned by this crate, while event
+    /// types are capped so a noisy database cannot produce an unbounded
+    /// response. This method performs only SELECTs and does not affect
+    /// recovery state or retention data.
+    pub fn read_diagnostics_summary(
+        &self,
+        max_event_types: usize,
+    ) -> Result<DiagnosticsSummary, StorageError> {
+        const TABLES: [&str; 13] = [
+            "events",
+            "projects",
+            "work_items",
+            "work_item_edges",
+            "provenance",
+            "runs",
+            "command_dedup",
+            "snapshots",
+            "run_checkpoints",
+            "run_effects",
+            "project_policies",
+            "run_leases",
+            "run_reconciliations",
+        ];
+
+        let mut table_counts = Vec::with_capacity(TABLES.len());
+        for table in TABLES {
+            let sql = format!("SELECT COUNT(*) FROM {table}");
+            let rows = self.connection.query_row(&sql, [], |row| row.get(0))?;
+            table_counts.push(DiagnosticsTableCount {
+                table: table.to_string(),
+                rows,
+            });
+        }
+
+        let total_events = self
+            .connection
+            .query_row("SELECT COUNT(*) FROM events", [], |row| row.get(0))?;
+        let limit = max_event_types.min(MAX_DIAGNOSTICS_EVENT_TYPES);
+        let query_limit = limit.saturating_add(1).min(i64::MAX as usize) as i64;
+        let mut statement = self.connection.prepare(
+            "SELECT event_type, COUNT(*) AS rows
+             FROM events GROUP BY event_type
+             ORDER BY rows DESC, event_type ASC LIMIT ?1",
+        )?;
+        let rows = statement.query_map([query_limit], |row| {
+            Ok(DiagnosticsEventCount {
+                event_type: row.get(0)?,
+                rows: row.get(1)?,
+            })
+        })?;
+        let mut event_counts = rows.collect::<Result<Vec<_>, _>>()?;
+        let event_types_truncated = event_counts.len() > limit;
+        event_counts.truncate(limit);
+
+        Ok(DiagnosticsSummary {
+            table_counts,
+            event_counts,
+            total_events,
+            event_types_truncated,
+        })
+    }
+
     fn read_schema_version(connection: &Connection) -> Result<u32, rusqlite::Error> {
         connection.query_row("PRAGMA user_version", [], |row| row.get(0))
     }
@@ -1311,9 +1397,9 @@ impl LocalDatabase {
 #[cfg(test)]
 mod tests {
     use super::{
-        ImportedTask, LocalDatabase, ModelRouteSnapshot, PolicySnapshot, RoleRef,
-        RunCheckpointRecord, RunEffectRecord, RunRecord, RunSnapshots, SkillRef, StorageError,
-        WorkItemRecord, SCHEMA_VERSION,
+        DiagnosticsSummary, ImportedTask, LocalDatabase, ModelRouteSnapshot, PolicySnapshot,
+        RoleRef, RunCheckpointRecord, RunEffectRecord, RunRecord, RunSnapshots, SkillRef,
+        StorageError, WorkItemRecord, SCHEMA_VERSION,
     };
     use std::path::PathBuf;
 
@@ -1419,6 +1505,69 @@ mod tests {
         assert_eq!(record["payload"]["ok"], true);
         let _ = std::fs::remove_file(path);
         let _ = std::fs::remove_file(output);
+    }
+
+    #[test]
+    fn diagnostics_summary_is_bounded_read_only_and_counts_tables_and_events() {
+        let path = temp_database_path("diagnostics-summary");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        database
+            .create_project("diagnostics-project", "Diagnostics", "C:\\workspace", None)
+            .expect("project creates");
+        database
+            .append_event("task-1", "task.started", b"one")
+            .expect("first event writes");
+        database
+            .append_event("task-1", "task.started", b"two")
+            .expect("second event writes");
+        database
+            .append_event("task-1", "task.completed", b"three")
+            .expect("third event writes");
+
+        let before_version = database.schema_version().expect("schema version reads");
+        let summary: DiagnosticsSummary = database
+            .read_diagnostics_summary(1)
+            .expect("diagnostics summary reads");
+
+        assert_eq!(summary.total_events, 3);
+        assert_eq!(summary.event_counts.len(), 1);
+        assert_eq!(summary.event_counts[0].event_type, "task.started");
+        assert_eq!(summary.event_counts[0].rows, 2);
+        assert!(summary.event_types_truncated);
+        assert_eq!(summary.table_counts.len(), 13);
+        assert_eq!(
+            summary
+                .table_counts
+                .iter()
+                .find(|count| count.table == "projects")
+                .expect("projects count exists")
+                .rows,
+            1
+        );
+        assert_eq!(
+            summary
+                .table_counts
+                .iter()
+                .find(|count| count.table == "events")
+                .expect("events count exists")
+                .rows,
+            3
+        );
+        assert_eq!(
+            database.schema_version().expect("schema version reads"),
+            before_version
+        );
+        assert_eq!(
+            database
+                .read_events_after(0, 10)
+                .expect("events remain readable")
+                .len(),
+            3
+        );
+
+        drop(database);
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

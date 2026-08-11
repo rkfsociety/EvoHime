@@ -502,7 +502,9 @@ use tokio_util::sync::CancellationToken;
 pub mod build;
 pub mod plan;
 pub mod prd;
+pub mod research;
 pub mod scope;
+pub mod workflow;
 pub mod workspace;
 
 pub enum CoreCommand {

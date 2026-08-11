@@ -1,8 +1,7 @@
 use serde_json::json;
 use std::{
     ffi::OsStr,
-    fs,
-    io,
+    fs, io,
     mem::size_of,
     os::windows::ffi::OsStrExt,
     path::PathBuf,
@@ -217,22 +216,51 @@ fn heartbeat_is_stale(path: &Path, max_age: StdDuration) -> bool {
         .unwrap_or(true)
 }
 
+fn heartbeat_is_current_generation(path: &Path, generation_started_at: SystemTime) -> bool {
+    fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .map(|modified| modified >= generation_started_at)
+        .unwrap_or(false)
+}
+
+fn heartbeat_is_stale_for_generation(
+    path: &Path,
+    generation_started_at: SystemTime,
+    max_age: StdDuration,
+) -> bool {
+    if !heartbeat_is_current_generation(path, generation_started_at) {
+        return true;
+    }
+    heartbeat_is_stale(path, max_age)
+}
+
 async fn wait_for_core(
     child: &mut tokio::process::Child,
     heartbeat_path: &Path,
     logger: &SupervisorLogger,
 ) -> io::Result<std::process::ExitStatus> {
     let started = tokio::time::Instant::now();
+    let generation_started_at = SystemTime::now();
     loop {
         if let Some(status) = child.try_wait()? {
             return Ok(status);
         }
         if started.elapsed() > Duration::from_secs(10)
-            && heartbeat_is_stale(heartbeat_path, StdDuration::from_secs(5))
+            && heartbeat_is_stale_for_generation(
+                heartbeat_path,
+                generation_started_at,
+                StdDuration::from_secs(5),
+            )
         {
             let _ = logger.write(
                 "core.health_timeout",
-                json!({"heartbeat": heartbeat_path.display().to_string()}),
+                json!({
+                    "heartbeat": heartbeat_path.display().to_string(),
+                    "generation_started_at_ms": generation_started_at
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis(),
+                }),
             );
             child.kill().await?;
             return child.wait().await;
@@ -243,7 +271,10 @@ async fn wait_for_core(
 
 #[cfg(test)]
 mod tests {
-    use super::{heartbeat_is_stale, recover_pending_update};
+    use super::{
+        heartbeat_is_current_generation, heartbeat_is_stale, heartbeat_is_stale_for_generation,
+        recover_pending_update,
+    };
     use evohime_tx::UpdateTransaction;
     use std::fs;
     use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
@@ -277,7 +308,61 @@ mod tests {
 
     #[test]
     fn missing_core_heartbeat_is_stale() {
-        let path = std::env::temp_dir().join(format!("evohime-missing-heartbeat-{}", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("evohime-missing-heartbeat-{}", std::process::id()));
         assert!(heartbeat_is_stale(&path, StdDuration::from_secs(5)));
+    }
+
+    #[test]
+    fn heartbeat_from_previous_generation_is_not_current() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-old-heartbeat-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("core-heartbeat");
+        fs::write(&path, "old-generation").unwrap();
+
+        let generation_started_at = SystemTime::now() + StdDuration::from_secs(1);
+        assert!(!heartbeat_is_current_generation(
+            &path,
+            generation_started_at
+        ));
+        assert!(heartbeat_is_stale_for_generation(
+            &path,
+            generation_started_at,
+            StdDuration::from_secs(5),
+        ));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn heartbeat_written_after_generation_is_current() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-current-heartbeat-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("core-heartbeat");
+        let generation_started_at = SystemTime::now();
+        std::thread::sleep(StdDuration::from_millis(20));
+        fs::write(&path, "current-generation").unwrap();
+
+        assert!(heartbeat_is_current_generation(
+            &path,
+            generation_started_at
+        ));
+        assert!(!heartbeat_is_stale_for_generation(
+            &path,
+            generation_started_at,
+            StdDuration::from_secs(5),
+        ));
+        fs::remove_dir_all(root).unwrap();
     }
 }

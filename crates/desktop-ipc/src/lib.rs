@@ -4,6 +4,30 @@ pub mod generated {
 pub mod transport;
 
 pub const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
+pub const DEFAULT_RESYNC_MAX_EVENTS: u32 = 512;
+pub const MAX_RESYNC_SNAPSHOT_BYTES: usize = MAX_FRAME_BYTES - 1024;
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum ResyncError {
+    #[error("resync batch exceeds the {DEFAULT_RESYNC_MAX_EVENTS} event limit")]
+    TooManyEvents,
+    #[error("full snapshot exceeds the bounded IPC snapshot limit")]
+    SnapshotTooLarge,
+}
+
+pub fn validate_resync_request(request: &generated::ResyncRequest) -> Result<(), ResyncError> {
+    if request.max_events > DEFAULT_RESYNC_MAX_EVENTS {
+        return Err(ResyncError::TooManyEvents);
+    }
+    Ok(())
+}
+
+pub fn validate_full_snapshot(snapshot: &generated::FullSnapshot) -> Result<(), ResyncError> {
+    if snapshot.snapshot_json.len() > MAX_RESYNC_SNAPSHOT_BYTES {
+        return Err(ResyncError::SnapshotTooLarge);
+    }
+    Ok(())
+}
 
 pub fn normalize_task_status(value: i32) -> generated::TaskStatus {
     generated::TaskStatus::try_from(value).unwrap_or(generated::TaskStatus::Unknown)
@@ -73,7 +97,8 @@ mod tests {
     use crate::generated;
     use crate::normalize_task_status;
     use super::{
-        decode_frame, encode_frame, transport, FrameError, ProtocolVersion, MAX_FRAME_BYTES,
+        decode_frame, encode_frame, transport, validate_full_snapshot, validate_resync_request,
+        FrameError, ProtocolVersion, ResyncError, DEFAULT_RESYNC_MAX_EVENTS, MAX_FRAME_BYTES,
     };
 
     #[test]
@@ -198,5 +223,17 @@ mod tests {
             .expect("task decodes");
         assert_eq!(decoded.status_code, 99);
         assert_eq!(normalize_task_status(decoded.status_code), generated::TaskStatus::Unknown);
+    }
+
+    #[test]
+    fn bounded_resync_rejects_unbounded_batch() {
+        let request = generated::ResyncRequest { after_sequence: 1, max_events: DEFAULT_RESYNC_MAX_EVENTS + 1, include_full_snapshot: false };
+        assert_eq!(validate_resync_request(&request), Err(ResyncError::TooManyEvents));
+    }
+
+    #[test]
+    fn full_snapshot_validation_is_bounded() {
+        let snapshot = generated::FullSnapshot { sequence_id: 1, snapshot_json: vec![0; super::MAX_RESYNC_SNAPSHOT_BYTES + 1] };
+        assert_eq!(validate_full_snapshot(&snapshot), Err(ResyncError::SnapshotTooLarge));
     }
 }

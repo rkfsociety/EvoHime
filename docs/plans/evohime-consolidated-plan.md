@@ -220,6 +220,7 @@ Exit criteria 0b: kill-9 не создаёт второй effect; checkpoint в�
 - Статус реализации на 2026-08-12: **в работе**. Первый bounded Build-срез закрывает single-owner lease, heartbeat, generation claim и snapshot-based reconciliation; protocol replay/resync и type-specific verifiers остаются.
 - [x] Добавить durable `run_leases` с owner, generation, heartbeat и expiry; второй владелец не может claim-нуть активный run.
 - [x] Для bounded Build добавить reconciliation verifier по durable snapshot: подтверждённый outcome получает `run.reconciliation.completed`, неподтверждённый остаётся blocked, blind retry не выполняется.
+- [x] Добавить bounded `ResyncRequest`, additive replay-gap/full-snapshot envelopes и защиту размера resync payload.
 - Добавить negotiated `protocol_version + capabilities`, backward compatibility matrix и bounded durable command/event replay.
 - Реализовать `RECOVERING → RECONCILING → RESUMABLE | BLOCKED | WAITING_APPROVAL | FAILED`, leases/generation, partial-gap replay/resync/full snapshot и type-specific effect verifiers.
 - Логировать reconciliation в audit: effect id, globally unique idempotency key, verifier, evidence и решение.
@@ -255,6 +256,9 @@ MVP-1 milestone после этапа 1: пользователь видит п�
 
 ### Этап 3 — Research и typed workflow graph (P0)
 
+- Статус реализации на 2026-08-12: **контракты в работе**. Добавлены bounded research evidence и статический typed workflow graph; persistence, network capability layer и runner остаются.
+- [x] Добавить bounded research evidence contract с redacted excerpt, source hash, freshness/TTL и deterministic JSON.
+- [x] Добавить typed static workflow graph contract с input/output types, retry/timeout/cancellation/approval и deterministic validation; dynamic edits отложены.
 - Реализовать сначала статический workflow graph с typed input/output, condition, retry, timeout, cancellation, approval и subgraph. Dynamic graph edits отложить.
 - Реализовать research pipeline: запрос → разрешённый HTTP/search → извлечение → краткое резюме → citations → сохранение.
 - Evidence хранит redacted/plain excerpt с max bytes, fetched-at, TTL/freshness, source hash и approval/provenance link.
@@ -304,6 +308,7 @@ approval: none
 
 ### Этап 7 — Evals, hooks, observability и Core Doctor (P1)
 
+- [x] Добавить read-only bounded `DiagnosticsSummary` для SQLite table/event counts без удаления данных и изменения recovery semantics.
 - Evals для skill selection, allowlist, plan quality, IPC compatibility, cancellation, replay, citations, memory retrieval, routing и UI truthfulness.
 - Hooks `before_context`, `before_tool`, `after_tool`, `before_commit`, `after_task` только наблюдают или отклоняют по policy, не получают секреты и не могут менять порядок context.
 - Локальный JSONL/SQLite audit trail: versions, tool calls, approvals, durations, failures, budgets, diffs и evidence.

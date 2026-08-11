@@ -49,6 +49,7 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _eventCts;
     private string? _activeTaskId;
     private int _reconnectAttempt;
+    private string? _recoveryOutcomeStatus;
     private string? _pendingApprovalId;
     private Button? _modelButton;
     private Button? _contextButton;
@@ -1299,11 +1300,50 @@ public partial class MainWindow : Window
                     : "нет подробностей";
                 return $"Build applied: run {root.GetProperty("run_id").GetString()}, snapshot {root.GetProperty("snapshot_id").GetString()}, diff {root.GetProperty("diff_count").GetInt32()} [{diff}] ({createdAt})";
             }
-            catch (JsonException)
+            catch (Exception error) when (error is JsonException or InvalidOperationException or KeyNotFoundException)
             {
                 return $"{eventType} ({createdAt})";
             }
         }
+
+        if (eventType is "run.reconciliation.completed" or "run.recovery.blocked")
+        {
+            try
+            {
+                var bytes = item.GetProperty("payload").EnumerateArray().Select(value => value.GetByte()).ToArray();
+                using var payload = JsonDocument.Parse(bytes);
+                var root = payload.RootElement;
+                var runId = root.TryGetProperty("run_id", out var run)
+                    ? run.GetString()
+                    : "неизвестен";
+                var effectId = root.TryGetProperty("effect_id", out var effect)
+                    ? effect.GetString()
+                    : "неизвестен";
+
+                if (eventType == "run.reconciliation.completed")
+                {
+                    var snapshotId = root.TryGetProperty("snapshot_id", out var snapshot) && snapshot.ValueKind != JsonValueKind.Null
+                        ? snapshot.GetString()
+                        : "неизвестен";
+                    var decision = root.TryGetProperty("decision", out var decisionValue)
+                        ? decisionValue.GetString()
+                        : "applied";
+                    return $"RESUMABLE: результат подтверждён (run {runId}, effect {effectId}, snapshot {snapshotId}, решение {decision}) ({createdAt})";
+                }
+
+                var reason = root.TryGetProperty("reason", out var reasonValue)
+                    ? reasonValue.GetString()
+                    : "требуется проверка";
+                return $"BLOCKED: неизвестный effect остановлен (run {runId}, effect {effectId}, причина {reason}) ({createdAt})";
+            }
+            catch (Exception error) when (error is JsonException or InvalidOperationException or KeyNotFoundException)
+            {
+                return eventType == "run.reconciliation.completed"
+                    ? $"RESUMABLE: результат подтверждён ({createdAt})"
+                    : $"BLOCKED: recovery требует проверки ({createdAt})";
+            }
+        }
+
         return $"{eventType} ({createdAt})";
     }
 
@@ -3494,6 +3534,7 @@ public partial class MainWindow : Window
                 }
 
                 var recoveryBlocked = false;
+                var reconciliationCompleted = false;
                 SetConnectionStatus("RECOVERING: replay durable state...");
                 await _ipc.ReadReplayAsync(
                     _state.LastSequence,
@@ -3504,11 +3545,14 @@ public partial class MainWindow : Window
                             if (envelope.EventType == "run.recovery.blocked")
                             {
                                 recoveryBlocked = true;
+                                _recoveryOutcomeStatus = "BLOCKED: recovery требует проверки";
                                 SetConnectionStatus("BLOCKED: unknown effect остановлен после recovery");
                             }
                             if (envelope.EventType == "run.reconciliation.completed")
                             {
-                                SetConnectionStatus("RESUMABLE: outcome подтверждён reconciliation");
+                                reconciliationCompleted = true;
+                                _recoveryOutcomeStatus = "RESUMABLE: outcome подтверждён reconciliation";
+                                SetConnectionStatus(_recoveryOutcomeStatus);
                             }
                             if (envelope.TaskId == _activeTaskId)
                             {
@@ -3541,7 +3585,9 @@ public partial class MainWindow : Window
                     cancellationToken);
                 SetConnectionStatus(recoveryBlocked
                     ? "BLOCKED: recovery требует проверки"
-                    : "Подключено");
+                    : reconciliationCompleted
+                        ? "RESUMABLE: outcome подтверждён reconciliation"
+                        : _recoveryOutcomeStatus ?? "Подключено");
                 await Task.Delay(300, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
