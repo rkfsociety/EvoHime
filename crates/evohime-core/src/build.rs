@@ -27,6 +27,7 @@ pub struct WorkspaceSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApprovedBuild {
     pub intent_hash: String,
+    pub effective_permissions_hash: String,
     pub expected_workspace_hash: String,
     pub scope: BuildScope,
     pub changes: Vec<BuildChange>,
@@ -81,6 +82,7 @@ pub fn prepare_build(
     }
     let mut approved = ApprovedBuild {
         intent_hash: String::new(),
+        effective_permissions_hash: calculate_effective_permissions_hash(&proposal.scope),
         expected_workspace_hash: manifest.workspace_hash,
         scope: proposal.scope.clone(),
         changes,
@@ -90,7 +92,14 @@ pub fn prepare_build(
 }
 
 pub fn calculate_intent_hash(scope: &BuildScope, changes: &[BuildChange]) -> String {
-    let canonical = serde_json::to_vec(&(scope, changes)).expect("build intent serializes");
+    let effective_permissions_hash = calculate_effective_permissions_hash(scope);
+    let canonical = serde_json::to_vec(&(scope, changes, effective_permissions_hash))
+        .expect("build intent serializes");
+    content_hash(&canonical)
+}
+
+pub fn calculate_effective_permissions_hash(scope: &BuildScope) -> String {
+    let canonical = serde_json::to_vec(scope).expect("build scope serializes");
     content_hash(&canonical)
 }
 
@@ -98,7 +107,9 @@ pub fn apply_approved_build(
     root: impl AsRef<Path>,
     build: &ApprovedBuild,
 ) -> Result<WorkspaceSnapshot, BuildError> {
-    if calculate_intent_hash(&build.scope, &build.changes) != build.intent_hash {
+    if calculate_effective_permissions_hash(&build.scope) != build.effective_permissions_hash
+        || calculate_intent_hash(&build.scope, &build.changes) != build.intent_hash
+    {
         return Err(BuildError::IntentHashMismatch);
     }
     let root = root.as_ref().canonicalize()?;
@@ -200,7 +211,7 @@ fn safe_path(root: &Path, relative_path: &str) -> Result<PathBuf, BuildError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_approved_build, calculate_intent_hash, prepare_build, restore_snapshot, ApprovedBuild, BuildChange, BuildProposal};
+    use super::{apply_approved_build, calculate_effective_permissions_hash, calculate_intent_hash, prepare_build, restore_snapshot, ApprovedBuild, BuildChange, BuildProposal};
     use crate::{scope::BuildScope, workspace::build_manifest};
     use std::{fs, path::PathBuf};
 
@@ -235,10 +246,12 @@ mod tests {
         };
         let mut build = ApprovedBuild {
             intent_hash: String::new(),
+            effective_permissions_hash: String::new(),
             expected_workspace_hash: baseline.workspace_hash,
             scope: scope(),
             changes: vec![change],
         };
+        build.effective_permissions_hash = calculate_effective_permissions_hash(&build.scope);
         build.intent_hash = calculate_intent_hash(&build.scope, &build.changes);
         let snapshot = apply_approved_build(&root, &build).unwrap();
         assert_eq!(fs::read_to_string(root.join("src/lib.rs")).unwrap(), "new");
@@ -255,11 +268,13 @@ mod tests {
         fs::write(root.join("src/lib.rs"), "old").unwrap();
         let mut build = ApprovedBuild {
             intent_hash: "tampered".into(),
+            effective_permissions_hash: String::new(),
             expected_workspace_hash: "wrong".into(),
             scope: scope(),
             changes: vec![],
         };
         assert!(apply_approved_build(&root, &build).is_err());
+        build.effective_permissions_hash = calculate_effective_permissions_hash(&build.scope);
         build.intent_hash = calculate_intent_hash(&build.scope, &build.changes);
         assert!(apply_approved_build(&root, &build).is_err());
         fs::remove_dir_all(root).unwrap();

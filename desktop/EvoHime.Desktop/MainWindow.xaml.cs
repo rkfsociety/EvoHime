@@ -1395,6 +1395,7 @@ public partial class MainWindow : Window
 
             using var approved = JsonDocument.Parse(approvedJson);
             var intentHash = approved.RootElement.GetProperty("intent_hash").GetString();
+            var effectivePermissionsHash = approved.RootElement.GetProperty("effective_permissions_hash").GetString();
             var baseline = approved.RootElement.GetProperty("expected_workspace_hash").GetString();
             var changes = approved.RootElement.GetProperty("changes");
             var change = changes.GetArrayLength() == 0 ? "нет изменений" : changes[0].GetProperty("relative_path").GetString();
@@ -1406,7 +1407,7 @@ public partial class MainWindow : Window
                 Title = "Подтвердить bounded Build",
                 Content = new TextBlock
                 {
-                    Text = $"Файл: {change}\nAllowed paths: {allowedPaths}\nЛимит байт: {maxBytes}\nBaseline: {baseline}\nIntent hash: {intentHash}\n\nЗапись ещё не выполнялась.",
+                    Text = $"Файл: {change}\nAllowed paths: {allowedPaths}\nЛимит байт: {maxBytes}\nBaseline: {baseline}\nEffective permissions hash: {effectivePermissionsHash}\nIntent hash: {intentHash}\n\nЗапись ещё не выполнялась.",
                     TextWrapping = TextWrapping.Wrap,
                 },
                 PrimaryButtonText = "Одобрить и применить",

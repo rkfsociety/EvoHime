@@ -1849,6 +1849,7 @@ impl TaskCoordinator {
                         "run_id": run_id,
                         "snapshot_id": snapshot.id,
                         "intent_hash": approved.intent_hash,
+                        "effective_permissions_hash": approved.effective_permissions_hash,
                         "workspace_hash": snapshot.baseline_workspace_hash,
                     }))
                     .map_err(|error| error.to_string())?;
@@ -1882,6 +1883,7 @@ impl TaskCoordinator {
                     let audit_subject = format!("proposal-{}", approved.intent_hash);
                     let audit_payload = serde_json::to_vec(&serde_json::json!({
                         "intent_hash": approved.intent_hash,
+                        "effective_permissions_hash": approved.effective_permissions_hash,
                         "expected_workspace_hash": approved.expected_workspace_hash,
                         "change_count": approved.changes.len(),
                     }))
