@@ -130,6 +130,7 @@ pub enum CoreEvent {
         user_prompt: String,
         tools: Vec<String>,
         estimated_tokens: usize,
+        context_limit_tokens: usize,
     },
     TaskStarted {
         task_id: String,
@@ -440,6 +441,7 @@ impl ToolAgent {
             user_prompt,
             tools: tool_names,
             estimated_tokens: context_text.chars().count().div_ceil(4),
+            context_limit_tokens: 128_000,
         });
 
         for _ in 0..self.max_iterations {

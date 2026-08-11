@@ -3,6 +3,11 @@ using System.Security.Cryptography;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using XamlArcSegment = Microsoft.UI.Xaml.Media.ArcSegment;
+using XamlEllipse = Microsoft.UI.Xaml.Shapes.Ellipse;
+using XamlPathFigure = Microsoft.UI.Xaml.Media.PathFigure;
+using XamlPathGeometry = Microsoft.UI.Xaml.Media.PathGeometry;
+using XamlPath = Microsoft.UI.Xaml.Shapes.Path;
 using Microsoft.UI.Xaml.Input;
 using EvoHime.Desktop.Services;
 using Windows.Storage.Pickers;
@@ -43,6 +48,8 @@ public partial class MainWindow : Window
     private string? _pendingApprovalId;
     private Button? _modelButton;
     private Button? _contextButton;
+    private XamlPath? _contextProgressArc;
+    private TextBlock? _contextPercentText;
     private string _modelContextDetails = "Контекст модели ещё не получен.";
     private Grid? _homeContent;
     private Grid? _settingsView;
@@ -392,14 +399,42 @@ public partial class MainWindow : Window
         };
         accessButton.Click += AccessButton_Click;
         _modelButton.Click += ModelButton_Click;
+        var contextIndicator = new Grid { Width = 38, Height = 38 };
+        contextIndicator.Children.Add(new XamlEllipse
+        {
+            Width = 30,
+            Height = 30,
+            Stroke = ThemeBrush("BorderBrush", 48, 53, 72),
+            StrokeThickness = 3,
+        });
+        _contextProgressArc = new XamlPath
+        {
+            Width = 38,
+            Height = 38,
+            Stroke = ThemeBrush("PurpleBrush", 167, 139, 250),
+            StrokeThickness = 3,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        contextIndicator.Children.Add(_contextProgressArc);
+        _contextPercentText = new TextBlock
+        {
+            Text = "—",
+            FontSize = 10,
+            Foreground = text,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        contextIndicator.Children.Add(_contextPercentText);
         _contextButton = new Button
         {
-            Content = "Контекст",
+            Content = contextIndicator,
             Foreground = muted,
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-            Padding = new Thickness(6, 5, 6, 5),
+            Padding = new Thickness(0),
             IsEnabled = false,
         };
+        ToolTipService.SetToolTip(_contextButton, "Контекст модели");
         _contextButton.Click += ContextButton_Click;
         Grid.SetColumn(_contextButton, 3);
         composerActions.Children.Add(_contextButton);
@@ -1248,16 +1283,61 @@ public partial class MainWindow : Window
         var estimatedTokens = root.TryGetProperty("estimated_tokens", out var tokenValue)
             ? tokenValue.GetInt32().ToString()
             : "неизвестно";
+        var contextLimit = root.TryGetProperty("context_limit_tokens", out var limitValue)
+            ? limitValue.GetInt32()
+            : 128000;
         var tools = root.TryGetProperty("tools", out var toolsValue) && toolsValue.ValueKind == JsonValueKind.Array
             ? string.Join(", ", toolsValue.EnumerateArray().Select(item => item.GetString()).Where(item => !string.IsNullOrWhiteSpace(item)))
             : "нет инструментов";
 
-        _modelContextDetails = $"Модель: {model}\nWorkspace: {workspace}\nОценка контекста: ~{estimatedTokens} токенов\n\nСистемная инструкция:\n{systemPrompt}\n\nЗапрос:\n{userPrompt}\n\nДоступные инструменты ({(tools == "нет инструментов" ? 0 : tools.Split(", ").Length)}):\n{tools}";
+        var estimated = int.TryParse(estimatedTokens, out var parsedTokens) ? parsedTokens : 0;
+        var percent = contextLimit > 0 ? Math.Clamp((double)estimated / contextLimit * 100, 0, 100) : 0;
+        _modelContextDetails = $"Модель: {model}\nWorkspace: {workspace}\nКонтекст: ~{estimatedTokens} из {contextLimit:N0} токенов ({percent:0}%)\n\nСистемная инструкция:\n{systemPrompt}\n\nЗапрос:\n{userPrompt}\n\nДоступные инструменты ({(tools == "нет инструментов" ? 0 : tools.Split(", ").Length)}):\n{tools}";
+        UpdateContextProgress(percent);
         if (_contextButton is not null)
         {
-            _contextButton.Content = $"Контекст · ~{estimatedTokens} ток.";
             _contextButton.IsEnabled = true;
         }
+    }
+
+    private void UpdateContextProgress(double percent)
+    {
+        if (_contextPercentText is not null)
+        {
+            _contextPercentText.Text = $"{percent:0}%";
+        }
+
+        if (_contextProgressArc is null)
+        {
+            return;
+        }
+
+        if (percent <= 0)
+        {
+            _contextProgressArc.Data = null;
+            return;
+        }
+
+        var radius = 15d;
+        var center = 19d;
+        var start = -Math.PI / 2;
+        var angle = start + Math.Min(percent, 99.99) / 100d * Math.PI * 2;
+        var end = new Windows.Foundation.Point(center + radius * Math.Cos(angle), center + radius * Math.Sin(angle));
+        var figure = new XamlPathFigure
+        {
+            StartPoint = new Windows.Foundation.Point(center, center - radius),
+            IsClosed = false,
+        };
+        figure.Segments.Add(new XamlArcSegment
+        {
+            Point = end,
+            Size = new Windows.Foundation.Size(radius, radius),
+            IsLargeArc = percent > 50,
+            SweepDirection = SweepDirection.Clockwise,
+        });
+        var geometry = new XamlPathGeometry();
+        geometry.Figures.Add(figure);
+        _contextProgressArc.Data = geometry;
     }
 
     private async void ContextButton_Click(object sender, RoutedEventArgs e)
@@ -1659,9 +1739,9 @@ public partial class MainWindow : Window
         _streamingAssistantText = null;
         if (_contextButton is not null)
         {
-            _contextButton.Content = "Контекст: подготовка…";
             _contextButton.IsEnabled = false;
         }
+        UpdateContextProgress(0);
         AddConversationActivity("Ева подключается к Core…");
 
         try
