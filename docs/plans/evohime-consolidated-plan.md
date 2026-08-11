@@ -223,6 +223,7 @@ Exit criteria 0b: kill-9 не создаёт второй effect; checkpoint в�
 - [x] Добавить bounded type-specific verifiers для file/database/process outcomes с generation checks и состояниями confirmed/unconfirmed/blocked без blind retry.
 - [x] Добавить bounded `ResyncRequest`, additive replay-gap/full-snapshot envelopes и защиту размера resync payload.
 - [x] Добавить negotiated `protocol_version + capabilities`, backward compatibility matrix и bounded replay-log contract с gap detection/import-export fixtures; durable Core command/event wiring остаётся.
+- [x] Добавить bounded durable recovery state machine для replay/effect transitions `RECOVERING → RECONCILING → RESUMABLE | BLOCKED | WAITING_APPROVAL | FAILED` с idempotency и audit decisions без blind retry.
 - Реализовать `RECOVERING → RECONCILING → RESUMABLE | BLOCKED | WAITING_APPROVAL | FAILED`, leases/generation, partial-gap replay/resync/full snapshot и type-specific effect verifiers.
 - Логировать reconciliation в audit: effect id, globally unique idempotency key, verifier, evidence и решение.
 - Провести отдельный protocol design review и kill-9 model tests до production implementation.
@@ -284,6 +285,7 @@ approval: none
 
 ### Этап 4 — Skills, roles и capability registry (P0/P1)
 
+- [x] Добавить bounded capability registry contract с RoleRef/SkillRef, manifest validation, effective permissions, deterministic matcher, hash/version metadata и install/update rollback guards; runtime/UI wiring остаётся.
 - Для MVP достаточно `RoleRef`, `SkillRef`, `allowed_tools` и `risk_class`; полный registry/parser/validator и deterministic matcher по intent, файлам, языкам, lifecycle stage и project rules реализовать здесь.
 - UI показывает выбранные role/skill, version, причины, risk, tools и acceptance criteria; пользователь может закрепить или заменить выбор.
 - Ввести lifecycle snapshot: активная definition immutable в рамках run; skill не расширяет permissions и не меняет context order.
@@ -295,6 +297,7 @@ approval: none
 ### Этап 5 — Безопасный task loop и model routing (P1)
 
 - [x] Добавить bounded deterministic routing policy contract с capability/cost/latency/privacy/fallback decisions без секретов; wiring в provider gateway и UI остаётся.
+- [x] Добавить bounded routing runtime contract с local-first/balanced/cloud-research/offline modes, visible fallback, lifecycle/budget controls и redacted telemetry; provider/UI wiring остаётся.
 - Runner: выбрать `next_ready`, собрать task/research/skill context, выполнить bounded run, записать checkpoint и предложить следующий шаг.
 - `run_policy`: max iterations, wall-clock timeout, tool-call/token budget, network policy, approval mode и stop conditions. Значения defaults и способы override хранятся в `settings.toml`-подобной конфигурации и видны в UI.
 - Автоматически остановиться на approval, failure, unexpected diff, budget, scope drift или неясном критерии.
@@ -307,6 +310,7 @@ approval: none
 
 - [x] Добавить bounded Memory v1 domain contract со scoped retrieval, lexical search, TTL, privacy labels, provenance и forget/archive; persistence wiring и extraction policy остаются.
 - [x] Добавить bounded memory persistence contract с scoped search, provenance, TTL, redaction, archive/forget и параметризованным SQL; migration wiring и extraction policy остаются.
+- [x] Добавить bounded Memory API contract с CRUD/search/provenance, scoped retrieval, TTL/privacy, deterministic export и approval gates для archive/forget/delete; storage wiring остаётся.
 - Добавить memory domain/API: create, list, search, update, archive, forget и provenance inspection.
 - Интегрировать extraction фактов и решений после run только по policy; пользователь подтверждает важные записи.
 - В Memory v1 реализовать scoped retrieval project/task/workspace, lexical search, derived facts без confidence и ссылки на первичное событие. Vector search, recency ranking, confidence, entity/temporal signals и сложный hybrid search — memory v2.
@@ -344,6 +348,7 @@ approval: none
 
 ### Этап 9 — Schedules, proactive Pulse и внешние каналы (P2)
 
+- [x] Добавить bounded schedule/trigger/monitor contract с checkpoint/next-run, retry/backoff, missed/duplicate decisions, dead-letter/requeue и budget/approval/cancellation references; supervisor runtime wiring остаётся.
 - Сделать schedule/trigger/monitor state/last checkpoint/next run/retry/backoff/dead-letter entities.
 - Зафиксировать dead-letter policy: число попыток, backoff, причину перемещения и ручное requeue; добавить OAuth/browser authorization protocol для внешних каналов, не помещая токены в traces.
 - Начать с локальных источников: GitHub notifications, workspace changes, CI status, local files и task deadlines.

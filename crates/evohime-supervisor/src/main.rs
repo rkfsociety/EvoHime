@@ -1,3 +1,4 @@
+mod schedule_contract;
 mod scheduler_state;
 
 #[cfg(windows)]

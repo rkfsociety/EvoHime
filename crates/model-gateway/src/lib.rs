@@ -1,6 +1,8 @@
 pub mod config;
 pub mod providers;
 pub mod retry;
+pub mod routing_policy;
+pub mod routing_runtime;
 pub mod tools;
 
 pub use crate::config::{ModelGatewayConfig, ModelRouteConfig};
