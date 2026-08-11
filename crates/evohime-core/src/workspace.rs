@@ -1,5 +1,8 @@
 use serde::Serialize;
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 const TEXT_EXTENSIONS: &[&str] = &[
     "cs", "json", "md", "proto", "ps1", "rs", "toml", "txt", "xaml", "yaml", "yml",
@@ -59,7 +62,12 @@ pub fn build_manifest(
     }
     let canonical = entries
         .iter()
-        .map(|entry| format!("{}:{}:{}\n", entry.relative_path, entry.bytes, entry.content_hash))
+        .map(|entry| {
+            format!(
+                "{}:{}:{}\n",
+                entry.relative_path, entry.bytes, entry.content_hash
+            )
+        })
         .collect::<String>();
     Ok(WorkspaceManifest {
         entries,
@@ -106,7 +114,11 @@ fn collect_paths(root: &Path, paths: &mut Vec<PathBuf>) -> std::io::Result<()> {
                 continue;
             }
             collect_paths(&path, paths)?;
-        } else if path.extension().and_then(|ext| ext.to_str()).is_some_and(|ext| TEXT_EXTENSIONS.contains(&ext)) {
+        } else if path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| TEXT_EXTENSIONS.contains(&ext))
+        {
             paths.push(path);
         }
     }

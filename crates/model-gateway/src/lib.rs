@@ -72,13 +72,12 @@ pub async fn fetch_available_models(
             .unwrap_or_else(|| vec![route.literouter.model.clone()]));
     }
     if route.literouter.api_key.is_empty() {
-        return Err(ProviderError::Config("provider API key is not configured".into()));
+        return Err(ProviderError::Config(
+            "provider API key is not configured".into(),
+        ));
     }
 
-    let url = format!(
-        "{}/models",
-        route.literouter.base_url.trim_end_matches('/')
-    );
+    let url = format!("{}/models", route.literouter.base_url.trim_end_matches('/'));
     let response = reqwest::Client::new()
         .get(url)
         .bearer_auth(&route.literouter.api_key)

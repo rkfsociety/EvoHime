@@ -256,9 +256,11 @@ MVP-1 milestone после этапа 1: пользователь видит п�
 
 ### Этап 3 — Research и typed workflow graph (P0)
 
-- Статус реализации на 2026-08-12: **контракты в работе**. Добавлены bounded research evidence и статический typed workflow graph; persistence, network capability layer и runner остаются.
+- Статус реализации на 2026-08-12: **контракты в работе**. Добавлены bounded research evidence, persistence contract, статический typed workflow graph и deterministic runner contract; persistence wiring, network capability layer и side-effectful runner остаются.
 - [x] Добавить bounded research evidence contract с redacted excerpt, source hash, freshness/TTL и deterministic JSON.
+- [x] Добавить migration-neutral research evidence storage contract с provenance, TTL, bounded SQL payload и delete/list API.
 - [x] Добавить typed static workflow graph contract с input/output types, retry/timeout/cancellation/approval и deterministic validation; dynamic edits отложены.
+- [x] Добавить deterministic workflow runner contract с topological order и безопасными решениями retry/timeout/cancellation/approval; реальные side effects отложены.
 - Реализовать сначала статический workflow graph с typed input/output, condition, retry, timeout, cancellation, approval и subgraph. Dynamic graph edits отложить.
 - Реализовать research pipeline: запрос → разрешённый HTTP/search → извлечение → краткое резюме → citations → сохранение.
 - Evidence хранит redacted/plain excerpt с max bytes, fetched-at, TTL/freshness, source hash и approval/provenance link.
@@ -289,6 +291,7 @@ approval: none
 
 ### Этап 5 — Безопасный task loop и model routing (P1)
 
+- [x] Добавить bounded deterministic routing policy contract с capability/cost/latency/privacy/fallback decisions без секретов; wiring в provider gateway и UI остаётся.
 - Runner: выбрать `next_ready`, собрать task/research/skill context, выполнить bounded run, записать checkpoint и предложить следующий шаг.
 - `run_policy`: max iterations, wall-clock timeout, tool-call/token budget, network policy, approval mode и stop conditions. Значения defaults и способы override хранятся в `settings.toml`-подобной конфигурации и видны в UI.
 - Автоматически остановиться на approval, failure, unexpected diff, budget, scope drift или неясном критерии.
@@ -299,6 +302,7 @@ approval: none
 
 ### Этап 6 — Memory v1 и RAG для локального workspace (P1)
 
+- [x] Добавить bounded Memory v1 domain contract со scoped retrieval, lexical search, TTL, privacy labels, provenance и forget/archive; persistence wiring и extraction policy остаются.
 - Добавить memory domain/API: create, list, search, update, archive, forget и provenance inspection.
 - Интегрировать extraction фактов и решений после run только по policy; пользователь подтверждает важные записи.
 - В Memory v1 реализовать scoped retrieval project/task/workspace, lexical search, derived facts без confidence и ссылки на первичное событие. Vector search, recency ranking, confidence, entity/temporal signals и сложный hybrid search — memory v2.
@@ -309,6 +313,9 @@ approval: none
 ### Этап 7 — Evals, hooks, observability и Core Doctor (P1)
 
 - [x] Добавить read-only bounded `DiagnosticsSummary` для SQLite table/event counts без удаления данных и изменения recovery semantics.
+- [x] Добавить bounded hooks/observability contract с redaction, deterministic JSON, policy decisions и сохранением порядка context.
+- [x] Добавить bounded Core Doctor contract с actionable статусами storage/pipe/provider/recovery/permissions без выдачи секретов.
+- [x] Добавить bounded scheduler state contract для lifecycle, lease/heartbeat, retry/backoff и recovery decisions; wiring в supervisor runtime остаётся.
 - Evals для skill selection, allowlist, plan quality, IPC compatibility, cancellation, replay, citations, memory retrieval, routing и UI truthfulness.
 - Hooks `before_context`, `before_tool`, `after_tool`, `before_commit`, `after_task` только наблюдают или отклоняют по policy, не получают секреты и не могут менять порядок context.
 - Локальный JSONL/SQLite audit trail: versions, tool calls, approvals, durations, failures, budgets, diffs и evidence.
@@ -319,6 +326,7 @@ approval: none
 
 ### Этап 8 — Child roles, handoff и native workflow editor (P1/P2)
 
+- [x] Добавить bounded child-role и handoff contract с урезанным payload, redaction, лимитами и deterministic JSON; runtime delegation и UI editor остаются.
 - Разрешить дочерние read-only задачи для onboarding, code search, threat-model review, test-plan review и документации.
 - Child получает урезанный context и `child_task_id`, не имеет write, shell, commit, install или network mutation tools.
 - Child не может создавать нового child, передавать elevated permissions через handoff или превышать фиксированный `max_output_bytes`.

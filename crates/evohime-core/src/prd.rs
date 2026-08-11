@@ -138,7 +138,10 @@ mod tests {
     fn reports_checklist_before_a_task() {
         let result = parse_markdown_prd("- [ ] orphan\n", "prd.md", "v1");
         assert!(result.document.is_none());
-        assert!(result.diagnostics.iter().any(|item| item.message.contains("вне задачи")));
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|item| item.message.contains("вне задачи")));
     }
 
     #[test]
@@ -152,6 +155,9 @@ mod tests {
     fn reports_malformed_empty_task_heading() {
         let result = parse_markdown_prd("## \n", "prd.md", "v1");
         assert!(result.document.is_none());
-        assert!(result.diagnostics.iter().any(|item| item.message.contains("пустым")));
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|item| item.message.contains("пустым")));
     }
 }

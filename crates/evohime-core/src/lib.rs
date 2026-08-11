@@ -500,11 +500,16 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 pub mod build;
+pub mod child_roles;
+pub mod doctor;
+pub mod memory_domain;
+pub mod observability;
 pub mod plan;
 pub mod prd;
 pub mod research;
 pub mod scope;
 pub mod workflow;
+pub mod workflow_runner;
 pub mod workspace;
 
 pub enum CoreCommand {

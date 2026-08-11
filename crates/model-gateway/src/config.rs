@@ -120,7 +120,6 @@ impl ModelRouteConfig {
             ProviderKind::Mock => true,
         }
     }
-
 }
 
 #[derive(Debug, Clone)]

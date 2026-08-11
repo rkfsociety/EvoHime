@@ -1,6 +1,13 @@
-use crate::{scope::{validate_build_scope, BuildScope, ProposedChange}, workspace::{build_manifest, content_hash}};
+use crate::{
+    scope::{validate_build_scope, BuildScope, ProposedChange},
+    workspace::{build_manifest, content_hash},
+};
 use serde::{Deserialize, Serialize};
-use std::{fs, path::{Component, Path, PathBuf}, time::{Duration, Instant}};
+use std::{
+    fs,
+    path::{Component, Path, PathBuf},
+    time::{Duration, Instant},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BuildChange {
@@ -60,7 +67,11 @@ pub enum BuildError {
     #[error("build scope violation: {0}")]
     ScopeViolation(String),
     #[error("expected content hash mismatch for {path}: expected {expected}, current {current}")]
-    ContentConflict { path: String, expected: String, current: String },
+    ContentConflict {
+        path: String,
+        expected: String,
+        current: String,
+    },
     #[error("invalid workspace path {0}")]
     InvalidPath(String),
     #[error("bounded build timeout exceeded")]
@@ -97,7 +108,10 @@ pub fn prepare_build(
         })
         .collect::<Vec<_>>();
     if let Some(violation) = validate_build_scope(&proposal.scope, &proposed).first() {
-        return Err(BuildError::ScopeViolation(format!("{}: {}", violation.path, violation.reason)));
+        return Err(BuildError::ScopeViolation(format!(
+            "{}: {}",
+            violation.path, violation.reason
+        )));
     }
     let mut approved = ApprovedBuild {
         intent_hash: String::new(),
@@ -158,7 +172,10 @@ pub fn apply_approved_build(
         .collect::<Vec<_>>();
     let violations = validate_build_scope(&build.scope, &proposed);
     if let Some(violation) = violations.first() {
-        return Err(BuildError::ScopeViolation(format!("{}: {}", violation.path, violation.reason)));
+        return Err(BuildError::ScopeViolation(format!(
+            "{}: {}",
+            violation.path, violation.reason
+        )));
     }
 
     let mut snapshot = WorkspaceSnapshot {
@@ -200,7 +217,10 @@ pub fn apply_approved_build(
         let after_hash = if change.delete {
             None
         } else {
-            change.content.as_deref().map(|content| content_hash(content.as_bytes()))
+            change
+                .content
+                .as_deref()
+                .map(|content| content_hash(content.as_bytes()))
         };
         snapshot.diff.push(SnapshotDiff {
             relative_path: change.relative_path.clone(),
@@ -219,7 +239,10 @@ pub fn apply_approved_build(
     Ok(snapshot)
 }
 
-pub fn restore_snapshot(root: impl AsRef<Path>, snapshot: &WorkspaceSnapshot) -> Result<(), BuildError> {
+pub fn restore_snapshot(
+    root: impl AsRef<Path>,
+    snapshot: &WorkspaceSnapshot,
+) -> Result<(), BuildError> {
     let root = root.as_ref().canonicalize()?;
     for file in &snapshot.files {
         let path = safe_path(&root, &file.relative_path)?;
@@ -261,7 +284,12 @@ fn apply_changes(root: &Path, build: &ApprovedBuild, deadline: Instant) -> Resul
 fn safe_path(root: &Path, relative_path: &str) -> Result<PathBuf, BuildError> {
     let normalized = relative_path.replace('\\', "/");
     let path = Path::new(&normalized);
-    if path.components().any(|component| matches!(component, Component::ParentDir | Component::RootDir | Component::Prefix(_))) {
+    if path.components().any(|component| {
+        matches!(
+            component,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    }) {
         return Err(BuildError::InvalidPath(relative_path.into()));
     }
     Ok(root.join(path))
@@ -269,7 +297,10 @@ fn safe_path(root: &Path, relative_path: &str) -> Result<PathBuf, BuildError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_approved_build, calculate_effective_permissions_hash, calculate_intent_hash, prepare_build, restore_snapshot, ApprovedBuild, BuildChange, BuildProposal};
+    use super::{
+        apply_approved_build, calculate_effective_permissions_hash, calculate_intent_hash,
+        prepare_build, restore_snapshot, ApprovedBuild, BuildChange, BuildProposal,
+    };
     use crate::{scope::BuildScope, workspace::build_manifest};
     use std::{fs, path::PathBuf};
 
@@ -322,8 +353,14 @@ mod tests {
         assert_eq!(fs::read_to_string(root.join("src/lib.rs")).unwrap(), "new");
         assert_eq!(snapshot.diff.len(), 1);
         assert_eq!(snapshot.diff[0].operation, "write");
-        assert_eq!(snapshot.diff[0].before_hash.as_deref(), Some(crate::workspace::content_hash(b"old").as_str()));
-        assert_eq!(snapshot.diff[0].after_hash.as_deref(), Some(crate::workspace::content_hash(b"new").as_str()));
+        assert_eq!(
+            snapshot.diff[0].before_hash.as_deref(),
+            Some(crate::workspace::content_hash(b"old").as_str())
+        );
+        assert_eq!(
+            snapshot.diff[0].after_hash.as_deref(),
+            Some(crate::workspace::content_hash(b"new").as_str())
+        );
         restore_snapshot(&root, &snapshot).unwrap();
         assert_eq!(fs::read_to_string(root.join("src/lib.rs")).unwrap(), "old");
         fs::remove_dir_all(root).unwrap();
@@ -366,7 +403,10 @@ mod tests {
         };
         let approved = prepare_build(&root, &proposal).unwrap();
         assert_eq!(fs::read_to_string(root.join("src/lib.rs")).unwrap(), "old");
-        assert_eq!(approved.changes[0].expected_content_hash, Some(crate::workspace::content_hash(b"old")));
+        assert_eq!(
+            approved.changes[0].expected_content_hash,
+            Some(crate::workspace::content_hash(b"old"))
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }

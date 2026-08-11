@@ -1,3 +1,5 @@
+mod scheduler_state;
+
 #[cfg(windows)]
 mod windows_supervisor;
 

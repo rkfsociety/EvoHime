@@ -44,7 +44,14 @@ mod tests {
 
     #[test]
     fn plan_and_spec_are_read_only_and_bounded() {
-        let result = build_task_plan_spec("Task", "Description", "Tests pass", "No network", "## Task\nref", 40);
+        let result = build_task_plan_spec(
+            "Task",
+            "Description",
+            "Tests pass",
+            "No network",
+            "## Task\nref",
+            40,
+        );
         assert!(result.read_only);
         assert!(result.plan.chars().count() <= 40);
         assert!(result.spec.chars().count() <= 40);
