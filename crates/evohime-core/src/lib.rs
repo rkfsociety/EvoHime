@@ -69,6 +69,15 @@ pub enum CoreCommand {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum CoreEvent {
+    ModelContext {
+        task_id: String,
+        workspace_path: String,
+        model: String,
+        system_prompt: String,
+        user_prompt: String,
+        tools: Vec<String>,
+        estimated_tokens: usize,
+    },
     TaskStarted {
         task_id: String,
         prompt: String,
@@ -121,7 +130,8 @@ impl EventJournal {
 
     pub async fn record(&self, event: &CoreEvent) -> Result<i64, StorageError> {
         let task_id = match event {
-            CoreEvent::TaskStarted { task_id, .. }
+            CoreEvent::ModelContext { task_id, .. }
+            | CoreEvent::TaskStarted { task_id, .. }
             | CoreEvent::AssistantDelta { task_id, .. }
             | CoreEvent::ToolStarted { task_id, .. }
             | CoreEvent::ToolOutput { task_id, .. }
@@ -131,6 +141,7 @@ impl EventJournal {
             | CoreEvent::TaskStopped { task_id } => task_id,
         };
         let event_type = match event {
+            CoreEvent::ModelContext { .. } => "model.context",
             CoreEvent::TaskStarted { .. } => "task.started",
             CoreEvent::AssistantDelta { .. } => "agent.message.delta",
             CoreEvent::ToolStarted { .. } => "tool.started",
@@ -359,6 +370,23 @@ impl ToolAgent {
             ChatMessage::text(ChatRole::System, AGENT_IDENTITY_PROMPT),
             ChatMessage::text(ChatRole::User, prompt),
         ];
+
+        let system_prompt = AGENT_IDENTITY_PROMPT.to_string();
+        let user_prompt = messages[1].content.clone();
+        let tool_names = specs
+            .iter()
+            .map(|spec| spec.function.name.clone())
+            .collect::<Vec<_>>();
+        let context_text = format!("{system_prompt}\n{user_prompt}\n{}", tool_names.join("\n"));
+        let _ = events.send(CoreEvent::ModelContext {
+            task_id: task_id.clone(),
+            workspace_path: context.workspace_root.display().to_string(),
+            model: self.gateway.model_name().to_string(),
+            system_prompt,
+            user_prompt,
+            tools: tool_names,
+            estimated_tokens: context_text.chars().count().div_ceil(4),
+        });
 
         for _ in 0..self.max_iterations {
             let result = tokio::select! {
@@ -809,6 +837,10 @@ mod tests {
             .await
             .expect("tool loop succeeds");
         assert_eq!(result, "found it");
+        assert!(matches!(
+            receiver.recv().await,
+            Ok(CoreEvent::ModelContext { workspace_path, .. }) if workspace_path == workspace.display().to_string()
+        ));
         assert!(matches!(
             receiver.recv().await,
             Ok(CoreEvent::ToolStarted { .. })

@@ -42,6 +42,8 @@ public partial class MainWindow : Window
     private int _reconnectAttempt;
     private string? _pendingApprovalId;
     private Button? _modelButton;
+    private Button? _contextButton;
+    private string _modelContextDetails = "Контекст модели ещё не получен.";
     private Grid? _homeContent;
     private Grid? _settingsView;
     private TextBlock? _settingsWorkspaceText;
@@ -360,6 +362,7 @@ public partial class MainWindow : Window
         composerActions.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         composerActions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         composerActions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        composerActions.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var attachButton = new Button
         {
             Content = "+",
@@ -389,9 +392,20 @@ public partial class MainWindow : Window
         };
         accessButton.Click += AccessButton_Click;
         _modelButton.Click += ModelButton_Click;
-        Grid.SetColumn(_modelButton, 3);
+        _contextButton = new Button
+        {
+            Content = "Контекст",
+            Foreground = muted,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            Padding = new Thickness(6, 5, 6, 5),
+            IsEnabled = false,
+        };
+        _contextButton.Click += ContextButton_Click;
+        Grid.SetColumn(_contextButton, 3);
+        composerActions.Children.Add(_contextButton);
+        Grid.SetColumn(_modelButton, 4);
         composerActions.Children.Add(_modelButton);
-        Grid.SetColumn(StartButton, 4);
+        Grid.SetColumn(StartButton, 5);
         composerActions.Children.Add(StartButton);
         Grid.SetRow(composerActions, 1);
         composerGrid.Children.Add(composerActions);
@@ -1178,6 +1192,9 @@ public partial class MainWindow : Window
                 case "task.started":
                     AddConversationActivity("Ева отправила запрос модели, ожидаю ответ…");
                     break;
+                case "model.context":
+                    UpdateModelContext(root);
+                    break;
                 case "agent.message.delta":
                     AppendAssistantDelta(PayloadString(root, "content"));
                     break;
@@ -1221,6 +1238,48 @@ public partial class MainWindow : Window
 
     private static string PayloadString(JsonElement root, string property) =>
         root.TryGetProperty(property, out var value) ? value.GetString() ?? string.Empty : string.Empty;
+
+    private void UpdateModelContext(JsonElement root)
+    {
+        var workspace = PayloadString(root, "workspace_path");
+        var model = PayloadString(root, "model");
+        var systemPrompt = PayloadString(root, "system_prompt");
+        var userPrompt = PayloadString(root, "user_prompt");
+        var estimatedTokens = root.TryGetProperty("estimated_tokens", out var tokenValue)
+            ? tokenValue.GetInt32().ToString()
+            : "неизвестно";
+        var tools = root.TryGetProperty("tools", out var toolsValue) && toolsValue.ValueKind == JsonValueKind.Array
+            ? string.Join(", ", toolsValue.EnumerateArray().Select(item => item.GetString()).Where(item => !string.IsNullOrWhiteSpace(item)))
+            : "нет инструментов";
+
+        _modelContextDetails = $"Модель: {model}\nWorkspace: {workspace}\nОценка контекста: ~{estimatedTokens} токенов\n\nСистемная инструкция:\n{systemPrompt}\n\nЗапрос:\n{userPrompt}\n\nДоступные инструменты ({(tools == "нет инструментов" ? 0 : tools.Split(", ").Length)}):\n{tools}";
+        if (_contextButton is not null)
+        {
+            _contextButton.Content = $"Контекст · ~{estimatedTokens} ток.";
+            _contextButton.IsEnabled = true;
+        }
+    }
+
+    private async void ContextButton_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = "Контекст модели",
+            Content = new ScrollViewer
+            {
+                MaxHeight = 520,
+                Content = new TextBlock
+                {
+                    Text = _modelContextDetails,
+                    TextWrapping = TextWrapping.Wrap,
+                    IsTextSelectionEnabled = true,
+                },
+            },
+            CloseButtonText = "Закрыть",
+            XamlRoot = (Content as FrameworkElement)?.XamlRoot,
+        };
+        await dialog.ShowAsync();
+    }
 
     private void ScrollConversationToBottom() =>
         _ = DispatcherQueue.TryEnqueue(() => _conversationScroll?.ChangeView(null, double.MaxValue, null));
@@ -1598,6 +1657,11 @@ public partial class MainWindow : Window
         AddConversationMessage("Вы", prompt, true);
         PromptBox.Text = string.Empty;
         _streamingAssistantText = null;
+        if (_contextButton is not null)
+        {
+            _contextButton.Content = "Контекст: подготовка…";
+            _contextButton.IsEnabled = false;
+        }
         AddConversationActivity("Ева подключается к Core…");
 
         try
