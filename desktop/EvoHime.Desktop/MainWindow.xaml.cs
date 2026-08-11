@@ -314,7 +314,9 @@ public partial class MainWindow : Window
             PromptBox.Resources[resourceKey] = text;
         }
         PromptBox.Resources["TextControlPlaceholderForeground"] = muted;
-        PromptBox.KeyDown += PromptBox_KeyDown;
+        // В многострочном TextBox обычный KeyDown может быть поглощён
+        // обработчиком AcceptsReturn. PreviewKeyDown гарантирует отправку по Enter.
+        PromptBox.PreviewKeyDown += PromptBox_PreviewKeyDown;
         StartButton = new Button
         {
             Content = "↑",
@@ -1028,7 +1030,7 @@ public partial class MainWindow : Window
         ConnectionStatus.Text = $"Модель: {model}";
     }
 
-    private void PromptBox_KeyDown(object sender, KeyRoutedEventArgs e)
+    private void PromptBox_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key != VirtualKey.Enter)
         {
