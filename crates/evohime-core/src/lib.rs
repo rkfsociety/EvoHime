@@ -484,8 +484,9 @@ use std::{
 };
 
 use evohime_local_storage::{
-    EventRecord, ImportedTask, LocalDatabase, ProjectPolicyRecord, RunCheckpointRecord,
-    RunEffectRecord, RunRecord, StorageError, WorkItemRecord,
+    EventRecord, ImportedTask, LocalDatabase, ProjectPolicyRecord, RecoveryState,
+    RunCheckpointRecord, RunEffectRecord, RunRecord, RunRecoveryRecord, StorageError,
+    WorkItemRecord,
 };
 use evohime_model_gateway::{
     providers::{ChatMessage, ChatRole, ProviderError},
@@ -685,6 +686,14 @@ pub struct EventJournal {
     database: Arc<Mutex<LocalDatabase>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DurableReplayBatch {
+    pub events: Vec<EventRecord>,
+    pub gap_detected: bool,
+    pub first_available_sequence: Option<i64>,
+    pub last_sequence: i64,
+}
+
 fn default_build_policy() -> crate::scope::BuildScope {
     crate::scope::BuildScope {
         allowed_paths: Vec::new(),
@@ -755,6 +764,53 @@ impl EventJournal {
     ) -> Result<Vec<EventRecord>, StorageError> {
         let database = self.database.lock().await;
         database.read_events_after(after_sequence, limit)
+    }
+
+    pub async fn replay_bounded(
+        &self,
+        after_sequence: i64,
+        limit: usize,
+    ) -> Result<DurableReplayBatch, StorageError> {
+        const MAX_DURABLE_REPLAY_EVENTS: usize = 512;
+        let records = {
+            let database = self.database.lock().await;
+            database.read_events_after(after_sequence, limit.min(MAX_DURABLE_REPLAY_EVENTS))?
+        };
+        let first_available_sequence = records.first().map(|record| record.sequence_id);
+        let gap_detected =
+            first_available_sequence.is_some_and(|first| after_sequence.saturating_add(1) < first);
+        let last_sequence = records
+            .last()
+            .map(|record| record.sequence_id)
+            .unwrap_or(after_sequence);
+        Ok(DurableReplayBatch {
+            events: records,
+            gap_detected,
+            first_available_sequence,
+            last_sequence,
+        })
+    }
+
+    pub async fn transition_recovery(
+        &self,
+        run_id: &str,
+        state: RecoveryState,
+        effect_id: &str,
+        idempotency_key: &str,
+        verifier: &str,
+        evidence_json: &[u8],
+        decision: &str,
+    ) -> Result<RunRecoveryRecord, StorageError> {
+        let database = self.database.lock().await;
+        database.transition_recovery(
+            run_id,
+            state,
+            effect_id,
+            idempotency_key,
+            verifier,
+            evidence_json,
+            decision,
+        )
     }
 
     pub async fn create_project(

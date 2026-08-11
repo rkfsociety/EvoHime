@@ -11,7 +11,7 @@ pub mod memory_store;
 pub mod reconciliation_verifier;
 pub mod research_store;
 
-pub const SCHEMA_VERSION: u32 = 6;
+pub const SCHEMA_VERSION: u32 = 7;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -41,6 +41,8 @@ pub enum StorageError {
     DependencyCycle { from_id: String, to_id: String },
     #[error("invalid run effect transition: {0}")]
     InvalidRunEffect(String),
+    #[error("invalid recovery transition: {0}")]
+    InvalidRecovery(String),
 }
 
 pub struct LocalDatabase {
@@ -219,6 +221,64 @@ pub struct RunReconciliationRecord {
     pub verifier: String,
     pub evidence_json: Vec<u8>,
     pub reconciled_at: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum RecoveryState {
+    Recovering,
+    Reconciling,
+    Resumable,
+    Blocked,
+    WaitingApproval,
+    Failed,
+}
+
+impl RecoveryState {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Recovering => "RECOVERING",
+            Self::Reconciling => "RECONCILING",
+            Self::Resumable => "RESUMABLE",
+            Self::Blocked => "BLOCKED",
+            Self::WaitingApproval => "WAITING_APPROVAL",
+            Self::Failed => "FAILED",
+        }
+    }
+
+    fn is_terminal(self) -> bool {
+        matches!(
+            self,
+            Self::Resumable | Self::Blocked | Self::WaitingApproval | Self::Failed
+        )
+    }
+
+    fn parse(value: &str) -> Result<Self, StorageError> {
+        match value {
+            "RECOVERING" => Ok(Self::Recovering),
+            "RECONCILING" => Ok(Self::Reconciling),
+            "RESUMABLE" => Ok(Self::Resumable),
+            "BLOCKED" => Ok(Self::Blocked),
+            "WAITING_APPROVAL" => Ok(Self::WaitingApproval),
+            "FAILED" => Ok(Self::Failed),
+            other => Err(StorageError::InvalidRecovery(format!(
+                "unknown recovery state {other}"
+            ))),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunRecoveryRecord {
+    pub id: i64,
+    pub run_id: String,
+    pub state: RecoveryState,
+    pub effect_id: String,
+    pub idempotency_key: String,
+    pub verifier: String,
+    pub evidence_json: Vec<u8>,
+    pub decision: String,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1069,6 +1129,163 @@ impl LocalDatabase {
         ).map_err(Into::into)
     }
 
+    pub fn transition_recovery(
+        &self,
+        run_id: &str,
+        next: RecoveryState,
+        effect_id: &str,
+        idempotency_key: &str,
+        verifier: &str,
+        evidence_json: &[u8],
+        decision: &str,
+    ) -> Result<RunRecoveryRecord, StorageError> {
+        const MAX_TEXT: usize = 256;
+        const MAX_EVIDENCE_BYTES: usize = 64 * 1024;
+        for (field, value) in [
+            ("run_id", run_id),
+            ("effect_id", effect_id),
+            ("idempotency_key", idempotency_key),
+            ("verifier", verifier),
+            ("decision", decision),
+        ] {
+            if value.trim().is_empty() || value.chars().count() > MAX_TEXT {
+                return Err(StorageError::InvalidRecovery(format!(
+                    "{field} is empty or exceeds {MAX_TEXT} characters"
+                )));
+            }
+        }
+        if evidence_json.len() > MAX_EVIDENCE_BYTES {
+            return Err(StorageError::InvalidRecovery(format!(
+                "evidence exceeds {MAX_EVIDENCE_BYTES} bytes"
+            )));
+        }
+
+        let transaction = self.connection.unchecked_transaction()?;
+        let current = transaction
+            .query_row(
+                "SELECT id, run_id, state, effect_id, idempotency_key, verifier, evidence_json, decision, created_at
+                 FROM run_recovery WHERE run_id = ?1 ORDER BY id DESC LIMIT 1",
+                [run_id],
+                |row| {
+                    Ok(RunRecoveryRecord {
+                        id: row.get(0)?,
+                        run_id: row.get(1)?,
+                        state: RecoveryState::parse(&row.get::<_, String>(2)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        effect_id: row.get(3)?,
+                        idempotency_key: row.get(4)?,
+                        verifier: row.get(5)?,
+                        evidence_json: row.get(6)?,
+                        decision: row.get(7)?,
+                        created_at: row.get(8)?,
+                    })
+                },
+            )
+            .optional()?;
+        if let Some(record) = &current {
+            if record.idempotency_key == idempotency_key {
+                if record.state == next {
+                    transaction.commit()?;
+                    return Ok(record.clone());
+                }
+                return Err(StorageError::InvalidRecovery(format!(
+                    "idempotency key {} was already used for {:?}",
+                    idempotency_key, record.state
+                )));
+            }
+        }
+        let current_state = current.as_ref().map(|record| record.state);
+        let valid = match (current_state, next) {
+            (None, RecoveryState::Recovering) => true,
+            (Some(RecoveryState::Recovering), RecoveryState::Reconciling) => true,
+            (Some(RecoveryState::Reconciling), state) if state.is_terminal() => true,
+            (Some(state), next) if state == next && state.is_terminal() => true,
+            _ => false,
+        };
+        if !valid {
+            return Err(StorageError::InvalidRecovery(format!(
+                "cannot transition from {:?} to {:?}",
+                current_state, next
+            )));
+        }
+
+        transaction.execute(
+            "INSERT INTO run_recovery(run_id, state, effect_id, idempotency_key, verifier, evidence_json, decision)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                run_id,
+                next.as_str(),
+                effect_id,
+                idempotency_key,
+                verifier,
+                evidence_json,
+                decision,
+            ],
+        )?;
+        let work_item_id: String = transaction.query_row(
+            "SELECT work_item_id FROM runs WHERE id = ?1",
+            [run_id],
+            |row| row.get(0),
+        )?;
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "run_id": run_id,
+            "effect_id": effect_id,
+            "idempotency_key": idempotency_key,
+            "verifier": verifier,
+            "evidence": serde_json::from_slice::<serde_json::Value>(evidence_json)
+                .unwrap_or_else(|_| serde_json::json!({"raw_bytes": evidence_json})),
+            "decision": decision,
+            "state": next.as_str(),
+        }))?;
+        transaction.execute(
+            "INSERT INTO events(task_id, event_type, payload) VALUES (?1, 'run.recovery.decision', ?2)",
+            rusqlite::params![work_item_id, payload],
+        )?;
+        let record = transaction.query_row(
+            "SELECT id, run_id, state, effect_id, idempotency_key, verifier, evidence_json, decision, created_at
+             FROM run_recovery WHERE run_id = ?1 ORDER BY id DESC LIMIT 1",
+            [run_id],
+            |row| {
+                Ok(RunRecoveryRecord {
+                    id: row.get(0)?,
+                    run_id: row.get(1)?,
+                    state: RecoveryState::parse(&row.get::<_, String>(2)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    effect_id: row.get(3)?,
+                    idempotency_key: row.get(4)?,
+                    verifier: row.get(5)?,
+                    evidence_json: row.get(6)?,
+                    decision: row.get(7)?,
+                    created_at: row.get(8)?,
+                })
+            },
+        )?;
+        transaction.commit()?;
+        Ok(record)
+    }
+
+    pub fn latest_recovery(&self, run_id: &str) -> Result<Option<RunRecoveryRecord>, StorageError> {
+        self.connection
+            .query_row(
+                "SELECT id, run_id, state, effect_id, idempotency_key, verifier, evidence_json, decision, created_at
+                 FROM run_recovery WHERE run_id = ?1 ORDER BY id DESC LIMIT 1",
+                [run_id],
+                |row| {
+                    Ok(RunRecoveryRecord {
+                        id: row.get(0)?,
+                        run_id: row.get(1)?,
+                        state: RecoveryState::parse(&row.get::<_, String>(2)?).map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        effect_id: row.get(3)?,
+                        idempotency_key: row.get(4)?,
+                        verifier: row.get(5)?,
+                        evidence_json: row.get(6)?,
+                        decision: row.get(7)?,
+                        created_at: row.get(8)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
     pub fn update_run_status(&self, run_id: &str, status: &str) -> Result<(), StorageError> {
         self.connection.execute(
             "UPDATE runs SET status = ?1 WHERE id = ?2",
@@ -1211,7 +1428,7 @@ impl LocalDatabase {
         &self,
         max_event_types: usize,
     ) -> Result<DiagnosticsSummary, StorageError> {
-        const TABLES: [&str; 13] = [
+        const TABLES: [&str; 14] = [
             "events",
             "projects",
             "work_items",
@@ -1225,6 +1442,7 @@ impl LocalDatabase {
             "project_policies",
             "run_leases",
             "run_reconciliations",
+            "run_recovery",
         ];
 
         let mut table_counts = Vec::with_capacity(TABLES.len());
@@ -1393,6 +1611,23 @@ impl LocalDatabase {
                 PRAGMA user_version = 6;",
             )?;
         }
+        if current < 7 {
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS run_recovery (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+                    state TEXT NOT NULL,
+                    effect_id TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL,
+                    verifier TEXT NOT NULL,
+                    evidence_json BLOB NOT NULL,
+                    decision TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                );
+                CREATE INDEX IF NOT EXISTS idx_run_recovery_run ON run_recovery(run_id, id);
+                PRAGMA user_version = 7;",
+            )?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -1402,8 +1637,8 @@ impl LocalDatabase {
 mod tests {
     use super::{
         DiagnosticsSummary, ImportedTask, LocalDatabase, ModelRouteSnapshot, PolicySnapshot,
-        RoleRef, RunCheckpointRecord, RunEffectRecord, RunRecord, RunSnapshots, SkillRef,
-        StorageError, WorkItemRecord, SCHEMA_VERSION,
+        RecoveryState, RoleRef, RunCheckpointRecord, RunEffectRecord, RunRecord, RunSnapshots,
+        SkillRef, StorageError, WorkItemRecord, SCHEMA_VERSION,
     };
     use std::path::PathBuf;
 
@@ -1539,7 +1774,7 @@ mod tests {
         assert_eq!(summary.event_counts[0].event_type, "task.started");
         assert_eq!(summary.event_counts[0].rows, 2);
         assert!(summary.event_types_truncated);
-        assert_eq!(summary.table_counts.len(), 13);
+        assert_eq!(summary.table_counts.len(), 14);
         assert_eq!(
             summary
                 .table_counts
@@ -2069,6 +2304,125 @@ mod tests {
                 .get_run_snapshots("run-typed")
                 .expect("typed run reads"),
             Some(snapshots)
+        );
+        drop(database);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn recovery_transitions_are_durable_and_audited_without_retry() {
+        let path = temp_database_path("recovery-state-machine");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        database
+            .create_project("project-state", "State", ".", None)
+            .expect("project creates");
+        database
+            .create_work_item(&WorkItemRecord {
+                id: "task-state".into(),
+                project_id: "project-state".into(),
+                parent_id: None,
+                title: "State task".into(),
+                description: String::new(),
+                source_ref: None,
+                acceptance_criteria: String::new(),
+                non_goals: String::new(),
+                status: "ready".into(),
+                priority: 0,
+                estimate: None,
+                complexity: None,
+                attempt_count: 0,
+                version: 1,
+            })
+            .expect("task creates");
+        database
+            .create_run(&RunRecord {
+                id: "run-state".into(),
+                work_item_id: "task-state".into(),
+                status: "running".into(),
+                policy_snapshot: Vec::new(),
+                role_snapshot: Vec::new(),
+                skill_snapshot: Vec::new(),
+                model_route_snapshot: Vec::new(),
+            })
+            .expect("run creates");
+
+        database
+            .transition_recovery(
+                "run-state",
+                RecoveryState::Recovering,
+                "effect-state",
+                "run-state:effect-state",
+                "startup",
+                br#"{"reason":"process_restart"}"#,
+                "recovery_started",
+            )
+            .expect("recovering transition");
+        database
+            .transition_recovery(
+                "run-state",
+                RecoveryState::Reconciling,
+                "effect-state",
+                "run-state:effect-state:reconciling",
+                "file_hash",
+                br#"{"path":"src/lib.rs"}"#,
+                "verifier_started",
+            )
+            .expect("reconciling transition");
+        let blocked = database
+            .transition_recovery(
+                "run-state",
+                RecoveryState::Blocked,
+                "effect-state",
+                "run-state:effect-state:blocked",
+                "file_hash",
+                br#"{"match":false}"#,
+                "outcome_unconfirmed",
+            )
+            .expect("blocked transition");
+        assert_eq!(blocked.state, RecoveryState::Blocked);
+        assert_eq!(
+            database.latest_recovery("run-state").expect("latest reads"),
+            Some(blocked)
+        );
+        let repeated = database
+            .transition_recovery(
+                "run-state",
+                RecoveryState::Blocked,
+                "effect-state",
+                "run-state:effect-state:blocked",
+                "file_hash",
+                br#"{"match":false}"#,
+                "outcome_unconfirmed",
+            )
+            .expect("repeated decision is idempotent");
+        assert_eq!(
+            repeated.id,
+            database
+                .latest_recovery("run-state")
+                .expect("latest reads")
+                .expect("record exists")
+                .id
+        );
+        assert!(matches!(
+            database.transition_recovery(
+                "run-state",
+                RecoveryState::Resumable,
+                "effect-state",
+                "run-state:effect-state:blind-retry",
+                "file_hash",
+                br#"{}"#,
+                "blind_retry"
+            ),
+            Err(StorageError::InvalidRecovery(_))
+        ));
+        let events = database.read_events_after(0, 10).expect("events read");
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.event_type == "run.recovery.decision")
+                .count(),
+            3
         );
         drop(database);
         let _ = std::fs::remove_file(path);

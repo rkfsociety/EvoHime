@@ -136,20 +136,30 @@ impl IpcBridge {
                 } else {
                     request.max_events
                 } as usize;
-                let records = self
+                let batch = self
                     .journal
-                    .replay(request.after_sequence as i64, limit)
+                    .replay_bounded(request.after_sequence as i64, limit)
                     .await
                     .map_err(|error| FrameError::Io(error.to_string()))?;
-                let last_sequence = records
+                let last_sequence = batch
+                    .events
                     .last()
                     .map(|record| record.sequence_id as u64)
                     .unwrap_or(request.after_sequence);
+                if batch.gap_detected {
+                    let payload = serde_json::to_vec(&serde_json::json!({
+                        "after_sequence": request.after_sequence,
+                        "first_available_sequence": batch.first_available_sequence,
+                        "reason": "replay_gap",
+                    }))
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                    self.write_response(writer, "replay.gap", payload).await?;
+                }
                 if request.include_full_snapshot {
                     let snapshot_json = serde_json::to_vec(&serde_json::json!({
                         "after_sequence": request.after_sequence,
                         "last_sequence": last_sequence,
-                        "events": records.iter().map(|record| serde_json::json!({
+                        "events": batch.events.iter().map(|record| serde_json::json!({
                             "sequence_id": record.sequence_id,
                             "task_id": record.task_id,
                             "event_type": record.event_type,
@@ -176,7 +186,7 @@ impl IpcBridge {
                     };
                     transport::write_frame(writer, &event.encode_to_vec()).await?;
                 } else {
-                    for record in records {
+                    for record in batch.events {
                         let event = generated::EventEnvelope {
                             protocol: Some(protocol()),
                             sequence_id: record.sequence_id as u64,
@@ -203,13 +213,22 @@ impl IpcBridge {
                 transport::write_frame(writer, &end.encode_to_vec()).await?;
             }
             Some(generated::command_envelope::Command::ReplayEvents(replay)) => {
-                let mut last_sequence = replay.after_sequence;
-                for record in self
+                let batch = self
                     .journal
-                    .replay(replay.after_sequence as i64, 1_000)
+                    .replay_bounded(replay.after_sequence as i64, 1_000)
                     .await
-                    .map_err(|error| FrameError::Io(error.to_string()))?
-                {
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                let mut last_sequence = batch.last_sequence as u64;
+                if batch.gap_detected {
+                    let payload = serde_json::to_vec(&serde_json::json!({
+                        "after_sequence": replay.after_sequence,
+                        "first_available_sequence": batch.first_available_sequence,
+                        "reason": "replay_gap",
+                    }))
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                    self.write_response(writer, "replay.gap", payload).await?;
+                }
+                for record in batch.events {
                     last_sequence = record.sequence_id as u64;
                     let event = generated::EventEnvelope {
                         protocol: Some(protocol()),
