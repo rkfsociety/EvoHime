@@ -14,6 +14,7 @@ using Microsoft.UI.Xaml.Input;
 using EvoHime.Desktop.Services;
 using Windows.Storage.Pickers;
 using Windows.Storage;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.System;
 using Windows.UI.Core;
 using Microsoft.UI.Input;
@@ -1171,6 +1172,18 @@ public partial class MainWindow : Window
             Foreground = text,
         };
         bubble.Children.Add(body);
+        var copyButton = new Button
+        {
+            Content = "Копировать",
+            FontSize = 11,
+            Padding = new Thickness(5, 2, 5, 2),
+            Foreground = ThemeBrush("MutedTextBrush", 146, 152, 173),
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        ToolTipService.SetToolTip(copyButton, "Скопировать сообщение");
+        copyButton.Click += (_, _) => CopyConversationMessage(body.Text);
+        bubble.Children.Add(copyButton);
         _conversationPanel.Children.Add(new Border
         {
             Child = bubble,
@@ -1186,6 +1199,26 @@ public partial class MainWindow : Window
         if (!isUser)
         {
             _streamingAssistantText = body;
+        }
+    }
+
+    private void CopyConversationMessage(string message)
+    {
+        if (string.IsNullOrEmpty(message))
+        {
+            return;
+        }
+
+        try
+        {
+            var package = new DataPackage();
+            package.SetText(message);
+            Clipboard.SetContent(package);
+            ConnectionStatus.Text = "Сообщение скопировано";
+        }
+        catch (Exception error)
+        {
+            ConnectionStatus.Text = $"Не удалось скопировать сообщение: {error.Message}";
         }
     }
 
