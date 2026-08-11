@@ -1287,7 +1287,11 @@ public partial class MainWindow : Window
                 var bytes = item.GetProperty("payload").EnumerateArray().Select(value => value.GetByte()).ToArray();
                 using var payload = JsonDocument.Parse(bytes);
                 var root = payload.RootElement;
-                return $"Build applied: run {root.GetProperty("run_id").GetString()}, snapshot {root.GetProperty("snapshot_id").GetString()}, diff {root.GetProperty("diff_count").GetInt32()} ({createdAt})";
+                var diff = root.TryGetProperty("diff", out var diffValue)
+                    ? string.Join(", ", diffValue.EnumerateArray().Select(item =>
+                        $"{item.GetProperty("operation").GetString()}:{item.GetProperty("relative_path").GetString()}"))
+                    : "нет подробностей";
+                return $"Build applied: run {root.GetProperty("run_id").GetString()}, snapshot {root.GetProperty("snapshot_id").GetString()}, diff {root.GetProperty("diff_count").GetInt32()} [{diff}] ({createdAt})";
             }
             catch (JsonException)
             {

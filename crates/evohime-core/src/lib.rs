@@ -1939,6 +1939,7 @@ impl TaskCoordinator {
                         "effective_permissions_hash": approved.effective_permissions_hash,
                         "workspace_hash": snapshot.baseline_workspace_hash,
                         "diff_count": snapshot.diff.len(),
+                        "diff": &snapshot.diff,
                     }))
                     .map_err(|error| error.to_string())?;
                     let audit_subject = if task_id.is_empty() { &run_id } else { &task_id };
