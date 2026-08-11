@@ -474,6 +474,8 @@ use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
+pub mod prd;
+
 pub enum CoreCommand {
     StartTask {
         task_id: String,
