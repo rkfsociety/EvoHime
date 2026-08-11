@@ -128,6 +128,25 @@ public static class ProtocolEnvelope
         output.WriteString(sourceText);
     });
 
+    public static byte[] CreateProject(
+        string projectId,
+        string title,
+        string workspacePath,
+        string sourceRef = "") => TaskCommand(18, output =>
+    {
+        output.WriteTag(1, WireFormat.WireType.LengthDelimited);
+        output.WriteString(projectId);
+        output.WriteTag(2, WireFormat.WireType.LengthDelimited);
+        output.WriteString(title);
+        output.WriteTag(3, WireFormat.WireType.LengthDelimited);
+        output.WriteString(workspacePath);
+        if (!string.IsNullOrWhiteSpace(sourceRef))
+        {
+            output.WriteTag(4, WireFormat.WireType.LengthDelimited);
+            output.WriteString(sourceRef);
+        }
+    });
+
     public static CoreEventEnvelope ReadEvent(ReadOnlySpan<byte> payload)
     {
         using var input = new CodedInputStream(payload.ToArray());

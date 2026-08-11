@@ -80,6 +80,15 @@ public sealed class CoreIpcClient
             ProtocolEnvelope.ImportPrd(importId, projectId, origin, version, sourceText),
             cancellationToken);
 
+    public Task CreateProjectAsync(
+        string projectId,
+        string title,
+        string workspacePath,
+        CancellationToken cancellationToken) =>
+        SendPayloadAsync(
+            ProtocolEnvelope.CreateProject(projectId, title, workspacePath),
+            cancellationToken);
+
     public async Task<ulong> ReadReplayAsync(
         ulong afterSequence,
         Func<CoreEventEnvelope, Task> onEvent,

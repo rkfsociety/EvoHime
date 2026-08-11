@@ -207,7 +207,9 @@ impl LocalDatabase {
         source_ref: Option<&str>,
     ) -> Result<ProjectRecord, StorageError> {
         self.connection.execute(
-            "INSERT INTO projects(id, title, workspace_path, source_ref) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO projects(id, title, workspace_path, source_ref) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET title = excluded.title,
+             workspace_path = excluded.workspace_path, source_ref = excluded.source_ref",
             rusqlite::params![id, title, workspace_path, source_ref],
         )?;
         self.get_project(id)?

@@ -20,6 +20,7 @@ using Windows.UI.Core;
 using Microsoft.UI.Input;
 using WinRT.Interop;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace EvoHime.Desktop;
 
@@ -58,6 +59,10 @@ public partial class MainWindow : Window
     private Grid? _settingsView;
     private Grid? _scheduledView;
     private Grid? _pluginsView;
+    private Grid? _tasksView;
+    private StackPanel? _taskList;
+    private TextBlock? _taskWorkspaceStatus;
+    private readonly HashSet<string> _coreProjects = new(StringComparer.Ordinal);
     private StackPanel? _pluginsList;
     private TextBox? _pluginSearch;
     private TextBlock? _pluginStatus;
@@ -576,6 +581,10 @@ public partial class MainWindow : Window
         Grid.SetColumn(_scheduledView, 1);
         _scheduledView.Visibility = Visibility.Collapsed;
         root.Children.Add(_scheduledView);
+        _tasksView = BuildTasksView();
+        Grid.SetColumn(_tasksView, 1);
+        _tasksView.Visibility = Visibility.Collapsed;
+        root.Children.Add(_tasksView);
         _pluginsView = BuildPluginsView();
         Grid.SetColumn(_pluginsView, 1);
         _pluginsView.Visibility = Visibility.Collapsed;
@@ -752,6 +761,9 @@ public partial class MainWindow : Window
     {
         switch (title)
         {
+            case "Задачи":
+                ShowTasksView();
+                break;
             case "Запланировано":
                 ShowScheduledView();
                 break;
@@ -772,6 +784,7 @@ public partial class MainWindow : Window
         if (_homeContent is not null) _homeContent.Visibility = Visibility.Collapsed;
         if (_settingsView is not null) _settingsView.Visibility = Visibility.Collapsed;
         if (_scheduledView is not null) _scheduledView.Visibility = Visibility.Collapsed;
+        if (_tasksView is not null) _tasksView.Visibility = Visibility.Collapsed;
         if (_pluginsView is not null) _pluginsView.Visibility = Visibility.Collapsed;
     }
 
@@ -779,6 +792,16 @@ public partial class MainWindow : Window
     {
         HideShellViews();
         if (_scheduledView is not null) _scheduledView.Visibility = Visibility.Visible;
+    }
+
+    private void ShowTasksView()
+    {
+        HideShellViews();
+        if (_tasksView is not null)
+        {
+            _tasksView.Visibility = Visibility.Visible;
+            _ = LoadTaskWorkspaceAsync();
+        }
     }
 
     private void ShowPluginsView()
@@ -811,6 +834,261 @@ public partial class MainWindow : Window
         view.Children.Add(content);
         return view;
     }
+
+    private Grid BuildTasksView()
+    {
+        var view = BuildShellPage("Задачи", "Граф задач проекта, готовые и заблокированные шаги.");
+        var content = new Grid { RowSpacing = 12 };
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var refresh = new Button { Content = "Обновить" };
+        refresh.Click += (_, _) => _ = LoadTaskWorkspaceAsync();
+        actions.Children.Add(refresh);
+        var nextReady = new Button { Content = "Следующая задача" };
+        nextReady.Click += (_, _) => _ = RequestNextReadyTaskAsync();
+        actions.Children.Add(nextReady);
+        var import = new Button { Content = "Импортировать PRD" };
+        import.Click += async (_, _) => await ImportPrdFromFileAsync();
+        actions.Children.Add(import);
+        Grid.SetRow(actions, 0);
+        content.Children.Add(actions);
+
+        _taskWorkspaceStatus = new TextBlock
+        {
+            Text = "Граф ещё не загружен.",
+            Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157),
+            TextWrapping = TextWrapping.Wrap,
+        };
+        Grid.SetRow(_taskWorkspaceStatus, 1);
+        content.Children.Add(_taskWorkspaceStatus);
+
+        _taskList = new StackPanel { Spacing = 10 };
+        var scroll = new ScrollViewer
+        {
+            Content = _taskList,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+        Grid.SetRow(scroll, 2);
+        content.Children.Add(scroll);
+        Grid.SetRow(content, 1);
+        view.Children.Add(content);
+        return view;
+    }
+
+    private async Task LoadTaskWorkspaceAsync()
+    {
+        if (_taskList is null || _taskWorkspaceStatus is null)
+        {
+            return;
+        }
+
+        var project = ActiveProject();
+        if (project is null)
+        {
+            _taskWorkspaceStatus.Text = "Сначала выберите проект.";
+            return;
+        }
+
+        try
+        {
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                await EnsureCoreProjectAsync(project);
+                await _ipc.RequestTaskGraphAsync(project.Id, CancellationToken.None);
+                var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                if (response.EventType != "task.graph")
+                {
+                    throw new InvalidOperationException("Core не вернул граф задач.");
+                }
+
+                var graph = JsonSerializer.Deserialize<TaskGraphDto>(response.Payload);
+                if (graph is null)
+                {
+                    throw new JsonException("Пустой граф задач.");
+                }
+
+                _taskList.Children.Clear();
+                foreach (var task in graph.Tasks.OrderByDescending(task => task.Priority).ThenBy(task => task.Id, StringComparer.Ordinal))
+                {
+                    _taskList.Children.Add(BuildTaskCard(task, graph.Edges));
+                }
+                _taskWorkspaceStatus.Text = graph.Tasks.Count == 0
+                    ? "В проекте пока нет задач. Импортируйте PRD или создайте задачу через Core."
+                    : $"Задач: {graph.Tasks.Count} · Связей: {graph.Edges.Count}";
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+        {
+            _taskWorkspaceStatus.Text = $"Не удалось загрузить task workspace: {error.Message}";
+        }
+    }
+
+    private Border BuildTaskCard(TaskDto task, IReadOnlyList<TaskEdgeDto> edges)
+    {
+        var text = ThemeBrush("TextBrush", 247, 244, 245);
+        var muted = ThemeBrush("MutedTextBrush", 143, 146, 157);
+        var dependencies = edges.Count(edge => edge.FromTaskId == task.Id);
+        var details = new StackPanel { Spacing = 5 };
+        details.Children.Add(new TextBlock
+        {
+            Text = task.Title,
+            FontSize = 16,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = text,
+        });
+        details.Children.Add(new TextBlock
+        {
+            Text = $"{task.Status} · приоритет {task.Priority} · зависимостей: {dependencies}",
+            Foreground = muted,
+            FontSize = 12,
+        });
+        if (!string.IsNullOrWhiteSpace(task.Description))
+        {
+            details.Children.Add(new TextBlock { Text = task.Description, Foreground = muted, TextWrapping = TextWrapping.Wrap });
+        }
+        if (!string.IsNullOrWhiteSpace(task.AcceptanceCriteria))
+        {
+            details.Children.Add(new TextBlock { Text = $"Критерии: {task.AcceptanceCriteria}", Foreground = muted, TextWrapping = TextWrapping.Wrap, FontSize = 12 });
+        }
+        return new Border
+        {
+            Background = ThemeBrush("SurfaceRaisedBrush", 23, 28, 37),
+            BorderBrush = ThemeBrush("BorderBrush", 68, 32, 43),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(14),
+            Child = details,
+        };
+    }
+
+    private async Task RequestNextReadyTaskAsync()
+    {
+        var project = ActiveProject();
+        if (project is null || _taskWorkspaceStatus is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                await EnsureCoreProjectAsync(project);
+                await _ipc.RequestNextReadyTaskAsync(project.Id, CancellationToken.None);
+                var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                if (response.EventType != "task.next_ready")
+                {
+                    throw new InvalidOperationException("Core не вернул next_ready.");
+                }
+                using var json = JsonDocument.Parse(response.Payload);
+                var task = json.RootElement.GetProperty("task");
+                _taskWorkspaceStatus.Text = task.ValueKind == JsonValueKind.Null
+                    ? "Готовых задач сейчас нет. Заблокированные задачи не предлагаются."
+                    : $"Следующая задача: {task.GetProperty("title").GetString()} · {task.GetProperty("status").GetString()}";
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+        {
+            _taskWorkspaceStatus.Text = $"Не удалось выбрать следующую задачу: {error.Message}";
+        }
+    }
+
+    private async Task ImportPrdFromFileAsync()
+    {
+        var project = ActiveProject();
+        if (project is null || _taskWorkspaceStatus is null)
+        {
+            return;
+        }
+
+        var picker = new FileOpenPicker();
+        picker.FileTypeFilter.Add(".md");
+        picker.FileTypeFilter.Add(".markdown");
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+        var file = await picker.PickSingleFileAsync();
+        if (file is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var source = await FileIO.ReadTextAsync(file);
+            var importId = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"{file.Path}\n{source}")));
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                await EnsureCoreProjectAsync(project);
+                await _ipc.ImportPrdAsync(importId, project.Id, file.Path, "v1", source, CancellationToken.None);
+                var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                if (response.EventType != "prd.imported")
+                {
+                    throw new InvalidOperationException("Core не подтвердил импорт PRD.");
+                }
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+            _taskWorkspaceStatus.Text = $"Импортирован PRD: {file.Name}";
+            await LoadTaskWorkspaceAsync();
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+        {
+            _taskWorkspaceStatus.Text = $"Импорт PRD не выполнен: {error.Message}";
+        }
+    }
+
+    private async Task EnsureCoreProjectAsync(ProjectEntry project)
+    {
+        if (_coreProjects.Contains(project.Id))
+        {
+            return;
+        }
+
+        if (!_ipc.IsConnected)
+        {
+            await ConnectToCoreWithRetryAsync(CancellationToken.None);
+        }
+        await _ipc.CreateProjectAsync(project.Id, project.Name, project.Path, CancellationToken.None);
+        var response = await _ipc.ReadEventAsync(CancellationToken.None);
+        if (response.EventType != "project.created")
+        {
+            throw new InvalidOperationException("Core не подтвердил проект.");
+        }
+        _coreProjects.Add(project.Id);
+    }
+
+    private sealed record TaskGraphDto(
+        [property: JsonPropertyName("project_id")] string ProjectId,
+        [property: JsonPropertyName("tasks")] List<TaskDto> Tasks,
+        [property: JsonPropertyName("edges")] List<TaskEdgeDto> Edges);
+
+    private sealed record TaskDto(
+        [property: JsonPropertyName("id")] string Id,
+        [property: JsonPropertyName("title")] string Title,
+        [property: JsonPropertyName("description")] string Description,
+        [property: JsonPropertyName("acceptance_criteria")] string AcceptanceCriteria,
+        [property: JsonPropertyName("status")] string Status,
+        [property: JsonPropertyName("priority")] long Priority);
+
+    private sealed record TaskEdgeDto(
+        [property: JsonPropertyName("from_task_id")] string FromTaskId,
+        [property: JsonPropertyName("to_task_id")] string ToTaskId,
+        [property: JsonPropertyName("kind")] string Kind);
 
     private Grid BuildPluginsView()
     {
