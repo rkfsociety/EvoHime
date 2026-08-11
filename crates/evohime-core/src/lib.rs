@@ -205,6 +205,12 @@ fn parse_natural_tool_intent(content: &str, iteration: usize) -> Option<NativeTo
 }
 
 fn parse_tagged_tool_call(content: &str, iteration: usize) -> Option<NativeToolCall> {
+    if let Some(start) = content.find("<tool_code>") {
+        let body_start = start + "<tool_code>".len();
+        let body_end = content[body_start..].find("</tool_code>")? + body_start;
+        let wrapped = format!("<tool_call>{}</tool_call>", content[body_start..body_end].trim());
+        return parse_tagged_tool_call(&wrapped, iteration);
+    }
     if let (Some(name_start), Some(input_start)) = (
         content.find("<tool_name>"),
         content.find("<tool_input>"),
@@ -1287,6 +1293,12 @@ mod tests {
         .expect("structured tool call");
         assert_eq!(xml_call.name, "filesystem.read");
         assert_eq!(xml_call.arguments, r#"{"path":"README.md"}"#);
+        let code_call = super::parse_tagged_tool_call(
+            r#"<tool_code>filesystem.read(path="README.md")</tool_code>"#,
+            6,
+        )
+        .expect("tool code call");
+        assert_eq!(code_call.name, "filesystem.read");
     }
 
     #[tokio::test]
