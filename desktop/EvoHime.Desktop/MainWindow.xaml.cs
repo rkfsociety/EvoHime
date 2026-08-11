@@ -1398,12 +1398,15 @@ public partial class MainWindow : Window
             var baseline = approved.RootElement.GetProperty("expected_workspace_hash").GetString();
             var changes = approved.RootElement.GetProperty("changes");
             var change = changes.GetArrayLength() == 0 ? "нет изменений" : changes[0].GetProperty("relative_path").GetString();
+            var scope = approved.RootElement.GetProperty("scope");
+            var allowedPaths = string.Join(", ", scope.GetProperty("allowed_paths").EnumerateArray().Select(item => item.GetString()));
+            var maxBytes = scope.GetProperty("max_bytes_changed").GetInt64();
             var approvalDialog = new ContentDialog
             {
                 Title = "Подтвердить bounded Build",
                 Content = new TextBlock
                 {
-                    Text = $"Файл: {change}\nBaseline: {baseline}\nIntent hash: {intentHash}\n\nИзменение ограничено одним текстовым файлом. Запись ещё не выполнялась.",
+                    Text = $"Файл: {change}\nAllowed paths: {allowedPaths}\nЛимит байт: {maxBytes}\nBaseline: {baseline}\nIntent hash: {intentHash}\n\nЗапись ещё не выполнялась.",
                     TextWrapping = TextWrapping.Wrap,
                 },
                 PrimaryButtonText = "Одобрить и применить",
@@ -1419,7 +1422,8 @@ public partial class MainWindow : Window
             await _ipcRequestGate.WaitAsync();
             try
             {
-                await _ipc.ApplyApprovedBuildAsync(project.Id, approvedJson, CancellationToken.None);
+                var runId = $"build-{task.Id}-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}";
+                await _ipc.ApplyApprovedBuildAsync(project.Id, runId, approvedJson, CancellationToken.None);
                 var response = await _ipc.ReadEventAsync(CancellationToken.None);
                 if (response.EventType != "build.applied")
                 {
@@ -1430,7 +1434,7 @@ public partial class MainWindow : Window
             {
                 _ipcRequestGate.Release();
             }
-            _taskWorkspaceStatus.Text = $"Build применён с approval intent {intentHash}. Snapshot сохранён в ответе Core.";
+            _taskWorkspaceStatus.Text = $"Build применён с approval intent {intentHash}. Run-linked snapshot сохранён Core.";
         }
         catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
         {

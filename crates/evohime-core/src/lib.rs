@@ -562,6 +562,7 @@ pub enum CoreCommand {
     },
     ApplyApprovedBuild {
         project_id: String,
+        run_id: String,
         approved_build_json: Vec<u8>,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
@@ -763,6 +764,17 @@ impl EventJournal {
             source_text,
             tasks,
         )
+    }
+
+    pub async fn save_snapshot(
+        &self,
+        id: &str,
+        run_id: &str,
+        workspace_hash: &str,
+        payload: &[u8],
+    ) -> Result<evohime_local_storage::SnapshotRecord, StorageError> {
+        let database = self.database.lock().await;
+        database.save_snapshot(id, run_id, workspace_hash, payload)
     }
 
     pub async fn task_history(
@@ -1802,6 +1814,7 @@ impl TaskCoordinator {
             }
             CoreCommand::ApplyApprovedBuild {
                 project_id,
+                run_id,
                 approved_build_json,
                 reply,
             } => {
@@ -1817,7 +1830,12 @@ impl TaskCoordinator {
                         .map_err(|error| format!("invalid approved build: {error}"))?;
                     let snapshot = crate::build::apply_approved_build(&project.workspace_path, &approved)
                         .map_err(|error| error.to_string())?;
-                    serde_json::to_vec(&snapshot).map_err(|error| error.to_string())
+                    let payload = serde_json::to_vec(&snapshot).map_err(|error| error.to_string())?;
+                    journal
+                        .save_snapshot(&snapshot.id, &run_id, &snapshot.baseline_workspace_hash, &payload)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    Ok(payload)
                 }
                 .await;
                 let _ = reply.send(result);

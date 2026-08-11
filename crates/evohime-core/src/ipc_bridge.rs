@@ -337,7 +337,7 @@ impl IpcBridge {
             }
             Some(generated::command_envelope::Command::ApplyApprovedBuild(request)) => {
                 let result = self
-                    .dispatch_apply_approved_build(request.project_id, request.approved_build_json)
+                    .dispatch_apply_approved_build(request.project_id, request.run_id, request.approved_build_json)
                     .await?;
                 self.write_response(writer, "build.applied", result).await?;
             }
@@ -671,6 +671,7 @@ impl IpcBridge {
     async fn dispatch_apply_approved_build(
         &self,
         project_id: String,
+        run_id: String,
         approved_build_json: Vec<u8>,
     ) -> Result<Vec<u8>, IpcBridgeError> {
         let coordinator = self
@@ -681,6 +682,7 @@ impl IpcBridge {
         coordinator
             .dispatch(CoreCommand::ApplyApprovedBuild {
                 project_id,
+                run_id,
                 approved_build_json,
                 reply,
             })

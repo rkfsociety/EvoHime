@@ -7,7 +7,7 @@ use std::{
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -93,6 +93,15 @@ pub struct ProvenanceRecord {
     pub kind: String,
     pub source: String,
     pub payload: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SnapshotRecord {
+    pub id: String,
+    pub run_id: String,
+    pub workspace_hash: String,
+    pub payload: Vec<u8>,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -312,6 +321,39 @@ impl LocalDatabase {
                         kind: row.get(1)?,
                         source: row.get(2)?,
                         payload: row.get(3)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    pub fn save_snapshot(
+        &self,
+        id: &str,
+        run_id: &str,
+        workspace_hash: &str,
+        payload: &[u8],
+    ) -> Result<SnapshotRecord, StorageError> {
+        self.connection.execute(
+            "INSERT INTO snapshots(id, run_id, workspace_hash, payload) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![id, run_id, workspace_hash, payload],
+        )?;
+        self.get_snapshot(id)?.ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+    }
+
+    pub fn get_snapshot(&self, id: &str) -> Result<Option<SnapshotRecord>, StorageError> {
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT id, run_id, workspace_hash, payload, created_at FROM snapshots WHERE id = ?1",
+                [id],
+                |row| {
+                    Ok(SnapshotRecord {
+                        id: row.get(0)?,
+                        run_id: row.get(1)?,
+                        workspace_hash: row.get(2)?,
+                        payload: row.get(3)?,
+                        created_at: row.get(4)?,
                     })
                 },
             )
@@ -739,6 +781,17 @@ impl LocalDatabase {
                     PRIMARY KEY(client_id, request_id)
                 );
                 PRAGMA user_version = 2;",
+                )?;
+        }
+        if current < 3 {
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS snapshots (
+                    id TEXT PRIMARY KEY, run_id TEXT NOT NULL, workspace_hash TEXT NOT NULL,
+                    payload BLOB NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                );
+                CREATE INDEX IF NOT EXISTS idx_snapshots_run ON snapshots(run_id);
+                PRAGMA user_version = 3;",
             )?;
         }
         transaction.commit()?;
@@ -971,6 +1024,23 @@ mod tests {
             .import_prd("import-1", "project-prd", "prd.md", "v7", source, &tasks)
             .is_err());
         assert_eq!(database.list_work_items("project-prd").unwrap().len(), 1);
+        drop(database);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn persists_run_linked_snapshot_payload_immutably() {
+        let path = temp_database_path("snapshots");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        let saved = database
+            .save_snapshot("snapshot-1", "run-1", "workspace-hash", br#"{"files":[]}"#)
+            .expect("snapshot saves");
+        assert_eq!(saved.run_id, "run-1");
+        assert_eq!(database.get_snapshot("snapshot-1").unwrap(), Some(saved));
+        assert!(database
+            .save_snapshot("snapshot-1", "run-2", "other", b"changed")
+            .is_err());
         drop(database);
         let _ = std::fs::remove_file(path);
     }

@@ -217,11 +217,12 @@ public static class ProtocolEnvelope
         output.WriteBytes(ByteString.CopyFrom(proposalJson));
     });
 
-    public static byte[] ApplyApprovedBuild(string projectId, byte[] approvedBuildJson) => TaskCommand(28, output =>
+    public static byte[] ApplyApprovedBuild(string projectId, string runId, byte[] approvedBuildJson) => TaskCommand(28, output =>
     {
         WriteString(output, 1, projectId);
         output.WriteTag(2, WireFormat.WireType.LengthDelimited);
         output.WriteBytes(ByteString.CopyFrom(approvedBuildJson));
+        WriteString(output, 3, runId);
     });
 
     public static CoreEventEnvelope ReadEvent(ReadOnlySpan<byte> payload)

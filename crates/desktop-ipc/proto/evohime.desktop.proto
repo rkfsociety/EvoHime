@@ -109,6 +109,7 @@ message GetTaskPlanSpec {
 message ApplyApprovedBuild {
   string project_id = 1;
   bytes approved_build_json = 2;
+  string run_id = 3;
 }
 
 message PrepareBuild {
