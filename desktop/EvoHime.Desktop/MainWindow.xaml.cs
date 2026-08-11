@@ -30,6 +30,7 @@ public partial class MainWindow : Window
     private readonly NativeShellState _state = new();
     private readonly WorkspaceSettings _settings = new();
     private readonly UpdateService _updates = new();
+    private readonly GitHubAuthService _githubAuth = new();
     private readonly ProjectCatalogService _projectCatalogService = new();
     private ProjectCatalog _projectCatalog = new();
     private StackPanel? _projectListPanel;
@@ -54,6 +55,9 @@ public partial class MainWindow : Window
     private readonly List<StorageFile> _attachments = [];
     private TextBlock? _attachmentsText;
     private string _permissionMode = "ask";
+    private TextBlock? _githubProfileText;
+    private TextBlock? _githubProfileStatus;
+    private Button? _githubProfileButton;
 
     public MainWindow()
     {
@@ -65,6 +69,7 @@ public partial class MainWindow : Window
         _ = LoadModelConfigAsync();
         _ = RestoreWorkspaceAsync();
         _ = CheckForUpdatesAsync();
+        _ = RefreshGitHubProfileAsync();
     }
 
     private void BuildUi()
@@ -152,9 +157,65 @@ public partial class MainWindow : Window
         navItems.Children.Add(settingsButton);
         Grid.SetRow(navItems, 2);
         sidebar.Children.Add(navItems);
-        var workspaceInfo = new StackPanel { Spacing = 5 };
+        var workspaceInfo = new StackPanel { Spacing = 5, Margin = new Thickness(0, 14, 0, 0) };
         workspaceInfo.Children.Add(new TextBlock { Text = "РАБОЧЕЕ ПРОСТРАНСТВО", FontSize = 11, Foreground = muted });
         workspaceInfo.Children.Add(new TextBlock { Text = "⌂  Текущий проект", Foreground = muted, Padding = new Thickness(4, 8, 4, 8) });
+        var accountGrid = new Grid
+        {
+            Padding = new Thickness(8, 7, 6, 7),
+        };
+        accountGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        accountGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var accountBar = new Border
+        {
+            Background = raised,
+            CornerRadius = new CornerRadius(10),
+            Margin = new Thickness(0, 10, 0, 0),
+            Child = accountGrid,
+        };
+        _githubProfileButton = new Button
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Left,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            Padding = new Thickness(0),
+            BorderThickness = new Thickness(0),
+        };
+        var profileContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        profileContent.Children.Add(new Border
+        {
+            Width = 28,
+            Height = 28,
+            CornerRadius = new CornerRadius(14),
+            Background = ThemeBrush("PurpleBrush", 167, 139, 250),
+            Child = new TextBlock { Text = "⌁", FontSize = 18, Foreground = new SolidColorBrush(Microsoft.UI.Colors.White), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+        });
+        var profileText = new StackPanel { Spacing = 1, VerticalAlignment = VerticalAlignment.Center };
+        _githubProfileText = new TextBlock { Text = "GitHub", FontSize = 12, Foreground = text, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 132 };
+        _githubProfileStatus = new TextBlock { Text = "Проверяю вход…", FontSize = 10, Foreground = muted, TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 132 };
+        profileText.Children.Add(_githubProfileText);
+        profileText.Children.Add(_githubProfileStatus);
+        profileContent.Children.Add(profileText);
+        _githubProfileButton.Content = profileContent;
+        _githubProfileButton.Click += (_, _) => _ = HandleGitHubProfileClickAsync();
+        accountGrid.Children.Add(_githubProfileButton);
+        var settingsGear = new Button
+        {
+            Content = "⚙",
+            FontSize = 18,
+            Width = 32,
+            Height = 32,
+            Padding = new Thickness(0),
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            Foreground = muted,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+        };
+        ToolTipService.SetToolTip(settingsGear, "Настройки");
+        settingsGear.Click += (_, _) => ShowSettingsView();
+        Grid.SetColumn(settingsGear, 1);
+        accountGrid.Children.Add(settingsGear);
+        workspaceInfo.Children.Add(accountBar);
         Grid.SetRow(workspaceInfo, 3);
         sidebar.Children.Add(workspaceInfo);
         Grid.SetColumn(sidebar, 0);
@@ -533,6 +594,76 @@ public partial class MainWindow : Window
             _settingsView.Visibility = Visibility.Collapsed;
             _homeContent.Visibility = Visibility.Visible;
         }
+    }
+
+    private async Task RefreshGitHubProfileAsync()
+    {
+        var profile = await _githubAuth.GetProfileAsync();
+        if (_githubProfileText is null || _githubProfileStatus is null)
+        {
+            return;
+        }
+
+        _githubProfileText.Text = profile.IsAuthenticated ? profile.DisplayName : "GitHub";
+        _githubProfileStatus.Text = profile.IsAuthenticated ? profile.Login : "Войти через gh / Git";
+        _githubProfileStatus.Foreground = profile.IsAuthenticated
+            ? ThemeBrush("TealBrush", 89, 216, 200)
+            : ThemeBrush("MutedTextBrush", 146, 152, 173);
+        if (_githubProfileButton is not null)
+        {
+            ToolTipService.SetToolTip(_githubProfileButton, profile.IsAuthenticated
+                ? $"GitHub: {profile.Login} ({profile.Provider})"
+                : profile.Error ?? "Авторизовать GitHub");
+        }
+    }
+
+    private async Task HandleGitHubProfileClickAsync()
+    {
+        var profile = await _githubAuth.GetProfileAsync();
+        if (profile.IsAuthenticated)
+        {
+            var dialog = new ContentDialog
+            {
+                Title = "Профиль GitHub",
+                Content = $"{profile.DisplayName}\n{profile.Login}\nАвторизация: {profile.Provider}",
+                CloseButtonText = "Закрыть",
+                XamlRoot = Content.XamlRoot,
+            };
+            await dialog.ShowAsync();
+            return;
+        }
+
+        var loginDialog = new ContentDialog
+        {
+            Title = "Войти в GitHub",
+            Content = "Выберите способ авторизации. gh откроет официальный веб-вход, Git CLI использует Git Credential Manager.",
+            PrimaryButtonText = "Войти через gh",
+            SecondaryButtonText = "Войти через Git CLI",
+            CloseButtonText = "Отмена",
+            XamlRoot = Content.XamlRoot,
+        };
+        var result = await loginDialog.ShowAsync();
+        if (result == ContentDialogResult.None)
+        {
+            return;
+        }
+
+        var command = result == ContentDialogResult.Primary
+            ? await _githubAuth.StartGhLoginAsync()
+            : await _githubAuth.StartGitLoginAsync();
+        if (command.ExitCode != 0)
+        {
+            var error = new ContentDialog
+            {
+                Title = "Не удалось начать авторизацию",
+                Content = string.IsNullOrWhiteSpace(command.Stderr) ? "Проверьте, что gh или Git Credential Manager установлены." : command.Stderr.Trim(),
+                CloseButtonText = "Закрыть",
+                XamlRoot = Content.XamlRoot,
+            };
+            await error.ShowAsync();
+        }
+
+        await RefreshGitHubProfileAsync();
     }
 
     private async void ChooseSettingsWorkspace_Click(object sender, RoutedEventArgs e)
