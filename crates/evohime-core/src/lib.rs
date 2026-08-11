@@ -87,6 +87,75 @@ fn write_model_trace(event: &str, fields: serde_json::Value) {
     }
 }
 
+fn xml_unescape(value: &str) -> String {
+    value
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+}
+
+fn attribute_value(tag: &str, attribute: &str) -> Option<String> {
+    let marker = format!("{attribute}=\"");
+    let start = tag.find(&marker)? + marker.len();
+    let end = tag[start..].find('\"')? + start;
+    Some(xml_unescape(&tag[start..end]))
+}
+
+fn parse_legacy_function_calls(content: &str, iteration: usize) -> Vec<NativeToolCall> {
+    let mut calls = Vec::new();
+    let mut cursor = 0;
+    while let Some(relative_start) = content[cursor..].find("<invoke") {
+        let start = cursor + relative_start;
+        let Some(tag_end_relative) = content[start..].find('>') else {
+            break;
+        };
+        let tag_end = start + tag_end_relative;
+        let Some(name) = attribute_value(&content[start..=tag_end], "name") else {
+            cursor = tag_end + 1;
+            continue;
+        };
+        let body_start = tag_end + 1;
+        let Some(body_end_relative) = content[body_start..].find("</invoke>") else {
+            break;
+        };
+        let body_end = body_start + body_end_relative;
+        let body = &content[body_start..body_end];
+        let mut arguments = serde_json::Map::new();
+        let mut parameter_cursor = 0;
+        while let Some(relative_parameter) = body[parameter_cursor..].find("<parameter") {
+            let parameter_start = parameter_cursor + relative_parameter;
+            let Some(parameter_tag_end_relative) = body[parameter_start..].find('>') else {
+                break;
+            };
+            let parameter_tag_end = parameter_start + parameter_tag_end_relative;
+            let tag = &body[parameter_start..=parameter_tag_end];
+            let Some(parameter_name) = attribute_value(tag, "name") else {
+                parameter_cursor = parameter_tag_end + 1;
+                continue;
+            };
+            let value_start = parameter_tag_end + 1;
+            let Some(value_end_relative) = body[value_start..].find("</parameter>") else {
+                break;
+            };
+            let value_end = value_start + value_end_relative;
+            arguments.insert(
+                parameter_name,
+                serde_json::Value::String(xml_unescape(body[value_start..value_end].trim())),
+            );
+            parameter_cursor = value_end + "</parameter>".len();
+        }
+        calls.push(NativeToolCall {
+            id: format!("legacy-{iteration}-{}", calls.len()),
+            name,
+            arguments: serde_json::Value::Object(arguments).to_string(),
+        });
+        cursor = body_end + "</invoke>".len();
+    }
+    calls
+}
+
 mod ipc_bridge;
 pub use ipc_bridge::{IpcBridge, IpcBridgeError, ModelConfigSnapshot};
 mod logging;
@@ -136,7 +205,7 @@ use std::{
 use evohime_local_storage::{EventRecord, LocalDatabase, StorageError};
 use evohime_model_gateway::{
     providers::{ChatMessage, ChatRole, ProviderError},
-    ModelGateway, ToolSpec,
+    ModelGateway, NativeToolCall, ToolSpec,
 };
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use futures_util::future::BoxFuture;
@@ -482,7 +551,7 @@ impl ToolAgent {
             context_limit_tokens: 128_000,
         });
 
-        for _ in 0..self.max_iterations {
+        for iteration in 0..self.max_iterations {
             write_model_trace(
                 "model.request",
                 serde_json::json!({
@@ -508,7 +577,20 @@ impl ToolAgent {
                     "usage": result.usage
                 }),
             );
-            if result.tool_calls.is_empty() {
+            let mut tool_calls = result.tool_calls.clone();
+            if tool_calls.is_empty() {
+                tool_calls = parse_legacy_function_calls(&result.content, iteration);
+                if !tool_calls.is_empty() {
+                    write_model_trace(
+                        "legacy.tool_calls.parsed",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "tool_calls": tool_calls
+                        }),
+                    );
+                }
+            }
+            if tool_calls.is_empty() {
                 let _ = events.send(CoreEvent::TaskCompleted {
                     task_id,
                     final_message: result.content.clone(),
@@ -518,9 +600,9 @@ impl ToolAgent {
 
             messages.push(ChatMessage::assistant_tool_calls(
                 result.content,
-                result.tool_calls.clone(),
+                tool_calls.clone(),
             ));
-            for call in result.tool_calls {
+            for call in tool_calls {
                 let _ = events.send(CoreEvent::ToolStarted {
                     task_id: task_id.clone(),
                     tool_name: call.name.clone(),
@@ -824,6 +906,21 @@ mod tests {
         assert!(prompt.contains(r"C:\Projects\demo"));
         assert!(prompt.contains("filesystem.list"));
         assert!(prompt.contains("Не проси пользователя прислать структуру"));
+    }
+
+    #[test]
+    fn parses_legacy_text_function_calls() {
+        let content = r#"
+<function_calls>
+<invoke name="filesystem.list">
+<parameter name="path">.</parameter>
+</invoke>
+</function_calls>
+"#;
+        let calls = super::parse_legacy_function_calls(content, 2);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "filesystem.list");
+        assert_eq!(calls[0].arguments, r#"{"path":"."}"#);
     }
 
     impl TaskExecutor for NeverExecutor {
