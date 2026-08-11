@@ -357,7 +357,20 @@ public partial class MainWindow : Window
         {
             PromptBox.Resources[resourceKey] = text;
         }
-        PromptBox.Resources["TextControlPlaceholderForeground"] = muted;
+        // WinUI uses separate placeholder resources for the normal, focused,
+        // hover and disabled states. Setting only the base key leaves the
+        // hint almost black in the native TextBox template.
+        var placeholder = ThemeBrush("TextBrush", 193, 196, 209);
+        foreach (var resourceKey in new[]
+        {
+            "TextControlPlaceholderForeground",
+            "TextControlPlaceholderForegroundFocused",
+            "TextControlPlaceholderForegroundPointerOver",
+            "TextControlPlaceholderForegroundDisabled",
+        })
+        {
+            PromptBox.Resources[resourceKey] = placeholder;
+        }
         // В многострочном TextBox обычный KeyDown может быть поглощён
         // обработчиком AcceptsReturn. PreviewKeyDown гарантирует отправку по Enter.
         PromptBox.PreviewKeyDown += PromptBox_PreviewKeyDown;
