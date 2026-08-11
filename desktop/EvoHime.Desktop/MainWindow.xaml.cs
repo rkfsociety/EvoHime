@@ -1162,6 +1162,17 @@ public partial class MainWindow : Window
         {
             using var document = JsonDocument.Parse(envelope.Payload);
             var root = document.RootElement;
+            // Старые записи журнала сериализованы с именем варианта enum
+            // (например, {"TaskCompleted": {...}}), новые идут плоским JSON.
+            // Поддерживаем оба формата, чтобы итог задачи не терялся.
+            if (root.ValueKind == JsonValueKind.Object && root.EnumerateObject().Count() == 1)
+            {
+                var wrapped = root.EnumerateObject().First().Value;
+                if (wrapped.ValueKind == JsonValueKind.Object)
+                {
+                    root = wrapped;
+                }
+            }
             switch (envelope.EventType)
             {
                 case "agent.message.delta":
@@ -1178,6 +1189,10 @@ public partial class MainWindow : Window
                     if (!string.IsNullOrWhiteSpace(finalMessage) && _streamingAssistantText is null)
                     {
                         AddConversationMessage("Ева", finalMessage, false);
+                    }
+                    else if (string.IsNullOrWhiteSpace(finalMessage) && _streamingAssistantText is null)
+                    {
+                        AddConversationMessage("Ева", "Задача завершена, но итоговый ответ от модели не пришёл.", false);
                     }
                     AddConversationActivity("Задача завершена");
                     _streamingAssistantText = null;
@@ -1764,7 +1779,10 @@ public partial class MainWindow : Window
                     {
                         if (_state.ApplyEvent(envelope))
                         {
-                            _ = DispatcherQueue.TryEnqueue(() => RenderConversationEvent(envelope));
+                            if (envelope.TaskId == _activeTaskId)
+                            {
+                                _ = DispatcherQueue.TryEnqueue(() => RenderConversationEvent(envelope));
+                            }
                             if (envelope.EventType == "approval.required")
                             {
                                 ShowApproval(envelope);
