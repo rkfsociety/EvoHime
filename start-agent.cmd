@@ -8,12 +8,9 @@ if errorlevel 1 goto noPowerShell
 
 echo [EvoHime] Build and start native agent...
 echo [EvoHime] This window stays open while the agent is running.
-if /I "%~1"=="-SkipBuild" goto skipBuild
 pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\build-windows-native.ps1" -OutputPath "%~dp0.evohime-native\windows-x64" -Configuration Debug
 if errorlevel 1 goto buildFailed
-goto launch
 
-:skipBuild
 :launch
 pwsh.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0start-dev.ps1" -SkipBuild
 goto finish
