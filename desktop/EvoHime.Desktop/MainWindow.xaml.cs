@@ -62,6 +62,7 @@ public partial class MainWindow : Window
     private Grid? _tasksView;
     private StackPanel? _taskList;
     private TextBlock? _taskWorkspaceStatus;
+    private TaskGraphDto? _lastTaskGraph;
     private readonly HashSet<string> _coreProjects = new(StringComparer.Ordinal);
     private StackPanel? _pluginsList;
     private TextBox? _pluginSearch;
@@ -847,6 +848,12 @@ public partial class MainWindow : Window
         var refresh = new Button { Content = "Обновить" };
         refresh.Click += (_, _) => _ = LoadTaskWorkspaceAsync();
         actions.Children.Add(refresh);
+        var addTask = new Button { Content = "Добавить задачу" };
+        addTask.Click += async (_, _) => await CreateTaskDialogAsync(null);
+        actions.Children.Add(addTask);
+        var addEdge = new Button { Content = "Добавить зависимость" };
+        addEdge.Click += async (_, _) => await AddTaskEdgeDialogAsync();
+        actions.Children.Add(addEdge);
         var nextReady = new Button { Content = "Следующая задача" };
         nextReady.Click += (_, _) => _ = RequestNextReadyTaskAsync();
         actions.Children.Add(nextReady);
@@ -912,6 +919,7 @@ public partial class MainWindow : Window
                 }
 
                 _taskList.Children.Clear();
+                _lastTaskGraph = graph;
                 foreach (var task in graph.Tasks.OrderByDescending(task => task.Priority).ThenBy(task => task.Id, StringComparer.Ordinal))
                 {
                     _taskList.Children.Add(BuildTaskCard(task, graph.Edges));
@@ -983,6 +991,9 @@ public partial class MainWindow : Window
         var history = new Button { Content = "История", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
         history.Click += async (_, _) => await RequestTaskHistoryAsync(task);
         actions.Children.Add(history);
+        var subtask = new Button { Content = "Подзадача", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
+        subtask.Click += async (_, _) => await CreateTaskDialogAsync(task.Id);
+        actions.Children.Add(subtask);
         details.Children.Add(actions);
         return new Border
         {
@@ -1196,6 +1207,118 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task CreateTaskDialogAsync(string? parentId)
+    {
+        var project = ActiveProject();
+        if (project is null || _taskWorkspaceStatus is null)
+        {
+            return;
+        }
+
+        var title = new TextBox { Header = "Название", PlaceholderText = "Что нужно сделать?" };
+        var description = new TextBox { Header = "Описание", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 70 };
+        var acceptance = new TextBox { Header = "Критерии приемки", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 55 };
+        var priority = new NumberBox { Header = "Приоритет", Value = 0, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };
+        var dialog = new ContentDialog
+        {
+            Title = parentId is null ? "Новая задача" : "Новая подзадача",
+            Content = new StackPanel { Spacing = 10, Children = { title, description, acceptance, priority } },
+            PrimaryButtonText = "Создать",
+            CloseButtonText = "Отмена",
+            XamlRoot = ((FrameworkElement)Content).XamlRoot,
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary || string.IsNullOrWhiteSpace(title.Text))
+        {
+            return;
+        }
+
+        try
+        {
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                await EnsureCoreProjectAsync(project);
+                await _ipc.CreateTaskAsync(
+                    Guid.NewGuid().ToString("N"),
+                    project.Id,
+                    parentId ?? string.Empty,
+                    title.Text.Trim(),
+                    description.Text,
+                    acceptance.Text,
+                    (long)priority.Value,
+                    CancellationToken.None);
+                var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                if (response.EventType != "task.created")
+                {
+                    throw new InvalidOperationException("Core не подтвердил создание задачи.");
+                }
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+            await LoadTaskWorkspaceAsync();
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+        {
+            _taskWorkspaceStatus.Text = $"Задача не создана: {error.Message}";
+        }
+    }
+
+    private async Task AddTaskEdgeDialogAsync()
+    {
+        var project = ActiveProject();
+        var graph = _lastTaskGraph;
+        if (project is null || graph is null || graph.Tasks.Count < 2 || _taskWorkspaceStatus is null)
+        {
+            if (_taskWorkspaceStatus is not null)
+            {
+                _taskWorkspaceStatus.Text = "Для зависимости нужны минимум две загруженные задачи.";
+            }
+            return;
+        }
+
+        var choices = graph.Tasks.Select(task => new TaskChoice(task.Id, task.Title)).ToList();
+        var from = new ComboBox { Header = "Задача, которая зависит", ItemsSource = choices, DisplayMemberPath = nameof(TaskChoice.Label), SelectedIndex = 0 };
+        var to = new ComboBox { Header = "Зависимость", ItemsSource = choices, DisplayMemberPath = nameof(TaskChoice.Label), SelectedIndex = 1 };
+        var kind = new TextBox { Header = "Тип связи", Text = "blocks" };
+        var dialog = new ContentDialog
+        {
+            Title = "Добавить зависимость",
+            Content = new StackPanel { Spacing = 10, Children = { from, to, kind } },
+            PrimaryButtonText = "Добавить",
+            CloseButtonText = "Отмена",
+            XamlRoot = ((FrameworkElement)Content).XamlRoot,
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary || from.SelectedItem is not TaskChoice source || to.SelectedItem is not TaskChoice target || source.Id == target.Id)
+        {
+            return;
+        }
+
+        try
+        {
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                await _ipc.AddTaskEdgeAsync(source.Id, target.Id, string.IsNullOrWhiteSpace(kind.Text) ? "blocks" : kind.Text.Trim(), CancellationToken.None);
+                var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                if (response.EventType != "task.edge_added")
+                {
+                    throw new InvalidOperationException("Core не подтвердил зависимость.");
+                }
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+            await LoadTaskWorkspaceAsync();
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+        {
+            _taskWorkspaceStatus.Text = $"Зависимость не добавлена: {error.Message}";
+        }
+    }
+
     private async Task ImportPrdFromFileAsync()
     {
         var project = ActiveProject();
@@ -1266,6 +1389,8 @@ public partial class MainWindow : Window
         [property: JsonPropertyName("project_id")] string ProjectId,
         [property: JsonPropertyName("tasks")] List<TaskDto> Tasks,
         [property: JsonPropertyName("edges")] List<TaskEdgeDto> Edges);
+
+    private sealed record TaskChoice(string Id, string Label);
 
     private sealed record TaskDto(
         [property: JsonPropertyName("id")] string Id,

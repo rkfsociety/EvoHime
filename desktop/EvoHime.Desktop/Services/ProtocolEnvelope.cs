@@ -165,6 +165,33 @@ public static class ProtocolEnvelope
         output.WriteUInt32(limit);
     });
 
+    public static byte[] CreateTask(
+        string taskId,
+        string projectId,
+        string parentId,
+        string title,
+        string description,
+        string acceptanceCriteria,
+        long priority) => TaskCommand(19, output =>
+    {
+        WriteString(output, 1, taskId);
+        WriteString(output, 2, projectId);
+        WriteString(output, 3, parentId);
+        WriteString(output, 4, title);
+        WriteString(output, 5, description);
+        WriteString(output, 7, acceptanceCriteria);
+        WriteString(output, 9, "backlog");
+        output.WriteTag(10, WireFormat.WireType.Varint);
+        output.WriteInt64(priority);
+    });
+
+    public static byte[] AddTaskEdge(string fromTaskId, string toTaskId, string kind) => TaskCommand(21, output =>
+    {
+        WriteString(output, 1, fromTaskId);
+        WriteString(output, 2, toTaskId);
+        WriteString(output, 3, kind);
+    });
+
     public static CoreEventEnvelope ReadEvent(ReadOnlySpan<byte> payload)
     {
         using var input = new CodedInputStream(payload.ToArray());
@@ -213,6 +240,15 @@ public static class ProtocolEnvelope
             protocol.Flush();
         }
         output.WriteBytes(ByteString.CopyFrom(nested.ToArray()));
+    }
+
+    private static void WriteString(CodedOutputStream output, int field, string value)
+    {
+        if (!string.IsNullOrEmpty(value))
+        {
+            output.WriteTag(field, WireFormat.WireType.LengthDelimited);
+            output.WriteString(value);
+        }
     }
 
     private static byte[] TaskCommand(uint field, Action<CodedOutputStream> writeNested)

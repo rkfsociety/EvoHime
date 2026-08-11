@@ -101,6 +101,22 @@ public sealed class CoreIpcClient
     public Task RequestTaskHistoryAsync(string taskId, uint limit, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.GetTaskHistory(taskId, limit), cancellationToken);
 
+    public Task CreateTaskAsync(
+        string taskId,
+        string projectId,
+        string parentId,
+        string title,
+        string description,
+        string acceptanceCriteria,
+        long priority,
+        CancellationToken cancellationToken) =>
+        SendPayloadAsync(
+            ProtocolEnvelope.CreateTask(taskId, projectId, parentId, title, description, acceptanceCriteria, priority),
+            cancellationToken);
+
+    public Task AddTaskEdgeAsync(string fromTaskId, string toTaskId, string kind, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.AddTaskEdge(fromTaskId, toTaskId, kind), cancellationToken);
+
     public async Task<ulong> ReadReplayAsync(
         ulong afterSequence,
         Func<CoreEventEnvelope, Task> onEvent,
