@@ -1027,6 +1027,9 @@ public partial class MainWindow : Window
         var build = new Button { Content = "Build preview", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
         build.Click += async (_, _) => await PrepareBuildDialogAsync(task);
         actions.Children.Add(build);
+        var policy = new Button { Content = "Policy", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
+        policy.Click += async (_, _) => await EditBuildPolicyAsync();
+        actions.Children.Add(policy);
         var subtask = new Button { Content = "Подзадача", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
         subtask.Click += async (_, _) => await CreateTaskDialogAsync(task.Id);
         actions.Children.Add(subtask);
@@ -1562,6 +1565,87 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task EditBuildPolicyAsync()
+    {
+        var project = ActiveProject();
+        if (project is null || _taskWorkspaceStatus is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                await EnsureCoreProjectAsync(project);
+                await _ipc.RequestBuildPolicyAsync(project.Id, CancellationToken.None);
+                var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                if (response.EventType != "build.policy")
+                {
+                    throw new InvalidOperationException("Core не вернул build policy.");
+                }
+                var current = JsonSerializer.Deserialize<BuildPolicyEnvelope>(response.Payload)
+                    ?? throw new InvalidOperationException("Core вернул пустую build policy.");
+                var paths = new TextBox { Header = "Разрешённые пути (через запятую)", Text = string.Join(", ", current.Policy.AllowedPaths) };
+                var operations = new TextBox { Header = "Разрешённые операции (через запятую)", Text = string.Join(", ", current.Policy.AllowedOperations) };
+                var maxFiles = new NumberBox { Header = "Максимум изменённых файлов", Value = current.Policy.MaxFilesChanged, Minimum = 1, Maximum = 1000, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };
+                var maxBytes = new NumberBox { Header = "Максимум изменённых байт", Value = current.Policy.MaxBytesChanged, Minimum = 1, Maximum = 16 * 1024 * 1024, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };
+                var timeout = new NumberBox { Header = "Таймаут Build (мс)", Value = current.Policy.TimeoutMs, Minimum = 1, Maximum = 300000, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };
+                var risk = new ComboBox { Header = "Класс риска", ItemsSource = new[] { "low", "medium", "high" }, SelectedItem = current.Policy.RiskClass };
+                var allowCreate = new CheckBox { Content = "Разрешить создание файлов", IsChecked = current.Policy.AllowCreate };
+                var allowDelete = new CheckBox { Content = "Разрешить удаление файлов", IsChecked = current.Policy.AllowDelete };
+                var allowRename = new CheckBox { Content = "Разрешить переименование", IsChecked = current.Policy.AllowRename };
+                var dialog = new ContentDialog
+                {
+                    Title = $"Build policy · версия {current.Version}",
+                    Content = new ScrollViewer { Content = new StackPanel { Spacing = 8, Children = { paths, operations, maxFiles, maxBytes, timeout, risk, allowCreate, allowDelete, allowRename } } },
+                    PrimaryButtonText = "Сохранить в Core",
+                    CloseButtonText = "Отмена",
+                    XamlRoot = ((FrameworkElement)Content).XamlRoot,
+                };
+                if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                {
+                    return;
+                }
+
+                var policy = current.Policy with
+                {
+                    AllowedPaths = SplitPolicyList(paths.Text),
+                    AllowedOperations = SplitPolicyList(operations.Text),
+                    MaxFilesChanged = (int)maxFiles.Value,
+                    MaxBytesChanged = (int)maxBytes.Value,
+                    TimeoutMs = (int)timeout.Value,
+                    RiskClass = risk.SelectedItem as string ?? current.Policy.RiskClass,
+                    AllowCreate = allowCreate.IsChecked == true,
+                    AllowDelete = allowDelete.IsChecked == true,
+                    AllowRename = allowRename.IsChecked == true,
+                };
+                var policyJson = JsonSerializer.SerializeToUtf8Bytes(policy);
+                await _ipc.SaveBuildPolicyAsync(project.Id, policyJson, current.Version, CancellationToken.None);
+                var saved = await _ipc.ReadEventAsync(CancellationToken.None);
+                if (saved.EventType != "build.policy.saved")
+                {
+                    throw new InvalidOperationException("Core не подтвердил сохранение policy.");
+                }
+                _taskWorkspaceStatus.Text = "Build policy сохранена в Core.";
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+        {
+            _taskWorkspaceStatus.Text = $"Policy не сохранена: {error.Message}";
+        }
+    }
+
+    private static string[] SplitPolicyList(string value) => value
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Where(item => !string.IsNullOrWhiteSpace(item))
+        .ToArray();
+
     private async Task RequestNextReadyTaskAsync()
     {
         var project = ActiveProject();
@@ -1789,6 +1873,11 @@ public partial class MainWindow : Window
     private sealed record BuildProposalDto(
         [property: JsonPropertyName("scope")] BuildScopeDto Scope,
         [property: JsonPropertyName("changes")] BuildChangeDto[] Changes);
+
+    private sealed record BuildPolicyEnvelope(
+        [property: JsonPropertyName("project_id")] string ProjectId,
+        [property: JsonPropertyName("version")] long Version,
+        [property: JsonPropertyName("policy")] BuildScopeDto Policy);
 
     private sealed record BuildScopeDto(
         [property: JsonPropertyName("allowed_paths")] string[] AllowedPaths,

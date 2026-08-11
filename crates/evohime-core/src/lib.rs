@@ -596,6 +596,16 @@ pub enum CoreCommand {
         snapshot_id: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    GetBuildPolicy {
+        project_id: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    SaveBuildPolicy {
+        project_id: String,
+        policy_json: Vec<u8>,
+        expected_version: i64,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     ApplyApprovedBuild {
         project_id: String,
         run_id: String,
@@ -684,6 +694,15 @@ fn default_build_policy() -> crate::scope::BuildScope {
     }
 }
 
+fn harden_build_policy(mut policy: crate::scope::BuildScope) -> crate::scope::BuildScope {
+    for required in [".git", ".evohime"] {
+        if !policy.protected_paths.iter().any(|path| path == required) {
+            policy.protected_paths.push(required.into());
+        }
+    }
+    policy
+}
+
 impl EventJournal {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, StorageError> {
         Ok(Self {
@@ -758,13 +777,39 @@ impl EventJournal {
             .map_err(|error| error.to_string())?
         {
             return serde_json::from_slice(&record.policy_json)
+                .map(harden_build_policy)
                 .map_err(|error| format!("invalid persisted build policy: {error}"));
         }
         let policy_json = serde_json::to_vec(default_policy).map_err(|error| error.to_string())?;
         database
             .upsert_project_policy(project_id, &policy_json, None)
             .map_err(|error| error.to_string())?;
-        Ok(default_policy.clone())
+        Ok(harden_build_policy(default_policy.clone()))
+    }
+
+    pub async fn get_build_policy(
+        &self,
+        project_id: &str,
+        default_policy: &crate::scope::BuildScope,
+    ) -> Result<(crate::scope::BuildScope, i64), String> {
+        let database = self.database.lock().await;
+        let record = match database
+            .get_project_policy(project_id)
+            .map_err(|error| error.to_string())?
+        {
+            Some(record) => record,
+            None => {
+                let policy_json =
+                    serde_json::to_vec(default_policy).map_err(|error| error.to_string())?;
+                database
+                    .upsert_project_policy(project_id, &policy_json, None)
+                    .map_err(|error| error.to_string())?
+            }
+        };
+        let policy = serde_json::from_slice(&record.policy_json)
+            .map(harden_build_policy)
+            .map_err(|error| format!("invalid persisted build policy: {error}"))?;
+        Ok((policy, record.version))
     }
 
     pub async fn save_build_policy(
@@ -2132,6 +2177,33 @@ impl TaskCoordinator {
                     .map_err(|error| error.to_string())?)
                 }
                 .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::GetBuildPolicy { project_id, reply } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let project = journal.get_project(&project_id).await.map_err(|error| error.to_string())?.ok_or_else(|| "project not found".to_string())?;
+                    let (policy, version) = journal.get_build_policy(&project.id, &default_build_policy()).await?;
+                    serde_json::to_vec(&serde_json::json!({ "project_id": project_id, "version": version, "policy": policy })).map_err(|error| error.to_string())
+                }.await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::SaveBuildPolicy {
+                project_id,
+                policy_json,
+                expected_version,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    journal.get_project(&project_id).await.map_err(|error| error.to_string())?.ok_or_else(|| "project not found".to_string())?;
+                    let policy = harden_build_policy(serde_json::from_slice::<crate::scope::BuildScope>(&policy_json).map_err(|error| format!("invalid build policy: {error}"))?);
+                    if let Some(violation) = crate::scope::validate_build_scope(&policy, &[]).first() { return Err(format!("invalid build policy: {}", violation.reason)); }
+                    let saved = journal.save_build_policy(&project_id, &policy, Some(expected_version)).await?;
+                    serde_json::to_vec(&serde_json::json!({ "project_id": project_id, "version": saved.version, "policy": policy })).map_err(|error| error.to_string())
+                }.await;
                 let _ = reply.send(result);
             }
             CoreCommand::ApplyApprovedBuild {

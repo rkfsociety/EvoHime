@@ -240,6 +240,7 @@ MVP-1 milestone после этапа 1: пользователь видит п�
 
 - [x] В MVP-2 оставить read-only `/plan` и `/spec`, Build только по ограниченному списку разрешённых текстовых файлов и один approval на весь bounded Build; полный lifecycle mutation matrix, compaction и сложный rollback расширяются после feedback.
 - [x] Хранить project build-policy в Core/SQLite с versioning: proposal может только сузить persisted limits, risk и timeout; defaults не принадлежат WinUI.
+- [x] Добавить IPC `GetBuildPolicy`/`SaveBuildPolicy` и WinUI policy panel для allowed paths, operations, budgets, timeout и risk с optimistic version check.
 - [x] Добавить context assembler из task, acceptance criteria, non-goals, локальных workspace references и ручных подсказок пользователя. Research stub пустой, но Plan/Build полностью offline и не зависит от research.
 - Snapshot минимален и связан с run: `snapshot { id, run_id, workspace_hash, diff[], created_at }`; snapshot+diff атомарны. Он не включает SQLite и не откатывает external effects. UI явно показывает эту границу.
 - Для workspace использовать manifest + content hashes; ограничить snapshot размером и текстовыми файлами MVP. Запись требует `expected_content_hash`; mismatch даёт workspace conflict, а не overwrite. Git diff/rollback — отдельный ограниченный Core tool, auto-commit/push не входят.

@@ -4,10 +4,10 @@ use serde::Serialize;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use crate::{ApprovalCoordinator, CoreCommand, EventJournal, TaskCoordinator};
-use evohime_model_gateway::ModelGatewayConfig;
-use evohime_tool_runtime::ToolRegistry;
-use evohime_permissions::{Permission, PermissionMode};
 use evohime_local_storage::WorkItemRecord;
+use evohime_model_gateway::ModelGatewayConfig;
+use evohime_permissions::{Permission, PermissionMode};
+use evohime_tool_runtime::ToolRegistry;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 
@@ -162,7 +162,8 @@ impl IpcBridge {
                 transport::write_frame(writer, &end.encode_to_vec()).await?;
             }
             Some(generated::command_envelope::Command::ModelConfig(_)) => {
-                let payload = serde_json::to_vec(&self.model_config).unwrap_or_else(|_| b"null".to_vec());
+                let payload =
+                    serde_json::to_vec(&self.model_config).unwrap_or_else(|_| b"null".to_vec());
                 let event = generated::EventEnvelope {
                     protocol: Some(protocol()),
                     sequence_id: 0,
@@ -176,7 +177,11 @@ impl IpcBridge {
                 transport::write_frame(writer, &event.encode_to_vec()).await?;
             }
             Some(generated::command_envelope::Command::ModelCatalog(request)) => {
-                let mode = if request.mode == "paid" { "paid" } else { "free" };
+                let mode = if request.mode == "paid" {
+                    "paid"
+                } else {
+                    "free"
+                };
                 let result = self
                     .gateway_config
                     .as_ref()
@@ -248,7 +253,8 @@ impl IpcBridge {
                 let result = self
                     .dispatch_create_project(client_id, request_id, command_hash, request)
                     .await?;
-                self.write_response(writer, "project.created", result).await?;
+                self.write_response(writer, "project.created", result)
+                    .await?;
             }
             Some(generated::command_envelope::Command::CreateTask(request)) => {
                 let item = WorkItemRecord {
@@ -260,7 +266,11 @@ impl IpcBridge {
                     source_ref: (!request.source_ref.is_empty()).then_some(request.source_ref),
                     acceptance_criteria: request.acceptance_criteria,
                     non_goals: request.non_goals,
-                    status: if request.status.is_empty() { "backlog".into() } else { request.status },
+                    status: if request.status.is_empty() {
+                        "backlog".into()
+                    } else {
+                        request.status
+                    },
                     priority: request.priority,
                     estimate: (request.estimate != 0).then_some(request.estimate),
                     complexity: (!request.complexity.is_empty()).then_some(request.complexity),
@@ -283,7 +293,8 @@ impl IpcBridge {
                         request.status,
                     )
                     .await?;
-                self.write_response(writer, "task.status_updated", result).await?;
+                self.write_response(writer, "task.status_updated", result)
+                    .await?;
             }
             Some(generated::command_envelope::Command::AddTaskEdge(request)) => {
                 let result = self
@@ -296,7 +307,8 @@ impl IpcBridge {
                         request.kind,
                     )
                     .await?;
-                self.write_response(writer, "task.edge_added", result).await?;
+                self.write_response(writer, "task.edge_added", result)
+                    .await?;
             }
             Some(generated::command_envelope::Command::GetTaskGraph(request)) => {
                 let result = self.dispatch_get_task_graph(request.project_id).await?;
@@ -304,16 +316,12 @@ impl IpcBridge {
             }
             Some(generated::command_envelope::Command::NextReadyTask(request)) => {
                 let result = self.dispatch_next_ready_task(request.project_id).await?;
-                self.write_response(writer, "task.next_ready", result).await?;
+                self.write_response(writer, "task.next_ready", result)
+                    .await?;
             }
             Some(generated::command_envelope::Command::ImportPrd(request)) => {
                 let result = self
-                    .dispatch_import_prd(
-                        client_id,
-                        request_id,
-                        command_hash,
-                        request,
-                    )
+                    .dispatch_import_prd(client_id, request_id, command_hash, request)
                     .await?;
                 self.write_response(writer, "prd.imported", result).await?;
             }
@@ -325,15 +333,24 @@ impl IpcBridge {
             }
             Some(generated::command_envelope::Command::GetTaskContext(request)) => {
                 let result = self
-                    .dispatch_get_task_context(request.project_id, request.task_id, request.max_chars as usize)
+                    .dispatch_get_task_context(
+                        request.project_id,
+                        request.task_id,
+                        request.max_chars as usize,
+                    )
                     .await?;
                 self.write_response(writer, "task.context", result).await?;
             }
             Some(generated::command_envelope::Command::GetTaskPlanSpec(request)) => {
                 let result = self
-                    .dispatch_get_task_plan_spec(request.project_id, request.task_id, request.max_chars as usize)
+                    .dispatch_get_task_plan_spec(
+                        request.project_id,
+                        request.task_id,
+                        request.max_chars as usize,
+                    )
                     .await?;
-                self.write_response(writer, "task.plan_spec", result).await?;
+                self.write_response(writer, "task.plan_spec", result)
+                    .await?;
             }
             Some(generated::command_envelope::Command::ApplyApprovedBuild(request)) => {
                 let result = self
@@ -350,7 +367,8 @@ impl IpcBridge {
                 let result = self
                     .dispatch_prepare_build(request.project_id, request.proposal_json)
                     .await?;
-                self.write_response(writer, "build.prepared", result).await?;
+                self.write_response(writer, "build.prepared", result)
+                    .await?;
             }
             Some(generated::command_envelope::Command::GetTaskSnapshot(request)) => {
                 let result = self
@@ -360,9 +378,29 @@ impl IpcBridge {
             }
             Some(generated::command_envelope::Command::RestoreTaskSnapshot(request)) => {
                 let result = self
-                    .dispatch_restore_task_snapshot(request.project_id, request.task_id, request.snapshot_id)
+                    .dispatch_restore_task_snapshot(
+                        request.project_id,
+                        request.task_id,
+                        request.snapshot_id,
+                    )
                     .await?;
-                self.write_response(writer, "snapshot.restored", result).await?;
+                self.write_response(writer, "snapshot.restored", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::GetBuildPolicy(request)) => {
+                let result = self.dispatch_get_build_policy(request.project_id).await?;
+                self.write_response(writer, "build.policy", result).await?;
+            }
+            Some(generated::command_envelope::Command::SaveBuildPolicy(request)) => {
+                let result = self
+                    .dispatch_save_build_policy(
+                        request.project_id,
+                        request.policy_json,
+                        request.expected_version,
+                    )
+                    .await?;
+                self.write_response(writer, "build.policy.saved", result)
+                    .await?;
             }
             Some(generated::command_envelope::Command::StartTask(start)) => {
                 if let Some(coordinator) = &self.coordinator {
@@ -533,10 +571,7 @@ impl IpcBridge {
             .map_err(IpcBridgeError::from)
     }
 
-    async fn dispatch_get_task_graph(
-        &self,
-        project_id: String,
-    ) -> Result<Vec<u8>, IpcBridgeError> {
+    async fn dispatch_get_task_graph(&self, project_id: String) -> Result<Vec<u8>, IpcBridgeError> {
         let coordinator = self
             .coordinator
             .as_ref()
@@ -750,7 +785,11 @@ impl IpcBridge {
             .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
         let (reply, response) = oneshot::channel();
         coordinator
-            .dispatch(CoreCommand::GetTaskSnapshot { project_id, task_id, reply })
+            .dispatch(CoreCommand::GetTaskSnapshot {
+                project_id,
+                task_id,
+                reply,
+            })
             .await
             .map_err(|error| FrameError::Io(error.to_string()))?;
         response
@@ -772,7 +811,59 @@ impl IpcBridge {
             .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
         let (reply, response) = oneshot::channel();
         coordinator
-            .dispatch(CoreCommand::RestoreTaskSnapshot { project_id, task_id, snapshot_id, reply })
+            .dispatch(CoreCommand::RestoreTaskSnapshot {
+                project_id,
+                task_id,
+                snapshot_id,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_get_build_policy(
+        &self,
+        project_id: String,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::GetBuildPolicy { project_id, reply })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_save_build_policy(
+        &self,
+        project_id: String,
+        policy_json: Vec<u8>,
+        expected_version: i64,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::SaveBuildPolicy {
+                project_id,
+                policy_json,
+                expected_version,
+                reply,
+            })
             .await
             .map_err(|error| FrameError::Io(error.to_string()))?;
         response
@@ -876,7 +967,8 @@ mod tests {
 
     #[tokio::test]
     async fn handshake_exposes_runtime_identity() {
-        let path = std::env::temp_dir().join(format!("evohime-ipc-handshake-{}.db", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("evohime-ipc-handshake-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let bridge = IpcBridge::new(EventJournal::open(&path).expect("journal opens"));
         let (mut client, server) = duplex(16 * 1024);
@@ -905,7 +997,9 @@ mod tests {
             .process_once(&mut server_reader, &mut server_writer)
             .await
             .expect("handshake serves");
-        let response = transport::read_frame(&mut client).await.expect("response reads");
+        let response = transport::read_frame(&mut client)
+            .await
+            .expect("response reads");
         let event = generated::EventEnvelope::decode(response.as_slice()).expect("event decodes");
         assert!(!event.core_instance_id.is_empty());
         assert!(event.session_epoch > 0);
@@ -914,7 +1008,8 @@ mod tests {
 
     #[tokio::test]
     async fn malformed_command_is_rejected_without_crashing_bridge() {
-        let path = std::env::temp_dir().join(format!("evohime-ipc-malformed-{}.db", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("evohime-ipc-malformed-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let bridge = IpcBridge::new(EventJournal::open(&path).expect("journal opens"));
         let (mut client, server) = duplex(1024);
@@ -923,7 +1018,9 @@ mod tests {
             .await
             .expect("malformed frame writes");
         assert!(matches!(
-            bridge.process_once(&mut server_reader, &mut server_writer).await,
+            bridge
+                .process_once(&mut server_reader, &mut server_writer)
+                .await,
             Err(IpcBridgeError::Protobuf(_))
         ));
         let _ = std::fs::remove_file(path);
@@ -931,15 +1028,22 @@ mod tests {
 
     #[tokio::test]
     async fn reconnect_replays_only_events_after_last_sequence() {
-        let path = std::env::temp_dir().join(format!("evohime-ipc-reconnect-{}.db", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("evohime-ipc-reconnect-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let journal = EventJournal::open(&path).expect("journal opens");
         let first = journal
-            .record(&CoreEvent::TaskStarted { task_id: "task-reconnect".into(), prompt: "one".into() })
+            .record(&CoreEvent::TaskStarted {
+                task_id: "task-reconnect".into(),
+                prompt: "one".into(),
+            })
             .await
             .expect("first event");
         journal
-            .record(&CoreEvent::TaskCompleted { task_id: "task-reconnect".into(), final_message: "two".into() })
+            .record(&CoreEvent::TaskCompleted {
+                task_id: "task-reconnect".into(),
+                final_message: "two".into(),
+            })
             .await
             .expect("second event");
         let bridge = IpcBridge::new(journal);
@@ -952,7 +1056,9 @@ mod tests {
             core_instance_id: String::new(),
             session_epoch: 2,
             command: Some(generated::command_envelope::Command::ReplayEvents(
-                generated::ReplayEvents { after_sequence: first as u64 },
+                generated::ReplayEvents {
+                    after_sequence: first as u64,
+                },
             )),
         };
         transport::write_frame(&mut client, &command.encode_to_vec())
@@ -962,7 +1068,9 @@ mod tests {
             .process_once(&mut server_reader, &mut server_writer)
             .await
             .expect("reconnect serves");
-        let response = transport::read_frame(&mut client).await.expect("event reads");
+        let response = transport::read_frame(&mut client)
+            .await
+            .expect("event reads");
         let event = generated::EventEnvelope::decode(response.as_slice()).expect("event decodes");
         assert_eq!(event.event_type, "task.completed");
         assert_eq!(event.sequence_id, first as u64 + 1);
@@ -1000,7 +1108,9 @@ mod tests {
             .process_once(&mut server_reader, &mut server_writer)
             .await
             .expect("project creates");
-        let first = transport::read_frame(&mut client).await.expect("first response");
+        let first = transport::read_frame(&mut client)
+            .await
+            .expect("first response");
 
         transport::write_frame(&mut client, &command.encode_to_vec())
             .await
@@ -1009,17 +1119,24 @@ mod tests {
             .process_once(&mut server_reader, &mut server_writer)
             .await
             .expect("duplicate replays");
-        let second = transport::read_frame(&mut client).await.expect("second response");
+        let second = transport::read_frame(&mut client)
+            .await
+            .expect("second response");
         assert_eq!(first, second);
 
         let mut conflict = command.clone();
-        if let Some(generated::command_envelope::Command::CreateProject(project)) = &mut conflict.command {
+        if let Some(generated::command_envelope::Command::CreateProject(project)) =
+            &mut conflict.command
+        {
             project.title = "Different".into();
         }
         transport::write_frame(&mut client, &conflict.encode_to_vec())
             .await
             .expect("conflicting writes");
-        assert!(bridge.process_once(&mut server_reader, &mut server_writer).await.is_err());
+        assert!(bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .is_err());
         let _ = std::fs::remove_file(path);
     }
 
@@ -1054,7 +1171,9 @@ mod tests {
             .process_once(&mut server_reader, &mut server_writer)
             .await
             .expect("project creates");
-        let _ = transport::read_frame(&mut client).await.expect("project response");
+        let _ = transport::read_frame(&mut client)
+            .await
+            .expect("project response");
 
         let import = generated::CommandEnvelope {
             protocol: Some(protocol()),
@@ -1079,21 +1198,44 @@ mod tests {
             .process_once(&mut server_reader, &mut server_writer)
             .await
             .expect("import succeeds");
-        let response = transport::read_frame(&mut client).await.expect("import response");
+        let response = transport::read_frame(&mut client)
+            .await
+            .expect("import response");
         let event = generated::EventEnvelope::decode(response.as_slice()).expect("event decodes");
         assert_eq!(event.event_type, "prd.imported");
-        assert_eq!(journal.list_task_graph("project-prd").await.unwrap().0.len(), 1);
+        assert_eq!(
+            journal
+                .list_task_graph("project-prd")
+                .await
+                .unwrap()
+                .0
+                .len(),
+            1
+        );
 
         let mut duplicate = import;
-        if let Some(generated::command_envelope::Command::ImportPrd(request)) = &mut duplicate.command {
+        if let Some(generated::command_envelope::Command::ImportPrd(request)) =
+            &mut duplicate.command
+        {
             request.source_text.push_str("\n## Another");
             duplicate.request_id = "import-prd-2".into();
         }
         transport::write_frame(&mut client, &duplicate.encode_to_vec())
             .await
             .expect("duplicate writes");
-        assert!(bridge.process_once(&mut server_reader, &mut server_writer).await.is_err());
-        assert_eq!(journal.list_task_graph("project-prd").await.unwrap().0.len(), 1);
+        assert!(bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .is_err());
+        assert_eq!(
+            journal
+                .list_task_graph("project-prd")
+                .await
+                .unwrap()
+                .0
+                .len(),
+            1
+        );
         let _ = std::fs::remove_file(path);
     }
 }

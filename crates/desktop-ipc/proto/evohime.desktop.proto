@@ -129,6 +129,16 @@ message RestoreTaskSnapshot {
   string snapshot_id = 3;
 }
 
+message GetBuildPolicy {
+  string project_id = 1;
+}
+
+message SaveBuildPolicy {
+  string project_id = 1;
+  bytes policy_json = 2;
+  int64 expected_version = 3;
+}
+
 message StartTask {
   string task_id = 1;
   string prompt = 2;
@@ -173,6 +183,8 @@ message CommandEnvelope {
     PrepareBuild prepare_build = 29;
     GetTaskSnapshot get_task_snapshot = 30;
     RestoreTaskSnapshot restore_task_snapshot = 31;
+    GetBuildPolicy get_build_policy = 32;
+    SaveBuildPolicy save_build_policy = 33;
   }
 }
 

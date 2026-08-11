@@ -22,7 +22,7 @@
 
 1. Foundation — solution, core, SQLite, IPC, logging. Завершён.
 2. Native shell — task workspace, replay/reconnect, tray and notifications. Завершён.
-3. Agent workflow — streaming, approvals, cancellation, checkpoints and diff review. В работе: streaming, cancellation, approval round-trip, bounded Build recovery checkpoints и Core-owned project policy завершены; leases/reconciliation и расширенный diff review продолжаются.
+3. Agent workflow — streaming, approvals, cancellation, checkpoints and diff review. В работе: streaming, cancellation, approval round-trip, bounded Build recovery checkpoints, Core-owned project policy и WinUI policy panel завершены; leases/reconciliation и расширенный diff review продолжаются.
 4. Developer tools — files, editor, Git and controlled terminal. Следующий этап.
 5. Product hardening — credentials, backup/restore, installer, update and crash recovery. В работе.
 6. Release cleanup — единый installer, retention релизов, диагностика и чистый native CI. В работе.

@@ -136,6 +136,12 @@ public sealed class CoreIpcClient
     public Task RestoreTaskSnapshotAsync(string projectId, string taskId, string snapshotId, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.RestoreTaskSnapshot(projectId, taskId, snapshotId), cancellationToken);
 
+    public Task RequestBuildPolicyAsync(string projectId, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.GetBuildPolicy(projectId), cancellationToken);
+
+    public Task SaveBuildPolicyAsync(string projectId, byte[] policyJson, long expectedVersion, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.SaveBuildPolicy(projectId, policyJson, expectedVersion), cancellationToken);
+
     public async Task<ulong> ReadReplayAsync(
         ulong afterSequence,
         Func<CoreEventEnvelope, Task> onEvent,

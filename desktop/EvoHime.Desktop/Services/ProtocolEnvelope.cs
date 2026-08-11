@@ -239,6 +239,17 @@ public static class ProtocolEnvelope
         WriteString(output, 3, snapshotId);
     });
 
+    public static byte[] GetBuildPolicy(string projectId) => TaskCommand(32, output => WriteString(output, 1, projectId));
+
+    public static byte[] SaveBuildPolicy(string projectId, byte[] policyJson, long expectedVersion) => TaskCommand(33, output =>
+    {
+        WriteString(output, 1, projectId);
+        output.WriteTag(2, WireFormat.WireType.LengthDelimited);
+        output.WriteBytes(ByteString.CopyFrom(policyJson));
+        output.WriteTag(3, WireFormat.WireType.Varint);
+        output.WriteInt64(expectedVersion);
+    });
+
     public static CoreEventEnvelope ReadEvent(ReadOnlySpan<byte> payload)
     {
         using var input = new CodedInputStream(payload.ToArray());
