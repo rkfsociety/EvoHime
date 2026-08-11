@@ -1227,9 +1227,6 @@ public partial class MainWindow : Window
 
     private void CompleteTaskUi(string status)
     {
-        _eventCts?.Cancel();
-        _eventCts?.Dispose();
-        _eventCts = null;
         _activeTaskId = null;
         StartButton.IsEnabled = true;
         StopButton.IsEnabled = false;
@@ -1637,8 +1634,11 @@ public partial class MainWindow : Window
             _attachments.Clear();
             UpdateAttachmentsText();
             ConnectionStatus.Text = $"Задача {_activeTaskId}: выполняется";
-            _eventCts = new CancellationTokenSource();
-            _ = PumpEventsAsync(_eventCts.Token);
+            if (_eventCts is null)
+            {
+                _eventCts = new CancellationTokenSource();
+                _ = PumpEventsAsync(_eventCts.Token);
+            }
             StartButton.IsEnabled = false;
             StopButton.IsEnabled = true;
         }
@@ -1779,7 +1779,7 @@ public partial class MainWindow : Window
 
     private async Task PumpEventsAsync(CancellationToken cancellationToken)
     {
-        while (!cancellationToken.IsCancellationRequested && _activeTaskId is not null)
+        while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
