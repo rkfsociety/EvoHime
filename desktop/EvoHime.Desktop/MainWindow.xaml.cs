@@ -1175,6 +1175,9 @@ public partial class MainWindow : Window
             }
             switch (envelope.EventType)
             {
+                case "task.started":
+                    AddConversationActivity("Ева отправила запрос модели, ожидаю ответ…");
+                    break;
                 case "agent.message.delta":
                     AppendAssistantDelta(PayloadString(root, "content"));
                     break;
@@ -1196,14 +1199,17 @@ public partial class MainWindow : Window
                     }
                     AddConversationActivity("Задача завершена");
                     _streamingAssistantText = null;
+                    CompleteTaskUi("Задача завершена");
                     break;
                 case "task.failed":
                     AddConversationMessage("Ева", $"Задача завершилась с ошибкой: {PayloadString(root, "error")}", false);
                     _streamingAssistantText = null;
+                    CompleteTaskUi("Задача завершилась с ошибкой");
                     break;
                 case "task.stopped":
                     AddConversationActivity("Задача остановлена");
                     _streamingAssistantText = null;
+                    CompleteTaskUi("Задача остановлена");
                     break;
             }
         }
@@ -1218,6 +1224,17 @@ public partial class MainWindow : Window
 
     private void ScrollConversationToBottom() =>
         _ = DispatcherQueue.TryEnqueue(() => _conversationScroll?.ChangeView(null, double.MaxValue, null));
+
+    private void CompleteTaskUi(string status)
+    {
+        _eventCts?.Cancel();
+        _eventCts?.Dispose();
+        _eventCts = null;
+        _activeTaskId = null;
+        StartButton.IsEnabled = true;
+        StopButton.IsEnabled = false;
+        ConnectionStatus.Text = status;
+    }
 
     private async void AttachFiles_Click(object sender, RoutedEventArgs e)
     {

@@ -40,7 +40,7 @@ impl CoreVersion {
     }
 }
 
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 
 use evohime_local_storage::{EventRecord, LocalDatabase, StorageError};
 use evohime_model_gateway::{
@@ -52,6 +52,7 @@ use futures_util::future::BoxFuture;
 use futures_util::StreamExt;
 use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
+use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,6 +161,8 @@ pub enum AgentRunError {
     Provider(#[from] ProviderError),
     #[error("agent execution was cancelled")]
     Cancelled,
+    #[error("agent execution timed out after {0} seconds")]
+    Timeout(u64),
 }
 
 #[derive(Clone, Default)]
@@ -572,19 +575,23 @@ impl TaskCoordinator {
                 drop(state_guard);
                 tokio::spawn(async move {
                     let result = match executor {
-                        Some(executor) => {
-                            executor
-                                .execute_in_workspace(
-                                    task_id.clone(),
-                                    prompt,
-                                    workspace_root.unwrap_or_else(|| {
-                                        std::env::current_dir().unwrap_or_default()
-                                    }),
-                                    cancellation.clone(),
-                                    events.clone(),
-                                )
-                                .await
-                        }
+                        Some(executor) => match timeout(
+                            Duration::from_secs(60),
+                            executor.execute_in_workspace(
+                                task_id.clone(),
+                                prompt,
+                                workspace_root.unwrap_or_else(|| {
+                                    std::env::current_dir().unwrap_or_default()
+                                }),
+                                cancellation.clone(),
+                                events.clone(),
+                            ),
+                        )
+                        .await
+                        {
+                            Ok(result) => result,
+                            Err(_) => Err(AgentRunError::Timeout(60)),
+                        },
                         None => {
                             cancellation.cancelled().await;
                             Err(AgentRunError::Cancelled)

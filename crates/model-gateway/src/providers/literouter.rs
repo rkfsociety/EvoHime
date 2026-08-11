@@ -10,6 +10,7 @@ use futures_util::StreamExt;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::Value;
+use std::time::Duration;
 
 /// LiteRouter — OpenAI-compatible provider.
 ///
@@ -34,6 +35,8 @@ impl LiteRouterProvider {
         }
 
         let client = Client::builder()
+            .connect_timeout(Duration::from_secs(15))
+            .timeout(Duration::from_secs(60))
             .build()
             .map_err(|error| ProviderError::Http(error.to_string()))?;
 
