@@ -5,6 +5,7 @@ use std::{
 };
 
 use rusqlite::{Connection, OptionalExtension};
+use serde::{Deserialize, Serialize};
 
 pub const SCHEMA_VERSION: u32 = 2;
 
@@ -73,6 +74,45 @@ pub struct WorkItemRecord {
     pub complexity: Option<String>,
     pub attempt_count: i64,
     pub version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoleRef {
+    pub id: String,
+    pub version: String,
+    pub hash: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillRef {
+    pub id: String,
+    pub version: String,
+    pub hash: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PolicySnapshot {
+    pub schema_version: u32,
+    pub policy_version: u32,
+    pub effective_permissions_hash: String,
+    pub canonical_json: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelRouteSnapshot {
+    pub requested_route: String,
+    pub resolved_provider: String,
+    pub resolved_model: String,
+    pub route_policy_version: u32,
+    pub canonical_json: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunSnapshots {
+    pub role_ref: RoleRef,
+    pub skill_ref: SkillRef,
+    pub policy: PolicySnapshot,
+    pub model_route: ModelRouteSnapshot,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -336,6 +376,37 @@ impl LocalDatabase {
             .optional()?)
     }
 
+    pub fn create_run_with_snapshots(
+        &self,
+        id: &str,
+        work_item_id: &str,
+        status: &str,
+        snapshots: &RunSnapshots,
+    ) -> Result<RunRecord, StorageError> {
+        let run = RunRecord {
+            id: id.into(),
+            work_item_id: work_item_id.into(),
+            status: status.into(),
+            policy_snapshot: serde_json::to_vec(&snapshots.policy)?,
+            role_snapshot: serde_json::to_vec(&snapshots.role_ref)?,
+            skill_snapshot: serde_json::to_vec(&snapshots.skill_ref)?,
+            model_route_snapshot: serde_json::to_vec(&snapshots.model_route)?,
+        };
+        self.create_run(&run)
+    }
+
+    pub fn get_run_snapshots(&self, id: &str) -> Result<Option<RunSnapshots>, StorageError> {
+        let Some(run) = self.get_run(id)? else {
+            return Ok(None);
+        };
+        Ok(Some(RunSnapshots {
+            role_ref: serde_json::from_slice(&run.role_snapshot)?,
+            skill_ref: serde_json::from_slice(&run.skill_snapshot)?,
+            policy: serde_json::from_slice(&run.policy_snapshot)?,
+            model_route: serde_json::from_slice(&run.model_route_snapshot)?,
+        }))
+    }
+
     pub fn append_event(
         &self,
         task_id: &str,
@@ -469,7 +540,10 @@ impl LocalDatabase {
 
 #[cfg(test)]
 mod tests {
-    use super::{LocalDatabase, RunRecord, StorageError, WorkItemRecord, SCHEMA_VERSION};
+    use super::{
+        LocalDatabase, ModelRouteSnapshot, PolicySnapshot, RoleRef, RunRecord, RunSnapshots,
+        SkillRef, StorageError, WorkItemRecord, SCHEMA_VERSION,
+    };
     use std::path::PathBuf;
 
     fn temp_database_path(name: &str) -> PathBuf {
@@ -671,6 +745,57 @@ mod tests {
         assert_eq!(database.create_run(&run).expect("run creates"), run);
         assert!(database.create_run(&run).is_err(), "run snapshot is immutable");
         assert_eq!(database.get_run("run-1").expect("run reads"), Some(run));
+        drop(database);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn round_trips_typed_snapshot_contracts() {
+        let path = temp_database_path("typed-snapshots");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        database
+            .create_project("project-typed", "Typed", "C:\\Projects\\typed", None)
+            .expect("project creates");
+        database
+            .create_work_item(&WorkItemRecord {
+                id: "task-typed".into(),
+                project_id: "project-typed".into(),
+                parent_id: None,
+                title: "Typed task".into(),
+                description: String::new(),
+                source_ref: None,
+                acceptance_criteria: String::new(),
+                non_goals: String::new(),
+                status: "ready".into(),
+                priority: 0,
+                estimate: None,
+                complexity: None,
+                attempt_count: 0,
+                version: 1,
+            })
+            .expect("task creates");
+        let snapshots = RunSnapshots {
+            role_ref: RoleRef { id: "planner".into(), version: "1".into(), hash: "role-hash".into() },
+            skill_ref: SkillRef { id: "native".into(), version: "2".into(), hash: "skill-hash".into() },
+            policy: PolicySnapshot {
+                schema_version: 1,
+                policy_version: 3,
+                effective_permissions_hash: "permissions-hash".into(),
+                canonical_json: br#"{"tools":["filesystem.read"]}"#.to_vec(),
+            },
+            model_route: ModelRouteSnapshot {
+                requested_route: "local-first".into(),
+                resolved_provider: "mock".into(),
+                resolved_model: "test-model".into(),
+                route_policy_version: 1,
+                canonical_json: br#"{"route":"local-first"}"#.to_vec(),
+            },
+        };
+        database
+            .create_run_with_snapshots("run-typed", "task-typed", "queued", &snapshots)
+            .expect("typed run creates");
+        assert_eq!(database.get_run_snapshots("run-typed").expect("typed run reads"), Some(snapshots));
         drop(database);
         let _ = std::fs::remove_file(path);
     }

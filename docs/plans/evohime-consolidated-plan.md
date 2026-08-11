@@ -157,7 +157,7 @@ Capability registry описывает tools, skills, MCP, модели, кан�
 
 ### Этап 0a — минимальные storage и restart foundation (P0)
 
-Статус реализации на 2026-08-11: **в работе**. Выполнено в текущем срезе:
+Статус реализации на 2026-08-11: **завершён**. Выполнено:
 
 - [x] Schema v2 с `projects`, `work_items`, dependency edges, `provenance`, `runs` и bounded `command_dedup`.
 - [x] SQLite WAL, backup перед миграцией, идемпотентная миграция и optimistic `version` для изменения статуса work item.
@@ -170,9 +170,10 @@ Capability registry описывает tools, skills, MCP, модели, кан�
 - [x] Migration failure restores the pre-migration backup; immutable run snapshots persist policy, role, skill and model-route bytes.
 - [x] Malformed command rejection and reconnect replay-after-sequence tests are covered.
 - [x] Versioned `TaskStatus` enum has explicit `UNKNOWN`; unknown numeric values normalize safely.
+- [x] Typed `RoleRef`, `SkillRef`, `PolicySnapshot` and `ModelRouteSnapshot` contracts round-trip through immutable run snapshots.
 - [x] Targeted Rust tests: 21 Core, 10 IPC и 8 local-storage тестов; UI tests 20/20.
 
-Остаётся для полного закрытия 0a: выделить typed `RoleRef`, `SkillRef`, `PolicySnapshot` и `ModelRouteSnapshot` из opaque run snapshot bytes; затем провести финальный review storage/IPC boundaries.
+Этап 0a закрыт после финального review storage/IPC boundaries. Следующий блок roadmap — этап 1: Plan/Task Core и task workspace UI.
 
 Зависимости: существующие IPC/SQLite foundations.
 
