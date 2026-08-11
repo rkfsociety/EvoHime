@@ -21,14 +21,15 @@ async fn main() {
     let approvals = evohime_core::ApprovalCoordinator::default();
     let model_config = evohime_model_gateway::ModelGatewayConfig::from_env().ok();
     let model_snapshot = model_config.as_ref().and_then(|config| {
-        config.routes.get(&config.default_route).map(|route| {
-            evohime_core::ModelConfigSnapshot {
+        config
+            .routes
+            .get(&config.default_route)
+            .map(|route| evohime_core::ModelConfigSnapshot {
                 provider: route.provider.as_str().to_string(),
                 route: config.default_route.clone(),
                 model: route.literouter.model.clone(),
                 configured: route.configured(),
-            }
-        })
+            })
     });
     let gateway_config = model_config.clone();
     let executor = model_config
@@ -40,6 +41,39 @@ async fn main() {
                 approvals.clone(),
             )) as std::sync::Arc<dyn evohime_core::TaskExecutor>
         });
+    if let Some((prompt, workspace_root)) = console_request() {
+        let Some(executor) = executor else {
+            eprintln!("evohime-core console: модель не настроена; проверьте .env");
+            std::process::exit(1);
+        };
+        let (coordinator, mut events) =
+            evohime_core::TaskCoordinator::new_with_journal(256, Some(executor), journal);
+        let task_id = uuid::Uuid::new_v4().to_string();
+        if let Err(error) = coordinator
+            .dispatch(evohime_core::CoreCommand::StartTask {
+                task_id: task_id.clone(),
+                prompt,
+                workspace_root: Some(workspace_root),
+            })
+            .await
+        {
+            eprintln!("evohime-core console: не удалось запустить задачу: {error}");
+            std::process::exit(1);
+        }
+        while let Ok(event) = events.recv().await {
+            let finished = matches!(
+                &event,
+                evohime_core::CoreEvent::TaskCompleted { .. }
+                    | evohime_core::CoreEvent::TaskFailed { .. }
+                    | evohime_core::CoreEvent::TaskStopped { .. }
+            );
+            print_console_event(&event);
+            if finished {
+                break;
+            }
+        }
+        return;
+    }
     let (coordinator, _events) =
         evohime_core::TaskCoordinator::new_with_journal(256, executor, journal.clone());
     let bridge = evohime_core::IpcBridge::with_coordinator_and_approvals(
@@ -65,6 +99,80 @@ async fn main() {
     if let Err(error) = evohime_core::run_windows_pipe(&pipe_name, bridge, logger).await {
         eprintln!("evohime-core failed: {error}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(windows)]
+fn console_request() -> Option<(String, std::path::PathBuf)> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if !args.iter().any(|arg| arg == "--console") {
+        return None;
+    }
+    let mut workspace = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let mut prompt_parts = Vec::new();
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--workspace" => {
+                if let Some(value) = args.get(index + 1) {
+                    workspace = std::path::PathBuf::from(value);
+                    index += 1;
+                }
+            }
+            "--prompt" => {
+                if let Some(value) = args.get(index + 1) {
+                    prompt_parts.push(value.clone());
+                    index += 1;
+                }
+            }
+            "--console" => {}
+            "--" => {
+                prompt_parts.extend(args.iter().skip(index + 1).cloned());
+                break;
+            }
+            value if !value.starts_with('-') => prompt_parts.push(value.to_string()),
+            _ => {}
+        }
+        index += 1;
+    }
+    let prompt = prompt_parts.join(" ").trim().to_string();
+    if prompt.is_empty() {
+        eprintln!("Использование: evohime-core.exe --console --workspace <path> --prompt <текст>");
+        std::process::exit(2);
+    }
+    Some((prompt, workspace))
+}
+
+#[cfg(windows)]
+fn print_console_event(event: &evohime_core::CoreEvent) {
+    match event {
+        evohime_core::CoreEvent::ModelContext {
+            workspace_path,
+            model,
+            tools,
+            estimated_tokens,
+            context_limit_tokens,
+            ..
+        } => println!(
+            "Контекст: модель={model}; workspace={workspace_path}; инструментов={}; токены={estimated_tokens}/{context_limit_tokens}",
+            tools.len()
+        ),
+        evohime_core::CoreEvent::TaskStarted { prompt, .. } => println!("\nЗапрос: {prompt}"),
+        evohime_core::CoreEvent::AssistantDelta { content, .. } => print!("{content}"),
+        evohime_core::CoreEvent::ToolStarted { tool_name, .. } => {
+            println!("\n→ tool.started {tool_name}")
+        }
+        evohime_core::CoreEvent::ToolOutput {
+            tool_name, output, ..
+        } => println!("← tool.output {tool_name}\n{output}"),
+        evohime_core::CoreEvent::ApprovalRequired {
+            tool_name, permission, ..
+        } => println!("⚠ approval.required {tool_name}: {permission}"),
+        evohime_core::CoreEvent::TaskCompleted { final_message, .. } => {
+            println!("\n\n✓ Задача завершена\n{final_message}")
+        }
+        evohime_core::CoreEvent::TaskFailed { error, .. } => println!("\n\n✕ Задача завершена с ошибкой\n{error}"),
+        evohime_core::CoreEvent::TaskStopped { .. } => println!("\n\n■ Задача остановлена"),
     }
 }
 
