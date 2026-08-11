@@ -270,6 +270,9 @@ impl LocalDatabase {
                 request_id: request_id.into(),
             });
         }
+        if result.is_empty() {
+            return Ok(None);
+        }
         self.connection.execute(
             "INSERT INTO command_dedup(client_id, request_id, command_hash, result) VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![client_id, request_id, command_hash, result],

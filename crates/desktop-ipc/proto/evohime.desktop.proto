@@ -30,6 +30,40 @@ message PermissionModeRequest {
   string mode = 1;
 }
 
+message CreateProject {
+  string project_id = 1;
+  string title = 2;
+  string workspace_path = 3;
+  string source_ref = 4;
+}
+
+message CreateTask {
+  string task_id = 1;
+  string project_id = 2;
+  string parent_id = 3;
+  string title = 4;
+  string description = 5;
+  string source_ref = 6;
+  string acceptance_criteria = 7;
+  string non_goals = 8;
+  string status = 9;
+  int64 priority = 10;
+  int64 estimate = 11;
+  string complexity = 12;
+}
+
+message UpdateTaskStatus {
+  string task_id = 1;
+  int64 expected_version = 2;
+  string status = 3;
+}
+
+message AddTaskEdge {
+  string from_task_id = 1;
+  string to_task_id = 2;
+  string kind = 3;
+}
+
 message StartTask {
   string task_id = 1;
   string prompt = 2;
@@ -60,6 +94,10 @@ message CommandEnvelope {
     ModelConfigRequest model_config = 15;
     ModelCatalogRequest model_catalog = 16;
     PermissionModeRequest permission_mode = 17;
+    CreateProject create_project = 18;
+    CreateTask create_task = 19;
+    UpdateTaskStatus update_task_status = 20;
+    AddTaskEdge add_task_edge = 21;
   }
 }
 

@@ -459,7 +459,9 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use evohime_local_storage::{EventRecord, LocalDatabase, StorageError};
+use evohime_local_storage::{
+    EventRecord, LocalDatabase, StorageError, WorkItemRecord,
+};
 use evohime_model_gateway::{
     providers::{ChatMessage, ChatRole, ProviderError},
     ModelGateway, NativeToolCall, ToolSpec,
@@ -581,6 +583,56 @@ impl EventJournal {
     ) -> Result<Vec<EventRecord>, StorageError> {
         let database = self.database.lock().await;
         database.read_events_after(after_sequence, limit)
+    }
+
+    pub async fn create_project(
+        &self,
+        id: &str,
+        title: &str,
+        workspace_path: &str,
+        source_ref: Option<&str>,
+    ) -> Result<evohime_local_storage::ProjectRecord, StorageError> {
+        let database = self.database.lock().await;
+        database.create_project(id, title, workspace_path, source_ref)
+    }
+
+    pub async fn create_work_item(
+        &self,
+        item: &WorkItemRecord,
+    ) -> Result<WorkItemRecord, StorageError> {
+        let database = self.database.lock().await;
+        database.create_work_item(item)
+    }
+
+    pub async fn update_work_item_status(
+        &self,
+        id: &str,
+        expected_version: i64,
+        status: &str,
+    ) -> Result<WorkItemRecord, StorageError> {
+        let database = self.database.lock().await;
+        database.update_work_item_status(id, expected_version, status)
+    }
+
+    pub async fn add_dependency(
+        &self,
+        from_id: &str,
+        to_id: &str,
+        kind: &str,
+    ) -> Result<(), StorageError> {
+        let database = self.database.lock().await;
+        database.add_dependency(from_id, to_id, kind)
+    }
+
+    pub async fn record_deduplicated(
+        &self,
+        client_id: &str,
+        request_id: &str,
+        command_hash: &str,
+        result: &[u8],
+    ) -> Result<Option<Vec<u8>>, StorageError> {
+        let database = self.database.lock().await;
+        database.record_deduplicated(client_id, request_id, command_hash, result)
     }
 }
 

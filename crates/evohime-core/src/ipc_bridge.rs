@@ -7,6 +7,7 @@ use crate::{ApprovalCoordinator, CoreCommand, EventJournal, TaskCoordinator};
 use evohime_model_gateway::ModelGatewayConfig;
 use evohime_tool_runtime::ToolRegistry;
 use evohime_permissions::{Permission, PermissionMode};
+use evohime_local_storage::WorkItemRecord;
 use std::sync::Arc;
 
 const PROTOCOL_MAJOR: u32 = 1;
@@ -85,6 +86,9 @@ impl IpcBridge {
     ) -> Result<(), IpcBridgeError> {
         let payload = transport::read_frame(reader).await?;
         let command = generated::CommandEnvelope::decode(payload.as_slice())?;
+        let request_id = command.request_id.clone();
+        let client_id = command.client_id.clone();
+        let command_hash = hex_encode(&payload);
         match command.command {
             Some(generated::command_envelope::Command::Handshake(_)) => {
                 let event = generated::EventEnvelope {
@@ -218,6 +222,127 @@ impl IpcBridge {
                     }
                 }
             }
+            Some(generated::command_envelope::Command::CreateProject(request)) => {
+                let result = if let Some(replay) = self
+                    .journal
+                    .record_deduplicated(&client_id, &request_id, &command_hash, b"")
+                    .await
+                    .map_err(storage_error)?
+                {
+                    replay
+                } else {
+                    let project = self
+                        .journal
+                        .create_project(
+                            &request.project_id,
+                            &request.title,
+                            &request.workspace_path,
+                            (!request.source_ref.is_empty()).then_some(request.source_ref.as_str()),
+                        )
+                        .await
+                        .map_err(storage_error)?;
+                    serde_json::to_vec(&serde_json::json!({
+                        "project_id": project.id,
+                        "title": project.title,
+                        "workspace_path": project.workspace_path,
+                        "version": project.version,
+                    }))
+                    .map_err(|error| FrameError::Io(error.to_string()))?
+                };
+                self.journal
+                    .record_deduplicated(&client_id, &request_id, &command_hash, &result)
+                    .await
+                    .map_err(storage_error)?;
+                self.write_response(writer, "project.created", result).await?;
+            }
+            Some(generated::command_envelope::Command::CreateTask(request)) => {
+                let item = WorkItemRecord {
+                    id: request.task_id,
+                    project_id: request.project_id,
+                    parent_id: (!request.parent_id.is_empty()).then_some(request.parent_id),
+                    title: request.title,
+                    description: request.description,
+                    source_ref: (!request.source_ref.is_empty()).then_some(request.source_ref),
+                    acceptance_criteria: request.acceptance_criteria,
+                    non_goals: request.non_goals,
+                    status: if request.status.is_empty() { "backlog".into() } else { request.status },
+                    priority: request.priority,
+                    estimate: (request.estimate != 0).then_some(request.estimate),
+                    complexity: (!request.complexity.is_empty()).then_some(request.complexity),
+                    attempt_count: 0,
+                    version: 1,
+                };
+                let result = if let Some(replay) = self
+                    .journal
+                    .record_deduplicated(&client_id, &request_id, &command_hash, b"")
+                    .await
+                    .map_err(storage_error)?
+                {
+                    replay
+                } else {
+                    let created = self.journal.create_work_item(&item).await.map_err(storage_error)?;
+                    serde_json::to_vec(&serde_json::json!({
+                        "task_id": created.id,
+                        "project_id": created.project_id,
+                        "status": created.status,
+                        "version": created.version,
+                    }))
+                    .map_err(|error| FrameError::Io(error.to_string()))?
+                };
+                self.journal
+                    .record_deduplicated(&client_id, &request_id, &command_hash, &result)
+                    .await
+                    .map_err(storage_error)?;
+                self.write_response(writer, "task.created", result).await?;
+            }
+            Some(generated::command_envelope::Command::UpdateTaskStatus(request)) => {
+                let result = if let Some(replay) = self
+                    .journal
+                    .record_deduplicated(&client_id, &request_id, &command_hash, b"")
+                    .await
+                    .map_err(storage_error)?
+                {
+                    replay
+                } else {
+                    let updated = self
+                        .journal
+                        .update_work_item_status(&request.task_id, request.expected_version, &request.status)
+                        .await
+                        .map_err(storage_error)?;
+                    serde_json::to_vec(&serde_json::json!({
+                        "task_id": updated.id,
+                        "status": updated.status,
+                        "version": updated.version,
+                    }))
+                    .map_err(|error| FrameError::Io(error.to_string()))?
+                };
+                self.journal
+                    .record_deduplicated(&client_id, &request_id, &command_hash, &result)
+                    .await
+                    .map_err(storage_error)?;
+                self.write_response(writer, "task.status_updated", result).await?;
+            }
+            Some(generated::command_envelope::Command::AddTaskEdge(request)) => {
+                let result = if let Some(replay) = self
+                    .journal
+                    .record_deduplicated(&client_id, &request_id, &command_hash, b"")
+                    .await
+                    .map_err(storage_error)?
+                {
+                    replay
+                } else {
+                    self.journal
+                        .add_dependency(&request.from_task_id, &request.to_task_id, &request.kind)
+                        .await
+                        .map_err(storage_error)?;
+                    br#"{"from_task_id":"ok"}"#.to_vec()
+                };
+                self.journal
+                    .record_deduplicated(&client_id, &request_id, &command_hash, &result)
+                    .await
+                    .map_err(storage_error)?;
+                self.write_response(writer, "task.edge_added", result).await?;
+            }
             Some(generated::command_envelope::Command::StartTask(start)) => {
                 if let Some(coordinator) = &self.coordinator {
                     coordinator
@@ -259,6 +384,43 @@ impl IpcBridge {
         }
         Ok(())
     }
+
+    async fn write_response<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        event_type: &str,
+        payload: Vec<u8>,
+    ) -> Result<(), IpcBridgeError> {
+        transport::write_frame(
+            writer,
+            &generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: 0,
+                task_id: String::new(),
+                event_type: event_type.into(),
+                payload,
+                core_instance_id: String::new(),
+                session_epoch: 0,
+                event: None,
+            }
+            .encode_to_vec(),
+        )
+        .await?;
+        Ok(())
+    }
+}
+
+fn storage_error(error: impl std::fmt::Display) -> FrameError {
+    FrameError::Io(error.to_string())
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use std::fmt::Write;
+        let _ = write!(output, "{byte:02x}");
+    }
+    output
 }
 
 fn protocol() -> generated::ProtocolVersion {
@@ -316,6 +478,58 @@ mod tests {
         assert!(String::from_utf8(event.payload)
             .expect("payload utf8")
             .contains("replayed"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn serves_task_crud_and_replays_deduplicated_create() {
+        let path = std::env::temp_dir().join(format!("evohime-ipc-task-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let bridge = IpcBridge::new(EventJournal::open(&path).expect("journal opens"));
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+        let command = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "create-project-1".into(),
+            client_id: "test-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::CreateProject(
+                generated::CreateProject {
+                    project_id: "project-1".into(),
+                    title: "Demo".into(),
+                    workspace_path: "C:\\Projects\\demo".into(),
+                    source_ref: "plan:0a".into(),
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &command.encode_to_vec())
+            .await
+            .expect("command writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("project creates");
+        let first = transport::read_frame(&mut client).await.expect("first response");
+
+        transport::write_frame(&mut client, &command.encode_to_vec())
+            .await
+            .expect("duplicate writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("duplicate replays");
+        let second = transport::read_frame(&mut client).await.expect("second response");
+        assert_eq!(first, second);
+
+        let mut conflict = command.clone();
+        if let Some(generated::command_envelope::Command::CreateProject(project)) = &mut conflict.command {
+            project.title = "Different".into();
+        }
+        transport::write_frame(&mut client, &conflict.encode_to_vec())
+            .await
+            .expect("conflicting writes");
+        assert!(bridge.process_once(&mut server_reader, &mut server_writer).await.is_err());
         let _ = std::fs::remove_file(path);
     }
 }
