@@ -39,14 +39,7 @@ pub async fn execute(
         || input.program.contains(['/', '\\'])
         || matches!(
             input.program.to_ascii_lowercase().as_str(),
-            "cmd"
-                | "cmd.exe"
-                | "powershell"
-                | "powershell.exe"
-                | "pwsh"
-                | "pwsh.exe"
-                | "sh"
-                | "bash"
+            "cmd" | "cmd.exe" | "powershell" | "powershell.exe" | "sh" | "bash"
         )
     {
         return Err(ToolError::InvalidInput {
@@ -192,7 +185,7 @@ mod tests {
             session_id: None,
             progress_tx: Some(tx),
         };
-        // Use a portable-ish program: on Windows `cmd` is blocked; use rustc/echo alternatives.
+        // Use a portable-ish program: on Windows shell interpreters are blocked; use git.
         // `git` is usually present in this repo's CI/dev machines.
         let result = execute(
             &ctx,
@@ -218,5 +211,38 @@ mod tests {
         assert!(
             result.output.contains("git version") || result.structured["stdout"].as_str().is_some()
         );
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn runs_pwsh_without_shell_wrapper() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let permissions = PermissionEngine::new();
+        permissions
+            .set_mode(Permission::ShellExecute, PermissionMode::Allow)
+            .await;
+        let ctx = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+        };
+
+        let result = execute(
+            &ctx,
+            json!({
+                "program": "pwsh.exe",
+                "args": ["-NoLogo", "-NoProfile", "-Command", "Write-Output evohime-pwsh-ok"]
+            }),
+            CancellationToken::new(),
+        )
+        .await
+        .expect("pwsh should be allowed as a direct executable");
+
+        assert_eq!(result.structured["exit_code"], 0);
+        assert!(result.structured["stdout"]
+            .as_str()
+            .expect("pwsh stdout")
+            .contains("evohime-pwsh-ok"));
     }
 }
