@@ -41,7 +41,7 @@ async fn main() {
                 approvals.clone(),
             )) as std::sync::Arc<dyn evohime_core::TaskExecutor>
         });
-    if let Some((prompt, workspace_root)) = console_request() {
+    if let Some((prompt, workspace_root, approve_writes)) = console_request() {
         let Some(executor) = executor else {
             eprintln!("evohime-core console: модель не настроена; проверьте .env");
             std::process::exit(1);
@@ -68,6 +68,21 @@ async fn main() {
                     | evohime_core::CoreEvent::TaskStopped { .. }
             );
             print_console_event(&event);
+            if let evohime_core::CoreEvent::ApprovalRequired { approval_id, .. } = &event {
+                let granted = approve_writes;
+                if let Ok(approval_id) = uuid::Uuid::parse_str(approval_id) {
+                    let _ = approvals.resolve(approval_id, granted).await;
+                    println!(
+                        "{} approval: {}",
+                        if granted { "✓" } else { "✕" },
+                        if granted {
+                            "разрешено"
+                        } else {
+                            "отклонено"
+                        }
+                    );
+                }
+            }
             if finished {
                 break;
             }
@@ -103,13 +118,14 @@ async fn main() {
 }
 
 #[cfg(windows)]
-fn console_request() -> Option<(String, std::path::PathBuf)> {
+fn console_request() -> Option<(String, std::path::PathBuf, bool)> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if !args.iter().any(|arg| arg == "--console") {
         return None;
     }
     let mut workspace = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let mut prompt_parts = Vec::new();
+    let mut approve_writes = false;
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
@@ -126,6 +142,7 @@ fn console_request() -> Option<(String, std::path::PathBuf)> {
                 }
             }
             "--console" => {}
+            "--approve-writes" => approve_writes = true,
             "--" => {
                 prompt_parts.extend(args.iter().skip(index + 1).cloned());
                 break;
@@ -140,7 +157,7 @@ fn console_request() -> Option<(String, std::path::PathBuf)> {
         eprintln!("Использование: evohime-core.exe --console --workspace <path> --prompt <текст>");
         std::process::exit(2);
     }
-    Some((prompt, workspace))
+    Some((prompt, workspace, approve_writes))
 }
 
 #[cfg(windows)]

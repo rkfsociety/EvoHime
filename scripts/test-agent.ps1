@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory = $true, Position = 0)]
     [string]$Prompt,
     [string]$Workspace = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
-    [switch]$NoBuild
+    [switch]$NoBuild,
+    [switch]$ApproveWrites
 )
 
 $ErrorActionPreference = 'Stop'
@@ -65,7 +66,11 @@ try {
     if (-not (Test-Path -LiteralPath $corePath)) {
         throw "Core не найден: $corePath. Запустите без -NoBuild."
     }
-    & $corePath --console --workspace $Workspace --prompt $Prompt
+    $coreArgs = @('--console', '--workspace', $Workspace, '--prompt', $Prompt)
+    if ($ApproveWrites) {
+        $coreArgs += '--approve-writes'
+    }
+    & $corePath @coreArgs
     exit $LASTEXITCODE
 }
 finally {
