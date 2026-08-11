@@ -204,6 +204,44 @@ fn parse_natural_tool_intent(content: &str, iteration: usize) -> Option<NativeTo
     })
 }
 
+fn parse_tagged_tool_call(content: &str, iteration: usize) -> Option<NativeToolCall> {
+    let start_marker = "<tool_call>";
+    let end_marker = "</tool_call>";
+    let start = content.find(start_marker)? + start_marker.len();
+    let end = content[start..].find(end_marker)? + start;
+    let body = content[start..end].trim();
+    let (name, arguments) = if let Ok(value) = serde_json::from_str::<serde_json::Value>(body) {
+        let name = value.get("name")?.as_str()?.to_string();
+        let arguments = value
+            .get("arguments")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}));
+        (name, arguments)
+    } else {
+        let open = body.find('(')?;
+        let name = body[..open].trim().to_string();
+        let params = body[open + 1..].strip_suffix(')')?.trim();
+        let mut arguments = serde_json::Map::new();
+        for pair in params.split(',').filter(|pair| !pair.trim().is_empty()) {
+            let (key, value) = pair.split_once('=')?;
+            let value = value.trim().trim_matches('"').trim_matches('\'');
+            arguments.insert(key.trim().to_string(), serde_json::Value::String(value.to_string()));
+        }
+        (name, serde_json::Value::Object(arguments))
+    };
+    if !matches!(
+        name.as_str(),
+        "filesystem.list" | "filesystem.read" | "filesystem.search" | "git.status" | "git.diff"
+    ) {
+        return None;
+    }
+    Some(NativeToolCall {
+        id: format!("tagged-{iteration}"),
+        name,
+        arguments: arguments.to_string(),
+    })
+}
+
 fn strip_legacy_function_blocks(content: &str) -> String {
     let mut cleaned = String::with_capacity(content.len());
     let mut cursor = 0;
@@ -729,6 +767,18 @@ impl ToolAgent {
                     tool_calls.push(call);
                 }
             }
+            if tool_calls.is_empty() {
+                if let Some(call) = parse_tagged_tool_call(&result.content, iteration) {
+                    write_model_trace(
+                        "tagged.tool_call.parsed",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "tool_call": call
+                        }),
+                    );
+                    tool_calls.push(call);
+                }
+            }
             tool_calls.retain(|call| {
                 seen_tool_calls.insert(format!("{}:{}", call.name, call.arguments))
             });
@@ -1193,6 +1243,17 @@ mod tests {
             requirements.missing(false, true, false),
             vec!["внести изменение", "создать commit"]
         );
+    }
+
+    #[test]
+    fn parses_tagged_tool_call_format() {
+        let call = super::parse_tagged_tool_call(
+            r#"<tool_call>filesystem.read(path="README.md")</tool_call>"#,
+            4,
+        )
+        .expect("tagged tool call");
+        assert_eq!(call.name, "filesystem.read");
+        assert_eq!(call.arguments, r#"{"path":"README.md"}"#);
     }
 
     #[tokio::test]
