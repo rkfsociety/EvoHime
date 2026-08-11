@@ -953,6 +953,15 @@ public partial class MainWindow : Window
             Foreground = muted,
             FontSize = 12,
         });
+        if (!string.IsNullOrWhiteSpace(task.ParentId))
+        {
+            details.Children.Add(new TextBlock
+            {
+                Text = $"Подзадача родителя: {task.ParentId}",
+                Foreground = muted,
+                FontSize = 11,
+            });
+        }
         if (!string.IsNullOrWhiteSpace(task.Description))
         {
             details.Children.Add(new TextBlock { Text = task.Description, Foreground = muted, TextWrapping = TextWrapping.Wrap });
@@ -964,6 +973,11 @@ public partial class MainWindow : Window
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(0, 5, 0, 0) };
         AddTaskStatusButton(actions, "Готова", task, "ready");
         AddTaskStatusButton(actions, "В работу", task, "in_progress");
+        AddTaskControlButton(actions, "Запустить", task, StartTaskControlAsync);
+        if (task.Status == "in_progress")
+        {
+            AddTaskControlButton(actions, "Остановить", task, StopTaskControlAsync);
+        }
         AddTaskStatusButton(actions, "Выполнена", task, "done");
         AddTaskStatusButton(actions, "Отложить", task, "backlog");
         var history = new Button { Content = "История", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
@@ -990,6 +1004,90 @@ public partial class MainWindow : Window
             await SetTaskStatusAsync(task, status);
         };
         panel.Children.Add(button);
+    }
+
+    private void AddTaskControlButton(
+        Panel panel,
+        string title,
+        TaskDto task,
+        Func<TaskDto, Task> action)
+    {
+        var button = new Button { Content = title, Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
+        button.Click += async (_, _) =>
+        {
+            button.IsEnabled = false;
+            await action(task);
+        };
+        panel.Children.Add(button);
+    }
+
+    private async Task StartTaskControlAsync(TaskDto task)
+    {
+        if (_taskWorkspaceStatus is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                await _ipc.UpdateTaskStatusAsync(task.Id, task.Version, "in_progress", CancellationToken.None);
+                var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                if (response.EventType != "task.status_updated")
+                {
+                    throw new InvalidOperationException("Core не подтвердил запуск задачи.");
+                }
+                var prompt = string.IsNullOrWhiteSpace(task.Description)
+                    ? task.Title
+                    : $"{task.Title}\n\n{task.Description}\n\nКритерии приемки: {task.AcceptanceCriteria}";
+                await _ipc.StartTaskAsync(task.Id, prompt, _state.WorkspacePath ?? Environment.CurrentDirectory, CancellationToken.None);
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+            _taskWorkspaceStatus.Text = $"Задача «{task.Title}» запущена.";
+            await LoadTaskWorkspaceAsync();
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+        {
+            _taskWorkspaceStatus.Text = $"Запуск задачи не выполнен: {error.Message}";
+        }
+    }
+
+    private async Task StopTaskControlAsync(TaskDto task)
+    {
+        if (_taskWorkspaceStatus is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                await _ipc.StopTaskAsync(task.Id, CancellationToken.None);
+                await _ipc.UpdateTaskStatusAsync(task.Id, task.Version, "ready", CancellationToken.None);
+                var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                if (response.EventType != "task.status_updated")
+                {
+                    throw new InvalidOperationException("Core не подтвердил остановку задачи.");
+                }
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+            _taskWorkspaceStatus.Text = $"Задача «{task.Title}» остановлена и возвращена в ready.";
+            await LoadTaskWorkspaceAsync();
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+        {
+            _taskWorkspaceStatus.Text = $"Остановка задачи не выполнена: {error.Message}";
+        }
     }
 
     private async Task SetTaskStatusAsync(TaskDto task, string status)
@@ -1171,6 +1269,7 @@ public partial class MainWindow : Window
 
     private sealed record TaskDto(
         [property: JsonPropertyName("id")] string Id,
+        [property: JsonPropertyName("parent_id")] string? ParentId,
         [property: JsonPropertyName("title")] string Title,
         [property: JsonPropertyName("description")] string Description,
         [property: JsonPropertyName("acceptance_criteria")] string AcceptanceCriteria,
