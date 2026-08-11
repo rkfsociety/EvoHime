@@ -634,7 +634,12 @@ public partial class MainWindow : Window
         _configuredModel = providerSettings.Model;
         _apiKeyBox = new PasswordBox { Header = "API-ключ", PlaceholderText = "Введите ключ провайдера" };
         _apiKeyBox.Password = providerSettings.ApiKey;
-        _modelModeBox = new ComboBox { Header = "Режим каталога", ItemsSource = new[] { "Бесплатные", "Платные" }, SelectedIndex = 0 };
+        _modelModeBox = new ComboBox
+        {
+            Header = "Режим каталога",
+            ItemsSource = new[] { "Бесплатные", "Платные" },
+            SelectedIndex = string.Equals(providerSettings.CatalogMode, "paid", StringComparison.OrdinalIgnoreCase) ? 1 : 0,
+        };
         _modelSelector = new ComboBox { Header = "Модель", PlaceholderText = "Загрузка списка моделей..." };
         _modelModeBox.SelectionChanged += (_, _) =>
         {
@@ -2002,11 +2007,15 @@ public partial class MainWindow : Window
                 throw new InvalidOperationException("Сначала выберите модель из списка.");
             }
 
+            var catalogMode = SelectedCatalogMode();
             _providerSettings.Save(new ProviderSettings(
                 _providerBox.Text.Trim(),
                 _baseUrlBox.Text.Trim(),
                 selectedModel,
-                _apiKeyBox.Password));
+                _apiKeyBox.Password)
+            {
+                CatalogMode = catalogMode,
+            });
             if (_settingsSaveStatus is not null)
             {
                 _settingsSaveStatus.Text = "Сохранено. Загружаю модели...";
@@ -2290,35 +2299,31 @@ public partial class MainWindow : Window
                 await ConnectToCoreWithRetryAsync(CancellationToken.None);
             }
 
-            var models = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var mode in new[] { "free", "paid" })
+            var mode = SelectedCatalogMode();
+            using var requestTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            await _ipc.RequestModelCatalogAsync(mode, requestTimeout.Token);
+            var response = await _ipc.ReadEventAsync(requestTimeout.Token);
+            if (response.EventType != "model.catalog")
             {
-                using var requestTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                await _ipc.RequestModelCatalogAsync(mode, requestTimeout.Token);
-                var response = await _ipc.ReadEventAsync(requestTimeout.Token);
-                if (response.EventType != "model.catalog")
-                {
-                    throw new InvalidOperationException("Core не вернул каталог моделей.");
-                }
-
-                using var json = JsonDocument.Parse(response.Payload);
-                if (json.RootElement.TryGetProperty("models", out var modelsValue))
-                {
-                    foreach (var model in modelsValue.EnumerateArray()
-                                 .Select(item => item.GetString())
-                                 .Where(item => !string.IsNullOrWhiteSpace(item)))
-                    {
-                        models.Add(model!);
-                    }
-                }
+                throw new InvalidOperationException("Core не вернул каталог моделей.");
             }
-            return models.OrderBy(model => model, StringComparer.OrdinalIgnoreCase).ToList();
+
+            using var json = JsonDocument.Parse(response.Payload);
+            var models = json.RootElement.TryGetProperty("models", out var modelsValue)
+                ? modelsValue.EnumerateArray().Select(item => item.GetString() ?? string.Empty)
+                : [];
+            return ModelCatalogFilter.Filter(models, mode).ToList();
         }
         finally
         {
             _ipcRequestGate.Release();
         }
     }
+
+    private string SelectedCatalogMode() =>
+        _modelModeBox?.SelectedIndex == 1
+            ? "paid"
+            : "free";
 
     private async Task ApplyComposerModelAsync(string model)
     {
@@ -2861,6 +2866,7 @@ public partial class MainWindow : Window
             var models = json.RootElement.TryGetProperty("models", out var modelsValue)
                 ? modelsValue.EnumerateArray().Select(item => item.GetString()).Where(item => !string.IsNullOrWhiteSpace(item)).Cast<string>().ToList()
                 : [];
+            models = ModelCatalogFilter.Filter(models, mode).ToList();
             _ = DispatcherQueue.TryEnqueue(() =>
             {
                 _modelSelector.Items.Clear();

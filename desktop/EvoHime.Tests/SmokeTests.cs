@@ -21,4 +21,28 @@ public sealed class SmokeTests
             new[] { "Новый чат", "Задачи", "Запланировано", "Плагины", "Проекты", "Настройки" },
             ShellNavigationCatalog.Items.Select(item => item.Title).ToArray());
     }
+
+    [TestMethod]
+    public void FreeCatalogContainsOnlyFreeModels()
+    {
+        var models = ModelCatalogFilter.Filter(
+            new[] { "claude-haiku:free", "gpt-5", "deepseek:free", "gpt-5:preview" },
+            "free");
+
+        CollectionAssert.AreEqual(
+            new[] { "claude-haiku:free", "deepseek:free" },
+            models.ToArray());
+    }
+
+    [TestMethod]
+    public void PaidCatalogExcludesFreeModels()
+    {
+        var models = ModelCatalogFilter.Filter(
+            new[] { "claude-haiku:free", "gpt-5", "deepseek:free", "gpt-5:preview" },
+            "paid");
+
+        CollectionAssert.AreEqual(
+            new[] { "gpt-5", "gpt-5:preview" },
+            models.ToArray());
+    }
 }

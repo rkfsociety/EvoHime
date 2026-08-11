@@ -11,6 +11,8 @@ public sealed record ProviderSettings(
     string Model,
     string ApiKey)
 {
+    public string CatalogMode { get; init; } = "free";
+
     public static ProviderSettings Default => new(
         "literouter",
         "https://api.literouter.com/v1",
