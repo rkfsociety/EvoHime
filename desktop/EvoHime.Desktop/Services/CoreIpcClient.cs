@@ -121,6 +121,9 @@ public sealed class CoreIpcClient
     public Task RequestTaskContextAsync(string projectId, string taskId, uint maxChars, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.GetTaskContext(projectId, taskId, maxChars), cancellationToken);
 
+    public Task RequestTaskPlanSpecAsync(string projectId, string taskId, uint maxChars, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.GetTaskPlanSpec(projectId, taskId, maxChars), cancellationToken);
+
     public async Task<ulong> ReadReplayAsync(
         ulong afterSequence,
         Func<CoreEventEnvelope, Task> onEvent,

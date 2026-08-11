@@ -100,6 +100,12 @@ message GetTaskContext {
   uint32 max_chars = 3;
 }
 
+message GetTaskPlanSpec {
+  string project_id = 1;
+  string task_id = 2;
+  uint32 max_chars = 3;
+}
+
 message StartTask {
   string task_id = 1;
   string prompt = 2;
@@ -139,6 +145,7 @@ message CommandEnvelope {
     ImportPrd import_prd = 24;
     GetTaskHistory get_task_history = 25;
     GetTaskContext get_task_context = 26;
+    GetTaskPlanSpec get_task_plan_spec = 27;
   }
 }
 

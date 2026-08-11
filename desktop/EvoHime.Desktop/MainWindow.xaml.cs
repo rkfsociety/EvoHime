@@ -1009,6 +1009,9 @@ public partial class MainWindow : Window
         var context = new Button { Content = "Контекст", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
         context.Click += async (_, _) => await RequestTaskContextAsync(task);
         actions.Children.Add(context);
+        var planSpec = new Button { Content = "Plan/Spec", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
+        planSpec.Click += async (_, _) => await RequestTaskPlanSpecAsync(task);
+        actions.Children.Add(planSpec);
         var subtask = new Button { Content = "Подзадача", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
         subtask.Click += async (_, _) => await CreateTaskDialogAsync(task.Id);
         actions.Children.Add(subtask);
@@ -1293,6 +1296,39 @@ public partial class MainWindow : Window
         catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
         {
             _taskWorkspaceStatus.Text = $"Не удалось собрать context: {error.Message}";
+        }
+    }
+
+    private async Task RequestTaskPlanSpecAsync(TaskDto task)
+    {
+        var project = ActiveProject();
+        if (project is null || _taskWorkspaceStatus is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                await _ipc.RequestTaskPlanSpecAsync(project.Id, task.Id, 4096, CancellationToken.None);
+                var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                if (response.EventType != "task.plan_spec")
+                {
+                    throw new InvalidOperationException("Core не вернул Plan/Spec.");
+                }
+                using var json = JsonDocument.Parse(response.Payload);
+                _taskWorkspaceStatus.Text = $"READ-ONLY PLAN\n{json.RootElement.GetProperty("plan").GetString()}\n\nSPEC\n{json.RootElement.GetProperty("spec").GetString()}";
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+        {
+            _taskWorkspaceStatus.Text = $"Не удалось получить Plan/Spec: {error.Message}";
         }
     }
 

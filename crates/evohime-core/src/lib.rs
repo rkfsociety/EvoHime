@@ -475,6 +475,8 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 pub mod prd;
+pub mod plan;
+pub mod scope;
 pub mod workspace;
 
 pub enum CoreCommand {
@@ -546,6 +548,12 @@ pub enum CoreCommand {
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
     GetTaskContext {
+        project_id: String,
+        task_id: String,
+        max_chars: usize,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    GetTaskPlanSpec {
         project_id: String,
         task_id: String,
         max_chars: usize,
@@ -1747,6 +1755,36 @@ impl TaskCoordinator {
                         "context": context,
                     }))
                     .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::GetTaskPlanSpec {
+                project_id,
+                task_id,
+                max_chars,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let task = journal
+                        .get_work_item(&task_id)
+                        .await
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "task not found".to_string())?;
+                    if task.project_id != project_id {
+                        return Err("task does not belong to project".to_string());
+                    }
+                    let plan = crate::plan::build_task_plan_spec(
+                        &task.title,
+                        &task.description,
+                        &task.acceptance_criteria,
+                        &task.non_goals,
+                        "offline context; research не выполняется",
+                        max_chars.min(32 * 1024),
+                    );
+                    serde_json::to_vec(&plan).map_err(|error| error.to_string())
                 }
                 .await;
                 let _ = reply.send(result);

@@ -202,6 +202,14 @@ public static class ProtocolEnvelope
         output.WriteUInt32(maxChars);
     });
 
+    public static byte[] GetTaskPlanSpec(string projectId, string taskId, uint maxChars = 4096) => TaskCommand(27, output =>
+    {
+        WriteString(output, 1, projectId);
+        WriteString(output, 2, taskId);
+        output.WriteTag(3, WireFormat.WireType.Varint);
+        output.WriteUInt32(maxChars);
+    });
+
     public static CoreEventEnvelope ReadEvent(ReadOnlySpan<byte> payload)
     {
         using var input = new CodedInputStream(payload.ToArray());
