@@ -291,6 +291,39 @@ fn parse_plain_tool_call(content: &str, iteration: usize) -> Option<NativeToolCa
     })
 }
 
+fn parse_xml_named_tool_call(content: &str, iteration: usize) -> Option<NativeToolCall> {
+    let name = ["filesystem.list", "filesystem.read", "filesystem.search", "git.status", "git.diff"]
+        .iter()
+        .find(|candidate| content.contains(&format!("<{}>", candidate)))
+        .copied()?;
+    let start_marker = format!("<{}>", name);
+    let end_marker = format!("</{}>", name);
+    let start = content.find(&start_marker)? + start_marker.len();
+    let end = content[start..].find(&end_marker)? + start;
+    let body = &content[start..end];
+    let parameter_start = body.find("<parameter")?;
+    let tag_end = body[parameter_start..].find('>')? + parameter_start;
+    let value_end = body[tag_end + 1..].find("</parameter>")? + tag_end + 1;
+    let tag = &body[parameter_start..=tag_end];
+    let parameter_name = attribute_value(tag, "name").or_else(|| {
+        body[tag_end + 1..value_end]
+            .split_once('>')
+            .map(|(key, _)| key.trim().to_string())
+    })?;
+    let value = if tag.contains("name=") {
+        body[tag_end + 1..value_end].trim().to_string()
+    } else {
+        body[tag_end + 1..value_end]
+            .split_once('>')
+            .map(|(_, value)| value.trim().to_string())?
+    };
+    Some(NativeToolCall {
+        id: format!("xml-{iteration}"),
+        name: name.to_string(),
+        arguments: serde_json::json!({ parameter_name: value }).to_string(),
+    })
+}
+
 fn strip_legacy_function_blocks(content: &str) -> String {
     let mut cleaned = String::with_capacity(content.len());
     let mut cursor = 0;
@@ -840,6 +873,18 @@ impl ToolAgent {
                     tool_calls.push(call);
                 }
             }
+            if tool_calls.is_empty() {
+                if let Some(call) = parse_xml_named_tool_call(&result.content, iteration) {
+                    write_model_trace(
+                        "xml.tool_call.parsed",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "tool_call": call
+                        }),
+                    );
+                    tool_calls.push(call);
+                }
+            }
             tool_calls.retain(|call| {
                 seen_tool_calls.insert(format!("{}:{}", call.name, call.arguments))
             });
@@ -1332,6 +1377,13 @@ mod tests {
             .expect("plain tool call");
         assert_eq!(plain_call.name, "filesystem.read");
         assert_eq!(plain_call.arguments, r#"{"path":"README.md"}"#);
+        let xml_named = super::parse_xml_named_tool_call(
+            "<filesystem.read><parameter>path>README.md</parameter></filesystem.read>",
+            8,
+        )
+        .expect("xml named tool call");
+        assert_eq!(xml_named.name, "filesystem.read");
+        assert_eq!(xml_named.arguments, r#"{"path":"README.md"}"#);
     }
 
     #[tokio::test]
