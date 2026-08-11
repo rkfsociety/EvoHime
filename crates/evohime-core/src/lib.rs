@@ -657,6 +657,7 @@ impl ToolAgent {
         });
 
         let mut legacy_seen = HashSet::new();
+        let mut seen_tool_calls = HashSet::new();
         let mut mutation_done = false;
         let mut verification_done = false;
         let mut commit_done = false;
@@ -727,6 +728,9 @@ impl ToolAgent {
                     tool_calls.push(call);
                 }
             }
+            tool_calls.retain(|call| {
+                seen_tool_calls.insert(format!("{}:{}", call.name, call.arguments))
+            });
             if tool_calls.is_empty() {
                 let missing =
                     delivery_requirements.missing(mutation_done, verification_done, commit_done);
