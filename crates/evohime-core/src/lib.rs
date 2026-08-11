@@ -56,6 +56,37 @@ fn tool_parameters(name: &str) -> serde_json::Value {
     }
 }
 
+fn write_model_trace(event: &str, fields: serde_json::Value) {
+    let data_dir = std::env::var_os("EVOHIME_DATA_DIR")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("LOCALAPPDATA").map(|path| PathBuf::from(path).join("EvoHime"))
+        })
+        .unwrap_or_else(|| PathBuf::from(".evohime"));
+    let logs_dir = data_dir.join("logs");
+    if fs::create_dir_all(&logs_dir).is_err() {
+        return;
+    }
+    let timestamp_ms = SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let record = serde_json::json!({
+        "timestamp_ms": timestamp_ms,
+        "event": event,
+        "fields": fields,
+    });
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(logs_dir.join("model-trace.jsonl"))
+    {
+        if serde_json::to_writer(&mut file, &record).is_ok() {
+            let _ = file.write_all(b"\n");
+        }
+    }
+}
+
 mod ipc_bridge;
 pub use ipc_bridge::{IpcBridge, IpcBridgeError, ModelConfigSnapshot};
 mod logging;
@@ -93,7 +124,14 @@ impl CoreVersion {
     }
 }
 
-use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    fs::{self, OpenOptions},
+    io::Write,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use evohime_local_storage::{EventRecord, LocalDatabase, StorageError};
 use evohime_model_gateway::{
@@ -445,10 +483,31 @@ impl ToolAgent {
         });
 
         for _ in 0..self.max_iterations {
+            write_model_trace(
+                "model.request",
+                serde_json::json!({
+                    "task_id": task_id,
+                    "model": self.gateway.model_name(),
+                    "workspace_path": context.workspace_root,
+                    "messages": messages,
+                    "tools": specs,
+                    "tool_choice": "auto"
+                }),
+            );
             let result = tokio::select! {
                 _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
                 result = self.gateway.chat_with_tools_for_route("default", None, &messages, &specs) => result?,
             };
+            write_model_trace(
+                "model.response",
+                serde_json::json!({
+                    "task_id": task_id,
+                    "content": result.content,
+                    "thinking": result.thinking,
+                    "tool_calls": result.tool_calls,
+                    "usage": result.usage
+                }),
+            );
             if result.tool_calls.is_empty() {
                 let _ = events.send(CoreEvent::TaskCompleted {
                     task_id,
@@ -466,6 +525,14 @@ impl ToolAgent {
                     task_id: task_id.clone(),
                     tool_name: call.name.clone(),
                 });
+                write_model_trace(
+                    "tool.started",
+                    serde_json::json!({
+                        "task_id": task_id,
+                        "tool_name": call.name,
+                        "arguments": call.arguments
+                    }),
+                );
                 let input = serde_json::from_str(&call.arguments)
                     .unwrap_or_else(|_| serde_json::Value::Null);
                 let output = match tokio::select! {
@@ -512,9 +579,17 @@ impl ToolAgent {
                 };
                 let _ = events.send(CoreEvent::ToolOutput {
                     task_id: task_id.clone(),
-                    tool_name: call.name,
+                    tool_name: call.name.clone(),
                     output: output.clone(),
                 });
+                write_model_trace(
+                    "tool.output",
+                    serde_json::json!({
+                        "task_id": task_id,
+                        "tool_name": call.name,
+                        "output": output
+                    }),
+                );
                 messages.push(ChatMessage::tool_observation(call.id, output));
             }
         }

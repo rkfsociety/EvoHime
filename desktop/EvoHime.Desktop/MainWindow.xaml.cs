@@ -501,10 +501,16 @@ public partial class MainWindow : Window
         UpdateStatusText = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Foreground = muted, FontSize = 12 };
         UpdateButton = new Button { Content = "Обновить", Visibility = Visibility.Collapsed };
         UpdateButton.Click += UpdateButton_Click;
+        var copyAllButton = new Button { Content = "Скопировать весь чат" };
+        copyAllButton.Click += (_, _) => CopyWholeConversation();
+        var traceButton = new Button { Content = "Открыть trace" };
+        traceButton.Click += (_, _) => OpenTraceFolder();
         StopButton = new Button { Content = "Остановить", IsEnabled = false };
         StopButton.Click += StopButton_Click;
         footer.Children.Add(UpdateStatusText);
         footer.Children.Add(UpdateButton);
+        footer.Children.Add(copyAllButton);
+        footer.Children.Add(traceButton);
         footer.Children.Add(StopButton);
         Grid.SetRow(footer, 2);
         content.Children.Add(footer);
@@ -1220,6 +1226,53 @@ public partial class MainWindow : Window
         {
             ConnectionStatus.Text = $"Не удалось скопировать сообщение: {error.Message}";
         }
+    }
+
+    private void CopyWholeConversation()
+    {
+        if (_conversationPanel is null)
+        {
+            return;
+        }
+
+        var lines = new List<string>();
+        foreach (var child in _conversationPanel.Children.OfType<Border>())
+        {
+            if (child.Child is StackPanel messagePanel)
+            {
+                var texts = messagePanel.Children.OfType<TextBlock>()
+                    .Select(item => item.Text)
+                    .Where(item => !string.IsNullOrWhiteSpace(item))
+                    .ToList();
+                if (texts.Count >= 2)
+                {
+                    lines.Add($"{texts[0]}: {texts[1]}");
+                }
+            }
+            else if (child.Child is TextBlock activity && !string.IsNullOrWhiteSpace(activity.Text))
+            {
+                lines.Add(activity.Text.Trim());
+            }
+        }
+
+        CopyConversationMessage(string.Join(Environment.NewLine + Environment.NewLine, lines));
+        ConnectionStatus.Text = lines.Count == 0 ? "Чат пока пуст" : "Весь чат скопирован";
+    }
+
+    private void OpenTraceFolder()
+    {
+        var logs = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "EvoHime",
+            "logs");
+        Directory.CreateDirectory(logs);
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = "explorer.exe",
+            Arguments = $"/select,\"{Path.Combine(logs, "model-trace.jsonl")}\"",
+            UseShellExecute = true,
+        });
+        ConnectionStatus.Text = $"Trace: {Path.Combine(logs, "model-trace.jsonl")}";
     }
 
     private void AddConversationActivity(string message)
