@@ -7,7 +7,7 @@ use std::{
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA_VERSION: u32 = 4;
+pub const SCHEMA_VERSION: u32 = 5;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -60,6 +60,14 @@ pub struct ProjectRecord {
     pub workspace_path: String,
     pub source_ref: Option<String>,
     pub version: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectPolicyRecord {
+    pub project_id: String,
+    pub policy_json: Vec<u8>,
+    pub version: i64,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -278,6 +286,55 @@ impl LocalDatabase {
             .optional()?)
     }
 
+    pub fn get_project_policy(
+        &self,
+        project_id: &str,
+    ) -> Result<Option<ProjectPolicyRecord>, StorageError> {
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT project_id, policy_json, version, updated_at FROM project_policies WHERE project_id = ?1",
+                [project_id],
+                |row| {
+                    Ok(ProjectPolicyRecord {
+                        project_id: row.get(0)?,
+                        policy_json: row.get(1)?,
+                        version: row.get(2)?,
+                        updated_at: row.get(3)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    pub fn upsert_project_policy(
+        &self,
+        project_id: &str,
+        policy_json: &[u8],
+        expected_version: Option<i64>,
+    ) -> Result<ProjectPolicyRecord, StorageError> {
+        let current = self.get_project_policy(project_id)?;
+        match (current, expected_version) {
+            (Some(record), Some(expected)) if record.version != expected => {
+                return Err(StorageError::VersionConflict {
+                    entity: "project_policy",
+                    id: project_id.into(),
+                    expected,
+                    current: record.version,
+                });
+            }
+            _ => {}
+        }
+        self.connection.execute(
+            "INSERT INTO project_policies(project_id, policy_json, version) VALUES (?1, ?2, 1)
+             ON CONFLICT(project_id) DO UPDATE SET policy_json = excluded.policy_json, version = project_policies.version + 1,
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
+            rusqlite::params![project_id, policy_json],
+        )?;
+        self.get_project_policy(project_id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+    }
+
     pub fn create_work_item(&self, item: &WorkItemRecord) -> Result<WorkItemRecord, StorageError> {
         self.connection.execute(
             "INSERT INTO work_items(id, project_id, parent_id, title, description, source_ref,
@@ -374,7 +431,8 @@ impl LocalDatabase {
             "INSERT INTO snapshots(id, run_id, workspace_hash, payload) VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![id, run_id, workspace_hash, payload],
         )?;
-        self.get_snapshot(id)?.ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+        self.get_snapshot(id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
     pub fn get_snapshot(&self, id: &str) -> Result<Option<SnapshotRecord>, StorageError> {
@@ -396,7 +454,10 @@ impl LocalDatabase {
             .optional()?)
     }
 
-    pub fn latest_snapshot_for_task(&self, task_id: &str) -> Result<Option<SnapshotRecord>, StorageError> {
+    pub fn latest_snapshot_for_task(
+        &self,
+        task_id: &str,
+    ) -> Result<Option<SnapshotRecord>, StorageError> {
         let mut statement = self.connection.prepare(
             "SELECT s.id, s.run_id, s.workspace_hash, s.payload, s.created_at
              FROM snapshots s JOIN runs r ON r.id = s.run_id
@@ -405,8 +466,11 @@ impl LocalDatabase {
         Ok(statement
             .query_row([task_id], |row| {
                 Ok(SnapshotRecord {
-                    id: row.get(0)?, run_id: row.get(1)?, workspace_hash: row.get(2)?,
-                    payload: row.get(3)?, created_at: row.get(4)?,
+                    id: row.get(0)?,
+                    run_id: row.get(1)?,
+                    workspace_hash: row.get(2)?,
+                    payload: row.get(3)?,
+                    created_at: row.get(4)?,
                 })
             })
             .optional()?)
@@ -631,7 +695,8 @@ impl LocalDatabase {
                 run.model_route_snapshot
             ],
         )?;
-        self.get_run(&run.id)?.ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+        self.get_run(&run.id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
     pub fn get_run(&self, id: &str) -> Result<Option<RunRecord>, StorageError> {
@@ -699,10 +764,14 @@ impl LocalDatabase {
                 run.model_route_snapshot
             ],
         )?;
-        self.get_run(&run.id)?.ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+        self.get_run(&run.id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
-    pub fn create_checkpoint(&self, checkpoint: &RunCheckpointRecord) -> Result<RunCheckpointRecord, StorageError> {
+    pub fn create_checkpoint(
+        &self,
+        checkpoint: &RunCheckpointRecord,
+    ) -> Result<RunCheckpointRecord, StorageError> {
         self.connection.execute(
             "INSERT INTO run_checkpoints(run_id, checkpoint_id, stage, node_id, attempt, input_hash,
              state_json, pending_effects_json, committed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -721,7 +790,10 @@ impl LocalDatabase {
         Ok(checkpoint.clone())
     }
 
-    pub fn latest_checkpoint(&self, run_id: &str) -> Result<Option<RunCheckpointRecord>, StorageError> {
+    pub fn latest_checkpoint(
+        &self,
+        run_id: &str,
+    ) -> Result<Option<RunCheckpointRecord>, StorageError> {
         let mut statement = self.connection.prepare(
             "SELECT run_id, checkpoint_id, stage, node_id, attempt, input_hash, state_json,
              pending_effects_json, committed_at FROM run_checkpoints
@@ -755,28 +827,45 @@ impl LocalDatabase {
             "INSERT OR IGNORE INTO runs(id, work_item_id, status, policy_snapshot, role_snapshot,
              skill_snapshot, model_route_snapshot) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             rusqlite::params![
-                run.id, run.work_item_id, run.status, run.policy_snapshot, run.role_snapshot,
-                run.skill_snapshot, run.model_route_snapshot
+                run.id,
+                run.work_item_id,
+                run.status,
+                run.policy_snapshot,
+                run.role_snapshot,
+                run.skill_snapshot,
+                run.model_route_snapshot
             ],
         )?;
         transaction.execute(
             "INSERT OR IGNORE INTO run_checkpoints(run_id, checkpoint_id, stage, node_id, attempt,
              input_hash, state_json, pending_effects_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             rusqlite::params![
-                checkpoint.run_id, checkpoint.checkpoint_id, checkpoint.stage, checkpoint.node_id,
-                checkpoint.attempt, checkpoint.input_hash, checkpoint.state_json, checkpoint.pending_effects_json
+                checkpoint.run_id,
+                checkpoint.checkpoint_id,
+                checkpoint.stage,
+                checkpoint.node_id,
+                checkpoint.attempt,
+                checkpoint.input_hash,
+                checkpoint.state_json,
+                checkpoint.pending_effects_json
             ],
         )?;
         transaction.execute(
             "INSERT OR IGNORE INTO run_effects(effect_id, run_id, node_id, kind, idempotency_key,
              immutable_intent_hash, state) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             rusqlite::params![
-                effect.effect_id, effect.run_id, effect.node_id, effect.kind, effect.idempotency_key,
-                effect.immutable_intent_hash, effect.state
+                effect.effect_id,
+                effect.run_id,
+                effect.node_id,
+                effect.kind,
+                effect.idempotency_key,
+                effect.immutable_intent_hash,
+                effect.state
             ],
         )?;
         transaction.commit()?;
-        self.get_run_effect(&effect.effect_id)?.ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+        self.get_run_effect(&effect.effect_id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
     pub fn get_run_effect(&self, effect_id: &str) -> Result<Option<RunEffectRecord>, StorageError> {
@@ -787,9 +876,16 @@ impl LocalDatabase {
         Ok(statement
             .query_row([effect_id], |row| {
                 Ok(RunEffectRecord {
-                    effect_id: row.get(0)?, run_id: row.get(1)?, node_id: row.get(2)?,
-                    kind: row.get(3)?, idempotency_key: row.get(4)?, immutable_intent_hash: row.get(5)?,
-                    state: row.get(6)?, started_at: row.get(7)?, completed_at: row.get(8)?, result_hash: row.get(9)?,
+                    effect_id: row.get(0)?,
+                    run_id: row.get(1)?,
+                    node_id: row.get(2)?,
+                    kind: row.get(3)?,
+                    idempotency_key: row.get(4)?,
+                    immutable_intent_hash: row.get(5)?,
+                    state: row.get(6)?,
+                    started_at: row.get(7)?,
+                    completed_at: row.get(8)?,
+                    result_hash: row.get(9)?,
                 })
             })
             .optional()?)
@@ -801,21 +897,35 @@ impl LocalDatabase {
              WHERE effect_id = ?1 AND state = 'prepared'",
             [effect_id],
         )?;
-        self.get_run_effect(effect_id)?.ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+        self.get_run_effect(effect_id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
-    pub fn complete_run_effect(&self, effect_id: &str, success: bool, result_hash: Option<&str>) -> Result<RunEffectRecord, StorageError> {
-        let state = if success { "completed_success" } else { "completed_failure" };
+    pub fn complete_run_effect(
+        &self,
+        effect_id: &str,
+        success: bool,
+        result_hash: Option<&str>,
+    ) -> Result<RunEffectRecord, StorageError> {
+        let state = if success {
+            "completed_success"
+        } else {
+            "completed_failure"
+        };
         self.connection.execute(
             "UPDATE run_effects SET state = ?1, completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), result_hash = ?2
              WHERE effect_id = ?3 AND state = 'executing'",
             rusqlite::params![state, result_hash, effect_id],
         )?;
-        self.get_run_effect(effect_id)?.ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+        self.get_run_effect(effect_id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
     pub fn update_run_status(&self, run_id: &str, status: &str) -> Result<(), StorageError> {
-        self.connection.execute("UPDATE runs SET status = ?1 WHERE id = ?2", rusqlite::params![status, run_id])?;
+        self.connection.execute(
+            "UPDATE runs SET status = ?1 WHERE id = ?2",
+            rusqlite::params![status, run_id],
+        )?;
         Ok(())
     }
 
@@ -827,7 +937,11 @@ impl LocalDatabase {
         )?;
         let records = statement
             .query_map([], |row| {
-                Ok(RecoveredRunRecord { run_id: row.get(0)?, work_item_id: row.get(1)?, effect_id: row.get(2)? })
+                Ok(RecoveredRunRecord {
+                    run_id: row.get(0)?,
+                    work_item_id: row.get(1)?,
+                    effect_id: row.get(2)?,
+                })
             })?
             .collect::<Result<Vec<_>, _>>()?;
         drop(statement);
@@ -1013,7 +1127,7 @@ impl LocalDatabase {
                 );
                 CREATE INDEX IF NOT EXISTS idx_snapshots_run ON snapshots(run_id);
                 PRAGMA user_version = 3;",
-                )?;
+            )?;
         }
         if current < 4 {
             transaction.execute_batch(
@@ -1033,6 +1147,17 @@ impl LocalDatabase {
                 );
                 CREATE INDEX IF NOT EXISTS idx_run_effects_run ON run_effects(run_id);
                 PRAGMA user_version = 4;",
+                )?;
+        }
+        if current < 5 {
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS project_policies (
+                    project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+                    policy_json BLOB NOT NULL,
+                    version INTEGER NOT NULL DEFAULT 1,
+                    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                );
+                PRAGMA user_version = 5;",
             )?;
         }
         transaction.commit()?;
@@ -1043,9 +1168,9 @@ impl LocalDatabase {
 #[cfg(test)]
 mod tests {
     use super::{
-        ImportedTask, LocalDatabase, ModelRouteSnapshot, PolicySnapshot, RoleRef, RunCheckpointRecord,
-        RunEffectRecord, RunRecord, RunSnapshots, SkillRef, StorageError, WorkItemRecord,
-        SCHEMA_VERSION,
+        ImportedTask, LocalDatabase, ModelRouteSnapshot, PolicySnapshot, RoleRef,
+        RunCheckpointRecord, RunEffectRecord, RunRecord, RunSnapshots, SkillRef, StorageError,
+        WorkItemRecord, SCHEMA_VERSION,
     };
     use std::path::PathBuf;
 
@@ -1122,7 +1247,9 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].sequence_id, second);
         assert_eq!(events[0].payload, b"two");
-        let task_events = database.read_task_events("task-1", 10).expect("task events read");
+        let task_events = database
+            .read_task_events("task-1", 10)
+            .expect("task events read");
         assert_eq!(task_events.len(), 2);
         assert_eq!(task_events[0].sequence_id, first);
         assert_eq!(task_events[1].sequence_id, second);
@@ -1229,8 +1356,14 @@ mod tests {
             Err(StorageError::DependencyCycle { .. })
         ));
         assert_eq!(database.list_work_items("project-graph").unwrap().len(), 3);
-        assert_eq!(database.list_dependencies("project-graph").unwrap().len(), 1);
-        assert_eq!(database.next_ready("project-graph").unwrap().unwrap().id, "task-b");
+        assert_eq!(
+            database.list_dependencies("project-graph").unwrap().len(),
+            1
+        );
+        assert_eq!(
+            database.next_ready("project-graph").unwrap().unwrap().id,
+            "task-b"
+        );
         drop(database);
         let _ = std::fs::remove_file(path);
     }
@@ -1261,7 +1394,10 @@ mod tests {
             .expect("provenance exists");
         assert_eq!(provenance.kind, "prd_import");
         assert_eq!(provenance.source, "prd.md");
-        assert_eq!(serde_json::from_slice::<serde_json::Value>(&provenance.payload).unwrap()["version"], "v7");
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&provenance.payload).unwrap()["version"],
+            "v7"
+        );
         assert!(database
             .import_prd("import-1", "project-prd", "prd.md", "v7", source, &tasks)
             .is_err());
@@ -1288,6 +1424,40 @@ mod tests {
     }
 
     #[test]
+    fn persists_project_policy_with_optimistic_versioning() {
+        let path = temp_database_path("project-policy");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        database
+            .create_project("project-policy", "Policy", ".", None)
+            .expect("project creates");
+        let first = database
+            .upsert_project_policy("project-policy", br#"{"timeout_ms":30000}"#, None)
+            .expect("policy creates");
+        assert_eq!(first.version, 1);
+        let second = database
+            .upsert_project_policy("project-policy", br#"{"timeout_ms":15000}"#, Some(1))
+            .expect("policy updates");
+        assert_eq!(second.version, 2);
+        assert!(matches!(
+            database.upsert_project_policy("project-policy", b"{}", Some(1)),
+            Err(StorageError::VersionConflict {
+                entity: "project_policy",
+                ..
+            })
+        ));
+        assert_eq!(
+            database
+                .get_project_policy("project-policy")
+                .unwrap()
+                .unwrap(),
+            second
+        );
+        drop(database);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
     fn checkpoints_and_unknown_effects_recover_without_retry() {
         let path = temp_database_path("recovery");
         let _ = std::fs::remove_file(&path);
@@ -1296,38 +1466,84 @@ mod tests {
             .create_project("project-recovery", "Recovery", ".", None)
             .expect("project creates");
         let task = WorkItemRecord {
-            id: "task-recovery".into(), project_id: "project-recovery".into(), parent_id: None,
-            title: "recover me".into(), description: String::new(), source_ref: None,
-            acceptance_criteria: String::new(), non_goals: String::new(), status: "in_progress".into(),
-            priority: 0, estimate: None, complexity: None, attempt_count: 0, version: 1,
+            id: "task-recovery".into(),
+            project_id: "project-recovery".into(),
+            parent_id: None,
+            title: "recover me".into(),
+            description: String::new(),
+            source_ref: None,
+            acceptance_criteria: String::new(),
+            non_goals: String::new(),
+            status: "in_progress".into(),
+            priority: 0,
+            estimate: None,
+            complexity: None,
+            attempt_count: 0,
+            version: 1,
         };
         database.create_work_item(&task).expect("task creates");
         let run = RunRecord {
-            id: "run-recovery".into(), work_item_id: task.id.clone(), status: "running".into(),
-            policy_snapshot: vec![], role_snapshot: vec![], skill_snapshot: vec![], model_route_snapshot: vec![],
+            id: "run-recovery".into(),
+            work_item_id: task.id.clone(),
+            status: "running".into(),
+            policy_snapshot: vec![],
+            role_snapshot: vec![],
+            skill_snapshot: vec![],
+            model_route_snapshot: vec![],
         };
         let checkpoint = RunCheckpointRecord {
-            run_id: run.id.clone(), checkpoint_id: "checkpoint-1".into(), stage: "build".into(),
-            node_id: "node-1".into(), attempt: 1, input_hash: "input-hash".into(),
-            state_json: br#"{"stage":"build"}"#.to_vec(), pending_effects_json: br#"["effect-1"]"#.to_vec(),
+            run_id: run.id.clone(),
+            checkpoint_id: "checkpoint-1".into(),
+            stage: "build".into(),
+            node_id: "node-1".into(),
+            attempt: 1,
+            input_hash: "input-hash".into(),
+            state_json: br#"{"stage":"build"}"#.to_vec(),
+            pending_effects_json: br#"["effect-1"]"#.to_vec(),
             committed_at: "2026-01-01T00:00:00Z".into(),
         };
         let effect = RunEffectRecord {
-            effect_id: "effect-1".into(), run_id: run.id.clone(), node_id: "node-1".into(),
-            kind: "bounded_build".into(), idempotency_key: "run-recovery:build".into(),
-            immutable_intent_hash: "intent-hash".into(), state: "prepared".into(),
-            started_at: None, completed_at: None, result_hash: None,
+            effect_id: "effect-1".into(),
+            run_id: run.id.clone(),
+            node_id: "node-1".into(),
+            kind: "bounded_build".into(),
+            idempotency_key: "run-recovery:build".into(),
+            immutable_intent_hash: "intent-hash".into(),
+            state: "prepared".into(),
+            started_at: None,
+            completed_at: None,
+            result_hash: None,
         };
-        database.prepare_run_effect(&run, &checkpoint, &effect).expect("effect prepares");
-        database.mark_effect_executing("effect-1").expect("effect starts");
+        database
+            .prepare_run_effect(&run, &checkpoint, &effect)
+            .expect("effect prepares");
+        database
+            .mark_effect_executing("effect-1")
+            .expect("effect starts");
         drop(database);
         let database = LocalDatabase::open(&path).expect("database reopens after restart");
         let recovered = database.recover_unknown_effects().expect("recovery runs");
         assert_eq!(recovered.len(), 1);
-        assert_eq!(database.get_run("run-recovery").unwrap().unwrap().status, "blocked");
-        assert_eq!(database.latest_checkpoint("run-recovery").unwrap().unwrap().checkpoint_id, "checkpoint-1");
-        assert_eq!(database.read_task_events(&task.id, 10).unwrap()[0].event_type, "run.recovery.blocked");
-        assert!(database.recover_unknown_effects().unwrap().is_empty(), "recovery is idempotent");
+        assert_eq!(
+            database.get_run("run-recovery").unwrap().unwrap().status,
+            "blocked"
+        );
+        assert_eq!(
+            database
+                .latest_checkpoint("run-recovery")
+                .unwrap()
+                .unwrap()
+                .checkpoint_id,
+            "checkpoint-1"
+        );
+        assert_eq!(
+            database.read_task_events(&task.id, 10).unwrap()[0].event_type,
+            "run.recovery.blocked"
+        );
+        assert!(
+            database.recover_unknown_effects().unwrap().is_empty(),
+            "recovery is idempotent"
+        );
         let _ = std::fs::remove_file(path);
     }
 
@@ -1392,7 +1608,10 @@ mod tests {
             model_route_snapshot: br#"{"route":"local-first"}"#.to_vec(),
         };
         assert_eq!(database.create_run(&run).expect("run creates"), run);
-        assert!(database.create_run(&run).is_err(), "run snapshot is immutable");
+        assert!(
+            database.create_run(&run).is_err(),
+            "run snapshot is immutable"
+        );
         assert_eq!(database.get_run("run-1").expect("run reads"), Some(run));
         drop(database);
         let _ = std::fs::remove_file(path);
@@ -1425,8 +1644,16 @@ mod tests {
             })
             .expect("task creates");
         let snapshots = RunSnapshots {
-            role_ref: RoleRef { id: "planner".into(), version: "1".into(), hash: "role-hash".into() },
-            skill_ref: SkillRef { id: "native".into(), version: "2".into(), hash: "skill-hash".into() },
+            role_ref: RoleRef {
+                id: "planner".into(),
+                version: "1".into(),
+                hash: "role-hash".into(),
+            },
+            skill_ref: SkillRef {
+                id: "native".into(),
+                version: "2".into(),
+                hash: "skill-hash".into(),
+            },
             policy: PolicySnapshot {
                 schema_version: 1,
                 policy_version: 3,
@@ -1444,7 +1671,12 @@ mod tests {
         database
             .create_run_with_snapshots("run-typed", "task-typed", "queued", &snapshots)
             .expect("typed run creates");
-        assert_eq!(database.get_run_snapshots("run-typed").expect("typed run reads"), Some(snapshots));
+        assert_eq!(
+            database
+                .get_run_snapshots("run-typed")
+                .expect("typed run reads"),
+            Some(snapshots)
+        );
         drop(database);
         let _ = std::fs::remove_file(path);
     }

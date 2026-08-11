@@ -199,7 +199,7 @@ Exit criteria 0a: повторный запуск миграций идемпо�
 
 ### Этап 0b — минимальный durable recovery (P0, MVP-2)
 
-Статус реализации на 2026-08-11: **в работе**. Первый вертикальный recovery-срез закрывает bounded Build; полный kill-9 harness и supervisor health-ping остаются.
+Статус реализации на 2026-08-12: **в работе**. Вертикальный recovery-срез bounded Build, kill/restart harness и supervisor health-ping закрыты; leases/generation и reconciliation остаются в 0c.
 
 - Добавить durable checkpoints, минимальный `RunEffect`, idempotency keys, cancellation token, timeout и bounded output.
 - После kill/restart восстанавливать graph, status и последний durable checkpoint; started effect с неизвестным outcome сразу переводить в `BLOCKED` или `WAITING_APPROVAL`, без blind retry.
@@ -239,6 +239,7 @@ MVP-1 milestone после этапа 1: пользователь видит п�
 ### Этап 2 — Plan/Build lifecycle, context и snapshots (P0)
 
 - [x] В MVP-2 оставить read-only `/plan` и `/spec`, Build только по ограниченному списку разрешённых текстовых файлов и один approval на весь bounded Build; полный lifecycle mutation matrix, compaction и сложный rollback расширяются после feedback.
+- [x] Хранить project build-policy в Core/SQLite с versioning: proposal может только сузить persisted limits, risk и timeout; defaults не принадлежат WinUI.
 - [x] Добавить context assembler из task, acceptance criteria, non-goals, локальных workspace references и ручных подсказок пользователя. Research stub пустой, но Plan/Build полностью offline и не зависит от research.
 - Snapshot минимален и связан с run: `snapshot { id, run_id, workspace_hash, diff[], created_at }`; snapshot+diff атомарны. Он не включает SQLite и не откатывает external effects. UI явно показывает эту границу.
 - Для workspace использовать manifest + content hashes; ограничить snapshot размером и текстовыми файлами MVP. Запись требует `expected_content_hash`; mismatch даёт workspace conflict, а не overwrite. Git diff/rollback — отдельный ограниченный Core tool, auto-commit/push не входят.

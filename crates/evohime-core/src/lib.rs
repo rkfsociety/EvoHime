@@ -240,13 +240,15 @@ fn parse_tagged_tool_call(content: &str, iteration: usize) -> Option<NativeToolC
     if let Some(start) = content.find("<tool_code>") {
         let body_start = start + "<tool_code>".len();
         let body_end = content[body_start..].find("</tool_code>")? + body_start;
-        let wrapped = format!("<tool_call>{}</tool_call>", content[body_start..body_end].trim());
+        let wrapped = format!(
+            "<tool_call>{}</tool_call>",
+            content[body_start..body_end].trim()
+        );
         return parse_tagged_tool_call(&wrapped, iteration);
     }
-    if let (Some(name_start), Some(input_start)) = (
-        content.find("<tool_name>"),
-        content.find("<tool_input>"),
-    ) {
+    if let (Some(name_start), Some(input_start)) =
+        (content.find("<tool_name>"), content.find("<tool_input>"))
+    {
         let name_start = name_start + "<tool_name>".len();
         let name_end = content[name_start..].find("</tool_name>")? + name_start;
         let input_start = input_start + "<tool_input>".len();
@@ -254,15 +256,13 @@ fn parse_tagged_tool_call(content: &str, iteration: usize) -> Option<NativeToolC
         let name = content[name_start..name_end].trim();
         if !matches!(
             name,
-            "filesystem.list"
-                | "filesystem.read"
-                | "filesystem.search"
-                | "git.status"
-                | "git.diff"
+            "filesystem.list" | "filesystem.read" | "filesystem.search" | "git.status" | "git.diff"
         ) {
             return None;
         }
-        let arguments = serde_json::from_str::<serde_json::Value>(content[input_start..input_end].trim()).ok()?;
+        let arguments =
+            serde_json::from_str::<serde_json::Value>(content[input_start..input_end].trim())
+                .ok()?;
         return Some(NativeToolCall {
             id: format!("tagged-{iteration}"),
             name: name.to_string(),
@@ -289,7 +289,10 @@ fn parse_tagged_tool_call(content: &str, iteration: usize) -> Option<NativeToolC
         for pair in params.split(',').filter(|pair| !pair.trim().is_empty()) {
             let (key, value) = pair.split_once('=')?;
             let value = value.trim().trim_matches('"').trim_matches('\'');
-            arguments.insert(key.trim().to_string(), serde_json::Value::String(value.to_string()));
+            arguments.insert(
+                key.trim().to_string(),
+                serde_json::Value::String(value.to_string()),
+            );
         }
         (name, serde_json::Value::Object(arguments))
     };
@@ -307,10 +310,16 @@ fn parse_tagged_tool_call(content: &str, iteration: usize) -> Option<NativeToolC
 }
 
 fn parse_plain_tool_call(content: &str, iteration: usize) -> Option<NativeToolCall> {
-    let name = ["filesystem.list", "filesystem.read", "filesystem.search", "git.status", "git.diff"]
-        .iter()
-        .find(|candidate| content.lines().any(|line| line.trim() == **candidate))
-        .copied()?;
+    let name = [
+        "filesystem.list",
+        "filesystem.read",
+        "filesystem.search",
+        "git.status",
+        "git.diff",
+    ]
+    .iter()
+    .find(|candidate| content.lines().any(|line| line.trim() == **candidate))
+    .copied()?;
     let (key, value) = content
         .lines()
         .filter_map(|line| line.split_once(':'))
@@ -324,10 +333,16 @@ fn parse_plain_tool_call(content: &str, iteration: usize) -> Option<NativeToolCa
 }
 
 fn parse_xml_named_tool_call(content: &str, iteration: usize) -> Option<NativeToolCall> {
-    let name = ["filesystem.list", "filesystem.read", "filesystem.search", "git.status", "git.diff"]
-        .iter()
-        .find(|candidate| content.contains(&format!("<{}>", candidate)))
-        .copied()?;
+    let name = [
+        "filesystem.list",
+        "filesystem.read",
+        "filesystem.search",
+        "git.status",
+        "git.diff",
+    ]
+    .iter()
+    .find(|candidate| content.contains(&format!("<{}>", candidate)))
+    .copied()?;
     let start_marker = format!("<{}>", name);
     let end_marker = format!("</{}>", name);
     let start = content.find(&start_marker)? + start_marker.len();
@@ -383,9 +398,18 @@ impl DeliveryRequirements {
     fn from_prompt(prompt: &str) -> Self {
         let prompt = prompt.to_lowercase();
         Self {
-            mutation: ["исправ", "измен", "добав", "реализ", "сделай", "улучш", "удал", "убер"]
-                .iter()
-                .any(|marker| prompt.contains(marker)),
+            mutation: [
+                "исправ",
+                "измен",
+                "добав",
+                "реализ",
+                "сделай",
+                "улучш",
+                "удал",
+                "убер",
+            ]
+            .iter()
+            .any(|marker| prompt.contains(marker)),
             verification: ["проверь", "провер", "тест", "test", "собери", "запусти"]
                 .iter()
                 .any(|marker| prompt.contains(marker)),
@@ -460,8 +484,8 @@ use std::{
 };
 
 use evohime_local_storage::{
-    EventRecord, ImportedTask, LocalDatabase, RunCheckpointRecord, RunEffectRecord, RunRecord,
-    StorageError, WorkItemRecord,
+    EventRecord, ImportedTask, LocalDatabase, ProjectPolicyRecord, RunCheckpointRecord,
+    RunEffectRecord, RunRecord, StorageError, WorkItemRecord,
 };
 use evohime_model_gateway::{
     providers::{ChatMessage, ChatRole, ProviderError},
@@ -475,11 +499,11 @@ use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
-pub mod prd;
+pub mod build;
 pub mod plan;
+pub mod prd;
 pub mod scope;
 pub mod workspace;
-pub mod build;
 
 pub enum CoreCommand {
     StartTask {
@@ -641,6 +665,25 @@ pub struct EventJournal {
     database: Arc<Mutex<LocalDatabase>>,
 }
 
+fn default_build_policy() -> crate::scope::BuildScope {
+    crate::scope::BuildScope {
+        allowed_paths: Vec::new(),
+        allowed_operations: vec!["write".into(), "create".into()],
+        expected_outputs: Vec::new(),
+        protected_paths: vec![".git".into(), ".evohime".into()],
+        allowed_file_types: Vec::new(),
+        max_files_changed: 20,
+        max_bytes_changed: 2 * 1024 * 1024,
+        allow_create: true,
+        allow_delete: false,
+        allow_rename: false,
+        baseline_snapshot_id: None,
+        acceptance_criteria: String::new(),
+        risk_class: "medium".into(),
+        timeout_ms: 30_000,
+    }
+}
+
 impl EventJournal {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, StorageError> {
         Ok(Self {
@@ -704,10 +747,40 @@ impl EventJournal {
         database.get_project(id)
     }
 
-    pub async fn get_work_item(
+    pub async fn get_or_create_build_policy(
         &self,
-        id: &str,
-    ) -> Result<Option<WorkItemRecord>, StorageError> {
+        project_id: &str,
+        default_policy: &crate::scope::BuildScope,
+    ) -> Result<crate::scope::BuildScope, String> {
+        let database = self.database.lock().await;
+        if let Some(record) = database
+            .get_project_policy(project_id)
+            .map_err(|error| error.to_string())?
+        {
+            return serde_json::from_slice(&record.policy_json)
+                .map_err(|error| format!("invalid persisted build policy: {error}"));
+        }
+        let policy_json = serde_json::to_vec(default_policy).map_err(|error| error.to_string())?;
+        database
+            .upsert_project_policy(project_id, &policy_json, None)
+            .map_err(|error| error.to_string())?;
+        Ok(default_policy.clone())
+    }
+
+    pub async fn save_build_policy(
+        &self,
+        project_id: &str,
+        policy: &crate::scope::BuildScope,
+        expected_version: Option<i64>,
+    ) -> Result<ProjectPolicyRecord, String> {
+        let policy_json = serde_json::to_vec(policy).map_err(|error| error.to_string())?;
+        let database = self.database.lock().await;
+        database
+            .upsert_project_policy(project_id, &policy_json, expected_version)
+            .map_err(|error| error.to_string())
+    }
+
+    pub async fn get_work_item(&self, id: &str) -> Result<Option<WorkItemRecord>, StorageError> {
         let database = self.database.lock().await;
         database.get_work_item(id)
     }
@@ -858,15 +931,22 @@ impl EventJournal {
         };
         let stored = database.prepare_run_effect(&run, &checkpoint, &effect)?;
         if stored.immutable_intent_hash != intent_hash {
-            return Err(StorageError::InvalidRunEffect("intent hash conflict".into()));
+            return Err(StorageError::InvalidRunEffect(
+                "intent hash conflict".into(),
+            ));
         }
         match stored.state.as_str() {
             "prepared" => database.mark_effect_executing(&effect_id),
-            "executing" => Err(StorageError::InvalidRunEffect("effect is already executing".into())),
-            "completed_success" | "completed_failure" | "unknown" => {
-                Err(StorageError::InvalidRunEffect(format!("effect is already {}", stored.state)))
-            }
-            _ => Err(StorageError::InvalidRunEffect(format!("unsupported state {}", stored.state))),
+            "executing" => Err(StorageError::InvalidRunEffect(
+                "effect is already executing".into(),
+            )),
+            "completed_success" | "completed_failure" | "unknown" => Err(
+                StorageError::InvalidRunEffect(format!("effect is already {}", stored.state)),
+            ),
+            _ => Err(StorageError::InvalidRunEffect(format!(
+                "unsupported state {}",
+                stored.state
+            ))),
         }
     }
 
@@ -877,7 +957,8 @@ impl EventJournal {
         result_hash: Option<&str>,
     ) -> Result<RunEffectRecord, StorageError> {
         let database = self.database.lock().await;
-        let effect = database.complete_run_effect(&format!("effect-{run_id}"), success, result_hash)?;
+        let effect =
+            database.complete_run_effect(&format!("effect-{run_id}"), success, result_hash)?;
         database.update_run_status(run_id, if success { "completed" } else { "failed" })?;
         Ok(effect)
     }
@@ -1114,11 +1195,7 @@ impl ToolAgent {
             .into_iter()
             .map(|tool| {
                 let name = tool.name.to_string();
-                ToolSpec::function(
-                    name,
-                    tool.description,
-                    tool_parameters(tool.name),
-                )
+                ToolSpec::function(name, tool.description, tool_parameters(tool.name))
             })
             .collect::<Vec<_>>();
         let tool_names = specs
@@ -1196,7 +1273,12 @@ impl ToolAgent {
                         let invalid_directory_read = call.name == "filesystem.read"
                             && serde_json::from_str::<serde_json::Value>(&call.arguments)
                                 .ok()
-                                .and_then(|value| value.get("path").and_then(|path| path.as_str()).map(str::to_string))
+                                .and_then(|value| {
+                                    value
+                                        .get("path")
+                                        .and_then(|path| path.as_str())
+                                        .map(str::to_string)
+                                })
                                 .is_some_and(|path| path == ".");
                         let key = format!("{}:{}", call.name, call.arguments);
                         !invalid_directory_read && legacy_seen.insert(key)
@@ -1253,9 +1335,8 @@ impl ToolAgent {
                     tool_calls.push(call);
                 }
             }
-            tool_calls.retain(|call| {
-                seen_tool_calls.insert(format!("{}:{}", call.name, call.arguments))
-            });
+            tool_calls
+                .retain(|call| seen_tool_calls.insert(format!("{}:{}", call.name, call.arguments)));
             if tool_calls.is_empty() {
                 let missing =
                     delivery_requirements.missing(mutation_done, verification_done, commit_done);
@@ -1342,13 +1423,17 @@ impl ToolAgent {
                         if !granted {
                             "approval denied".to_string()
                         } else {
-                            match self.tools.execute_after_approval(
-                                &context,
-                                &tool,
-                                input,
-                                approval_id,
-                                cancellation.clone(),
-                            ).await {
+                            match self
+                                .tools
+                                .execute_after_approval(
+                                    &context,
+                                    &tool,
+                                    input,
+                                    approval_id,
+                                    cancellation.clone(),
+                                )
+                                .await
+                            {
                                 Ok(result) => result.output,
                                 Err(error) => error.to_string(),
                             }
@@ -1538,9 +1623,8 @@ impl TaskCoordinator {
                             executor.execute_in_workspace(
                                 task_id.clone(),
                                 prompt,
-                                workspace_root.unwrap_or_else(|| {
-                                    std::env::current_dir().unwrap_or_default()
-                                }),
+                                workspace_root
+                                    .unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
                                 cancellation.clone(),
                                 events.clone(),
                             ),
@@ -1589,7 +1673,8 @@ impl TaskCoordinator {
             } => {
                 let journal = state.lock().await.journal.clone();
                 let result = async {
-                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
                     if let Some(replay) = journal
                         .record_deduplicated(&client_id, &request_id, &command_hash, b"")
                         .await
@@ -1626,7 +1711,8 @@ impl TaskCoordinator {
             } => {
                 let journal = state.lock().await.journal.clone();
                 let result = async {
-                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
                     if let Some(replay) = journal
                         .record_deduplicated(&client_id, &request_id, &command_hash, b"")
                         .await
@@ -1665,7 +1751,8 @@ impl TaskCoordinator {
             } => {
                 let journal = state.lock().await.journal.clone();
                 let result = async {
-                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
                     if let Some(replay) = journal
                         .record_deduplicated(&client_id, &request_id, &command_hash, b"")
                         .await
@@ -1703,7 +1790,8 @@ impl TaskCoordinator {
             } => {
                 let journal = state.lock().await.journal.clone();
                 let result = async {
-                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
                     if let Some(replay) = journal
                         .record_deduplicated(&client_id, &request_id, &command_hash, b"")
                         .await
@@ -1728,7 +1816,8 @@ impl TaskCoordinator {
             CoreCommand::GetTaskGraph { project_id, reply } => {
                 let journal = state.lock().await.journal.clone();
                 let result = async {
-                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
                     let (tasks, edges) = journal
                         .list_task_graph(&project_id)
                         .await
@@ -1750,7 +1839,8 @@ impl TaskCoordinator {
             CoreCommand::NextReadyTask { project_id, reply } => {
                 let journal = state.lock().await.journal.clone();
                 let result = async {
-                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
                     let task = journal
                         .next_ready_task(&project_id)
                         .await
@@ -1777,7 +1867,8 @@ impl TaskCoordinator {
             } => {
                 let journal = state.lock().await.journal.clone();
                 let result = async {
-                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
                     if let Some(replay) = journal
                         .record_deduplicated(&client_id, &request_id, &command_hash, b"")
                         .await
@@ -1830,7 +1921,11 @@ impl TaskCoordinator {
                 .await;
                 let _ = reply.send(result);
             }
-            CoreCommand::GetTaskHistory { task_id, limit, reply } => {
+            CoreCommand::GetTaskHistory {
+                task_id,
+                limit,
+                reply,
+            } => {
                 let journal = state.lock().await.journal.clone();
                 let result = async {
                     let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
@@ -1861,7 +1956,8 @@ impl TaskCoordinator {
             } => {
                 let journal = state.lock().await.journal.clone();
                 let result = async {
-                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
                     let project = journal
                         .get_project(&project_id)
                         .await
@@ -1875,8 +1971,12 @@ impl TaskCoordinator {
                     if task.project_id != project_id {
                         return Err("task does not belong to project".to_string());
                     }
-                    let manifest = crate::workspace::build_manifest(&project.workspace_path, 500, 2 * 1024 * 1024)
-                        .map_err(|error| error.to_string())?;
+                    let manifest = crate::workspace::build_manifest(
+                        &project.workspace_path,
+                        500,
+                        2 * 1024 * 1024,
+                    )
+                    .map_err(|error| error.to_string())?;
                     let references = manifest
                         .entries
                         .iter()
@@ -1912,7 +2012,8 @@ impl TaskCoordinator {
             } => {
                 let journal = state.lock().await.journal.clone();
                 let result = async {
-                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
                     let task = journal
                         .get_work_item(&task_id)
                         .await
@@ -1934,10 +2035,15 @@ impl TaskCoordinator {
                 .await;
                 let _ = reply.send(result);
             }
-            CoreCommand::GetTaskSnapshot { project_id, task_id, reply } => {
+            CoreCommand::GetTaskSnapshot {
+                project_id,
+                task_id,
+                reply,
+            } => {
                 let journal = state.lock().await.journal.clone();
                 let result = async {
-                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
                     let task = journal
                         .get_work_item(&task_id)
                         .await
@@ -1951,8 +2057,9 @@ impl TaskCoordinator {
                         .await
                         .map_err(|error| error.to_string())?
                         .ok_or_else(|| "snapshot not found".to_string())?;
-                    let snapshot_json = serde_json::from_slice::<serde_json::Value>(&snapshot.payload)
-                        .map_err(|error| error.to_string())?;
+                    let snapshot_json =
+                        serde_json::from_slice::<serde_json::Value>(&snapshot.payload)
+                            .map_err(|error| error.to_string())?;
                     serde_json::to_vec(&serde_json::json!({
                         "id": snapshot.id,
                         "run_id": snapshot.run_id,
@@ -1965,10 +2072,16 @@ impl TaskCoordinator {
                 .await;
                 let _ = reply.send(result);
             }
-            CoreCommand::RestoreTaskSnapshot { project_id, task_id, snapshot_id, reply } => {
+            CoreCommand::RestoreTaskSnapshot {
+                project_id,
+                task_id,
+                snapshot_id,
+                reply,
+            } => {
                 let journal = state.lock().await.journal.clone();
                 let result = async {
-                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
                     let project = journal
                         .get_project(&project_id)
                         .await
@@ -1995,8 +2108,10 @@ impl TaskCoordinator {
                         return Err("snapshot ownership could not be verified".to_string());
                     }
                     let run_id = snapshot.run_id.clone();
-                    let workspace_snapshot = serde_json::from_slice::<crate::build::WorkspaceSnapshot>(&snapshot.payload)
-                        .map_err(|error| format!("invalid snapshot: {error}"))?;
+                    let workspace_snapshot = serde_json::from_slice::<
+                        crate::build::WorkspaceSnapshot,
+                    >(&snapshot.payload)
+                    .map_err(|error| format!("invalid snapshot: {error}"))?;
                     crate::build::restore_snapshot(&project.workspace_path, &workspace_snapshot)
                         .map_err(|error| error.to_string())?;
                     let audit_payload = serde_json::to_vec(&serde_json::json!({
@@ -2028,28 +2143,39 @@ impl TaskCoordinator {
             } => {
                 let journal = state.lock().await.journal.clone();
                 let result = async {
-                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
                     let project = journal
                         .get_project(&project_id)
                         .await
                         .map_err(|error| error.to_string())?
                         .ok_or_else(|| "project not found".to_string())?;
-                    let approved = serde_json::from_slice::<crate::build::ApprovedBuild>(&approved_build_json)
-                        .map_err(|error| format!("invalid approved build: {error}"))?;
+                    let approved =
+                        serde_json::from_slice::<crate::build::ApprovedBuild>(&approved_build_json)
+                            .map_err(|error| format!("invalid approved build: {error}"))?;
                     let _effect = journal
                         .begin_build_effect(&run_id, &task_id, &approved.intent_hash)
                         .await
                         .map_err(|error| error.to_string())?;
-                    let snapshot = match crate::build::apply_approved_build(&project.workspace_path, &approved) {
+                    let snapshot = match crate::build::apply_approved_build(
+                        &project.workspace_path,
+                        &approved,
+                    ) {
                         Ok(snapshot) => snapshot,
                         Err(error) => {
                             let _ = journal.complete_build_effect(&run_id, false, None).await;
                             return Err(error.to_string());
                         }
                     };
-                    let payload = serde_json::to_vec(&snapshot).map_err(|error| error.to_string())?;
+                    let payload =
+                        serde_json::to_vec(&snapshot).map_err(|error| error.to_string())?;
                     journal
-                        .save_snapshot(&snapshot.id, &run_id, &snapshot.baseline_workspace_hash, &payload)
+                        .save_snapshot(
+                            &snapshot.id,
+                            &run_id,
+                            &snapshot.baseline_workspace_hash,
+                            &payload,
+                        )
                         .await
                         .map_err(|error| error.to_string())?;
                     let audit_payload = serde_json::to_vec(&serde_json::json!({
@@ -2062,7 +2188,11 @@ impl TaskCoordinator {
                         "diff": &snapshot.diff,
                     }))
                     .map_err(|error| error.to_string())?;
-                    let audit_subject = if task_id.is_empty() { &run_id } else { &task_id };
+                    let audit_subject = if task_id.is_empty() {
+                        &run_id
+                    } else {
+                        &task_id
+                    };
                     journal
                         .record_audit(audit_subject, "build.applied", &audit_payload)
                         .await
@@ -2083,17 +2213,35 @@ impl TaskCoordinator {
             } => {
                 let journal = state.lock().await.journal.clone();
                 let result = async {
-                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
                     let project = journal
                         .get_project(&project_id)
                         .await
                         .map_err(|error| error.to_string())?
                         .ok_or_else(|| "project not found".to_string())?;
-                    let proposal = serde_json::from_slice::<crate::build::BuildProposal>(&proposal_json)
-                        .map_err(|error| format!("invalid build proposal: {error}"))?;
-                    let approved = crate::build::prepare_build(&project.workspace_path, &proposal)
-                        .map_err(|error| error.to_string())?;
-                    let payload = serde_json::to_vec(&approved).map_err(|error| error.to_string())?;
+                    let proposal =
+                        serde_json::from_slice::<crate::build::BuildProposal>(&proposal_json)
+                            .map_err(|error| format!("invalid build proposal: {error}"))?;
+                    let policy = journal
+                        .get_or_create_build_policy(&project_id, &default_build_policy())
+                        .await?;
+                    let effective_scope =
+                        crate::scope::restrict_to_policy(&policy, &proposal.scope).map_err(
+                            |violations| {
+                                serde_json::to_string(&violations)
+                                    .unwrap_or_else(|_| "build policy violation".into())
+                            },
+                        )?;
+                    let effective_proposal = crate::build::BuildProposal {
+                        scope: effective_scope,
+                        changes: proposal.changes,
+                    };
+                    let approved =
+                        crate::build::prepare_build(&project.workspace_path, &effective_proposal)
+                            .map_err(|error| error.to_string())?;
+                    let payload =
+                        serde_json::to_vec(&approved).map_err(|error| error.to_string())?;
                     let audit_subject = format!("proposal-{}", approved.intent_hash);
                     let audit_payload = serde_json::to_vec(&serde_json::json!({
                         "intent_hash": approved.intent_hash,
@@ -2187,7 +2335,9 @@ mod tests {
         .expect("filesystem intent");
         assert_eq!(call.name, "filesystem.list");
         assert_eq!(call.arguments, r#"{"path":"crates"}"#);
-        assert!(super::parse_natural_tool_intent("Инструмент filesystem.list доступен.", 3).is_none());
+        assert!(
+            super::parse_natural_tool_intent("Инструмент filesystem.list доступен.", 3).is_none()
+        );
     }
 
     impl TaskExecutor for NeverExecutor {
@@ -2442,7 +2592,11 @@ mod tests {
         assert_eq!(replay[0].event_type, "task.completed");
         assert_eq!(replay[0].task_id, "task-journal");
         journal
-            .record_audit("run-journal", "build.applied", br#"{"snapshot_id":"snap-1"}"#)
+            .record_audit(
+                "run-journal",
+                "build.applied",
+                br#"{"snapshot_id":"snap-1"}"#,
+            )
             .await
             .expect("audit records");
         let audit = journal
