@@ -173,6 +173,36 @@ fn parse_legacy_function_calls(content: &str, iteration: usize) -> Vec<NativeToo
     calls
 }
 
+fn parse_natural_tool_intent(content: &str, iteration: usize) -> Option<NativeToolCall> {
+    let lower = content.to_lowercase();
+    let explicit_action = ["вызываю", "вызову", "вызвать", "запрашиваю"]
+        .iter()
+        .any(|marker| lower.contains(marker));
+    let name = ["filesystem.list", "filesystem.read", "filesystem.search"]
+        .iter()
+        .find(|candidate| content.contains(**candidate))
+        .copied()?;
+    if !explicit_action {
+        return None;
+    }
+
+    let path = content
+        .split('`')
+        .nth(1)
+        .filter(|value| !value.contains('.'))
+        .unwrap_or(".");
+    let arguments = match name {
+        "filesystem.list" | "filesystem.read" => serde_json::json!({ "path": path }),
+        "filesystem.search" => serde_json::json!({ "query": path }),
+        _ => return None,
+    };
+    Some(NativeToolCall {
+        id: format!("natural-{iteration}"),
+        name: name.to_string(),
+        arguments: arguments.to_string(),
+    })
+}
+
 mod ipc_bridge;
 pub use ipc_bridge::{IpcBridge, IpcBridgeError, ModelConfigSnapshot};
 mod logging;
@@ -625,6 +655,18 @@ impl ToolAgent {
                 }
             }
             if tool_calls.is_empty() {
+                if let Some(call) = parse_natural_tool_intent(&result.content, iteration) {
+                    write_model_trace(
+                        "natural.tool_intent.parsed",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "tool_call": call
+                        }),
+                    );
+                    tool_calls.push(call);
+                }
+            }
+            if tool_calls.is_empty() {
                 let _ = events.send(CoreEvent::TaskCompleted {
                     task_id,
                     final_message: result.content.clone(),
@@ -958,6 +1000,18 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].name, "filesystem.list");
         assert_eq!(calls[0].arguments, r#"{"path":"."}"#);
+    }
+
+    #[test]
+    fn parses_explicit_natural_filesystem_intent() {
+        let call = super::parse_natural_tool_intent(
+            "Продолжу изучение. Вызываю filesystem.list для папки `crates`.",
+            3,
+        )
+        .expect("filesystem intent");
+        assert_eq!(call.name, "filesystem.list");
+        assert_eq!(call.arguments, r#"{"path":"crates"}"#);
+        assert!(super::parse_natural_tool_intent("Инструмент filesystem.list доступен.", 3).is_none());
     }
 
     impl TaskExecutor for NeverExecutor {
