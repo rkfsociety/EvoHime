@@ -42,6 +42,22 @@ fn tool_parameters(name: &str) -> serde_json::Value {
             "properties": { "path": { "type": "string", "description": "Workspace-relative UTF-8 file path" } },
             "required": ["path"]
         }),
+        "filesystem.write" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "Workspace-relative UTF-8 file path" },
+                "content": { "type": "string", "description": "Complete UTF-8 file content" }
+            },
+            "required": ["path", "content"]
+        }),
+        "filesystem.patch" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "Workspace-relative file path" },
+                "patch": { "type": "string", "description": "Unified diff to apply to the file" }
+            },
+            "required": ["path", "patch"]
+        }),
         "filesystem.search" => serde_json::json!({
             "type": "object",
             "properties": {
@@ -55,6 +71,21 @@ fn tool_parameters(name: &str) -> serde_json::Value {
         "git.diff" => serde_json::json!({
             "type": "object",
             "properties": { "path": { "type": "string", "description": "Optional workspace-relative path" } }
+        }),
+        "git.commit" => serde_json::json!({
+            "type": "object",
+            "properties": { "message": { "type": "string", "description": "Commit message" } },
+            "required": ["message"]
+        }),
+        "shell.execute" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "program": { "type": "string", "description": "Executable name, for example cargo or dotnet" },
+                "args": { "type": "array", "items": { "type": "string" } },
+                "cwd": { "type": "string" },
+                "timeout_ms": { "type": "integer" }
+            },
+            "required": ["program"]
         }),
         _ => serde_json::json!({ "type": "object", "additionalProperties": true }),
     }
