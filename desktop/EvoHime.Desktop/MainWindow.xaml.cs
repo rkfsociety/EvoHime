@@ -56,6 +56,8 @@ public partial class MainWindow : Window
     private string _modelContextDetails = "Контекст модели ещё не получен.";
     private Grid? _homeContent;
     private Grid? _settingsView;
+    private Grid? _scheduledView;
+    private Grid? _pluginsView;
     private TextBlock? _settingsWorkspaceText;
     private readonly ProviderSettingsService _providerSettings = new();
     private TextBox? _providerBox;
@@ -168,13 +170,10 @@ public partial class MainWindow : Window
                 Tag = item.Description,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 HorizontalContentAlignment = HorizontalAlignment.Left,
-                Background = item.Title == "Пульс" ? raised : new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
                 Foreground = text,
             };
-            if (item.Title == "Настройки")
-            {
-                button.Click += (_, _) => ShowSettingsView();
-            }
+            button.Click += (_, _) => NavigateShellItem(item.Title);
             navItems.Children.Add(button);
         }
         navItems.Children.Add(new TextBlock
@@ -569,6 +568,14 @@ public partial class MainWindow : Window
         Grid.SetColumn(_settingsView, 1);
         _settingsView.Visibility = Visibility.Collapsed;
         root.Children.Add(_settingsView);
+        _scheduledView = BuildScheduledView();
+        Grid.SetColumn(_scheduledView, 1);
+        _scheduledView.Visibility = Visibility.Collapsed;
+        root.Children.Add(_scheduledView);
+        _pluginsView = BuildPluginsView();
+        Grid.SetColumn(_pluginsView, 1);
+        _pluginsView.Visibility = Visibility.Collapsed;
+        root.Children.Add(_pluginsView);
         var providerSettings = _providerSettings.Load();
         if (!string.IsNullOrWhiteSpace(providerSettings.Model))
         {
@@ -720,9 +727,9 @@ public partial class MainWindow : Window
 
     private void ShowSettingsView()
     {
-        if (_homeContent is not null && _settingsView is not null)
+        HideShellViews();
+        if (_settingsView is not null)
         {
-            _homeContent.Visibility = Visibility.Collapsed;
             _settingsView.Visibility = Visibility.Visible;
             _ = LoadModelCatalogAsync(_modelModeBox?.SelectedIndex == 1 ? "paid" : "free");
         }
@@ -730,11 +737,132 @@ public partial class MainWindow : Window
 
     private void ShowHomeView()
     {
-        if (_homeContent is not null && _settingsView is not null)
+        HideShellViews();
+        if (_homeContent is not null)
         {
-            _settingsView.Visibility = Visibility.Collapsed;
             _homeContent.Visibility = Visibility.Visible;
         }
+    }
+
+    private void NavigateShellItem(string title)
+    {
+        switch (title)
+        {
+            case "Запланировано":
+                ShowScheduledView();
+                break;
+            case "Плагины":
+                ShowPluginsView();
+                break;
+            case "Настройки":
+                ShowSettingsView();
+                break;
+            case "Новый чат":
+                ShowHomeView();
+                break;
+        }
+    }
+
+    private void HideShellViews()
+    {
+        if (_homeContent is not null) _homeContent.Visibility = Visibility.Collapsed;
+        if (_settingsView is not null) _settingsView.Visibility = Visibility.Collapsed;
+        if (_scheduledView is not null) _scheduledView.Visibility = Visibility.Collapsed;
+        if (_pluginsView is not null) _pluginsView.Visibility = Visibility.Collapsed;
+    }
+
+    private void ShowScheduledView()
+    {
+        HideShellViews();
+        if (_scheduledView is not null) _scheduledView.Visibility = Visibility.Visible;
+    }
+
+    private void ShowPluginsView()
+    {
+        HideShellViews();
+        if (_pluginsView is not null) _pluginsView.Visibility = Visibility.Visible;
+    }
+
+    private Grid BuildScheduledView()
+    {
+        var view = BuildShellPage(
+            "Запланировано",
+            "Управление задачами, которые нужно выполнить позже.");
+        var content = new StackPanel { Spacing = 14 };
+        content.Children.Add(CreateSettingsSection(
+            "Планировщик",
+            "Здесь будут отображаться будущие задачи Евы.",
+            new StackPanel
+            {
+                Spacing = 10,
+                Children =
+                {
+                    new TextBlock { Text = "Запланированных задач пока нет.", Foreground = ThemeBrush("TextBrush", 247, 244, 245), FontSize = 15 },
+                    new TextBlock { Text = "Создайте задачу в чате, когда понадобится выполнить её в выбранное время.", Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157), TextWrapping = TextWrapping.Wrap },
+                    CreateNavigationButton("Создать задачу в чате", ShowHomeView),
+                },
+            },
+            ThemeBrush("SurfaceRaisedBrush", 23, 28, 37)));
+        Grid.SetRow(content, 1);
+        view.Children.Add(content);
+        return view;
+    }
+
+    private Grid BuildPluginsView()
+    {
+        var view = BuildShellPage(
+            "Плагины",
+            "Инструменты, которыми Ева пользуется в рабочем пространстве.");
+        var content = new StackPanel { Spacing = 10 };
+        foreach (var plugin in new[]
+        {
+            ("Файловая система", "Чтение, поиск и изменение файлов workspace", "Подключён"),
+            ("Командная строка", "Запуск проверок и сборок проекта", "Подключён"),
+            ("Git", "Проверка состояния и создание коммитов", "Подключён"),
+        })
+        {
+            content.Children.Add(CreateSettingsSection(
+                plugin.Item1,
+                plugin.Item2,
+                new TextBlock { Text = plugin.Item3, Foreground = ThemeBrush("TealBrush", 89, 216, 200) },
+                ThemeBrush("SurfaceRaisedBrush", 23, 28, 37)));
+        }
+        var scroll = new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Grid.SetRow(scroll, 1);
+        view.Children.Add(scroll);
+        return view;
+    }
+
+    private Grid BuildShellPage(string titleText, string subtitle)
+    {
+        var view = new Grid { Margin = new Thickness(30, 24, 30, 22) };
+        view.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        view.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        var header = new Grid { Margin = new Thickness(0, 0, 0, 22) };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.Children.Add(new StackPanel
+        {
+            Spacing = 5,
+            Children =
+            {
+                new TextBlock { Text = titleText, FontSize = 28, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Foreground = ThemeBrush("TextBrush", 247, 244, 245) },
+                new TextBlock { Text = subtitle, FontSize = 14, Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157), TextWrapping = TextWrapping.Wrap },
+            },
+        });
+        var back = new Button { Content = "←  Вернуться к чату" };
+        back.Click += (_, _) => ShowHomeView();
+        Grid.SetColumn(back, 1);
+        header.Children.Add(back);
+        view.Children.Add(header);
+        return view;
+    }
+
+    private static Button CreateNavigationButton(string text, Action action)
+    {
+        var button = new Button { Content = text };
+        button.Click += (_, _) => action();
+        return button;
     }
 
     private async Task RefreshGitHubProfileAsync()

@@ -7,7 +7,6 @@ public static class ShellNavigationCatalog
     public static IReadOnlyList<ShellNavigationItem> Items { get; } =
     [
         new("Новый чат", "＋", "Начать новую задачу"),
-        new("Пульс", "◉", "Состояние Евы и задач"),
         new("Запланировано", "◷", "Будущие задачи"),
         new("Плагины", "◇", "Подключённые источники"),
         new("Проекты", "⌂", "Рабочие пространства"),
