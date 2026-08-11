@@ -63,6 +63,7 @@ public partial class MainWindow : Window
     private StackPanel? _taskList;
     private TextBlock? _taskWorkspaceStatus;
     private TaskGraphDto? _lastTaskGraph;
+    private Microsoft.UI.Xaml.Controls.Canvas? _taskGraphCanvas;
     private readonly HashSet<string> _coreProjects = new(StringComparer.Ordinal);
     private StackPanel? _pluginsList;
     private TextBox? _pluginSearch;
@@ -842,6 +843,7 @@ public partial class MainWindow : Window
         var content = new Grid { RowSpacing = 12 };
         content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
@@ -872,13 +874,21 @@ public partial class MainWindow : Window
         Grid.SetRow(_taskWorkspaceStatus, 1);
         content.Children.Add(_taskWorkspaceStatus);
 
+        _taskGraphCanvas = new Microsoft.UI.Xaml.Controls.Canvas
+        {
+            Height = 190,
+            Background = ThemeBrush("SurfaceRaisedBrush", 23, 28, 37),
+        };
+        Grid.SetRow(_taskGraphCanvas, 2);
+        content.Children.Add(_taskGraphCanvas);
+
         _taskList = new StackPanel { Spacing = 10 };
         var scroll = new ScrollViewer
         {
             Content = _taskList,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         };
-        Grid.SetRow(scroll, 2);
+        Grid.SetRow(scroll, 3);
         content.Children.Add(scroll);
         Grid.SetRow(content, 1);
         view.Children.Add(content);
@@ -920,6 +930,7 @@ public partial class MainWindow : Window
 
                 _taskList.Children.Clear();
                 _lastTaskGraph = graph;
+                RenderTaskGraph(graph);
                 foreach (var task in graph.Tasks.OrderByDescending(task => task.Priority).ThenBy(task => task.Id, StringComparer.Ordinal))
                 {
                     _taskList.Children.Add(BuildTaskCard(task, graph.Edges));
@@ -1004,6 +1015,79 @@ public partial class MainWindow : Window
             Padding = new Thickness(14),
             Child = details,
         };
+    }
+
+    private void RenderTaskGraph(TaskGraphDto graph)
+    {
+        if (_taskGraphCanvas is null)
+        {
+            return;
+        }
+
+        _taskGraphCanvas.Children.Clear();
+        var positions = new Dictionary<string, (double X, double Y)>();
+        const double nodeWidth = 170;
+        const double nodeHeight = 52;
+        const double horizontalGap = 28;
+        const double verticalGap = 18;
+        const int columns = 3;
+        for (var index = 0; index < graph.Tasks.Count; index++)
+        {
+            var task = graph.Tasks[index];
+            var column = index % columns;
+            var row = index / columns;
+            positions[task.Id] = (column * (nodeWidth + horizontalGap) + 8, row * (nodeHeight + verticalGap) + 8);
+        }
+
+        _taskGraphCanvas.Height = Math.Max(190, Math.Ceiling(graph.Tasks.Count / (double)columns) * (nodeHeight + verticalGap) + 16);
+        foreach (var edge in graph.Edges)
+        {
+            if (!positions.TryGetValue(edge.FromTaskId, out var from) || !positions.TryGetValue(edge.ToTaskId, out var to))
+            {
+                continue;
+            }
+            var line = new Microsoft.UI.Xaml.Shapes.Line
+            {
+                X1 = from.X + nodeWidth,
+                Y1 = from.Y + nodeHeight / 2,
+                X2 = to.X,
+                Y2 = to.Y + nodeHeight / 2,
+                Stroke = ThemeBrush("PurpleBrush", 167, 139, 250),
+                StrokeThickness = 2,
+            };
+            _taskGraphCanvas.Children.Add(line);
+        }
+
+        foreach (var task in graph.Tasks)
+        {
+            var position = positions[task.Id];
+            var node = new Border
+            {
+                Width = nodeWidth,
+                Height = nodeHeight,
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(8),
+                Background = task.Status switch
+                {
+                    "done" => ThemeBrush("TealBrush", 40, 95, 91),
+                    "in_progress" => ThemeBrush("PurpleBrush", 80, 62, 128),
+                    "ready" => ThemeBrush("SurfaceBrush", 34, 72, 76),
+                    _ => ThemeBrush("SurfaceBrush", 48, 48, 58),
+                },
+                Child = new TextBlock
+                {
+                    Text = task.Title,
+                    Foreground = ThemeBrush("TextBrush", 247, 244, 245),
+                    TextWrapping = TextWrapping.Wrap,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    MaxLines = 2,
+                },
+            };
+            ToolTipService.SetToolTip(node, $"{task.Id} · {task.Status}");
+            Microsoft.UI.Xaml.Controls.Canvas.SetLeft(node, position.X);
+            Microsoft.UI.Xaml.Controls.Canvas.SetTop(node, position.Y);
+            _taskGraphCanvas.Children.Add(node);
+        }
     }
 
     private void AddTaskStatusButton(Panel panel, string title, TaskDto task, string status)
