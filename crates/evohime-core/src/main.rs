@@ -71,6 +71,7 @@ async fn main() {
             if let evohime_core::CoreEvent::ApprovalRequired { approval_id, .. } = &event {
                 let granted = approve_writes;
                 if let Ok(approval_id) = uuid::Uuid::parse_str(approval_id) {
+                    let _ = tools.permissions().resolve(approval_id, granted).await;
                     let _ = approvals.resolve(approval_id, granted).await;
                     println!(
                         "{} approval: {}",
