@@ -11,8 +11,10 @@ fn build_agent_system_prompt(workspace: &std::path::Path, tool_names: &[String])
 Этот путь доступен инструментам как их корневая папка; не проси пользователя сообщать его повторно.\n\n\
 Правила выполнения:\n\
 - Выполняй задачу самостоятельно и используй инструменты, когда они нужны для фактической проверки.\n\
+- За один ответ вызывай только один инструмент и жди его результата перед следующим вызовом.\n\
 - Если пользователь просит изучить, проверить, найти или объяснить проект, сначала вызови filesystem.list с path точкой (.).\n\
 - Затем прочитай подходящие manifest-файлы и документацию (например Cargo.toml, *.csproj, package.json, README и архитектурные документы), а для поиска по коду используй filesystem.search.\n\
+- Для изучения проекта не используй shell.execute: filesystem.list, filesystem.read и filesystem.search безопаснее и достаточно информативны.\n\
 - Не проси пользователя прислать структуру проекта, путь или команды, если workspace уже указан.\n\
 - Не утверждай, что изучила файл или выполнила действие, пока соответствующий инструмент не вернул результат.\n\
 - Для чтения используй безопасные read-only инструменты. Перед изменениями и опасными действиями учитывай approval.\n\
@@ -116,6 +118,19 @@ fn parse_legacy_function_calls(content: &str, iteration: usize) -> Vec<NativeToo
             cursor = tag_end + 1;
             continue;
         };
+        let legacy_read_only = matches!(
+            name.as_str(),
+            "filesystem.list"
+                | "filesystem.read"
+                | "filesystem.search"
+                | "git.status"
+                | "git.diff"
+                | "memory.search"
+                | "browser.open"
+                | "browser.extract"
+                | "browser.session.read"
+                | "browser.session.screenshot"
+        );
         let body_start = tag_end + 1;
         let Some(body_end_relative) = content[body_start..].find("</invoke>") else {
             break;
@@ -146,11 +161,13 @@ fn parse_legacy_function_calls(content: &str, iteration: usize) -> Vec<NativeToo
             );
             parameter_cursor = value_end + "</parameter>".len();
         }
-        calls.push(NativeToolCall {
-            id: format!("legacy-{iteration}-{}", calls.len()),
-            name,
-            arguments: serde_json::Value::Object(arguments).to_string(),
-        });
+        if legacy_read_only {
+            calls.push(NativeToolCall {
+                id: format!("legacy-{iteration}-{}", calls.len()),
+                name,
+                arguments: serde_json::Value::Object(arguments).to_string(),
+            });
+        }
         cursor = body_end + "</invoke>".len();
     }
     calls
@@ -579,15 +596,19 @@ impl ToolAgent {
             );
             let mut tool_calls = result.tool_calls.clone();
             if tool_calls.is_empty() {
-                tool_calls = parse_legacy_function_calls(&result.content, iteration);
-                if !tool_calls.is_empty() {
+                let parsed_legacy_calls = parse_legacy_function_calls(&result.content, iteration);
+                if !parsed_legacy_calls.is_empty() {
                     write_model_trace(
                         "legacy.tool_calls.parsed",
                         serde_json::json!({
                             "task_id": task_id,
-                            "tool_calls": tool_calls
+                            "tool_calls": parsed_legacy_calls
                         }),
                     );
+                    // Legacy models often print an entire future plan in one
+                    // response. Execute only the first safe call and ask the
+                    // model for the next step after its observation.
+                    tool_calls.push(parsed_legacy_calls[0].clone());
                 }
             }
             if tool_calls.is_empty() {
@@ -914,6 +935,9 @@ mod tests {
 <function_calls>
 <invoke name="filesystem.list">
 <parameter name="path">.</parameter>
+</invoke>
+<invoke name="shell.execute">
+<parameter name="command">dir /B</parameter>
 </invoke>
 </function_calls>
 "#;
