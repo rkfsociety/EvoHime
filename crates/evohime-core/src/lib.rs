@@ -205,6 +205,32 @@ fn parse_natural_tool_intent(content: &str, iteration: usize) -> Option<NativeTo
 }
 
 fn parse_tagged_tool_call(content: &str, iteration: usize) -> Option<NativeToolCall> {
+    if let (Some(name_start), Some(input_start)) = (
+        content.find("<tool_name>"),
+        content.find("<tool_input>"),
+    ) {
+        let name_start = name_start + "<tool_name>".len();
+        let name_end = content[name_start..].find("</tool_name>")? + name_start;
+        let input_start = input_start + "<tool_input>".len();
+        let input_end = content[input_start..].find("</tool_input>")? + input_start;
+        let name = content[name_start..name_end].trim();
+        if !matches!(
+            name,
+            "filesystem.list"
+                | "filesystem.read"
+                | "filesystem.search"
+                | "git.status"
+                | "git.diff"
+        ) {
+            return None;
+        }
+        let arguments = serde_json::from_str::<serde_json::Value>(content[input_start..input_end].trim()).ok()?;
+        return Some(NativeToolCall {
+            id: format!("tagged-{iteration}"),
+            name: name.to_string(),
+            arguments: arguments.to_string(),
+        });
+    }
     let start_marker = "<tool_call>";
     let end_marker = "</tool_call>";
     let start = content.find(start_marker)? + start_marker.len();
@@ -1254,6 +1280,13 @@ mod tests {
         .expect("tagged tool call");
         assert_eq!(call.name, "filesystem.read");
         assert_eq!(call.arguments, r#"{"path":"README.md"}"#);
+        let xml_call = super::parse_tagged_tool_call(
+            "<tool_name>filesystem.read</tool_name><tool_input>{\"path\": \"README.md\"}</tool_input>",
+            5,
+        )
+        .expect("structured tool call");
+        assert_eq!(xml_call.name, "filesystem.read");
+        assert_eq!(xml_call.arguments, r#"{"path":"README.md"}"#);
     }
 
     #[tokio::test]
