@@ -217,6 +217,9 @@ Exit criteria 0b: kill-9 не создаёт второй effect; checkpoint в�
 
 ### Этап 0c — расширенный replay, protocol и effect recovery (P0/P1)
 
+- Статус реализации на 2026-08-12: **в работе**. Первый bounded Build-срез закрывает single-owner lease, heartbeat, generation claim и snapshot-based reconciliation; protocol replay/resync и type-specific verifiers остаются.
+- [x] Добавить durable `run_leases` с owner, generation, heartbeat и expiry; второй владелец не может claim-нуть активный run.
+- [x] Для bounded Build добавить reconciliation verifier по durable snapshot: подтверждённый outcome получает `run.reconciliation.completed`, неподтверждённый остаётся blocked, blind retry не выполняется.
 - Добавить negotiated `protocol_version + capabilities`, backward compatibility matrix и bounded durable command/event replay.
 - Реализовать `RECOVERING → RECONCILING → RESUMABLE | BLOCKED | WAITING_APPROVAL | FAILED`, leases/generation, partial-gap replay/resync/full snapshot и type-specific effect verifiers.
 - Логировать reconciliation в audit: effect id, globally unique idempotency key, verifier, evidence и решение.

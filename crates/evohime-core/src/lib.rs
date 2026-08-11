@@ -981,7 +981,10 @@ impl EventJournal {
             ));
         }
         match stored.state.as_str() {
-            "prepared" => database.mark_effect_executing(&effect_id),
+            "prepared" => {
+                database.acquire_run_lease(run_id, &format!("lease-{run_id}"), "core", 1, 30)?;
+                database.mark_effect_executing(&effect_id)
+            }
             "executing" => Err(StorageError::InvalidRunEffect(
                 "effect is already executing".into(),
             )),
@@ -1005,7 +1008,27 @@ impl EventJournal {
         let effect =
             database.complete_run_effect(&format!("effect-{run_id}"), success, result_hash)?;
         database.update_run_status(run_id, if success { "completed" } else { "failed" })?;
+        database.release_run_lease(run_id, &format!("lease-{run_id}"), "core", 1)?;
         Ok(effect)
+    }
+
+    pub async fn reconcile_build_effect(
+        &self,
+        run_id: &str,
+        success: bool,
+        evidence: &serde_json::Value,
+    ) -> Result<evohime_local_storage::RunReconciliationRecord, StorageError> {
+        let database = self.database.lock().await;
+        let record = database.reconcile_run_effect(
+            &format!("effect-{run_id}"),
+            success,
+            "bounded_build_snapshot",
+            &serde_json::to_vec(evidence)?,
+        )?;
+        if success {
+            database.update_run_status(run_id, "completed")?;
+        }
+        Ok(record)
     }
 
     pub async fn recover_after_restart(
@@ -1013,6 +1036,46 @@ impl EventJournal {
     ) -> Result<Vec<evohime_local_storage::RecoveredRunRecord>, StorageError> {
         let database = self.database.lock().await;
         database.recover_unknown_effects()
+    }
+
+    pub async fn recover_and_reconcile_after_restart(
+        &self,
+    ) -> Result<Vec<evohime_local_storage::RunReconciliationRecord>, StorageError> {
+        let database = self.database.lock().await;
+        let recovered = database.recover_unknown_effects()?;
+        let mut reconciliations = Vec::with_capacity(recovered.len());
+        for record in recovered {
+            let snapshot = database.latest_snapshot_for_task(&record.work_item_id)?;
+            let success = snapshot
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.run_id == record.run_id);
+            let evidence = serde_json::json!({
+                "run_id": record.run_id,
+                "effect_id": record.effect_id,
+                "snapshot_id": success.then(|| snapshot.as_ref().expect("successful reconciliation has snapshot").id.clone()),
+                "decision": if success { "applied" } else { "blocked" },
+            });
+            let reconciliation = database.reconcile_run_effect(
+                &record.effect_id,
+                success,
+                "bounded_build_snapshot",
+                &serde_json::to_vec(&evidence)?,
+            )?;
+            if success {
+                database.update_run_status(&record.run_id, "completed")?;
+            }
+            database.append_event(
+                &record.work_item_id,
+                if success {
+                    "run.reconciliation.completed"
+                } else {
+                    "run.recovery.blocked"
+                },
+                &serde_json::to_vec(&evidence)?,
+            )?;
+            reconciliations.push(reconciliation);
+        }
+        Ok(reconciliations)
     }
 
     pub async fn record_audit(

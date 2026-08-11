@@ -7,7 +7,7 @@ use std::{
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA_VERSION: u32 = 5;
+pub const SCHEMA_VERSION: u32 = 6;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -196,6 +196,25 @@ pub struct RecoveredRunRecord {
     pub run_id: String,
     pub work_item_id: String,
     pub effect_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunLeaseRecord {
+    pub run_id: String,
+    pub lease_id: String,
+    pub owner_id: String,
+    pub generation: u64,
+    pub lease_expires_at: String,
+    pub heartbeat_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunReconciliationRecord {
+    pub effect_id: String,
+    pub state: String,
+    pub verifier: String,
+    pub evidence_json: Vec<u8>,
+    pub reconciled_at: String,
 }
 
 impl LocalDatabase {
@@ -921,6 +940,109 @@ impl LocalDatabase {
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
     }
 
+    pub fn acquire_run_lease(
+        &self,
+        run_id: &str,
+        lease_id: &str,
+        owner_id: &str,
+        generation: u64,
+        ttl_seconds: u64,
+    ) -> Result<RunLeaseRecord, StorageError> {
+        let transaction = self.connection.unchecked_transaction()?;
+        transaction.execute(
+            "INSERT OR IGNORE INTO run_leases(run_id, lease_id, owner_id, generation, lease_expires_at, heartbeat_at)
+             VALUES (?1, ?2, ?3, ?4, datetime('now', '+' || ?5 || ' seconds'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+            rusqlite::params![run_id, lease_id, owner_id, generation, ttl_seconds as i64],
+        )?;
+        let updated = transaction.execute(
+            "UPDATE run_leases SET lease_id = ?1, owner_id = ?2, generation = ?3,
+             lease_expires_at = datetime('now', '+' || ?4 || ' seconds'),
+             heartbeat_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE run_id = ?5 AND (lease_id = ?1 OR lease_expires_at <= datetime('now'))",
+            rusqlite::params![lease_id, owner_id, generation, ttl_seconds as i64, run_id],
+        )?;
+        if updated == 0 {
+            return Err(StorageError::InvalidRunEffect(
+                "run lease is held by another owner".into(),
+            ));
+        }
+        transaction.commit()?;
+        self.get_run_lease(run_id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+    }
+
+    pub fn get_run_lease(&self, run_id: &str) -> Result<Option<RunLeaseRecord>, StorageError> {
+        Ok(self.connection.query_row(
+            "SELECT run_id, lease_id, owner_id, generation, lease_expires_at, heartbeat_at FROM run_leases WHERE run_id = ?1",
+            [run_id],
+            |row| Ok(RunLeaseRecord { run_id: row.get(0)?, lease_id: row.get(1)?, owner_id: row.get(2)?, generation: row.get(3)?, lease_expires_at: row.get(4)?, heartbeat_at: row.get(5)? }),
+        ).optional()?)
+    }
+
+    pub fn heartbeat_run_lease(
+        &self,
+        run_id: &str,
+        lease_id: &str,
+        owner_id: &str,
+        generation: u64,
+        ttl_seconds: u64,
+    ) -> Result<RunLeaseRecord, StorageError> {
+        let changed = self.connection.execute(
+            "UPDATE run_leases SET lease_expires_at = datetime('now', '+' || ?1 || ' seconds'), heartbeat_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE run_id = ?2 AND lease_id = ?3 AND owner_id = ?4 AND generation = ?5 AND lease_expires_at > datetime('now')",
+            rusqlite::params![ttl_seconds as i64, run_id, lease_id, owner_id, generation],
+        )?;
+        if changed == 0 {
+            return Err(StorageError::InvalidRunEffect(
+                "run lease heartbeat rejected".into(),
+            ));
+        }
+        self.get_run_lease(run_id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+    }
+
+    pub fn release_run_lease(
+        &self,
+        run_id: &str,
+        lease_id: &str,
+        owner_id: &str,
+        generation: u64,
+    ) -> Result<(), StorageError> {
+        self.connection.execute(
+            "DELETE FROM run_leases WHERE run_id = ?1 AND lease_id = ?2 AND owner_id = ?3 AND generation = ?4",
+            rusqlite::params![run_id, lease_id, owner_id, generation],
+        )?;
+        Ok(())
+    }
+
+    pub fn reconcile_run_effect(
+        &self,
+        effect_id: &str,
+        success: bool,
+        verifier: &str,
+        evidence_json: &[u8],
+    ) -> Result<RunReconciliationRecord, StorageError> {
+        let state = if success {
+            "reconciled_success"
+        } else {
+            "reconciled_blocked"
+        };
+        let transaction = self.connection.unchecked_transaction()?;
+        transaction.execute(
+            "INSERT OR REPLACE INTO run_reconciliations(effect_id, state, verifier, evidence_json) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![effect_id, state, verifier, evidence_json],
+        )?;
+        if success {
+            transaction.execute("UPDATE run_effects SET state = 'completed_success', result_hash = ?1 WHERE effect_id = ?2 AND state = 'unknown'", rusqlite::params![verifier, effect_id])?;
+        }
+        transaction.commit()?;
+        self.connection.query_row(
+            "SELECT effect_id, state, verifier, evidence_json, reconciled_at FROM run_reconciliations WHERE effect_id = ?1",
+            [effect_id],
+            |row| Ok(RunReconciliationRecord { effect_id: row.get(0)?, state: row.get(1)?, verifier: row.get(2)?, evidence_json: row.get(3)?, reconciled_at: row.get(4)? }),
+        ).map_err(Into::into)
+    }
+
     pub fn update_run_status(&self, run_id: &str, status: &str) -> Result<(), StorageError> {
         self.connection.execute(
             "UPDATE runs SET status = ?1 WHERE id = ?2",
@@ -946,6 +1068,7 @@ impl LocalDatabase {
             .collect::<Result<Vec<_>, _>>()?;
         drop(statement);
         for record in &records {
+            transaction.execute("DELETE FROM run_leases WHERE run_id = ?1", [&record.run_id])?;
             transaction.execute(
                 "UPDATE run_effects SET state = 'unknown', completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                  WHERE effect_id = ?1 AND state = 'executing'",
@@ -1158,6 +1281,26 @@ impl LocalDatabase {
                     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
                 );
                 PRAGMA user_version = 5;",
+            )?;
+        }
+        if current < 6 {
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS run_leases (
+                    run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE,
+                    lease_id TEXT NOT NULL UNIQUE,
+                    owner_id TEXT NOT NULL,
+                    generation INTEGER NOT NULL,
+                    lease_expires_at TEXT NOT NULL,
+                    heartbeat_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS run_reconciliations (
+                    effect_id TEXT PRIMARY KEY REFERENCES run_effects(effect_id) ON DELETE CASCADE,
+                    state TEXT NOT NULL,
+                    verifier TEXT NOT NULL,
+                    evidence_json BLOB NOT NULL,
+                    reconciled_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                );
+                PRAGMA user_version = 6;",
             )?;
         }
         transaction.commit()?;
@@ -1543,6 +1686,103 @@ mod tests {
         assert!(
             database.recover_unknown_effects().unwrap().is_empty(),
             "recovery is idempotent"
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn run_lease_is_single_owner_and_effect_can_be_reconciled() {
+        let path = temp_database_path("leases");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        database
+            .create_project("project-lease", "Lease", ".", None)
+            .expect("project creates");
+        database
+            .create_work_item(&WorkItemRecord {
+                id: "task-lease".into(),
+                project_id: "project-lease".into(),
+                parent_id: None,
+                title: "lease".into(),
+                description: String::new(),
+                source_ref: None,
+                acceptance_criteria: String::new(),
+                non_goals: String::new(),
+                status: "in_progress".into(),
+                priority: 0,
+                estimate: None,
+                complexity: None,
+                attempt_count: 0,
+                version: 1,
+            })
+            .expect("task creates");
+        let run = RunRecord {
+            id: "run-lease".into(),
+            work_item_id: "task-lease".into(),
+            status: "running".into(),
+            policy_snapshot: vec![],
+            role_snapshot: vec![],
+            skill_snapshot: vec![],
+            model_route_snapshot: vec![],
+        };
+        let checkpoint = RunCheckpointRecord {
+            run_id: run.id.clone(),
+            checkpoint_id: "checkpoint-lease".into(),
+            stage: "build".into(),
+            node_id: "bounded-build".into(),
+            attempt: 1,
+            input_hash: "intent".into(),
+            state_json: b"{}".to_vec(),
+            pending_effects_json: br#"["effect-lease"]"#.to_vec(),
+            committed_at: String::new(),
+        };
+        let effect = RunEffectRecord {
+            effect_id: "effect-lease".into(),
+            run_id: run.id.clone(),
+            node_id: "bounded-build".into(),
+            kind: "bounded_build".into(),
+            idempotency_key: "lease-key".into(),
+            immutable_intent_hash: "intent".into(),
+            state: "prepared".into(),
+            started_at: None,
+            completed_at: None,
+            result_hash: None,
+        };
+        database
+            .prepare_run_effect(&run, &checkpoint, &effect)
+            .expect("effect prepares");
+        database
+            .acquire_run_lease("run-lease", "lease-1", "core-a", 1, 30)
+            .expect("first owner claims");
+        assert!(matches!(
+            database.acquire_run_lease("run-lease", "lease-2", "core-b", 2, 30),
+            Err(StorageError::InvalidRunEffect(_))
+        ));
+        database
+            .heartbeat_run_lease("run-lease", "lease-1", "core-a", 1, 30)
+            .expect("owner heartbeats");
+        database
+            .mark_effect_executing("effect-lease")
+            .expect("effect executes");
+        database
+            .recover_unknown_effects()
+            .expect("unknown effect recovers");
+        let reconciliation = database
+            .reconcile_run_effect(
+                "effect-lease",
+                true,
+                "snapshot",
+                br#"{"snapshot_id":"snapshot-1"}"#,
+            )
+            .expect("effect reconciles");
+        assert_eq!(reconciliation.state, "reconciled_success");
+        assert_eq!(
+            database
+                .get_run_effect("effect-lease")
+                .unwrap()
+                .unwrap()
+                .state,
+            "completed_success"
         );
         let _ = std::fs::remove_file(path);
     }

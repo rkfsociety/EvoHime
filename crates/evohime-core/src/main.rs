@@ -17,7 +17,7 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    if let Err(error) = journal.recover_after_restart().await {
+    if let Err(error) = journal.recover_and_reconcile_after_restart().await {
         eprintln!("evohime-core recovery failed: {error}");
         std::process::exit(1);
     }

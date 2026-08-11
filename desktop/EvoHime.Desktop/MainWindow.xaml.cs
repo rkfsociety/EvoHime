@@ -3506,6 +3506,10 @@ public partial class MainWindow : Window
                                 recoveryBlocked = true;
                                 SetConnectionStatus("BLOCKED: unknown effect остановлен после recovery");
                             }
+                            if (envelope.EventType == "run.reconciliation.completed")
+                            {
+                                SetConnectionStatus("RESUMABLE: outcome подтверждён reconciliation");
+                            }
                             if (envelope.TaskId == _activeTaskId)
                             {
                                 _ = DispatcherQueue.TryEnqueue(() => RenderConversationEvent(envelope));
@@ -3514,7 +3518,7 @@ public partial class MainWindow : Window
                             {
                                 ShowApproval(envelope);
                             }
-                            if (envelope.TaskId == _activeTaskId || envelope.EventType == "run.recovery.blocked")
+                            if (envelope.TaskId == _activeTaskId || envelope.EventType is "run.recovery.blocked" or "run.reconciliation.completed")
                             {
                                 var notification = envelope.EventType switch
                                 {
@@ -3522,6 +3526,7 @@ public partial class MainWindow : Window
                                     "task.failed" => ("Задача завершилась с ошибкой", "Проверьте журнал событий EvoHime."),
                                     "task.stopped" => ("Задача остановлена", "Выполнение остановлено пользователем."),
                                     "run.recovery.blocked" => ("Run заблокирован после восстановления", "Неизвестный effect не был запущен повторно; требуется проверка."),
+                                    "run.reconciliation.completed" => ("Run подтверждён после восстановления", "Durable snapshot подтвердил результат; повторный effect не запускался."),
                                     _ => ((string Title, string Message)?)null,
                                 };
                                 if (notification is not null)
