@@ -383,7 +383,7 @@ impl DeliveryRequirements {
     fn from_prompt(prompt: &str) -> Self {
         let prompt = prompt.to_lowercase();
         Self {
-            mutation: ["исправ", "измен", "добав", "реализ", "сделай", "улучш"]
+            mutation: ["исправ", "измен", "добав", "реализ", "сделай", "улучш", "удал", "убер"]
                 .iter()
                 .any(|marker| prompt.contains(marker)),
             verification: ["проверь", "провер", "тест", "test", "собери", "запусти"]
@@ -964,16 +964,6 @@ impl ToolAgent {
                 tool_calls.clone(),
             ));
             for call in tool_calls {
-                mutation_done |=
-                    matches!(call.name.as_str(), "filesystem.write" | "filesystem.patch");
-                commit_done |= call.name == "git.commit";
-                if call.name == "shell.execute" {
-                    let arguments = call.arguments.to_lowercase();
-                    verification_done |= arguments.contains("test")
-                        || arguments.contains("check")
-                        || arguments.contains("build")
-                        || arguments.contains("собер");
-                }
                 let _ = events.send(CoreEvent::ToolStarted {
                     task_id: task_id.clone(),
                     tool_name: call.name.clone(),
@@ -1043,6 +1033,19 @@ impl ToolAgent {
                         "output": output
                     }),
                 );
+                let failed = output.to_lowercase().contains("failed")
+                    || output.to_lowercase().contains("ошиб")
+                    || output.to_lowercase().contains("не удалось");
+                mutation_done |= !failed
+                    && matches!(call.name.as_str(), "filesystem.write" | "filesystem.patch");
+                commit_done |= !failed && call.name == "git.commit";
+                if call.name == "shell.execute" && !failed {
+                    let arguments = call.arguments.to_lowercase();
+                    verification_done |= arguments.contains("test")
+                        || arguments.contains("check")
+                        || arguments.contains("build")
+                        || arguments.contains("собер");
+                }
                 messages.push(ChatMessage::tool_observation(call.id, output));
             }
         }
