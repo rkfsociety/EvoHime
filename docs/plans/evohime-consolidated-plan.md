@@ -207,6 +207,7 @@ Exit criteria 0a: повторный запуск миграций идемпо�
 - [x] Для bounded Build добавить durable `run_checkpoints` и `run_effects` с idempotency key, immutable intent hash и переходами `prepared → executing → completed_*`.
 - [x] При старте Core переводить незавершённый `executing` effect в `unknown`, run — в `blocked`, писать replayable `run.recovery.blocked` и не выполнять blind retry.
 - [x] Перед записью Build создавать checkpoint/effect, после успешного snapshot завершать effect; UI показывает truthful recovery notification.
+- [x] Kill/restart harness принудительно завершает дочерний Core-like process с `executing` effect и подтверждает recovery без blind retry.
 
 Выход: после kill/restart Core восстанавливает graph, status и последний durable checkpoint; unknown effects не запускаются повторно и видимы пользователю как blocked/approval.
 
