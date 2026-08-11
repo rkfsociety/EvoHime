@@ -1,4 +1,5 @@
 mod cdp;
+pub mod network_capability;
 mod registry;
 mod risk;
 mod sandbox;

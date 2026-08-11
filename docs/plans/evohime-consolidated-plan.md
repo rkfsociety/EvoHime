@@ -222,7 +222,7 @@ Exit criteria 0b: kill-9 не создаёт второй effect; checkpoint в�
 - [x] Для bounded Build добавить reconciliation verifier по durable snapshot: подтверждённый outcome получает `run.reconciliation.completed`, неподтверждённый остаётся blocked, blind retry не выполняется.
 - [x] Добавить bounded type-specific verifiers для file/database/process outcomes с generation checks и состояниями confirmed/unconfirmed/blocked без blind retry.
 - [x] Добавить bounded `ResyncRequest`, additive replay-gap/full-snapshot envelopes и защиту размера resync payload.
-- Добавить negotiated `protocol_version + capabilities`, backward compatibility matrix и bounded durable command/event replay.
+- [x] Добавить negotiated `protocol_version + capabilities`, backward compatibility matrix и bounded replay-log contract с gap detection/import-export fixtures; durable Core command/event wiring остаётся.
 - Реализовать `RECOVERING → RECONCILING → RESUMABLE | BLOCKED | WAITING_APPROVAL | FAILED`, leases/generation, partial-gap replay/resync/full snapshot и type-specific effect verifiers.
 - Логировать reconciliation в audit: effect id, globally unique idempotency key, verifier, evidence и решение.
 - Провести отдельный protocol design review и kill-9 model tests до production implementation.
@@ -257,12 +257,13 @@ MVP-1 milestone после этапа 1: пользователь видит п�
 
 ### Этап 3 — Research и typed workflow graph (P0)
 
-- Статус реализации на 2026-08-12: **контракты в работе**. Добавлены bounded research evidence, persistence contract, статический typed workflow graph и deterministic runner contract; persistence wiring, network capability layer и side-effectful runner остаются.
+- Статус реализации на 2026-08-12: **контракты в работе**. Добавлены bounded research evidence, persistence contract, статический typed workflow graph, deterministic runner contract и network capability policy; persistence wiring, реальный HTTP execution layer и side-effectful runner остаются.
 - [x] Добавить bounded research evidence contract с redacted excerpt, source hash, freshness/TTL и deterministic JSON.
 - [x] Добавить migration-neutral research evidence storage contract с provenance, TTL, bounded SQL payload и delete/list API.
 - [x] Добавить typed static workflow graph contract с input/output types, retry/timeout/cancellation/approval и deterministic validation; dynamic edits отложены.
 - [x] Добавить deterministic workflow runner contract с topological order и безопасными решениями retry/timeout/cancellation/approval; реальные side effects отложены.
 - [x] Добавить bounded research pipeline policy с network/domain allowlist, budgets, cancellation и citation/source integrity; реальный HTTP capability layer остаётся.
+- [x] Добавить общий bounded network capability policy layer в tool-runtime с HTTPS/SSRF, domain allowlist, response/latency/cost budgets, cancellation и refresh decisions; фактический HTTP execution остаётся отдельным wiring.
 - Реализовать сначала статический workflow graph с typed input/output, condition, retry, timeout, cancellation, approval и subgraph. Dynamic graph edits отложить.
 - Реализовать research pipeline: запрос → разрешённый HTTP/search → извлечение → краткое резюме → citations → сохранение.
 - Evidence хранит redacted/plain excerpt с max bytes, fetched-at, TTL/freshness, source hash и approval/provenance link.
