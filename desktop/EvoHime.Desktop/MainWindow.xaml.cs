@@ -1401,13 +1401,17 @@ public partial class MainWindow : Window
             var change = changes.GetArrayLength() == 0 ? "нет изменений" : changes[0].GetProperty("relative_path").GetString();
             var scope = approved.RootElement.GetProperty("scope");
             var allowedPaths = string.Join(", ", scope.GetProperty("allowed_paths").EnumerateArray().Select(item => item.GetString()));
+            var allowedTypes = string.Join(", ", scope.GetProperty("allowed_file_types").EnumerateArray().Select(item => item.GetString()));
+            var maxFiles = scope.GetProperty("max_files_changed").GetInt64();
             var maxBytes = scope.GetProperty("max_bytes_changed").GetInt64();
+            var allowCreate = scope.GetProperty("allow_create").GetBoolean();
+            var allowDelete = scope.GetProperty("allow_delete").GetBoolean();
             var approvalDialog = new ContentDialog
             {
                 Title = "Подтвердить bounded Build",
                 Content = new TextBlock
                 {
-                    Text = $"Файл: {change}\nAllowed paths: {allowedPaths}\nЛимит байт: {maxBytes}\nBaseline: {baseline}\nEffective permissions hash: {effectivePermissionsHash}\nIntent hash: {intentHash}\n\nЗапись ещё не выполнялась.",
+                    Text = $"Файл: {change}\nAllowed paths: {allowedPaths}\nТипы файлов: {allowedTypes}\nЛимит файлов: {maxFiles}\nЛимит байт: {maxBytes}\nСоздание: {(allowCreate ? "разрешено" : "запрещено")} · удаление: {(allowDelete ? "разрешено" : "запрещено")}\nBaseline: {baseline}\nEffective permissions hash: {effectivePermissionsHash}\nIntent hash: {intentHash}\n\nЗапись ещё не выполнялась.",
                     TextWrapping = TextWrapping.Wrap,
                 },
                 PrimaryButtonText = "Одобрить и применить",
