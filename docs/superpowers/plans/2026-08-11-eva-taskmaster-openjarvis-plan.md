@@ -1,7 +1,7 @@
 # План развития Евы по мотивам Task Master и OpenJarvis
 
-Дата: 2026-08-11  
-Статус: предложение для следующей native-фазы EvoHime  
+Дата: 2026-08-11
+Статус: предложение для следующей native-фазы EvoHime
 Область: Rust Core, SQLite, versioned named-pipe IPC, WinUI 3, supervisor
 
 ## 1. Что изучено
@@ -147,4 +147,3 @@
 - Skills и monitors проходят manifest/permission checks и могут быть отключены/откачены.
 - Rust tests, C# IPC/UI tests, native workflow smoke, git diff --check и package smoke проходят на Windows.
 - После проверок удаляются target, bin, obj и временные package artifacts; изменения фиксируются task-only коммитами.
-
