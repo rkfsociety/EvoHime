@@ -74,6 +74,8 @@ public partial class MainWindow : Window
     private StackPanel? _conversationPanel;
     private ScrollViewer? _conversationScroll;
     private TextBlock? _streamingAssistantText;
+    private StackPanel? _tracePanel;
+    private ScrollViewer? _traceScroll;
 
     public MainWindow()
     {
@@ -124,6 +126,7 @@ public partial class MainWindow : Window
         var root = new Grid { Background = ThemeBrush("NightBackgroundBrush", 17, 19, 27) };
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(248) });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(310) });
 
         var sidebar = new Grid { Background = surface, Padding = new Thickness(18, 24, 14, 18) };
         sidebar.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -516,6 +519,36 @@ public partial class MainWindow : Window
         content.Children.Add(footer);
         Grid.SetColumn(content, 1);
         root.Children.Add(content);
+        var traceBackground = ThemeBrush("SurfaceBrush", 25, 28, 39);
+        var tracePanelBorder = new Border
+        {
+            Background = traceBackground,
+            BorderBrush = ThemeBrush("BorderBrush", 48, 53, 72),
+            BorderThickness = new Thickness(1, 0, 0, 0),
+            Padding = new Thickness(16, 24, 14, 18),
+        };
+        var traceLayout = new Grid { RowSpacing = 10 };
+        traceLayout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        traceLayout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        traceLayout.Children.Add(new TextBlock
+        {
+            Text = "Трейс выполнения",
+            FontSize = 18,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = text,
+        });
+        _tracePanel = new StackPanel { Spacing = 8 };
+        _traceScroll = new ScrollViewer
+        {
+            Content = _tracePanel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        };
+        Grid.SetRow(_traceScroll, 1);
+        traceLayout.Children.Add(_traceScroll);
+        tracePanelBorder.Child = traceLayout;
+        Grid.SetColumn(tracePanelBorder, 2);
+        root.Children.Add(tracePanelBorder);
         _homeContent = content;
         _settingsView = BuildSettingsView();
         Grid.SetColumn(_settingsView, 1);
@@ -1302,6 +1335,35 @@ public partial class MainWindow : Window
         ScrollConversationToBottom();
     }
 
+    private void AddTraceLine(string message, bool important = false)
+    {
+        if (_tracePanel is null)
+        {
+            return;
+        }
+
+        _tracePanel.Children.Add(new Border
+        {
+            Background = important
+                ? ThemeBrush("SurfaceRaisedBrush", 34, 38, 53)
+                : ThemeBrush("SurfaceBrush", 21, 24, 33),
+            BorderBrush = ThemeBrush("BorderBrush", 48, 53, 72),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(9, 7, 9, 7),
+            Child = new TextBlock
+            {
+                Text = message,
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 11,
+                Foreground = important
+                    ? ThemeBrush("TextBrush", 244, 242, 250)
+                    : ThemeBrush("MutedTextBrush", 146, 152, 173),
+            },
+        });
+        _ = DispatcherQueue.TryEnqueue(() => _traceScroll?.ChangeView(null, double.MaxValue, null));
+    }
+
     private void AppendAssistantDelta(string content)
     {
         if (string.IsNullOrEmpty(content))
@@ -1344,15 +1406,21 @@ public partial class MainWindow : Window
                     break;
                 case "model.context":
                     UpdateModelContext(root);
+                    var toolCount = root.TryGetProperty("tools", out var contextTools) && contextTools.ValueKind == JsonValueKind.Array
+                        ? contextTools.GetArrayLength()
+                        : 0;
+                    AddTraceLine($"Контекст подготовлен\nМодель: {PayloadString(root, "model")}\nWorkspace: {PayloadString(root, "workspace_path")}\nИнструментов: {toolCount}", true);
                     break;
                 case "agent.message.delta":
                     AppendAssistantDelta(PayloadString(root, "content"));
                     break;
                 case "tool.started":
                     AddConversationActivity($"Ева использует инструмент: {PayloadString(root, "tool_name")}");
+                    AddTraceLine($"→ tool.started\n{PayloadString(root, "tool_name")}");
                     break;
                 case "tool.output":
                     AddConversationActivity($"Инструмент завершён: {PayloadString(root, "tool_name")}");
+                    AddTraceLine($"← tool.output\n{PayloadString(root, "tool_name")}\n{TrimTrace(PayloadString(root, "output"))}");
                     break;
                 case "task.completed":
                     var finalMessage = PayloadString(root, "final_message");
@@ -1365,11 +1433,13 @@ public partial class MainWindow : Window
                         AddConversationMessage("Ева", "Задача завершена, но итоговый ответ от модели не пришёл.", false);
                     }
                     AddConversationActivity("Задача завершена");
+                    AddTraceLine($"✓ task.completed\n{TrimTrace(finalMessage)}", true);
                     _streamingAssistantText = null;
                     CompleteTaskUi("Задача завершена");
                     break;
                 case "task.failed":
                     AddConversationMessage("Ева", $"Задача завершилась с ошибкой: {PayloadString(root, "error")}", false);
+                    AddTraceLine($"✕ task.failed\n{TrimTrace(PayloadString(root, "error"))}", true);
                     _streamingAssistantText = null;
                     CompleteTaskUi("Задача завершилась с ошибкой");
                     break;
@@ -1388,6 +1458,9 @@ public partial class MainWindow : Window
 
     private static string PayloadString(JsonElement root, string property) =>
         root.TryGetProperty(property, out var value) ? value.GetString() ?? string.Empty : string.Empty;
+
+    private static string TrimTrace(string value) =>
+        value.Length <= 900 ? value : value[..900] + "…";
 
     private void UpdateModelContext(JsonElement root)
     {
