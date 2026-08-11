@@ -824,7 +824,7 @@ public partial class MainWindow : Window
         var searchBar = new Grid { ColumnSpacing = 8 };
         searchBar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         searchBar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        _pluginSearch = new TextBox { PlaceholderText = "Поиск плагинов на GitHub", Text = "agent plugin" };
+        _pluginSearch = new TextBox { PlaceholderText = "Поиск Agent Plugins на GitHub", Text = "agent plugins" };
         _pluginSearch.KeyDown += (_, args) =>
         {
             if (args.Key == VirtualKey.Enter)
@@ -862,8 +862,8 @@ public partial class MainWindow : Window
         _pluginsList.Children.Clear();
         try
         {
-            var plugins = await _pluginCatalogService.SearchAsync(_pluginSearch?.Text ?? "agent plugin");
-            _pluginStatus.Text = $"Найдено плагинов: {plugins.Count}. Установка сохраняет репозиторий в {_pluginCatalogService.PluginsDirectory}.";
+            var plugins = await _pluginCatalogService.SearchAsync(_pluginSearch?.Text ?? "agent plugins");
+            _pluginStatus.Text = $"Совместимых Agent Plugins: {plugins.Count}. Установка сохраняет пакеты в {_pluginCatalogService.PluginsDirectory}.";
             foreach (var plugin in plugins)
             {
                 _pluginsList.Children.Add(BuildPluginCard(plugin));
@@ -888,8 +888,8 @@ public partial class MainWindow : Window
         var title = new TextBlock { Text = plugin.FullName, FontSize = 15, Foreground = ThemeBrush("TextBrush", 247, 244, 245) };
         title.PointerPressed += (_, _) => OpenExternalUrl(plugin.HtmlUrl);
         details.Children.Add(title);
-        details.Children.Add(new TextBlock { Text = string.IsNullOrWhiteSpace(plugin.Description) ? "Описание отсутствует." : plugin.Description, Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157), TextWrapping = TextWrapping.Wrap });
-        details.Children.Add(new TextBlock { Text = $"★ {plugin.Stars:N0}  ·  GitHub", Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157), FontSize = 11 });
+        details.Children.Add(new TextBlock { Text = string.IsNullOrWhiteSpace(plugin.Manifest.Description) ? plugin.Description : plugin.Manifest.Description, Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157), TextWrapping = TextWrapping.Wrap });
+        details.Children.Add(new TextBlock { Text = $"{plugin.Manifest.Name}  ·  {plugin.Manifest.Version}  ·  ★ {plugin.Stars:N0}  ·  {(plugin.Manifest.HasMcp ? "MCP" : "Skills")}", Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157), FontSize = 11 });
         content.Children.Add(details);
         var action = new Button { Content = plugin.Installed ? "Удалить" : "Установить" };
         action.Click += async (_, _) =>
