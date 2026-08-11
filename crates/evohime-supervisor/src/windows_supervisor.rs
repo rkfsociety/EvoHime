@@ -1,13 +1,14 @@
 use serde_json::json;
 use std::{
     ffi::OsStr,
+    fs,
     io,
     mem::size_of,
     os::windows::ffi::OsStrExt,
     path::PathBuf,
     ptr,
     sync::Mutex,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration as StdDuration, SystemTime, UNIX_EPOCH},
 };
 
 use std::path::Path;
@@ -177,13 +178,14 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|value| value.parse::<u32>().ok())
         .unwrap_or(3);
     let mut restarts = 0;
+    let heartbeat_path = core_data_dir().join("core-heartbeat");
 
     loop {
         let _ = logger.write("core.spawn", json!({"restart": restarts}));
         let job = JobObject::create()?;
         let mut child = Command::new(&core_exe).kill_on_drop(true).spawn()?;
         job.assign(&child)?;
-        let status = child.wait().await?;
+        let status = wait_for_core(&mut child, &heartbeat_path, &logger).await?;
         let _ = logger.write(
             "core.exit",
             json!({"success": status.success(), "code": status.code()}),
@@ -197,12 +199,54 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+fn core_data_dir() -> PathBuf {
+    std::env::var_os("EVOHIME_DATA_DIR")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("LOCALAPPDATA")
+                .map(PathBuf::from)
+                .map(|path| path.join("EvoHime"))
+        })
+        .unwrap_or_else(|| PathBuf::from(".evohime"))
+}
+
+fn heartbeat_is_stale(path: &Path, max_age: StdDuration) -> bool {
+    let modified = fs::metadata(path).and_then(|metadata| metadata.modified());
+    modified
+        .map(|time| SystemTime::now().duration_since(time).unwrap_or_default() > max_age)
+        .unwrap_or(true)
+}
+
+async fn wait_for_core(
+    child: &mut tokio::process::Child,
+    heartbeat_path: &Path,
+    logger: &SupervisorLogger,
+) -> io::Result<std::process::ExitStatus> {
+    let started = tokio::time::Instant::now();
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Ok(status);
+        }
+        if started.elapsed() > Duration::from_secs(10)
+            && heartbeat_is_stale(heartbeat_path, StdDuration::from_secs(5))
+        {
+            let _ = logger.write(
+                "core.health_timeout",
+                json!({"heartbeat": heartbeat_path.display().to_string()}),
+            );
+            child.kill().await?;
+            return child.wait().await;
+        }
+        sleep(Duration::from_secs(1)).await;
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::recover_pending_update;
+    use super::{heartbeat_is_stale, recover_pending_update};
     use evohime_tx::UpdateTransaction;
     use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
 
     #[test]
     fn recovers_pending_update_before_core_start() {
@@ -229,5 +273,11 @@ mod tests {
         );
         assert!(!transaction.state_path().exists());
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn missing_core_heartbeat_is_stale() {
+        let path = std::env::temp_dir().join(format!("evohime-missing-heartbeat-{}", std::process::id()));
+        assert!(heartbeat_is_stale(&path, StdDuration::from_secs(5)));
     }
 }

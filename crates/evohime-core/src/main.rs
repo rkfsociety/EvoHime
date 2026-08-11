@@ -17,6 +17,11 @@ async fn main() {
             std::process::exit(1);
         }
     };
+    if let Err(error) = journal.recover_after_restart().await {
+        eprintln!("evohime-core recovery failed: {error}");
+        std::process::exit(1);
+    }
+    let heartbeat_task = spawn_heartbeat(data_dir.join("core-heartbeat"));
     let tools = std::sync::Arc::new(evohime_tool_runtime::ToolRegistry::bootstrap());
     let approvals = evohime_core::ApprovalCoordinator::default();
     let model_config = evohime_model_gateway::ModelGatewayConfig::from_env().ok();
@@ -88,6 +93,7 @@ async fn main() {
                 break;
             }
         }
+        heartbeat_task.abort();
         return;
     }
     let (coordinator, _events) =
@@ -116,6 +122,26 @@ async fn main() {
         eprintln!("evohime-core failed: {error}");
         std::process::exit(1);
     }
+    heartbeat_task.abort();
+}
+
+#[cfg(windows)]
+fn spawn_heartbeat(path: std::path::PathBuf) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            let payload = format!("{}\n", heartbeat_timestamp());
+            let _ = std::fs::write(&path, payload);
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+    })
+}
+
+#[cfg(windows)]
+fn heartbeat_timestamp() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
 }
 
 #[cfg(windows)]

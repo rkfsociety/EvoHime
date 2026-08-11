@@ -460,7 +460,8 @@ use std::{
 };
 
 use evohime_local_storage::{
-    EventRecord, ImportedTask, LocalDatabase, StorageError, WorkItemRecord,
+    EventRecord, ImportedTask, LocalDatabase, RunCheckpointRecord, RunEffectRecord, RunRecord,
+    StorageError, WorkItemRecord,
 };
 use evohime_model_gateway::{
     providers::{ChatMessage, ChatRole, ProviderError},
@@ -776,6 +777,81 @@ impl EventJournal {
     ) -> Result<evohime_local_storage::SnapshotRecord, StorageError> {
         let database = self.database.lock().await;
         database.save_snapshot(id, run_id, workspace_hash, payload)
+    }
+
+    pub async fn begin_build_effect(
+        &self,
+        run_id: &str,
+        task_id: &str,
+        intent_hash: &str,
+    ) -> Result<RunEffectRecord, StorageError> {
+        let database = self.database.lock().await;
+        let effect_id = format!("effect-{run_id}");
+        let checkpoint = RunCheckpointRecord {
+            run_id: run_id.into(),
+            checkpoint_id: format!("checkpoint-{run_id}"),
+            stage: "build".into(),
+            node_id: "bounded-build".into(),
+            attempt: 1,
+            input_hash: intent_hash.into(),
+            state_json: serde_json::to_vec(&serde_json::json!({
+                "stage": "build", "intent_hash": intent_hash
+            }))?,
+            pending_effects_json: serde_json::to_vec(&vec![effect_id.clone()])?,
+            committed_at: String::new(),
+        };
+        let effect = RunEffectRecord {
+            effect_id: effect_id.clone(),
+            run_id: run_id.into(),
+            node_id: "bounded-build".into(),
+            kind: "bounded_build".into(),
+            idempotency_key: format!("{run_id}:bounded-build"),
+            immutable_intent_hash: intent_hash.into(),
+            state: "prepared".into(),
+            started_at: None,
+            completed_at: None,
+            result_hash: None,
+        };
+        let run = RunRecord {
+            id: run_id.into(),
+            work_item_id: task_id.into(),
+            status: "running".into(),
+            policy_snapshot: Vec::new(),
+            role_snapshot: Vec::new(),
+            skill_snapshot: Vec::new(),
+            model_route_snapshot: Vec::new(),
+        };
+        let stored = database.prepare_run_effect(&run, &checkpoint, &effect)?;
+        if stored.immutable_intent_hash != intent_hash {
+            return Err(StorageError::InvalidRunEffect("intent hash conflict".into()));
+        }
+        match stored.state.as_str() {
+            "prepared" => database.mark_effect_executing(&effect_id),
+            "executing" => Err(StorageError::InvalidRunEffect("effect is already executing".into())),
+            "completed_success" | "completed_failure" | "unknown" => {
+                Err(StorageError::InvalidRunEffect(format!("effect is already {}", stored.state)))
+            }
+            _ => Err(StorageError::InvalidRunEffect(format!("unsupported state {}", stored.state))),
+        }
+    }
+
+    pub async fn complete_build_effect(
+        &self,
+        run_id: &str,
+        success: bool,
+        result_hash: Option<&str>,
+    ) -> Result<RunEffectRecord, StorageError> {
+        let database = self.database.lock().await;
+        let effect = database.complete_run_effect(&format!("effect-{run_id}"), success, result_hash)?;
+        database.update_run_status(run_id, if success { "completed" } else { "failed" })?;
+        Ok(effect)
+    }
+
+    pub async fn recover_after_restart(
+        &self,
+    ) -> Result<Vec<evohime_local_storage::RecoveredRunRecord>, StorageError> {
+        let database = self.database.lock().await;
+        database.recover_unknown_effects()
     }
 
     pub async fn record_audit(
@@ -1840,8 +1916,17 @@ impl TaskCoordinator {
                         .ok_or_else(|| "project not found".to_string())?;
                     let approved = serde_json::from_slice::<crate::build::ApprovedBuild>(&approved_build_json)
                         .map_err(|error| format!("invalid approved build: {error}"))?;
-                    let snapshot = crate::build::apply_approved_build(&project.workspace_path, &approved)
+                    let _effect = journal
+                        .begin_build_effect(&run_id, &task_id, &approved.intent_hash)
+                        .await
                         .map_err(|error| error.to_string())?;
+                    let snapshot = match crate::build::apply_approved_build(&project.workspace_path, &approved) {
+                        Ok(snapshot) => snapshot,
+                        Err(error) => {
+                            let _ = journal.complete_build_effect(&run_id, false, None).await;
+                            return Err(error.to_string());
+                        }
+                    };
                     let payload = serde_json::to_vec(&snapshot).map_err(|error| error.to_string())?;
                     journal
                         .save_snapshot(&snapshot.id, &run_id, &snapshot.baseline_workspace_hash, &payload)
@@ -1859,6 +1944,10 @@ impl TaskCoordinator {
                     let audit_subject = if task_id.is_empty() { &run_id } else { &task_id };
                     journal
                         .record_audit(audit_subject, "build.applied", &audit_payload)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    journal
+                        .complete_build_effect(&run_id, true, Some(&snapshot.id))
                         .await
                         .map_err(|error| error.to_string())?;
                     Ok(payload)

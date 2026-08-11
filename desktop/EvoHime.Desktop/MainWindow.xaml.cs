@@ -3347,6 +3347,7 @@ public partial class MainWindow : Window
                                     "task.completed" => ("Задача завершена", "EvoHime завершила задачу."),
                                     "task.failed" => ("Задача завершилась с ошибкой", "Проверьте журнал событий EvoHime."),
                                     "task.stopped" => ("Задача остановлена", "Выполнение остановлено пользователем."),
+                                    "run.recovery.blocked" => ("Run заблокирован после восстановления", "Неизвестный effect не был запущен повторно; требуется проверка."),
                                     _ => ((string Title, string Message)?)null,
                                 };
                                 if (notification is not null)
