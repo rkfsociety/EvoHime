@@ -460,7 +460,7 @@ use std::{
 };
 
 use evohime_local_storage::{
-    EventRecord, LocalDatabase, StorageError, WorkItemRecord,
+    EventRecord, ImportedTask, LocalDatabase, StorageError, WorkItemRecord,
 };
 use evohime_model_gateway::{
     providers::{ChatMessage, ChatRole, ProviderError},
@@ -526,6 +526,17 @@ pub enum CoreCommand {
     },
     NextReadyTask {
         project_id: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    ImportPrd {
+        client_id: String,
+        request_id: String,
+        command_hash: String,
+        import_id: String,
+        project_id: String,
+        origin: String,
+        version: String,
+        source_text: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
 }
@@ -685,6 +696,26 @@ impl EventJournal {
     ) -> Result<Option<WorkItemRecord>, StorageError> {
         let database = self.database.lock().await;
         database.next_ready(project_id)
+    }
+
+    pub async fn import_prd(
+        &self,
+        provenance_id: &str,
+        project_id: &str,
+        origin: &str,
+        version: &str,
+        source_text: &str,
+        tasks: &[ImportedTask],
+    ) -> Result<Vec<WorkItemRecord>, StorageError> {
+        let database = self.database.lock().await;
+        database.import_prd(
+            provenance_id,
+            project_id,
+            origin,
+            version,
+            source_text,
+            tasks,
+        )
     }
 
     pub async fn record_deduplicated(
@@ -1539,6 +1570,72 @@ impl TaskCoordinator {
                         "task": task,
                     }))
                     .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::ImportPrd {
+                client_id,
+                request_id,
+                command_hash,
+                import_id,
+                project_id,
+                origin,
+                version,
+                source_text,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    if let Some(replay) = journal
+                        .record_deduplicated(&client_id, &request_id, &command_hash, b"")
+                        .await
+                        .map_err(|error| error.to_string())?
+                    {
+                        return Ok(replay);
+                    }
+                    let parsed = crate::prd::parse_markdown_prd(&source_text, &origin, &version);
+                    if !parsed.diagnostics.is_empty() {
+                        let diagnostics = serde_json::to_string(&parsed.diagnostics)
+                            .map_err(|error| error.to_string())?;
+                        return Err(format!("PRD contains diagnostics: {diagnostics}"));
+                    }
+                    let document = parsed.document.ok_or_else(|| "PRD is empty".to_string())?;
+                    let tasks = document
+                        .tasks
+                        .iter()
+                        .enumerate()
+                        .map(|(index, task)| ImportedTask {
+                            id: format!("{project_id}:{import_id}:{index}"),
+                            title: task.title.clone(),
+                            description: task.description.clone(),
+                            source_ref: task.source_ref.clone(),
+                            acceptance_criteria: task.acceptance_criteria.join("\n"),
+                        })
+                        .collect::<Vec<_>>();
+                    let imported = journal
+                        .import_prd(
+                            &import_id,
+                            &project_id,
+                            &origin,
+                            &version,
+                            &source_text,
+                            &tasks,
+                        )
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    let result = serde_json::to_vec(&serde_json::json!({
+                        "import_id": import_id,
+                        "project_id": project_id,
+                        "task_ids": imported.into_iter().map(|task| task.id).collect::<Vec<_>>(),
+                    }))
+                    .map_err(|error| error.to_string())?;
+                    journal
+                        .record_deduplicated(&client_id, &request_id, &command_hash, &result)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    Ok(result)
                 }
                 .await;
                 let _ = reply.send(result);

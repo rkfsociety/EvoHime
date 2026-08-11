@@ -306,6 +306,17 @@ impl IpcBridge {
                 let result = self.dispatch_next_ready_task(request.project_id).await?;
                 self.write_response(writer, "task.next_ready", result).await?;
             }
+            Some(generated::command_envelope::Command::ImportPrd(request)) => {
+                let result = self
+                    .dispatch_import_prd(
+                        client_id,
+                        request_id,
+                        command_hash,
+                        request,
+                    )
+                    .await?;
+                self.write_response(writer, "prd.imported", result).await?;
+            }
             Some(generated::command_envelope::Command::StartTask(start)) => {
                 if let Some(coordinator) = &self.coordinator {
                     coordinator
@@ -506,6 +517,39 @@ impl IpcBridge {
         let (reply, response) = oneshot::channel();
         coordinator
             .dispatch(CoreCommand::NextReadyTask { project_id, reply })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_import_prd(
+        &self,
+        client_id: String,
+        request_id: String,
+        command_hash: String,
+        request: generated::ImportPrd,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::ImportPrd {
+                client_id,
+                request_id,
+                command_hash,
+                import_id: request.import_id,
+                project_id: request.project_id,
+                origin: request.origin,
+                version: request.version,
+                source_text: request.source_text,
+                reply,
+            })
             .await
             .map_err(|error| FrameError::Io(error.to_string()))?;
         response
@@ -753,6 +797,80 @@ mod tests {
             .await
             .expect("conflicting writes");
         assert!(bridge.process_once(&mut server_reader, &mut server_writer).await.is_err());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn imports_prd_without_touching_workspace_and_rejects_duplicate_import() {
+        let path = std::env::temp_dir().join(format!("evohime-ipc-prd-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal.clone(), coordinator);
+        let (mut client, server) = duplex(32 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+        let project = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "project-prd".into(),
+            client_id: "prd-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::CreateProject(
+                generated::CreateProject {
+                    project_id: "project-prd".into(),
+                    title: "PRD".into(),
+                    workspace_path: "C:\\Projects\\prd".into(),
+                    source_ref: String::new(),
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &project.encode_to_vec())
+            .await
+            .expect("project writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("project creates");
+        let _ = transport::read_frame(&mut client).await.expect("project response");
+
+        let import = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "import-prd-1".into(),
+            client_id: "prd-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::ImportPrd(
+                generated::ImportPrd {
+                    import_id: "import-1".into(),
+                    project_id: "project-prd".into(),
+                    origin: "prd.md".into(),
+                    version: "v1".into(),
+                    source_text: "# Plan\n\n## Task\n- [ ] Pass\n".into(),
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &import.encode_to_vec())
+            .await
+            .expect("import writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("import succeeds");
+        let response = transport::read_frame(&mut client).await.expect("import response");
+        let event = generated::EventEnvelope::decode(response.as_slice()).expect("event decodes");
+        assert_eq!(event.event_type, "prd.imported");
+        assert_eq!(journal.list_task_graph("project-prd").await.unwrap().0.len(), 1);
+
+        let mut duplicate = import;
+        if let Some(generated::command_envelope::Command::ImportPrd(request)) = &mut duplicate.command {
+            request.source_text.push_str("\n## Another");
+            duplicate.request_id = "import-prd-2".into();
+        }
+        transport::write_frame(&mut client, &duplicate.encode_to_vec())
+            .await
+            .expect("duplicate writes");
+        assert!(bridge.process_once(&mut server_reader, &mut server_writer).await.is_err());
+        assert_eq!(journal.list_task_graph("project-prd").await.unwrap().0.len(), 1);
         let _ = std::fs::remove_file(path);
     }
 }

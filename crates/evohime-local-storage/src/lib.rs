@@ -78,6 +78,23 @@ pub struct WorkItemRecord {
     pub version: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportedTask {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub source_ref: String,
+    pub acceptance_criteria: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProvenanceRecord {
+    pub id: String,
+    pub kind: String,
+    pub source: String,
+    pub payload: Vec<u8>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RoleRef {
     pub id: String,
@@ -237,6 +254,66 @@ impl LocalDatabase {
         )?;
         self.get_work_item(&item.id)?
             .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+    }
+
+    pub fn import_prd(
+        &self,
+        provenance_id: &str,
+        project_id: &str,
+        origin: &str,
+        version: &str,
+        source_text: &str,
+        tasks: &[ImportedTask],
+    ) -> Result<Vec<WorkItemRecord>, StorageError> {
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "version": version,
+            "source_text": source_text,
+        }))?;
+        let transaction = self.connection.unchecked_transaction()?;
+        transaction.execute(
+            "INSERT INTO provenance(id, kind, source, payload) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![provenance_id, "prd_import", origin, payload],
+        )?;
+        for task in tasks {
+            transaction.execute(
+                "INSERT INTO work_items(id, project_id, title, description, source_ref,
+                 acceptance_criteria, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'backlog')",
+                rusqlite::params![
+                    task.id,
+                    project_id,
+                    task.title,
+                    task.description,
+                    task.source_ref,
+                    task.acceptance_criteria,
+                ],
+            )?;
+        }
+        transaction.commit()?;
+        tasks
+            .iter()
+            .map(|task| {
+                self.get_work_item(&task.id)?
+                    .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+            })
+            .collect()
+    }
+
+    pub fn get_provenance(&self, id: &str) -> Result<Option<ProvenanceRecord>, StorageError> {
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT id, kind, source, payload FROM provenance WHERE id = ?1",
+                [id],
+                |row| {
+                    Ok(ProvenanceRecord {
+                        id: row.get(0)?,
+                        kind: row.get(1)?,
+                        source: row.get(2)?,
+                        payload: row.get(3)?,
+                    })
+                },
+            )
+            .optional()?)
     }
 
     pub fn get_work_item(&self, id: &str) -> Result<Option<WorkItemRecord>, StorageError> {
@@ -646,8 +723,8 @@ impl LocalDatabase {
 #[cfg(test)]
 mod tests {
     use super::{
-        LocalDatabase, ModelRouteSnapshot, PolicySnapshot, RoleRef, RunRecord, RunSnapshots,
-        SkillRef, StorageError, WorkItemRecord, SCHEMA_VERSION,
+        ImportedTask, LocalDatabase, ModelRouteSnapshot, PolicySnapshot, RoleRef, RunRecord,
+        RunSnapshots, SkillRef, StorageError, WorkItemRecord, SCHEMA_VERSION,
     };
     use std::path::PathBuf;
 
@@ -829,6 +906,41 @@ mod tests {
         assert_eq!(database.list_work_items("project-graph").unwrap().len(), 3);
         assert_eq!(database.list_dependencies("project-graph").unwrap().len(), 1);
         assert_eq!(database.next_ready("project-graph").unwrap().unwrap().id, "task-b");
+        drop(database);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn imports_prd_atomically_and_preserves_provenance() {
+        let path = temp_database_path("prd-import");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        database
+            .create_project("project-prd", "PRD", "C:\\Projects\\prd", None)
+            .expect("project creates");
+        let source = "# Plan\n\n## Imported\nDescription\n- [ ] Verify\n";
+        let tasks = [ImportedTask {
+            id: "import-task-1".into(),
+            title: "Imported".into(),
+            description: "Description".into(),
+            source_ref: "prd.md#L3".into(),
+            acceptance_criteria: "Verify".into(),
+        }];
+        let imported = database
+            .import_prd("import-1", "project-prd", "prd.md", "v7", source, &tasks)
+            .expect("PRD imports");
+        assert_eq!(imported[0].status, "backlog");
+        let provenance = database
+            .get_provenance("import-1")
+            .expect("provenance reads")
+            .expect("provenance exists");
+        assert_eq!(provenance.kind, "prd_import");
+        assert_eq!(provenance.source, "prd.md");
+        assert_eq!(serde_json::from_slice::<serde_json::Value>(&provenance.payload).unwrap()["version"], "v7");
+        assert!(database
+            .import_prd("import-1", "project-prd", "prd.md", "v7", source, &tasks)
+            .is_err());
+        assert_eq!(database.list_work_items("project-prd").unwrap().len(), 1);
         drop(database);
         let _ = std::fs::remove_file(path);
     }

@@ -81,6 +81,14 @@ message NextReadyTask {
   string project_id = 1;
 }
 
+message ImportPrd {
+  string import_id = 1;
+  string project_id = 2;
+  string origin = 3;
+  string version = 4;
+  string source_text = 5;
+}
+
 message StartTask {
   string task_id = 1;
   string prompt = 2;
@@ -117,6 +125,7 @@ message CommandEnvelope {
     AddTaskEdge add_task_edge = 21;
     GetTaskGraph get_task_graph = 22;
     NextReadyTask next_ready_task = 23;
+    ImportPrd import_prd = 24;
   }
 }
 
