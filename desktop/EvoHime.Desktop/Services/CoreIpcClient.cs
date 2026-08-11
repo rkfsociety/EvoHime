@@ -109,9 +109,10 @@ public sealed class CoreIpcClient
         string description,
         string acceptanceCriteria,
         long priority,
+        string complexity,
         CancellationToken cancellationToken) =>
         SendPayloadAsync(
-            ProtocolEnvelope.CreateTask(taskId, projectId, parentId, title, description, acceptanceCriteria, priority),
+            ProtocolEnvelope.CreateTask(taskId, projectId, parentId, title, description, acceptanceCriteria, priority, complexity),
             cancellationToken);
 
     public Task AddTaskEdgeAsync(string fromTaskId, string toTaskId, string kind, CancellationToken cancellationToken) =>

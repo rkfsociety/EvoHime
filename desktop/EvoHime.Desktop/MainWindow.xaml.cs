@@ -968,7 +968,7 @@ public partial class MainWindow : Window
         });
         details.Children.Add(new TextBlock
         {
-            Text = $"{task.Status} · приоритет {task.Priority} · зависимостей: {dependencies}",
+            Text = $"{task.Status} · сложность {task.Complexity ?? "не указана"} · приоритет {task.Priority} · зависимостей: {dependencies}",
             Foreground = muted,
             FontSize = 12,
         });
@@ -999,6 +999,10 @@ public partial class MainWindow : Window
         }
         AddTaskStatusButton(actions, "Выполнена", task, "done");
         AddTaskStatusButton(actions, "Отложить", task, "backlog");
+        if (task.Status == "done")
+        {
+            AddTaskStatusButton(actions, "Повторить", task, "ready");
+        }
         var history = new Button { Content = "История", Padding = new Thickness(8, 3, 8, 3), FontSize = 11 };
         history.Click += async (_, _) => await RequestTaskHistoryAsync(task);
         actions.Children.Add(history);
@@ -1303,10 +1307,11 @@ public partial class MainWindow : Window
         var description = new TextBox { Header = "Описание", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 70 };
         var acceptance = new TextBox { Header = "Критерии приемки", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 55 };
         var priority = new NumberBox { Header = "Приоритет", Value = 0, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };
+        var complexity = new ComboBox { Header = "Сложность", ItemsSource = new[] { "small", "medium", "large" }, SelectedIndex = 0 };
         var dialog = new ContentDialog
         {
             Title = parentId is null ? "Новая задача" : "Новая подзадача",
-            Content = new StackPanel { Spacing = 10, Children = { title, description, acceptance, priority } },
+            Content = new StackPanel { Spacing = 10, Children = { title, description, acceptance, priority, complexity } },
             PrimaryButtonText = "Создать",
             CloseButtonText = "Отмена",
             XamlRoot = ((FrameworkElement)Content).XamlRoot,
@@ -1330,6 +1335,7 @@ public partial class MainWindow : Window
                     description.Text,
                     acceptance.Text,
                     (long)priority.Value,
+                    complexity.SelectedItem as string ?? "medium",
                     CancellationToken.None);
                 var response = await _ipc.ReadEventAsync(CancellationToken.None);
                 if (response.EventType != "task.created")
@@ -1482,6 +1488,7 @@ public partial class MainWindow : Window
         [property: JsonPropertyName("title")] string Title,
         [property: JsonPropertyName("description")] string Description,
         [property: JsonPropertyName("acceptance_criteria")] string AcceptanceCriteria,
+        [property: JsonPropertyName("complexity")] string? Complexity,
         [property: JsonPropertyName("status")] string Status,
         [property: JsonPropertyName("priority")] long Priority,
         [property: JsonPropertyName("version")] long Version);

@@ -172,7 +172,8 @@ public static class ProtocolEnvelope
         string title,
         string description,
         string acceptanceCriteria,
-        long priority) => TaskCommand(19, output =>
+        long priority,
+        string complexity) => TaskCommand(19, output =>
     {
         WriteString(output, 1, taskId);
         WriteString(output, 2, projectId);
@@ -183,6 +184,7 @@ public static class ProtocolEnvelope
         WriteString(output, 9, "backlog");
         output.WriteTag(10, WireFormat.WireType.Varint);
         output.WriteInt64(priority);
+        WriteString(output, 12, complexity);
     });
 
     public static byte[] AddTaskEdge(string fromTaskId, string toTaskId, string kind) => TaskCommand(21, output =>
