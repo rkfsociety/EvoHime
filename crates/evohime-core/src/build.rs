@@ -18,10 +18,20 @@ pub struct SnapshotFile {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SnapshotDiff {
+    pub relative_path: String,
+    pub operation: String,
+    pub before_hash: Option<String>,
+    pub after_hash: Option<String>,
+    pub bytes_changed: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkspaceSnapshot {
     pub id: String,
     pub baseline_workspace_hash: String,
     pub files: Vec<SnapshotFile>,
+    pub diff: Vec<SnapshotDiff>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -153,6 +163,7 @@ pub fn apply_approved_build(
         id: format!("snapshot-{}", content_hash(build.intent_hash.as_bytes())),
         baseline_workspace_hash: build.expected_workspace_hash.clone(),
         files: Vec::new(),
+        diff: Vec::new(),
     };
     for change in &build.changes {
         let path = safe_path(&root, &change.relative_path)?;
@@ -171,6 +182,30 @@ pub fn apply_approved_build(
             relative_path: change.relative_path.clone(),
             existed: existing.is_some(),
             content: existing.unwrap_or_default(),
+        });
+        let before_hash = snapshot
+            .files
+            .last()
+            .filter(|file| file.existed)
+            .map(|file| content_hash(&file.content));
+        let operation = if change.delete {
+            "delete"
+        } else if before_hash.is_none() {
+            "create"
+        } else {
+            "write"
+        };
+        let after_hash = if change.delete {
+            None
+        } else {
+            change.content.as_deref().map(|content| content_hash(content.as_bytes()))
+        };
+        snapshot.diff.push(SnapshotDiff {
+            relative_path: change.relative_path.clone(),
+            operation: operation.into(),
+            before_hash,
+            after_hash,
+            bytes_changed: change.content.as_deref().map(str::len).unwrap_or(0),
         });
     }
 
@@ -274,6 +309,10 @@ mod tests {
         build.intent_hash = calculate_intent_hash(&build.scope, &build.changes);
         let snapshot = apply_approved_build(&root, &build).unwrap();
         assert_eq!(fs::read_to_string(root.join("src/lib.rs")).unwrap(), "new");
+        assert_eq!(snapshot.diff.len(), 1);
+        assert_eq!(snapshot.diff[0].operation, "write");
+        assert_eq!(snapshot.diff[0].before_hash.as_deref(), Some(crate::workspace::content_hash(b"old").as_str()));
+        assert_eq!(snapshot.diff[0].after_hash.as_deref(), Some(crate::workspace::content_hash(b"new").as_str()));
         restore_snapshot(&root, &snapshot).unwrap();
         assert_eq!(fs::read_to_string(root.join("src/lib.rs")).unwrap(), "old");
         fs::remove_dir_all(root).unwrap();
