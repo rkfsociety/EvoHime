@@ -111,6 +111,9 @@ public partial class MainWindow : Window
         var windowId = Win32Interop.GetWindowIdFromWindow(hwnd);
         var appWindow = AppWindow.GetFromWindowId(windowId);
         appWindow.Title = Title;
+        // Базовая композиция native-оболочки рассчитана на рабочую область 16:9.
+        // Пользователь по-прежнему может свободно изменить размер окна после запуска.
+        appWindow.Resize(new Windows.Graphics.SizeInt32(1440, 810));
 
         if (!AppWindowTitleBar.IsCustomizationSupported())
         {
@@ -427,11 +430,12 @@ public partial class MainWindow : Window
         composerActions.Children.Add(attachButton);
         var accessButton = new Button
         {
-            Content = "◉  С подтверждением",
+            Content = "Доступ: спрашивать",
             Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 239, 133, 80)),
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
             Padding = new Thickness(4, 5, 6, 5),
         };
+        ToolTipService.SetToolTip(accessButton, "Режим доступа инструментов агента");
         Grid.SetColumn(accessButton, 1);
         composerActions.Children.Add(accessButton);
         _modelButton = new Button
@@ -443,18 +447,18 @@ public partial class MainWindow : Window
         };
         accessButton.Click += AccessButton_Click;
         _modelButton.Click += ModelButton_Click;
-        var contextIndicator = new Grid { Width = 38, Height = 38 };
+        var contextIndicator = new Grid { Width = 42, Height = 42 };
         contextIndicator.Children.Add(new XamlEllipse
         {
-            Width = 30,
-            Height = 30,
+            Width = 34,
+            Height = 34,
             Stroke = ThemeBrush("BorderBrush", 48, 53, 72),
             StrokeThickness = 3,
         });
         _contextProgressArc = new XamlPath
         {
-            Width = 38,
-            Height = 38,
+            Width = 42,
+            Height = 42,
             Stroke = ThemeBrush("PurpleBrush", 167, 139, 250),
             StrokeThickness = 3,
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -478,7 +482,7 @@ public partial class MainWindow : Window
             Padding = new Thickness(0),
             IsEnabled = false,
         };
-        ToolTipService.SetToolTip(_contextButton, "Контекст модели");
+        ToolTipService.SetToolTip(_contextButton, "Заполнение контекста модели в токенах");
         _contextButton.Click += ContextButton_Click;
         Grid.SetColumn(_contextButton, 3);
         composerActions.Children.Add(_contextButton);
@@ -2700,8 +2704,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        var radius = 15d;
-        var center = 19d;
+        var radius = 17d;
+        var center = 21d;
         var start = -Math.PI / 2;
         var angle = start + Math.Min(percent, 99.99) / 100d * Math.PI * 2;
         var end = new Windows.Foundation.Point(center + radius * Math.Cos(angle), center + radius * Math.Sin(angle));
@@ -2792,9 +2796,9 @@ public partial class MainWindow : Window
     {
         var menu = new MenuFlyout();
         var button = sender as Button;
-        AddPermissionMenuItem(menu, button, "ask", "◉  С подтверждением");
-        AddPermissionMenuItem(menu, button, "read_only", "◌  Только чтение");
-        AddPermissionMenuItem(menu, button, "full", "⚡  Полный доступ");
+        AddPermissionMenuItem(menu, button, "ask", "Доступ: спрашивать");
+        AddPermissionMenuItem(menu, button, "read_only", "Доступ: только чтение");
+        AddPermissionMenuItem(menu, button, "full", "Доступ: полный");
         menu.ShowAt((FrameworkElement)sender);
     }
 
