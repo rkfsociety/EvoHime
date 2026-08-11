@@ -598,6 +598,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn malformed_command_is_rejected_without_crashing_bridge() {
+        let path = std::env::temp_dir().join(format!("evohime-ipc-malformed-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let bridge = IpcBridge::new(EventJournal::open(&path).expect("journal opens"));
+        let (mut client, server) = duplex(1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+        transport::write_frame(&mut client, &[0xff, 0x00, 0x01])
+            .await
+            .expect("malformed frame writes");
+        assert!(matches!(
+            bridge.process_once(&mut server_reader, &mut server_writer).await,
+            Err(IpcBridgeError::Protobuf(_))
+        ));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn reconnect_replays_only_events_after_last_sequence() {
+        let path = std::env::temp_dir().join(format!("evohime-ipc-reconnect-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let first = journal
+            .record(&CoreEvent::TaskStarted { task_id: "task-reconnect".into(), prompt: "one".into() })
+            .await
+            .expect("first event");
+        journal
+            .record(&CoreEvent::TaskCompleted { task_id: "task-reconnect".into(), final_message: "two".into() })
+            .await
+            .expect("second event");
+        let bridge = IpcBridge::new(journal);
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+        let command = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "reconnect".into(),
+            client_id: "client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 2,
+            command: Some(generated::command_envelope::Command::ReplayEvents(
+                generated::ReplayEvents { after_sequence: first as u64 },
+            )),
+        };
+        transport::write_frame(&mut client, &command.encode_to_vec())
+            .await
+            .expect("reconnect writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("reconnect serves");
+        let response = transport::read_frame(&mut client).await.expect("event reads");
+        let event = generated::EventEnvelope::decode(response.as_slice()).expect("event decodes");
+        assert_eq!(event.event_type, "task.completed");
+        assert_eq!(event.sequence_id, first as u64 + 1);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
     async fn serves_task_crud_and_replays_deduplicated_create() {
         let path = std::env::temp_dir().join(format!("evohime-ipc-task-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);

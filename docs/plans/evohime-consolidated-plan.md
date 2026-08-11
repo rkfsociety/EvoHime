@@ -167,9 +167,11 @@ Capability registry описывает tools, skills, MCP, модели, кан�
 - [x] Task mutations now pass through the single Core `TaskCoordinator` command queue and return bounded `oneshot` results.
 - [x] Runtime `core_instance_id` and `session_epoch` are populated in handshake, replay and command acknowledgements.
 - [x] Compatibility fixtures cover legacy envelopes and ignored additive protobuf fields.
-- [x] Targeted Rust tests: 18 Core, 7 IPC и 6 local-storage тестов; UI tests 20/20.
+- [x] Migration failure restores the pre-migration backup; immutable run snapshots persist policy, role, skill and model-route bytes.
+- [x] Malformed command rejection and reconnect replay-after-sequence tests are covered.
+- [x] Targeted Rust tests: 21 Core, 9 IPC и 8 local-storage тестов; UI tests 20/20.
 
-Остаётся для полного закрытия 0a: rollback при искусственном сбое миграции, reconnect/malformed-command tests и durable immutable role/skill/policy/model snapshots; enum compatibility fixture будет добавлен вместе с versioned enum contract.
+Остаётся для полного закрытия 0a: enum compatibility fixture вместе с versioned enum contract; затем можно закрыть этап 0a после финального review storage/IPC boundaries.
 
 Зависимости: существующие IPC/SQLite foundations.
 

@@ -75,9 +75,24 @@ pub struct WorkItemRecord {
     pub version: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunRecord {
+    pub id: String,
+    pub work_item_id: String,
+    pub status: String,
+    pub policy_snapshot: Vec<u8>,
+    pub role_snapshot: Vec<u8>,
+    pub skill_snapshot: Vec<u8>,
+    pub model_route_snapshot: Vec<u8>,
+}
+
 impl LocalDatabase {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
-        let path = path.as_ref().to_path_buf();
+        Self::open_internal(path.as_ref(), false)
+    }
+
+    fn open_internal(path: &Path, fail_migration: bool) -> Result<Self, StorageError> {
+        let path = path.to_path_buf();
         if let Some(parent) = path
             .parent()
             .filter(|parent| !parent.as_os_str().is_empty())
@@ -95,7 +110,11 @@ impl LocalDatabase {
             if existed {
                 fs::copy(&path, path.with_extension("db.bak"))?;
             }
-            Self::migrate(&connection, version)?;
+            if let Err(error) = Self::migrate(&connection, version, fail_migration) {
+                drop(connection);
+                fs::copy(path.with_extension("db.bak"), &path)?;
+                return Err(error);
+            }
         }
         connection.pragma_update(None, "journal_mode", "WAL")?;
         Ok(Self { path, connection })
@@ -280,6 +299,43 @@ impl LocalDatabase {
         Ok(None)
     }
 
+    pub fn create_run(&self, run: &RunRecord) -> Result<RunRecord, StorageError> {
+        self.connection.execute(
+            "INSERT INTO runs(id, work_item_id, status, policy_snapshot, role_snapshot,
+             skill_snapshot, model_route_snapshot) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                run.id,
+                run.work_item_id,
+                run.status,
+                run.policy_snapshot,
+                run.role_snapshot,
+                run.skill_snapshot,
+                run.model_route_snapshot
+            ],
+        )?;
+        self.get_run(&run.id)?.ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+    }
+
+    pub fn get_run(&self, id: &str) -> Result<Option<RunRecord>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, work_item_id, status, policy_snapshot, role_snapshot,
+             skill_snapshot, model_route_snapshot FROM runs WHERE id = ?1",
+        )?;
+        Ok(statement
+            .query_row([id], |row| {
+                Ok(RunRecord {
+                    id: row.get(0)?,
+                    work_item_id: row.get(1)?,
+                    status: row.get(2)?,
+                    policy_snapshot: row.get(3)?,
+                    role_snapshot: row.get(4)?,
+                    skill_snapshot: row.get(5)?,
+                    model_route_snapshot: row.get(6)?,
+                })
+            })
+            .optional()?)
+    }
+
     pub fn append_event(
         &self,
         task_id: &str,
@@ -344,7 +400,11 @@ impl LocalDatabase {
         connection.query_row("PRAGMA user_version", [], |row| row.get(0))
     }
 
-    fn migrate(connection: &Connection, current: u32) -> Result<(), StorageError> {
+    fn migrate(
+        connection: &Connection,
+        current: u32,
+        fail_migration: bool,
+    ) -> Result<(), StorageError> {
         let transaction = connection.unchecked_transaction()?;
         if current < 1 {
             transaction.execute_batch(
@@ -358,6 +418,9 @@ impl LocalDatabase {
                 CREATE INDEX IF NOT EXISTS idx_events_task_sequence ON events(task_id, sequence_id);
                 PRAGMA user_version = 1;",
             )?;
+        }
+        if fail_migration {
+            return Err(rusqlite::Error::InvalidQuery.into());
         }
         if current < 2 {
             transaction.execute_batch(
@@ -406,7 +469,7 @@ impl LocalDatabase {
 
 #[cfg(test)]
 mod tests {
-    use super::{LocalDatabase, StorageError, WorkItemRecord, SCHEMA_VERSION};
+    use super::{LocalDatabase, RunRecord, StorageError, WorkItemRecord, SCHEMA_VERSION};
     use std::path::PathBuf;
 
     fn temp_database_path(name: &str) -> PathBuf {
@@ -440,6 +503,29 @@ mod tests {
         }
         let _database = LocalDatabase::open(&path).expect("database migrates");
         assert!(path.with_extension("db.bak").exists());
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db.bak"));
+    }
+
+    #[test]
+    fn restores_backup_when_migration_fails() {
+        let path = temp_database_path("rollback");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db.bak"));
+        {
+            let connection = rusqlite::Connection::open(&path).expect("legacy database opens");
+            connection
+                .execute_batch("CREATE TABLE marker(value TEXT NOT NULL); INSERT INTO marker VALUES ('legacy');")
+                .expect("legacy data writes");
+        }
+        assert!(LocalDatabase::open_internal(&path, true).is_err());
+        let database = LocalDatabase::open(&path).expect("database restores and migrates");
+        let marker: String = database
+            .connection
+            .query_row("SELECT value FROM marker", [], |row| row.get(0))
+            .expect("legacy marker survives rollback");
+        assert_eq!(marker, "legacy");
+        drop(database);
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("db.bak"));
     }
@@ -543,6 +629,48 @@ mod tests {
             database.record_deduplicated("client", "request", "other", b"bad"),
             Err(StorageError::DeduplicationConflict { .. })
         ));
+        drop(database);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn persists_immutable_run_snapshots() {
+        let path = temp_database_path("run-snapshots");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        database
+            .create_project("project-run", "Run project", "C:\\Projects\\run", None)
+            .expect("project creates");
+        database
+            .create_work_item(&WorkItemRecord {
+                id: "task-run".into(),
+                project_id: "project-run".into(),
+                parent_id: None,
+                title: "Run task".into(),
+                description: String::new(),
+                source_ref: None,
+                acceptance_criteria: String::new(),
+                non_goals: String::new(),
+                status: "ready".into(),
+                priority: 0,
+                estimate: None,
+                complexity: None,
+                attempt_count: 0,
+                version: 1,
+            })
+            .expect("task creates");
+        let run = RunRecord {
+            id: "run-1".into(),
+            work_item_id: "task-run".into(),
+            status: "queued".into(),
+            policy_snapshot: br#"{"max_iterations":1}"#.to_vec(),
+            role_snapshot: br#"{"id":"planner","version":1}"#.to_vec(),
+            skill_snapshot: br#"{"id":"native","version":1}"#.to_vec(),
+            model_route_snapshot: br#"{"route":"local-first"}"#.to_vec(),
+        };
+        assert_eq!(database.create_run(&run).expect("run creates"), run);
+        assert!(database.create_run(&run).is_err(), "run snapshot is immutable");
+        assert_eq!(database.get_run("run-1").expect("run reads"), Some(run));
         drop(database);
         let _ = std::fs::remove_file(path);
     }
