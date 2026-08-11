@@ -164,9 +164,12 @@ Capability registry описывает tools, skills, MCP, модели, кан�
 - [x] Базовый CRUD project/work item, self-dependency guard, append-only event replay API и deduplication по `(client_id, request_id)`.
 - [x] Additive IPC contract fields for `client_id`, `core_instance_id`, `session_epoch`, `event_sequence` and capability list without removing old fields.
 - [x] Core IPC handlers for `CreateProject`, `CreateTask`, `UpdateTaskStatus` and `AddTaskEdge` with durable request deduplication and replayed acknowledgements.
+- [x] Task mutations now pass through the single Core `TaskCoordinator` command queue and return bounded `oneshot` results.
+- [x] Runtime `core_instance_id` and `session_epoch` are populated in handshake, replay and command acknowledgements.
+- [x] Compatibility fixtures cover legacy envelopes and ignored additive protobuf fields.
 - [x] Targeted Rust tests: 18 Core, 7 IPC и 6 local-storage тестов; UI tests 20/20.
 
-Остаётся для полного закрытия 0a: перенос task CRUD из прямого IPC handler в единый Core command queue, runtime session metadata, rollback при искусственном сбое миграции, unknown-field/enum compatibility fixtures, reconnect/malformed-command tests и durable immutable role/skill/policy/model snapshots.
+Остаётся для полного закрытия 0a: rollback при искусственном сбое миграции, reconnect/malformed-command tests и durable immutable role/skill/policy/model snapshots; enum compatibility fixture будет добавлен вместе с versioned enum contract.
 
 Зависимости: существующие IPC/SQLite foundations.
 

@@ -9,6 +9,7 @@ use evohime_tool_runtime::ToolRegistry;
 use evohime_permissions::{Permission, PermissionMode};
 use evohime_local_storage::WorkItemRecord;
 use std::sync::Arc;
+use tokio::sync::oneshot;
 
 const PROTOCOL_MAJOR: u32 = 1;
 const PROTOCOL_MINOR: u32 = 0;
@@ -36,10 +37,23 @@ pub struct IpcBridge {
     tools: Option<Arc<ToolRegistry>>,
     model_config: Option<ModelConfigSnapshot>,
     gateway_config: Option<ModelGatewayConfig>,
+    core_instance_id: String,
+    session_epoch: u64,
+}
+
+fn runtime_identity() -> (String, u64) {
+    (
+        uuid::Uuid::new_v4().to_string(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|value| value.as_secs())
+            .unwrap_or_default(),
+    )
 }
 
 impl IpcBridge {
     pub fn new(journal: EventJournal) -> Self {
+        let (core_instance_id, session_epoch) = runtime_identity();
         Self {
             journal,
             coordinator: None,
@@ -47,10 +61,13 @@ impl IpcBridge {
             tools: None,
             model_config: None,
             gateway_config: None,
+            core_instance_id,
+            session_epoch,
         }
     }
 
     pub fn with_coordinator(journal: EventJournal, coordinator: TaskCoordinator) -> Self {
+        let (core_instance_id, session_epoch) = runtime_identity();
         Self {
             journal,
             coordinator: Some(coordinator),
@@ -58,6 +75,8 @@ impl IpcBridge {
             tools: None,
             model_config: None,
             gateway_config: None,
+            core_instance_id,
+            session_epoch,
         }
     }
 
@@ -69,6 +88,7 @@ impl IpcBridge {
         model_config: Option<ModelConfigSnapshot>,
         gateway_config: Option<ModelGatewayConfig>,
     ) -> Self {
+        let (core_instance_id, session_epoch) = runtime_identity();
         Self {
             journal,
             coordinator: Some(coordinator),
@@ -76,6 +96,8 @@ impl IpcBridge {
             tools: Some(tools),
             model_config,
             gateway_config,
+            core_instance_id,
+            session_epoch,
         }
     }
 
@@ -97,8 +119,8 @@ impl IpcBridge {
                     task_id: String::new(),
                     event_type: "core.ready".into(),
                     payload: Vec::new(),
-                    core_instance_id: String::new(),
-                    session_epoch: 0,
+                    core_instance_id: self.core_instance_id.clone(),
+                    session_epoch: self.session_epoch,
                     event: Some(generated::event_envelope::Event::Ready(generated::Ready {
                         protocol: Some(protocol()),
                         core_version: env!("CARGO_PKG_VERSION").into(),
@@ -121,8 +143,8 @@ impl IpcBridge {
                         task_id: record.task_id,
                         event_type: record.event_type,
                         payload: record.payload,
-                        core_instance_id: String::new(),
-                        session_epoch: 0,
+                        core_instance_id: self.core_instance_id.clone(),
+                        session_epoch: self.session_epoch,
                         event: None,
                     };
                     transport::write_frame(writer, &event.encode_to_vec()).await?;
@@ -133,8 +155,8 @@ impl IpcBridge {
                     task_id: String::new(),
                     event_type: "replay.end".into(),
                     payload: Vec::new(),
-                    core_instance_id: String::new(),
-                    session_epoch: 0,
+                    core_instance_id: self.core_instance_id.clone(),
+                    session_epoch: self.session_epoch,
                     event: None,
                 };
                 transport::write_frame(writer, &end.encode_to_vec()).await?;
@@ -147,8 +169,8 @@ impl IpcBridge {
                     task_id: String::new(),
                     event_type: "model.config".into(),
                     payload,
-                    core_instance_id: String::new(),
-                    session_epoch: 0,
+                    core_instance_id: self.core_instance_id.clone(),
+                    session_epoch: self.session_epoch,
                     event: None,
                 };
                 transport::write_frame(writer, &event.encode_to_vec()).await?;
@@ -196,8 +218,8 @@ impl IpcBridge {
                     task_id: String::new(),
                     event_type: "model.catalog".into(),
                     payload: serde_json::to_vec(&payload).unwrap_or_default(),
-                    core_instance_id: String::new(),
-                    session_epoch: 0,
+                    core_instance_id: self.core_instance_id.clone(),
+                    session_epoch: self.session_epoch,
                     event: None,
                 };
                 transport::write_frame(writer, &event.encode_to_vec()).await?;
@@ -223,36 +245,9 @@ impl IpcBridge {
                 }
             }
             Some(generated::command_envelope::Command::CreateProject(request)) => {
-                let result = if let Some(replay) = self
-                    .journal
-                    .record_deduplicated(&client_id, &request_id, &command_hash, b"")
-                    .await
-                    .map_err(storage_error)?
-                {
-                    replay
-                } else {
-                    let project = self
-                        .journal
-                        .create_project(
-                            &request.project_id,
-                            &request.title,
-                            &request.workspace_path,
-                            (!request.source_ref.is_empty()).then_some(request.source_ref.as_str()),
-                        )
-                        .await
-                        .map_err(storage_error)?;
-                    serde_json::to_vec(&serde_json::json!({
-                        "project_id": project.id,
-                        "title": project.title,
-                        "workspace_path": project.workspace_path,
-                        "version": project.version,
-                    }))
-                    .map_err(|error| FrameError::Io(error.to_string()))?
-                };
-                self.journal
-                    .record_deduplicated(&client_id, &request_id, &command_hash, &result)
-                    .await
-                    .map_err(storage_error)?;
+                let result = self
+                    .dispatch_create_project(client_id, request_id, command_hash, request)
+                    .await?;
                 self.write_response(writer, "project.created", result).await?;
             }
             Some(generated::command_envelope::Command::CreateTask(request)) => {
@@ -272,75 +267,35 @@ impl IpcBridge {
                     attempt_count: 0,
                     version: 1,
                 };
-                let result = if let Some(replay) = self
-                    .journal
-                    .record_deduplicated(&client_id, &request_id, &command_hash, b"")
-                    .await
-                    .map_err(storage_error)?
-                {
-                    replay
-                } else {
-                    let created = self.journal.create_work_item(&item).await.map_err(storage_error)?;
-                    serde_json::to_vec(&serde_json::json!({
-                        "task_id": created.id,
-                        "project_id": created.project_id,
-                        "status": created.status,
-                        "version": created.version,
-                    }))
-                    .map_err(|error| FrameError::Io(error.to_string()))?
-                };
-                self.journal
-                    .record_deduplicated(&client_id, &request_id, &command_hash, &result)
-                    .await
-                    .map_err(storage_error)?;
+                let result = self
+                    .dispatch_create_task(client_id, request_id, command_hash, item)
+                    .await?;
                 self.write_response(writer, "task.created", result).await?;
             }
             Some(generated::command_envelope::Command::UpdateTaskStatus(request)) => {
-                let result = if let Some(replay) = self
-                    .journal
-                    .record_deduplicated(&client_id, &request_id, &command_hash, b"")
-                    .await
-                    .map_err(storage_error)?
-                {
-                    replay
-                } else {
-                    let updated = self
-                        .journal
-                        .update_work_item_status(&request.task_id, request.expected_version, &request.status)
-                        .await
-                        .map_err(storage_error)?;
-                    serde_json::to_vec(&serde_json::json!({
-                        "task_id": updated.id,
-                        "status": updated.status,
-                        "version": updated.version,
-                    }))
-                    .map_err(|error| FrameError::Io(error.to_string()))?
-                };
-                self.journal
-                    .record_deduplicated(&client_id, &request_id, &command_hash, &result)
-                    .await
-                    .map_err(storage_error)?;
+                let result = self
+                    .dispatch_update_status(
+                        client_id,
+                        request_id,
+                        command_hash,
+                        request.task_id,
+                        request.expected_version,
+                        request.status,
+                    )
+                    .await?;
                 self.write_response(writer, "task.status_updated", result).await?;
             }
             Some(generated::command_envelope::Command::AddTaskEdge(request)) => {
-                let result = if let Some(replay) = self
-                    .journal
-                    .record_deduplicated(&client_id, &request_id, &command_hash, b"")
-                    .await
-                    .map_err(storage_error)?
-                {
-                    replay
-                } else {
-                    self.journal
-                        .add_dependency(&request.from_task_id, &request.to_task_id, &request.kind)
-                        .await
-                        .map_err(storage_error)?;
-                    br#"{"from_task_id":"ok"}"#.to_vec()
-                };
-                self.journal
-                    .record_deduplicated(&client_id, &request_id, &command_hash, &result)
-                    .await
-                    .map_err(storage_error)?;
+                let result = self
+                    .dispatch_add_edge(
+                        client_id,
+                        request_id,
+                        command_hash,
+                        request.from_task_id,
+                        request.to_task_id,
+                        request.kind,
+                    )
+                    .await?;
                 self.write_response(writer, "task.edge_added", result).await?;
             }
             Some(generated::command_envelope::Command::StartTask(start)) => {
@@ -385,6 +340,133 @@ impl IpcBridge {
         Ok(())
     }
 
+    async fn dispatch_create_project(
+        &self,
+        client_id: String,
+        request_id: String,
+        command_hash: String,
+        request: generated::CreateProject,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::CreateProject {
+                client_id,
+                request_id,
+                command_hash,
+                project_id: request.project_id,
+                title: request.title,
+                workspace_path: request.workspace_path,
+                source_ref: (!request.source_ref.is_empty()).then_some(request.source_ref),
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_create_task(
+        &self,
+        client_id: String,
+        request_id: String,
+        command_hash: String,
+        item: WorkItemRecord,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::CreateTask {
+                client_id,
+                request_id,
+                command_hash,
+                item,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_update_status(
+        &self,
+        client_id: String,
+        request_id: String,
+        command_hash: String,
+        task_id: String,
+        expected_version: i64,
+        status: String,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::UpdateTaskStatus {
+                client_id,
+                request_id,
+                command_hash,
+                task_id,
+                expected_version,
+                status,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_add_edge(
+        &self,
+        client_id: String,
+        request_id: String,
+        command_hash: String,
+        from_task_id: String,
+        to_task_id: String,
+        kind: String,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::AddTaskEdge {
+                client_id,
+                request_id,
+                command_hash,
+                from_task_id,
+                to_task_id,
+                kind,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
     async fn write_response<W: AsyncWrite + Unpin>(
         &self,
         writer: &mut W,
@@ -399,8 +481,8 @@ impl IpcBridge {
                 task_id: String::new(),
                 event_type: event_type.into(),
                 payload,
-                core_instance_id: String::new(),
-                session_epoch: 0,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
                 event: None,
             }
             .encode_to_vec(),
@@ -408,10 +490,6 @@ impl IpcBridge {
         .await?;
         Ok(())
     }
-}
-
-fn storage_error(error: impl std::fmt::Display) -> FrameError {
-    FrameError::Io(error.to_string())
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -482,10 +560,50 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn handshake_exposes_runtime_identity() {
+        let path = std::env::temp_dir().join(format!("evohime-ipc-handshake-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let bridge = IpcBridge::new(EventJournal::open(&path).expect("journal opens"));
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+        let command = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "handshake".into(),
+            client_id: "client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 9,
+            command: Some(generated::command_envelope::Command::Handshake(
+                generated::Handshake {
+                    protocol: Some(protocol()),
+                    client_id: "client".into(),
+                    session_id: "session".into(),
+                    session_epoch: 9,
+                    last_event_sequence: 0,
+                    capabilities: vec!["task.crud".into()],
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &command.encode_to_vec())
+            .await
+            .expect("handshake writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("handshake serves");
+        let response = transport::read_frame(&mut client).await.expect("response reads");
+        let event = generated::EventEnvelope::decode(response.as_slice()).expect("event decodes");
+        assert!(!event.core_instance_id.is_empty());
+        assert!(event.session_epoch > 0);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
     async fn serves_task_crud_and_replays_deduplicated_create() {
         let path = std::env::temp_dir().join(format!("evohime-ipc-task-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
-        let bridge = IpcBridge::new(EventJournal::open(&path).expect("journal opens"));
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal, coordinator);
         let (mut client, server) = duplex(16 * 1024);
         let (mut server_reader, mut server_writer) = tokio::io::split(server);
         let command = generated::CommandEnvelope {

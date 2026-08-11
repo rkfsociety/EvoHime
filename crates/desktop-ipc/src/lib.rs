@@ -66,6 +66,7 @@ pub fn decode_frame(frame: &[u8]) -> Result<&[u8], FrameError> {
 
 #[cfg(test)]
 mod tests {
+    use crate::generated;
     use super::{
         decode_frame, encode_frame, transport, FrameError, ProtocolVersion, MAX_FRAME_BYTES,
     };
@@ -122,5 +123,50 @@ mod tests {
             .expect("read frame");
         write.await.expect("writer task");
         assert_eq!(payload, b"hello");
+    }
+
+    #[test]
+    fn legacy_command_envelope_decodes_after_additive_fields() {
+        use prost::Message;
+
+        let legacy = generated::CommandEnvelope {
+            protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
+            request_id: "legacy-request".into(),
+            client_id: String::new(),
+            core_instance_id: String::new(),
+            session_epoch: 0,
+            command: Some(generated::command_envelope::Command::ReplayEvents(
+                generated::ReplayEvents { after_sequence: 7 },
+            )),
+        };
+        let decoded = generated::CommandEnvelope::decode(legacy.encode_to_vec().as_slice())
+            .expect("legacy envelope decodes");
+        assert_eq!(decoded.request_id, "legacy-request");
+        assert_eq!(decoded.session_epoch, 0);
+        assert!(matches!(
+            decoded.command,
+            Some(generated::command_envelope::Command::ReplayEvents(
+                generated::ReplayEvents { after_sequence: 7 }
+            ))
+        ));
+    }
+
+    #[test]
+    fn unknown_additive_field_is_ignored() {
+        use prost::Message;
+
+        let mut encoded = generated::CommandEnvelope {
+            protocol: Some(generated::ProtocolVersion { major: 1, minor: 0 }),
+            request_id: "request".into(),
+            client_id: String::new(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: None,
+        }
+        .encode_to_vec();
+        encoded.extend_from_slice(&[0x98, 0x06, 0x01]);
+        let decoded = generated::CommandEnvelope::decode(encoded.as_slice())
+            .expect("unknown field is ignored");
+        assert_eq!(decoded.request_id, "request");
     }
 }

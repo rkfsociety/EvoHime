@@ -474,7 +474,6 @@ use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoreCommand {
     StartTask {
         task_id: String,
@@ -483,6 +482,41 @@ pub enum CoreCommand {
     },
     StopTask {
         task_id: String,
+    },
+    CreateProject {
+        client_id: String,
+        request_id: String,
+        command_hash: String,
+        project_id: String,
+        title: String,
+        workspace_path: String,
+        source_ref: Option<String>,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    CreateTask {
+        client_id: String,
+        request_id: String,
+        command_hash: String,
+        item: WorkItemRecord,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    UpdateTaskStatus {
+        client_id: String,
+        request_id: String,
+        command_hash: String,
+        task_id: String,
+        expected_version: i64,
+        status: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    AddTaskEdge {
+        client_id: String,
+        request_id: String,
+        command_hash: String,
+        from_task_id: String,
+        to_task_id: String,
+        kind: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
 }
 
@@ -1159,6 +1193,7 @@ struct CoordinatorState {
     tasks: HashMap<String, CancellationToken>,
     events: broadcast::Sender<CoreEvent>,
     executor: Option<Arc<dyn TaskExecutor>>,
+    journal: Option<EventJournal>,
 }
 
 impl TaskCoordinator {
@@ -1192,6 +1227,7 @@ impl TaskCoordinator {
             tasks: HashMap::new(),
             events: events.clone(),
             executor,
+            journal: journal.clone(),
         }));
         if let Some(journal) = journal {
             let mut journal_receiver = events.subscribe();
@@ -1290,6 +1326,154 @@ impl TaskCoordinator {
                 if let Some(cancellation) = state_guard.tasks.remove(&task_id) {
                     cancellation.cancel();
                 }
+            }
+            CoreCommand::CreateProject {
+                client_id,
+                request_id,
+                command_hash,
+                project_id,
+                title,
+                workspace_path,
+                source_ref,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    if let Some(replay) = journal
+                        .record_deduplicated(&client_id, &request_id, &command_hash, b"")
+                        .await
+                        .map_err(|error| error.to_string())?
+                    {
+                        return Ok(replay);
+                    }
+                    let project = journal
+                        .create_project(&project_id, &title, &workspace_path, source_ref.as_deref())
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    let result = serde_json::to_vec(&serde_json::json!({
+                        "project_id": project.id,
+                        "title": project.title,
+                        "workspace_path": project.workspace_path,
+                        "version": project.version,
+                    }))
+                    .map_err(|error| error.to_string())?;
+                    journal
+                        .record_deduplicated(&client_id, &request_id, &command_hash, &result)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    Ok(result)
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::CreateTask {
+                client_id,
+                request_id,
+                command_hash,
+                item,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    if let Some(replay) = journal
+                        .record_deduplicated(&client_id, &request_id, &command_hash, b"")
+                        .await
+                        .map_err(|error| error.to_string())?
+                    {
+                        return Ok(replay);
+                    }
+                    let created = journal
+                        .create_work_item(&item)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    let result = serde_json::to_vec(&serde_json::json!({
+                        "task_id": created.id,
+                        "project_id": created.project_id,
+                        "status": created.status,
+                        "version": created.version,
+                    }))
+                    .map_err(|error| error.to_string())?;
+                    journal
+                        .record_deduplicated(&client_id, &request_id, &command_hash, &result)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    Ok(result)
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::UpdateTaskStatus {
+                client_id,
+                request_id,
+                command_hash,
+                task_id,
+                expected_version,
+                status,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    if let Some(replay) = journal
+                        .record_deduplicated(&client_id, &request_id, &command_hash, b"")
+                        .await
+                        .map_err(|error| error.to_string())?
+                    {
+                        return Ok(replay);
+                    }
+                    let updated = journal
+                        .update_work_item_status(&task_id, expected_version, &status)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    let result = serde_json::to_vec(&serde_json::json!({
+                        "task_id": updated.id,
+                        "status": updated.status,
+                        "version": updated.version,
+                    }))
+                    .map_err(|error| error.to_string())?;
+                    journal
+                        .record_deduplicated(&client_id, &request_id, &command_hash, &result)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    Ok(result)
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::AddTaskEdge {
+                client_id,
+                request_id,
+                command_hash,
+                from_task_id,
+                to_task_id,
+                kind,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    if let Some(replay) = journal
+                        .record_deduplicated(&client_id, &request_id, &command_hash, b"")
+                        .await
+                        .map_err(|error| error.to_string())?
+                    {
+                        return Ok(replay);
+                    }
+                    journal
+                        .add_dependency(&from_task_id, &to_task_id, &kind)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    let result = br#"{"from_task_id":"ok"}"#.to_vec();
+                    journal
+                        .record_deduplicated(&client_id, &request_id, &command_hash, &result)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    Ok(result)
+                }
+                .await;
+                let _ = reply.send(result);
             }
         }
     }
