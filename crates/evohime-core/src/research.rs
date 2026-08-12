@@ -181,7 +181,7 @@ fn is_secret_token(token: &str) -> bool {
         || (token.contains('@') && token.split('@').next().is_some_and(|part| !part.is_empty()))
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     let digest = sha256(bytes);
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }

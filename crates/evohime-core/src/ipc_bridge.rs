@@ -536,6 +536,11 @@ impl IpcBridge {
                 self.write_response(writer, "research.evidence.list", result)
                     .await?;
             }
+            Some(generated::command_envelope::Command::RunResearchFetch(request)) => {
+                let result = self.dispatch_run_research_fetch(request).await?;
+                self.write_response(writer, "research.fetch.completed", result)
+                    .await?;
+            }
             Some(generated::command_envelope::Command::CreateMemory(request)) => {
                 let result = self.dispatch_create_memory(request).await?;
                 self.write_response(writer, "memory.created", result)
@@ -1125,6 +1130,36 @@ impl IpcBridge {
         coordinator
             .dispatch(CoreCommand::ListResearchEvidence {
                 work_item_id,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_run_research_fetch(
+        &self,
+        request: generated::RunResearchFetch,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::RunResearchFetch {
+                work_item_id: request.work_item_id,
+                url: request.url,
+                title: request.title,
+                allowed_domains: request.allowed_domains,
+                max_bytes: request.max_bytes,
+                max_latency_ms: request.max_latency_ms,
+                max_cost_micros: request.max_cost_micros,
+                ttl_ms: request.ttl_ms,
                 reply,
             })
             .await
@@ -2019,6 +2054,247 @@ mod tests {
             serde_json::json!("Useful finding [REDACTED] [REDACTED]")
         );
         assert_eq!(records[0]["provenance_link"], serde_json::json!("task-42"));
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    fn run_research_fetch_command(
+        work_item_id: &str,
+        url: String,
+        allowed_domains: Vec<String>,
+        max_bytes: u64,
+    ) -> generated::CommandEnvelope {
+        generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: format!("research-fetch-{work_item_id}"),
+            client_id: "research-fetch-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::RunResearchFetch(
+                generated::RunResearchFetch {
+                    work_item_id: work_item_id.into(),
+                    url,
+                    title: "Example Article".into(),
+                    allowed_domains,
+                    max_bytes,
+                    max_latency_ms: 5_000,
+                    max_cost_micros: 0,
+                    ttl_ms: 3_600_000,
+                },
+            )),
+        }
+    }
+
+    #[tokio::test]
+    async fn run_research_fetch_persists_real_evidence_from_a_live_http_get() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/article"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200)
+                    .set_body_string("Useful finding sk-secret alice@example.test")
+                    .insert_header("content-type", "text/plain"),
+            )
+            .mount(&server)
+            .await;
+        let _private = evohime_tool_runtime::lock_private_override(Some(true));
+        let domain = reqwest::Url::parse(&server.uri())
+            .expect("mock uri parses")
+            .host_str()
+            .expect("mock uri has host")
+            .to_ascii_lowercase();
+
+        let path = std::env::temp_dir().join(format!(
+            "evohime-ipc-research-fetch-ok-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal.clone(), coordinator);
+        let (mut client, server_io) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server_io);
+
+        let command = run_research_fetch_command(
+            "task-fetch-ok",
+            format!("{}/article", server.uri()),
+            vec![domain],
+            4096,
+        );
+        transport::write_frame(&mut client, &command.encode_to_vec())
+            .await
+            .expect("fetch command writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("fetch serves");
+        let response = transport::read_frame(&mut client)
+            .await
+            .expect("fetch response reads");
+        let event = generated::EventEnvelope::decode(response.as_slice()).expect("event decodes");
+        assert_eq!(event.event_type, "research.fetch.completed");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&event.payload).expect("fetch payload is valid json");
+        assert_eq!(payload["state"], serde_json::json!("completed"));
+        assert_eq!(
+            payload["evidence"]["excerpt"],
+            serde_json::json!("Useful finding [REDACTED] [REDACTED]")
+        );
+        let evidence_id = payload["id"].as_str().expect("id present").to_owned();
+
+        let records = journal
+            .list_research_evidence("task-fetch-ok")
+            .await
+            .expect("evidence lists from real storage");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].id, evidence_id);
+        assert_eq!(
+            records[0].redacted_excerpt,
+            "Useful finding [REDACTED] [REDACTED]"
+        );
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn run_research_fetch_denies_domain_outside_allowlist_and_persists_nothing() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/article"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_string("should not fetch"))
+            .mount(&server)
+            .await;
+        let _private = evohime_tool_runtime::lock_private_override(Some(true));
+
+        let path = std::env::temp_dir().join(format!(
+            "evohime-ipc-research-fetch-denied-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal.clone(), coordinator);
+        let (mut client, server_io) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server_io);
+
+        let command = run_research_fetch_command(
+            "task-fetch-denied",
+            format!("{}/article", server.uri()),
+            vec!["not-the-mock-domain.example".into()],
+            4096,
+        );
+        transport::write_frame(&mut client, &command.encode_to_vec())
+            .await
+            .expect("fetch command writes");
+        let outcome = bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await;
+        assert!(
+            outcome.is_err(),
+            "domain-denied fetch must fail the command"
+        );
+        assert_eq!(
+            server
+                .received_requests()
+                .await
+                .expect("requests tracked")
+                .len(),
+            0,
+            "no network call should happen for a denied domain"
+        );
+
+        let records = journal
+            .list_research_evidence("task-fetch-denied")
+            .await
+            .expect("list succeeds");
+        assert!(records.is_empty(), "no evidence should be persisted");
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn run_research_fetch_blocks_ssrf_targets_and_persists_nothing() {
+        let _private = evohime_tool_runtime::lock_private_override(Some(false));
+
+        let path = std::env::temp_dir().join(format!(
+            "evohime-ipc-research-fetch-ssrf-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal.clone(), coordinator);
+        let (mut client, server_io) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server_io);
+
+        let command = run_research_fetch_command(
+            "task-fetch-ssrf",
+            "http://127.0.0.1:9/".into(),
+            vec!["127.0.0.1".into()],
+            4096,
+        );
+        transport::write_frame(&mut client, &command.encode_to_vec())
+            .await
+            .expect("fetch command writes");
+        let outcome = bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await;
+        assert!(outcome.is_err(), "ssrf-blocked fetch must fail the command");
+
+        let records = journal
+            .list_research_evidence("task-fetch-ssrf")
+            .await
+            .expect("list succeeds");
+        assert!(records.is_empty(), "no evidence should be persisted");
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn run_research_fetch_rejects_oversized_response_and_persists_nothing() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/big"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_string("x".repeat(4_096)))
+            .mount(&server)
+            .await;
+        let _private = evohime_tool_runtime::lock_private_override(Some(true));
+        let domain = reqwest::Url::parse(&server.uri())
+            .expect("mock uri parses")
+            .host_str()
+            .expect("mock uri has host")
+            .to_ascii_lowercase();
+
+        let path = std::env::temp_dir().join(format!(
+            "evohime-ipc-research-fetch-oversized-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal.clone(), coordinator);
+        let (mut client, server_io) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server_io);
+
+        let command = run_research_fetch_command(
+            "task-fetch-oversized",
+            format!("{}/big", server.uri()),
+            vec![domain],
+            16,
+        );
+        transport::write_frame(&mut client, &command.encode_to_vec())
+            .await
+            .expect("fetch command writes");
+        let outcome = bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await;
+        assert!(outcome.is_err(), "oversized response must fail the command");
+
+        let records = journal
+            .list_research_evidence("task-fetch-oversized")
+            .await
+            .expect("list succeeds");
+        assert!(records.is_empty(), "no evidence should be persisted");
 
         let _ = std::fs::remove_file(path);
     }
