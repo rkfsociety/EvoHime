@@ -51,7 +51,14 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
     let path = ctx.sandbox()?.resolve_existing(&input.path)?;
     let original = fs::read_to_string(&path)
         .await
-        .map_err(|e| ToolError::Execution(format!("read failed: {e}")))?;
+        .map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => ToolError::NotFound {
+                tool: NAME.to_string(),
+                path: input.path.clone(),
+                hint: String::new(),
+            },
+            _ => ToolError::Execution(format!("read failed: {e}")),
+        })?;
     let mut lines: Vec<String> = original.lines().map(str::to_string).collect();
     if original.ends_with('\n') {
         lines.push(String::new());
@@ -137,7 +144,14 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
     }
     fs::write(&path, result.as_bytes())
         .await
-        .map_err(|e| ToolError::Execution(format!("write failed: {e}")))?;
+        .map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => ToolError::NotFound {
+                tool: NAME.to_string(),
+                path: input.path.clone(),
+                hint: String::new(),
+            },
+            _ => ToolError::Execution(format!("write failed: {e}")),
+        })?;
     Ok(ToolResult {
         output: format!("applied {applied} hunk(s)"),
         structured: json!({"path": input.path, "hunks_applied": applied, "bytes": result.len()}),
@@ -174,4 +188,5 @@ mod tests {
 
         assert!(validate_input(&value).is_err());
     }
+
 }
