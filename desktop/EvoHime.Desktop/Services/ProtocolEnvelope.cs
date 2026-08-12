@@ -163,6 +163,21 @@ public static class ProtocolEnvelope
         output.WriteUInt32(maxBytes);
     });
 
+    public static byte[] GitStatus(string workspacePath, uint maxBytes = 512 * 1024) => TaskCommand(54, output =>
+    {
+        WriteString(output, 1, workspacePath);
+        output.WriteTag(2, WireFormat.WireType.Varint);
+        output.WriteUInt32(maxBytes);
+    });
+
+    public static byte[] GitDiff(string workspacePath, string relativePath = "", uint maxBytes = 512 * 1024) => TaskCommand(55, output =>
+    {
+        WriteString(output, 1, workspacePath);
+        WriteString(output, 2, relativePath);
+        output.WriteTag(3, WireFormat.WireType.Varint);
+        output.WriteUInt32(maxBytes);
+    });
+
     public static byte[] UpdateTaskStatus(string taskId, long expectedVersion, string status) => TaskCommand(20, output =>
     {
         output.WriteTag(1, WireFormat.WireType.LengthDelimited);

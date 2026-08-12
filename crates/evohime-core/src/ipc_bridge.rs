@@ -7,7 +7,7 @@ use crate::{ApprovalCoordinator, CoreCommand, EventJournal, TaskCoordinator};
 use evohime_local_storage::WorkItemRecord;
 use evohime_model_gateway::ModelGatewayConfig;
 use evohime_permissions::{Permission, PermissionMode};
-use evohime_tool_runtime::ToolRegistry;
+use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use std::sync::Arc;
 use tokio::sync::oneshot;
 
@@ -556,6 +556,33 @@ impl IpcBridge {
                 .map_err(|error| FrameError::Io(error.to_string()))?;
                 self.write_response(writer, "workspace.file", payload)
                     .await?;
+            }
+            Some(generated::command_envelope::Command::GitStatus(request)) => {
+                let payload = self
+                    .dispatch_git_read(
+                        request.workspace_path,
+                        "git.status",
+                        serde_json::Value::Null,
+                        request.max_bytes,
+                    )
+                    .await?;
+                self.write_response(writer, "git.status", payload).await?;
+            }
+            Some(generated::command_envelope::Command::GitDiff(request)) => {
+                let input = if request.relative_path.is_empty() {
+                    serde_json::Value::Null
+                } else {
+                    serde_json::json!({"path": request.relative_path})
+                };
+                let payload = self
+                    .dispatch_git_read(
+                        request.workspace_path,
+                        "git.diff",
+                        input,
+                        request.max_bytes,
+                    )
+                    .await?;
+                self.write_response(writer, "git.diff", payload).await?;
             }
             Some(generated::command_envelope::Command::RunDoctor(request)) => {
                 let result = self
@@ -1584,6 +1611,49 @@ impl IpcBridge {
         }
     }
 
+    async fn dispatch_git_read(
+        &self,
+        workspace_path: String,
+        tool_name: &str,
+        input: serde_json::Value,
+        requested_max_bytes: u32,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        const DEFAULT_MAX_BYTES: usize = 512 * 1024;
+        let max_bytes = if requested_max_bytes == 0 {
+            DEFAULT_MAX_BYTES
+        } else {
+            (requested_max_bytes as usize).min(DEFAULT_MAX_BYTES)
+        };
+        let tools = self
+            .tools
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("Git tools are not configured".into()))?;
+        let context = ToolContext {
+            workspace_root: std::path::PathBuf::from(workspace_path),
+            task_id: uuid::Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+        };
+        let result = tools
+            .execute(&context, tool_name, input)
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        let bytes = result.output.as_bytes();
+        let truncated = bytes.len() > max_bytes;
+        let output = if truncated {
+            String::from_utf8_lossy(&bytes[..max_bytes]).into_owned()
+        } else {
+            result.output
+        };
+        serde_json::to_vec(&serde_json::json!({
+            "output": output,
+            "structured": result.structured,
+            "truncated": truncated,
+            "max_bytes": max_bytes,
+        }))
+        .map_err(|error| FrameError::Io(error.to_string()).into())
+    }
+
     async fn write_response<W: AsyncWrite + Unpin>(
         &self,
         writer: &mut W,
@@ -1754,6 +1824,77 @@ mod tests {
         assert_eq!(response.event_type, "workspace.file");
         let file: serde_json::Value = serde_json::from_slice(&response.payload).expect("file json");
         assert_eq!(file["content"], "hello from workspace");
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_file(journal_path);
+    }
+
+    #[tokio::test]
+    async fn serves_bounded_git_status_and_diff_through_core_tools() {
+        let root = std::env::temp_dir().join(format!(
+            "evohime-ipc-git-root-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("git root");
+        let status = std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(&root)
+            .status()
+            .expect("git init starts");
+        assert!(status.success());
+        std::fs::write(root.join("notes.txt"), "hello\n").expect("notes");
+        let status = std::process::Command::new("git")
+            .args(["add", "notes.txt"])
+            .current_dir(&root)
+            .status()
+            .expect("git add starts");
+        assert!(status.success());
+        std::fs::write(root.join("notes.txt"), "hello\nworld\n").expect("changed notes");
+        let journal_path = std::env::temp_dir().join(format!(
+            "evohime-ipc-git-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&journal_path);
+        let journal = EventJournal::open(&journal_path).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let tools = Arc::new(ToolRegistry::bootstrap());
+        let bridge = IpcBridge::with_coordinator_and_approvals(
+            journal,
+            coordinator,
+            ApprovalCoordinator::default(),
+            tools,
+            None,
+            None,
+        );
+
+        let status_payload = bridge
+            .dispatch_git_read(
+                root.display().to_string(),
+                "git.status",
+                serde_json::Value::Null,
+                128,
+            )
+            .await
+            .expect("git status reads");
+        let status_json: serde_json::Value =
+            serde_json::from_slice(&status_payload).expect("status json");
+        assert!(status_json["output"].as_str().unwrap().contains("notes.txt"));
+        assert_eq!(status_json["truncated"], false);
+
+        let diff_payload = bridge
+            .dispatch_git_read(
+                root.display().to_string(),
+                "git.diff",
+                serde_json::json!({"path": "notes.txt"}),
+                8,
+            )
+            .await
+            .expect("git diff reads");
+        let diff_json: serde_json::Value =
+            serde_json::from_slice(&diff_payload).expect("diff json");
+        assert_eq!(diff_json["max_bytes"], 8);
+        assert_eq!(diff_json["truncated"], true);
+
         let _ = std::fs::remove_dir_all(root);
         let _ = std::fs::remove_file(journal_path);
     }

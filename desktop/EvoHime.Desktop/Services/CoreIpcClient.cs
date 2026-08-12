@@ -60,6 +60,15 @@ public sealed class CoreIpcClient
         CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.ReadWorkspaceFile(workspacePath, relativePath), cancellationToken);
 
+    public Task RequestGitStatusAsync(string workspacePath, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.GitStatus(workspacePath), cancellationToken);
+
+    public Task RequestGitDiffAsync(
+        string workspacePath,
+        string relativePath,
+        CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.GitDiff(workspacePath, relativePath), cancellationToken);
+
     public Task StopTaskAsync(string taskId, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.StopTask(taskId), cancellationToken);
 

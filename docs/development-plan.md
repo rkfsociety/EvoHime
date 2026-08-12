@@ -43,7 +43,7 @@ Legacy web UI, browser launcher, HTTP server и PostgreSQL persistence удал�
 | Durable run recovery foundation | ✅ Завершён | `cbb64e9` |
 | Автообновление, SHA-256 verification, upgrade smoke и rollback recovery | ✅ Завершён | `edaa8ec` |
 | Files | 🟡 В работе: read-only tree/file preview через Core IPC | текущий срез |
-| Editor, Git, Terminal | ⬜ Следующий подэтап | — |
+| Editor, Git, Terminal | 🟡 В работе: read-only Git status/diff через bounded Core IPC | текущий native-срез |
 | Leases/reconciliation и расширенный diff review | 🟡 В работе | — |
 | Permission policy rules и закрытие обходов approval | 🟡 В работе | `docs/plans/` |
 | Credentials, расширенный backup/restore и crash recovery UI | ⬜ Запланирован | — |
