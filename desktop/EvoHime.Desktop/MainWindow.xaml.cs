@@ -2079,9 +2079,24 @@ public partial class MainWindow : Window
                 }
                 using var json = JsonDocument.Parse(response.Payload);
                 var task = json.RootElement.GetProperty("task");
-                _taskWorkspaceStatus.Text = task.ValueKind == JsonValueKind.Null
-                    ? "Готовых задач сейчас нет. Заблокированные задачи не предлагаются."
-                    : $"Следующая задача: {task.GetProperty("title").GetString()} · {task.GetProperty("status").GetString()}";
+                if (task.ValueKind == JsonValueKind.Null)
+                {
+                    _taskWorkspaceStatus.Text = "Готовых задач сейчас нет. Заблокированные задачи не предлагаются.";
+                    return;
+                }
+
+                var nextTask = JsonSerializer.Deserialize<TaskDto>(task.GetRawText());
+                if (nextTask is null)
+                {
+                    throw new InvalidOperationException("Core вернул пустую next_ready задачу.");
+                }
+
+                _taskWorkspaceStatus.Text = string.Join(
+                    Environment.NewLine,
+                    $"Следующая задача: {nextTask.Title} · {nextTask.Status}",
+                    $"Описание: {BoundedStatusText(nextTask.Description)}",
+                    $"Критерии приёмки: {BoundedStatusText(nextTask.AcceptanceCriteria)}",
+                    $"Версия: {nextTask.Version} · Приоритет: {nextTask.Priority}");
             }
             finally
             {
@@ -2092,6 +2107,16 @@ public partial class MainWindow : Window
         {
             _taskWorkspaceStatus.Text = $"Не удалось выбрать следующую задачу: {error.Message}";
         }
+    }
+
+    private static string BoundedStatusText(string? value, int maxLength = 700)
+    {
+        var normalized = string.IsNullOrWhiteSpace(value)
+            ? "не указано"
+            : value.Trim();
+        return normalized.Length <= maxLength
+            ? normalized
+            : normalized[..maxLength] + "…";
     }
 
     private async Task CreateTaskDialogAsync(string? parentId)
