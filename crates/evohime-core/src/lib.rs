@@ -776,6 +776,62 @@ pub enum CoreCommand {
         id: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    /// Validates and persists one bounded, redacted task handoff between
+    /// child roles (`child_roles::HandoffEnvelope::new`). This only records
+    /// the handoff; it does not deliver or act on it for any real child
+    /// agent -- runtime wiring remains a later, dedicated task per
+    /// `child_roles.rs`'s own scope note.
+    RequestChildHandoff {
+        handoff_id: String,
+        task_id: String,
+        kind: String,
+        from_role: String,
+        from_name: String,
+        to_role: String,
+        to_name: String,
+        purpose: String,
+        payload: std::collections::HashMap<String, String>,
+        sequence: u64,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Lists persisted child handoffs for a task, in sequence order.
+    ListChildHandoffs {
+        task_id: String,
+        limit: u32,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Validates (`child_runtime::ChildTaskRequest::validate`) and persists
+    /// one bounded, read-only child task request. Rejects any request with
+    /// a non-read-only `requested_capabilities` entry, any nested child
+    /// (`parent_is_child = true`), or oversized context/output -- the same
+    /// pure contract used by the unit tests, enforced end-to-end here. Core
+    /// does not act on an accepted request: it is stored as a durable
+    /// record of an approved read-only child task descriptor for whatever
+    /// later spawns it (out of scope for this task).
+    SubmitChildRequest {
+        child_task_id: String,
+        parent_task_id: String,
+        role: String,
+        kind: String,
+        reduced_context: Vec<String>,
+        max_output_bytes: u32,
+        requested_capabilities: Vec<String>,
+        parent_is_child: bool,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Validates (`child_runtime::accept_report`, against the matching
+    /// stored `SubmitChildRequest`) and persists one child report. Rejects
+    /// a task-id mismatch, secret-like content, duplicate sources, or a
+    /// missing/invalid matching request.
+    SubmitChildReport {
+        child_task_id: String,
+        status: String,
+        summary: String,
+        findings: Vec<String>,
+        sources: Vec<String>,
+        confidence_percent: u32,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1149,6 +1205,73 @@ impl EventJournal {
         evohime_local_storage::capability_store::CapabilityStoreSql::delete_by_id(
             database.connection(),
             id,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Persists one validated child handoff envelope.
+    pub async fn save_child_handoff(
+        &self,
+        record: &evohime_local_storage::child_store::HandoffRecord,
+    ) -> Result<(), String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::child_store::ChildStoreSql::insert_handoff(
+            database.connection(),
+            record,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Lists persisted child handoffs for a task, in sequence order.
+    pub async fn list_child_handoffs(
+        &self,
+        task_id: &str,
+        limit: u32,
+    ) -> Result<Vec<evohime_local_storage::child_store::HandoffRecord>, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::child_store::ChildStoreSql::list_handoffs_by_task(
+            database.connection(),
+            task_id,
+            limit,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Persists one validated, read-only child task request.
+    pub async fn save_child_task_request(
+        &self,
+        record: &evohime_local_storage::child_store::ChildTaskRequestRecord,
+    ) -> Result<(), String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::child_store::ChildStoreSql::insert_child_task_request(
+            database.connection(),
+            record,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Fetches one persisted child task request by its child_task_id.
+    pub async fn get_child_task_request(
+        &self,
+        child_task_id: &str,
+    ) -> Result<Option<evohime_local_storage::child_store::ChildTaskRequestRecord>, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::child_store::ChildStoreSql::get_child_task_request(
+            database.connection(),
+            child_task_id,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Persists one accepted child report.
+    pub async fn save_child_report(
+        &self,
+        record: &evohime_local_storage::child_store::ChildReportRecord,
+    ) -> Result<(), String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::child_store::ChildStoreSql::insert_child_report(
+            database.connection(),
+            record,
         )
         .map_err(|error| error.to_string())
     }
@@ -3506,6 +3629,232 @@ impl TaskCoordinator {
                 .await;
                 let _ = reply.send(result);
             }
+            CoreCommand::RequestChildHandoff {
+                handoff_id,
+                task_id,
+                kind,
+                from_role,
+                from_name,
+                to_role,
+                to_name,
+                purpose,
+                payload,
+                sequence,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let parsed_kind = handoff_kind_from_str(&kind)?;
+                    let from = role_identity_from_parts(&from_role, &from_name)?;
+                    let to = role_identity_from_parts(&to_role, &to_name)?;
+                    let handoff_payload = crate::child_roles::HandoffPayload::new(payload)
+                        .map_err(|error| error.to_string())?;
+                    let envelope = crate::child_roles::HandoffEnvelope::new(
+                        handoff_id.clone(),
+                        task_id.clone(),
+                        parsed_kind,
+                        from.clone(),
+                        to.clone(),
+                        purpose,
+                        handoff_payload,
+                        sequence,
+                    )
+                    .map_err(|error| error.to_string())?;
+                    let record = evohime_local_storage::child_store::HandoffRecord {
+                        handoff_id: envelope.handoff_id.clone(),
+                        task_id: envelope.task_id.clone(),
+                        kind: handoff_kind_str(envelope.kind).to_string(),
+                        status: handoff_status_str(envelope.status).to_string(),
+                        from_role: role_identity_display(&from),
+                        to_role: role_identity_display(&to),
+                        sequence: envelope.sequence,
+                        envelope_json: envelope.to_deterministic_json(),
+                    };
+                    journal.save_child_handoff(&record).await?;
+                    Self::record_audit(
+                        &state,
+                        crate::audit::AuditKind::Evidence,
+                        task_id.clone(),
+                        "child.handoff.requested",
+                        [
+                            ("handoff_id".to_owned(), envelope.handoff_id.clone()),
+                            ("task_id".to_owned(), task_id),
+                            ("from_role".to_owned(), record.from_role.clone()),
+                            ("to_role".to_owned(), record.to_role.clone()),
+                        ],
+                    )
+                    .await;
+                    serde_json::to_vec(&serde_json::json!({ "handoff": envelope }))
+                        .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::ListChildHandoffs {
+                task_id,
+                limit,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let records = journal.list_child_handoffs(&task_id, limit).await?;
+                    let handoffs = records
+                        .iter()
+                        .map(|record| {
+                            serde_json::from_str::<crate::child_roles::HandoffEnvelope>(
+                                &record.envelope_json,
+                            )
+                            .map_err(|error| error.to_string())
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    serde_json::to_vec(&serde_json::json!({
+                        "task_id": task_id,
+                        "handoffs": handoffs,
+                    }))
+                    .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::SubmitChildRequest {
+                child_task_id,
+                parent_task_id,
+                role,
+                kind,
+                reduced_context,
+                max_output_bytes,
+                requested_capabilities,
+                parent_is_child,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let parsed_kind = child_task_kind_from_str(&kind)?;
+                    let request = crate::child_runtime::ChildTaskRequest {
+                        child_task_id: child_task_id.clone(),
+                        parent_task_id: parent_task_id.clone(),
+                        role: role.clone(),
+                        kind: parsed_kind,
+                        reduced_context,
+                        max_output_bytes: max_output_bytes as usize,
+                        requested_capabilities,
+                        parent_is_child,
+                    };
+                    // The real bounded contract runs here: rejects nested
+                    // children, any non-read-only requested capability, and
+                    // oversized context/output. This is the same
+                    // `ChildTaskRequest::validate` used by the pure unit
+                    // tests, now enforced on the live IPC path.
+                    request.validate().map_err(|error| error.to_string())?;
+                    let request_json =
+                        serde_json::to_string(&request).map_err(|error| error.to_string())?;
+                    let record = evohime_local_storage::child_store::ChildTaskRequestRecord {
+                        child_task_id: request.child_task_id.clone(),
+                        parent_task_id: request.parent_task_id.clone(),
+                        role: request.role.clone(),
+                        kind: child_task_kind_str(request.kind).to_string(),
+                        request_json,
+                    };
+                    journal.save_child_task_request(&record).await?;
+                    Self::record_audit(
+                        &state,
+                        crate::audit::AuditKind::Evidence,
+                        parent_task_id.clone(),
+                        "child.request.submitted",
+                        [
+                            ("child_task_id".to_owned(), request.child_task_id.clone()),
+                            ("parent_task_id".to_owned(), parent_task_id),
+                            ("role".to_owned(), request.role.clone()),
+                        ],
+                    )
+                    .await;
+                    serde_json::to_vec(&serde_json::json!({ "request": request }))
+                        .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::SubmitChildReport {
+                child_task_id,
+                status,
+                summary,
+                findings,
+                sources,
+                confidence_percent,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let parsed_status = child_report_status_from_str(&status)?;
+                    let confidence_percent: u8 = u8::try_from(confidence_percent)
+                        .map_err(|_| "confidence_percent must be between 0 and 255".to_string())?;
+                    let report = crate::child_runtime::ChildReport {
+                        child_task_id: child_task_id.clone(),
+                        status: parsed_status,
+                        summary,
+                        findings,
+                        sources,
+                        confidence_percent,
+                    };
+                    let stored_request = journal
+                        .get_child_task_request(&child_task_id)
+                        .await?
+                        .ok_or_else(|| {
+                            "no matching child task request found for child_task_id".to_string()
+                        })?;
+                    let request: crate::child_runtime::ChildTaskRequest =
+                        serde_json::from_str(&stored_request.request_json)
+                            .map_err(|error| error.to_string())?;
+                    // The real bounded contract runs here: re-validates the
+                    // request, validates the report's own bounds, rejects
+                    // secret-like content and duplicate sources, and
+                    // rejects a child_task_id mismatch -- the same
+                    // `accept_report` used by the pure unit tests, now
+                    // enforced on the live IPC path.
+                    let accepted = crate::child_runtime::accept_report(&request, &report)
+                        .map_err(|error| error.to_string())?;
+                    let report_json =
+                        serde_json::to_string(&accepted).map_err(|error| error.to_string())?;
+                    let record = evohime_local_storage::child_store::ChildReportRecord {
+                        child_task_id: accepted.child_task_id.clone(),
+                        parent_task_id: stored_request.parent_task_id.clone(),
+                        status: child_report_status_str(accepted.status).to_string(),
+                        confidence_percent: accepted.confidence_percent,
+                        report_json,
+                    };
+                    journal.save_child_report(&record).await?;
+                    Self::record_audit(
+                        &state,
+                        crate::audit::AuditKind::Evidence,
+                        stored_request.parent_task_id.clone(),
+                        "child.report.accepted",
+                        [
+                            ("child_task_id".to_owned(), accepted.child_task_id.clone()),
+                            (
+                                "parent_task_id".to_owned(),
+                                stored_request.parent_task_id.clone(),
+                            ),
+                            (
+                                "confidence_percent".to_owned(),
+                                accepted.confidence_percent.to_string(),
+                            ),
+                        ],
+                    )
+                    .await;
+                    serde_json::to_vec(&serde_json::json!({ "report": accepted }))
+                        .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
         }
     }
 }
@@ -3660,6 +4009,111 @@ fn parse_capability_risk_class(
         "medium" | "" => Ok(crate::capability_registry::RiskClass::Medium),
         "high" => Ok(crate::capability_registry::RiskClass::High),
         other => Err(format!("unsupported requested_risk: {other}")),
+    }
+}
+
+fn handoff_kind_from_str(value: &str) -> Result<crate::child_roles::HandoffKind, String> {
+    match value {
+        "delegate" => Ok(crate::child_roles::HandoffKind::Delegate),
+        "return_result" => Ok(crate::child_roles::HandoffKind::ReturnResult),
+        "request_review" => Ok(crate::child_roles::HandoffKind::RequestReview),
+        "request_retry" => Ok(crate::child_roles::HandoffKind::RequestRetry),
+        other => Err(format!("unsupported handoff kind: {other}")),
+    }
+}
+
+fn handoff_kind_str(kind: crate::child_roles::HandoffKind) -> &'static str {
+    match kind {
+        crate::child_roles::HandoffKind::Delegate => "delegate",
+        crate::child_roles::HandoffKind::ReturnResult => "return_result",
+        crate::child_roles::HandoffKind::RequestReview => "request_review",
+        crate::child_roles::HandoffKind::RequestRetry => "request_retry",
+    }
+}
+
+fn handoff_status_str(status: crate::child_roles::HandoffStatus) -> &'static str {
+    match status {
+        crate::child_roles::HandoffStatus::Pending => "pending",
+        crate::child_roles::HandoffStatus::Accepted => "accepted",
+        crate::child_roles::HandoffStatus::Rejected => "rejected",
+        crate::child_roles::HandoffStatus::Completed => "completed",
+    }
+}
+
+fn child_role_from_str(value: &str) -> Result<crate::child_roles::ChildRole, String> {
+    match value {
+        "coordinator" => Ok(crate::child_roles::ChildRole::Coordinator),
+        "researcher" => Ok(crate::child_roles::ChildRole::Researcher),
+        "planner" => Ok(crate::child_roles::ChildRole::Planner),
+        "implementer" => Ok(crate::child_roles::ChildRole::Implementer),
+        "reviewer" => Ok(crate::child_roles::ChildRole::Reviewer),
+        "tester" => Ok(crate::child_roles::ChildRole::Tester),
+        "custom" => Ok(crate::child_roles::ChildRole::Custom),
+        other => Err(format!("unsupported child role: {other}")),
+    }
+}
+
+/// Builds a `RoleIdentity` from the wire's separate role/name fields. A
+/// "custom" role requires a bounded, validated name; a built-in role
+/// carries no name.
+fn role_identity_from_parts(
+    role: &str,
+    name: &str,
+) -> Result<crate::child_roles::RoleIdentity, String> {
+    let parsed_role = child_role_from_str(role)?;
+    if parsed_role == crate::child_roles::ChildRole::Custom {
+        crate::child_roles::RoleIdentity::custom(name).map_err(|error| error.to_string())
+    } else {
+        Ok(crate::child_roles::RoleIdentity::builtin(parsed_role))
+    }
+}
+
+/// Cheap display form of a `RoleIdentity` for the store's denormalized
+/// listing columns only; the full identity survives in the envelope JSON.
+fn role_identity_display(identity: &crate::child_roles::RoleIdentity) -> String {
+    match &identity.name {
+        Some(name) => format!("custom:{name}"),
+        None => format!("{:?}", identity.role).to_ascii_lowercase(),
+    }
+}
+
+fn child_task_kind_from_str(value: &str) -> Result<crate::child_runtime::ChildTaskKind, String> {
+    match value {
+        "code_search" => Ok(crate::child_runtime::ChildTaskKind::CodeSearch),
+        "threat_model_review" => Ok(crate::child_runtime::ChildTaskKind::ThreatModelReview),
+        "test_plan_review" => Ok(crate::child_runtime::ChildTaskKind::TestPlanReview),
+        "documentation" => Ok(crate::child_runtime::ChildTaskKind::Documentation),
+        "onboarding" => Ok(crate::child_runtime::ChildTaskKind::Onboarding),
+        other => Err(format!("unsupported child task kind: {other}")),
+    }
+}
+
+fn child_task_kind_str(kind: crate::child_runtime::ChildTaskKind) -> &'static str {
+    match kind {
+        crate::child_runtime::ChildTaskKind::CodeSearch => "code_search",
+        crate::child_runtime::ChildTaskKind::ThreatModelReview => "threat_model_review",
+        crate::child_runtime::ChildTaskKind::TestPlanReview => "test_plan_review",
+        crate::child_runtime::ChildTaskKind::Documentation => "documentation",
+        crate::child_runtime::ChildTaskKind::Onboarding => "onboarding",
+    }
+}
+
+fn child_report_status_from_str(
+    value: &str,
+) -> Result<crate::child_runtime::ChildReportStatus, String> {
+    match value {
+        "complete" => Ok(crate::child_runtime::ChildReportStatus::Complete),
+        "partial" => Ok(crate::child_runtime::ChildReportStatus::Partial),
+        "rejected" => Ok(crate::child_runtime::ChildReportStatus::Rejected),
+        other => Err(format!("unsupported child report status: {other}")),
+    }
+}
+
+fn child_report_status_str(status: crate::child_runtime::ChildReportStatus) -> &'static str {
+    match status {
+        crate::child_runtime::ChildReportStatus::Complete => "complete",
+        crate::child_runtime::ChildReportStatus::Partial => "partial",
+        crate::child_runtime::ChildReportStatus::Rejected => "rejected",
     }
 }
 

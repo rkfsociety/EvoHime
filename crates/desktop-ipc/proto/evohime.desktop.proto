@@ -285,6 +285,73 @@ message RemoveCapability {
   string id = 1;
 }
 
+// Requests a bounded, redacted task handoff between child roles
+// (evohime_core::child_roles::HandoffEnvelope). Fields match
+// HandoffEnvelope::new's parameters. from_role/to_role take a ChildRole
+// name in snake_case ("coordinator", "researcher", "planner",
+// "implementer", "reviewer", "tester", "custom"); when the role is
+// "custom", from_name/to_name carry the bounded custom label. payload
+// fields are redacted at construction time (secret-like names/values become
+// "[REDACTED]") before the envelope is ever persisted. This message only
+// validates and persists the envelope -- it does not deliver, accept, or
+// act on the handoff for any real child agent.
+message RequestChildHandoff {
+  string handoff_id = 1;
+  string task_id = 2;
+  string kind = 3;
+  string from_role = 4;
+  string from_name = 5;
+  string to_role = 6;
+  string to_name = 7;
+  string purpose = 8;
+  map<string, string> payload = 9;
+  uint64 sequence = 10;
+}
+
+// Lists persisted child handoffs for a task, in sequence order.
+message ListChildHandoffs {
+  string task_id = 1;
+  uint32 limit = 2;
+}
+
+// Submits a bounded, read-only child task request
+// (evohime_core::child_runtime::ChildTaskRequest) for durable storage.
+// Fields match ChildTaskRequest's own fields. Server-side,
+// ChildTaskRequest::validate() runs and rejects (end-to-end, not just at
+// the pure-function level) any request naming a non-read-only capability
+// in requested_capabilities, any request with parent_is_child = true
+// (nested child delegation), or any request whose context/output exceeds
+// the bounded contract limits. Accepting this request only persists a
+// durable record of an approved read-only child task descriptor; Core does
+// not spawn, execute, or otherwise act on it -- that remains a later,
+// dedicated task.
+message SubmitChildRequest {
+  string child_task_id = 1;
+  string parent_task_id = 2;
+  string role = 3;
+  string kind = 4;
+  repeated string reduced_context = 5;
+  uint32 max_output_bytes = 6;
+  repeated string requested_capabilities = 7;
+  bool parent_is_child = 8;
+}
+
+// Submits a completed child report (evohime_core::child_runtime::ChildReport)
+// for acceptance and durable storage. Server-side, accept_report() runs
+// against the matching persisted SubmitChildRequest: it re-validates the
+// request, validates the report's own bounds, rejects secret-like content
+// in the summary/findings/sources, rejects duplicate sources, and rejects a
+// child_task_id mismatch between the report and its request, before
+// anything is persisted.
+message SubmitChildReport {
+  string child_task_id = 1;
+  string status = 2;
+  string summary = 3;
+  repeated string findings = 4;
+  repeated string sources = 5;
+  uint32 confidence_percent = 6;
+}
+
 message CommandEnvelope {
   ProtocolVersion protocol = 1;
   string request_id = 2;
@@ -329,6 +396,10 @@ message CommandEnvelope {
     ListCapabilities list_capabilities = 44;
     MatchCapabilities match_capabilities = 45;
     RemoveCapability remove_capability = 46;
+    RequestChildHandoff request_child_handoff = 47;
+    ListChildHandoffs list_child_handoffs = 48;
+    SubmitChildRequest submit_child_request = 49;
+    SubmitChildReport submit_child_report = 50;
   }
 }
 
