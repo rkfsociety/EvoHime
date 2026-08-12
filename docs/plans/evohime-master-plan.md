@@ -53,7 +53,7 @@
 | № | Волна | Содержание | Трек | Почему здесь |
 | --- | --- | --- | --- | --- |
 | 1 | 0 | Активные дефекты: approval-баг delivery-gate, привязка approval к вызову | A | Обход политики и ложное «сделано» работают прямо сейчас |
-| 2 | I | Permission policy rules: glob, набор правил, встраивание в `check_scoped`, команда shell в проверке, загрузка `permissions.json` | A | Даёт политике предмет: `rm *` и `git *` перестают быть одним и тем же |
+| 2 | I | Permission policy rules: glob, набор правил, встраивание в `check_scoped`, subject вызова (shell + git), блок-лист интерпретаторов, загрузка `permissions.json` | A | Даёт политике предмет: `rm *` и `git push*` перестают быть неотличимыми от всего остального |
 | 3 | II | Типизированный результат инструмента (фаза 1) | A | Предпосылка для восстановления, метрик и памяти |
 | 4 | III | Адресное восстановление и эскалация (фаза 2), включая единую дедупликацию с окном | A | Наибольший эффект на живучесть прогона |
 | 5 | IV | Сброс бюджета рестартов supervisor (задача 4.1) | A | Дёшево, ощутимо для аптайма |
@@ -62,7 +62,12 @@
 | 8 | VII | Устойчивость провайдера (задачи 4.2, 4.3) | A | Зависит от поведения провайдера, можно параллельно с VI |
 | 9 | — | Native roadmap: 0b/0c → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 | B | Двигается своим темпом между волнами трека A |
 
-Волны 1–2 и 3–4 идут строго последовательно: волна 0 правит `execute_after_approval`, волна III правит соседние строки того же файла, а классификация из волны II обязана учесть отказ, введённый волной 0.
+Жёсткие связки по порядку, не по желанию:
+
+- дефект 0.2 закрывается задачей 6.5, поэтому волна 0 не отделима от волны I технически — отделён только приоритет;
+- волна II (7.3) обязана классифицировать оба отказа, введённых в 6.5, иначе они станут третьим тихим путём вместо двух починенных;
+- волна III (8.4) правит соседние строки того же `evohime-core/src/lib.rs`, что и 7.3, — параллелить их означает гарантированный конфликт;
+- 10.3 зависит и от резолвера 6.4, и от замены `failed` на `outcome.ok` из волны II; до них она нереализуема.
 
 Зависимости трека B:
 
@@ -90,7 +95,7 @@ flowchart LR
 
 **Shadow-режим перед строгим.** Волна II и задача 5.3 сначала работают параллельно старой эвристике: новая оценка только логируется в trace, решения принимает старая. Строгий режим включается после сверки расхождений на реальных прогонах.
 
-**Размещение кода.** `lib.rs` в `evohime-core` уже 5097 строк. Новая логика идёт в отдельные модули `recovery.rs`, `run_metrics.rs`, `task_memory.rs`, `permission_rules.rs`; в `lib.rs` остаются точки вызова.
+**Размещение кода.** `lib.rs` в `evohime-core` уже за 5 000 строк (5 103 на 2026-08-12). Новая логика идёт в отдельные модули `recovery.rs`, `run_metrics.rs`, `task_memory.rs`, `permission_rules.rs`; в `lib.rs` остаются точки вызова.
 
 **Какой именно агент дорабатывается.** В `lib.rs` живут два независимых агента с одинаково названным методом:
 
@@ -130,7 +135,7 @@ flowchart LR
 
 **Цель.** Дать EvoHime упорядоченные правила разрешений с glob-паттернами, которые учитывают *содержимое* вызова инструмента (в первую очередь shell-команду), а не только категорию и путь.
 
-**Архитектура.** В `evohime-permissions` добавляется слой `PolicyRule` (permission + glob + режим) с семантикой «побеждает последнее совпавшее правило». Слой встраивается в `check_scoped` с явным приоритетом: жёсткий `Deny` из правил не перекрывается runtime-грантами, остальные режимы стоят ниже path grants и session overrides. `tool-runtime` передаёт в проверку нормализованную shell-команду. Правила читаются Core из `permissions.json` в data dir при старте; этот файл — единственный источник истины, второго хранилища для них не заводится.
+**Архитектура.** В `evohime-permissions` добавляется слой `PolicyRule` (permission + glob + режим) с семантикой «побеждает последнее совпавшее правило». Слой встраивается в `check_scoped` с явным приоритетом: жёсткий `Deny` из правил не перекрывается runtime-грантами, остальные режимы стоят ниже path grants и session overrides. `tool-runtime` передаёт в проверку subject вызова — фактическую программу с аргументами для `shell.execute` и синтезированную команду для `git.*`. Правила читаются Core из `permissions.json` в data dir при старте; этот файл — единственный источник истины, второго хранилища для них не заводится.
 
 Источник модели — дизайн permission-системы opencode (`opencode.ai/docs/permissions`). Код оттуда не переносится, только модель правил; перед любым заимствованием текста проверить LICENSE.
 
@@ -141,7 +146,8 @@ flowchart LR
 | `crates/permissions/src/pattern.rs` (создать) | `glob_match(pattern, value)` — чистая функция |
 | `crates/permissions/src/policy.rs` (создать) | `PolicyRule`, `PolicyRuleSet`, «последнее совпавшее», дефолтный набор |
 | `crates/permissions/src/lib.rs` (изменить) | Хранение правил в движке, встраивание в `check_scoped`, поле `command` в `PermissionCheck` и `ApprovalRequest`, `approval_matches` |
-| `crates/tool-runtime/src/registry.rs` (изменить) | Извлечение команды, передача в проверку и approval, привязка approval к вызову, повторная проверка запретов |
+| `crates/tool-runtime/src/registry.rs` (изменить) | Построение subject вызова, передача в проверку и approval, привязка approval к вызову, повторная проверка запретов |
+| `crates/tool-runtime/src/tools/shell.rs` (изменить) | Вынос разбора аргументов в общий `resolve_invocation`, расширение блок-листа интерпретаторов |
 | `crates/evohime-core/src/permission_rules.rs` (создать) | Чтение `permissions.json`, применение к движку |
 | `crates/evohime-core/src/lib.rs`, `main.rs` (изменить) | Объявление модуля и вызов загрузчика при старте |
 
@@ -235,23 +241,39 @@ pub struct PolicyRuleSet(Vec<PolicyRule>);
 
 **Почему `PermissionEngine::new()` получает пустой набор, а не `defaults()`.** Встроенный запрет на чтение `.env` включается загрузчиком (6.6), а не конструктором: иначе каждый юнит-тест и каждый вызывающий, собирающий движок вручную, молча получал бы политику, которую не просил, и существующий тест `default_policy_allows_read_and_asks_for_write` начал бы описывать неправду.
 
-Существующие тесты, конструирующие `PermissionCheck` литералом (`session_override_beats_global_mode`, `path_grant_allows_matching_prefix`, `grant_remembers_path_for_session`, `path_deny_overrides_session_allow`, `scopes_snapshot_roundtrip_preserves_grants`, `import_scopes_skips_expired_path_grants`), дополняются `command: None`.
+Все литеральные конструкции `PermissionCheck` в тестах крейта дополняются `command: None` — на 2026-08-12 это 8 мест ([lib.rs:661](../../crates/permissions/src/lib.rs:661), 694, 706, 741, 808, 854, 866, 900). Перечислять их по именам тестов бессмысленно: часть тестов содержит по два литерала, и компилятор всё равно назовёт точный список. `PermissionCheck::default()` ([lib.rs:266](../../crates/permissions/src/lib.rs:266)) правки не требует — новое поле опционально.
 
 Новые тесты: правило `Deny` останавливает совпавшую команду, `Deny` бьёт path grant и session mode, path grant бьёт `Allow`/`Ask`-правило, новый движок стартует без правил.
 
-### 6.4. Команда shell доходит до проверки и до approval
+### 6.4. Subject вызова доходит до проверки и до approval
 
-`command_from_input(tool_name, input) -> Option<String>` в `registry.rs`: только для `shell.execute`, обе формы инструмента (`command: String` либо `program` + `args`) приводятся к одной строке со схлопыванием пробельных последовательностей, чтобы `git   push` и `git push` матчились одинаково.
+`command_from_input(tool_name, input) -> Option<String>` в `registry.rs` строит subject правила.
 
-`ApprovalRequest` получает `#[serde(default, skip_serializing_if = "Option::is_none")] pub command: Option<String>`; `create_approval_scoped` получает шестой параметр `command: Option<String>`; обёртка `create_approval` передаёт `None`.
+**Subject обязан совпадать с тем, что реально исполнится, а не с тем, что прислала модель.** Наивная нормализация сырой строки `command` — дыра, а не защита: `shell.execute` принимает две формы (`program` + `args` либо `command: String`), и для второй формы он сам разбирает строку — срезает префикс `cd <path> &&` и запускает **остаток** ([shell.rs:39-66](../../crates/tool-runtime/src/tools/shell.rs:39)). Значит `deny` на `rm *` обходится записью `cd sub && rm -rf x`: subject был бы `"cd sub && rm -rf x"`, а исполнилась бы `rm -rf x`.
 
-**Зачем команда в `ApprovalRequest`, если UI и так её видит.** Событие `CoreEvent::ApprovalRequired` ([lib.rs:2191](../../crates/evohime-core/src/lib.rs:2191)) уже несёт целиком `input` вызова, поэтому панель подтверждения показывает команду и без правок — работы по UI здесь нет. Поле нужно не для отображения, а как **запись движка о том, что именно было одобрено**: задача 6.5 сравнивает её с тем, что реально пришло на исполнение. Без поля движок физически не может отличить подмену.
+Поэтому разбор аргументов выносится из `shell::execute` в общую функцию вида `shell::resolve_invocation(&Value) -> Option<(String /*program*/, Vec<String> /*args*/, Option<String> /*cwd*/)>`, и её используют **оба** — сам инструмент и `command_from_input`. Subject = `program` + ` ` + `args.join(" ")`. Это же убирает будущее расхождение: любое изменение разбора автоматически меняет и то, что видит политика.
+
+Схлопывание пробелов остаётся: `git   push` и `git push` должны матчиться одинаково (в форме `program` + `args` это получается само, в форме `command` — за счёт `split_whitespace` внутри резолвера).
+
+**Тот же резолвер чинит и scope.** `scope_from_input` берёт `cwd` только из одноимённого поля входа ([registry.rs:466](../../crates/tool-runtime/src/registry.rs:466)), поэтому для формы `command: "cd sub && cargo test"` scope окажется `"workspace"`, хотя исполнение пойдёт в `sub`. Владелец увидит в approval не тот каталог, в котором всё произойдёт. После выноса резолвера `scope_from_input` для `shell.execute` берёт `cwd` из него же.
+
+**Git-инструменты — отдельный subject, иначе правила по ним не работают вовсе.** `git.commit`, `git.push`, `git.pull`, `git.status`, `git.diff` — самостоятельные инструменты с permissions `GitWrite`/`GitRead` ([git.rs:8-31](../../crates/tool-runtime/src/tools/git.rs:8)), а не вызовы `shell.execute`. Их `scope_from_input` даёт `path`/`cwd`/`"workspace"` ([registry.rs:462](../../crates/tool-runtime/src/registry.rs:462)), то есть subject не содержит глагола, и правило `{"permission":"git_write","pattern":"git push*","mode":"deny"}` не совпало бы никогда — политика молча ничего не делала бы. Учитывая правило хозяина «push только по прямому запросу», это именно то правило, которое напишут первым.
+
+Поэтому `command_from_input` синтезирует subject и для git-инструментов: имя инструмента отображается в `git push`, `git commit`, `git pull`, `git status`, `git diff`. Permission в правиле при этом — `git_write` / `git_read`, а не `shell_execute`; это обязано быть в примере конфига и в документации, иначе владелец напишет правило не под тем permission.
+
+Для остальных инструментов (`http.fetch`, `browser.*`, `mcp.call`, `filesystem.*`) subject остаётся URL/путём из `scope_from_input` — у них нет команды, и синтезировать её не из чего.
+
+`ApprovalRequest` получает два новых поля с `#[serde(default)]`: `pub command: Option<String>` (для человека, аудита и повторной проверки политики) и `pub call_hash: String` (для сверки из 6.5). `create_approval_scoped` получает их параметрами; обёртка `create_approval` передаёт `None` и хеш пустого вызова. Оба поля дефолтные, поэтому ранее записанный JSON читается без миграции.
+
+**Зачем команда в `ApprovalRequest`, если UI и так её видит.** Событие `CoreEvent::ApprovalRequired` ([lib.rs:2192-2199](../../crates/evohime-core/src/lib.rs:2192), объявление [lib.rs:979](../../crates/evohime-core/src/lib.rs:979)) уже несёт целиком `input` вызова, поэтому панель подтверждения показывает команду и без правок — работы по UI здесь нет. Поле нужно не для отображения, а как **запись движка о том, что именно было одобрено**: задача 6.5 сравнивает её с тем, что реально пришло на исполнение. Без поля движок физически не может отличить подмену.
 
 `ApprovalAuditEntry` при этом **не расширяем**: sink аудита (`attach_audit_sender`) в репозитории никем не вызывается, записи живут только в кольцевом буфере в памяти, и добавлять туда поле «на будущее» — то же спекулятивное хранилище, от которого отказались выше. Аудит подключается волной V, тогда же и расширяется.
 
 Блок проверки в `execute_with_cancellation` получает `command_from_input` один раз до цикла по permissions и передаёт `command.as_deref()` в `check_scoped`, а `command.clone()` — в `create_approval_scoped`.
 
-Полный список мест, ломающихся от новой сигнатуры (проверено по репозиторию, других вызовов нет): `crates/permissions/src/lib.rs:314` (обёртка), `crates/permissions/src/lib.rs:724` (тест `grant_remembers_path_for_session`), `crates/tool-runtime/src/registry.rs:295` (единственный продуктовый вызов). `ipc_bridge.rs` `create_approval_scoped` не вызывает.
+Полный список мест, ломающихся от новой сигнатуры (проверено по репозиторию на 2026-08-12, других вызовов нет): [permissions/src/lib.rs:314](../../crates/permissions/src/lib.rs:314) (обёртка `create_approval`), [permissions/src/lib.rs:724](../../crates/permissions/src/lib.rs:724) (тест `grant_remembers_path_for_session`), [tool-runtime/src/registry.rs:295](../../crates/tool-runtime/src/registry.rs:295) (единственный продуктовый вызов). `ipc_bridge.rs` `create_approval_scoped` не вызывает.
+
+Контрольный признак чужой регрессии: если после правок падает `bootstrap_registers_filesystem_read` на количестве зарегистрированных инструментов — задет реестр, и это не ожидаемое следствие волны I.
 
 ### 6.5. Привязка approval к конкретному вызову (закрывает дефект 0.2)
 
@@ -262,9 +284,15 @@ pub async fn approval_matches(
     id: Uuid,
     tool_name: &str,
     scope: &str,
-    command: Option<&str>,
+    call_hash: &str,
 ) -> bool
 ```
+
+**Сверять надо весь вызов, а не три его поля.** Первая редакция сравнивала `tool_name` + `scope` + `command` — и этого мало ровно там, где инструмент не shell. У `git.commit` subject синтезируется в `git commit`, а scope — путь или `"workspace"`; сообщение коммита лежит в `input` и в сверку не попадает, то есть одобрение коммита с текстом A позволяет закоммитить текст B. То же для `filesystem.write`: путь совпадает, содержимое подменено. Сверка «по трём полям» защищала бы ровно от того случая, который проще всего заметить, и пропускала остальные.
+
+Поэтому approval хранит `call_hash` — хеш канонизированного `input` (`serde_json::Value` с отсортированными ключами) вместе с именем инструмента и нормализованным scope. Легитимный путь не страдает: `execute_after_approval` получает тот же `input`, что ушёл в approval ([lib.rs:2212](../../crates/evohime-core/src/lib.rs:2212)), поэтому хеш совпадает.
+
+Поля `command` и `scope` остаются в `ApprovalRequest` — они нужны человеку и аудиту, а также повторной проверке политики; но **решение о совпадении принимает хеш**. Это же делает волну I предшественником `intent_hash` из этапа 2 (13.3), а не параллельным механизмом: когда появится полный `intent_hash`, `call_hash` войдёт в него.
 
 Метод живёт в `evohime-permissions`, потому что `ApprovalRequest.scope` пропущен через приватную `normalize_scope_path`, которая из крейта не экспортируется. Сравнивать снаружи означало бы дублировать её правила и однажды разойтись.
 
@@ -276,9 +304,10 @@ pub async fn approval_matches(
         // An approval authorizes one specific call, not the tool in general.
         let scope = scope_from_input(name, &input);
         let command = command_from_input(name, &input);
+        let call_hash = canonical_call_hash(name, &input);
         if !self
             .permissions
-            .approval_matches(approval_id, name, &scope, command.as_deref())
+            .approval_matches(approval_id, name, &scope, &call_hash)
             .await
         {
             return Err(ToolError::Execution(
@@ -317,17 +346,23 @@ pub async fn approval_matches(
 
 **Стык с волной II:** отказ по несовпадению возвращается как `ToolError::Execution`, но по смыслу это отказ политики. Классификация из 7.1 обязана относить его к `ToolFailureKind::Denied`, а не к `Execution`, иначе подсказка предложит Еве «повторить иначе» там, где повторять нельзя. Простейшая реализация — отдельный вариант ошибки или маркер, а не разбор текста сообщения.
 
-Тесты: approval на `cargo --version` не годится для `cargo publish`; одобренный вызов не отклоняется как mismatch (утверждение негативное намеренно — наличие `cargo` в PATH здесь ни при чём); правило `Deny`, добавленное после выдачи approval, останавливает неизменённый вызов; `approval_matches` игнорирует написание пути, но не содержание.
+Тесты:
+
+- approval на `cargo --version` не годится для `cargo publish`;
+- approval на `git.commit` с одним сообщением не годится для коммита с другим — это тот случай, который сверка «по трём полям» пропускала;
+- approval на `filesystem.write` того же пути с другим содержимым отклоняется;
+- одобренный вызов не отклоняется как mismatch (утверждение негативное намеренно — наличие `cargo` в PATH здесь ни при чём);
+- правило `Deny`, добавленное после выдачи approval, останавливает неизменённый вызов;
+- `call_hash` устойчив к порядку ключей в JSON, а `approval_matches` игнорирует написание пути, но не содержание.
 
 ### 6.6. Загрузка `permissions.json`
 
 ```
-pub fn rules_path() -> PathBuf                                  // <data_dir>/permissions.json
 pub fn load_rules_from(path: &Path) -> Result<PolicyRuleSet, String>
-pub async fn apply_rules(permissions: &PermissionEngine)
+pub async fn apply_rules(permissions: &PermissionEngine, data_dir: &Path)
 ```
 
-`data_dir` = `EVOHIME_DATA_DIR`, иначе `%LOCALAPPDATA%\EvoHime`, иначе `.evohime`.
+**`data_dir` передаётся, а не выводится заново.** `main.rs` уже вычисляет его через `normalized_env_path("EVOHIME_DATA_DIR")` → `%LOCALAPPDATA%\EvoHime` → `.evohime` ([main.rs:4-9](../../crates/evohime-core/src/main.rs:4)), и в `lib.rs` есть ещё две копии той же цепочки ([lib.rs:99](../../crates/evohime-core/src/lib.rs:99), [lib.rs:121](../../crates/evohime-core/src/lib.rs:121)). Четвёртая копия внутри `permission_rules.rs` разошлась бы с `main.rs` уже сегодня: там путь нормализуется, здесь бы — нет. Правила читаются из `data_dir.join("permissions.json")`, лог — из `data_dir.join("logs").join("core.jsonl")`.
 
 Формат файла — тот же порядок «последнее правило побеждает»:
 
@@ -336,25 +371,38 @@ pub async fn apply_rules(permissions: &PermissionEngine)
   { "permission": "shell_execute", "pattern": "*", "mode": "ask" },
   { "permission": "shell_execute", "pattern": "cargo *", "mode": "allow" },
   { "permission": "shell_execute", "pattern": "rm *", "mode": "deny" },
+  { "permission": "shell_execute", "pattern": "pwsh*", "mode": "deny" },
+  { "permission": "git_write", "pattern": "git push*", "mode": "deny" },
   { "permission": "filesystem_read", "pattern": "*.env", "mode": "deny" }
 ]
 ```
 
-Отсутствующий или пустой файл — не ошибка, применяются `defaults()`. Битый файл — тоже не ошибка запуска (агент не должен падать из-за опечатки в конфиге), но факт обязан попасть в лог, после чего применяются `defaults()`. Файл не создаётся автоматически.
+Значения `permission` — snake_case-имена вариантов enum `Permission` ([lib.rs:15-26](../../crates/permissions/src/lib.rs:15)): `filesystem_read`, `filesystem_write`, `shell_execute`, `git_read`, `git_write`, `browser_access`, `mcp_call`, `memory_search`. `mode` — `ask` / `allow` / `deny`. Обрати внимание на строку про push: permission именно `git_write`, потому что `git.push` — отдельный инструмент, а не вызов shell (см. 6.4).
+
+Три случая, различаемые намеренно:
+
+- **файла нет или он пуст** — не ошибка, применяются `defaults()`;
+- **файл содержит `[]`** — это валидный набор из нуля правил, то есть осознанное «выключить всё, включая встроенный запрет `.env`». Подменять его на `defaults()` нельзя: тогда владелец не сможет отказаться от дефолтов вовсе;
+- **файл битый** — не ошибка запуска (агент не должен падать из-за опечатки в конфиге), но факт обязан попасть в лог, после чего применяются `defaults()`.
+
+Файл не создаётся автоматически.
 
 Логирование идёт через `crate::StructuredLogger` ([logging.rs:11](../../crates/evohime-core/src/logging.rs:11)) в `<data_dir>/logs/core.jsonl`; ни `tracing`, ни `log` в крейте нет, новых зависимостей не добавляем. Разбор файла держим чистым (`Result`), чтобы тесты не трогали файловую систему логов. `tempfile` в dev-зависимостях `evohime-core` отсутствует — повторяем идиому соседнего теста ([logging.rs:54](../../crates/evohime-core/src/logging.rs:54)) с уникальным путём в `std::env::temp_dir()` и уборкой за собой.
 
-Подключение: `pub mod permission_rules;` между `pub mod observability;` и `pub mod plan;` (список алфавитный), вызов `evohime_core::permission_rules::apply_rules(tools.permissions()).await;` в `main.rs` после `ToolRegistry::bootstrap()` — `main` объявлен `#[tokio::main] async fn`.
+Подключение: `pub mod permission_rules;` между `pub mod observability;` ([lib.rs:626](../../crates/evohime-core/src/lib.rs:626)) и `pub mod plan;` ([lib.rs:627](../../crates/evohime-core/src/lib.rs:627)) — список алфавитный; вызов `evohime_core::permission_rules::apply_rules(tools.permissions(), &data_dir).await;` в `main.rs` после `ToolRegistry::bootstrap()` ([main.rs:24](../../crates/evohime-core/src/main.rs:24)) — `main` объявлен `#[tokio::main] async fn`, `data_dir` уже в области видимости.
 
-Документация: в `docs/architecture.md`, раздел «Данные и восстановление», дописать прозой, что правила читаются из `%LOCALAPPDATA%\EvoHime\permissions.json`, это упорядоченный массив, побеждает последнее совпавшее правило, отсутствующий или пустой файл означает встроенный набор.
+Новых записей в `crates/evohime-core/Cargo.toml` не требуется: `evohime-permissions` и `serde_json` уже подключены, логирование идёт через внутренний `crate::logging`.
+
+Документация: в `docs/architecture.md` раздел называется `## Данные, диагностика и восстановление` ([строка 30](../architecture.md)) и написан прозой; дописать в конец абзаца на строке 32 предложение в том же стиле — правила читаются из `%LOCALAPPDATA%\EvoHime\permissions.json`, это упорядоченный массив, побеждает последнее совпавшее правило, отсутствующий или пустой файл означает встроенный набор.
 
 ### 6.7. Известные ограничения волны I
 
 Их надо знать заранее, чтобы правило `*.env → deny` не создавало ложного чувства защищённости:
 
 1. **`filesystem.search` обходит запрет по пути.** Инструмент требует того же `Permission::FilesystemRead` ([search.rs:11](../../crates/tool-runtime/src/tools/search.rs:11)), но его scope — корень поиска, а не найденные файлы. Grep по workspace вернёт содержимое `.env`, хотя `filesystem.read` для него запрещён. Полное закрытие требует фильтрации результатов внутри самого инструмента — отдельная задача.
-2. **Вложенные команды не разбираются.** Матчинг идёт по нормализованной строке: `rm -rf target` отклоняется, а `cmd /c rm -rf target` или `powershell -c "rm ..."` — нет. Правила стоит писать и на интерпретаторы.
+2. **Интерпретаторы блокируются инструментом, но список неполон.** `shell.execute` уже отвергает `cmd`, `cmd.exe`, `powershell`, `powershell.exe`, `sh`, `bash`, а также любую программу с `/` или `\` в имени ([shell.rs:67-78](../../crates/tool-runtime/src/tools/shell.rs:67)) — то есть `cmd /c rm -rf target` не проходит и без всякой политики. Но в списке **нет `pwsh` и `pwsh.exe`**, хотя собственный тест инструмента запускает именно `pwsh.exe` ([shell.rs:263](../../crates/tool-runtime/src/tools/shell.rs:263)); нет также `wsl`, `npx`, `uv`, `python -c` и прочих программ, умеющих запускать чужой код. Отсюда две вещи: (а) в волну I входит отдельная задача — расширить блок-лист как минимум `pwsh`/`pwsh.exe`/`wsl` и покрыть тестом; (б) правила всё равно стоит писать и на интерпретаторы (`pwsh*`, `python*`), потому что блок-лист по определению отстаёт от изобретательности.
 3. **Политика не покрывает пути внутри аргументов.** Для `shell.execute` subject — команда, а не файлы, которые она тронет; ограничение записи по путям остаётся за песочницей и `filesystem.*`.
+4. **Аргументы git-инструментов в subject не входят.** Синтезированный subject — это `git push` / `git commit` без флагов и remote, поэтому «запретить push только в origin» правилом не выражается. Различать remote можно лишь на уровне самого инструмента.
 
 ---
 
@@ -381,7 +429,12 @@ pub struct ToolOutcome {
     pub kind: Option<ToolFailureKind>,
     pub output: String,      // текст для модели
 }
+
+/// Почему именно отказано: подсказка для `Denied` зависит от этого.
+pub enum DenialSource { Policy, User, Escalation }
 ```
+
+`ToolFailureKind::Denied` несёт `DenialSource` (обоснование — в 8.1): постоянный отказ политики, разовое «нет» хозяина и временное окно эскалации требуют разных подсказок.
 
 Порядок определения `ok`: (1) вариант `ToolError`; (2) поле `structured` для инструментов из 7.2; (3) `ok = true`. Текстовая эвристика `tool_output_failed` удаляется целиком, а не остаётся fallback-ом: сохранённый fallback вернёт ровно те ложные срабатывания, ради которых затевается волна.
 
@@ -395,22 +448,24 @@ pub struct ToolOutcome {
 
 ### 7.2. Инструменты, возвращающие `Ok` при семантическом провале
 
-Требовать поле `ok` во всех `structured` не нужно — 15 из 17 мест возвращают `Ok` только при фактическом успехе. Маскируют провал ровно два:
+Требовать поле `ok` во всех `structured` не нужно: подавляющее большинство инструментов возвращает `Ok` только при фактическом успехе. Но конкретное число мест в задачу лучше не зашивать — реестр вырос, и старая формулировка «15 из 17» уже не соответствует коду. Фактическая картина на 2026-08-12: диспетчер разбирает 23 инструментальных арма плюс catch-all ([registry.rs:385-408](../../crates/tool-runtime/src/registry.rs:385)) по 13 модулям инструментов; результат собирается и напрямую (13 мест `Ok(ToolResult {`), и через хелперы — `search::search_result`, `memory::format_results`, `agent::format_result`. Поэтому задача формулируется как **аудит всех мест построения `ToolResult`**, а не как правка двух известных, и аудит обязан покрыть поздние инструменты, которых исходный план вообще не видел: `mcp.call`, `agent.run`, `browser.*`, `browser_session.*`.
+
+Известные на сегодня нарушители — ровно два:
 
 - `shell.execute` ([shell.rs:158](../../crates/tool-runtime/src/tools/shell.rs:158)) — `Ok` с любым `exit_code`; читать `structured["exit_code"]` и `structured["timed_out"]`;
 - `git.commit` ([git.rs:80](../../crates/tool-runtime/src/tools/git.rs:80)) — `Ok` со `status: "nothing_to_commit"`; это не ошибка инструмента, но и не выполненный коммит, поэтому `commit_done` выставлять нельзя.
 
-`http.fetch` уже возвращает `Err` на не-2xx ([http.rs:78](../../crates/tool-runtime/src/tools/http.rs:78)) — менять не нужно.
+`http.fetch` уже возвращает `Err` на не-2xx ([http.rs:75-81](../../crates/tool-runtime/src/tools/http.rs:75)) — менять не нужно.
 
-Тест: итерация по реестру, проверяющая, что ни один другой инструмент не возвращает `Ok` с признаком ошибки в `structured`.
+Тест: итерация по реестру, проверяющая, что ни один другой инструмент не возвращает `Ok` с признаком ошибки в `structured`. Тест обязан пройтись по **всем** зарегистрированным инструментам, а не по списку из этого документа, — иначе он устареет так же, как устарело «15 из 17».
 
 ### 7.3. Замена `tool_output_failed` в agent loop
 
 [lib.rs:2239](../../crates/evohime-core/src/lib.rs:2239) — вместо `let failed = tool_output_failed(&output)` использовать `outcome.ok`. Классификация обязана покрыть **все три** пути получения результата:
 
 - прямой вызов `execute_with_cancellation`;
-- отказ в approval ([lib.rs:2205](../../crates/evohime-core/src/lib.rs:2205)) → `ok = false, kind = Denied`;
-- `execute_after_approval` после выданного approval — сейчас его ошибка схлопывается в `error.to_string()` и теряет тип. Сюда же попадают оба новых отказа волны I: mismatch и повторный `Deny`.
+- отказ в approval ([lib.rs:2204-2205](../../crates/evohime-core/src/lib.rs:2204)) → `ok = false, kind = Denied`. Здесь ошибки нет вообще: ветка кладёт в `output` строку `"approval denied"`, поэтому outcome строится явно в самой ветке, а не выводится из `Result`;
+- `execute_after_approval` после выданного approval — сейчас его ошибка схлопывается в `error.to_string()` ([lib.rs:2219](../../crates/evohime-core/src/lib.rs:2219)) и теряет тип. Сюда же попадают оба новых отказа волны I: mismatch и повторный `Deny`.
 
 Иначе волна чинит только самый заметный путь и оставляет два тихих.
 
@@ -429,20 +484,30 @@ pub struct ToolOutcome {
 
 ### 8.1. Таблица подсказок по `ToolFailureKind`
 
-Заменить единственную подсказку на [lib.rs:2270](../../crates/evohime-core/src/lib.rs:2270) функцией `recovery_hint(tool_name, kind, structured) -> Option<String>`:
+Заменить блок подсказки ([lib.rs:2271-2284](../../crates/evohime-core/src/lib.rs:2271)) функцией `recovery_hint(tool_name, kind, structured) -> Option<String>`:
 
 | Kind | Подсказка |
 | --- | --- |
 | `NotFound` | назвать `filesystem.search` с фрагментом имени; напомнить, что пути workspace-relative |
 | `InvalidInput` | вернуть JSON-схему **именно этого** инструмента из реестра, а не общий список примеров |
-| `Denied` | объяснить, что повтор не поможет; предложить альтернативу без данного permission или отчёт хозяину |
+| `Denied` | зависит от источника отказа — см. ниже: политика или временная эскалация |
 | `Timeout` | сузить объём (конкретный путь вместо `.`, `--lib` вместо полного прогона) |
 | `NonZeroExit` | процитировать первые N строк stderr из `structured`, а не весь вывод |
 | `Execution` | общий fallback (текущий текст) |
 
 Схема берётся из `tool_parameters(name)` ([lib.rs:38](../../crates/evohime-core/src/lib.rs:38)), чтобы подсказка не расходилась с реальным контрактом. **Оговорка:** у `tool_parameters` есть catch-all `_ => {"type": "object", "additionalProperties": true}` ([lib.rs:94](../../crates/evohime-core/src/lib.rs:94)); для неперечисленного инструмента подсказка выродилась бы в пустую схему — хуже нынешних захардкоженных примеров. Поэтому задача включает сверку покрытия `tool_parameters` с реестром: для неохваченных инструментов подсказка строится из `ToolDefinition::description`. Тест: ни один инструмент реестра не отдаёт catch-all-схему в качестве подсказки.
 
-Подсказка `Denied` учитывает волну I: если отказ пришёл от правила политики, повтор бессмысленен принципиально, и текст должен вести к отчёту хозяину, а не к перебору формулировок.
+**`Denied` — это три разных отказа, и одна подсказка на всех врёт.** После волны I и задачи 8.2 в этот класс попадают:
+
+- **отказ политики** (`PolicyRule` → `Deny`) — постоянный; повтор бессмыслен принципиально, текст ведёт к отчёту хозяину или к пути без этого permission;
+- **отклонённый approval** — хозяин сказал «нет» именно этому вызову; уместно предложить другой способ или спросить иначе, но не тот же вызов;
+- **отказ эскалации** из 8.2 — временный, на K = 2 итерации; текст обязан это сказать, иначе Ева бросит рабочий инструмент навсегда из-за двухшагового окна.
+
+Поэтому `ToolFailureKind::Denied` несёт причину (`policy` / `user` / `escalation`), а `recovery_hint` выбирает по ней. Без этого поля подсказка либо запугает Еву там, где надо просто подождать шаг, либо будет гонять её по кругу там, где решение принято окончательно.
+
+**Существующая подсказка про `patch context mismatch` — единственное исключение, и его надо решить явно.** Сейчас в цикле есть вторая, targeted подсказка, которая срабатывает по подстроке в выводе: `output.to_lowercase().contains("patch context mismatch")` ([lib.rs:2269](../../crates/evohime-core/src/lib.rs:2269), текст на [2272-2273](../../crates/evohime-core/src/lib.rs:2272)). Она полезна и по смыслу правильна, но это ровно та текстовая эвристика, которую волна II объявляет вне закона, — молча оставить её значит завести исключение из собственного правила.
+
+Решение: `filesystem.patch` получает типизированный признак несовпадения контекста — либо отдельный вариант в `ToolError`, либо поле в `structured` рядом с уже существующей валидацией входа ([registry.rs:273-275](../../crates/tool-runtime/src/registry.rs:273)), — и `recovery_hint` строит подсказку по нему. До этого момента подстроковая проверка остаётся, но помечена в коде как известное исключение с ссылкой на эту задачу; тихо она жить не должна.
 
 ### 8.2. Счётчик подряд идущих провалов и эскалация
 
@@ -463,7 +528,7 @@ pub struct ToolOutcome {
 
 ### 8.3. Приоритет эскалации над delivery-gate
 
-Delivery-gate ([lib.rs:2095](../../crates/evohime-core/src/lib.rs:2095)) при незакрытых требованиях подставляет «Задача ещё не завершена» и продолжает цикл. Это прямо конфликтует с решением об остановке из 8.2: gate будет гнать вперёд агента, уже признанного застрявшим.
+Delivery-gate ([lib.rs:2091-2126](../../crates/evohime-core/src/lib.rs:2091)) при незакрытых требованиях подставляет «Задача ещё не завершена» и продолжает цикл — но только пока `iteration + 1 < max_iterations` ([lib.rs:2103](../../crates/evohime-core/src/lib.rs:2103)). Это прямо конфликтует с решением об остановке из 8.2: gate будет гнать вперёд агента, уже признанного застрявшим.
 
 Правило: **эскалация имеет приоритет.** При достижении порога задача завершается `TaskFailed` с текстом, включающим и класс залипания, и список невыполненных требований доставки. Gate не имеет права продлить прогон после срабатывания эскалации.
 
@@ -475,7 +540,7 @@ Delivery-gate ([lib.rs:2095](../../crates/evohime-core/src/lib.rs:2095)) при 
 
 Дедупликация существует в двух независимых местах, и оба хешируют сырую строку аргументов, поэтому лишний пробел обходит защиту:
 
-- `seen_tool_calls` для обычных tool_call ([lib.rs:2074](../../crates/evohime-core/src/lib.rs:2074));
+- `seen_tool_calls` для обычных tool_call — объявление [lib.rs:1957](../../crates/evohime-core/src/lib.rs:1957), блок `retain` [lib.rs:2075-2082](../../crates/evohime-core/src/lib.rs:2075);
 - `legacy_seen` для распарсенных legacy-вызовов ([lib.rs:1956](../../crates/evohime-core/src/lib.rs:1956), [lib.rs:2021](../../crates/evohime-core/src/lib.rs:2021)).
 
 Кроме того, `seen_tool_calls` — это `HashSet`, живущий весь таск: `retain` вырезает любой вызов, который *когда-либо* встречался. Легитимный повтор — второй прогон `cargo test` после правки, повторное чтение файла после записи — молча удаляется до конца задачи, и агент получает подсказку «выбери другой шаг», хотя правильный шаг был именно этот.
@@ -510,7 +575,9 @@ impl RecentToolCalls {
 }
 ```
 
-Структура объявляется на уровне корня крейта перед `mod ipc_bridge;` ([lib.rs:555](../../crates/evohime-core/src/lib.rs:555)); `HashSet` там уже в области видимости, `VecDeque` записывается полным путём. Тестовый модуль ([lib.rs:4537](../../crates/evohime-core/src/lib.rs:4537)) импортирует символы явным списком, а не через `use super::*`, поэтому `RecentToolCalls` дописывается в этот список.
+Структура объявляется на уровне корня крейта перед `mod ipc_bridge;` ([lib.rs:555](../../crates/evohime-core/src/lib.rs:555)); `HashSet` там уже в области видимости, `VecDeque` записывается полным путём. Тестовый модуль ([lib.rs:4538](../../crates/evohime-core/src/lib.rs:4538)) импортирует символы явным списком `use super::{ AgentRunError, CoreCommand, CoreEvent, CoreVersion, EventJournal, ModelAgent, TaskCoordinator, TaskExecutor, ToolAgent }`, а не через `use super::*`, поэтому `RecentToolCalls` дописывается в этот список.
+
+Текст подсказки про удалённый повтор ([lib.rs:2084-2089](../../crates/evohime-core/src/lib.rs:2084)) остаётся прежним — для повтора внутри окна он по-прежнему верен.
 
 Дедуп-состояние выносится в одну структуру для обоих путей, чтобы третий парсер не завёл третий обход защиты.
 
@@ -553,11 +620,17 @@ impl RecentToolCalls {
 
 Собирать за задачу и писать в БД: число итераций, вызовов по инструментам, успехов/провалов по `ToolFailureKind`, число сработавших recovery-подсказок, факт эскалации, итоговый статус. Эти же данные — вход для 11.3.
 
-Таблица `runs` существует ([lib.rs:810](../../crates/evohime-local-storage/src/lib.rs:810)), но подходящих колонок в ней нет, а размазывать метрики по её полям нельзя: `runs` описывает жизненный цикл прогона, а не поведение агента. Нужна отдельная таблица `run_tool_metrics` и миграция **`user_version = 11`** — первая из двух (см. раздел 14).
+Таблица `runs` существует ([lib.rs:1587](../../crates/evohime-local-storage/src/lib.rs:1587)), но подходящих колонок в ней нет, а размазывать метрики по её полям нельзя: `runs` описывает жизненный цикл прогона, а не поведение агента. Нужна отдельная таблица `run_tool_metrics` и миграция **`user_version = 11`** — первая из двух (см. раздел 14).
 
 ### 10.3. Заменить подстроковые эвристики delivery-gate
 
-[lib.rs:2243](../../crates/evohime-core/src/lib.rs:2243) засчитывает верификацию по `arguments.contains("test") || "check" || "build" || "собер"` — `echo "check"` проходит как успешная проверка. Разбирать фактическую команду (первый исполняемый токен + подкоманда) и требовать `exit_code = 0` из `structured`. Порог `research_observations >= 5` заменить на проверку фактического покрытия (был ли прочитан хотя бы один файл, релевантный цели), а не на магическое число.
+Цикл засчитывает верификацию по подстрокам в **сырых аргументах вызова**: `arguments.contains("test") || "check" || "build" || "собер"` — `echo "check"` проходит как успешная проверка. Разбирать фактическую команду (программа + подкоманда из общего резолвера 6.4) и требовать `exit_code = 0` из `structured`.
+
+**Блоков два, и править надо оба.** [lib.rs:2243-2254](../../crates/evohime-core/src/lib.rs:2243) выставляет `verification_test_passed` и `diff_check_passed` при `!failed`, а [lib.rs:2255-2266](../../crates/evohime-core/src/lib.rs:2255) их же снимает при `failed` — с тем же списком подстрок. Правка только первого блока даст флаг, который нельзя снять правильным образом. Отдельно `diff_check_passed` определяется как `arguments.contains("diff") && arguments.contains("check")` — та же дыра: `echo "git diff --check"` засчитывается.
+
+Оба блока зависят от `failed`, то есть после волны II они начинают работать от `outcome.ok`; это ещё одна причина держать 10.3 после волны II, а не параллельно ей.
+
+Порог `research_observations >= 5` ([lib.rs:2092-2096](../../crates/evohime-core/src/lib.rs:2092)) заменить на проверку фактического покрытия (был ли прочитан хотя бы один файл, релевантный цели), а не на магическое число; соседние флаги `research_has_overview` / `has_content` / `has_search` при этом сохраняются.
 
 Парсер команды здесь — **единственный**: задача 11.3 переиспользует его, а не пишет второй. Два независимых парсера разойдутся, и урок начнёт противоречить delivery-gate.
 
@@ -573,7 +646,7 @@ impl RecentToolCalls {
 
 ## 11. Волна VI — память в агентном цикле
 
-Хранилище (`MemoryStoreSql::insert/search/list/archive`, [memory_store.rs](../../crates/evohime-local-storage/src/memory_store.rs)) и Core-обёртки ([lib.rs:1208](../../crates/evohime-core/src/lib.rs:1208)) уже есть. Агентный цикл к ним не обращается — это и есть отсутствующая петля обучения. Волна VI — подмножество Memory v1 из этапа 6 трека B: она подключает существующий контракт к циклу, а этап 6 добавляет поверх API, UI и extraction policy. Второй раз это не строится.
+Хранилище (`MemoryStoreSql::insert/search/list/archive`, [memory_store.rs](../../crates/evohime-local-storage/src/memory_store.rs)) и Core-обёртки (`save_memory` и соседи, [lib.rs:1206](../../crates/evohime-core/src/lib.rs:1206)) уже есть. Агентный цикл к ним не обращается — это и есть отсутствующая петля обучения. Волна VI — подмножество Memory v1 из этапа 6 трека B: она подключает существующий контракт к циклу, а этап 6 добавляет поверх API, UI и extraction policy. Второй раз это не строится.
 
 ### 11.0. Ключ scope (предпосылка)
 
@@ -589,11 +662,17 @@ impl RecentToolCalls {
 
 Кодировать счётчик внутри `content` нельзя: это ломает дедупликацию и делает вытеснение неработоспособным.
 
-Правка схемы тянет обвязку: поля в `MemoryRecord` и все четыре SQL-константы `INSERT` / `SELECT_BY_ID` / `SEARCH` / `LIST` ([memory_store.rs:184–201](../../crates/evohime-local-storage/src/memory_store.rs:184)) читают колонки позиционно, поэтому пропущенная константа даст не ошибку компиляции, а расползание значений по полям во время выполнения.
+Правка схемы тянет обвязку: поля в `MemoryRecord` ([memory_store.rs:74-86](../../crates/evohime-local-storage/src/memory_store.rs:74)) и все четыре SQL-константы `INSERT` / `SELECT_BY_ID` / `SEARCH` / `LIST` ([memory_store.rs:183-201](../../crates/evohime-local-storage/src/memory_store.rs:183)) перечисляют колонки позиционно, поэтому пропущенная константа даст не ошибку компиляции, а расползание значений по полям во время выполнения.
+
+Точнее: колонки перечислены поимённо, а не через `*`, поэтому сама по себе новая колонка ничего не ломает. Ломает рассинхронизация — общий парсер строки читает поля по позициям, и если новые колонки добавлены в `SEARCH`, но забыты в `LIST`, значения разъедутся на runtime. Значит все четыре константы правятся **вместе** с `MemoryRecord`, одним изменением.
+
+**Заодно чинится порядок выдачи.** Существующий `SEARCH` заканчивается на `ORDER BY id ASC LIMIT ?5` ([memory_store.rs:197](../../crates/evohime-local-storage/src/memory_store.rs:197)): при лимите K из тысячи подходящих записей вернутся те, у которых лексикографически меньший `id`, — то есть, по сути, случайные. Для общего Memory v1 это терпимо, для уроков — нет: Ева каждый раз получала бы одну и ту же произвольную пятёрку и никогда не увидела бы часто подтверждаемый урок.
+
+Поэтому добавляется **пятая** константа `SEARCH_LESSONS` с `ORDER BY confirmations DESC, created_at DESC, id ASC`. Порядок и фильтры существующего `SEARCH` при этом не меняются — на них опираются контрактные тесты Memory v1; он лишь получает новые колонки наравне с остальными тремя.
 
 ### 11.2. Pre-task retrieval
 
-Перед первой итерацией: lexical-поиск по промпту в scope из 11.0, top-K (K = 5, bounded по символам) записей класса «урок». Результат вставляется отдельным system-сообщением с явной пометкой, что это прошлый опыт, а не факт о текущем состоянии кода, и что он подлежит проверке.
+Перед первой итерацией: lexical-поиск по промпту в scope из 11.0, K = 5 записей класса «урок», bounded по символам. Это не «top-K по релевантности»: `LIKE` не даёт скоринга, поэтому порядок задаёт запрос из 11.1 — сначала самые подтверждённые, потом самые свежие. Называть это ранжированием по смыслу нельзя, и в trace надо писать именно тот порядок, который применён. Результат вставляется отдельным system-сообщением с явной пометкой, что это прошлый опыт, а не факт о текущем состоянии кода, и что он подлежит проверке.
 
 Пустой результат, недоступная БД или ошибка поиска не блокируют задачу — retrieval деградирует молча, с записью в trace.
 
@@ -607,7 +686,11 @@ impl RecentToolCalls {
 
 Формат урока детерминированный, собирается Core из метрик прогона волны V, **не** свободным текстом от модели: иначе память превращается в канал самовнушения. `provenance` = `task:<task_id>`, `privacy` — самый строгий из доступных, `expires_at` = +30 дней (в пределах `MAX_TTL_MS` = 31 день из `memory_domain`).
 
-**О редактировании секретов.** `MemoryStoreSql::insert` уже применяет `redact_sensitive` ([memory_store.rs:157](../../crates/evohime-local-storage/src/memory_store.rs:157)) — новый механизм не нужен, нужен трезвый взгляд на существующий. Он работает по префиксам токенов, разбитых по пробелам, и применяется **только к `content`**, но не к `title`. Значит `--token=abc` и `Authorization:Bearer x` он не поймает, а `title` не защищён вовсе.
+**О редактировании секретов.** `redact_sensitive` в крейте уже есть ([memory_store.rs:157-177](../../crates/evohime-local-storage/src/memory_store.rs:157)) — новый механизм не нужен, нужен трезвый взгляд на существующий. Три ограничения, каждое существенное:
+
+- он применяется **не в `insert`**, а в конструкторе `MemoryRecord::new` ([memory_store.rs:105](../../crates/evohime-local-storage/src/memory_store.rs:105)) — и только к `content`;
+- поля `MemoryRecord` публичные ([memory_store.rs:74-86](../../crates/evohime-local-storage/src/memory_store.rs:74)), поэтому запись, собранная структурным литералом, минует редактирование целиком. Урок обязан строиться через `new`, и это утверждение должно быть тестом, а не договорённостью;
+- он режет по префиксам пробельных токенов (`bearer`, `sk-`, `ghp_`, `github_pat_`, `api_key=`, `token=`, плюс всё с `@`), поэтому `--token=abc` и `Authorization:Bearer x` он не поймает, а `title` не защищён вовсе.
 
 Отсюда правило, а не надежда на фильтр: в урок не попадает ни полный argv, ни stdout/stderr, ни содержимое файлов. Только имена инструментов, классы ошибок, workspace-relative пути и форма команды. `redact_sensitive` остаётся вторым рубежом, а не первым.
 
@@ -631,9 +714,14 @@ impl RecentToolCalls {
 
 ### 12.1. Ретрай оборванного стрима
 
-[retry.rs](../../crates/model-gateway/src/retry.rs) покрывает только запрос до первого SSE-токена. Обрыв в середине генерации теряет всю итерацию.
+Ретрай живёт не в `retry.rs` (там только политика: `is_retryable_status`, `parse_retry_after_seconds`, `compute_backoff`), а в цикле провайдера ([literouter.rs:131-176](../../crates/model-gateway/src/providers/literouter.rs:131)). Этот цикл покрывает **только `send()`** — до получения статуса и заголовков. Всё, что после, уже вне ретрая:
 
-- **в `ToolAgent`** повтор безопасен всегда: `chat_with_tools_for_route` → `chat_with_tools` возвращает целый `ChatResult` ([lib.rs:266](../../crates/model-gateway/src/lib.rs:266)), частично применённого состояния не возникает, наружу ничего не ушло, инструменты запускаются после получения ответа целиком. Нужен только предел числа повторов на задачу;
+- для tool-пути это чтение тела `response.json()` ([literouter.rs:364-367](../../crates/model-gateway/src/providers/literouter.rs:364)) — обрыв соединения на этом шаге отдаёт `ProviderError::Api` и теряет всю итерацию;
+- для потокового пути — собственно SSE-поток.
+
+Отсюда разные решения:
+
+- **в `ToolAgent`** повтор безопасен всегда: провайдерский `chat_with_tools` ([providers/mod.rs:156](../../crates/model-gateway/src/providers/mod.rs:156), реализация [literouter.rs:341](../../crates/model-gateway/src/providers/literouter.rs:341)) возвращает целый `ChatResult` ([tools.rs:77](../../crates/model-gateway/src/tools.rs:77)), Core вызывает его через `chat_with_tools_for_route` ([lib.rs:266](../../crates/model-gateway/src/lib.rs:266)); частично применённого состояния не возникает, наружу ничего не ушло, инструменты запускаются после получения ответа целиком. Нужен только предел числа повторов на задачу;
 - **в потоковом чат-агенте** повтор итерации целиком недопустим: часть текста уже ушла пользователю событиями `AssistantDelta`, и повторная генерация выдаст в UI дубль. Здесь либо продолжение с уже отданного префикса, либо честное сообщение об обрыве — но не молчаливый повтор.
 
 Различие между агентами — причина, по которой ретрай нельзя реализовать целиком внутри `retry.rs`: слой gateway не знает, ушли ли дельты в UI. Решение о повторе принимает вызывающий агент.
@@ -642,9 +730,13 @@ impl RecentToolCalls {
 
 ### 12.2. Различать классы 429
 
-`is_retryable_status` считает все 429 одинаковыми. При троттлинге 190 запросов/час (коммит `467ca1a`) «подожди секунду» и «квота исчерпана» требуют разных решений.
+`is_retryable_status` ([retry.rs:48-49](../../crates/model-gateway/src/retry.rs:48)) считает все 429 одинаковыми. При троттлинге 190 запросов/час (коммит `467ca1a`, гейт `wait_for_request_slot`) «подожди секунду» и «квота исчерпана» требуют разных решений.
 
 Правило: явный признак исчерпания (заголовок/тело провайдера) → без ретраев, переключение маршрута через `routing_runtime` или честная остановка с сообщением хозяину. При неоднозначности — ограниченный backoff (не более 2 попыток, с учётом `Retry-After`), и только после их исчерпания — трактовка как исчерпание квоты.
+
+**Не только 429.** Рядом уже живёт вторая ветка того же смысла: 403 с текстом `rate limit` ([literouter.rs:150-151](../../crates/model-gateway/src/providers/literouter.rs:150)) — провайдер отдаёт троттлинг под другим статусом. Классификация обязана покрывать обе, иначе половина реальных случаев пройдёт мимо новой логики.
+
+**Попутный дефект.** В той же ветке `retry_after` разбирается ([literouter.rs:148](../../crates/model-gateway/src/providers/literouter.rs:148)), но для `rate_limited` отбрасывается ради жёстких `Duration::from_secs(5)` ([literouter.rs:155-159](../../crates/model-gateway/src/providers/literouter.rs:155)). То есть провайдер говорит «вернись через 60 секунд», а Ева приходит через 5 и тратит попытку впустую. `Retry-After` должен учитываться в обеих ветках.
 
 Дефолт «сразу считать исчерпанием» отвергнут: он превращает обычный transient rate-limit в отказ задачи, то есть регрессию относительно текущего поведения.
 
@@ -753,6 +845,11 @@ approval { approval_id, run_id, effect_id, requested_action, risk_class,
 `Evidence`: `evidence_id`, `run_id`, `work_item_id`, `kind`, `source`, `producer`, `command`, `exit_code`, `artifact_hash`, `input_hash`, `baseline_hash`, `verification_status`, `verifier`, `summary`, `captured_at`. Evidence бывает `claimed` или `verified`; сообщение модели «tests passed» не считается verified без фактического command/exit code. Виды: `test_result`, `diff`, `build`, `lint`, `screenshot`, `citation`, `manual_review`.
 
 IPC mutating commands используют durable bounded deduplication: `(request_id, client/session identity) → command_hash → committed_result`. Повтор того же запроса возвращает тот же результат; тот же `request_id` с другим payload — protocol error. MVP IPC surface: `CreateTask`, `UpdateTask`, `AddEdge`, `RemoveEdge`, `GetGraph`, `StartRun`, `StopRun`, `ResumeRun` и соответствующие events/acks.
+
+Два правила совместимости действуют постоянно, а не только в 0a:
+
+- **Envelope и размер.** Конверт несёт `request_id`, client/session identity, `core_instance_id`, `session_epoch`, `event_sequence`, `capabilities`; фрейм ограничен 4 MiB. Oversized payload отклоняется с диагностикой; chunking protocol сознательно отложен и вводится отдельным решением, а не по месту. Reader терпит неизвестные поля, новые enum-значения имеют `UNKNOWN`, ломающая семантика получает новую версию message/command.
+- **Миграции.** Новые nullable/defaulted поля не ломают старый Core; destructive schema change идёт отдельной миграцией с compatibility window и backup.
 
 **Роли и skills.**
 
@@ -971,7 +1068,11 @@ Reducer UI хранит только `last_known_good_snapshot` и послед�
 | **Память агента** (волна VI) и Memory v1 этапа 6 | Волна VI — wiring существующего контракта в цикл. Этап 6 добавляет API/UI/extraction поверх, не переписывая scope и lesson-формат. |
 | **Audit trail** — `ApprovalAuditEntry` (6.4) и bounded audit contract этапа 7 | В волне I аудит не расширяется, потому что sink мёртвый. Расширение и подключение — одной задачей в этапе 7. |
 | **Permission-правила** и `PolicySnapshot` этапов 0a/4 | `permissions.json` — источник истины для правил. Когда run-snapshot начнёт фиксировать effective permissions, в него кладётся **hash** активного `PolicyRuleSet`, а не копия правил и не второе хранилище. |
-| **Разбор команды** — delivery-gate (10.3) и урок памяти (11.3) | Один парсер, объявленный в 10.3. |
+| **Разбор команды** — политика (6.4), сам инструмент (`shell::execute`), delivery-gate (10.3), урок памяти (11.3) | Четыре потребителя, один резолвер `shell::resolve_invocation` из 6.4. Он появляется первым по порядку выполнения, поэтому 10.3 и 11.3 его переиспользуют, а не переизобретают. Расхождение здесь означает, что политика проверяет одно, а исполняется другое. |
+| **Блок-лист интерпретаторов** (6.7) и правила политики | Блок-лист — в инструменте, правила — в политике. Первый закрывает то, что нельзя разрешать никому, вторые — решение владельца. Не переносить одно в другое: правило `pwsh*` не спасёт, если инструмент сам согласился запустить интерпретатор. |
+| **Ранжирование выдачи памяти** (11.1/11.2) и Memory v1 `SEARCH` этапа 6 | Семантику существующего `SEARCH` не трогаем — на ней контрактные тесты; для уроков заводится пятая константа `SEARCH_LESSONS`. Новые колонки при этом получают все константы сразу, иначе позиционный парсер разъедется. |
+| **Привязка approval** (6.5) и `intent_hash` этапа 2/13.3 | `call_hash` волны I — локальный предшественник `intent_hash`. Когда появится полный `intent_hash` (command + diff + scope + risk_class + effective_permissions_hash), `call_hash` становится его частью, а не вторым независимым механизмом. |
+| **`patch context mismatch`** (8.1) и запрет текстовых эвристик (волна II) | Признак типизируется на стороне `filesystem.patch`; до этого подстрока живёт как явно помеченное исключение, а не как забытый хвост. |
 | **Verified evidence** этапа 2/3 и delivery-gate (10.3) | Одно определение «проверено»: фактическая команда + `exit_code = 0`. Сообщение модели не является evidence ни там, ни там. |
 
 **Нумерация миграций схемы.** Номера выдаются в порядке фактической реализации, а не в порядке разделов:
@@ -1030,7 +1131,7 @@ git diff --check
 Ручные прогоны:
 
 - `.\start-dev.ps1` с задачей, требующей мутации и верификации; сверка `core.jsonl` на события эскалации и запись урока (волны II–VI);
-- `permissions.json` с правилом `{"permission":"shell_execute","pattern":"rm *","mode":"deny"}` в `%LOCALAPPDATA%\EvoHime`, задача, требующая `rm`, — вызов отклонён без диалога approval (волна I).
+- `permissions.json` в `%LOCALAPPDATA%\EvoHime` с тремя правилами — `{"permission":"shell_execute","pattern":"rm *","mode":"deny"}`, `{"permission":"git_write","pattern":"git push*","mode":"deny"}`, `{"permission":"shell_execute","pattern":"pwsh*","mode":"deny"}` — и три задачи: требующая `rm`, требующая `git.push`, требующая `pwsh`. Все три вызова отклонены без диалога approval (волна I). Проверка именно тройная: `rm` идёт через shell-subject, `git push` — через синтезированный subject другого permission, `pwsh` — через путь, который до правки блок-листа проходил насквозь.
 
 Минимальный шаблон тест-кейса:
 
@@ -1070,6 +1171,9 @@ MVP acceptance tests:
 | Две миграции схемы (11 и 12) со связанной нумерацией | средняя | высокое | транзакционность, backup, тесты идемпотентности обеих, явная таблица номеров в разделе 14 |
 | Накопление kill-switch флагов | высокая | среднее | снятие флага — обязательный пункт закрытия волны |
 | Ложное чувство защищённости от `*.env → deny` | средняя | высокое | ограничения задокументированы в 6.7, фильтрация результатов `filesystem.search` — отдельная задача |
+| Subject политики расходится с фактически исполняемой командой | высокая | критическое | один резолвер `shell::resolve_invocation` на инструмент и на политику (6.4); тест на форму `cd X && …` |
+| Блок-лист интерпретаторов отстаёт от изобретательности | высокая | высокое | блок-лист расширяется в волне I и покрыт тестом, но не считается достаточным: правила пишутся и на интерпретаторы (6.7) |
+| Approval переиспользуется для другого вызова того же инструмента | средняя | критическое | сверка по `call_hash` всего канонизированного `input`, а не по трём полям (6.5) |
 | Этап 0 трека B становится бесконечным | высокая | критическое | MVP-1 после 0a+1, timeboxed 0a/0b, перенос расширенного recovery в 0c |
 | IPC Rust/C# несовместим | средняя | высокое | mini-spec, negotiated capabilities, fixtures в CI |
 | Двойной side effect после crash | средняя | критическое | RunEffect, idempotency key, unknown/reconciliation, approval |
@@ -1130,7 +1234,8 @@ Hard deadline: 0a и 0b имеют timeboxed implementation window; по ист�
 1. Scope памяти — `Project` по хешу workspace (принято как рабочий дефолт в 11.0) или что-то шире, чтобы опыт переносился между репозиториями?
 2. Показывать ли извлечённые уроки в UI перед стартом задачи (прозрачность) или держать только в контексте модели?
 3. Нужен ли approval на запись урока, или запись в локальную БД безопасна по умолчанию?
-4. Дефолтный `permissions.json` для этой машины: класть ли туда `rm *` / `git push*` → `deny` сразу, или оставить только встроенный запрет `.env`?
+4. Дефолтный `permissions.json` для этой машины: класть ли туда `{"shell_execute": "rm *"}`, `{"git_write": "git push*"}` и `{"shell_execute": "pwsh*"}` → `deny` сразу, или оставить только встроенный запрет `.env`? Правило про push прямо соответствует твоему «push только по прямому запросу», но сделает `git.push` недоступным вообще, пока правило не убрано — `deny` не снимается ни approval'ом, ни грантом.
+5. Расширять ли блок-лист интерпретаторов в `shell.execute` до `pwsh`/`pwsh.exe`/`wsl` (6.7)? Собственный тест инструмента запускает `pwsh.exe`, значит его придётся переписать — это осознанная поломка существующего теста, а не случайная.
 
 ---
 
@@ -1209,3 +1314,48 @@ Hard deadline: 0a и 0b имеют timeboxed implementation window; по ист�
 - достаточно ли порогов 2/3/5 при бюджете в 16 итераций — проверяется метриками волны V на реальных прогонах;
 - окупается ли pre-task retrieval (K = 5) ростом контекста — измеряется числом итераций до успеха;
 - насколько часто shadow-режим 10.3 расходится со старой эвристикой — это и есть критерий готовности к строгому режиму.
+
+---
+
+## Приложение Б — ревью мастер-плана (сверка с кодом, 2026-08-12)
+
+Четыре раунда после объединения: сверка каждого утверждения с репозиторием, внутренняя связность, полнота относительно четырёх источников, состязательное чтение. Блокирующие находки помечены **[B]**.
+
+### Расхождения с кодом (исправлены в тексте)
+
+| # | Было | Стало |
+| --- | --- | --- |
+| 1 | `lib.rs` 5097 строк | 5103; формулировка сделана нестареющей |
+| 2 | `mod tests` 4537, `ApprovalRequired` 2191, delivery-gate 2095, дедуп 2074, подсказка 2270 | 4538, 2192, 2091–2126, 2075–2082, 2271–2284 |
+| 3 | Core-обёртки памяти `lib.rs:1208` | `save_memory` на 1206 |
+| 4 | таблица `runs` в `local-storage/lib.rs:810` | 1587 |
+| 5 | `ChatResult` в `model-gateway/src/lib.rs:266` | `tools.rs:77`; 266 — это `chat_with_tools_for_route`, сам `chat_with_tools` — метод трейта в `providers/mod.rs:156` |
+| 6 | раздел `docs/architecture.md` «Данные и восстановление», строка 26 | «Данные, диагностика и восстановление», строка 30, проза на 32 |
+| 7 | шесть тестов с литералом `PermissionCheck` | 8 литералов; перечисление заменено на счёт и ссылки |
+| 8 | `redact_sensitive` применяется в `MemoryStoreSql::insert` | применяется в `MemoryRecord::new`, только к `content`; поля структуры публичные, литерал минует редактирование целиком |
+
+### Содержательные находки
+
+| # | Находка | Правка |
+| --- | --- | --- |
+| 9 | **[B]** Subject из сырой строки `command` расходится с исполняемым: `shell.execute` сам срезает префикс `cd X &&` и запускает остаток, поэтому `deny` на `rm *` обходится записью `cd sub && rm -rf x` | 6.4 — общий `shell::resolve_invocation` для инструмента и для политики; subject = фактические program + args |
+| 10 | **[B]** `git.commit` / `git.push` / `git.pull` — отдельные инструменты с `GitWrite`, их subject не содержит глагола; правило `git push*` не совпало бы никогда, а это первое правило, которое напишет хозяин | 6.4 — синтез subject для git-инструментов, пример конфига с `git_write` |
+| 11 | **[B]** Сверка approval по `tool_name + scope + command` пропускает подмену остального `input`: одобренный `git.commit` исполняет любое сообщение, одобренная запись файла — любое содержимое | 6.5 — сверка по `call_hash` канонизированного `input`; `call_hash` объявлен предшественником `intent_hash` |
+| 12 | Утверждение «`cmd /c rm` проходит мимо политики» неверно: интерпретаторы уже блокируются самим инструментом. Настоящая дыра в другом — в блок-листе нет `pwsh`/`pwsh.exe`, и собственный тест инструмента запускает именно `pwsh.exe` | 6.7 — текст исправлен, расширение блок-листа внесено в объём волны I, вопрос вынесен хозяину |
+| 13 | `scope_from_input` для формы `command: "cd sub && …"` даёт `"workspace"`, хотя исполнение идёт в `sub` — хозяин видит в approval не тот каталог | 6.4 — scope берётся из того же резолвера |
+| 14 | «15 из 17 инструментов» устарело: диспетчер разбирает 23 инструментальных арма по 13 модулям, результат строится и через хелперы; поздние `mcp.call`, `agent.run`, `browser*` исходный план не видел | 7.2 — задача переформулирована как аудит всех мест построения `ToolResult` |
+| 15 | Верификационная эвристика живёт в двух блоках (выставление и снятие флагов) плюс `diff_check_passed`; правка одного блока даёт неснимаемый флаг | 10.3 — правятся оба, `echo "git diff --check"` назван явно |
+| 16 | `patch context mismatch` — существующая подстроковая подсказка, то есть исключение из запрета текстовых эвристик, которое план молча оставлял | 8.1 — признак типизируется, до тех пор помечен как явное исключение |
+| 17 | `SEARCH` в памяти — `LIKE` + `ORDER BY id ASC`, поэтому «top-K = 5» вернул бы произвольную пятёрку и никогда — часто подтверждаемый урок | 11.1 — пятая константа `SEARCH_LESSONS` с `ORDER BY confirmations DESC` |
+| 18 | Собственное противоречие после правки 17: «`SEARCH` не меняем» против «все четыре константы правятся вместе» | 11.1 — не меняется семантика, колонки получают все четыре |
+| 19 | `Denied` объединяет три разных отказа (политика, хозяин, эскалация) с противоположными подсказками: постоянный против окна в две итерации | 7.1 и 8.1 — `DenialSource` и три ветки подсказки |
+| 20 | `rules_path()` завёл бы четвёртую копию вывода data dir, расходящуюся с `main.rs` уже сегодня (там путь нормализуется) | 6.6 — `data_dir` передаётся параметром |
+| 21 | Ретрай описан в терминах SSE, хотя tool-путь не потоковый; неретраится на самом деле чтение тела `response.json()` | 12.1 — формулировка по факту кода |
+| 22 | Троттлинг приходит не только как 429: рядом есть ветка 403 + `rate limit`, и в ней разобранный `Retry-After` отбрасывается ради жёстких 5 секунд | 12.2 — обе ветки в объёме, отбрасывание `Retry-After` названо дефектом |
+| 23 | Потеряны при слиянии: правило про oversized payload/chunking, правило forward-compatible миграций, семантика `[]` в конфиге, guard `bootstrap_registers_filesystem_read` | 13.3, 6.6, 6.4 — восстановлены |
+
+### Что осталось осознанно непроверенным
+
+- Поведение `resolve_invocation` на экзотических формах входа (`command` с несколькими `&&`, кавычками, переменными окружения) — проверяется тестами при реализации, не чтением.
+- Полнота блок-листа интерпретаторов — принципиально неполна; вопрос в том, где остановиться, и он вынесен хозяину.
+- Стоимость `call_hash` на больших `input` (например, `filesystem.write` с мегабайтным содержимым) — замеряется при реализации; если окажется дорого, хешируется потоково, но сверка остаётся по всему вводу.
