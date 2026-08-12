@@ -189,10 +189,10 @@ impl ToolOutcome {
         let kind = match &error {
             ToolError::NotFound { .. } => ToolFailureKind::NotFound,
             ToolError::InvalidInput { .. } => ToolFailureKind::InvalidInput,
-            ToolError::PermissionDenied(_)
-            | ToolError::NeedsApproval { .. }
-            | ToolError::ApprovalMismatch
-            | ToolError::ApprovalDenied => ToolFailureKind::Denied(DenialSource::Policy),
+            ToolError::PermissionDenied(_) => ToolFailureKind::Denied(DenialSource::Policy),
+            ToolError::NeedsApproval { .. } => ToolFailureKind::Denied(DenialSource::Policy),
+            ToolError::ApprovalMismatch => ToolFailureKind::Denied(DenialSource::Policy),
+            ToolError::ApprovalDenied => ToolFailureKind::Denied(DenialSource::User),
             ToolError::TimedOut(_) => ToolFailureKind::Timeout,
             ToolError::Execution(_) | ToolError::UnknownTool(_) => ToolFailureKind::Execution,
         };
@@ -226,7 +226,65 @@ fn semantic_failure(structured: &Value) -> Option<ToolFailureKind> {
     if structured.get("status").and_then(Value::as_str) == Some("nothing_to_commit") {
         return Some(ToolFailureKind::Execution);
     }
+    if let Some(ok_flag) = structured.get("ok").and_then(Value::as_bool) {
+        if !ok_flag {
+            return Some(ToolFailureKind::Execution);
+        }
+    }
     None
+}
+
+/// Классифицирует результат инструмента согласно приоритетной логике.
+///
+/// Порядок классификации:
+/// 1. ToolError::NotFound → ok=false, kind=NotFound
+/// 2. ToolError::InvalidInput → ok=false, kind=InvalidInput
+/// 3. ToolError::PermissionDenied → ok=false, kind=Denied(Policy)
+/// 4. ToolError::TimedOut → ok=false, kind=Timeout
+/// 5. exit_code != 0 → ok=false, kind=NonZeroExit
+/// 6. structured["ok"] exists → ok = structured["ok"]
+/// 7. Иначе → ok=true
+pub fn classify_tool_outcome(
+    result: Result<ToolResult, ToolError>,
+    output: String,
+) -> ToolOutcome {
+    match result {
+        Ok(tool_result) => {
+            // Начинаем с успешного результата, затем проверяем семантические ошибки
+            let kind = semantic_failure(&tool_result.structured);
+            ToolOutcome {
+                ok: kind.is_none(),
+                kind,
+                output,
+                structured: tool_result.structured,
+            }
+        }
+        Err(error) => {
+            // Приоритетная классификация ошибок
+            let kind = match &error {
+                // Приоритет 1: NotFound
+                ToolError::NotFound { .. } => ToolFailureKind::NotFound,
+                // Приоритет 2: InvalidInput
+                ToolError::InvalidInput { .. } => ToolFailureKind::InvalidInput,
+                // Приоритет 3: PermissionDenied
+                ToolError::PermissionDenied(_) => ToolFailureKind::Denied(DenialSource::Policy),
+                // Приоритет 4: TimedOut
+                ToolError::TimedOut(_) => ToolFailureKind::Timeout,
+                // Остальное: Execution или специфичные отказы
+                ToolError::NeedsApproval { .. } => ToolFailureKind::Denied(DenialSource::Policy),
+                ToolError::ApprovalMismatch => ToolFailureKind::Denied(DenialSource::Policy),
+                ToolError::ApprovalDenied => ToolFailureKind::Denied(DenialSource::User),
+                ToolError::Execution(_) | ToolError::UnknownTool(_) => ToolFailureKind::Execution,
+            };
+
+            ToolOutcome {
+                ok: false,
+                kind: Some(kind),
+                output,
+                structured: Value::Null,
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -294,5 +352,140 @@ mod tests {
         });
         assert!(!outcome.ok);
         assert_eq!(outcome.kind, Some(ToolFailureKind::Execution));
+    }
+
+    // === Тесты для classify_tool_outcome ===
+
+    #[test]
+    fn classify_toolerror_notfound_priority_1() {
+        let outcome = classify_tool_outcome(
+            Err(ToolError::NotFound {
+                tool: "filesystem.read".into(),
+                path: "missing.txt".into(),
+                hint: "файл не найден".into(),
+            }),
+            "resource not found for filesystem.read: missing.txt".into(),
+        );
+        assert!(!outcome.ok);
+        assert_eq!(outcome.kind, Some(ToolFailureKind::NotFound));
+    }
+
+    #[test]
+    fn classify_toolerror_invalidinput_priority_2() {
+        let outcome = classify_tool_outcome(
+            Err(ToolError::InvalidInput {
+                tool: "shell.execute".into(),
+                message: "program is required".into(),
+            }),
+            "invalid input for shell.execute: program is required".into(),
+        );
+        assert!(!outcome.ok);
+        assert_eq!(outcome.kind, Some(ToolFailureKind::InvalidInput));
+    }
+
+    #[test]
+    fn classify_permissiondenied_priority_3() {
+        use evohime_permissions::Permission;
+        let outcome = classify_tool_outcome(
+            Err(ToolError::PermissionDenied(Permission::ShellExecute)),
+            "permission denied: ShellExecute".into(),
+        );
+        assert!(!outcome.ok);
+        assert_eq!(
+            outcome.kind,
+            Some(ToolFailureKind::Denied(DenialSource::Policy))
+        );
+    }
+
+    #[test]
+    fn classify_shell_timedout_priority_4() {
+        let outcome = classify_tool_outcome(
+            Err(ToolError::TimedOut(Duration::from_secs(30))),
+            "tool timed out after 30s".into(),
+        );
+        assert!(!outcome.ok);
+        assert_eq!(outcome.kind, Some(ToolFailureKind::Timeout));
+    }
+
+    #[test]
+    fn classify_shell_execute_exit_code_nonzero_priority_5() {
+        let outcome = classify_tool_outcome(
+            Ok(ToolResult {
+                output: "command failed".into(),
+                structured: json!({
+                    "exit_code": 1,
+                    "stdout": "out",
+                    "stderr": "compilation error"
+                }),
+            }),
+            "command failed".into(),
+        );
+        assert!(!outcome.ok);
+        assert_eq!(outcome.kind, Some(ToolFailureKind::NonZeroExit));
+    }
+
+    #[test]
+    fn classify_filesystem_read_success_ok_true() {
+        let outcome = classify_tool_outcome(
+            Ok(ToolResult {
+                output: "file content here".into(),
+                structured: json!({"path": "src/main.rs"}),
+            }),
+            "file content here".into(),
+        );
+        assert!(outcome.ok);
+        assert_eq!(outcome.kind, None);
+    }
+
+    #[test]
+    fn classify_git_commit_nothing_to_commit() {
+        let outcome = classify_tool_outcome(
+            Ok(ToolResult {
+                output: "nothing to commit, working tree clean".into(),
+                structured: json!({"status": "nothing_to_commit"}),
+            }),
+            "nothing to commit, working tree clean".into(),
+        );
+        assert!(!outcome.ok);
+        assert_eq!(outcome.kind, Some(ToolFailureKind::Execution));
+    }
+
+    #[test]
+    fn classify_approval_denied_by_user() {
+        let outcome = classify_tool_outcome(
+            Err(ToolError::ApprovalDenied),
+            "approval was denied for this call".into(),
+        );
+        assert!(!outcome.ok);
+        assert_eq!(
+            outcome.kind,
+            Some(ToolFailureKind::Denied(DenialSource::User))
+        );
+    }
+
+    #[test]
+    fn classify_structured_ok_flag_false() {
+        let outcome = classify_tool_outcome(
+            Ok(ToolResult {
+                output: "operation did not complete as expected".into(),
+                structured: json!({"ok": false, "reason": "validation failed"}),
+            }),
+            "operation did not complete as expected".into(),
+        );
+        assert!(!outcome.ok);
+        assert_eq!(outcome.kind, Some(ToolFailureKind::Execution));
+    }
+
+    #[test]
+    fn classify_structured_ok_flag_true() {
+        let outcome = classify_tool_outcome(
+            Ok(ToolResult {
+                output: "success".into(),
+                structured: json!({"ok": true}),
+            }),
+            "success".into(),
+        );
+        assert!(outcome.ok);
+        assert_eq!(outcome.kind, None);
     }
 }

@@ -17,6 +17,7 @@ use std::{
 };
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
+use tracing;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -303,6 +304,11 @@ impl PermissionEngine {
             .unwrap_or_else(|| "workspace".to_string());
         let policy_mode = self.policy_rules.read().await.resolve(permission, &subject);
         if policy_mode == Some(PermissionMode::Deny) {
+            tracing::trace!(
+                permission = ?permission,
+                subject = ?subject,
+                "permission denied by hard policy rule"
+            );
             return PermissionDecision::Denied;
         }
 
@@ -311,6 +317,13 @@ impl PermissionEngine {
                 .find_path_mode(permission, &path, check.session_id)
                 .await
             {
+                tracing::trace!(
+                    permission = ?permission,
+                    path = ?path,
+                    session_id = ?check.session_id,
+                    mode = ?mode,
+                    "permission resolved by path grant"
+                );
                 return mode_to_decision(mode);
             }
         }
@@ -323,15 +336,33 @@ impl PermissionEngine {
                 .get(&(session_id, permission))
                 .copied()
             {
+                tracing::trace!(
+                    permission = ?permission,
+                    session_id = ?session_id,
+                    mode = ?mode,
+                    "permission resolved by session override"
+                );
                 return mode_to_decision(mode);
             }
         }
 
         if let Some(mode) = policy_mode {
+            tracing::trace!(
+                permission = ?permission,
+                subject = ?subject,
+                mode = ?mode,
+                "permission resolved by policy rule"
+            );
             return mode_to_decision(mode);
         }
 
-        mode_to_decision(self.mode(permission).await)
+        let mode = self.mode(permission).await;
+        tracing::trace!(
+            permission = ?permission,
+            mode = ?mode,
+            "permission resolved by global mode"
+        );
+        mode_to_decision(mode)
     }
 
     pub async fn create_approval(
@@ -1142,6 +1173,203 @@ mod tests {
                     )
                     .await,
                 PermissionDecision::Denied
+            );
+        });
+    }
+
+    #[test]
+    fn policy_deny_overrides_path_grant() {
+        block_on(async {
+            let session = Uuid::new_v4();
+            let engine = PermissionEngine::new();
+            engine
+                .set_policy_rules(PolicyRuleSet::new(vec![PolicyRule {
+                    permission: Permission::ShellExecute,
+                    pattern: "rm *".into(),
+                    mode: PermissionMode::Deny,
+                }]))
+                .await;
+            engine
+                .set_path_grant(
+                    Permission::ShellExecute,
+                    "workspace",
+                    PermissionMode::Allow,
+                    Some(session),
+                    None,
+                )
+                .await;
+            assert_eq!(
+                engine
+                    .check_scoped(
+                        Permission::ShellExecute,
+                        &PermissionCheck {
+                            session_id: Some(session),
+                            path: Some("workspace"),
+                            command: Some("rm -rf /"),
+                        },
+                    )
+                    .await,
+                PermissionDecision::Denied
+            );
+        });
+    }
+
+    #[test]
+    fn policy_deny_overrides_session_mode() {
+        block_on(async {
+            let session = Uuid::new_v4();
+            let engine = PermissionEngine::new();
+            engine
+                .set_policy_rules(PolicyRuleSet::new(vec![PolicyRule {
+                    permission: Permission::ShellExecute,
+                    pattern: "rm *".into(),
+                    mode: PermissionMode::Deny,
+                }]))
+                .await;
+            engine
+                .set_session_mode(session, Permission::ShellExecute, PermissionMode::Allow)
+                .await;
+            assert_eq!(
+                engine
+                    .check_scoped(
+                        Permission::ShellExecute,
+                        &PermissionCheck {
+                            session_id: Some(session),
+                            path: None,
+                            command: Some("rm target/debug"),
+                        },
+                    )
+                    .await,
+                PermissionDecision::Denied
+            );
+        });
+    }
+
+    #[test]
+    fn path_grant_beats_allow_policy() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            engine
+                .set_policy_rules(PolicyRuleSet::new(vec![PolicyRule {
+                    permission: Permission::FilesystemWrite,
+                    pattern: "docs/*".into(),
+                    mode: PermissionMode::Allow,
+                }]))
+                .await;
+            // Global mode is Ask for FilesystemWrite
+            assert_eq!(
+                engine.mode(Permission::FilesystemWrite).await,
+                PermissionMode::Ask
+            );
+            // Policy rule says Allow
+            assert_eq!(
+                engine
+                    .check_scoped(
+                        Permission::FilesystemWrite,
+                        &PermissionCheck {
+                            session_id: None,
+                            path: Some("docs/readme.md"),
+                            command: None,
+                        },
+                    )
+                    .await,
+                PermissionDecision::Allowed
+            );
+            // But matching path grant takes precedence
+            let session = Uuid::new_v4();
+            engine
+                .set_path_grant(
+                    Permission::FilesystemWrite,
+                    "docs",
+                    PermissionMode::Deny,
+                    Some(session),
+                    None,
+                )
+                .await;
+            assert_eq!(
+                engine
+                    .check_scoped(
+                        Permission::FilesystemWrite,
+                        &PermissionCheck {
+                            session_id: Some(session),
+                            path: Some("docs/readme.md"),
+                            command: None,
+                        },
+                    )
+                    .await,
+                PermissionDecision::Denied
+            );
+        });
+    }
+
+    #[test]
+    fn missing_policy_rule_uses_global_mode() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            engine
+                .set_policy_rules(PolicyRuleSet::new(vec![PolicyRule {
+                    permission: Permission::FilesystemWrite,
+                    pattern: "secrets/*".into(),
+                    mode: PermissionMode::Deny,
+                }]))
+                .await;
+            // Matching rule denies
+            assert_eq!(
+                engine
+                    .check_scoped(
+                        Permission::FilesystemWrite,
+                        &PermissionCheck {
+                            session_id: None,
+                            path: Some("secrets/key.env"),
+                            command: None,
+                        },
+                    )
+                    .await,
+                PermissionDecision::Denied
+            );
+            // Non-matching path falls back to global mode (Ask for FilesystemWrite)
+            assert_eq!(
+                engine
+                    .check_scoped(
+                        Permission::FilesystemWrite,
+                        &PermissionCheck {
+                            session_id: None,
+                            path: Some("src/main.rs"),
+                            command: None,
+                        },
+                    )
+                    .await,
+                PermissionDecision::NeedsApproval
+            );
+        });
+    }
+
+    #[test]
+    fn command_field_defaults_to_none_in_existing_checks() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let session = Uuid::new_v4();
+            engine
+                .set_path_grant(
+                    Permission::FilesystemWrite,
+                    "docs",
+                    PermissionMode::Allow,
+                    Some(session),
+                    None,
+                )
+                .await;
+            // Existing code using PermissionCheck without command should still work
+            let check = PermissionCheck {
+                session_id: Some(session),
+                path: Some("docs/readme.md"),
+                // command is not specified, defaults to None
+                ..Default::default()
+            };
+            assert_eq!(
+                engine
+                    .check_scoped(Permission::FilesystemWrite, &check)
+                    .await,
+                PermissionDecision::Allowed
             );
         });
     }

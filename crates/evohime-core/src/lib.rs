@@ -707,6 +707,7 @@ pub mod research_fetch;
 pub mod research_pipeline;
 pub mod scope;
 pub mod task_memory;
+pub use task_memory::project_scope_id;
 pub mod workflow;
 pub mod workflow_runner;
 pub mod workspace;
@@ -4914,8 +4915,8 @@ fn unresolved_permissions_probe(approval_required: bool) -> crate::doctor::Permi
 #[cfg(test)]
 mod tests {
     use super::{
-        AgentRunError, CoreCommand, CoreEvent, CoreVersion, EventJournal, ModelAgent,
-        TaskCoordinator, TaskExecutor, ToolAgent,
+        recovery, AgentRunError, ApprovalCoordinator, CoreCommand, CoreEvent, CoreVersion,
+        EventJournal, ModelAgent, TaskCoordinator, TaskExecutor, ToolAgent,
     };
     use evohime_model_gateway::{
         providers::mock::MockProvider, ChatResult, ModelGateway, NativeToolCall,
@@ -5561,5 +5562,17 @@ mod tests {
         assert_eq!(replay[0].event_type, "task.started");
         assert_eq!(replay[1].event_type, "task.stopped");
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn approval_denied_outcome_has_ok_false() {
+        let outcome = recovery::ToolOutcome::denied_by_user("approval denied: mutation not performed");
+        // Critical: denied_by_user must set ok to false, so mutation_done remains unchanged
+        assert!(!outcome.ok, "denied_by_user must set ok: false to prevent false success");
+        assert_eq!(outcome.output, "approval denied: mutation not performed");
+        assert!(matches!(
+            outcome.kind,
+            Some(recovery::ToolFailureKind::Denied(recovery::DenialSource::User))
+        ));
     }
 }
