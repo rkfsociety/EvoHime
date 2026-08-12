@@ -1,3 +1,4 @@
+use crate::runtime_loop::{SupervisorRuntime, TickEvent};
 use serde_json::json;
 use std::{
     ffi::OsStr,
@@ -29,6 +30,64 @@ use windows_sys::Win32::{
 struct SingleInstance(HANDLE);
 
 struct SupervisorLogger(Mutex<std::io::BufWriter<std::fs::File>>);
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+/// Turns a bounded-contract tick event into the (event, fields) shape used by
+/// `SupervisorLogger::write`, matching the `core.*` structured event style used
+/// elsewhere in this crate.
+fn tick_event_log(event: &TickEvent) -> (&'static str, serde_json::Value) {
+    match event {
+        TickEvent::LifecycleTransition { from, to } => (
+            "runtime.lifecycle_transition",
+            json!({"from": format!("{from:?}"), "to": format!("{to:?}")}),
+        ),
+        TickEvent::LeaseAcquired => ("runtime.lease_acquired", json!({})),
+        TickEvent::LeaseRenewed => ("runtime.lease_renewed", json!({})),
+        TickEvent::LeaseLost => ("runtime.lease_lost", json!({})),
+        TickEvent::HeartbeatRecorded { sequence } => {
+            ("runtime.heartbeat_recorded", json!({"sequence": sequence}))
+        }
+        TickEvent::RecoveryDecision(decision) => (
+            "runtime.recovery_decision",
+            json!({"decision": format!("{decision:?}")}),
+        ),
+        TickEvent::RetryScheduled {
+            attempts,
+            next_attempt_at_ms,
+        } => (
+            "runtime.retry_scheduled",
+            json!({"attempts": attempts, "next_attempt_at_ms": next_attempt_at_ms}),
+        ),
+        TickEvent::RetryExhausted => ("runtime.retry_exhausted", json!({})),
+        TickEvent::TriggerDecision(decision) => (
+            "runtime.trigger_decision",
+            json!({"decision": format!("{decision:?}")}),
+        ),
+        TickEvent::ScheduleCompleted { next_run_at_ms } => (
+            "runtime.schedule_completed",
+            json!({"next_run_at_ms": next_run_at_ms}),
+        ),
+        TickEvent::ScheduleFailed(decision) => (
+            "runtime.schedule_failed",
+            json!({"decision": format!("{decision:?}")}),
+        ),
+        TickEvent::ScheduleDeadLetter => ("runtime.schedule_dead_letter", json!({})),
+        TickEvent::ScheduleRequeued => ("runtime.schedule_requeued", json!({})),
+    }
+}
+
+fn log_runtime_events(logger: &SupervisorLogger, events: &[TickEvent]) {
+    for event in events {
+        let (name, fields) = tick_event_log(event);
+        let _ = logger.write(name, fields);
+    }
+}
 
 impl SupervisorLogger {
     fn open() -> io::Result<Self> {
@@ -179,16 +238,48 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut restarts = 0;
     let heartbeat_path = core_data_dir().join("core-heartbeat");
 
+    // In-memory bounded scheduler/schedule contracts for this supervisor process's
+    // lifetime (no persistence backing yet). They mirror the real spawn/health/exit
+    // lifecycle of the core process; the restart decision below still owns
+    // `max_restarts`, the contracts only report their own bounded view of it.
+    let watchdog_max_attempts = max_restarts
+        .saturating_add(2)
+        .min(crate::schedule_contract::MAX_ATTEMPTS);
+    let mut runtime = SupervisorRuntime::new(
+        "evohime-core",
+        "evohime-core-watchdog",
+        "evohime-supervisor",
+        StdDuration::from_secs(10),
+        watchdog_max_attempts,
+    )
+    .map_err(|error| -> Box<dyn std::error::Error> { Box::new(error) })?;
+
     loop {
         let _ = logger.write("core.spawn", json!({"restart": restarts}));
+        match runtime.start_generation(now_ms()) {
+            Ok(events) => log_runtime_events(&logger, &events),
+            Err(error) => {
+                let _ = logger.write("runtime.error", json!({"error": error.to_string()}));
+            }
+        }
         let job = JobObject::create()?;
         let mut child = Command::new(&core_exe).kill_on_drop(true).spawn()?;
         job.assign(&child)?;
-        let status = wait_for_core(&mut child, &heartbeat_path, &logger).await?;
+        let status = wait_for_core(&mut child, &heartbeat_path, &logger, &mut runtime).await?;
         let _ = logger.write(
             "core.exit",
             json!({"success": status.success(), "code": status.code()}),
         );
+        match runtime.complete_generation(
+            now_ms(),
+            status.success(),
+            format!("exit code {:?}", status.code()),
+        ) {
+            Ok(outcome) => log_runtime_events(&logger, &outcome.events),
+            Err(error) => {
+                let _ = logger.write("runtime.error", json!({"error": error.to_string()}));
+            }
+        }
         if status.success() || restarts >= max_restarts {
             return Ok(());
         }
@@ -238,12 +329,24 @@ async fn wait_for_core(
     child: &mut tokio::process::Child,
     heartbeat_path: &Path,
     logger: &SupervisorLogger,
+    runtime: &mut SupervisorRuntime,
 ) -> io::Result<std::process::ExitStatus> {
     let started = tokio::time::Instant::now();
     let generation_started_at = SystemTime::now();
     loop {
         if let Some(status) = child.try_wait()? {
             return Ok(status);
+        }
+        let heartbeat_fresh = !heartbeat_is_stale_for_generation(
+            heartbeat_path,
+            generation_started_at,
+            StdDuration::from_secs(5),
+        );
+        match runtime.observe_tick(now_ms(), heartbeat_fresh) {
+            Ok(events) => log_runtime_events(logger, &events),
+            Err(error) => {
+                let _ = logger.write("runtime.error", json!({"error": error.to_string()}));
+            }
         }
         if started.elapsed() > Duration::from_secs(10)
             && heartbeat_is_stale_for_generation(
