@@ -87,7 +87,7 @@ NuGet и crates.io — независимые источники: успешны
 
 ## Документы
 
-- `docs/superpowers/specs/2026-08-04-native-windows-agent-design.md` — архитектура;
-- `docs/superpowers/plans/2026-08-04-native-windows-agent.md` — архитектурный implementation plan;
-- `docs/superpowers/plans/2026-08-04-evohime-shell.md` — актуальный план визуальной native-оболочки;
+- `docs/architecture.md` — архитектура;
+- `docs/development-plan.md` — актуальный implementation plan;
+- `docs/plans/` — рабочие планы и результаты их ревью;
 - `docs/architecture.md` — deployment/runtime overview.

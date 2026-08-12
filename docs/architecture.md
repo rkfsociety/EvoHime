@@ -37,4 +37,4 @@ SQLite находится в `%LOCALAPPDATA%\EvoHime` либо в `EVOHIME_DATA_
 
 Пакет x64 предназначен для Windows 11 22H2+ и содержит только native runtime и его локальные компоненты.
 
-Подробное решение: `docs/superpowers/specs/2026-08-04-native-windows-agent-design.md`.
+Подробное решение и текущие ограничения: этот документ и `docs/development-plan.md`.

@@ -53,4 +53,4 @@ $dotnet = 'C:\Program Files\dotnet\dotnet.exe'
 cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc
 ```
 
-Архитектура и поэтапный план находятся в `docs/superpowers/specs/2026-08-04-native-windows-agent-design.md` и `docs/superpowers/plans/2026-08-04-native-windows-agent.md`.
+Архитектура и поэтапный план находятся в `docs/architecture.md` и `docs/development-plan.md`; рабочие планы — в `docs/plans/`.
