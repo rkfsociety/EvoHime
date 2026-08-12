@@ -1,6 +1,12 @@
 target/
 artifacts/
 .evohime-native/
+
+# Local Codex/plugin build output and removed legacy web workspace.
+.evohime/
+frontend/
+node_modules/
+.launcher-logs/
 desktop/**/bin/
 desktop/**/obj/
 .env
