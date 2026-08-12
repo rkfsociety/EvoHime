@@ -27,8 +27,8 @@
 | `crates/permissions/src/pattern.rs` (создать) | Чистая функция glob-сопоставления `glob_match(pattern, value)`. Без зависимостей от движка. |
 | `crates/permissions/src/policy.rs` (создать) | `PolicyRule`, `PolicyRuleSet`, разрешение «последнее совпавшее правило», дефолтный набор. |
 | `crates/permissions/src/lib.rs` (изменить) | Хранение набора правил в `PermissionEngine`, встраивание в `check_scoped`, поле `command` в `PermissionCheck` и `ApprovalRequest`, правила в snapshot. |
-| `crates/tool-runtime/src/registry.rs` (изменить) | Извлечение нормализованной команды из input и передача её в проверку и в approval. |
-| `crates/evohime-core/src/permission_rules.rs` (создать) | Загрузка `permissions.json` из data dir, seed дефолтного файла, применение к движку. |
+| `crates/tool-runtime/src/registry.rs` (изменить) | Извлечение нормализованной команды из input, передача её в проверку и в approval, а также запрет-проверка на пути после approval. |
+| `crates/evohime-core/src/permission_rules.rs` (создать) | Чтение `permissions.json` из data dir и применение правил к движку. Файл не создаётся автоматически: его отсутствие означает встроенные defaults. |
 | `crates/evohime-core/src/lib.rs` (изменить) | Вызов загрузчика при старте; окно повторов вместо «навсегда» в цикле агента. |
 
 Тесты живут в `#[cfg(test)] mod tests` внутри тех же файлов — так устроен весь код в этих крейтах, отдельных `tests/` директорий не заводим.
@@ -344,7 +344,13 @@ Expected: FAIL на этапе компиляции — `serde_json` не под
 
 - [ ] **Step 3: Добавить недостающую зависимость**
 
-Проверить `crates/permissions/Cargo.toml`. Если `serde_json` отсутствует в `[dev-dependencies]`, добавить туда, взяв версию из корневого workspace-манифеста (использовать `serde_json = { workspace = true }`, если остальные крейты объявляют зависимости так, иначе — ту же строку версии, что в `crates/tool-runtime/Cargo.toml`).
+В `crates/permissions/Cargo.toml` крейт `serde_json` не объявлен вообще — ни в `[dependencies]`, ни в `[dev-dependencies]`. Добавить в `[dev-dependencies]` рядом с `futures-executor`:
+
+```toml
+serde_json = "1"
+```
+
+Версии в этом workspace задаются строкой, а не `workspace = true` (см. тот же манифест), поэтому пишем `"1"`.
 
 - [ ] **Step 4: Запустить тесты и убедиться, что они проходят**
 
@@ -670,7 +676,7 @@ pub struct PermissionScopesSnapshot {
 }
 ```
 
-В `export_scopes` добавить `policy_rules: self.policy_rules().await,`. В начале `import_scopes` — `self.set_policy_rules(snapshot.policy_rules.clone()).await;` (перед разбором `session_overrides`, чтобы ранний `return` из-за пустых грантов не терял правила).
+В `export_scopes` добавить `policy_rules: self.policy_rules().await,`. В начале `import_scopes` — `self.set_policy_rules(snapshot.policy_rules.clone()).await;`. Ставим первой строкой не из-за ранних `return` (их в методе нет), а чтобы правила были применены до того, как метод начнёт заменять гранты: тогда параллельная проверка в момент импорта видит либо старую политику целиком, либо новую, но не «новые гранты со старой политикой».
 
 - [ ] **Step 4: Запустить тесты и убедиться, что они проходят**
 
@@ -941,7 +947,13 @@ fn normalize_command(command: &str) -> Option<String> {
         }
 ```
 
-Затем прогнать `cargo check --workspace` и поправить все прочие места вызова `create_approval_scoped` и литеральной инициализации `PermissionCheck` / `ApprovalRequest` (ожидаются в `crates/tool-runtime/src/registry.rs` в `execute_after_approval` и в `crates/evohime-core/src/ipc_bridge.rs`), добавив `command: None` либо проброс уже вычисленной команды.
+Затем прогнать `cargo check --workspace`. Полный список мест, которые сломаются от новой сигнатуры (проверено по репозиторию — других вызовов нет):
+
+- `crates/permissions/src/lib.rs:314` — обёртка `create_approval`, передать шестым аргументом `None`;
+- `crates/permissions/src/lib.rs:724` — тест `grant_remembers_path_for_session`, добавить `None`;
+- `crates/tool-runtime/src/registry.rs:295` — единственный продуктовый вызов, правится кодом выше.
+
+`crates/evohime-core/src/ipc_bridge.rs` `create_approval_scoped` не вызывает и правки не требует.
 
 - [ ] **Step 4: Запустить тесты и убедиться, что они проходят**
 
@@ -951,25 +963,160 @@ Expected: PASS. Если `bootstrap_registers_filesystem_read` упал на к�
 - [ ] **Step 5: Коммит**
 
 ```bash
-git add crates/permissions/src/lib.rs crates/tool-runtime/src/registry.rs crates/evohime-core/src/ipc_bridge.rs
+git add crates/permissions/src/lib.rs crates/tool-runtime/src/registry.rs
 git commit -m "feat(tools): match permission policy against shell commands"
 ```
 
 ---
 
-### Task 5: Загрузка `permissions.json` из data dir
+### Task 5: Закрыть обход политики через approval-путь
+
+**Files:**
+- Modify: `crates/tool-runtime/src/registry.rs:362-382` (`execute_after_approval`)
+
+**Interfaces:**
+- Consumes: `command_from_input` и `PermissionCheck.command` из Task 4.
+- Produces: публичных сигнатур не меняет.
+
+**Проблема (найдена при ревью плана).** `execute_after_approval` проверяет только то, что approval с таким `approval_id` находится в состоянии `Granted`, после чего исполняет **тот `input`, который передан в вызов**, а не тот, что был сохранён в approval. Ни `check_scoped`, ни правила политики на этом пути не выполняются вовсе. Последствия:
+
+- одобрение, выданное на `cargo test`, годится для исполнения `rm -rf target`, если вызывающий подставит другой `input`;
+- правило `Deny`, добавленное в `permissions.json` между запросом approval и его подтверждением, не сработает.
+
+Без этой задачи вся политика из Tasks 1–4 обходится штатным потоком «агент попросил → хозяин подтвердил».
+
+- [ ] **Step 1: Написать падающий тест**
+
+Добавить в `mod tests` в `crates/tool-runtime/src/registry.rs`:
+
+```rust
+    #[tokio::test]
+    async fn approved_call_cannot_execute_a_denied_command() {
+        let permissions = PermissionEngine::new();
+        permissions
+            .set_mode(
+                evohime_permissions::Permission::ShellExecute,
+                evohime_permissions::PermissionMode::Ask,
+            )
+            .await;
+        let registry = ToolRegistry::bootstrap_with_permissions(permissions);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let context = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: Some(Uuid::new_v4()),
+            progress_tx: None,
+        };
+
+        // The agent asks for a harmless command and the owner approves it.
+        let result = registry
+            .execute(
+                &context,
+                "shell.execute",
+                serde_json::json!({ "command": "cargo --version" }),
+            )
+            .await;
+        let approval_id = match result {
+            Err(ToolError::NeedsApproval { approval_id, .. }) => approval_id,
+            other => panic!("expected NeedsApproval, got {other:?}"),
+        };
+        registry
+            .permissions()
+            .resolve(approval_id, true)
+            .await
+            .expect("granted");
+
+        // A deny rule lands before the approved call actually runs.
+        registry
+            .permissions()
+            .set_policy_rules(evohime_permissions::PolicyRuleSet::new(vec![
+                evohime_permissions::PolicyRule {
+                    permission: evohime_permissions::Permission::ShellExecute,
+                    pattern: "rm *".into(),
+                    mode: evohime_permissions::PermissionMode::Deny,
+                },
+            ]))
+            .await;
+
+        let replayed = registry
+            .execute_after_approval(
+                &context,
+                "shell.execute",
+                serde_json::json!({ "command": "rm -rf target" }),
+                approval_id,
+                CancellationToken::new(),
+            )
+            .await;
+        assert!(matches!(replayed, Err(ToolError::PermissionDenied(_))));
+    }
+```
+
+- [ ] **Step 2: Запустить тест и убедиться, что он падает**
+
+Run: `cargo test -p evohime-tool-runtime approved_call_cannot_execute_a_denied_command`
+Expected: FAIL — команда исполняется (или падает с ошибкой запуска `rm` на Windows), но не с `PermissionDenied`.
+
+- [ ] **Step 3: Реализовать**
+
+В `crates/tool-runtime/src/registry.rs`, в `execute_after_approval`, сразу после получения `definition` (строка 379-382) и до объявления `let execution = async {`, вставить:
+
+```rust
+        // An approval is not a blank cheque: hard denials must still apply to
+        // the input we are about to run, which may differ from the one the
+        // owner saw. Only `Denied` is acted on here — re-asking would deadlock
+        // the flow that is already past its approval.
+        let command = command_from_input(name, &input);
+        for permission in definition.permissions {
+            let scope = scope_from_input(name, &input);
+            if self
+                .permissions
+                .check_scoped(
+                    *permission,
+                    &evohime_permissions::PermissionCheck {
+                        session_id: ctx.session_id,
+                        path: Some(scope.as_str()),
+                        command: command.as_deref(),
+                    },
+                )
+                .await
+                == PermissionDecision::Denied
+            {
+                return Err(ToolError::PermissionDenied(*permission));
+            }
+        }
+```
+
+- [ ] **Step 4: Запустить тесты и убедиться, что они проходят**
+
+Run: `cargo test -p evohime-tool-runtime`
+Expected: PASS — новый тест зелёный, existing approval-тесты (`ask_mode_creates_scoped_approval` и соседние) не сломаны.
+
+- [ ] **Step 5: Коммит**
+
+```bash
+git add crates/tool-runtime/src/registry.rs
+git commit -m "fix(tools): enforce deny rules on the post-approval path"
+```
+
+---
+
+### Task 6: Загрузка `permissions.json` из data dir
 
 **Files:**
 - Create: `crates/evohime-core/src/permission_rules.rs`
-- Modify: `crates/evohime-core/src/lib.rs` (добавить `mod permission_rules;` рядом с остальными объявлениями модулей), `crates/evohime-core/src/main.rs:24` (применить правила после `ToolRegistry::bootstrap()`)
+- Modify: `crates/evohime-core/src/lib.rs:626-627` (вставить `pub mod permission_rules;` между `pub mod observability;` и `pub mod plan;` — список объявлений там алфавитный), `crates/evohime-core/src/main.rs:24` (применить правила после `ToolRegistry::bootstrap()`)
 - Modify: `docs/architecture.md` (раздел про данные и диагностику — добавить строку про файл правил)
 
 **Interfaces:**
 - Consumes: `PolicyRuleSet`, `PolicyRule`, `PermissionEngine::set_policy_rules`.
 - Produces:
   - `pub fn rules_path() -> PathBuf` — `<data_dir>/permissions.json`.
-  - `pub fn load_rules_from(path: &Path) -> PolicyRuleSet` — читает файл; при отсутствии, пустом содержимом или ошибке парсинга возвращает `PolicyRuleSet::defaults()`.
-  - `pub async fn apply_rules(permissions: &PermissionEngine)` — грузит из `rules_path()` и ставит в движок.
+  - `pub fn load_rules_from(path: &Path) -> Result<PolicyRuleSet, String>` — `Ok(defaults())` при отсутствующем или пустом файле, `Ok(rules)` при валидном, `Err(message)` при битом JSON.
+  - `pub async fn apply_rules(permissions: &PermissionEngine)` — грузит из `rules_path()`, логирует ошибку разбора и в этом случае применяет `defaults()`.
+
+**Про логирование:** в `evohime-core` нет ни `tracing`, ни `log` — крейт пишет структурный JSONL через `crate::logging::StructuredLogger` (`crates/evohime-core/src/logging.rs:11-45`). Используем его, новых зависимостей не добавляем. Разбор файла держим чистым (`Result`), чтобы тесты не трогали файловую систему логов.
+
+**Про тесты:** `tempfile` в `[dev-dependencies]` крейта `evohime-core` отсутствует (там только `wiremock`). Вместо добавления зависимости повторяем идиому соседнего теста `crates/evohime-core/src/logging.rs:54` — уникальный путь внутри `std::env::temp_dir()` с уборкой за собой.
 
 **Формат файла** (сознательно тот же порядок «последнее правило побеждает»):
 
@@ -1008,32 +1155,48 @@ pub fn rules_path() -> PathBuf {
     data_dir.join("permissions.json")
 }
 
-/// Read rules from `path`. A missing, empty, or malformed file falls back to
-/// the built-in defaults — a typo in the config must not stop the agent.
-pub fn load_rules_from(path: &Path) -> PolicyRuleSet {
+/// Read rules from `path`.
+///
+/// A missing or empty file is not an error — it means "use the built-in
+/// defaults". Malformed JSON returns `Err` with a human-readable message; the
+/// caller logs it and still starts, because a typo in the config must not stop
+/// the agent.
+pub fn load_rules_from(path: &Path) -> Result<PolicyRuleSet, String> {
     let Ok(contents) = fs::read_to_string(path) else {
-        return PolicyRuleSet::defaults();
+        return Ok(PolicyRuleSet::defaults());
     };
     if contents.trim().is_empty() {
-        return PolicyRuleSet::defaults();
+        return Ok(PolicyRuleSet::defaults());
     }
-    match serde_json::from_str::<PolicyRuleSet>(&contents) {
-        Ok(rules) => rules,
-        Err(error) => {
-            tracing::warn!(
-                path = %path.display(),
-                error = %error,
-                "permissions.json is malformed; falling back to default policy rules"
-            );
-            PolicyRuleSet::defaults()
-        }
-    }
+    serde_json::from_str::<PolicyRuleSet>(&contents).map_err(|error| error.to_string())
+}
+
+/// Log path for the malformed-config warning: `<data_dir>/logs/core.jsonl`.
+fn core_log_path() -> PathBuf {
+    let mut path = rules_path();
+    path.pop();
+    path.join("logs").join("core.jsonl")
 }
 
 pub async fn apply_rules(permissions: &PermissionEngine) {
-    permissions
-        .set_policy_rules(load_rules_from(&rules_path()))
-        .await;
+    let path = rules_path();
+    let rules = match load_rules_from(&path) {
+        Ok(rules) => rules,
+        Err(error) => {
+            if let Ok(logger) = crate::logging::StructuredLogger::open(core_log_path()) {
+                let _ = logger.write(
+                    "warn",
+                    "permissions.rules.malformed",
+                    serde_json::json!({
+                        "path": path.display().to_string(),
+                        "error": error,
+                    }),
+                );
+            }
+            PolicyRuleSet::defaults()
+        }
+    };
+    permissions.set_policy_rules(rules).await;
 }
 
 #[cfg(test)]
@@ -1041,25 +1204,39 @@ mod tests {
     use super::*;
     use evohime_permissions::{Permission, PermissionMode};
 
-    #[test]
-    fn missing_file_falls_back_to_defaults() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let rules = load_rules_from(&dir.path().join("permissions.json"));
-        assert_eq!(rules, PolicyRuleSet::defaults());
+    /// Unique scratch dir per test, mirroring `logging.rs` — `evohime-core`
+    /// carries no `tempfile` dev-dependency.
+    fn scratch_dir(label: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "evohime-rules-{}-{label}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("scratch dir");
+        dir
     }
 
     #[test]
-    fn malformed_file_falls_back_to_defaults() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("permissions.json");
+    fn missing_file_falls_back_to_defaults() {
+        let dir = scratch_dir("missing");
+        let rules = load_rules_from(&dir.join("permissions.json")).expect("missing file is ok");
+        assert_eq!(rules, PolicyRuleSet::defaults());
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn malformed_file_is_reported_as_error() {
+        let dir = scratch_dir("malformed");
+        let path = dir.join("permissions.json");
         fs::write(&path, "{ not json").expect("write");
-        assert_eq!(load_rules_from(&path), PolicyRuleSet::defaults());
+        assert!(load_rules_from(&path).is_err());
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
     fn valid_file_is_parsed_in_order() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("permissions.json");
+        let dir = scratch_dir("valid");
+        let path = dir.join("permissions.json");
         fs::write(
             &path,
             r#"[
@@ -1070,7 +1247,7 @@ mod tests {
         )
         .expect("write");
 
-        let rules = load_rules_from(&path);
+        let rules = load_rules_from(&path).expect("valid file parses");
         assert_eq!(rules.rules().len(), 3);
         assert_eq!(
             rules.resolve(Permission::ShellExecute, "cargo test"),
@@ -1080,14 +1257,16 @@ mod tests {
             rules.resolve(Permission::ShellExecute, "rm -rf target"),
             Some(PermissionMode::Deny)
         );
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
     fn empty_array_disables_all_rules() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("permissions.json");
+        let dir = scratch_dir("empty-array");
+        let path = dir.join("permissions.json");
         fs::write(&path, "[]").expect("write");
-        assert!(load_rules_from(&path).is_empty());
+        assert!(load_rules_from(&path).expect("parses").is_empty());
+        let _ = fs::remove_dir_all(dir);
     }
 }
 ```
@@ -1099,7 +1278,7 @@ Expected: FAIL — модуль не объявлен в `lib.rs`, тесты н
 
 - [ ] **Step 3: Подключить модуль и вызвать при старте**
 
-В `crates/evohime-core/src/lib.rs` добавить объявление рядом с существующими `mod`-строками:
+В `crates/evohime-core/src/lib.rs` блок объявлений модулей (строки 618–635) отсортирован по алфавиту. Вставить между `pub mod observability;` и `pub mod plan;`:
 
 ```rust
 pub mod permission_rules;
@@ -1113,7 +1292,7 @@ pub mod permission_rules;
 
 `main` объявлен как `#[tokio::main] async fn main()`, поэтому `await` на этом месте допустим без дополнительных обвязок.
 
-Проверить, что `tracing` и `tempfile` доступны крейту `evohime-core` (`tracing` — в `[dependencies]`, `tempfile` — в `[dev-dependencies]`); если чего-то нет, добавить так же, как это объявлено в `crates/tool-runtime/Cargo.toml`.
+Новых записей в `crates/evohime-core/Cargo.toml` не требуется: `evohime-permissions` уже подключён (строка 17), `serde_json` — строка 22, логирование идёт через внутренний модуль `crate::logging`.
 
 - [ ] **Step 4: Запустить тесты и убедиться, что они проходят**
 
@@ -1134,19 +1313,19 @@ Expected: без ошибок.
 - [ ] **Step 6: Коммит**
 
 ```bash
-git add crates/evohime-core/src/permission_rules.rs crates/evohime-core/src/lib.rs crates/evohime-core/src/main.rs crates/evohime-core/Cargo.toml docs/architecture.md
+git add crates/evohime-core/src/permission_rules.rs crates/evohime-core/src/lib.rs crates/evohime-core/src/main.rs docs/architecture.md
 git commit -m "feat(core): load permission policy rules from data dir"
 ```
 
 ---
 
-### Task 6: Окно повторов вместо вечной блокировки вызова
+### Task 7: Окно повторов вместо вечной блокировки вызова
 
 **Files:**
 - Modify: `crates/evohime-core/src/lib.rs:1957` (объявление `seen_tool_calls`), `:2072-2092` (логика дедупликации в цикле `ToolAgent`)
 
 **Interfaces:**
-- Consumes: ничего из предыдущих задач (независима от Tasks 1–5, но идёт последней, чтобы не конфликтовать по `lib.rs` с Task 5).
+- Consumes: ничего из предыдущих задач (независима от Tasks 1–6, но идёт последней, чтобы не конфликтовать по `crates/evohime-core/src/lib.rs` с Task 6).
 - Produces: изменённое поведение цикла агента; публичных сигнатур не меняет.
 
 **Проблема:** сейчас `seen_tool_calls: HashSet` живёт весь таск, и `retain` вырезает любой вызов, который *когда-либо* уже встречался. Значит легитимный повтор — второй прогон `cargo test` после правки, повторное чтение файла после записи — молча удаляется до конца задачи, и агент получает подсказку «выбери другой шаг», хотя правильный шаг был именно этот.
@@ -1262,3 +1441,11 @@ git commit -m "fix(core): bound duplicate tool-call detection to a recent window
 - **Редактирование правил из WinUI.** Требует изменений в `evohime.desktop.proto` и в policy-панели; делается отдельным планом, после того как формат правил устоится на практике. До тех пор источник истины — `permissions.json`.
 - **`ApprovalAuditEntry.command`.** Аудит-запись не расширяем, чтобы не менять формат JSONL-журнала; команда доступна через `PermissionEngine::approval()`.
 - **LSP-диагностика и файл инструкций проекта (AGENTS.md) из того же обзора opencode.** Это отдельные фичи этапа 4, каждая тянет свой план.
+
+## Известные ограничения этой реализации
+
+Их надо знать заранее, чтобы правило `*.env → deny` не создавало ложного чувства защищённости:
+
+1. **`filesystem.search` обходит запрет по пути.** Инструмент требует того же `Permission::FilesystemRead` (`crates/tool-runtime/src/tools/search.rs:11`), но его scope — корень поиска, а не найденные файлы. Значит grep по workspace вернёт содержимое `.env`, хотя `filesystem.read` для него запрещён. Полное закрытие требует фильтрации результатов внутри самого инструмента — отдельная задача.
+2. **Вложенные команды не разбираются.** Матчинг идёт по нормализованной строке, поэтому `rm -rf target` отклоняется, а `cmd /c rm -rf target` или `powershell -c "rm ..."` — нет. Правила стоит писать и на интерпретаторы (`cmd *`, `powershell *`), если это важно.
+3. **Политика не покрывает пути внутри аргументов.** Для `shell.execute` subject — команда, а не файлы, которые она тронет; ограничение записи по путям остаётся за песочницей и `filesystem.*`.
