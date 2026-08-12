@@ -19,6 +19,19 @@ pub enum ToolFailureKind {
     Execution,
 }
 
+pub fn failure_kind_name(kind: ToolFailureKind) -> &'static str {
+    match kind {
+        ToolFailureKind::NotFound => "not_found",
+        ToolFailureKind::InvalidInput => "invalid_input",
+        ToolFailureKind::Denied(DenialSource::Policy) => "denied_policy",
+        ToolFailureKind::Denied(DenialSource::User) => "denied_user",
+        ToolFailureKind::Denied(DenialSource::Escalation) => "denied_escalation",
+        ToolFailureKind::Timeout => "timeout",
+        ToolFailureKind::NonZeroExit => "non_zero_exit",
+        ToolFailureKind::Execution => "execution",
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ToolOutcome {
     pub ok: bool,
@@ -71,14 +84,18 @@ pub fn recovery_hint(
 }
 
 pub fn canonical_call_signature(name: &str, arguments: &str) -> String {
-    let value = serde_json::from_str::<Value>(arguments).unwrap_or_else(|_| Value::String(arguments.into()));
+    let value = serde_json::from_str::<Value>(arguments)
+        .unwrap_or_else(|_| Value::String(arguments.into()));
     format!("{name}:{}", canonical_json(&value))
 }
 
 fn canonical_json(value: &Value) -> String {
     match value {
         Value::Object(object) => {
-            let sorted = object.iter().map(|(key, value)| (key, canonical_json(value))).collect::<BTreeMap<_, _>>();
+            let sorted = object
+                .iter()
+                .map(|(key, value)| (key, canonical_json(value)))
+                .collect::<BTreeMap<_, _>>();
             serde_json::to_string(&sorted).unwrap_or_default()
         }
         _ => serde_json::to_string(value).unwrap_or_default(),
@@ -93,15 +110,23 @@ pub struct RecentToolCalls {
 
 impl RecentToolCalls {
     pub fn new(capacity: usize) -> Self {
-        Self { capacity, order: VecDeque::new(), present: HashMap::new() }
+        Self {
+            capacity,
+            order: VecDeque::new(),
+            present: HashMap::new(),
+        }
     }
 
     pub fn remember(&mut self, signature: String) -> bool {
-        if self.present.contains_key(&signature) { return false; }
+        if self.present.contains_key(&signature) {
+            return false;
+        }
         self.present.insert(signature.clone(), ());
         self.order.push_back(signature);
         while self.order.len() > self.capacity {
-            if let Some(old) = self.order.pop_front() { self.present.remove(&old); }
+            if let Some(old) = self.order.pop_front() {
+                self.present.remove(&old);
+            }
         }
         true
     }
@@ -111,7 +136,9 @@ impl RecentToolCalls {
             let keep = !(signature.starts_with("filesystem.read:")
                 || signature.starts_with("filesystem.list:")
                 || signature.starts_with("filesystem.search:"));
-            if !keep { self.present.remove(signature); }
+            if !keep {
+                self.present.remove(signature);
+            }
             keep
         });
     }
@@ -165,9 +192,7 @@ impl ToolOutcome {
             ToolError::PermissionDenied(_)
             | ToolError::NeedsApproval { .. }
             | ToolError::ApprovalMismatch
-            | ToolError::ApprovalDenied => {
-                ToolFailureKind::Denied(DenialSource::Policy)
-            }
+            | ToolError::ApprovalDenied => ToolFailureKind::Denied(DenialSource::Policy),
             ToolError::TimedOut(_) => ToolFailureKind::Timeout,
             ToolError::Execution(_) | ToolError::UnknownTool(_) => ToolFailureKind::Execution,
         };

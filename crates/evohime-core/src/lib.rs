@@ -148,6 +148,40 @@ fn write_model_trace(event: &str, fields: serde_json::Value) {
     }
 }
 
+fn write_observability_hook(
+    task_id: &str,
+    sequence: u64,
+    hook: observability::HookName,
+    fields: impl IntoIterator<Item = (String, String)>,
+) {
+    let Ok(payload) = observability::HookPayload::new(fields) else {
+        return;
+    };
+    let Ok(context_order) = observability::ContextOrder::capture(
+        ["system", "user", "assistant", "tool"]
+            .into_iter()
+            .map(String::from),
+    ) else {
+        return;
+    };
+    let decision = observability::HookPolicy::default().decide(hook);
+    let event_id = format!("{task_id}:{sequence}");
+    let Ok(event) = observability::HookEvent::new(
+        hook,
+        event_id,
+        task_id,
+        sequence,
+        decision,
+        context_order,
+        payload,
+    ) else {
+        return;
+    };
+    let fields =
+        serde_json::from_str(&event.to_deterministic_json()).unwrap_or(serde_json::Value::Null);
+    write_model_trace("observability.hook", fields);
+}
+
 fn xml_unescape(value: &str) -> String {
     value
         .replace("&lt;", "<")
@@ -601,7 +635,7 @@ use std::{
 use evohime_local_storage::{
     EventRecord, ImportedTask, LocalDatabase, ProjectPolicyRecord, RecoveryState,
     RunCheckpointRecord, RunEffectRecord, RunRecord, RunRecoveryRecord, StorageError,
-    WorkItemRecord,
+    ToolMetricRecord, WorkItemRecord,
 };
 use evohime_model_gateway::{
     providers::{ChatMessage, ChatRole, ProviderError},
@@ -625,9 +659,9 @@ pub mod memory_api;
 pub mod memory_domain;
 pub mod observability;
 pub mod permission_rules;
-pub mod recovery;
 pub mod plan;
 pub mod prd;
+pub mod recovery;
 pub mod research;
 pub mod research_fetch;
 pub mod research_pipeline;
@@ -1073,6 +1107,37 @@ impl EventJournal {
         let payload = serde_json::to_vec(event).expect("core events serialize");
         let database = self.database.lock().await;
         database.append_event(task_id, event_type, &payload)
+    }
+
+    pub async fn record_tool_metric(
+        &self,
+        task_id: &str,
+        tool_name: &str,
+        iteration: usize,
+        ok: bool,
+        failure_kind: Option<&str>,
+        recovery_hint: bool,
+        escalated: bool,
+    ) -> Result<i64, StorageError> {
+        let database = self.database.lock().await;
+        database.record_tool_metric(
+            task_id,
+            tool_name,
+            iteration.min(i64::MAX as usize) as i64,
+            ok,
+            failure_kind,
+            recovery_hint,
+            escalated,
+        )
+    }
+
+    pub async fn tool_metrics(
+        &self,
+        task_id: &str,
+        limit: usize,
+    ) -> Result<Vec<ToolMetricRecord>, StorageError> {
+        let database = self.database.lock().await;
+        database.read_tool_metrics(task_id, limit)
     }
 
     pub async fn replay(
@@ -1869,6 +1934,7 @@ pub struct ToolAgent {
     tools: Arc<ToolRegistry>,
     max_iterations: usize,
     approvals: ApprovalCoordinator,
+    journal: Option<EventJournal>,
 }
 
 impl ToolAgent {
@@ -1886,7 +1952,13 @@ impl ToolAgent {
             tools,
             max_iterations: 16,
             approvals,
+            journal: None,
         }
+    }
+
+    pub fn with_journal(mut self, journal: EventJournal) -> Self {
+        self.journal = Some(journal);
+        self
     }
 
     pub async fn run_once(
@@ -1968,6 +2040,7 @@ impl ToolAgent {
         let mut research_has_overview = false;
         let mut research_has_content = false;
         let mut research_has_search = false;
+        let mut observability_sequence = 0_u64;
         for iteration in 0..self.max_iterations {
             write_model_trace(
                 "model.request",
@@ -2077,9 +2150,10 @@ impl ToolAgent {
             }
             let mut duplicate_tool_call = None;
             tool_calls.retain(|call| {
-                let is_new = recent_tool_calls.remember(
-                    recovery::canonical_call_signature(&call.name, &call.arguments),
-                );
+                let is_new = recent_tool_calls.remember(recovery::canonical_call_signature(
+                    &call.name,
+                    &call.arguments,
+                ));
                 if !is_new && duplicate_tool_call.is_none() {
                     duplicate_tool_call = Some(call.name.clone());
                 }
@@ -2153,6 +2227,8 @@ impl ToolAgent {
                 tool_calls.clone(),
             ));
             for call in tool_calls {
+                let hook_sequence = observability_sequence;
+                observability_sequence = observability_sequence.saturating_add(1);
                 if delivery_requirements.research {
                     research_observations += 1;
                     research_has_overview |= call.name == "filesystem.list";
@@ -2179,8 +2255,10 @@ impl ToolAgent {
                     && (!verification_test_passed
                         || (delivery_requirements.diff_check && !diff_check_passed));
                 let outcome = if escalation_remaining.get(&call.name).copied().unwrap_or(0) > 0
-                    && !matches!(call.name.as_str(), "filesystem.read" | "filesystem.list" | "filesystem.search")
-                {
+                    && !matches!(
+                        call.name.as_str(),
+                        "filesystem.read" | "filesystem.list" | "filesystem.search"
+                    ) {
                     if let Some(remaining) = escalation_remaining.get_mut(&call.name) {
                         *remaining = remaining.saturating_sub(1);
                     }
@@ -2189,7 +2267,10 @@ impl ToolAgent {
                         kind: Some(recovery::ToolFailureKind::Denied(
                             recovery::DenialSource::Escalation,
                         )),
-                        output: format!("{} временно заблокирован после повторных ошибок", call.name),
+                        output: format!(
+                            "{} временно заблокирован после повторных ошибок",
+                            call.name
+                        ),
                         structured: serde_json::Value::Null,
                     }
                 } else if commit_blocked {
@@ -2261,6 +2342,15 @@ impl ToolAgent {
                         "output": outcome.output
                     }),
                 );
+                write_observability_hook(
+                    &task_id,
+                    hook_sequence,
+                    observability::HookName::BeforeTool,
+                    [
+                        ("tool_name".into(), call.name.clone()),
+                        ("iteration".into(), iteration.to_string()),
+                    ],
+                );
                 let failed = !outcome.ok;
                 if outcome.ok {
                     consecutive_failures.remove(&call.name);
@@ -2271,7 +2361,10 @@ impl ToolAgent {
                     *failures += 1;
                     failures_without_success += 1;
                     if *failures >= 3
-                        && !matches!(call.name.as_str(), "filesystem.read" | "filesystem.list" | "filesystem.search")
+                        && !matches!(
+                            call.name.as_str(),
+                            "filesystem.read" | "filesystem.list" | "filesystem.search"
+                        )
                     {
                         escalation_remaining.insert(call.name.clone(), 2);
                     }
@@ -2317,6 +2410,45 @@ impl ToolAgent {
                     .output
                     .to_lowercase()
                     .contains("patch context mismatch");
+                let escalated = matches!(
+                    outcome.kind,
+                    Some(recovery::ToolFailureKind::Denied(
+                        recovery::DenialSource::Escalation
+                    ))
+                );
+                let recovery_hint_added = failed;
+                write_observability_hook(
+                    &task_id,
+                    hook_sequence,
+                    observability::HookName::AfterTool,
+                    [
+                        ("tool_name".into(), call.name.clone()),
+                        ("ok".into(), outcome.ok.to_string()),
+                        (
+                            "failure_kind".into(),
+                            outcome
+                                .kind
+                                .map(recovery::failure_kind_name)
+                                .unwrap_or("none")
+                                .into(),
+                        ),
+                        ("recovery_hint".into(), recovery_hint_added.to_string()),
+                        ("escalated".into(), escalated.to_string()),
+                    ],
+                );
+                if let Some(journal) = &self.journal {
+                    let _ = journal
+                        .record_tool_metric(
+                            &task_id,
+                            &call.name,
+                            iteration,
+                            outcome.ok,
+                            outcome.kind.map(recovery::failure_kind_name),
+                            recovery_hint_added,
+                            escalated,
+                        )
+                        .await;
+                }
                 messages.push(ChatMessage::tool_observation(call.id, outcome.output));
                 if failed {
                     let schema = tool_parameters(&call.name);
@@ -2327,15 +2459,18 @@ impl ToolAgent {
                         .find(|tool| tool.name == call.name)
                         .map(|tool| tool.description)
                         .unwrap_or("проверь аргументы инструмента");
-                    let mut recovery = outcome.kind.map(|kind| {
-                        recovery::recovery_hint(
-                            &call.name,
-                            kind,
-                            &outcome.structured,
-                            &schema,
-                            description,
-                        )
-                    }).unwrap_or_default();
+                    let mut recovery = outcome
+                        .kind
+                        .map(|kind| {
+                            recovery::recovery_hint(
+                                &call.name,
+                                kind,
+                                &outcome.structured,
+                                &schema,
+                                description,
+                            )
+                        })
+                        .unwrap_or_default();
                     if patch_context_mismatch {
                         recovery.push_str(" Сначала вызови git.diff или filesystem.read для актуального файла, затем сформируй новый patch по фактическому содержимому.");
                     }
@@ -2400,6 +2535,7 @@ impl TaskExecutor for ToolAgent {
             tools: Arc::clone(&self.tools),
             max_iterations: self.max_iterations,
             approvals: self.approvals.clone(),
+            journal: self.journal.clone(),
         };
         Box::pin(async move {
             agent
@@ -4923,10 +5059,14 @@ mod tests {
             diff_check: true,
             commit: true,
         };
-        assert!(super::delivery_next_step(requirements, false, false, false, false)
-            .contains("read-only"));
-        assert!(super::delivery_next_step(requirements, true, false, false, false)
-            .contains("filesystem.patch"));
+        assert!(
+            super::delivery_next_step(requirements, false, false, false, false)
+                .contains("read-only")
+        );
+        assert!(
+            super::delivery_next_step(requirements, true, false, false, false)
+                .contains("filesystem.patch")
+        );
     }
 
     #[test]

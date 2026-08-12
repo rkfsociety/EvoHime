@@ -1,8 +1,8 @@
 //! Bounded, redacted observability hook contract.
 //!
-//! Модуль намеренно не подключён к `lib.rs`: интеграция с runtime и delivery
-//! pipeline будет отдельной задачей. Hook только наблюдает снимок контекста и
-//! не имеет операции, которая может изменить порядок элементов контекста.
+//! Runtime записывает bounded hook-события в core model-trace. Hook только
+//! наблюдает снимок контекста и не имеет операции, которая может изменить
+//! порядок элементов контекста или заблокировать выполнение инструмента.
 
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fmt};

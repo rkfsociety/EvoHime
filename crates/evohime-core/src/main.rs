@@ -40,11 +40,14 @@ async fn main() {
     let executor = model_config
         .and_then(|config| evohime_model_gateway::ModelGateway::from_config(&config).ok())
         .map(|gateway| {
-            std::sync::Arc::new(evohime_core::ToolAgent::new_with_approvals(
-                std::sync::Arc::new(gateway),
-                tools.clone(),
-                approvals.clone(),
-            )) as std::sync::Arc<dyn evohime_core::TaskExecutor>
+            std::sync::Arc::new(
+                evohime_core::ToolAgent::new_with_approvals(
+                    std::sync::Arc::new(gateway),
+                    tools.clone(),
+                    approvals.clone(),
+                )
+                .with_journal(journal.clone()),
+            ) as std::sync::Arc<dyn evohime_core::TaskExecutor>
         });
     if let Some((prompt, workspace_root, approve_writes)) = console_request() {
         let Some(executor) = executor else {

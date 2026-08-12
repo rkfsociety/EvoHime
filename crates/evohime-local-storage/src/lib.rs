@@ -13,7 +13,7 @@ pub mod memory_store;
 pub mod reconciliation_verifier;
 pub mod research_store;
 
-pub const SCHEMA_VERSION: u32 = 10;
+pub const SCHEMA_VERSION: u32 = 11;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -58,6 +58,19 @@ pub struct EventRecord {
     pub task_id: String,
     pub event_type: String,
     pub payload: Vec<u8>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolMetricRecord {
+    pub id: i64,
+    pub task_id: String,
+    pub tool_name: String,
+    pub iteration: i64,
+    pub ok: bool,
+    pub failure_kind: Option<String>,
+    pub recovery_hint: bool,
+    pub escalated: bool,
     pub created_at: String,
 }
 
@@ -1366,6 +1379,57 @@ impl LocalDatabase {
         Ok(self.connection.last_insert_rowid())
     }
 
+    pub fn record_tool_metric(
+        &self,
+        task_id: &str,
+        tool_name: &str,
+        iteration: i64,
+        ok: bool,
+        failure_kind: Option<&str>,
+        recovery_hint: bool,
+        escalated: bool,
+    ) -> Result<i64, StorageError> {
+        self.connection.execute(
+            "INSERT INTO run_tool_metrics(task_id, tool_name, iteration, ok, failure_kind, recovery_hint, escalated)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                task_id,
+                tool_name,
+                iteration,
+                ok as i64,
+                failure_kind,
+                recovery_hint as i64,
+                escalated as i64
+            ],
+        )?;
+        Ok(self.connection.last_insert_rowid())
+    }
+
+    pub fn read_tool_metrics(
+        &self,
+        task_id: &str,
+        limit: usize,
+    ) -> Result<Vec<ToolMetricRecord>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, task_id, tool_name, iteration, ok, failure_kind, recovery_hint, escalated, created_at
+             FROM run_tool_metrics WHERE task_id = ?1 ORDER BY id LIMIT ?2",
+        )?;
+        let rows = statement.query_map(rusqlite::params![task_id, limit as i64], |row| {
+            Ok(ToolMetricRecord {
+                id: row.get(0)?,
+                task_id: row.get(1)?,
+                tool_name: row.get(2)?,
+                iteration: row.get(3)?,
+                ok: row.get::<_, i64>(4)? != 0,
+                failure_kind: row.get(5)?,
+                recovery_hint: row.get::<_, i64>(6)? != 0,
+                escalated: row.get::<_, i64>(7)? != 0,
+                created_at: row.get(8)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     pub fn read_events_after(
         &self,
         after_sequence: i64,
@@ -1757,6 +1821,26 @@ impl LocalDatabase {
                 PRAGMA user_version = 10;",
             )?;
         }
+        if current < 11 {
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS run_tool_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL,
+                    tool_name TEXT NOT NULL,
+                    iteration INTEGER NOT NULL,
+                    ok INTEGER NOT NULL,
+                    failure_kind TEXT,
+                    recovery_hint INTEGER NOT NULL,
+                    escalated INTEGER NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                );
+                CREATE INDEX IF NOT EXISTS idx_run_tool_metrics_task
+                    ON run_tool_metrics(task_id, id);
+                CREATE INDEX IF NOT EXISTS idx_run_tool_metrics_tool
+                    ON run_tool_metrics(task_id, tool_name, id);
+                PRAGMA user_version = 11;",
+            )?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -1785,6 +1869,24 @@ mod tests {
             SCHEMA_VERSION
         );
         assert!(database.has_events_table().expect("table exists"));
+        let id = database
+            .record_tool_metric(
+                "task-1",
+                "filesystem.read",
+                2,
+                false,
+                Some("not_found"),
+                true,
+                false,
+            )
+            .expect("metric records");
+        assert!(id > 0);
+        let metrics = database
+            .read_tool_metrics("task-1", 10)
+            .expect("metrics read");
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].failure_kind.as_deref(), Some("not_found"));
+        assert!(metrics[0].recovery_hint);
         drop(database);
         let _ = std::fs::remove_file(&path);
     }
