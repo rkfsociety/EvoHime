@@ -62,10 +62,15 @@ public partial class MainWindow : Window
     private Grid? _pluginsView;
     private Grid? _tasksView;
     private Grid? _filesView;
+    private Grid? _gitView;
     private StackPanel? _filesList;
     private TextBox? _filePreview;
     private TextBlock? _filesPathText;
     private string _filesRelativePath = ".";
+    private TextBox? _gitPathBox;
+    private TextBox? _gitStatusPreview;
+    private TextBox? _gitDiffPreview;
+    private TextBlock? _gitStatusText;
     private StackPanel? _taskList;
     private TextBlock? _taskWorkspaceStatus;
     private TaskGraphDto? _lastTaskGraph;
@@ -601,6 +606,10 @@ public partial class MainWindow : Window
         Grid.SetColumn(_filesView, 1);
         _filesView.Visibility = Visibility.Collapsed;
         root.Children.Add(_filesView);
+        _gitView = BuildGitView();
+        Grid.SetColumn(_gitView, 1);
+        _gitView.Visibility = Visibility.Collapsed;
+        root.Children.Add(_gitView);
         _pluginsView = BuildPluginsView();
         Grid.SetColumn(_pluginsView, 1);
         _pluginsView.Visibility = Visibility.Collapsed;
@@ -788,6 +797,9 @@ public partial class MainWindow : Window
             case "Файлы":
                 ShowFilesView();
                 break;
+            case "Git":
+                ShowGitView();
+                break;
             case "Запланировано":
                 ShowScheduledView();
                 break;
@@ -810,6 +822,7 @@ public partial class MainWindow : Window
         if (_scheduledView is not null) _scheduledView.Visibility = Visibility.Collapsed;
         if (_tasksView is not null) _tasksView.Visibility = Visibility.Collapsed;
         if (_filesView is not null) _filesView.Visibility = Visibility.Collapsed;
+        if (_gitView is not null) _gitView.Visibility = Visibility.Collapsed;
         if (_pluginsView is not null) _pluginsView.Visibility = Visibility.Collapsed;
     }
 
@@ -836,6 +849,121 @@ public partial class MainWindow : Window
         {
             _filesView.Visibility = Visibility.Visible;
             _ = LoadFilesAsync(_filesRelativePath);
+        }
+    }
+
+    private void ShowGitView()
+    {
+        HideShellViews();
+        if (_gitView is not null)
+        {
+            _gitView.Visibility = Visibility.Visible;
+            _ = LoadGitAsync();
+        }
+    }
+
+    private Grid BuildGitView()
+    {
+        var view = BuildShellPage("Git", "Read-only статус и diff через Core IPC.");
+        var content = new Grid { RowSpacing = 12 };
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        _gitPathBox = new TextBox { PlaceholderText = "Файл для diff (необязательно)", Width = 260 };
+        actions.Children.Add(_gitPathBox);
+        var refresh = new Button { Content = "Обновить" };
+        refresh.Click += (_, _) => _ = LoadGitAsync();
+        actions.Children.Add(refresh);
+        Grid.SetRow(actions, 0);
+        content.Children.Add(actions);
+
+        _gitStatusText = new TextBlock
+        {
+            Text = "Загрузка Git…",
+            Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157),
+            TextWrapping = TextWrapping.Wrap,
+        };
+        Grid.SetRow(_gitStatusText, 1);
+        content.Children.Add(_gitStatusText);
+
+        var panes = new Grid { ColumnSpacing = 12 };
+        panes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.8, GridUnitType.Star) });
+        panes.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.2, GridUnitType.Star) });
+        _gitStatusPreview = CreateReadOnlyCodeBox("Статус репозитория");
+        _gitDiffPreview = CreateReadOnlyCodeBox("Выберите файл или оставьте поле пустым");
+        panes.Children.Add(new Border { Child = _gitStatusPreview, Background = ThemeBrush("SurfaceRaisedBrush", 23, 28, 37), CornerRadius = new CornerRadius(10) });
+        var diffScroll = new ScrollViewer { Content = _gitDiffPreview, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Grid.SetColumn(diffScroll, 1);
+        panes.Children.Add(new Border { Child = diffScroll, Background = ThemeBrush("SurfaceRaisedBrush", 23, 28, 37), CornerRadius = new CornerRadius(10) });
+        Grid.SetRow(panes, 2);
+        content.Children.Add(panes);
+        Grid.SetRow(content, 1);
+        view.Children.Add(content);
+        return view;
+    }
+
+    private TextBox CreateReadOnlyCodeBox(string placeholder) => new()
+    {
+        IsReadOnly = true,
+        TextWrapping = TextWrapping.Wrap,
+        AcceptsReturn = true,
+        FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Cascadia Mono"),
+        Foreground = ThemeBrush("TextBrush", 247, 244, 245),
+        Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+        Padding = new Thickness(14),
+        PlaceholderText = placeholder,
+    };
+
+    private async Task LoadGitAsync()
+    {
+        if (_gitStatusPreview is null || _gitDiffPreview is null || _gitStatusText is null)
+        {
+            return;
+        }
+        var workspacePath = _state.WorkspacePath ?? Environment.CurrentDirectory;
+        try
+        {
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                if (!_ipc.IsConnected)
+                {
+                    await ConnectToCoreWithRetryAsync(timeout.Token);
+                }
+                await _ipc.RequestGitStatusAsync(workspacePath, timeout.Token);
+                var status = await _ipc.ReadEventAsync(timeout.Token);
+                if (status.EventType != "git.status")
+                {
+                    throw new InvalidOperationException($"Core вернул {status.EventType} вместо git.status.");
+                }
+                await _ipc.RequestGitDiffAsync(workspacePath, _gitPathBox?.Text.Trim() ?? string.Empty, timeout.Token);
+                var diff = await _ipc.ReadEventAsync(timeout.Token);
+                if (diff.EventType != "git.diff")
+                {
+                    throw new InvalidOperationException($"Core вернул {diff.EventType} вместо git.diff.");
+                }
+                using var statusJson = JsonDocument.Parse(status.Payload);
+                using var diffJson = JsonDocument.Parse(diff.Payload);
+                _gitStatusPreview.Text = statusJson.RootElement.GetProperty("output").GetString() ?? string.Empty;
+                _gitDiffPreview.Text = diffJson.RootElement.GetProperty("output").GetString() ?? string.Empty;
+                var truncated = diffJson.RootElement.TryGetProperty("truncated", out var truncatedValue) && truncatedValue.GetBoolean();
+                _gitStatusText.Text = truncated
+                    ? "Git загружен; diff усечён bounded-лимитом Core."
+                    : "Git загружен через Core; операции записи и push здесь недоступны.";
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+        }
+        catch (Exception error)
+        {
+            _gitStatusText.Text = $"Не удалось получить Git через Core: {error.Message}";
+            _gitStatusPreview.Text = string.Empty;
+            _gitDiffPreview.Text = string.Empty;
         }
     }
 
