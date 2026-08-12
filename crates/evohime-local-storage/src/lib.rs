@@ -11,7 +11,7 @@ pub mod memory_store;
 pub mod reconciliation_verifier;
 pub mod research_store;
 
-pub const SCHEMA_VERSION: u32 = 7;
+pub const SCHEMA_VERSION: u32 = 8;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -339,6 +339,13 @@ impl LocalDatabase {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Exposes the shared migrated connection so bounded, migration-neutral
+    /// contracts (e.g. `research_store`, `memory_store`) can persist against
+    /// the real application database instead of a private test connection.
+    pub fn connection(&self) -> &Connection {
+        &self.connection
     }
 
     pub fn schema_version(&self) -> Result<u32, StorageError> {
@@ -1628,6 +1635,36 @@ impl LocalDatabase {
                 PRAGMA user_version = 7;",
             )?;
         }
+        if current < 8 {
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS research_evidence (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    source_kind TEXT NOT NULL,
+                    source_ref TEXT NOT NULL,
+                    redacted_excerpt TEXT NOT NULL,
+                    source_hash TEXT NOT NULL,
+                    fetched_at TEXT NOT NULL,
+                    ttl_seconds INTEGER NOT NULL,
+                    provenance_link TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_research_evidence_provenance ON research_evidence(provenance_link);
+                CREATE TABLE IF NOT EXISTS memory_entries (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    scope_kind TEXT NOT NULL,
+                    scope_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    provenance TEXT NOT NULL,
+                    privacy TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT,
+                    archived INTEGER NOT NULL,
+                    forgotten INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_memory_entries_scope ON memory_entries(scope_kind, scope_id);
+                PRAGMA user_version = 8;",
+            )?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -2426,5 +2463,77 @@ mod tests {
         );
         drop(database);
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn research_and_memory_stores_round_trip_against_shared_migrated_database() {
+        use crate::memory_store::{MemoryPrivacy, MemoryRecord, MemoryScope, MemoryStoreSql};
+        use crate::research_store::{ResearchEvidenceRecord, ResearchEvidenceSql};
+
+        let path = temp_database_path("bounded-stores");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        assert_eq!(
+            database.schema_version().expect("version reads"),
+            SCHEMA_VERSION
+        );
+
+        let evidence = ResearchEvidenceRecord {
+            id: "evidence-1".into(),
+            source_kind: "url".into(),
+            source_ref: "https://example.test/source".into(),
+            redacted_excerpt: "redacted result".into(),
+            source_hash: "sha256:abc".into(),
+            fetched_at: "2026-08-12T10:00:00Z".into(),
+            ttl_seconds: 3600,
+            provenance_link: Some("run:shared-db".into()),
+        };
+        ResearchEvidenceSql::insert(database.connection(), &evidence)
+            .expect("evidence inserts against shared connection");
+        assert_eq!(
+            ResearchEvidenceSql::get_by_id(database.connection(), "evidence-1")
+                .expect("evidence reads"),
+            Some(evidence)
+        );
+        assert_eq!(
+            ResearchEvidenceSql::list_by_provenance(database.connection(), "run:shared-db")
+                .expect("evidence lists")
+                .len(),
+            1
+        );
+
+        let memory = MemoryRecord::new(
+            "memory-1",
+            MemoryScope::Project,
+            "project-shared-db",
+            "Decision",
+            "keep this fact",
+            "run:shared-db",
+            MemoryPrivacy::Internal,
+            "2026-08-12T10:00:00Z",
+            Some("2027-01-01T00:00:00Z".into()),
+        )
+        .expect("memory record builds");
+        MemoryStoreSql::insert(database.connection(), &memory)
+            .expect("memory inserts against shared connection");
+        assert_eq!(
+            MemoryStoreSql::get_by_id(database.connection(), "memory-1").expect("memory reads"),
+            Some(memory)
+        );
+        let found = MemoryStoreSql::search(
+            database.connection(),
+            MemoryScope::Project,
+            "project-shared-db",
+            "fact",
+            "2026-09-01T00:00:00Z",
+            10,
+        )
+        .expect("memory search");
+        assert_eq!(found.len(), 1);
+        assert!(MemoryStoreSql::archive(database.connection(), "memory-1").expect("archive"));
+        assert!(MemoryStoreSql::forget(database.connection(), "memory-1").expect("forget"));
+
+        drop(database);
+        let _ = std::fs::remove_file(&path);
     }
 }
