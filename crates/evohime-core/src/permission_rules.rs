@@ -1,72 +1,159 @@
-use evohime_permissions::{PermissionEngine, PolicyRuleSet};
+use evohime_permissions::{PermissionEngine, PolicyRule, PolicyRuleSet};
 use std::path::Path;
 
+/// Загружает rules из permissions.json файла.
+///
+/// Логика:
+/// 1. Если файл не существует → вернуть Ok(PolicyRuleSet::defaults())
+/// 2. Если файл пуст → вернуть Ok(PolicyRuleSet::defaults())
+/// 3. Если файл содержит `[]` (пустой JSON массив) → вернуть Ok(PolicyRuleSet::new(vec![]))
+/// 4. Если файл битый JSON → вернуть Ok(PolicyRuleSet::defaults())
+/// 5. Если JSON валиден → десериализовать в Vec<PolicyRule>, вернуть Ok(PolicyRuleSet::new(...))
 pub fn load_rules_from(path: &Path) -> Result<PolicyRuleSet, String> {
-    let content = std::fs::read_to_string(path).map_err(|error| error.to_string())?;
-    if content.trim().is_empty() {
+    let rules_path = path.join("permissions.json");
+
+    // Если файл не существует → дефолты
+    if !rules_path.exists() {
         return Ok(PolicyRuleSet::defaults());
     }
-    serde_json::from_str(&content).map_err(|error| error.to_string())
+
+    // Прочитаем файл
+    let content = match std::fs::read_to_string(&rules_path) {
+        Ok(content) => content,
+        Err(_error) => {
+            return Ok(PolicyRuleSet::defaults());
+        }
+    };
+
+    // Если файл пуст → дефолты
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return Ok(PolicyRuleSet::defaults());
+    }
+
+    // Парсим JSON
+    let rules: Vec<PolicyRule> = match serde_json::from_str(trimmed) {
+        Ok(rules) => rules,
+        Err(_error) => {
+            return Ok(PolicyRuleSet::defaults());
+        }
+    };
+
+    // Если пустой массив [] → осознанное отключение дефолтов
+    if rules.is_empty() && trimmed == "[]" {
+        return Ok(PolicyRuleSet::new(vec![]));
+    }
+
+    // Валидный набор правил
+    Ok(PolicyRuleSet::new(rules))
 }
 
+/// Применяет загруженные rules к PermissionEngine при старте.
 pub async fn apply_rules(permissions: &PermissionEngine, data_dir: &Path) {
-    let path = data_dir.join("permissions.json");
-    let result = if path.exists() {
-        load_rules_from(&path)
-    } else {
-        Ok(PolicyRuleSet::defaults())
-    };
-    let (rules, error) = match result {
-        Ok(rules) => (rules, None),
-        Err(error) => (PolicyRuleSet::defaults(), Some(error)),
-    };
-    permissions.set_policy_rules(rules).await;
-    if let Some(error) = error {
-        if let Ok(logger) = crate::StructuredLogger::open(data_dir.join("logs/core.jsonl")) {
-            let _ = logger.write(
-                "error",
-                "permissions.load_failed",
-                serde_json::json!({"path": path, "error": error, "fallback": "defaults"}),
-            );
-        }
+    if let Ok(rules) = load_rules_from(data_dir) {
+        permissions.set_policy_rules(rules).await;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use evohime_permissions::{Permission, PermissionMode};
     use std::fs;
+    use std::path::PathBuf;
+
+    fn create_temp_dir() -> PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "evohime-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let _ = fs::create_dir_all(&path);
+        path
+    }
+
+    fn cleanup_temp_dir(path: &PathBuf) {
+        let _ = fs::remove_dir_all(path);
+    }
 
     #[test]
-    fn reads_rules_and_keeps_explicit_empty_array_empty() {
-        let path =
-            std::env::temp_dir().join(format!("evohime-permissions-{}.json", std::process::id()));
-        fs::write(
-            &path,
-            r#"[{"permission":"git_write","pattern":"git push*","mode":"deny"}]"#,
-        )
-        .unwrap();
-        assert_eq!(
-            load_rules_from(&path)
-                .unwrap()
-                .resolve(Permission::GitWrite, "git push"),
-            Some(PermissionMode::Deny)
-        );
-        fs::write(&path, "[]").unwrap();
-        assert!(load_rules_from(&path).unwrap().is_empty());
-        let _ = fs::remove_file(path);
+    fn load_nonexistent_file_returns_defaults() {
+        let temp_dir = create_temp_dir();
+        let result = load_rules_from(&temp_dir).unwrap();
+        let defaults = PolicyRuleSet::defaults();
+        assert_eq!(result.rules().len(), defaults.rules().len());
+        cleanup_temp_dir(&temp_dir);
+    }
+
+    #[test]
+    fn load_empty_file_returns_defaults() {
+        let temp_dir = create_temp_dir();
+        fs::write(temp_dir.join("permissions.json"), "").unwrap();
+        let result = load_rules_from(&temp_dir).unwrap();
+        let defaults = PolicyRuleSet::defaults();
+        assert_eq!(result.rules().len(), defaults.rules().len());
+        cleanup_temp_dir(&temp_dir);
+    }
+
+    #[test]
+    fn load_empty_array_returns_empty_set() {
+        let temp_dir = create_temp_dir();
+        fs::write(temp_dir.join("permissions.json"), "[]").unwrap();
+        let result = load_rules_from(&temp_dir).unwrap();
+        assert!(result.is_empty());
+        assert_eq!(result.rules().len(), 0);
+        cleanup_temp_dir(&temp_dir);
+    }
+
+    #[test]
+    fn load_invalid_json_returns_defaults() {
+        let temp_dir = create_temp_dir();
+        fs::write(temp_dir.join("permissions.json"), "{invalid json").unwrap();
+        let result = load_rules_from(&temp_dir).unwrap();
+        let defaults = PolicyRuleSet::defaults();
+        assert_eq!(result.rules().len(), defaults.rules().len());
+        cleanup_temp_dir(&temp_dir);
+    }
+
+    #[test]
+    fn load_valid_rules() {
+        let temp_dir = create_temp_dir();
+        let rules_json = r#"[
+            {
+                "permission": "shell_execute",
+                "pattern": "cargo *",
+                "mode": "allow"
+            },
+            {
+                "permission": "shell_execute",
+                "pattern": "rm *",
+                "mode": "deny"
+            }
+        ]"#;
+        fs::write(temp_dir.join("permissions.json"), rules_json).unwrap();
+        let result = load_rules_from(&temp_dir).unwrap();
+        assert_eq!(result.rules().len(), 2);
+        assert_eq!(result.rules()[0].pattern, "cargo *");
+        assert_eq!(result.rules()[1].pattern, "rm *");
+        cleanup_temp_dir(&temp_dir);
     }
 
     #[tokio::test]
-    async fn missing_file_applies_defaults() {
-        let dir =
-            std::env::temp_dir().join(format!("evohime-permissions-dir-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        let permissions = PermissionEngine::new();
-        apply_rules(&permissions, &dir).await;
-        assert_eq!(permissions.policy_rules().await.rules().len(), 2);
-        let _ = fs::remove_dir_all(dir);
+    async fn apply_rules_sets_engine_rules() {
+        let temp_dir = create_temp_dir();
+        let rules_json = r#"[
+            {
+                "permission": "filesystem_read",
+                "pattern": "*.secret",
+                "mode": "deny"
+            }
+        ]"#;
+        fs::write(temp_dir.join("permissions.json"), rules_json).unwrap();
+
+        let engine = PermissionEngine::new();
+        apply_rules(&engine, &temp_dir).await;
+
+        let loaded_rules = engine.policy_rules().await;
+        assert_eq!(loaded_rules.rules().len(), 1);
+        assert_eq!(loaded_rules.rules()[0].pattern, "*.secret");
+        cleanup_temp_dir(&temp_dir);
     }
 }

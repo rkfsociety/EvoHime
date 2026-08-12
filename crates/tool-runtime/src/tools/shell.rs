@@ -158,6 +158,7 @@ pub async fn execute(
             &stderr
         }
     );
+    let ok = exit_code.map_or(false, |code| code == 0);
     Ok(ToolResult {
         output,
         structured: json!({
@@ -166,7 +167,8 @@ pub async fn execute(
             "stdout": stdout,
             "stderr": stderr,
             "exit_code": exit_code,
-            "timed_out": false
+            "timed_out": false,
+            "ok": ok
         }),
     })
 }
@@ -403,5 +405,67 @@ mod tests {
     fn resolve_invocation_no_input() {
         let result = resolve_invocation(&json!({}));
         assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn semantic_failure_on_nonzero_exit_code() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let permissions = PermissionEngine::new();
+        permissions
+            .set_mode(Permission::ShellExecute, PermissionMode::Allow)
+            .await;
+        let ctx = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+        };
+
+        // Use a command that will fail (false always exits with code 1)
+        let result = execute(
+            &ctx,
+            json!({
+                "program": "false",
+                "args": []
+            }),
+            CancellationToken::new(),
+        )
+        .await
+        .expect("false command succeeds structurally");
+
+        // Check that ok flag is false when exit_code is 1
+        assert_eq!(result.structured.get("exit_code").and_then(|v| v.as_i64()), Some(1));
+        assert_eq!(result.structured.get("ok").and_then(|v| v.as_bool()), Some(false));
+    }
+
+    #[tokio::test]
+    async fn semantic_success_on_zero_exit_code() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let permissions = PermissionEngine::new();
+        permissions
+            .set_mode(Permission::ShellExecute, PermissionMode::Allow)
+            .await;
+        let ctx = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+        };
+
+        // Use a command that will succeed (true always exits with code 0)
+        let result = execute(
+            &ctx,
+            json!({
+                "program": "true",
+                "args": []
+            }),
+            CancellationToken::new(),
+        )
+        .await
+        .expect("true command succeeds");
+
+        // Check that ok flag is true when exit_code is 0
+        assert_eq!(result.structured.get("exit_code").and_then(|v| v.as_i64()), Some(0));
+        assert_eq!(result.structured.get("ok").and_then(|v| v.as_bool()), Some(true));
     }
 }
