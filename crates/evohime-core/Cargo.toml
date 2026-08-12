@@ -30,4 +30,3 @@ tracing = "0.1"
 [dev-dependencies]
 wiremock = "0.6"
 tempfile = "3"
-tracing = "0.1"
