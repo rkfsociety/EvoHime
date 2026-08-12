@@ -1814,6 +1814,8 @@ impl EventJournal {
             let evidence = serde_json::json!({
                 "run_id": record.run_id,
                 "effect_id": record.effect_id,
+                "idempotency_key": format!("{}:bounded-build", record.run_id),
+                "verifier": "bounded_build_snapshot",
                 "snapshot_id": success.then(|| snapshot.as_ref().expect("successful reconciliation has snapshot").id.clone()),
                 "decision": if success { "applied" } else { "blocked" },
             });
@@ -1834,6 +1836,17 @@ impl EventJournal {
                     "run.recovery.blocked"
                 },
                 &serde_json::to_vec(&evidence)?,
+            )?;
+            database.append_event(
+                &record.work_item_id,
+                "run.reconciliation.audit",
+                &serde_json::to_vec(&serde_json::json!({
+                    "effect_id": record.effect_id,
+                    "idempotency_key": format!("{}:bounded-build", record.run_id),
+                    "verifier": "bounded_build_snapshot",
+                    "evidence": evidence,
+                    "decision": if success { "applied" } else { "blocked" },
+                }))?,
             )?;
             reconciliations.push(reconciliation);
         }
