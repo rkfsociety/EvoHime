@@ -101,9 +101,10 @@ impl LiteRouterProvider {
                 .iter()
                 .cloned()
                 .map(|mut spec| {
-                    if model.to_ascii_lowercase().contains("gemini") {
-                        strip_gemini_unsupported_schema_fields(&mut spec.function.parameters);
-                    }
+                    // LiteRouter may translate the OpenAI-compatible request to
+                    // Gemini, whose function-declaration schema rejects this
+                    // otherwise common JSON-Schema keyword.
+                    strip_gemini_unsupported_schema_fields(&mut spec.function.parameters);
                     spec
                 })
                 .collect::<Vec<ToolSpec>>()
