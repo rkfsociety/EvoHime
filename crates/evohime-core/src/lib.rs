@@ -702,6 +702,7 @@ pub mod permission_rules;
 pub mod plan;
 pub mod prd;
 pub mod recovery;
+pub use recovery::{classify_tool_outcome, DenialSource, ToolFailureKind, ToolOutcome};
 pub mod research;
 pub mod research_fetch;
 pub mod research_pipeline;
