@@ -4,7 +4,7 @@
 
 **Goal:** Дать EvoHime декларативные правила разрешений с glob-паттернами, которые учитывают *содержимое* вызова инструмента (в первую очередь shell-команду), а не только категорию и путь.
 
-**Architecture:** В `evohime-permissions` добавляется новый слой — упорядоченный набор `PolicyRule` (permission + glob-паттерн + режим), с семантикой «побеждает последнее совпавшее правило». Слой встраивается в существующий `check_scoped` с явным приоритетом: жёсткий `Deny` из правил не может быть перекрыт runtime-грантами, остальные режимы правил стоят ниже path grants и session overrides. `tool-runtime` начинает передавать в проверку нормализованную shell-команду, поэтому `rm *` и `git *` становятся различимыми политикой. Правила загружаются Core из `permissions.json` в data dir и переживают перезапуск через существующий snapshot-механизм.
+**Architecture:** В `evohime-permissions` добавляется новый слой — упорядоченный набор `PolicyRule` (permission + glob-паттерн + режим), с семантикой «побеждает последнее совпавшее правило». Слой встраивается в существующий `check_scoped` с явным приоритетом: жёсткий `Deny` из правил не может быть перекрыт runtime-грантами, остальные режимы правил стоят ниже path grants и session overrides. `tool-runtime` начинает передавать в проверку нормализованную shell-команду, поэтому `rm *` и `git *` становятся различимыми политикой, а выданное одобрение перестаёт быть карт-бланшем: оно привязывается к тому вызову, который хозяин видел. Правила загружаются Core из `permissions.json` в data dir при старте; этот файл — единственный источник истины, никакого второго хранилища для них не заводится.
 
 **Tech Stack:** Rust 2021, tokio (`RwLock`), serde, futures-executor (в тестах `evohime-permissions`), tempfile (в тестах `evohime-core`).
 
@@ -18,7 +18,7 @@
 - Каждая задача заканчивается task-only git-коммитом в текущей ветке `main`. Push — не выполняем.
 - Перед заявлением о готовности задачи: свежий прогон тестов + `git diff --check`.
 - Сравнение путей и команд — регистронезависимое (Windows), разделитель нормализуется в `/`.
-- Существующие сериализованные структуры расширяются только через `#[serde(default)]`, чтобы старые снапшоты читались без миграции.
+- Существующие сериализованные структуры (в этом плане — только `ApprovalRequest`) расширяются полями с `#[serde(default)]`, чтобы ранее записанный JSON читался без миграции.
 
 ## File Structure
 
@@ -26,8 +26,8 @@
 | --- | --- |
 | `crates/permissions/src/pattern.rs` (создать) | Чистая функция glob-сопоставления `glob_match(pattern, value)`. Без зависимостей от движка. |
 | `crates/permissions/src/policy.rs` (создать) | `PolicyRule`, `PolicyRuleSet`, разрешение «последнее совпавшее правило», дефолтный набор. |
-| `crates/permissions/src/lib.rs` (изменить) | Хранение набора правил в `PermissionEngine`, встраивание в `check_scoped`, поле `command` в `PermissionCheck` и `ApprovalRequest`, правила в snapshot. |
-| `crates/tool-runtime/src/registry.rs` (изменить) | Извлечение нормализованной команды из input, передача её в проверку и в approval, а также запрет-проверка на пути после approval. |
+| `crates/permissions/src/lib.rs` (изменить) | Хранение набора правил в `PermissionEngine`, встраивание в `check_scoped`, поле `command` в `PermissionCheck` и `ApprovalRequest`. |
+| `crates/tool-runtime/src/registry.rs` (изменить) | Извлечение нормализованной команды из input, передача её в проверку и в approval, привязка approval к конкретному вызову и повторная проверка запретов после подтверждения. |
 | `crates/evohime-core/src/permission_rules.rs` (создать) | Чтение `permissions.json` из data dir и применение правил к движку. Файл не создаётся автоматически: его отсутствие означает встроенные defaults. |
 | `crates/evohime-core/src/lib.rs` (изменить) | Вызов загрузчика при старте; окно повторов вместо «навсегда» в цикле агента. |
 
@@ -51,7 +51,7 @@
 - Сравнение регистронезависимое.
 - Пустой паттерн совпадает только с пустой строкой.
 
-- [ ] **Step 1: Написать падающий тест**
+- [ ] **Step 1: Написать падающие тесты**
 
 Создать `crates/permissions/src/pattern.rs` с одним лишь тестовым модулем и объявлением функции:
 
@@ -105,8 +105,28 @@ mod tests {
         assert!(glob_match("git*", "git"));
         assert!(glob_match("git *", "git "));
     }
+
+    /// The exact patterns later tasks and the default rule set rely on.
+    #[test]
+    fn patterns_used_by_the_rule_sets() {
+        assert!(glob_match("rm *", "rm -rf target"));
+        assert!(glob_match("git *", "git status"));
+        assert!(!glob_match("git *", "cargo test"));
+        assert!(glob_match("git push*", "git push origin main"));
+        assert!(glob_match("cargo *", "cargo --version"));
+        assert!(glob_match("*.env", ".env"));
+        assert!(glob_match("*.env", "backend/.env"));
+        // `*.env` does NOT cover `.env.local` — that is why the default set
+        // carries a second rule.
+        assert!(!glob_match("*.env", "backend/.env.local"));
+        assert!(glob_match("*.env.*", "backend/.env.local"));
+        assert!(!glob_match("*.env", "src/main.rs"));
+        assert!(!glob_match("*.env.*", "src/environment.rs"));
+    }
 }
 ```
+
+Реализация из Step 3 вместе с этими тестами уже собрана и прогнана отдельным файлом через `rustc --test` — 6 тестов, все зелёные. То есть алгоритм проверен, а не только вычитан; при переносе в крейт менять его не нужно.
 
 Добавить в `crates/permissions/src/lib.rs` сразу после строки `use serde::{Deserialize, Serialize};`:
 
@@ -369,14 +389,17 @@ git commit -m "feat(permissions): add ordered policy rule set"
 ### Task 3: Встроить правила в `check_scoped`
 
 **Files:**
-- Modify: `crates/permissions/src/lib.rs:73-76` (`PermissionCheck`), `:125-134` (поля `PermissionEngine`), `:151-170` (`new`), `:276-305` (`check_scoped`), `:113-120` (`PermissionScopesSnapshot`), `:456-493` (`export_scopes`/`import_scopes`)
+- Modify: `crates/permissions/src/lib.rs:73-76` (`PermissionCheck`), `:125-134` (поля `PermissionEngine`), `:151-170` (`new`), `:276-305` (`check_scoped`)
 
 **Interfaces:**
-- Consumes: `PolicyRuleSet::resolve`, `PolicyRuleSet::defaults` из Task 2.
+- Consumes: `PolicyRuleSet::resolve` из Task 2.
 - Produces:
   - `PermissionCheck` получает поле `pub command: Option<&'a str>` (по умолчанию `None`, структура остаётся `Default`).
   - `PermissionEngine::set_policy_rules(&self, rules: PolicyRuleSet)`, `PermissionEngine::policy_rules(&self) -> PolicyRuleSet`.
-  - `PermissionScopesSnapshot` получает поле `pub policy_rules: PolicyRuleSet` с `#[serde(default)]`.
+
+**Почему правила не кладутся в `PermissionScopesSnapshot`.** Соблазн есть — рядом лежит готовый `export_scopes`/`import_scopes`. Но: (а) у этой пары **нет ни одного вызывающего** во всём репозитории, кроме её собственных тестов, то есть persistence там сейчас мёртвый; (б) источник истины для правил — `permissions.json` (Task 6), и второе хранилище того же состояния создаёт реальный баг: `import_scopes` с пустым `policy_rules` затрёт правила, загруженные из файла при старте. Одно состояние — одно место хранения.
+
+**Почему `PermissionEngine::new()` получает пустой набор, а не `defaults()`.** Встроенный запрет на чтение `.env` включается загрузчиком (Task 6), а не конструктором: иначе каждый юнит-тест и каждый вызывающий, собирающий движок вручную, молча получал бы политику, которую не просил, и существующий тест `default_policy_allows_read_and_asks_for_write` начал бы описывать неправду.
 
 **Приоритет разрешения (документировать в doc-комментарии `check_scoped`):**
 
@@ -533,28 +556,17 @@ git commit -m "feat(permissions): add ordered policy rule set"
     }
 
     #[test]
-    fn snapshot_roundtrip_preserves_policy_rules() {
+    fn new_engine_starts_without_policy_rules() {
         block_on(async {
+            // Built-in hardening arrives through the loader (Task 6), never
+            // through the constructor.
             let engine = PermissionEngine::new();
-            engine.set_policy_rules(PolicyRuleSet::defaults()).await;
-
-            let snapshot = engine.export_scopes().await;
-            let restored = PermissionEngine::new();
-            restored.import_scopes(snapshot).await;
-
+            assert!(engine.policy_rules().await.is_empty());
             assert_eq!(
-                restored.policy_rules().await,
-                PolicyRuleSet::defaults()
+                engine.check(Permission::FilesystemRead).await,
+                PermissionDecision::Allowed
             );
         });
-    }
-
-    #[test]
-    fn snapshot_without_policy_rules_field_still_parses() {
-        let legacy = r#"{"session_overrides":[],"path_grants":[]}"#;
-        let snapshot: PermissionScopesSnapshot =
-            serde_json::from_str(legacy).expect("legacy snapshot must parse");
-        assert!(snapshot.policy_rules.is_empty());
     }
 ```
 
@@ -563,7 +575,7 @@ git commit -m "feat(permissions): add ordered policy rule set"
 - [ ] **Step 2: Запустить тесты и убедиться, что они падают**
 
 Run: `cargo test -p evohime-permissions`
-Expected: FAIL на компиляции — нет поля `command` в `PermissionCheck`, нет методов `set_policy_rules`/`policy_rules`, нет поля `policy_rules` в снапшоте.
+Expected: FAIL на компиляции — нет поля `command` в `PermissionCheck` и нет методов `set_policy_rules` / `policy_rules`.
 
 - [ ] **Step 3: Реализовать**
 
@@ -662,21 +674,7 @@ pub struct PermissionCheck<'a> {
     }
 ```
 
-Расширить снапшот:
-
-```rust
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PermissionScopesSnapshot {
-    #[serde(default)]
-    pub session_overrides: Vec<SessionOverride>,
-    #[serde(default)]
-    pub path_grants: Vec<PathGrant>,
-    #[serde(default)]
-    pub policy_rules: PolicyRuleSet,
-}
-```
-
-В `export_scopes` добавить `policy_rules: self.policy_rules().await,`. В начале `import_scopes` — `self.set_policy_rules(snapshot.policy_rules.clone()).await;`. Ставим первой строкой не из-за ранних `return` (их в методе нет), а чтобы правила были применены до того, как метод начнёт заменять гранты: тогда параллельная проверка в момент импорта видит либо старую политику целиком, либо новую, но не «новые гранты со старой политикой».
+`PermissionScopesSnapshot`, `export_scopes` и `import_scopes` **не трогаем** — обоснование выше, в блоке Interfaces.
 
 - [ ] **Step 4: Запустить тесты и убедиться, что они проходят**
 
@@ -704,6 +702,10 @@ git commit -m "feat(permissions): resolve policy rules inside scoped checks"
   - `fn command_from_input(tool_name: &str, input: &Value) -> Option<String>` в `registry.rs` (private).
   - `ApprovalRequest` получает `#[serde(default, skip_serializing_if = "Option::is_none")] pub command: Option<String>`.
   - `PermissionEngine::create_approval_scoped` получает шестой параметр `command: Option<String>`.
+
+**Зачем команда в `ApprovalRequest`, если UI и так её видит.** Событие `CoreEvent::ApprovalRequired` (`crates/evohime-core/src/lib.rs:2191-2199`) уже несёт целиком `input` вызова, поэтому панель подтверждения показывает команду и без наших правок — работы по UI здесь нет. Поле нужно не для отображения, а как **запись движка о том, что именно было одобрено**: Task 5 сравнивает её с тем, что реально пришло на исполнение. Без этого поля движок физически не может отличить подмену.
+
+`ApprovalAuditEntry` при этом **не расширяем**: sink аудита (`attach_audit_sender`) в репозитории никем не вызывается, записи живут только в кольцевом буфере в памяти, и добавлять туда поле «на будущее» — то же самое спекулятивное хранилище, от которого мы отказались в Task 3.
 
 **Нормализация команды:** инструмент `shell.execute` принимает либо `command: String`, либо `program: String` + `args: Vec<String>` (см. `crates/tool-runtime/src/tools/shell.rs:20-27`). Обе формы приводим к одной строке, схлопывая любые пробельные последовательности в один пробел, чтобы `git   push` и `git push` матчились одинаково.
 
@@ -870,7 +872,7 @@ pub struct ApprovalRequest {
         };
 ```
 
-В `create_approval` (обёртка) передать `None` шестым аргументом. В `resolve_with_options` строка `tool_name: request.tool_name,` остаётся как есть — `ApprovalAuditEntry` не расширяем, команда уже видна через `scope`+`tool_name` в UI-слое и через `approval()`.
+В `create_approval` (обёртка, строка 314) передать `None` шестым аргументом. `ApprovalAuditEntry` и оба вызова `push_audit` остаются без изменений — обоснование выше, в блоке Interfaces.
 
 В `crates/tool-runtime/src/registry.rs` добавить рядом с `scope_from_input`:
 
@@ -969,27 +971,101 @@ git commit -m "feat(tools): match permission policy against shell commands"
 
 ---
 
-### Task 5: Закрыть обход политики через approval-путь
+### Task 5: Привязать approval к конкретному вызову
 
 **Files:**
+- Modify: `crates/permissions/src/lib.rs` (новый метод `approval_matches` рядом с `approval`, строка 414)
 - Modify: `crates/tool-runtime/src/registry.rs:362-382` (`execute_after_approval`)
 
 **Interfaces:**
-- Consumes: `command_from_input` и `PermissionCheck.command` из Task 4.
-- Produces: публичных сигнатур не меняет.
+- Consumes: `command_from_input` и `ApprovalRequest.command` из Task 4.
+- Produces: `PermissionEngine::approval_matches(&self, id: Uuid, tool_name: &str, scope: &str, command: Option<&str>) -> bool` — `true` только если approval существует, находится в состоянии `Granted` **и** описывает ровно этот вызов.
 
-**Проблема (найдена при ревью плана).** `execute_after_approval` проверяет только то, что approval с таким `approval_id` находится в состоянии `Granted`, после чего исполняет **тот `input`, который передан в вызов**, а не тот, что был сохранён в approval. Ни `check_scoped`, ни правила политики на этом пути не выполняются вовсе. Последствия:
+**Проблема (найдена при ревью плана).** `execute_after_approval` проверяет только то, что approval с таким `approval_id` находится в состоянии `Granted`, после чего исполняет **тот `input`, который передан в вызов**, а не тот, что был сохранён в approval. Ни сверки с одобренным вызовом, ни `check_scoped` на этом пути нет. Последствия:
 
-- одобрение, выданное на `cargo test`, годится для исполнения `rm -rf target`, если вызывающий подставит другой `input`;
+- одобрение, выданное на `cargo test`, годится для исполнения чего угодно другого, если вызывающий подставит другой `input`;
 - правило `Deny`, добавленное в `permissions.json` между запросом approval и его подтверждением, не сработает.
 
 Без этой задачи вся политика из Tasks 1–4 обходится штатным потоком «агент попросил → хозяин подтвердил».
 
-- [ ] **Step 1: Написать падающий тест**
+**Две отдельные защиты, обе нужны.** Сверка вызова с одобренным закрывает подмену целиком, включая команды, которых нет ни в одном правиле (`cargo test` → `cargo publish`). Повторная проверка `Deny` закрывает изменение политики между запросом и подтверждением, когда сам вызов не менялся. Ни одна из них не покрывает случай другой.
+
+**Почему нормализация живёт в `evohime-permissions`.** `ApprovalRequest.scope` пропущен через приватную `normalize_scope_path` (`crates/permissions/src/lib.rs:572`), которая из крейта не экспортируется. Сравнивать снаружи означало бы дублировать её правила и однажды разойтись, поэтому сравнение выполняется методом самого движка.
+
+- [ ] **Step 1: Написать падающие тесты**
 
 Добавить в `mod tests` в `crates/tool-runtime/src/registry.rs`:
 
 ```rust
+    #[tokio::test]
+    async fn approval_cannot_be_reused_for_a_different_call() {
+        let permissions = PermissionEngine::new();
+        permissions
+            .set_mode(
+                evohime_permissions::Permission::ShellExecute,
+                evohime_permissions::PermissionMode::Ask,
+            )
+            .await;
+        let registry = ToolRegistry::bootstrap_with_permissions(permissions);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let context = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: Some(Uuid::new_v4()),
+            progress_tx: None,
+        };
+
+        let result = registry
+            .execute(
+                &context,
+                "shell.execute",
+                serde_json::json!({ "command": "cargo --version" }),
+            )
+            .await;
+        let approval_id = match result {
+            Err(ToolError::NeedsApproval { approval_id, .. }) => approval_id,
+            other => panic!("expected NeedsApproval, got {other:?}"),
+        };
+        registry
+            .permissions()
+            .resolve(approval_id, true)
+            .await
+            .expect("granted");
+
+        // No policy rule covers `cargo publish`; the substitution alone must
+        // be enough to refuse.
+        let substituted = registry
+            .execute_after_approval(
+                &context,
+                "shell.execute",
+                serde_json::json!({ "command": "cargo publish" }),
+                approval_id,
+                CancellationToken::new(),
+            )
+            .await;
+        assert!(
+            matches!(&substituted, Err(ToolError::Execution(message)) if message.contains("does not match")),
+            "expected a mismatch refusal, got {substituted:?}"
+        );
+
+        // The call the owner actually approved is not refused as a mismatch.
+        // Asserted negatively on purpose: whether `cargo` exists on PATH is
+        // not what this test is about.
+        let approved = registry
+            .execute_after_approval(
+                &context,
+                "shell.execute",
+                serde_json::json!({ "command": "cargo --version" }),
+                approval_id,
+                CancellationToken::new(),
+            )
+            .await;
+        assert!(
+            !matches!(&approved, Err(ToolError::Execution(message)) if message.contains("does not match")),
+            "approved call must not be refused as a mismatch, got {approved:?}"
+        );
+    }
+
     #[tokio::test]
     async fn approved_call_cannot_execute_a_denied_command() {
         let permissions = PermissionEngine::new();
@@ -1026,13 +1102,15 @@ git commit -m "feat(tools): match permission policy against shell commands"
             .await
             .expect("granted");
 
-        // A deny rule lands before the approved call actually runs.
+        // A deny rule lands after the approval was granted but before the call
+        // actually runs. The call itself is unchanged, so the mismatch check
+        // passes and the deny check is what must stop it.
         registry
             .permissions()
             .set_policy_rules(evohime_permissions::PolicyRuleSet::new(vec![
                 evohime_permissions::PolicyRule {
                     permission: evohime_permissions::Permission::ShellExecute,
-                    pattern: "rm *".into(),
+                    pattern: "cargo *".into(),
                     mode: evohime_permissions::PermissionMode::Deny,
                 },
             ]))
@@ -1042,7 +1120,7 @@ git commit -m "feat(tools): match permission policy against shell commands"
             .execute_after_approval(
                 &context,
                 "shell.execute",
-                serde_json::json!({ "command": "rm -rf target" }),
+                serde_json::json!({ "command": "cargo --version" }),
                 approval_id,
                 CancellationToken::new(),
             )
@@ -1053,21 +1131,138 @@ git commit -m "feat(tools): match permission policy against shell commands"
 
 - [ ] **Step 2: Запустить тест и убедиться, что он падает**
 
-Run: `cargo test -p evohime-tool-runtime approved_call_cannot_execute_a_denied_command`
-Expected: FAIL — команда исполняется (или падает с ошибкой запуска `rm` на Windows), но не с `PermissionDenied`.
+Run: `cargo test -p evohime-tool-runtime approval`
+Expected: FAIL — `approval_cannot_be_reused_for_a_different_call` не компилируется (нет `approval_matches`); после добавления метода он и `approved_call_cannot_execute_a_denied_command` падают по существу.
 
-- [ ] **Step 3: Реализовать**
+- [ ] **Step 3: Добавить сверку в движок разрешений**
 
-В `crates/tool-runtime/src/registry.rs`, в `execute_after_approval`, сразу после получения `definition` (строка 379-382) и до объявления `let execution = async {`, вставить:
+В `crates/permissions/src/lib.rs`, рядом с методом `approval` (строка 414):
 
 ```rust
-        // An approval is not a blank cheque: hard denials must still apply to
-        // the input we are about to run, which may differ from the one the
-        // owner saw. Only `Denied` is acted on here — re-asking would deadlock
-        // the flow that is already past its approval.
+    /// True when `id` is a granted approval describing exactly this call.
+    ///
+    /// Normalization of `scope` happens here on purpose: the rules live in
+    /// this crate and must not be duplicated by callers.
+    pub async fn approval_matches(
+        &self,
+        id: Uuid,
+        tool_name: &str,
+        scope: &str,
+        command: Option<&str>,
+    ) -> bool {
+        let approvals = self.approvals.read().await;
+        let Some(record) = approvals.get(&id) else {
+            return false;
+        };
+        record.state == ApprovalState::Granted
+            && record.request.tool_name == tool_name
+            && record.request.scope == normalize_scope_path(scope)
+            && record.request.command.as_deref() == command
+    }
+```
+
+**Попутно чиним порядок в `normalize_scope_path`** (`crates/permissions/src/lib.rs:572`). Сейчас там:
+
+```rust
+    path.as_ref()
+        .trim()
+        .trim_start_matches("./")
+        .replace('\\', "/")
+```
+
+Префикс `./` срезается **до** замены разделителей, поэтому windows-написание `.\src\main.rs` превращается в `./src/main.rs` и не совпадает с `src/main.rs`. Для одобрений это прямая дыра: одна и та же цель в двух написаниях выглядит как два разных scope. Поменять порядок:
+
+```rust
+fn normalize_scope_path(path: impl AsRef<str>) -> String {
+    path.as_ref()
+        .trim()
+        .replace('\\', "/")
+        .trim_start_matches("./")
+        .to_string()
+}
+```
+
+И тест в `mod tests` того же файла — на ту самую нормализацию, ради которой метод живёт в этом крейте:
+
+```rust
+    #[test]
+    fn scope_normalization_folds_windows_spelling() {
+        assert_eq!(normalize_scope_path(".\\src\\main.rs"), "src/main.rs");
+        assert_eq!(normalize_scope_path("./src/main.rs"), "src/main.rs");
+        assert_eq!(normalize_scope_path("  src/main.rs "), "src/main.rs");
+    }
+```
+
+```rust
+    #[test]
+    fn approval_matches_ignores_path_spelling_but_not_content() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let request = engine
+                .create_approval_scoped(
+                    Uuid::new_v4(),
+                    None,
+                    "filesystem.write",
+                    Permission::FilesystemWrite,
+                    "src/main.rs",
+                    None,
+                )
+                .await;
+            engine.resolve(request.id, true).await.expect("granted");
+
+            // Same path, different spelling — still the approved call.
+            assert!(
+                engine
+                    .approval_matches(request.id, "filesystem.write", ".\\src\\main.rs", None)
+                    .await
+            );
+            // Different file, different tool, or an unexpected command — not.
+            assert!(
+                !engine
+                    .approval_matches(request.id, "filesystem.write", "src/other.rs", None)
+                    .await
+            );
+            assert!(
+                !engine
+                    .approval_matches(request.id, "filesystem.read", "src/main.rs", None)
+                    .await
+            );
+            assert!(
+                !engine
+                    .approval_matches(request.id, "filesystem.write", "src/main.rs", Some("rm -rf"))
+                    .await
+            );
+        });
+    }
+```
+
+- [ ] **Step 4: Применить сверку и повторную проверку запретов**
+
+В `crates/tool-runtime/src/registry.rs` заменить начало `execute_after_approval` (строки 370-382 — проверку `granted` и получение `definition`) на:
+
+```rust
+        // An approval authorizes one specific call, not the tool in general.
+        let scope = scope_from_input(name, &input);
         let command = command_from_input(name, &input);
+        if !self
+            .permissions
+            .approval_matches(approval_id, name, &scope, command.as_deref())
+            .await
+        {
+            return Err(ToolError::Execution(
+                "approval does not match this call".to_string(),
+            ));
+        }
+
+        let definition = self
+            .tools
+            .get(name)
+            .ok_or_else(|| ToolError::UnknownTool(name.to_string()))?;
+
+        // Hard denials still apply: the policy may have changed between the
+        // request and the confirmation. Only `Denied` is acted on — re-asking
+        // would deadlock a flow that is already past its approval.
         for permission in definition.permissions {
-            let scope = scope_from_input(name, &input);
             if self
                 .permissions
                 .check_scoped(
@@ -1086,16 +1281,18 @@ Expected: FAIL — команда исполняется (или падает с
         }
 ```
 
-- [ ] **Step 4: Запустить тесты и убедиться, что они проходят**
+Сообщение `"approval is not granted"` исчезает: `approval_matches` возвращает `false` и для неподтверждённого approval тоже, а вызывающему в обоих случаях нужен один и тот же отказ. Проверить, что на это сообщение никто не полагается: `grep -rn "approval is not granted" --include=*.rs --include=*.cs .` — ожидается пусто после правки.
 
-Run: `cargo test -p evohime-tool-runtime`
-Expected: PASS — новый тест зелёный, existing approval-тесты (`ask_mode_creates_scoped_approval` и соседние) не сломаны.
+- [ ] **Step 5: Запустить тесты и убедиться, что они проходят**
 
-- [ ] **Step 5: Коммит**
+Run: `cargo test -p evohime-permissions -p evohime-tool-runtime`
+Expected: PASS — три новых теста зелёные, существующие approval-тесты (`ask_mode_creates_scoped_approval`, `approval_is_one_shot`, `grant_remembers_path_for_session`) не сломаны.
+
+- [ ] **Step 6: Коммит**
 
 ```bash
-git add crates/tool-runtime/src/registry.rs
-git commit -m "fix(tools): enforce deny rules on the post-approval path"
+git add crates/permissions/src/lib.rs crates/tool-runtime/src/registry.rs
+git commit -m "fix(tools): bind approvals to the exact call they authorized"
 ```
 
 ---
@@ -1114,7 +1311,7 @@ git commit -m "fix(tools): enforce deny rules on the post-approval path"
   - `pub fn load_rules_from(path: &Path) -> Result<PolicyRuleSet, String>` — `Ok(defaults())` при отсутствующем или пустом файле, `Ok(rules)` при валидном, `Err(message)` при битом JSON.
   - `pub async fn apply_rules(permissions: &PermissionEngine)` — грузит из `rules_path()`, логирует ошибку разбора и в этом случае применяет `defaults()`.
 
-**Про логирование:** в `evohime-core` нет ни `tracing`, ни `log` — крейт пишет структурный JSONL через `crate::logging::StructuredLogger` (`crates/evohime-core/src/logging.rs:11-45`). Используем его, новых зависимостей не добавляем. Разбор файла держим чистым (`Result`), чтобы тесты не трогали файловую систему логов.
+**Про логирование:** в `evohime-core` нет ни `tracing`, ни `log` — крейт пишет структурный JSONL через `StructuredLogger` (`crates/evohime-core/src/logging.rs:11-45`), который уже реэкспортирован из корня крейта (`lib.rs:558`), поэтому обращаемся как `crate::StructuredLogger`. Новых зависимостей не добавляем. Разбор файла держим чистым (`Result`), чтобы тесты не трогали файловую систему логов.
 
 **Про тесты:** `tempfile` в `[dev-dependencies]` крейта `evohime-core` отсутствует (там только `wiremock`). Вместо добавления зависимости повторяем идиому соседнего теста `crates/evohime-core/src/logging.rs:54` — уникальный путь внутри `std::env::temp_dir()` с уборкой за собой.
 
@@ -1183,7 +1380,7 @@ pub async fn apply_rules(permissions: &PermissionEngine) {
     let rules = match load_rules_from(&path) {
         Ok(rules) => rules,
         Err(error) => {
-            if let Ok(logger) = crate::logging::StructuredLogger::open(core_log_path()) {
+            if let Ok(logger) = crate::StructuredLogger::open(core_log_path()) {
                 let _ = logger.write(
                     "warn",
                     "permissions.rules.malformed",
@@ -1304,10 +1501,10 @@ Expected: без ошибок.
 
 - [ ] **Step 5: Задокументировать файл**
 
-В `docs/architecture.md`, в списке данных/диагностики (рядом со строками про SQLite и логи), добавить пункт:
+В `docs/architecture.md` раздел называется `## Данные и восстановление` (строка 26) и написан прозой, а не списком. Дописать в конец абзаца на строке 28 предложение в том же стиле:
 
 ```markdown
-- правила разрешений: `%LOCALAPPDATA%\EvoHime\permissions.json` (упорядоченный массив; побеждает последнее совпавшее правило; отсутствие файла = встроенные defaults).
+Правила разрешений читаются из `%LOCALAPPDATA%\EvoHime\permissions.json`: упорядоченный массив, побеждает последнее совпавшее правило; отсутствующий или пустой файл означает встроенный набор по умолчанию.
 ```
 
 - [ ] **Step 6: Коммит**
@@ -1334,7 +1531,16 @@ git commit -m "feat(core): load permission policy rules from data dir"
 
 - [ ] **Step 1: Написать падающий тест**
 
-Добавить в `mod tests` в `crates/evohime-core/src/lib.rs` (рядом с прочими юнит-тестами файла):
+Тестовый модуль в `crates/evohime-core/src/lib.rs:4537` импортирует символы **явным списком**, а не через `use super::*`, поэтому сначала дописать тип в этот список:
+
+```rust
+    use super::{
+        AgentRunError, CoreCommand, CoreEvent, CoreVersion, EventJournal, ModelAgent,
+        RecentToolCalls, TaskCoordinator, TaskExecutor, ToolAgent,
+    };
+```
+
+Затем добавить в тот же `mod tests` сам тест:
 
 ```rust
     #[test]
@@ -1359,7 +1565,7 @@ Expected: FAIL на компиляции — `RecentToolCalls` не сущест
 
 - [ ] **Step 3: Реализовать**
 
-Добавить в `crates/evohime-core/src/lib.rs` рядом с прочими вспомогательными типами файла:
+Добавить в `crates/evohime-core/src/lib.rs` на уровне корня крейта — непосредственно перед строкой 555 `mod ipc_bridge;`. `HashSet` там уже в области видимости (импорт на строке 593; порядок `use` относительно определения значения не имеет), а `VecDeque` не импортирован, поэтому он записан полным путём:
 
 ```rust
 /// How many recent tool calls are checked for repetition. A repeat inside the
@@ -1439,7 +1645,7 @@ git commit -m "fix(core): bound duplicate tool-call detection to a recent window
 
 - **Отдельный `external_directory` permission из opencode.** У нас выход за пределы workspace уже блокируется песочницей (`crates/tool-runtime/src/sandbox.rs`, `resolve_existing` / `resolve_for_write`), отдельный слой разрешений дублировал бы её.
 - **Редактирование правил из WinUI.** Требует изменений в `evohime.desktop.proto` и в policy-панели; делается отдельным планом, после того как формат правил устоится на практике. До тех пор источник истины — `permissions.json`.
-- **`ApprovalAuditEntry.command`.** Аудит-запись не расширяем, чтобы не менять формат JSONL-журнала; команда доступна через `PermissionEngine::approval()`.
+- **Изменения в WinUI-панели подтверждений.** Не нужны: `CoreEvent::ApprovalRequired` уже несёт весь `input` вызова, поэтому команда доступна панели и без правок Core.
 - **LSP-диагностика и файл инструкций проекта (AGENTS.md) из того же обзора opencode.** Это отдельные фичи этапа 4, каждая тянет свой план.
 
 ## Известные ограничения этой реализации
