@@ -558,6 +558,20 @@ impl PermissionEngine {
         })
     }
 
+    /// Check if approval matches a specific call based on call_hash alone.
+    /// Returns true if the approval exists, is in Granted state, and the call_hash matches.
+    pub async fn approval_matches(
+        &self,
+        id: Uuid,
+        call_hash: &str,
+    ) -> bool {
+        if let Some(record) = self.approvals.read().await.get(&id) {
+            record.state == ApprovalState::Granted && record.request.call_hash == call_hash
+        } else {
+            false
+        }
+    }
+
     pub async fn list_session_overrides(&self) -> Vec<SessionOverride> {
         self.session_modes
             .read()
@@ -778,7 +792,7 @@ fn fingerprint_input(input: &serde_json::Value) -> String {
     }
 }
 
-fn canonical_call_hash(tool_name: &str, scope: &str, input: &serde_json::Value) -> String {
+pub fn canonical_call_hash(tool_name: &str, scope: &str, input: &serde_json::Value) -> String {
     let payload = format!("{}\n{}\n{}", tool_name, scope, fingerprint_input(input));
     let digest = Sha256::digest(payload.as_bytes());
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -1371,6 +1385,252 @@ mod tests {
                     .await,
                 PermissionDecision::Allowed
             );
+        });
+    }
+
+    #[test]
+    fn approval_matches_detects_different_inputs() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let task_id = Uuid::new_v4();
+            let input1 = serde_json::json!({"cmd": "cargo", "args": ["--version"]});
+            let input2 = serde_json::json!({"cmd": "cargo", "args": ["publish"]});
+
+            let request = engine
+                .create_approval_scoped_for_call(
+                    task_id,
+                    None,
+                    "shell.execute",
+                    Permission::ShellExecute,
+                    "workspace",
+                    &input1,
+                )
+                .await;
+            engine.resolve(request.id, true).await.expect("granted");
+
+            // Same hash matches
+            assert!(engine.approval_matches(request.id, &request.call_hash).await);
+
+            // Different input has different hash
+            let different_hash = canonical_call_hash("shell.execute", "workspace", &input2);
+            assert_ne!(request.call_hash, different_hash);
+            assert!(!engine.approval_matches(request.id, &different_hash).await);
+        });
+    }
+
+    #[test]
+    fn approval_matches_rejects_denied_approval() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let task_id = Uuid::new_v4();
+            let input = serde_json::json!({"cmd": "rm", "args": ["-rf", "/"]});
+
+            let request = engine
+                .create_approval_scoped_for_call(
+                    task_id,
+                    None,
+                    "shell.execute",
+                    Permission::ShellExecute,
+                    "workspace",
+                    &input,
+                )
+                .await;
+            engine.resolve(request.id, false).await.expect("denied");
+
+            // Denied approval should not match even with correct hash
+            assert!(!engine.approval_matches(request.id, &request.call_hash).await);
+        });
+    }
+
+    #[test]
+    fn approval_matches_rejects_pending_approval() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let task_id = Uuid::new_v4();
+            let input = serde_json::json!({"path": "file.txt", "content": "hello"});
+
+            let request = engine
+                .create_approval_scoped_for_call(
+                    task_id,
+                    None,
+                    "filesystem.write",
+                    Permission::FilesystemWrite,
+                    "file.txt",
+                    &input,
+                )
+                .await;
+
+            // Pending approval should not match
+            assert!(!engine.approval_matches(request.id, &request.call_hash).await);
+        });
+    }
+
+    #[test]
+    fn approval_for_git_commit_rejects_different_message() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let task_id = Uuid::new_v4();
+            let input1 = serde_json::json!({"message": "feat: add new feature"});
+            let input2 = serde_json::json!({"message": "fix: repair broken thing"});
+
+            let request = engine
+                .create_approval_scoped_for_call(
+                    task_id,
+                    None,
+                    "git.commit",
+                    Permission::GitWrite,
+                    "workspace",
+                    &input1,
+                )
+                .await;
+            engine.resolve(request.id, true).await.expect("granted");
+
+            // Different commit message has different hash
+            let different_hash = canonical_call_hash("git.commit", "workspace", &input2);
+            assert!(!engine.approval_matches(request.id, &different_hash).await);
+        });
+    }
+
+    #[test]
+    fn approval_for_file_write_rejects_different_content() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let task_id = Uuid::new_v4();
+            let input1 = serde_json::json!({"path": "src/main.rs", "content": "fn main() {}"});
+            let input2 = serde_json::json!({"path": "src/main.rs", "content": "fn main() { panic!(); }"});
+
+            let request = engine
+                .create_approval_scoped_for_call(
+                    task_id,
+                    None,
+                    "filesystem.write",
+                    Permission::FilesystemWrite,
+                    "src/main.rs",
+                    &input1,
+                )
+                .await;
+            engine.resolve(request.id, true).await.expect("granted");
+
+            // Same path but different content should not match
+            let different_hash = canonical_call_hash("filesystem.write", "src/main.rs", &input2);
+            assert!(!engine.approval_matches(request.id, &different_hash).await);
+        });
+    }
+
+    #[test]
+    fn call_hash_is_stable_across_json_key_order() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let task_id = Uuid::new_v4();
+            let input1 = serde_json::json!({"b": 2, "a": 1, "c": {"z": 26, "x": 24}});
+            let input2 = serde_json::json!({"c": {"x": 24, "z": 26}, "a": 1, "b": 2});
+
+            let request = engine
+                .create_approval_scoped_for_call(
+                    task_id,
+                    None,
+                    "mcp.call",
+                    Permission::McpCall,
+                    "workspace",
+                    &input1,
+                )
+                .await;
+            engine.resolve(request.id, true).await.expect("granted");
+
+            // Same input with different key order should have same hash
+            let equivalent_hash = canonical_call_hash("mcp.call", "workspace", &input2);
+            assert_eq!(request.call_hash, equivalent_hash);
+            assert!(engine.approval_matches(request.id, &equivalent_hash).await);
+        });
+    }
+
+    #[test]
+    fn hard_deny_policy_stops_granted_approval_execution() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let task_id = Uuid::new_v4();
+            let input = serde_json::json!({"cmd": "rm -rf /"});
+
+            // Create and grant approval
+            let request = engine
+                .create_approval_scoped_for_call(
+                    task_id,
+                    None,
+                    "shell.execute",
+                    Permission::ShellExecute,
+                    "workspace",
+                    &input,
+                )
+                .await;
+            engine.resolve(request.id, true).await.expect("granted");
+
+            // Approval matches initially
+            assert!(engine.approval_matches(request.id, &request.call_hash).await);
+
+            // Now add a hard deny policy for this command
+            engine
+                .set_policy_rules(PolicyRuleSet::new(vec![PolicyRule {
+                    permission: Permission::ShellExecute,
+                    pattern: "rm *".into(),
+                    mode: PermissionMode::Deny,
+                }]))
+                .await;
+
+            // Check with same input still shows approval matches
+            // (approval_matches only checks approval state, not policy)
+            assert!(engine.approval_matches(request.id, &request.call_hash).await);
+
+            // But check_scoped now denies due to hard policy
+            let check = PermissionCheck {
+                session_id: None,
+                path: Some("workspace"),
+                command: Some("rm -rf /"),
+            };
+            assert_eq!(
+                engine.check_scoped(Permission::ShellExecute, &check).await,
+                PermissionDecision::Denied
+            );
+        });
+    }
+
+    #[test]
+    fn approval_scope_normalization_consistent_with_hash() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let task_id = Uuid::new_v4();
+            let input = serde_json::json!({"content": "test"});
+
+            // Create approval with backslashes
+            let request = engine
+                .create_approval_scoped_for_call(
+                    task_id,
+                    None,
+                    "filesystem.write",
+                    Permission::FilesystemWrite,
+                    r".\src\main.rs",
+                    &input,
+                )
+                .await;
+            engine.resolve(request.id, true).await.expect("granted");
+
+            // The request should have normalized scope (converted to forward slashes)
+            assert!(request.scope.contains("src/main.rs"));
+
+            // And hash should match
+            let expected_hash = canonical_call_hash("filesystem.write", &request.scope, &input);
+            assert_eq!(request.call_hash, expected_hash);
+            assert!(engine.approval_matches(request.id, &expected_hash).await);
+        });
+    }
+
+    #[test]
+    fn approval_matches_returns_false_for_nonexistent_id() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let fake_id = Uuid::new_v4();
+            let call_hash = "some_hash".to_string();
+
+            assert!(!engine.approval_matches(fake_id, &call_hash).await);
         });
     }
 }
