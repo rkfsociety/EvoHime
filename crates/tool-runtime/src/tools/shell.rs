@@ -172,6 +172,22 @@ pub async fn execute(
 }
 
 /// Resolve the exact direct invocation that `execute` will spawn.
+///
+/// Handles both forms:
+/// - `{"command": "cd sub && rm -rf x"}` — parses cd prefix and remaining command
+/// - `{"program": "rm", "args": ["-rf", "x"], "cwd": "sub"}` — direct form
+///
+/// Returns `(program, args, cwd_option)` or `None` if input is insufficient.
+///
+/// # Examples
+///
+/// ```ignore
+/// resolve_invocation(&json!({"command": "rm -rf target"}))
+/// // → Some(("rm", ["-rf", "target"], None))
+///
+/// resolve_invocation(&json!({"command": "cd src && cargo test"}))
+/// // → Some(("cargo", ["test"], Some("src")))
+/// ```
 pub fn resolve_invocation(value: &Value) -> Option<(String, Vec<String>, Option<String>)> {
     let input: Input = serde_json::from_value(value.clone()).ok()?;
     resolve_invocation_from_input(&input)
@@ -296,5 +312,96 @@ mod tests {
         .await;
 
         assert!(matches!(result, Err(ToolError::InvalidInput { .. })));
+    }
+
+    #[test]
+    fn resolve_invocation_simple_command() {
+        let result = resolve_invocation(&json!({
+            "command": "rm -rf target"
+        }));
+        assert_eq!(
+            result,
+            Some(("rm".to_string(), vec!["-rf".to_string(), "target".to_string()], None))
+        );
+    }
+
+    #[test]
+    fn resolve_invocation_with_cd_prefix() {
+        let result = resolve_invocation(&json!({
+            "command": "cd src && cargo test"
+        }));
+        assert_eq!(
+            result,
+            Some((
+                "cargo".to_string(),
+                vec!["test".to_string()],
+                Some("src".to_string())
+            ))
+        );
+    }
+
+    #[test]
+    fn resolve_invocation_program_with_args_and_cwd() {
+        let result = resolve_invocation(&json!({
+            "program": "cargo",
+            "args": ["test"],
+            "cwd": "src"
+        }));
+        assert_eq!(
+            result,
+            Some((
+                "cargo".to_string(),
+                vec!["test".to_string()],
+                Some("src".to_string())
+            ))
+        );
+    }
+
+    #[test]
+    fn resolve_invocation_empty_command() {
+        let result = resolve_invocation(&json!({
+            "command": ""
+        }));
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn resolve_invocation_multiple_spaces() {
+        let result = resolve_invocation(&json!({
+            "command": "rm  -rf   target"
+        }));
+        assert_eq!(
+            result,
+            Some(("rm".to_string(), vec!["-rf".to_string(), "target".to_string()], None))
+        );
+    }
+
+    #[test]
+    fn resolve_invocation_cd_with_quoted_path() {
+        let result = resolve_invocation(&json!({
+            "command": r#"cd "src/test" && cargo test"#
+        }));
+        assert_eq!(
+            result,
+            Some((
+                "cargo".to_string(),
+                vec!["test".to_string()],
+                Some("src/test".to_string())
+            ))
+        );
+    }
+
+    #[test]
+    fn resolve_invocation_program_only() {
+        let result = resolve_invocation(&json!({
+            "program": "git"
+        }));
+        assert_eq!(result, Some(("git".to_string(), vec![], None)));
+    }
+
+    #[test]
+    fn resolve_invocation_no_input() {
+        let result = resolve_invocation(&json!({}));
+        assert_eq!(result, None);
     }
 }
