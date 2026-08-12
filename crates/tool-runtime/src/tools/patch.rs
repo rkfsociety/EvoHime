@@ -87,7 +87,11 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
                     .map(|s| s != &item[1..])
                     .unwrap_or(true)
                 {
-                    return Err(ToolError::Execution("patch context mismatch".into()));
+                    old_index = lines
+                        .iter()
+                        .position(|line| line == &item[1..])
+                        .map(|index| index as isize)
+                        .ok_or_else(|| ToolError::Execution("patch context mismatch".into()))?;
                 }
                 replacements.push(lines[old_index as usize].clone());
                 old_index += 1;
@@ -97,7 +101,11 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
                     .map(|s| s != &item[1..])
                     .unwrap_or(true)
                 {
-                    return Err(ToolError::Execution("patch removal mismatch".into()));
+                    old_index = lines
+                        .iter()
+                        .position(|line| line == &item[1..])
+                        .map(|index| index as isize)
+                        .ok_or_else(|| ToolError::Execution("patch removal mismatch".into()))?;
                 }
                 old_index += 1;
             } else if let Some(stripped) = item.strip_prefix('+') {
