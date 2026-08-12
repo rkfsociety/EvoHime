@@ -170,6 +170,12 @@ message ResolveApproval {
   bool granted = 2;
 }
 
+// Bounded, read-only Core Doctor diagnostic. project_id is optional; when
+// set, the permissions check is grounded in that project's real workspace.
+message RunDoctor {
+  string project_id = 1;
+}
+
 message CommandEnvelope {
   ProtocolVersion protocol = 1;
   string request_id = 2;
@@ -202,6 +208,7 @@ message CommandEnvelope {
     GetBuildPolicy get_build_policy = 32;
     SaveBuildPolicy save_build_policy = 33;
     ResyncRequest resync_request = 34;
+    RunDoctor run_doctor = 35;
   }
 }
 
