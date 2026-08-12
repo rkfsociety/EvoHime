@@ -2820,7 +2820,8 @@ public partial class MainWindow : Window
                     var toolCount = root.TryGetProperty("tools", out var contextTools) && contextTools.ValueKind == JsonValueKind.Array
                         ? contextTools.GetArrayLength()
                         : 0;
-                    AddTraceLine($"Контекст подготовлен\nМодель: {PayloadString(root, "model")}\nWorkspace: {PayloadString(root, "workspace_path")}\nИнструментов: {toolCount}", true);
+                    var userPrompt = PayloadString(root, "user_prompt");
+                    AddTraceLine($"Контекст подготовлен\nМодель: {PayloadString(root, "model")}\nWorkspace: {PayloadString(root, "workspace_path")}\nИнструментов: {toolCount}\nЗадача: {(string.IsNullOrWhiteSpace(userPrompt) ? "(не передана)" : TrimTrace(userPrompt))}", true);
                     break;
                 case "agent.message.delta":
                     AppendAssistantDelta(PayloadString(root, "content"));
