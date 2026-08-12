@@ -292,12 +292,13 @@ impl ToolRegistry {
                 PermissionDecision::NeedsApproval => {
                     let approval = self
                         .permissions
-                        .create_approval_scoped(
+                        .create_approval_scoped_for_call(
                             ctx.task_id,
                             ctx.session_id,
                             name,
                             *permission,
                             scope,
+                            &input,
                         )
                         .await;
                     return Err(ToolError::NeedsApproval {
@@ -367,19 +368,50 @@ impl ToolRegistry {
         approval_id: Uuid,
         cancellation: CancellationToken,
     ) -> Result<ToolResult, ToolError> {
-        let granted = self
-            .permissions
-            .approval(approval_id)
-            .await
-            .map(|(_, state)| state == evohime_permissions::ApprovalState::Granted)
-            .unwrap_or(false);
-        if !granted {
-            return Err(ToolError::Execution("approval is not granted".to_string()));
-        }
         let definition = self
             .tools
             .get(name)
             .ok_or_else(|| ToolError::UnknownTool(name.to_string()))?;
+        let scope = scope_from_input(name, &input);
+        for permission in definition.permissions {
+            match self
+                .permissions
+                .approval_matches_call(
+                    approval_id,
+                    ctx.task_id,
+                    ctx.session_id,
+                    name,
+                    *permission,
+                    &scope,
+                    &input,
+                )
+                .await
+            {
+                Some(evohime_permissions::ApprovalState::Granted) => {}
+                Some(evohime_permissions::ApprovalState::Denied) => {
+                    return Err(ToolError::PermissionDenied(*permission));
+                }
+                Some(evohime_permissions::ApprovalState::Pending) | None => {
+                    return Err(ToolError::Execution(
+                        "approval is not granted for this call".to_string(),
+                    ));
+                }
+            }
+            if matches!(
+                self.permissions
+                    .check_scoped(
+                        *permission,
+                        &evohime_permissions::PermissionCheck {
+                            session_id: ctx.session_id,
+                            path: Some(scope.as_str()),
+                        },
+                    )
+                    .await,
+                evohime_permissions::PermissionDecision::Denied
+            ) {
+                return Err(ToolError::PermissionDenied(*permission));
+            }
+        }
         let execution = async {
             match name {
             tools::filesystem::NAME => tools::filesystem::execute(ctx, input).await,
@@ -775,6 +807,119 @@ mod tests {
             }
             other => panic!("expected NeedsApproval, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn approval_is_bound_to_exact_call_and_rechecks_deny() {
+        let permissions = PermissionEngine::new();
+        permissions
+            .set_mode(
+                evohime_permissions::Permission::FilesystemWrite,
+                evohime_permissions::PermissionMode::Ask,
+            )
+            .await;
+        let registry = ToolRegistry::bootstrap_with_permissions(permissions.clone());
+        let dir = tempfile::tempdir().expect("tempdir");
+        let context = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::new_v4(),
+            session_id: Some(Uuid::new_v4()),
+            progress_tx: None,
+        };
+        let original = serde_json::json!({
+            "path": "notes/todo.txt",
+            "content": "approved"
+        });
+        let approval_id = match registry
+            .execute(&context, "filesystem.write", original.clone())
+            .await
+            .expect_err("ask mode should require approval")
+        {
+            ToolError::NeedsApproval { approval_id, .. } => approval_id,
+            other => panic!("expected NeedsApproval, got {other:?}"),
+        };
+        permissions.resolve(approval_id, true).await.expect("granted");
+
+        let changed = serde_json::json!({
+            "path": "notes/todo.txt",
+            "content": "tampered"
+        });
+        assert!(matches!(
+            registry
+                .execute_after_approval(
+                    &context,
+                    "filesystem.write",
+                    changed,
+                    approval_id,
+                    CancellationToken::new(),
+                )
+                .await,
+            Err(ToolError::Execution(message)) if message.contains("this call")
+        ));
+        assert!(!dir.path().join("notes/todo.txt").exists());
+
+        permissions
+            .set_mode(
+                evohime_permissions::Permission::FilesystemWrite,
+                evohime_permissions::PermissionMode::Deny,
+            )
+            .await;
+        assert!(matches!(
+            registry
+                .execute_after_approval(
+                    &context,
+                    "filesystem.write",
+                    original,
+                    approval_id,
+                    CancellationToken::new(),
+                )
+                .await,
+            Err(ToolError::PermissionDenied(
+                evohime_permissions::Permission::FilesystemWrite
+            ))
+        ));
+        assert!(!dir.path().join("notes/todo.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn denied_approval_is_rejected_when_rechecked() {
+        let permissions = PermissionEngine::new();
+        let input = serde_json::json!({ "path": "notes/todo.txt", "content": "x" });
+        let request = permissions
+            .create_approval_scoped_for_call(
+                Uuid::new_v4(),
+                None,
+                "filesystem.write",
+                evohime_permissions::Permission::FilesystemWrite,
+                "notes/todo.txt",
+                &input,
+            )
+            .await;
+        permissions.resolve(request.id, false).await.expect("denied");
+        let registry = ToolRegistry::bootstrap_with_permissions(permissions);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let context = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: request.task_id,
+            session_id: request.session_id,
+            progress_tx: None,
+        };
+
+        assert!(matches!(
+            registry
+                .execute_after_approval(
+                    &context,
+                    "filesystem.write",
+                    input,
+                    request.id,
+                    CancellationToken::new(),
+                )
+                .await,
+            Err(ToolError::PermissionDenied(
+                evohime_permissions::Permission::FilesystemWrite
+            ))
+        ));
+        assert!(!dir.path().join("notes/todo.txt").exists());
     }
 
     #[tokio::test]

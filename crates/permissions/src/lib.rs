@@ -4,6 +4,7 @@
 //! Session overrides + path grants persist via `app_settings.permission_scopes` (Stage 7.22).
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     sync::Arc,
@@ -50,6 +51,9 @@ pub struct ApprovalRequest {
     pub permission: Permission,
     /// Relative path, URL, or `"workspace"`.
     pub scope: String,
+    /// Hash of the tool name, normalized scope, and exact canonical input.
+    #[serde(default)]
+    pub call_hash: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -311,7 +315,14 @@ impl PermissionEngine {
         permission: Permission,
         scope: impl Into<String>,
     ) -> ApprovalRequest {
-        self.create_approval_scoped(task_id, None, tool_name, permission, scope)
+        self.create_approval_scoped_for_call(
+            task_id,
+            None,
+            tool_name,
+            permission,
+            scope,
+            &serde_json::Value::Null,
+        )
             .await
     }
 
@@ -323,13 +334,37 @@ impl PermissionEngine {
         permission: Permission,
         scope: impl Into<String>,
     ) -> ApprovalRequest {
+        self.create_approval_scoped_for_call(
+            task_id,
+            session_id,
+            tool_name,
+            permission,
+            scope,
+            &serde_json::Value::Null,
+        )
+        .await
+    }
+
+    pub async fn create_approval_scoped_for_call(
+        &self,
+        task_id: Uuid,
+        session_id: Option<Uuid>,
+        tool_name: impl Into<String>,
+        permission: Permission,
+        scope: impl Into<String>,
+        input: &serde_json::Value,
+    ) -> ApprovalRequest {
+        let tool_name = tool_name.into();
+        let scope = normalize_scope_path(scope.into());
+        let call_hash = canonical_call_hash(&tool_name, &scope, input);
         let request = ApprovalRequest {
             id: Uuid::new_v4(),
             task_id,
             session_id,
-            tool_name: tool_name.into(),
+            tool_name,
             permission,
-            scope: normalize_scope_path(scope.into()),
+            scope,
+            call_hash,
         };
         self.approvals.write().await.insert(
             request.id,
@@ -417,6 +452,28 @@ impl PermissionEngine {
             .await
             .get(&id)
             .map(|r| (r.request.clone(), r.state))
+    }
+
+    pub async fn approval_matches_call(
+        &self,
+        id: Uuid,
+        task_id: Uuid,
+        session_id: Option<Uuid>,
+        tool_name: &str,
+        permission: Permission,
+        scope: &str,
+        input: &serde_json::Value,
+    ) -> Option<ApprovalState> {
+        self.approvals.read().await.get(&id).and_then(|record| {
+            let request = &record.request;
+            (request.task_id == task_id
+                && request.session_id == session_id
+                && request.tool_name == tool_name
+                && request.permission == permission
+                && request.scope == normalize_scope_path(scope)
+                && request.call_hash == canonical_call_hash(tool_name, &request.scope, input))
+                .then_some(record.state)
+        })
     }
 
     pub async fn list_session_overrides(&self) -> Vec<SessionOverride> {
@@ -572,8 +629,9 @@ fn mode_to_decision(mode: PermissionMode) -> PermissionDecision {
 fn normalize_scope_path(path: impl AsRef<str>) -> String {
     path.as_ref()
         .trim()
-        .trim_start_matches("./")
         .replace('\\', "/")
+        .trim_start_matches("./")
+        .to_string()
 }
 
 fn is_rememberable_scope(scope: &str) -> bool {
@@ -602,6 +660,46 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or(0)
+}
+
+fn fingerprint_input(input: &serde_json::Value) -> String {
+    match input {
+        serde_json::Value::Null => "null".to_string(),
+        serde_json::Value::Bool(value) => value.to_string(),
+        serde_json::Value::Number(value) => value.to_string(),
+        serde_json::Value::String(value) => serde_json::to_string(value).unwrap_or_default(),
+        serde_json::Value::Array(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(fingerprint_input)
+                .collect::<Vec<_>>()
+                .join(",")
+        ),
+        serde_json::Value::Object(values) => {
+            let mut keys = values.keys().collect::<Vec<_>>();
+            keys.sort();
+            format!(
+                "{{{}}}",
+                keys.into_iter()
+                    .map(|key| {
+                        format!(
+                            "{}:{}",
+                            serde_json::to_string(key).unwrap_or_default(),
+                            fingerprint_input(&values[key])
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+        }
+    }
+}
+
+fn canonical_call_hash(tool_name: &str, scope: &str, input: &serde_json::Value) -> String {
+    let payload = format!("{}\n{}\n{}", tool_name, scope, fingerprint_input(input));
+    let digest = Sha256::digest(payload.as_bytes());
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 #[cfg(test)]
@@ -643,6 +741,47 @@ mod tests {
                 Some(ApprovalState::Granted)
             );
             assert_eq!(engine.resolve(request.id, false).await, None);
+        });
+    }
+
+    #[test]
+    fn approval_call_hash_is_canonical_and_scope_is_normalized() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let input = serde_json::from_str::<serde_json::Value>(
+                r#"{"path":".\\src\\main.rs","content":"x","metadata":{"b":2,"a":1}}"#,
+            )
+            .unwrap();
+            let equivalent = serde_json::from_str::<serde_json::Value>(
+                r#"{"metadata":{"a":1,"b":2},"content":"x","path":".\\src\\main.rs"}"#,
+            )
+            .unwrap();
+            let request = engine
+                .create_approval_scoped_for_call(
+                    Uuid::new_v4(),
+                    None,
+                    "filesystem.write",
+                    Permission::FilesystemWrite,
+                    r#".\src\main.rs"#,
+                    &input,
+                )
+                .await;
+            engine.resolve(request.id, true).await.expect("granted");
+
+            assert_eq!(
+                engine
+                    .approval_matches_call(
+                        request.id,
+                        request.task_id,
+                        None,
+                        "filesystem.write",
+                        Permission::FilesystemWrite,
+                        "src/main.rs",
+                        &equivalent,
+                    )
+                    .await,
+                Some(ApprovalState::Granted)
+            );
         });
     }
 

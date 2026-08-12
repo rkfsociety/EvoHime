@@ -2202,7 +2202,7 @@ impl ToolAgent {
                                 result = receiver => result.unwrap_or(false),
                             };
                             if !granted {
-                                "approval denied".to_string()
+                                "approval denied: mutation not performed".to_string()
                             } else {
                                 match self
                                     .tools
@@ -2238,6 +2238,7 @@ impl ToolAgent {
                 );
                 let failed = tool_output_failed(&output);
                 mutation_done |= !failed
+                    && !output.to_lowercase().contains("approval denied")
                     && matches!(call.name.as_str(), "filesystem.write" | "filesystem.patch");
                 commit_done |= !failed && call.name == "git.commit";
                 if call.name == "shell.execute" && !failed {
@@ -2300,6 +2301,7 @@ fn tool_output_failed(output: &str) -> bool {
         return !lower.contains("exit_code: 0");
     }
     lower.contains("failed")
+        || lower.contains("approval denied")
         || lower.contains("ошиб")
         || lower.contains("не удалось")
         || lower.contains("blocked")
@@ -4559,6 +4561,13 @@ mod tests {
         assert!(coordinator.resolve(approval_id, true).await);
         assert!(!coordinator.resolve(approval_id, false).await);
         assert!(receiver.await.expect("approval response"));
+    }
+
+    #[test]
+    fn denied_approval_output_is_not_a_successful_mutation() {
+        assert!(super::tool_output_failed(
+            "approval denied: mutation not performed"
+        ));
     }
 
     #[test]
