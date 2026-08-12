@@ -166,6 +166,53 @@ fn attribute_value(tag: &str, attribute: &str) -> Option<String> {
 
 fn parse_legacy_function_calls(content: &str, iteration: usize) -> Vec<NativeToolCall> {
     let mut calls = Vec::new();
+    let supported_names = [
+        "filesystem.list",
+        "filesystem.read",
+        "filesystem.search",
+        "filesystem.write",
+        "filesystem.patch",
+        "shell.execute",
+        "git.status",
+        "git.diff",
+        "git.commit",
+    ];
+
+    let mut json_cursor = 0;
+    while let Some(relative_start) = content[json_cursor..].find("<function_calls>") {
+        let start = json_cursor + relative_start + "<function_calls>".len();
+        let Some(relative_end) = content[start..].find("</function_calls>") else {
+            break;
+        };
+        let end = start + relative_end;
+        let body = content[start..end].trim();
+        if let Ok(items) = serde_json::from_str::<Vec<serde_json::Value>>(body) {
+            for item in items {
+                let Some(name) = item
+                    .get("tool_name")
+                    .or_else(|| item.get("name"))
+                    .and_then(serde_json::Value::as_str)
+                else {
+                    continue;
+                };
+                if !supported_names.contains(&name) {
+                    continue;
+                }
+                let arguments = item
+                    .get("arguments")
+                    .or_else(|| item.get("parameters"))
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({}));
+                calls.push(NativeToolCall {
+                    id: format!("legacy-json-{iteration}-{}", calls.len()),
+                    name: name.to_string(),
+                    arguments: arguments.to_string(),
+                });
+            }
+        }
+        json_cursor = end + "</function_calls>".len();
+    }
+
     let mut cursor = 0;
     while let Some(relative_start) = content[cursor..].find("<invoke") {
         let start = cursor + relative_start;
@@ -177,19 +224,7 @@ fn parse_legacy_function_calls(content: &str, iteration: usize) -> Vec<NativeToo
             cursor = tag_end + 1;
             continue;
         };
-        let legacy_read_only = matches!(
-            name.as_str(),
-            "filesystem.list"
-                | "filesystem.read"
-                | "filesystem.search"
-                | "git.status"
-                | "git.diff"
-                | "memory.search"
-                | "browser.open"
-                | "browser.extract"
-                | "browser.session.read"
-                | "browser.session.screenshot"
-        );
+        let legacy_read_only = supported_names.contains(&name.as_str());
         let body_start = tag_end + 1;
         let Some(body_end_relative) = content[body_start..].find("</invoke>") else {
             break;
@@ -4463,6 +4498,19 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].name, "filesystem.list");
         assert_eq!(calls[0].arguments, r#"{"path":"."}"#);
+    }
+
+    #[test]
+    fn parses_json_function_call_blocks_for_mutating_tools() {
+        let content = r#"
+<function_calls>
+[{"tool_name":"filesystem.patch","arguments":{"path":"tests/a.rs","patch":"--- a/tests/a.rs\n+++ b/tests/a.rs\n@@"}}]
+</function_calls>
+"#;
+        let calls = super::parse_legacy_function_calls(content, 4);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "filesystem.patch");
+        assert!(calls[0].arguments.contains("tests/a.rs"));
     }
 
     #[test]
