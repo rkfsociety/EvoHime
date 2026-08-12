@@ -96,6 +96,19 @@ impl LiteRouterProvider {
         thinking: Option<ThinkingConfig>,
     ) -> Result<reqwest::Response, ProviderError> {
         self.wait_for_request_slot().await;
+        let tools = tools.map(|specs| {
+            specs
+                .iter()
+                .cloned()
+                .map(|mut spec| {
+                    if model.to_ascii_lowercase().contains("gemini") {
+                        strip_gemini_unsupported_schema_fields(&mut spec.function.parameters);
+                    }
+                    spec
+                })
+                .collect::<Vec<ToolSpec>>()
+        });
+        let has_tools = tools.as_ref().is_some_and(|specs| !specs.is_empty());
         let body = ChatCompletionRequest {
             model: model.to_string(),
             messages: messages.iter().map(ApiMessage::from_chat_message).collect(),
@@ -103,8 +116,8 @@ impl LiteRouterProvider {
             stream_options: stream.then_some(StreamOptions {
                 include_usage: true,
             }),
-            tools: tools.map(|specs| specs.to_vec()),
-            tool_choice: if tools.is_some_and(|specs| !specs.is_empty()) {
+            tools,
+            tool_choice: if has_tools {
                 Some(Value::String("auto".into()))
             } else {
                 None
@@ -167,6 +180,23 @@ impl LiteRouterProvider {
             }
         }
         *last_request = Some(Instant::now());
+    }
+}
+
+fn strip_gemini_unsupported_schema_fields(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            object.remove("additionalProperties");
+            for child in object.values_mut() {
+                strip_gemini_unsupported_schema_fields(child);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                strip_gemini_unsupported_schema_fields(item);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -717,5 +747,24 @@ mod tests {
         let value = serde_json::to_value(&spec).expect("serialize");
         assert_eq!(value["type"], "function");
         assert_eq!(value["function"]["name"], "filesystem.read");
+    }
+
+    #[test]
+    fn strips_additional_properties_only_for_gemini_tools() {
+        let mut schema = json!({
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "nested": {
+                    "type": "object",
+                    "additionalProperties": false
+                }
+            }
+        });
+        strip_gemini_unsupported_schema_fields(&mut schema);
+        assert!(schema.get("additionalProperties").is_none());
+        assert!(schema["properties"]["nested"]
+            .get("additionalProperties")
+            .is_none());
     }
 }
