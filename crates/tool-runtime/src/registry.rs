@@ -15,6 +15,12 @@ pub enum ToolError {
     InvalidInput { tool: String, message: String },
     #[error("permission denied: {0:?}")]
     PermissionDenied(Permission),
+    #[error("resource not found for {tool}: {path}{hint}")]
+    NotFound {
+        tool: String,
+        path: String,
+        hint: String,
+    },
     #[error("approval required for {tool}: {approval_id}")]
     NeedsApproval {
         tool: String,
@@ -23,6 +29,10 @@ pub enum ToolError {
         approval_id: uuid::Uuid,
         input: Value,
     },
+    #[error("approval does not match this call")]
+    ApprovalMismatch,
+    #[error("approval was denied for this call")]
+    ApprovalDenied,
     #[error("tool execution failed: {0}")]
     Execution(String),
     #[error("tool timed out after {0:?}")]
@@ -393,12 +403,10 @@ impl ToolRegistry {
             {
                 Some(evohime_permissions::ApprovalState::Granted) => {}
                 Some(evohime_permissions::ApprovalState::Denied) => {
-                    return Err(ToolError::PermissionDenied(*permission));
+                    return Err(ToolError::ApprovalDenied);
                 }
                 Some(evohime_permissions::ApprovalState::Pending) | None => {
-                    return Err(ToolError::Execution(
-                        "approval is not granted for this call".to_string(),
-                    ));
+                    return Err(ToolError::ApprovalMismatch);
                 }
             }
             if matches!(
@@ -969,7 +977,7 @@ mod tests {
                     CancellationToken::new(),
                 )
                 .await,
-            Err(ToolError::Execution(message)) if message.contains("this call")
+            Err(ToolError::ApprovalMismatch)
         ));
         assert!(!dir.path().join("notes/todo.txt").exists());
 
@@ -1033,9 +1041,7 @@ mod tests {
                     CancellationToken::new(),
                 )
                 .await,
-            Err(ToolError::PermissionDenied(
-                evohime_permissions::Permission::FilesystemWrite
-            ))
+            Err(ToolError::ApprovalDenied)
         ));
         assert!(!dir.path().join("notes/todo.txt").exists());
     }

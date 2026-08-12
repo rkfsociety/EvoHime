@@ -26,6 +26,14 @@ impl WorkspaceSandbox {
     }
 
     pub fn resolve_existing(&self, path: &str) -> Result<PathBuf, ToolError> {
+        self.resolve_existing_for_tool(path, "workspace")
+    }
+
+    pub fn resolve_existing_for_tool(
+        &self,
+        path: &str,
+        tool: &str,
+    ) -> Result<PathBuf, ToolError> {
         let candidate = self.root.join(path);
         let resolved = match candidate.canonicalize() {
             Ok(resolved) => resolved,
@@ -33,10 +41,11 @@ impl WorkspaceSandbox {
                 if let Some(recovered) = self.find_unique_suffix(path) {
                     return self.ensure_inside(recovered, Permission::FilesystemRead);
                 }
-                return Err(ToolError::Execution(format!(
-                    "path invalid: {error}; {}",
-                    self.recovery_hint(&candidate, path)
-                )));
+                return Err(ToolError::NotFound {
+                    tool: tool.to_string(),
+                    path: path.to_string(),
+                    hint: format!("; {error}; {}", self.recovery_hint(&candidate, path)),
+                });
             }
         };
         self.ensure_inside(resolved, Permission::FilesystemRead)

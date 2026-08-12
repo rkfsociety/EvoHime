@@ -625,6 +625,7 @@ pub mod memory_api;
 pub mod memory_domain;
 pub mod observability;
 pub mod permission_rules;
+pub mod recovery;
 pub mod plan;
 pub mod prd;
 pub mod research;
@@ -2174,14 +2175,18 @@ impl ToolAgent {
                     && delivery_requirements.commit
                     && (!verification_test_passed
                         || (delivery_requirements.diff_check && !diff_check_passed));
-                let output = if commit_blocked {
-                    "git.commit blocked: сначала успешно выполни обязательную проверку и git diff --check".to_string()
+                let outcome = if commit_blocked {
+                    recovery::ToolOutcome::from_error(
+                        evohime_tool_runtime::ToolError::Execution(
+                            "git.commit blocked: сначала успешно выполни обязательную проверку и git diff --check".to_string(),
+                        ),
+                    )
                 } else {
                     match tokio::select! {
                         _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
                         result = self.tools.execute_with_cancellation(&context, &call.name, input, cancellation.clone()) => result,
                     } {
-                        Ok(result) => result.output,
+                        Ok(result) => recovery::ToolOutcome::success(result),
                         Err(evohime_tool_runtime::ToolError::NeedsApproval {
                             tool,
                             permission,
@@ -2203,7 +2208,9 @@ impl ToolAgent {
                                 result = receiver => result.unwrap_or(false),
                             };
                             if !granted {
-                                "approval denied: mutation not performed".to_string()
+                                recovery::ToolOutcome::denied_by_user(
+                                    "approval denied: mutation not performed",
+                                )
                             } else {
                                 match self
                                     .tools
@@ -2216,33 +2223,38 @@ impl ToolAgent {
                                     )
                                     .await
                                 {
-                                    Ok(result) => result.output,
-                                    Err(error) => error.to_string(),
+                                    Ok(result) => recovery::ToolOutcome::success(result),
+                                    Err(error) => recovery::ToolOutcome::from_error(error),
                                 }
                             }
                         }
-                        Err(error) => error.to_string(),
+                        Err(error) => recovery::ToolOutcome::from_error(error),
                     }
                 };
                 let _ = events.send(CoreEvent::ToolOutput {
                     task_id: task_id.clone(),
                     tool_name: call.name.clone(),
-                    output: output.clone(),
+                    output: outcome.output.clone(),
                 });
                 write_model_trace(
                     "tool.output",
                     serde_json::json!({
                         "task_id": task_id,
                         "tool_name": call.name,
-                        "output": output
+                        "output": outcome.output
                     }),
                 );
-                let failed = tool_output_failed(&output);
-                mutation_done |= !failed
-                    && !output.to_lowercase().contains("approval denied")
+                let failed = !outcome.ok;
+                mutation_done |= outcome.ok
                     && matches!(call.name.as_str(), "filesystem.write" | "filesystem.patch");
-                commit_done |= !failed && call.name == "git.commit";
-                if call.name == "shell.execute" && !failed {
+                commit_done |= outcome.ok
+                    && call.name == "git.commit"
+                    && outcome
+                        .structured
+                        .get("status")
+                        .and_then(serde_json::Value::as_str)
+                        != Some("nothing_to_commit");
+                if call.name == "shell.execute" && outcome.ok {
                     let arguments = call.arguments.to_lowercase();
                     if arguments.contains("diff") && arguments.contains("check") {
                         diff_check_passed = true;
@@ -2268,8 +2280,13 @@ impl ToolAgent {
                 }
                 verification_done = verification_test_passed
                     && (!delivery_requirements.diff_check || diff_check_passed);
-                let patch_context_mismatch = output.to_lowercase().contains("patch context mismatch");
-                messages.push(ChatMessage::tool_observation(call.id, output));
+                // Temporary exception: patch context is typed by filesystem.patch in wave III.
+                // Until then this hint may inspect only that specific recovery marker.
+                let patch_context_mismatch = outcome
+                    .output
+                    .to_lowercase()
+                    .contains("patch context mismatch");
+                messages.push(ChatMessage::tool_observation(call.id, outcome.output));
                 if failed {
                     let recovery = if patch_context_mismatch {
                         " Для patch context mismatch сначала вызови git.diff или filesystem.read для актуального файла, затем сформируй новый patch по фактическому содержимому; старый patch не повторяй."
@@ -2294,23 +2311,6 @@ impl ToolAgent {
         });
         Ok(message)
     }
-}
-
-fn tool_output_failed(output: &str) -> bool {
-    let lower = output.to_lowercase();
-    if lower.contains("exit_code:") {
-        return !lower.contains("exit_code: 0");
-    }
-    lower.contains("failed")
-        || lower.contains("approval denied")
-        || lower.contains("approval is not granted")
-        || lower.contains("permission denied:")
-        || lower.contains("ошиб")
-        || lower.contains("не удалось")
-        || lower.contains("blocked")
-        || lower.contains("exit_code: 1")
-        || lower.contains("exit_code: 101")
-        || lower.contains("error:")
 }
 
 impl TaskExecutor for ToolAgent {
@@ -4564,21 +4564,6 @@ mod tests {
         assert!(coordinator.resolve(approval_id, true).await);
         assert!(!coordinator.resolve(approval_id, false).await);
         assert!(receiver.await.expect("approval response"));
-    }
-
-    #[test]
-    fn denied_approval_output_is_not_a_successful_mutation() {
-        assert!(super::tool_output_failed(
-            "approval denied: mutation not performed"
-        ));
-    }
-
-    #[test]
-    fn approval_recheck_failures_are_not_successful_mutations() {
-        assert!(super::tool_output_failed(
-            "approval is not granted for this call"
-        ));
-        assert!(super::tool_output_failed("permission denied: FilesystemWrite"));
     }
 
     #[test]

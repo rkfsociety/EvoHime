@@ -21,10 +21,19 @@ pub async fn execute(ctx: &ToolContext, input: Value) -> Result<ToolResult, Tool
         message: error.to_string(),
     })?;
 
-    let resolved = ctx.sandbox()?.resolve_existing(&input.path)?;
+    let resolved = ctx
+        .sandbox()?
+        .resolve_existing_for_tool(&input.path, NAME)?;
     let content = fs::read_to_string(&resolved)
         .await
-        .map_err(|error| ToolError::Execution(format!("read failed: {error}")))?;
+        .map_err(|error| match error.kind() {
+            std::io::ErrorKind::NotFound => ToolError::NotFound {
+                tool: NAME.to_string(),
+                path: input.path.clone(),
+                hint: String::new(),
+            },
+            _ => ToolError::Execution(format!("read failed: {error}")),
+        })?;
 
     let display = truncate_for_display(&content);
     Ok(ToolResult {
@@ -89,5 +98,25 @@ mod tests {
             ToolError::PermissionDenied(Permission::FilesystemRead) => {}
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn classifies_missing_file_as_not_found() {
+        let dir = tempdir().expect("tempdir");
+        let ctx = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: uuid::Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+        };
+
+        let error = execute(&ctx, json!({ "path": "missing.txt" }))
+            .await
+            .expect_err("missing file must fail");
+        assert!(matches!(
+            error,
+            ToolError::NotFound { ref tool, ref path, .. }
+                if tool == NAME && path == "missing.txt"
+        ));
     }
 }
