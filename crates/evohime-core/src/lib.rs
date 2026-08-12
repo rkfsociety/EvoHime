@@ -276,6 +276,27 @@ fn parse_natural_tool_intent(content: &str, iteration: usize) -> Option<NativeTo
         .iter()
         .find(|candidate| content.contains(**candidate))
         .copied()?;
+
+    if let Some(json_body) = content
+        .split("```json")
+        .nth(1)
+        .and_then(|body| body.split("```").next())
+        .and_then(|body| serde_json::from_str::<serde_json::Value>(body.trim()).ok())
+    {
+        let arguments = if name == "filesystem.search" {
+            json_body
+        } else if json_body.get("path").is_some() {
+            json_body
+        } else {
+            serde_json::json!({ "path": "." })
+        };
+        return Some(NativeToolCall {
+            id: format!("natural-{iteration}"),
+            name: name.to_string(),
+            arguments: arguments.to_string(),
+        });
+    }
+
     if !explicit_action {
         return None;
     }
@@ -284,7 +305,7 @@ fn parse_natural_tool_intent(content: &str, iteration: usize) -> Option<NativeTo
         .split('`')
         .nth(1)
         .filter(|value| !value.contains('.'))
-        .unwrap_or(".");
+        .unwrap_or(if name == "filesystem.list" { "." } else { "" });
     let arguments = match name {
         "filesystem.list" | "filesystem.read" => serde_json::json!({ "path": path }),
         "filesystem.search" => serde_json::json!({ "query": path }),
