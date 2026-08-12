@@ -195,6 +195,13 @@ impl MemoryStoreSql {
           AND (expires_at IS NULL OR expires_at > ?3)
           AND (lower(title) LIKE lower(?4) OR lower(content) LIKE lower(?4))
         ORDER BY id ASC LIMIT ?5";
+    pub const LIST: &'static str = "SELECT id, scope_kind, scope_id,
+        title, content, provenance, privacy, created_at, expires_at,
+        archived, forgotten FROM memory_entries
+        WHERE scope_kind = ?1 AND scope_id = ?2
+          AND forgotten = 0
+          AND (?3 = 1 OR archived = 0)
+        ORDER BY created_at DESC, id ASC LIMIT ?4";
     pub const ARCHIVE: &'static str =
         "UPDATE memory_entries SET archived = 1 WHERE id = ?1 AND forgotten = 0";
     pub const FORGET: &'static str =
@@ -256,6 +263,33 @@ impl MemoryStoreSql {
                     now,
                     pattern,
                     i64::from(limit.min(100))
+                ],
+                map_record,
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(records)
+    }
+
+    /// Lists non-forgotten records for one exact scope, newest first.
+    /// Unlike `search`, this is not lexically filtered and does not exclude
+    /// expired records: bounded listing/cleanup of expired entries is a
+    /// separate concern left to the caller.
+    pub fn list(
+        connection: &Connection,
+        scope: MemoryScope,
+        scope_id: &str,
+        include_archived: bool,
+        limit: u32,
+    ) -> Result<Vec<MemoryRecord>, MemoryStoreError> {
+        validate_required("scope_id", scope_id, MAX_SCOPE_ID_BYTES)?;
+        let mut statement = connection.prepare(Self::LIST)?;
+        let records = statement
+            .query_map(
+                params![
+                    scope.as_str(),
+                    scope_id,
+                    include_archived as i64,
+                    i64::from(limit.clamp(1, 100))
                 ],
                 map_record,
             )?
@@ -391,6 +425,31 @@ mod tests {
             MemoryStoreSql::get_by_id(&connection, "a").unwrap(),
             Some(record("a", "Rust decision"))
         );
+    }
+
+    #[test]
+    fn list_is_scoped_and_hides_archived_unless_requested() {
+        let connection = Connection::open_in_memory().expect("sqlite opens");
+        schema(&connection);
+        MemoryStoreSql::insert(&connection, &record("b", "Rust decision")).expect("insert b");
+        MemoryStoreSql::insert(&connection, &record("a", "Rust decision")).expect("insert a");
+        let other = MemoryRecord {
+            scope_id: "other-project".into(),
+            ..record("c", "Rust decision")
+        };
+        MemoryStoreSql::insert(&connection, &other).expect("insert other");
+        assert!(MemoryStoreSql::archive(&connection, "a").expect("archive a"));
+
+        let active = MemoryStoreSql::list(&connection, MemoryScope::Project, "project-1", false, 10)
+            .expect("list active");
+        assert_eq!(
+            active.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(),
+            ["b"]
+        );
+
+        let all = MemoryStoreSql::list(&connection, MemoryScope::Project, "project-1", true, 10)
+            .expect("list including archived");
+        assert_eq!(all.len(), 2);
     }
 
     #[test]

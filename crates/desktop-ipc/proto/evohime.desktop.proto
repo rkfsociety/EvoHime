@@ -196,6 +196,59 @@ message ListResearchEvidence {
   string work_item_id = 1;
 }
 
+// Creates one bounded Memory v1 record (evohime_core::memory_domain
+// validation and redaction run server-side before persistence). scope_kind
+// is one of "project" | "task" | "workspace"; secondary_id is the task_id or
+// workspace_id and must be empty for "project" scope. privacy is one of
+// "public" | "internal" | "private" ("secret" is rejected: the persistent
+// store has no representation for it).
+message CreateMemory {
+  string scope_kind = 1;
+  string project_id = 2;
+  string secondary_id = 3;
+  string title = 4;
+  string content = 5;
+  string provenance_kind = 6;
+  string provenance_id = 7;
+  string provenance_locator = 8;
+  string privacy = 9;
+  uint64 ttl_ms = 10;
+}
+
+// Lists bounded, active-by-default Memory v1 records for one exact scope.
+message ListMemory {
+  string scope_kind = 1;
+  string project_id = 2;
+  string secondary_id = 3;
+  bool include_archived = 4;
+  uint32 limit = 5;
+}
+
+// Lexical, deterministic search over Memory v1 records for one exact scope.
+message SearchMemory {
+  string scope_kind = 1;
+  string project_id = 2;
+  string secondary_id = 3;
+  string query = 4;
+  uint32 limit = 5;
+}
+
+// Archives a memory record (hides it from default listings). Per the Memory
+// v1 plan, archive requires an out-of-band approval token, mirroring the
+// ApplyApprovedBuild trust model: approval_id proves the operation was
+// already approved by the user before this request is sent.
+message ArchiveMemory {
+  string id = 1;
+  string approval_id = 2;
+}
+
+// Permanently erases a memory record's title/content (forget). Also requires
+// an out-of-band approval token; see ArchiveMemory.
+message ForgetMemory {
+  string id = 1;
+  string approval_id = 2;
+}
+
 message CommandEnvelope {
   ProtocolVersion protocol = 1;
   string request_id = 2;
@@ -231,6 +284,11 @@ message CommandEnvelope {
     RunDoctor run_doctor = 35;
     SaveResearchEvidence save_research_evidence = 36;
     ListResearchEvidence list_research_evidence = 37;
+    CreateMemory create_memory = 38;
+    ListMemory list_memory = 39;
+    SearchMemory search_memory = 40;
+    ArchiveMemory archive_memory = 41;
+    ForgetMemory forget_memory = 42;
   }
 }
 
