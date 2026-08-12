@@ -701,6 +701,8 @@ pub mod observability;
 pub mod permission_rules;
 pub mod plan;
 pub mod prd;
+pub mod provider_resilience;
+pub use provider_resilience::{ProviderResilienceConfig, is_retriable_error, handle_provider_error, default_tool_specs, filter_readonly_tools};
 pub mod recovery;
 pub use recovery::{classify_tool_outcome, DenialSource, ToolFailureKind, ToolOutcome};
 pub mod research;
@@ -2083,6 +2085,93 @@ impl ToolAgent {
         let _ = journal.record_lesson(&lesson).await;
     }
 
+    /// Calls model with retry logic and timeout for resilience (Wave VII).
+    /// Returns the model result or a terminal error after max retries.
+    async fn call_model_with_resilience(
+        &self,
+        task_id: &str,
+        messages: &[ChatMessage],
+        specs: &[ToolSpec],
+        config: &ProviderResilienceConfig,
+    ) -> Result<evohime_model_gateway::ChatResult, AgentRunError> {
+        let timeout_duration = Duration::from_secs(config.model_timeout_secs);
+        let mut last_error: Option<String> = None;
+
+        for attempt in 0..=config.retry_max {
+            if attempt > 0 {
+                let backoff = provider_resilience::provider_backoff(attempt - 1, config);
+                write_model_trace(
+                    "provider.retry",
+                    serde_json::json!({
+                        "task_id": task_id,
+                        "attempt": attempt,
+                        "backoff_ms": backoff.as_millis(),
+                    }),
+                );
+                tokio::time::sleep(backoff).await;
+            }
+
+            write_model_trace(
+                "provider.attempt",
+                serde_json::json!({
+                    "task_id": task_id,
+                    "attempt": attempt + 1,
+                    "timeout_secs": config.model_timeout_secs,
+                }),
+            );
+
+            let result: Result<evohime_model_gateway::ChatResult, ProviderError> = match timeout(
+                timeout_duration,
+                self.gateway.chat_with_tools_for_route("default", None, messages, specs),
+            )
+            .await
+            {
+                Ok(Ok(result)) => return Ok(result),
+                Ok(Err(error)) => Err(error),
+                Err(_) => Err(ProviderError::Http(format!(
+                    "model timeout after {} seconds",
+                    config.model_timeout_secs
+                ))),
+            };
+
+            match result {
+                Err(error) => {
+                    last_error = Some(format!("{}", error));
+                    if !is_retriable_error(&error) {
+                        write_model_trace(
+                            "provider.error_terminal",
+                            serde_json::json!({
+                                "task_id": task_id,
+                                "error": error.to_string(),
+                            }),
+                        );
+                        return Err(AgentRunError::Provider(error));
+                    }
+                    write_model_trace(
+                        "provider.error_retriable",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "error": error.to_string(),
+                            "attempt": attempt + 1,
+                            "will_retry": attempt < config.retry_max,
+                        }),
+                    );
+                    if attempt >= config.retry_max {
+                        return Err(AgentRunError::Provider(ProviderError::Http(format!(
+                            "provider overload after {} attempts",
+                            config.retry_max
+                        ))));
+                    }
+                }
+                Ok(_) => unreachable!(),
+            }
+        }
+
+        Err(AgentRunError::Provider(ProviderError::Api(
+            last_error.unwrap_or_else(|| "unknown provider error".to_string()),
+        )))
+    }
+
     pub async fn run_once(
         &self,
         task_id: impl Into<String>,
@@ -2116,7 +2205,8 @@ impl ToolAgent {
             session_id: None,
             progress_tx: None,
         };
-        let specs = self
+        let resilience_config = ProviderResilienceConfig::default();
+        let mut specs = self
             .tools
             .list()
             .into_iter()
@@ -2125,6 +2215,19 @@ impl ToolAgent {
                 ToolSpec::function(name, tool.description, tool_parameters(tool.name))
             })
             .collect::<Vec<_>>();
+
+        // Graceful degradation: if no specs available, use defaults
+        if specs.is_empty() {
+            write_model_trace(
+                "provider.fallback_specs",
+                serde_json::json!({
+                    "task_id": task_id,
+                    "reason": "no tool specs available",
+                    "using": "default_tool_specs"
+                }),
+            );
+            specs = default_tool_specs();
+        }
         let tool_names = specs
             .iter()
             .map(|spec| spec.function.name.clone())
@@ -2215,7 +2318,7 @@ impl ToolAgent {
             );
             let result = tokio::select! {
                 _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
-                result = self.gateway.chat_with_tools_for_route("default", None, &messages, &specs) => result?,
+                result = self.call_model_with_resilience(&task_id, &messages, &specs, &resilience_config) => result?,
             };
             write_model_trace(
                 "model.response",
