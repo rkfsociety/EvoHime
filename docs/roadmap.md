@@ -1,10 +1,12 @@
 # EvoHime — native Windows roadmap
 
+Это краткая продуктовая карта, а не список отдельных задач. Детали текущего цикла находятся в [`development-plan.md`](development-plan.md), фактическая реализация — в [`current-state.md`](current-state.md).
+
 Актуальный roadmap описывает один локальный Windows-клиент Ева, распространяемый через `EvoHime-Setup.exe`. Пользователь запускает один ярлык `EvoHime`; внутренние Core и supervisor не являются отдельными продуктами.
 
 ## Текущая версия
 
-`0.0.0001` — первый клиентский релиз.
+`0.0.000032` — текущая версия native-клиента; первая версия продукта была `0.0.0001`.
 
 ## Завершено
 
@@ -23,7 +25,7 @@
 
 ## Ближайшая работа
 
-### 1. Developer workflow
+### 1. Developer workflow — следующий продуктовый этап
 
 - Files: дерево workspace, открытие и безопасное чтение;
 - Editor: native текстовый редактор с сохранением через Core;
@@ -31,7 +33,7 @@
 - Terminal: controlled child process, поток stdout/stderr, timeout и Stop;
 - approval preview для команд и изменений.
 
-### 2. Product hardening
+### 2. Reliability and security hardening
 
 - Windows Credential Manager/DPAPI для provider keys;
 - backup/restore SQLite и migration recovery;
@@ -54,3 +56,5 @@
 4. Inno Setup создаёт единственный `EvoHime-Setup.exe`.
 5. Для tag `vX.Y.Z` создаётся GitHub Release.
 6. Еженедельная retention-задача удаляет все versioned Releases/tags, кроме последнего.
+
+Незавершённые архитектурные варианты, ревью и пошаговые планы находятся в `docs/plans/` и намеренно не повторяются в roadmap.

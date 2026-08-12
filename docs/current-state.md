@@ -1,10 +1,10 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-04.
+Обновлено: 2026-08-12.
 
 ## Продукт
 
-EvoHime — локальный Windows-клиент для coding-agent задач. Пользовательское имя агента — **Ева**. Первая версия — `0.0.0001`.
+EvoHime — локальный Windows-клиент для coding-agent задач. Пользовательское имя агента — **Ева**. Текущая версия native-клиента — `0.0.000032`.
 
 Пользователь получает один `EvoHime-Setup.exe`. После установки на рабочем столе появляется один ярлык `EvoHime`, запускающий `EvoHime.exe`.
 
@@ -30,14 +30,17 @@ Core и supervisor — внутренние компоненты установ�
 - автообнаружение GitHub Release, SHA-256 проверка installer и upgrade smoke в CI;
 - автоматический rollback при ошибке установщика и recovery незавершённой транзакции перед запуском Core;
 - release retention: сохраняется только последний стабильный `vX.Y.Z` release/tag;
-- имя агента «Ева» передаётся в system context Core.
+- имя агента «Ева» передаётся в system context Core;
+- Core-owned build policy, её хранение и native policy panel;
+- durable recovery foundation для длительных запусков и reconciliation.
 
 ## Следующий этап
 
 1. Files, Editor, Git и controlled Terminal;
-2. diff/command preview в approval UI;
-3. Credential Manager/DPAPI, расширенный backup/restore и crash recovery UI;
-4. дальнейшая проверка установочного UX на чистой Windows 11.
+2. leases/reconciliation и расширенный diff/command preview в approval UI;
+3. permission policy rules с glob-областями и повторной проверкой approval-пути;
+4. Credential Manager/DPAPI, расширенный backup/restore и crash recovery UI;
+5. дальнейшая проверка установочного UX на чистой Windows 11.
 
 ## Граница продукта
 
