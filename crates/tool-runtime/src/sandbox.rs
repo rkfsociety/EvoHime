@@ -29,7 +29,12 @@ impl WorkspaceSandbox {
         let candidate = self.root.join(path);
         let resolved = candidate
             .canonicalize()
-            .map_err(|e| ToolError::Execution(format!("path invalid: {e}")))?;
+            .map_err(|e| {
+                ToolError::Execution(format!(
+                    "path invalid: {e}; {}",
+                    self.recovery_hint(&candidate, path)
+                ))
+            })?;
         self.ensure_inside(resolved, Permission::FilesystemRead)
     }
 
@@ -71,6 +76,36 @@ impl WorkspaceSandbox {
             Err(ToolError::PermissionDenied(permission))
         }
     }
+
+    fn recovery_hint(&self, candidate: &Path, requested: &str) -> String {
+        let mut directory = candidate.parent().unwrap_or(&self.root);
+        while !directory.exists() && directory != self.root {
+            directory = directory.parent().unwrap_or(&self.root);
+        }
+        let mut entries = std::fs::read_dir(directory)
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .take(32)
+            .collect::<Vec<_>>();
+        entries.sort_unstable();
+        let relative_directory = directory
+            .strip_prefix(&self.root)
+            .ok()
+            .and_then(|path| path.to_str())
+            .filter(|path| !path.is_empty())
+            .unwrap_or(".");
+        let available = if entries.is_empty() {
+            "(каталог пуст или недоступен)".to_string()
+        } else {
+            entries.join(", ")
+        };
+        format!(
+            "запрошенный workspace-relative путь `{requested}` не найден; проверь путь через filesystem.list для `{relative_directory}`. Доступные записи: {available}"
+        )
+    }
 }
 
 #[cfg(test)]
@@ -100,5 +135,18 @@ mod tests {
             .resolve_for_write("nested/new.txt")
             .unwrap()
             .ends_with(Path::new("nested").join("new.txt")));
+    }
+
+    #[test]
+    fn invalid_path_error_contains_recovery_directory_and_entries() {
+        let dir = tempdir().unwrap();
+        fs::create_dir(dir.path().join("docs")).unwrap();
+        fs::write(dir.path().join("docs/plan.md"), "plan").unwrap();
+        let sandbox = WorkspaceSandbox::new(dir.path()).unwrap();
+        let error = sandbox.resolve_existing("docs/missing/plan.md").unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("filesystem.list"));
+        assert!(message.contains("docs"));
+        assert!(message.contains("plan.md"));
     }
 }
