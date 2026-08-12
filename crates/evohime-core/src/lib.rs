@@ -21,6 +21,7 @@ fn build_agent_system_prompt(workspace: &std::path::Path, tool_names: &[String])
 - Для чтения используй безопасные read-only инструменты. Перед изменениями и опасными действиями учитывай approval.\n\
 - Аргументы инструментов всегда передавай полным JSON-объектом: filesystem.list — {{\"path\":\".\"}}, filesystem.read — {{\"path\":\"README.md\"}}, filesystem.search — {{\"query\":\"pattern\",\"path\":\".\"}}; не вызывай их с пустым объектом и не передавай абсолютный путь вместо workspace-relative path.\n\
 - Если инструмент вернул ошибку, не завершай задачу: исправь аргументы по тексту ошибки и повтори вызов.\n\
+- filesystem.patch принимает только JSON {{\"path\":\"relative/file.rs\",\"patch\":\"--- a/relative/file.rs\\n+++ b/relative/file.rs\\n@@ ...\"}}; поля edits и patches недопустимы.\n\
 - Если пользователь просит исправить, изменить или реализовать код, обязательно внеси изменение через filesystem.patch или filesystem.write; для просьбы о проверке запусти соответствующий тест/сборку, а для просьбы о commit вызови git.commit. Не выдавай план за результат.\n\
 - Все улучшения EvoHime выполняй самостоятельно через доступные инструменты Евы. Если попытка не удалась, не завершай задачу: зафиксируй причину в trace, дождись следующего шага настройки и повтори работу через инструменты до успешного результата.\n\
 - После исследования дай отчёт: что обнаружено, какие файлы проверены, какие проблемы найдены и что предлагается сделать дальше.\n\n\
@@ -57,7 +58,7 @@ fn tool_parameters(name: &str) -> serde_json::Value {
             "type": "object",
             "properties": {
                 "path": { "type": "string", "description": "Workspace-relative file path" },
-                "patch": { "type": "string", "description": "Unified diff to apply to the file" }
+                "patch": { "type": "string", "description": "Required unified diff beginning with --- and +++; do not use edits, patches, JSON operations, or complete file content" }
             },
             "required": ["path", "patch"]
         }),
