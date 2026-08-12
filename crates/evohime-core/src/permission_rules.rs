@@ -1,13 +1,13 @@
 use evohime_permissions::{PermissionEngine, PolicyRule, PolicyRuleSet};
 use std::path::Path;
 
-/// Загружает rules из permissions.json файла.
+/// Загружает rules из permissions.json файла в data_dir.
 ///
 /// Логика:
 /// 1. Если файл не существует → вернуть Ok(PolicyRuleSet::defaults())
 /// 2. Если файл пуст → вернуть Ok(PolicyRuleSet::defaults())
 /// 3. Если файл содержит `[]` (пустой JSON массив) → вернуть Ok(PolicyRuleSet::new(vec![]))
-/// 4. Если файл битый JSON → вернуть Ok(PolicyRuleSet::defaults())
+/// 4. Если файл битый JSON → залогировать и вернуть Ok(PolicyRuleSet::defaults())
 /// 5. Если JSON валиден → десериализовать в Vec<PolicyRule>, вернуть Ok(PolicyRuleSet::new(...))
 pub fn load_rules_from(path: &Path) -> Result<PolicyRuleSet, String> {
     let rules_path = path.join("permissions.json");
@@ -20,8 +20,8 @@ pub fn load_rules_from(path: &Path) -> Result<PolicyRuleSet, String> {
     // Прочитаем файл
     let content = match std::fs::read_to_string(&rules_path) {
         Ok(content) => content,
-        Err(_error) => {
-            return Ok(PolicyRuleSet::defaults());
+        Err(error) => {
+            return Err(format!("failed to read permissions.json: {error}"));
         }
     };
 
@@ -34,8 +34,8 @@ pub fn load_rules_from(path: &Path) -> Result<PolicyRuleSet, String> {
     // Парсим JSON
     let rules: Vec<PolicyRule> = match serde_json::from_str(trimmed) {
         Ok(rules) => rules,
-        Err(_error) => {
-            return Ok(PolicyRuleSet::defaults());
+        Err(error) => {
+            return Err(format!("invalid JSON in permissions.json: {error}"));
         }
     };
 
@@ -49,9 +49,29 @@ pub fn load_rules_from(path: &Path) -> Result<PolicyRuleSet, String> {
 }
 
 /// Применяет загруженные rules к PermissionEngine при старте.
+/// При ошибке логирует в core.jsonl и использует дефолты.
 pub async fn apply_rules(permissions: &PermissionEngine, data_dir: &Path) {
-    if let Ok(rules) = load_rules_from(data_dir) {
-        permissions.set_policy_rules(rules).await;
+    let path = data_dir.join("permissions.json");
+
+    // Пытаемся загрузить правила
+    let result = load_rules_from(data_dir);
+
+    let (rules, error) = match result {
+        Ok(rules) => (rules, None),
+        Err(error) => (PolicyRuleSet::defaults(), Some(error)),
+    };
+
+    permissions.set_policy_rules(rules).await;
+
+    // Логируем ошибку, если она была
+    if let Some(error) = error {
+        if let Ok(logger) = StructuredLogger::open(data_dir.join("logs/core.jsonl")) {
+            let _ = logger.write(
+                "error",
+                "permissions.load_failed",
+                serde_json::json!({"path": path, "error": error, "fallback": "defaults"}),
+            );
+        }
     }
 }
 
@@ -104,12 +124,11 @@ mod tests {
     }
 
     #[test]
-    fn load_invalid_json_returns_defaults() {
+    fn load_invalid_json_returns_error() {
         let temp_dir = create_temp_dir();
         fs::write(temp_dir.join("permissions.json"), "{invalid json").unwrap();
-        let result = load_rules_from(&temp_dir).unwrap();
-        let defaults = PolicyRuleSet::defaults();
-        assert_eq!(result.rules().len(), defaults.rules().len());
+        let result = load_rules_from(&temp_dir);
+        assert!(result.is_err());
         cleanup_temp_dir(&temp_dir);
     }
 
@@ -157,3 +176,5 @@ mod tests {
         cleanup_temp_dir(&temp_dir);
     }
 }
+
+pub use crate::StructuredLogger;

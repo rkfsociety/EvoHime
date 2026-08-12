@@ -1,0 +1,32 @@
+[
+  {
+    "permission": "shell_execute",
+    "pattern": "*",
+    "mode": "ask"
+  },
+  {
+    "permission": "shell_execute",
+    "pattern": "cargo *",
+    "mode": "allow"
+  },
+  {
+    "permission": "shell_execute",
+    "pattern": "rm *",
+    "mode": "deny"
+  },
+  {
+    "permission": "shell_execute",
+    "pattern": "pwsh*",
+    "mode": "deny"
+  },
+  {
+    "permission": "git_write",
+    "pattern": "git push*",
+    "mode": "deny"
+  },
+  {
+    "permission": "filesystem_read",
+    "pattern": "*.env",
+    "mode": "deny"
+  }
+]
