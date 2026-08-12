@@ -4950,7 +4950,7 @@ fn unresolved_permissions_probe(approval_required: bool) -> crate::doctor::Permi
 #[cfg(test)]
 mod tests {
     use super::{
-        recovery, AgentRunError, ApprovalCoordinator, CoreCommand, CoreEvent, CoreVersion,
+        observability, recovery, AgentRunError, CoreCommand, CoreEvent, CoreVersion,
         EventJournal, ModelAgent, TaskCoordinator, TaskExecutor, ToolAgent,
     };
     use evohime_model_gateway::{
@@ -5609,5 +5609,102 @@ mod tests {
             outcome.kind,
             Some(recovery::ToolFailureKind::Denied(recovery::DenialSource::User))
         ));
+    }
+
+    #[test]
+    fn before_commit_hook_event_is_valid() {
+        let context_order = observability::ContextOrder::capture(
+            ["system", "user", "assistant", "tool"]
+                .into_iter()
+                .map(String::from),
+        )
+        .unwrap();
+        let payload = observability::HookPayload::new([
+            ("tool_name".into(), "git.commit".to_owned()),
+            ("iteration".into(), "3".to_owned()),
+        ])
+        .unwrap();
+        let event = observability::HookEvent::new(
+            observability::HookName::BeforeCommit,
+            "event-1",
+            "task-1",
+            1,
+            observability::PolicyDecision::Observe,
+            context_order,
+            payload,
+        )
+        .unwrap();
+        assert_eq!(event.hook, observability::HookName::BeforeCommit);
+        assert_eq!(event.task_id, "task-1");
+        let json = event.to_deterministic_json();
+        assert!(json.contains("\"hook\":\"before_commit\""));
+    }
+
+    #[test]
+    fn after_task_hook_event_is_valid() {
+        let context_order = observability::ContextOrder::capture(
+            ["system", "user", "assistant", "tool"]
+                .into_iter()
+                .map(String::from),
+        )
+        .unwrap();
+        let payload = observability::HookPayload::new([
+            ("status".into(), "exceeded_iteration_limit".to_owned()),
+            ("mutation_done".into(), "true".to_owned()),
+            ("verification_done".into(), "false".to_owned()),
+            ("commit_done".into(), "false".to_owned()),
+        ])
+        .unwrap();
+        let event = observability::HookEvent::new(
+            observability::HookName::AfterTask,
+            "event-2",
+            "task-1",
+            2,
+            observability::PolicyDecision::Allow,
+            context_order,
+            payload,
+        )
+        .unwrap();
+        assert_eq!(event.hook, observability::HookName::AfterTask);
+        assert_eq!(event.task_id, "task-1");
+        let json = event.to_deterministic_json();
+        assert!(json.contains("\"hook\":\"after_task\""));
+        assert!(json.contains("\"status\":\"exceeded_iteration_limit\""));
+    }
+
+    #[test]
+    fn observability_hooks_cover_all_gate_points() {
+        // Verify that all hook types are accessible and serializable
+        for hook in [
+            observability::HookName::BeforeContext,
+            observability::HookName::BeforeTool,
+            observability::HookName::AfterTool,
+            observability::HookName::BeforeCommit,
+            observability::HookName::AfterTask,
+        ] {
+            let context_order = observability::ContextOrder::capture(
+                ["system", "user", "assistant", "tool"]
+                    .into_iter()
+                    .map(String::from),
+            )
+            .unwrap();
+            let payload = observability::HookPayload::new([
+                ("hook_name".into(), format!("{hook:?}")),
+            ])
+            .unwrap();
+            let event = observability::HookEvent::new(
+                hook,
+                "e1",
+                "t1",
+                1,
+                observability::PolicyDecision::Allow,
+                context_order,
+                payload,
+            )
+            .unwrap();
+            let json = event.to_deterministic_json();
+            assert!(!json.is_empty());
+            assert!(json.len() <= observability::MAX_EVENT_BYTES);
+        }
     }
 }
