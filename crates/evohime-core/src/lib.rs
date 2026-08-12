@@ -765,15 +765,16 @@ pub enum CoreCommand {
     /// `manifest_json` is validated via
     /// `capability_registry::CapabilityManifest`'s own bounds plus
     /// `validate_registry`/`validate_update` against the manifests already
-    /// persisted, before anything is written. `install_source` must be
-    /// `"local_archive"`; `"https_archive"` is rejected because that
-    /// installer (archive fetch, signature/hash verification) is separate,
-    /// larger, security-sensitive work not built in this pass.
-    /// `source_path` is carried through only for the audit record.
+    /// persisted, before anything is written. `local_archive` carries only
+    /// an audit path. `https_archive` treats `source_path` as an HTTPS URL,
+    /// downloads it through the shared SSRF guard, and requires the trusted
+    /// out-of-band SHA-256 in `expected_content_hash` to match before any
+    /// catalog write.
     InstallCapability {
         manifest_json: String,
         install_source: String,
         source_path: String,
+        expected_content_hash: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
     /// Lists installed capability manifests, newest-first.
@@ -3581,30 +3582,35 @@ impl TaskCoordinator {
                 manifest_json,
                 install_source,
                 source_path,
+                expected_content_hash,
                 reply,
             } => {
                 let journal = state.lock().await.journal.clone();
                 let result = async {
                     let journal =
                         journal.ok_or_else(|| "storage journal is not configured".to_string())?;
-                    if install_source != "local_archive" {
+                    if install_source != "local_archive" && install_source != "https_archive" {
                         return Err(format!(
-                            "unsupported capability install source: {install_source} \
-                             (only local_archive is supported in this pass; https_archive \
-                             requires the not-yet-built HTTPS/signature-verifying installer)"
+                            "unsupported capability install source: {install_source}"
                         ));
                     }
                     let candidate: crate::capability_registry::CapabilityManifest =
                         serde_json::from_str(&manifest_json).map_err(|error| error.to_string())?;
                     candidate.validate().map_err(|error| error.to_string())?;
-                    if candidate.install.source
-                        != crate::capability_registry::InstallSource::LocalArchive
-                    {
+                    let expected_manifest_source = if install_source == "https_archive" {
+                        crate::capability_registry::InstallSource::HttpsArchive
+                    } else {
+                        crate::capability_registry::InstallSource::LocalArchive
+                    };
+                    if candidate.install.source != expected_manifest_source {
                         return Err(
-                            "manifest declares an install source other than local_archive, \
-                             which is not supported in this pass"
+                            "manifest install source does not match the requested installer"
                                 .to_string(),
                         );
+                    }
+                    if install_source == "https_archive" {
+                        verify_https_capability_archive(&source_path, &expected_content_hash)
+                            .await?;
                     }
                     let existing_records = journal
                         .list_capability_manifests(crate::capability_registry::MAX_MANIFESTS as u32)
@@ -3649,6 +3655,14 @@ impl TaskCoordinator {
                             ("version".to_owned(), candidate.version.clone()),
                             ("install_source".to_owned(), install_source),
                             ("source_path".to_owned(), source_path),
+                            (
+                                "expected_content_hash".to_owned(),
+                                if expected_content_hash.is_empty() {
+                                    "not_provided".to_owned()
+                                } else {
+                                    expected_content_hash
+                                },
+                            ),
                         ],
                     )
                     .await;
@@ -4105,6 +4119,95 @@ fn capability_manifest_kind(
     }
 }
 
+const MAX_CAPABILITY_ARCHIVE_BYTES: u64 = 16 * 1024 * 1024;
+const CAPABILITY_ARCHIVE_TIMEOUT_MS: u64 = 30_000;
+
+/// Downloads one capability archive into bounded memory solely for integrity
+/// verification. The archive is deliberately not persisted by this command;
+/// the catalog write below records only the already-validated manifest.
+async fn verify_https_capability_archive(
+    source_url: &str,
+    expected_content_hash: &str,
+) -> Result<(), String> {
+    if expected_content_hash.len() != 64
+        || !expected_content_hash
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err("expected_content_hash must be a 64-character SHA-256 digest".to_string());
+    }
+    let url = reqwest::Url::parse(source_url).map_err(|error| error.to_string())?;
+    if url.scheme() != "https" {
+        return Err("https_archive source_path must use HTTPS".to_string());
+    }
+    evohime_tool_runtime::assert_safe_http_url(&url)
+        .map_err(|message| format!("ssrf blocked capability archive: {message}"))?;
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(
+            CAPABILITY_ARCHIVE_TIMEOUT_MS,
+        ))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.url().scheme() == "https"
+                && evohime_tool_runtime::assert_safe_http_url(attempt.url()).is_ok()
+            {
+                attempt.follow()
+            } else {
+                attempt.stop()
+            }
+        }))
+        .user_agent("EvoHime/0.1 capability-installer")
+        .build()
+        .map_err(|error| format!("capability archive client setup failed: {error}"))?;
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| format!("capability archive download failed: {error}"))?;
+    if response.url().scheme() != "https" {
+        return Err("capability archive redirect left HTTPS".to_string());
+    }
+    evohime_tool_runtime::assert_safe_http_url(response.url())
+        .map_err(|message| format!("ssrf blocked capability archive redirect: {message}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "capability archive endpoint returned {}",
+            response.status()
+        ));
+    }
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_CAPABILITY_ARCHIVE_BYTES)
+    {
+        return Err(format!(
+            "capability archive exceeds {MAX_CAPABILITY_ARCHIVE_BYTES} byte limit"
+        ));
+    }
+
+    let mut body = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|error| format!("failed to read capability archive: {error}"))?;
+        body.extend_from_slice(&chunk);
+        if body.len() as u64 > MAX_CAPABILITY_ARCHIVE_BYTES {
+            return Err(format!(
+                "capability archive exceeds {MAX_CAPABILITY_ARCHIVE_BYTES} byte limit"
+            ));
+        }
+    }
+    verify_capability_archive_hash(&body, expected_content_hash)
+}
+
+fn verify_capability_archive_hash(bytes: &[u8], expected_content_hash: &str) -> Result<(), String> {
+    let observed = crate::research::sha256_hex(bytes);
+    if !observed.eq_ignore_ascii_case(expected_content_hash) {
+        return Err(format!(
+            "capability archive SHA-256 mismatch: expected {expected_content_hash}, observed {observed}"
+        ));
+    }
+    Ok(())
+}
+
 fn capability_risk_class_str(risk: crate::capability_registry::RiskClass) -> &'static str {
     match risk {
         crate::capability_registry::RiskClass::Low => "low",
@@ -4272,6 +4375,13 @@ mod tests {
     fn agent_identity_includes_short_name() {
         assert!(super::AGENT_IDENTITY_PROMPT.contains("Ева"));
         assert!(super::AGENT_IDENTITY_PROMPT.contains("EvoHime"));
+    }
+
+    #[test]
+    fn capability_archive_hash_mismatch_is_rejected_before_install() {
+        let error = super::verify_capability_archive_hash(b"trusted archive", &"0".repeat(64))
+            .expect_err("tampered archive must be rejected");
+        assert!(error.contains("SHA-256 mismatch"));
     }
 
     #[test]

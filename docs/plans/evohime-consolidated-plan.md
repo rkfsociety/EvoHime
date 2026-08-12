@@ -258,7 +258,7 @@ MVP-1 milestone после этапа 1: пользователь видит п�
 
 ### Этап 3 — Research и typed workflow graph (P0)
 
-- Статус реализации на 2026-08-12: **контракты в работе**. Добавлены bounded research evidence, persistence contract, статический typed workflow graph, deterministic runner contract и network capability policy; persistence wiring, реальный HTTP execution layer и side-effectful runner остаются.
+- Статус реализации на 2026-08-12: **контракты и persistence в работе**. Добавлены bounded research evidence, persistence contract, статический typed workflow graph, deterministic runner contract и network capability policy; реальный direct-URL HTTP fetch теперь проходит через state machine и сохраняет evidence, search/LLM summary и side-effectful runner остаются отдельными задачами.
 - [x] Добавить bounded research evidence contract с redacted excerpt, source hash, freshness/TTL и deterministic JSON.
 - [x] Добавить migration-neutral research evidence storage contract с provenance, TTL, bounded SQL payload и delete/list API.
 - [x] Добавить typed static workflow graph contract с input/output types, retry/timeout/cancellation/approval и deterministic validation; dynamic edits отложены.
@@ -266,7 +266,7 @@ MVP-1 milestone после этапа 1: пользователь видит п�
 - [x] Добавить bounded research pipeline policy с network/domain allowlist, budgets, cancellation и citation/source integrity; реальный HTTP capability layer остаётся.
 - [x] Добавить общий bounded network capability policy layer в tool-runtime с HTTPS/SSRF, domain allowlist, response/latency/cost budgets, cancellation и refresh decisions; фактический HTTP execution остаётся отдельным wiring.
 - Реализовать сначала статический workflow graph с typed input/output, condition, retry, timeout, cancellation, approval и subgraph. Dynamic graph edits отложить.
-- Реализовать research pipeline: запрос → разрешённый HTTP/search → извлечение → краткое резюме → citations → сохранение.
+- [x] Реализовать bounded direct-URL research pipeline: запрос → SSRF/domain policy → HTTP → извлечение → bounded deterministic excerpt → citations → сохранение; search API и LLM summary остаются отдельными задачами.
 - Evidence хранит redacted/plain excerpt с max bytes, fetched-at, TTL/freshness, source hash и approval/provenance link.
 - Ограничить domains, время, размер ответа и стоимость; добавить refresh и cancel через общий network capability layer.
 - Для security, dependency и API-вопросов поддержать policy, требующую research перед запуском.
@@ -291,6 +291,8 @@ approval: none
 - Ввести lifecycle snapshot: активная definition immutable в рамках run; skill не расширяет permissions и не меняет context order.
 - Поддержать skill/capability manifest, effective permissions, allowed domains и разделение инструкций, MCP и исполняемых расширений.
 - Установка — только локальный архив или HTTPS с manifest, hash/signature и совместимостью; install scripts запрещены по умолчанию; update staged, rollback сохраняется.
+
+- [x] Добавить HTTPS capability installer с shared SSRF guard, trusted out-of-band SHA-256, bounded download и проверкой до записи в registry; public-key signature trust root остаётся отдельным решением.
 
 Проверки: invalid risk/tool, missing reference, version conflict, hash/signature mismatch, path escape, prompt injection, unknown skill и disable/rollback.
 

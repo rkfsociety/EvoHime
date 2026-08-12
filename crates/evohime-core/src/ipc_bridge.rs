@@ -1319,6 +1319,7 @@ impl IpcBridge {
                 manifest_json: request.manifest_json,
                 install_source: request.install_source,
                 source_path: request.source_path,
+                expected_content_hash: request.expected_content_hash,
                 reply,
             })
             .await
@@ -2618,9 +2619,8 @@ mod tests {
             generated::EventEnvelope::decode(response.as_slice()).expect("event decodes")
         }
 
-        // Installing a manifest that declares an unsupported https_archive
-        // install source must be rejected: that installer is out of scope
-        // for this pass.
+        // HTTPS installation requires a real URL and a trusted hash. A
+        // request without those inputs must still be rejected before storage.
         let https_envelope = generated::CommandEnvelope {
             protocol: Some(protocol()),
             request_id: "capability-install-https".into(),
@@ -2632,6 +2632,7 @@ mod tests {
                     manifest_json: capability_manifest_json("reviewer", "1.0.0", "medium"),
                     install_source: "https_archive".into(),
                     source_path: String::new(),
+                    expected_content_hash: String::new(),
                 },
             )),
         };
@@ -2660,6 +2661,7 @@ mod tests {
                         .replace("0123456789abcdef0123456789abcdef", "not-a-hex-hash"),
                     install_source: "local_archive".into(),
                     source_path: String::new(),
+                    expected_content_hash: String::new(),
                 },
             )),
         };
@@ -2687,6 +2689,7 @@ mod tests {
                     manifest_json: capability_manifest_json("bad-risk", "1.0.0", "extreme"),
                     install_source: "local_archive".into(),
                     source_path: String::new(),
+                    expected_content_hash: String::new(),
                 },
             )),
         };
@@ -2712,6 +2715,7 @@ mod tests {
                 manifest_json: capability_manifest_json("reviewer", "1.0.0", "medium"),
                 install_source: "local_archive".into(),
                 source_path: "C:/archives/reviewer.zip".into(),
+                expected_content_hash: String::new(),
             }),
         )
         .await;

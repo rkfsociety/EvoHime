@@ -281,6 +281,9 @@ message InstallCapability {
   string manifest_json = 1;
   string install_source = 2;
   string source_path = 3;
+  // Trusted out-of-band SHA-256 of the exact HTTPS response bytes. The Core
+  // never treats a manifest-declared hash as a substitute for this value.
+  string expected_content_hash = 4;
 }
 
 // Lists installed capability manifests (bounded, newest-first).
