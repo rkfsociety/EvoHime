@@ -532,6 +532,26 @@ impl DeliveryRequirements {
     }
 }
 
+fn delivery_next_step(
+    requirements: DeliveryRequirements,
+    research_done: bool,
+    mutation_done: bool,
+    verification_done: bool,
+    commit_done: bool,
+) -> &'static str {
+    if requirements.research && !research_done {
+        "НЕМЕДЛЕННО вызови следующий нужный read-only инструмент с полным JSON и продолжи исследование. Не пиши отчёт."
+    } else if !mutation_done && requirements.mutation {
+        "НЕМЕДЛЕННО вызови filesystem.patch или filesystem.write и внеси требуемое изменение. Не вызывай read/search и не пиши отчёт."
+    } else if !verification_done && requirements.verification {
+        "НЕМЕДЛЕННО вызови shell.execute с требуемым тестом/проверкой. Не пиши отчёт."
+    } else if !commit_done && requirements.commit {
+        "НЕМЕДЛЕННО вызови git.commit с task-only сообщением. Не пиши отчёт."
+    } else {
+        "НЕМЕДЛЕННО вызови следующий нужный read-only инструмент с полным JSON и продолжи исследование. Не пиши отчёт."
+    }
+}
+
 mod ipc_bridge;
 pub use ipc_bridge::{IpcBridge, IpcBridgeError, ModelConfigSnapshot};
 mod logging;
@@ -2067,15 +2087,13 @@ impl ToolAgent {
                     commit_done,
                 );
                 if !missing.is_empty() && iteration + 1 < self.max_iterations {
-                    let next_step = if !mutation_done && delivery_requirements.mutation {
-                        "НЕМЕДЛЕННО вызови filesystem.patch или filesystem.write и внеси требуемое изменение. Не вызывай read/search и не пиши отчёт."
-                    } else if !verification_done && delivery_requirements.verification {
-                        "НЕМЕДЛЕННО вызови shell.execute с требуемым тестом/проверкой. Не пиши отчёт."
-                    } else if !commit_done && delivery_requirements.commit {
-                        "НЕМЕДЛЕННО вызови git.commit с task-only сообщением. Не пиши отчёт."
-                    } else {
-                        "НЕМЕДЛЕННО вызови следующий нужный read-only инструмент с полным JSON и продолжи исследование. Не пиши отчёт."
-                    };
+                    let next_step = delivery_next_step(
+                        delivery_requirements,
+                        research_done,
+                        mutation_done,
+                        verification_done,
+                        commit_done,
+                    );
                     let continuation = format!(
                         "Задача ещё не завершена. Не выполнены: {}. {next_step}",
                         missing.join(", ")
@@ -4812,6 +4830,21 @@ mod tests {
             vec!["изучить workspace и подготовить отчёт"]
         );
         assert!(super::DeliveryRequirements::from_prompt("привет").research == false);
+    }
+
+    #[test]
+    fn delivery_gate_finishes_research_before_mutation() {
+        let requirements = super::DeliveryRequirements {
+            research: true,
+            mutation: true,
+            verification: true,
+            diff_check: true,
+            commit: true,
+        };
+        assert!(super::delivery_next_step(requirements, false, false, false, false)
+            .contains("read-only"));
+        assert!(super::delivery_next_step(requirements, true, false, false, false)
+            .contains("filesystem.patch"));
     }
 
     #[test]
