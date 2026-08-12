@@ -74,7 +74,8 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
             .unwrap()
             .parse()
             .map_err(|_| invalid_input("malformed hunk range"))?;
-        let mut old_index = start.saturating_sub(1) as isize + offset;
+        let mut hunk_begin = start.saturating_sub(1) as isize + offset;
+        let mut old_index = hunk_begin;
         let mut replacements = Vec::new();
         while let Some(next) = hunk_lines.peek() {
             if next.starts_with("@@") || next.starts_with("---") || next.starts_with("+++") {
@@ -92,6 +93,7 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
                         .position(|line| line == &item[1..])
                         .map(|index| index as isize)
                         .ok_or_else(|| ToolError::Execution("patch context mismatch".into()))?;
+                    hunk_begin = old_index;
                 }
                 replacements.push(lines[old_index as usize].clone());
                 old_index += 1;
@@ -106,6 +108,7 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
                         .position(|line| line == &item[1..])
                         .map(|index| index as isize)
                         .ok_or_else(|| ToolError::Execution("patch removal mismatch".into()))?;
+                    hunk_begin = old_index;
                 }
                 old_index += 1;
             } else if let Some(stripped) = item.strip_prefix('+') {
@@ -114,8 +117,10 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
                 return Err(invalid_input("malformed diff line"));
             }
         }
-        let end = old_index as usize;
-        let begin = (start.saturating_sub(1) as isize + offset) as usize;
+        let begin = usize::try_from(hunk_begin)
+            .map_err(|_| ToolError::Execution("patch start is outside file".into()))?;
+        let end = usize::try_from(old_index)
+            .map_err(|_| ToolError::Execution("patch end is outside file".into()))?;
         lines.splice(begin..end, replacements.clone());
         offset += replacements.len() as isize - (end - begin) as isize;
         applied += 1;
