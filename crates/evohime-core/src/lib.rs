@@ -2442,6 +2442,17 @@ impl ToolAgent {
                         ),
                     )
                 } else {
+                    if call.name == "git.commit" {
+                        write_observability_hook(
+                            &task_id,
+                            hook_sequence,
+                            observability::HookName::BeforeCommit,
+                            [
+                                ("tool_name".into(), call.name.clone()),
+                                ("iteration".into(), iteration.to_string()),
+                            ],
+                        );
+                    }
                     match tokio::select! {
                         _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
                         result = self.tools.execute_with_cancellation(&context, &call.name, input, cancellation.clone()) => result,
@@ -2666,6 +2677,18 @@ impl ToolAgent {
                         "Задача остановлена: 5 последовательных провалов инструментов; последний инструмент {} получил класс {:?}.",
                         call.name, outcome.kind
                     );
+                    write_observability_hook(
+                        &task_id,
+                        observability_sequence,
+                        observability::HookName::AfterTask,
+                        [
+                            ("status".into(), "repeated_failures".to_string()),
+                            ("mutation_done".into(), mutation_done.to_string()),
+                            ("verification_done".into(), verification_done.to_string()),
+                            ("commit_done".into(), commit_done.to_string()),
+                            ("failure_count".into(), failures_without_success.to_string()),
+                        ],
+                    );
                     self.persist_lesson(&task_id, &context.workspace_root).await;
                     let _ = events.send(CoreEvent::TaskFailed {
                         task_id: task_id.clone(),
@@ -2677,6 +2700,17 @@ impl ToolAgent {
         }
 
         let message = "agent exceeded the tool iteration limit".to_string();
+        write_observability_hook(
+            &task_id,
+            observability_sequence,
+            observability::HookName::AfterTask,
+            [
+                ("status".into(), "exceeded_iteration_limit".to_string()),
+                ("mutation_done".into(), mutation_done.to_string()),
+                ("verification_done".into(), verification_done.to_string()),
+                ("commit_done".into(), commit_done.to_string()),
+            ],
+        );
         self.persist_lesson(&task_id, &context.workspace_root).await;
         let _ = events.send(CoreEvent::TaskFailed {
             task_id,

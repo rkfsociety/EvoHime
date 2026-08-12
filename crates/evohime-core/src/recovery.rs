@@ -488,4 +488,102 @@ mod tests {
         assert!(outcome.ok);
         assert_eq!(outcome.kind, None);
     }
+
+    // === Тесты для recovery_hint ===
+
+    #[test]
+    fn recovery_hint_notfound_recommends_search() {
+        let hint = recovery_hint(
+            "filesystem.read",
+            ToolFailureKind::NotFound,
+            &json!({"path": "src/missing.rs"}),
+            &json!({"type": "object", "properties": {"path": {"type": "string"}}}),
+            "читать файл",
+        );
+        assert!(hint.contains("filesystem.search"));
+        assert!(hint.contains("workspace-relative"));
+    }
+
+    #[test]
+    fn recovery_hint_invalidinput_shows_schema() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "content": {"type": "string"}
+            },
+            "required": ["path", "content"]
+        });
+        let hint = recovery_hint(
+            "filesystem.write",
+            ToolFailureKind::InvalidInput,
+            &json!({"path": "test.txt"}),
+            &schema,
+            "писать файл",
+        );
+        assert!(hint.contains("schema") || hint.contains("JSON") || hint.contains("обязательные"));
+    }
+
+    #[test]
+    fn recovery_hint_denied_policy_refuses_retry() {
+        let hint = recovery_hint(
+            "shell.execute",
+            ToolFailureKind::Denied(DenialSource::Policy),
+            &json!({}),
+            &json!({"type": "object"}),
+            "выполнить команду",
+        );
+        assert!(hint.contains("политик"));
+        assert!(hint.contains("не повторяй"));
+    }
+
+    #[test]
+    fn recovery_hint_denied_user_says_ask_again() {
+        let hint = recovery_hint(
+            "git.commit",
+            ToolFailureKind::Denied(DenialSource::User),
+            &json!({}),
+            &json!({"type": "object"}),
+            "коммитить",
+        );
+        assert!(hint.contains("хозяин") || hint.contains("отклонил"));
+    }
+
+    #[test]
+    fn recovery_hint_nonzero_exit_shows_stderr() {
+        let hint = recovery_hint(
+            "shell.execute",
+            ToolFailureKind::NonZeroExit,
+            &json!({"stderr": "error: undefined reference\nerror: failed to link\nother"}),
+            &json!({"type": "object"}),
+            "выполнить",
+        );
+        assert!(hint.contains("undefined reference"));
+    }
+
+    #[test]
+    fn recovery_hint_timeout_suggests_narrowing() {
+        let hint = recovery_hint(
+            "shell.execute",
+            ToolFailureKind::Timeout,
+            &json!({}),
+            &json!({"type": "object"}),
+            "выполнить",
+        );
+        assert!(hint.contains("конкретн"));
+        assert!(hint.contains("объём") || hint.contains("сузь"));
+    }
+
+    #[test]
+    fn recovery_hint_denial_escalation_describes_block() {
+        let hint = recovery_hint(
+            "filesystem.patch",
+            ToolFailureKind::Denied(DenialSource::Escalation),
+            &json!({}),
+            &json!({"type": "object"}),
+            "патчить файл",
+        );
+        assert!(hint.contains("заблокирован"));
+        assert!(hint.contains("2 шаг"));
+    }
 }
