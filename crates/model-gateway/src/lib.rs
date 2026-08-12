@@ -12,6 +12,17 @@ use crate::providers::{
     ProviderKind, TokenStream,
 };
 pub use crate::retry::RetryPolicy;
+// `routing_runtime` embeds its own private copy of `routing_policy` when
+// this crate is built with `cfg(test)` (see the comment in
+// `routing_runtime.rs`), so `RoutingRuntime::plan` there expects
+// `RouteCandidate`/`RoutingRequest`/`PrivacyClass` from that embedded copy
+// rather than from `crate::routing_policy`. Mirror the same split here so
+// candidates built in this file always match the type `plan` expects.
+#[cfg(not(test))]
+pub use crate::routing_policy::{PrivacyClass, RouteCandidate, RoutingRequest};
+#[cfg(test)]
+pub use crate::routing_runtime::routing_policy::{PrivacyClass, RouteCandidate, RoutingRequest};
+pub use crate::routing_runtime::{RoutingMode, RoutingRuntime, RuntimeError, RuntimeLimits};
 pub use crate::tools::{
     ChatResult, ChatStreamItem, FunctionSpec, LlmUsage, NativeToolCall, ToolSpec,
 };
@@ -264,6 +275,89 @@ impl ModelGateway {
             .await
     }
 
+    /// Plans a route using the bounded routing contract (`routing_policy` /
+    /// `routing_runtime`) instead of trusting a caller-supplied route name.
+    /// This is the real entry point for policy-governed selection: mode
+    /// (local-first/balanced/cloud-research/offline), capability/cost/
+    /// latency/privacy filtering, and visible fallback are all decided by
+    /// `RoutingRuntime::plan`, not by ad hoc string checks in this crate.
+    pub fn plan_route(
+        &self,
+        mode: RoutingMode,
+        request: &RoutingRequest,
+        limits: RuntimeLimits,
+    ) -> Result<RoutingRuntime, RuntimeError> {
+        let candidates = self.route_candidates();
+        RoutingRuntime::plan(mode, request, &candidates, limits)
+    }
+
+    /// Streams a chat completion using a route chosen by the routing policy
+    /// contract for the given mode, rather than a route name specified
+    /// directly by the caller.
+    pub fn stream_chat_with_policy(
+        &self,
+        mode: RoutingMode,
+        request: &RoutingRequest,
+        messages: &[ChatMessage],
+    ) -> Result<TokenStream, ProviderError> {
+        let mut runtime = self
+            .plan_route(mode, request, RuntimeLimits::default())
+            .map_err(|error| ProviderError::Config(error.to_string()))?;
+        runtime
+            .start()
+            .map_err(|error| ProviderError::Config(error.to_string()))?;
+        let route =
+            runtime.decision().selected_route.clone().ok_or_else(|| {
+                ProviderError::Config("routing policy selected no route".to_string())
+            })?;
+        self.stream_chat_for_route(&route, messages)
+    }
+
+    /// Builds routing-policy candidates from the configured routes.
+    ///
+    /// Only fields with a real, non-fabricated source in this crate are
+    /// populated:
+    /// - `route_id` / `model`: the configured route name and the
+    ///   provider's model name.
+    /// - `cost_micros_per_1k_tokens`: reuses the existing `:free` model-tier
+    ///   convention (0 for free-tier models, 1 for paid) as a coarse cost
+    ///   proxy, since no richer per-route billing metadata exists yet.
+    /// - `available`: routes only enter `self.routes` after
+    ///   `build_provider` succeeds (which itself requires a non-empty API
+    ///   key for non-mock providers), so every route present is available.
+    ///
+    /// Two dimensions are intentionally left as neutral no-ops rather than
+    /// invented: `p95_latency_ms` is always `0` (no latency telemetry is
+    /// collected per route today) and `privacy` is always
+    /// `PrivacyClass::Internal` (this crate has no per-route privacy
+    /// classification and no local/on-device provider implementation, so
+    /// `Public`/`Sensitive`/`Restricted` cannot be assigned meaningfully).
+    /// `RoutingMode::LocalFirst`/`Offline` still work because
+    /// `routing_runtime` classifies "local" routes by route id / model name
+    /// substring, independent of this candidate metadata.
+    fn route_candidates(&self) -> Vec<RouteCandidate> {
+        let mut route_ids: Vec<&String> = self.routes.keys().collect();
+        route_ids.sort();
+        route_ids
+            .into_iter()
+            .map(|route_id| {
+                let provider = &self.routes[route_id];
+                let model = provider.model_name().to_string();
+                let cost_micros_per_1k_tokens = if model.ends_with(":free") { 0 } else { 1 };
+                RouteCandidate {
+                    route_id: route_id.clone(),
+                    model,
+                    capabilities: vec!["chat".to_string()],
+                    cost_micros_per_1k_tokens,
+                    p95_latency_ms: 0,
+                    privacy: PrivacyClass::Internal,
+                    available: true,
+                    fallback_rank: 0,
+                }
+            })
+            .collect()
+    }
+
     fn provider_for_route(&self, route: &str) -> Result<&Arc<dyn ModelProvider>, ProviderError> {
         self.routes
             .get(route)
@@ -303,6 +397,7 @@ fn build_provider(route: &ModelRouteConfig) -> Result<Arc<dyn ModelProvider>, Pr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures_util::StreamExt;
 
     #[test]
     fn builds_openai_compatible_route_as_distinct_provider() {
@@ -323,5 +418,90 @@ mod tests {
             gateway.route_provider_kind("openai").expect("route"),
             ProviderKind::OpenAICompatible
         );
+    }
+
+    fn policy_request() -> RoutingRequest {
+        RoutingRequest {
+            required_capabilities: vec!["chat".to_string()],
+            max_cost_micros_per_1k_tokens: None,
+            max_latency_ms: None,
+            required_privacy: PrivacyClass::Internal,
+            allow_fallback: true,
+        }
+    }
+
+    fn gateway_with_routes(routes: Vec<(&str, &str)>) -> ModelGateway {
+        let routes = routes
+            .into_iter()
+            .map(|(route_id, model)| {
+                (
+                    route_id.to_string(),
+                    Arc::new(MockProvider::new(model, vec![format!("{route_id}-chunk")]))
+                        as Arc<dyn ModelProvider>,
+                )
+            })
+            .collect();
+        ModelGateway::from_routes("local", routes)
+    }
+
+    #[test]
+    fn local_first_plan_route_picks_local_provider_when_available() {
+        let gateway = gateway_with_routes(vec![("local", "local-model"), ("cloud", "cloud-model")]);
+        let runtime = gateway
+            .plan_route(
+                RoutingMode::LocalFirst,
+                &policy_request(),
+                RuntimeLimits::default(),
+            )
+            .expect("plan");
+        assert_eq!(runtime.decision().selected_route.as_deref(), Some("local"));
+        assert!(runtime.telemetry().fallback.is_none());
+    }
+
+    #[tokio::test]
+    async fn local_first_falls_back_to_cloud_when_no_local_route_exists() {
+        let gateway = gateway_with_routes(vec![("cloud", "cloud-model")]);
+        let mut stream = gateway
+            .stream_chat_with_policy(RoutingMode::LocalFirst, &policy_request(), &[])
+            .expect("policy-selected stream");
+        let first = stream.next().await.expect("chunk").expect("ok");
+        assert_eq!(first, ChatStreamItem::Delta("cloud-chunk".to_string()));
+
+        // Re-plan directly to inspect the visible fallback telemetry.
+        let runtime = gateway
+            .plan_route(
+                RoutingMode::LocalFirst,
+                &policy_request(),
+                RuntimeLimits::default(),
+            )
+            .expect("plan");
+        assert_eq!(runtime.decision().selected_route.as_deref(), Some("cloud"));
+        assert_eq!(
+            runtime
+                .telemetry()
+                .fallback
+                .as_ref()
+                .map(|notice| notice.reason.as_str()),
+            Some("local_route_unavailable")
+        );
+    }
+
+    #[test]
+    fn policy_denies_route_when_no_candidate_satisfies_required_capability() {
+        let gateway = gateway_with_routes(vec![("local", "local-model"), ("cloud", "cloud-model")]);
+        let request = RoutingRequest {
+            required_capabilities: vec!["vision".to_string()],
+            max_cost_micros_per_1k_tokens: None,
+            max_latency_ms: None,
+            required_privacy: PrivacyClass::Internal,
+            allow_fallback: true,
+        };
+        let runtime = gateway
+            .plan_route(RoutingMode::Balanced, &request, RuntimeLimits::default())
+            .expect("plan runs even when denied");
+        assert_eq!(runtime.decision().selected_route, None);
+
+        let result = gateway.stream_chat_with_policy(RoutingMode::Balanced, &request, &[]);
+        assert!(matches!(result, Err(ProviderError::Config(_))));
     }
 }
