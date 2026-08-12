@@ -1884,6 +1884,28 @@ impl EventJournal {
     }
 }
 
+/// Подключает permission-аудит к локальному append-only журналу Core.
+///
+/// PermissionEngine сохраняет короткий bounded-журнал для быстрых проверок,
+/// а этот sink делает те же переходы durable и доступными через историю задачи.
+pub async fn attach_permission_audit_sink(
+    journal: EventJournal,
+    tools: &std::sync::Arc<ToolRegistry>,
+) -> tokio::task::JoinHandle<()> {
+    let (sender, mut receiver) = mpsc::unbounded_channel();
+    tools.permissions().attach_audit_sender(sender).await;
+    tokio::spawn(async move {
+        while let Some(entry) = receiver.recv().await {
+            let Ok(payload) = serde_json::to_vec(&entry) else {
+                continue;
+            };
+            let _ = journal
+                .record_audit(&entry.task_id.to_string(), "approval.audit", &payload)
+                .await;
+        }
+    })
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum AgentRunError {
     #[error("model request failed: {0}")]
@@ -5451,6 +5473,54 @@ mod tests {
         assert_eq!(audit.len(), 1);
         assert_eq!(audit[0].event_type, "build.applied");
         assert_eq!(audit[0].payload, br#"{"snapshot_id":"snap-1"}"#);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn persists_permission_audit_through_runtime_sink() {
+        let path = std::env::temp_dir().join(format!(
+            "evohime-core-permission-audit-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let tools = Arc::new(ToolRegistry::bootstrap());
+        let sink = super::attach_permission_audit_sink(journal.clone(), &tools).await;
+        let task_id = uuid::Uuid::new_v4();
+        let request = tools
+            .permissions()
+            .create_approval(
+                task_id,
+                "filesystem.write",
+                evohime_permissions::Permission::FilesystemWrite,
+                "notes.txt",
+            )
+            .await;
+        tools
+            .permissions()
+            .resolve(request.id, false)
+            .await
+            .expect("approval resolves");
+
+        let mut history = Vec::new();
+        for _ in 0..20 {
+            history = journal
+                .task_history(&task_id.to_string(), 10)
+                .await
+                .expect("audit reads");
+            if history.len() == 2 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(history.len(), 2);
+        assert!(history.iter().all(|entry| entry.event_type == "approval.audit"));
+        let payload: serde_json::Value = serde_json::from_slice(&history[1].payload)
+            .expect("audit payload is JSON");
+        assert_eq!(payload["approval_id"], request.id.to_string());
+        assert_eq!(payload["decision"], "denied");
+
+        sink.abort();
         let _ = std::fs::remove_file(path);
     }
 
