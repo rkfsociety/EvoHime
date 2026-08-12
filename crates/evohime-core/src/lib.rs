@@ -2204,13 +2204,7 @@ impl ToolAgent {
                         "output": output
                     }),
                 );
-                let failed = output.to_lowercase().contains("failed")
-                    || output.to_lowercase().contains("ошиб")
-                    || output.to_lowercase().contains("не удалось")
-                    || output.to_lowercase().contains("blocked")
-                    || output.to_lowercase().contains("exit_code: 1")
-                    || output.to_lowercase().contains("exit_code: 101")
-                    || output.to_lowercase().contains("error:");
+                let failed = tool_output_failed(&output);
                 mutation_done |= !failed
                     && matches!(call.name.as_str(), "filesystem.write" | "filesystem.patch");
                 commit_done |= !failed && call.name == "git.commit";
@@ -2260,6 +2254,20 @@ impl ToolAgent {
         });
         Ok(message)
     }
+}
+
+fn tool_output_failed(output: &str) -> bool {
+    let lower = output.to_lowercase();
+    if lower.contains("exit_code: 0") {
+        return false;
+    }
+    lower.contains("failed")
+        || lower.contains("ошиб")
+        || lower.contains("не удалось")
+        || lower.contains("blocked")
+        || lower.contains("exit_code: 1")
+        || lower.contains("exit_code: 101")
+        || lower.contains("error:")
 }
 
 impl TaskExecutor for ToolAgent {
