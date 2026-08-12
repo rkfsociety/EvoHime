@@ -284,9 +284,11 @@ impl PermissionEngine {
     /// Resolve decision with path/session overrides.
     ///
     /// Priority (most specific first):
-    /// 1. matching path grant (session-scoped preferred over global)
-    /// 2. session permission mode
-    /// 3. global mode
+    /// 1. a matching hard policy `Deny` (cannot be overridden)
+    /// 2. matching path grant (session-scoped preferred over global)
+    /// 3. session permission mode
+    /// 4. matching policy `Allow`/`Ask`
+    /// 5. global mode
     pub async fn check_scoped(
         &self,
         permission: Permission,

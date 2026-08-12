@@ -2303,6 +2303,8 @@ fn tool_output_failed(output: &str) -> bool {
     }
     lower.contains("failed")
         || lower.contains("approval denied")
+        || lower.contains("approval is not granted")
+        || lower.contains("permission denied:")
         || lower.contains("ошиб")
         || lower.contains("не удалось")
         || lower.contains("blocked")
@@ -4569,6 +4571,14 @@ mod tests {
         assert!(super::tool_output_failed(
             "approval denied: mutation not performed"
         ));
+    }
+
+    #[test]
+    fn approval_recheck_failures_are_not_successful_mutations() {
+        assert!(super::tool_output_failed(
+            "approval is not granted for this call"
+        ));
+        assert!(super::tool_output_failed("permission denied: FilesystemWrite"));
     }
 
     #[test]
