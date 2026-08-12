@@ -412,6 +412,7 @@ fn strip_legacy_function_blocks(content: &str) -> String {
 
 #[derive(Debug, Default, Clone, Copy)]
 struct DeliveryRequirements {
+    research: bool,
     mutation: bool,
     verification: bool,
     commit: bool,
@@ -421,6 +422,9 @@ impl DeliveryRequirements {
     fn from_prompt(prompt: &str) -> Self {
         let prompt = prompt.to_lowercase();
         Self {
+            research: ["изучи", "исслед", "ознаком", "найди", "объясни"]
+                .iter()
+                .any(|marker| prompt.contains(marker)),
             mutation: [
                 "исправ",
                 "измен",
@@ -442,11 +446,15 @@ impl DeliveryRequirements {
 
     fn missing(
         self,
+        research_done: bool,
         mutation_done: bool,
         verification_done: bool,
         commit_done: bool,
     ) -> Vec<&'static str> {
         let mut missing = Vec::new();
+        if self.research && !research_done {
+            missing.push("изучить workspace и подготовить отчёт");
+        }
         if self.mutation && !mutation_done {
             missing.push("внести изменение");
         }
@@ -1866,6 +1874,9 @@ impl ToolAgent {
         let mut mutation_done = false;
         let mut verification_done = false;
         let mut commit_done = false;
+        let mut research_observations = 0usize;
+        let mut research_has_overview = false;
+        let mut research_has_content = false;
         for iteration in 0..self.max_iterations {
             write_model_trace(
                 "model.request",
@@ -1977,11 +1988,19 @@ impl ToolAgent {
             tool_calls
                 .retain(|call| seen_tool_calls.insert(format!("{}:{}", call.name, call.arguments)));
             if tool_calls.is_empty() {
-                let missing =
-                    delivery_requirements.missing(mutation_done, verification_done, commit_done);
+                let research_done = !delivery_requirements.research
+                    || (research_observations >= 3
+                        && research_has_overview
+                        && research_has_content);
+                let missing = delivery_requirements.missing(
+                    research_done,
+                    mutation_done,
+                    verification_done,
+                    commit_done,
+                );
                 if !missing.is_empty() && iteration + 1 < self.max_iterations {
                     let continuation = format!(
-                        "Задача ещё не завершена. Обязательные результаты не выполнены: {}. Не пиши план и не заверши ответ текстом. Немедленно вызови нужный инструмент: для изменения — filesystem.patch или filesystem.write, для проверки — shell.execute с тестом/сборкой, для commit — git.commit. Выполни следующий шаг прямо сейчас.",
+                        "Задача ещё не завершена. Обязательные результаты не выполнены: {}. Не пиши план и не заверши ответ текстом. Для исследования немедленно продолжи изучение workspace через filesystem.read или filesystem.search; для изменения — filesystem.patch или filesystem.write, для проверки — shell.execute с тестом/сборкой, для commit — git.commit. Выполни следующий шаг прямо сейчас.",
                         missing.join(", ")
                     );
                     write_model_trace(
@@ -2020,6 +2039,12 @@ impl ToolAgent {
                 tool_calls.clone(),
             ));
             for call in tool_calls {
+                if delivery_requirements.research {
+                    research_observations += 1;
+                    research_has_overview |= call.name == "filesystem.list";
+                    research_has_content |=
+                        matches!(call.name.as_str(), "filesystem.read" | "filesystem.search");
+                }
                 let _ = events.send(CoreEvent::ToolStarted {
                     task_id: task_id.clone(),
                     tool_name: call.name.clone(),
@@ -4623,9 +4648,20 @@ mod tests {
         assert!(requirements.verification);
         assert!(requirements.commit);
         assert_eq!(
-            requirements.missing(false, true, false),
+            requirements.missing(false, false, true, false),
             vec!["внести изменение", "создать commit"]
         );
+    }
+
+    #[test]
+    fn detects_research_requirement_and_keeps_it_open_until_observed() {
+        let requirements = super::DeliveryRequirements::from_prompt("изучи проект");
+        assert!(requirements.research);
+        assert_eq!(
+            requirements.missing(false, false, false, false),
+            vec!["изучить workspace и подготовить отчёт"]
+        );
+        assert!(super::DeliveryRequirements::from_prompt("привет").research == false);
     }
 
     #[test]
