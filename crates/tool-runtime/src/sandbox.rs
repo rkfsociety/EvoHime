@@ -27,14 +27,18 @@ impl WorkspaceSandbox {
 
     pub fn resolve_existing(&self, path: &str) -> Result<PathBuf, ToolError> {
         let candidate = self.root.join(path);
-        let resolved = candidate
-            .canonicalize()
-            .map_err(|e| {
-                ToolError::Execution(format!(
-                    "path invalid: {e}; {}",
+        let resolved = match candidate.canonicalize() {
+            Ok(resolved) => resolved,
+            Err(error) => {
+                if let Some(recovered) = self.find_unique_suffix(path) {
+                    return self.ensure_inside(recovered, Permission::FilesystemRead);
+                }
+                return Err(ToolError::Execution(format!(
+                    "path invalid: {error}; {}",
                     self.recovery_hint(&candidate, path)
-                ))
-            })?;
+                )));
+            }
+        };
         self.ensure_inside(resolved, Permission::FilesystemRead)
     }
 
@@ -106,6 +110,45 @@ impl WorkspaceSandbox {
             "запрошенный workspace-relative путь `{requested}` не найден; проверь путь через filesystem.list для `{relative_directory}`. Доступные записи: {available}"
         )
     }
+
+    fn find_unique_suffix(&self, requested: &str) -> Option<PathBuf> {
+        let requested = Path::new(requested);
+        if requested.is_absolute() {
+            return None;
+        }
+        let mut pending = vec![self.root.clone()];
+        let mut matches = Vec::new();
+        while let Some(directory) = pending.pop() {
+            let Ok(entries) = std::fs::read_dir(directory) else {
+                continue;
+            };
+            for entry in entries.filter_map(Result::ok) {
+                let path = entry.path();
+                let Ok(file_type) = entry.file_type() else {
+                    continue;
+                };
+                if file_type.is_symlink() {
+                    continue;
+                }
+                let is_match = path
+                    .strip_prefix(&self.root)
+                    .map(|relative| relative.ends_with(requested))
+                    .unwrap_or(false);
+                if is_match {
+                    if let Ok(resolved) = path.canonicalize() {
+                        matches.push(resolved);
+                        if matches.len() > 1 {
+                            return None;
+                        }
+                    }
+                }
+                if file_type.is_dir() {
+                    pending.push(path);
+                }
+            }
+        }
+        matches.pop()
+    }
 }
 
 #[cfg(test)]
@@ -148,5 +191,21 @@ mod tests {
         assert!(message.contains("filesystem.list"));
         assert!(message.contains("docs"));
         assert!(message.contains("plan.md"));
+    }
+
+    #[test]
+    fn resolves_unique_workspace_suffix_without_hiding_ambiguity() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("crates/demo/src")).unwrap();
+        fs::write(dir.path().join("crates/demo/src/main.rs"), "main").unwrap();
+        let sandbox = WorkspaceSandbox::new(dir.path()).unwrap();
+        assert!(sandbox
+            .resolve_existing("demo/src/main.rs")
+            .unwrap()
+            .ends_with(Path::new("crates/demo/src/main.rs")));
+
+        fs::create_dir_all(dir.path().join("desktop/demo/src")).unwrap();
+        fs::write(dir.path().join("desktop/demo/src/main.rs"), "main").unwrap();
+        assert!(sandbox.resolve_existing("demo/src/main.rs").is_err());
     }
 }
