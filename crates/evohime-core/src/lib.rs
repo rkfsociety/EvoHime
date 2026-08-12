@@ -741,6 +741,41 @@ pub enum CoreCommand {
         approval_id: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    /// Installs (or, when a manifest of the same name already exists,
+    /// updates) one bounded capability manifest into the local catalog.
+    /// `manifest_json` is validated via
+    /// `capability_registry::CapabilityManifest`'s own bounds plus
+    /// `validate_registry`/`validate_update` against the manifests already
+    /// persisted, before anything is written. `install_source` must be
+    /// `"local_archive"`; `"https_archive"` is rejected because that
+    /// installer (archive fetch, signature/hash verification) is separate,
+    /// larger, security-sensitive work not built in this pass.
+    /// `source_path` is carried through only for the audit record.
+    InstallCapability {
+        manifest_json: String,
+        install_source: String,
+        source_path: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Lists installed capability manifests, newest-first.
+    ListCapabilities {
+        limit: u32,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Deterministic intent/tool/domain match against the installed
+    /// catalog, via `capability_registry::match_capabilities`.
+    MatchCapabilities {
+        intent: String,
+        required_tools: Vec<String>,
+        required_domains: Vec<String>,
+        requested_risk: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Removes one installed capability manifest by id (manifest name).
+    RemoveCapability {
+        id: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1063,6 +1098,59 @@ impl EventJournal {
         let database = self.database.lock().await;
         evohime_local_storage::memory_store::MemoryStoreSql::forget(database.connection(), id)
             .map_err(|error| error.to_string())
+    }
+
+    /// Installs (inserts) or updates (replaces by id) one bounded capability
+    /// manifest against the real `capability_manifests` table.
+    pub async fn save_capability_manifest(
+        &self,
+        record: &evohime_local_storage::capability_store::CapabilityManifestRecord,
+    ) -> Result<(), String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::capability_store::CapabilityStoreSql::insert(
+            database.connection(),
+            record,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Lists installed capability manifests, newest-first.
+    pub async fn list_capability_manifests(
+        &self,
+        limit: u32,
+    ) -> Result<Vec<evohime_local_storage::capability_store::CapabilityManifestRecord>, String>
+    {
+        let database = self.database.lock().await;
+        evohime_local_storage::capability_store::CapabilityStoreSql::list(
+            database.connection(),
+            limit,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Fetches one installed capability manifest by id (manifest name).
+    pub async fn get_capability_manifest(
+        &self,
+        id: &str,
+    ) -> Result<Option<evohime_local_storage::capability_store::CapabilityManifestRecord>, String>
+    {
+        let database = self.database.lock().await;
+        evohime_local_storage::capability_store::CapabilityStoreSql::get_by_id(
+            database.connection(),
+            id,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Removes one installed capability manifest by id. Returns `false` if
+    /// no matching row was found.
+    pub async fn remove_capability_manifest(&self, id: &str) -> Result<bool, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::capability_store::CapabilityStoreSql::delete_by_id(
+            database.connection(),
+            id,
+        )
+        .map_err(|error| error.to_string())
     }
 
     pub async fn get_or_create_build_policy(
@@ -3254,6 +3342,170 @@ impl TaskCoordinator {
                 .await;
                 let _ = reply.send(result);
             }
+            CoreCommand::InstallCapability {
+                manifest_json,
+                install_source,
+                source_path,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    if install_source != "local_archive" {
+                        return Err(format!(
+                            "unsupported capability install source: {install_source} \
+                             (only local_archive is supported in this pass; https_archive \
+                             requires the not-yet-built HTTPS/signature-verifying installer)"
+                        ));
+                    }
+                    let candidate: crate::capability_registry::CapabilityManifest =
+                        serde_json::from_str(&manifest_json).map_err(|error| error.to_string())?;
+                    candidate.validate().map_err(|error| error.to_string())?;
+                    if candidate.install.source
+                        != crate::capability_registry::InstallSource::LocalArchive
+                    {
+                        return Err(
+                            "manifest declares an install source other than local_archive, \
+                             which is not supported in this pass"
+                                .to_string(),
+                        );
+                    }
+                    let existing_records = journal
+                        .list_capability_manifests(crate::capability_registry::MAX_MANIFESTS as u32)
+                        .await?;
+                    let mut existing_manifests = Vec::with_capacity(existing_records.len());
+                    for record in &existing_records {
+                        let manifest: crate::capability_registry::CapabilityManifest =
+                            serde_json::from_str(&record.manifest_json)
+                                .map_err(|error| error.to_string())?;
+                        existing_manifests.push(manifest);
+                    }
+                    if let Some(current) = existing_manifests
+                        .iter()
+                        .find(|manifest| manifest.name == candidate.name)
+                    {
+                        crate::capability_registry::validate_update(current, &candidate)
+                            .map_err(|error| error.to_string())?;
+                    } else {
+                        let mut proposed = existing_manifests.clone();
+                        proposed.push(candidate.clone());
+                        crate::capability_registry::validate_registry(&proposed)
+                            .map_err(|error| error.to_string())?;
+                    }
+                    let store_record =
+                        evohime_local_storage::capability_store::CapabilityManifestRecord {
+                            id: candidate.name.clone(),
+                            kind: capability_manifest_kind(&candidate),
+                            version: candidate.version.clone(),
+                            risk_class: capability_risk_class_str(candidate.risk_class).to_string(),
+                            content_hash: candidate.content_hash.clone(),
+                            manifest_json: serde_json::to_string(&candidate)
+                                .map_err(|error| error.to_string())?,
+                        };
+                    journal.save_capability_manifest(&store_record).await?;
+                    Self::record_audit(
+                        &state,
+                        crate::audit::AuditKind::Approval,
+                        candidate.name.clone(),
+                        "capability.installed",
+                        [
+                            ("manifest_id".to_owned(), candidate.name.clone()),
+                            ("version".to_owned(), candidate.version.clone()),
+                            ("install_source".to_owned(), install_source),
+                            ("source_path".to_owned(), source_path),
+                        ],
+                    )
+                    .await;
+                    serde_json::to_vec(&serde_json::json!({ "manifest": candidate }))
+                        .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::ListCapabilities { limit, reply } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let records = journal.list_capability_manifests(limit).await?;
+                    let manifests = records
+                        .iter()
+                        .map(|record| {
+                            serde_json::from_str::<crate::capability_registry::CapabilityManifest>(
+                                &record.manifest_json,
+                            )
+                            .map_err(|error| error.to_string())
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    serde_json::to_vec(&serde_json::json!({ "manifests": manifests }))
+                        .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::MatchCapabilities {
+                intent,
+                required_tools,
+                required_domains,
+                requested_risk,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let requested_risk = parse_capability_risk_class(&requested_risk)?;
+                    let records = journal
+                        .list_capability_manifests(crate::capability_registry::MAX_MANIFESTS as u32)
+                        .await?;
+                    let manifests = records
+                        .iter()
+                        .map(|record| {
+                            serde_json::from_str::<crate::capability_registry::CapabilityManifest>(
+                                &record.manifest_json,
+                            )
+                            .map_err(|error| error.to_string())
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let query = crate::capability_registry::MatchQuery {
+                        intent,
+                        required_tools,
+                        required_domains,
+                        requested_risk,
+                    };
+                    let matches =
+                        crate::capability_registry::match_capabilities(&manifests, &query)
+                            .map_err(|error| error.to_string())?;
+                    serde_json::to_vec(&serde_json::json!({ "matches": matches }))
+                        .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::RemoveCapability { id, reply } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let removed = journal.remove_capability_manifest(&id).await?;
+                    if !removed {
+                        return Err("capability manifest was not found".to_string());
+                    }
+                    Self::record_audit(
+                        &state,
+                        crate::audit::AuditKind::Approval,
+                        id.clone(),
+                        "capability.removed",
+                        [("manifest_id".to_owned(), id.clone())],
+                    )
+                    .await;
+                    serde_json::to_vec(&serde_json::json!({ "id": id, "removed": true }))
+                        .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
         }
     }
 }
@@ -3377,6 +3629,38 @@ fn memory_record_to_json(
         "archived": record.archived,
         "forgotten": record.forgotten,
     }))
+}
+
+/// Cheap listing classification derived from which of a manifest's
+/// `roles`/`skills` lists are non-empty; see
+/// `capability_store::ManifestKind` for why this is store-layer only.
+fn capability_manifest_kind(
+    manifest: &crate::capability_registry::CapabilityManifest,
+) -> evohime_local_storage::capability_store::ManifestKind {
+    match (!manifest.roles.is_empty(), !manifest.skills.is_empty()) {
+        (true, false) => evohime_local_storage::capability_store::ManifestKind::Role,
+        (false, true) => evohime_local_storage::capability_store::ManifestKind::Skill,
+        _ => evohime_local_storage::capability_store::ManifestKind::Mixed,
+    }
+}
+
+fn capability_risk_class_str(risk: crate::capability_registry::RiskClass) -> &'static str {
+    match risk {
+        crate::capability_registry::RiskClass::Low => "low",
+        crate::capability_registry::RiskClass::Medium => "medium",
+        crate::capability_registry::RiskClass::High => "high",
+    }
+}
+
+fn parse_capability_risk_class(
+    value: &str,
+) -> Result<crate::capability_registry::RiskClass, String> {
+    match value {
+        "low" => Ok(crate::capability_registry::RiskClass::Low),
+        "medium" | "" => Ok(crate::capability_registry::RiskClass::Medium),
+        "high" => Ok(crate::capability_registry::RiskClass::High),
+        other => Err(format!("unsupported requested_risk: {other}")),
+    }
 }
 
 /// Fail-closed permissions probe used when the doctor cannot ground its
