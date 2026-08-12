@@ -579,6 +579,26 @@ impl IpcBridge {
                 self.write_response(writer, "capability.removed", result)
                     .await?;
             }
+            Some(generated::command_envelope::Command::RequestChildHandoff(request)) => {
+                let result = self.dispatch_request_child_handoff(request).await?;
+                self.write_response(writer, "child.handoff.requested", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::ListChildHandoffs(request)) => {
+                let result = self.dispatch_list_child_handoffs(request).await?;
+                self.write_response(writer, "child.handoff.list", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::SubmitChildRequest(request)) => {
+                let result = self.dispatch_submit_child_request(request).await?;
+                self.write_response(writer, "child.request.submitted", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::SubmitChildReport(request)) => {
+                let result = self.dispatch_submit_child_report(request).await?;
+                self.write_response(writer, "child.report.accepted", result)
+                    .await?;
+            }
             Some(generated::command_envelope::Command::ResolveApproval(resolve)) => {
                 let approval_id = uuid::Uuid::parse_str(&resolve.approval_id)
                     .map_err(|error| FrameError::Io(format!("invalid approval id: {error}")))?;
@@ -1336,6 +1356,120 @@ impl IpcBridge {
         coordinator
             .dispatch(CoreCommand::RemoveCapability {
                 id: request.id,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_request_child_handoff(
+        &self,
+        request: generated::RequestChildHandoff,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::RequestChildHandoff {
+                handoff_id: request.handoff_id,
+                task_id: request.task_id,
+                kind: request.kind,
+                from_role: request.from_role,
+                from_name: request.from_name,
+                to_role: request.to_role,
+                to_name: request.to_name,
+                purpose: request.purpose,
+                payload: request.payload,
+                sequence: request.sequence,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_list_child_handoffs(
+        &self,
+        request: generated::ListChildHandoffs,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::ListChildHandoffs {
+                task_id: request.task_id,
+                limit: request.limit,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_submit_child_request(
+        &self,
+        request: generated::SubmitChildRequest,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::SubmitChildRequest {
+                child_task_id: request.child_task_id,
+                parent_task_id: request.parent_task_id,
+                role: request.role,
+                kind: request.kind,
+                reduced_context: request.reduced_context,
+                max_output_bytes: request.max_output_bytes,
+                requested_capabilities: request.requested_capabilities,
+                parent_is_child: request.parent_is_child,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_submit_child_report(
+        &self,
+        request: generated::SubmitChildReport,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::SubmitChildReport {
+                child_task_id: request.child_task_id,
+                status: request.status,
+                summary: request.summary,
+                findings: request.findings,
+                sources: request.sources,
+                confidence_percent: request.confidence_percent,
                 reply,
             })
             .await
@@ -2409,6 +2543,253 @@ mod tests {
             .as_array()
             .expect("manifests array")
             .is_empty());
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// Proves the read-only child delegation boundary holds end-to-end
+    /// through the real IPC command path, not just at the pure-function
+    /// level (`child_runtime::ChildTaskRequest::validate` /
+    /// `child_runtime::accept_report` unit tests): a request naming a
+    /// non-read-only capability is rejected, a nested-child request is
+    /// rejected, a report with secret-like content is rejected, and a
+    /// valid read-only request plus matching valid report round-trips
+    /// through save -> submit -> list successfully. This test does not
+    /// spawn or execute any child agent; it only proves the
+    /// request/report validation and persistence boundary.
+    #[tokio::test]
+    async fn child_handoff_request_report_security_boundary_against_real_storage() {
+        let path =
+            std::env::temp_dir().join(format!("evohime-ipc-child-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal, coordinator);
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+
+        async fn send(
+            bridge: &IpcBridge,
+            client: &mut tokio::io::DuplexStream,
+            server_reader: &mut (impl tokio::io::AsyncRead + Unpin),
+            server_writer: &mut (impl tokio::io::AsyncWrite + Unpin),
+            request_id: &str,
+            command: generated::command_envelope::Command,
+        ) -> generated::EventEnvelope {
+            let envelope = generated::CommandEnvelope {
+                protocol: Some(protocol()),
+                request_id: request_id.into(),
+                client_id: "child-client".into(),
+                core_instance_id: String::new(),
+                session_epoch: 1,
+                command: Some(command),
+            };
+            transport::write_frame(client, &envelope.encode_to_vec())
+                .await
+                .expect("request writes");
+            bridge
+                .process_once(server_reader, server_writer)
+                .await
+                .expect("request serves");
+            let response = transport::read_frame(client).await.expect("response reads");
+            generated::EventEnvelope::decode(response.as_slice()).expect("event decodes")
+        }
+
+        // (a) A request naming a non-read-only capability (workspace.write)
+        // must be rejected end-to-end, not just by the pure function.
+        let write_capability_envelope = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "child-request-write-capability".into(),
+            client_id: "child-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::SubmitChildRequest(
+                generated::SubmitChildRequest {
+                    child_task_id: "child-write".into(),
+                    parent_task_id: "task-1".into(),
+                    role: "researcher".into(),
+                    kind: "code_search".into(),
+                    reduced_context: vec!["inspect src".into()],
+                    max_output_bytes: 4096,
+                    requested_capabilities: vec!["workspace.write".into()],
+                    parent_is_child: false,
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &write_capability_envelope.encode_to_vec())
+            .await
+            .expect("write-capability request writes");
+        let write_capability_denied = bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await;
+        assert!(
+            write_capability_denied.is_err(),
+            "a request naming a non-read-only capability must be rejected"
+        );
+
+        // (b) A nested child (parent_is_child = true) must be rejected.
+        let nested_envelope = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "child-request-nested".into(),
+            client_id: "child-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::SubmitChildRequest(
+                generated::SubmitChildRequest {
+                    child_task_id: "child-nested".into(),
+                    parent_task_id: "task-1".into(),
+                    role: "researcher".into(),
+                    kind: "code_search".into(),
+                    reduced_context: vec!["inspect src".into()],
+                    max_output_bytes: 4096,
+                    requested_capabilities: vec!["workspace.read".into()],
+                    parent_is_child: true,
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &nested_envelope.encode_to_vec())
+            .await
+            .expect("nested request writes");
+        let nested_denied = bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await;
+        assert!(
+            nested_denied.is_err(),
+            "a nested child request (parent_is_child = true) must be rejected"
+        );
+
+        // A valid read-only request submits successfully.
+        let submitted = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "child-request-valid",
+            generated::command_envelope::Command::SubmitChildRequest(
+                generated::SubmitChildRequest {
+                    child_task_id: "child-1".into(),
+                    parent_task_id: "task-1".into(),
+                    role: "researcher".into(),
+                    kind: "code_search".into(),
+                    reduced_context: vec!["inspect src".into()],
+                    max_output_bytes: 4096,
+                    requested_capabilities: vec!["workspace.read".into(), "git.diff".into()],
+                    parent_is_child: false,
+                },
+            ),
+        )
+        .await;
+        assert_eq!(submitted.event_type, "child.request.submitted");
+        let submitted_payload: serde_json::Value =
+            serde_json::from_slice(&submitted.payload).expect("submit payload is valid json");
+        assert_eq!(
+            submitted_payload["request"]["child_task_id"],
+            serde_json::json!("child-1")
+        );
+
+        // (c) A report containing secret-like content must be rejected,
+        // even though it matches a valid, already-persisted request.
+        let secret_report_envelope = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "child-report-secret".into(),
+            client_id: "child-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::SubmitChildReport(
+                generated::SubmitChildReport {
+                    child_task_id: "child-1".into(),
+                    status: "complete".into(),
+                    summary: "api_key=do-not-leak".into(),
+                    findings: vec!["module is bounded".into()],
+                    sources: vec!["src/lib.rs:10".into()],
+                    confidence_percent: 90,
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &secret_report_envelope.encode_to_vec())
+            .await
+            .expect("secret report writes");
+        let secret_report_denied = bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await;
+        assert!(
+            secret_report_denied.is_err(),
+            "a report containing secret-like content must be rejected"
+        );
+
+        // (d) A matching, valid report round-trips through
+        // save -> submit -> list successfully.
+        let accepted = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "child-report-valid",
+            generated::command_envelope::Command::SubmitChildReport(generated::SubmitChildReport {
+                child_task_id: "child-1".into(),
+                status: "complete".into(),
+                summary: "found one relevant module".into(),
+                findings: vec!["module is bounded".into()],
+                sources: vec!["src/lib.rs:10".into()],
+                confidence_percent: 90,
+            }),
+        )
+        .await;
+        assert_eq!(accepted.event_type, "child.report.accepted");
+        let accepted_payload: serde_json::Value =
+            serde_json::from_slice(&accepted.payload).expect("report payload is valid json");
+        assert_eq!(
+            accepted_payload["report"]["child_task_id"],
+            serde_json::json!("child-1")
+        );
+
+        // A separately requested handoff persists and lists back through
+        // the real command path too.
+        let handoff = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "child-handoff-valid",
+            generated::command_envelope::Command::RequestChildHandoff(
+                generated::RequestChildHandoff {
+                    handoff_id: "handoff-1".into(),
+                    task_id: "task-1".into(),
+                    kind: "delegate".into(),
+                    from_role: "coordinator".into(),
+                    from_name: String::new(),
+                    to_role: "researcher".into(),
+                    to_name: String::new(),
+                    purpose: "investigate module bounds".into(),
+                    payload: std::collections::HashMap::new(),
+                    sequence: 1,
+                },
+            ),
+        )
+        .await;
+        assert_eq!(handoff.event_type, "child.handoff.requested");
+
+        let listed_handoffs = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "child-handoff-list",
+            generated::command_envelope::Command::ListChildHandoffs(generated::ListChildHandoffs {
+                task_id: "task-1".into(),
+                limit: 10,
+            }),
+        )
+        .await;
+        assert_eq!(listed_handoffs.event_type, "child.handoff.list");
+        let listed_handoffs_payload: serde_json::Value =
+            serde_json::from_slice(&listed_handoffs.payload)
+                .expect("handoff list payload is valid json");
+        let handoffs = listed_handoffs_payload["handoffs"]
+            .as_array()
+            .expect("handoffs array");
+        assert_eq!(handoffs.len(), 1);
+        assert_eq!(handoffs[0]["handoff_id"], serde_json::json!("handoff-1"));
 
         let _ = std::fs::remove_file(path);
     }
