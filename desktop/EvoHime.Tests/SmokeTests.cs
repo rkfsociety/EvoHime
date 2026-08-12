@@ -18,7 +18,7 @@ public sealed class SmokeTests
     public void ShellNavigationContainsTheFirstVisualWorkspaceSections()
     {
         CollectionAssert.AreEqual(
-            new[] { "Новый чат", "Задачи", "Файлы", "Git", "Запланировано", "Плагины", "Проекты", "Настройки" },
+            new[] { "Новый чат", "Задачи", "Файлы", "Git", "Терминал", "Запланировано", "Плагины", "Проекты", "Настройки" },
             ShellNavigationCatalog.Items.Select(item => item.Title).ToArray());
     }
 

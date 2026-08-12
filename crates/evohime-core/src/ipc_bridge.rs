@@ -20,6 +20,8 @@ pub enum IpcBridgeError {
     Frame(#[from] FrameError),
     #[error("protobuf message failed: {0}")]
     Protobuf(#[from] prost::DecodeError),
+    #[error("JSON payload failed: {0}")]
+    Json(#[from] serde_json::Error),
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -583,6 +585,9 @@ impl IpcBridge {
                     )
                     .await?;
                 self.write_response(writer, "git.diff", payload).await?;
+            }
+            Some(generated::command_envelope::Command::TerminalExecute(request)) => {
+                self.dispatch_terminal_execute(request, writer).await?;
             }
             Some(generated::command_envelope::Command::RunDoctor(request)) => {
                 let result = self
@@ -1652,6 +1657,126 @@ impl IpcBridge {
             "max_bytes": max_bytes,
         }))
         .map_err(|error| FrameError::Io(error.to_string()).into())
+    }
+
+    async fn dispatch_terminal_execute<W: AsyncWrite + Unpin>(
+        &self,
+        request: generated::TerminalExecute,
+        writer: &mut W,
+    ) -> Result<(), IpcBridgeError> {
+        const DEFAULT_TIMEOUT_MS: u32 = 30_000;
+        const MAX_OUTPUT_BYTES: usize = 512 * 1024;
+        let tools = self
+            .tools
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("Terminal tools are not configured".into()))?;
+        let task_id = uuid::Uuid::parse_str(&request.task_id)
+            .map_err(|error| FrameError::Io(format!("invalid terminal task id: {error}")))?;
+        let workspace_root = std::path::PathBuf::from(request.workspace_path);
+        let input = serde_json::json!({
+            "program": request.program,
+            "args": request.args,
+            "cwd": (!request.cwd.is_empty()).then_some(request.cwd),
+            "timeout_ms": if request.timeout_ms == 0 { DEFAULT_TIMEOUT_MS } else { request.timeout_ms.min(DEFAULT_TIMEOUT_MS) },
+        });
+        let context = ToolContext {
+            workspace_root,
+            task_id,
+            session_id: None,
+            progress_tx: None,
+        };
+        let cancellation = tokio_util::sync::CancellationToken::new();
+        let result = if request.approval_id.is_empty() {
+            match tools
+                .execute_with_cancellation(&context, "shell.execute", input.clone(), cancellation.clone())
+                .await
+            {
+            Ok(result) => result,
+            Err(evohime_tool_runtime::ToolError::NeedsApproval {
+                tool,
+                permission,
+                scope,
+                approval_id,
+                input,
+            }) => {
+                self.write_response(
+                    writer,
+                    "approval.required",
+                    serde_json::to_vec(&serde_json::json!({
+                        "task_id": task_id.to_string(),
+                        "approval_id": approval_id.to_string(),
+                        "tool_name": tool,
+                        "permission": format!("{permission:?}"),
+                        "scope": scope,
+                        "input": input,
+                    }))?,
+                )
+                .await?;
+                return Ok(());
+            }
+            Err(error) => {
+                return self
+                    .write_response(
+                        writer,
+                        "terminal.result",
+                        serde_json::to_vec(&serde_json::json!({
+                            "task_id": task_id.to_string(),
+                            "ok": false,
+                            "error": error.to_string(),
+                        }))?,
+                    )
+                    .await;
+            }
+            }
+        } else {
+            let approval_id = uuid::Uuid::parse_str(&request.approval_id)
+                .map_err(|error| FrameError::Io(format!("invalid terminal approval id: {error}")))?;
+            match tools
+                .execute_after_approval(
+                    &context,
+                    "shell.execute",
+                    input,
+                    approval_id,
+                    cancellation,
+                )
+                .await
+            {
+                Ok(result) => result,
+                Err(error) => {
+                    return self
+                        .write_response(
+                            writer,
+                            "terminal.result",
+                            serde_json::to_vec(&serde_json::json!({
+                                "task_id": task_id.to_string(),
+                                "ok": false,
+                                "error": error.to_string(),
+                            }))?,
+                        )
+                        .await;
+                }
+            }
+        };
+        let bytes = result.output.as_bytes();
+        let truncated = bytes.len() > MAX_OUTPUT_BYTES;
+        let output = if truncated {
+            String::from_utf8_lossy(&bytes[..MAX_OUTPUT_BYTES]).into_owned()
+        } else {
+            result.output
+        };
+        self.write_response(
+            writer,
+            "terminal.result",
+            serde_json::to_vec(&serde_json::json!({
+                "task_id": task_id.to_string(),
+                "ok": true,
+                "output": output,
+                "structured": result.structured,
+                "truncated": truncated,
+                "max_bytes": MAX_OUTPUT_BYTES,
+            }))?,
+        )
+        .await
     }
 
     async fn write_response<W: AsyncWrite + Unpin>(

@@ -178,6 +178,28 @@ public static class ProtocolEnvelope
         output.WriteUInt32(maxBytes);
     });
 
+    public static byte[] TerminalExecute(
+        string taskId,
+        string workspacePath,
+        string program,
+        IReadOnlyList<string> args,
+        string cwd = "",
+        uint timeoutMs = 30_000,
+        string approvalId = "") => TaskCommand(56, output =>
+    {
+        WriteString(output, 1, taskId);
+        WriteString(output, 2, workspacePath);
+        WriteString(output, 3, program);
+        foreach (var arg in args)
+        {
+            WriteString(output, 4, arg);
+        }
+        WriteString(output, 5, cwd);
+        output.WriteTag(6, WireFormat.WireType.Varint);
+        output.WriteUInt32(timeoutMs);
+        WriteString(output, 7, approvalId);
+    });
+
     public static byte[] UpdateTaskStatus(string taskId, long expectedVersion, string status) => TaskCommand(20, output =>
     {
         output.WriteTag(1, WireFormat.WireType.LengthDelimited);

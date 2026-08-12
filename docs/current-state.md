@@ -36,11 +36,10 @@ Core и supervisor — внутренние компоненты установ�
 
 ## Следующий этап
 
-1. controlled Terminal: bounded Core command с approval, ограниченным выводом и audit;
-2. leases/reconciliation и расширенный diff/command preview в approval UI;
-3. permission policy rules с glob-областями и повторной проверкой approval-пути;
-4. Credential Manager/DPAPI, расширенный backup/restore и crash recovery UI;
-5. дальнейшая проверка установочного UX на чистой Windows 11.
+1. leases/reconciliation и расширенный diff/command preview в approval UI;
+2. permission policy rules с glob-областями и повторной проверкой approval-пути;
+3. Credential Manager/DPAPI, расширенный backup/restore и crash recovery UI;
+4. дальнейшая проверка установочного UX на чистой Windows 11.
 
 ## Граница продукта
 

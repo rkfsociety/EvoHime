@@ -69,6 +69,19 @@ public sealed class CoreIpcClient
         CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.GitDiff(workspacePath, relativePath), cancellationToken);
 
+    public Task ExecuteTerminalAsync(
+        string taskId,
+        string workspacePath,
+        string program,
+        IReadOnlyList<string> args,
+        string cwd,
+        uint timeoutMs,
+        string approvalId,
+        CancellationToken cancellationToken) =>
+        SendPayloadAsync(
+            ProtocolEnvelope.TerminalExecute(taskId, workspacePath, program, args, cwd, timeoutMs, approvalId),
+            cancellationToken);
+
     public Task StopTaskAsync(string taskId, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.StopTask(taskId), cancellationToken);
 

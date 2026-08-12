@@ -63,6 +63,7 @@ public partial class MainWindow : Window
     private Grid? _tasksView;
     private Grid? _filesView;
     private Grid? _gitView;
+    private Grid? _terminalView;
     private StackPanel? _filesList;
     private TextBox? _filePreview;
     private TextBlock? _filesPathText;
@@ -611,6 +612,10 @@ public partial class MainWindow : Window
         Grid.SetColumn(_gitView, 1);
         _gitView.Visibility = Visibility.Collapsed;
         root.Children.Add(_gitView);
+        _terminalView = BuildTerminalView();
+        Grid.SetColumn(_terminalView, 1);
+        _terminalView.Visibility = Visibility.Collapsed;
+        root.Children.Add(_terminalView);
         _pluginsView = BuildPluginsView();
         Grid.SetColumn(_pluginsView, 1);
         _pluginsView.Visibility = Visibility.Collapsed;
@@ -801,6 +806,9 @@ public partial class MainWindow : Window
             case "Git":
                 ShowGitView();
                 break;
+            case "Терминал":
+                ShowTerminalView();
+                break;
             case "Запланировано":
                 ShowScheduledView();
                 break;
@@ -824,6 +832,7 @@ public partial class MainWindow : Window
         if (_tasksView is not null) _tasksView.Visibility = Visibility.Collapsed;
         if (_filesView is not null) _filesView.Visibility = Visibility.Collapsed;
         if (_gitView is not null) _gitView.Visibility = Visibility.Collapsed;
+        if (_terminalView is not null) _terminalView.Visibility = Visibility.Collapsed;
         if (_pluginsView is not null) _pluginsView.Visibility = Visibility.Collapsed;
     }
 
@@ -860,6 +869,121 @@ public partial class MainWindow : Window
         {
             _gitView.Visibility = Visibility.Visible;
             _ = LoadGitAsync();
+        }
+    }
+
+    private void ShowTerminalView()
+    {
+        HideShellViews();
+        if (_terminalView is not null)
+        {
+            _terminalView.Visibility = Visibility.Visible;
+        }
+    }
+
+    private Grid BuildTerminalView()
+    {
+        var view = BuildShellPage("Терминал", "Команды выполняются Core в sandbox workspace и ограничены timeout/output.");
+        var content = new Grid { RowSpacing = 10 };
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        var form = new StackPanel { Spacing = 8 };
+        var program = new TextBox { Header = "Программа", PlaceholderText = "например: git" };
+        var args = new TextBox { Header = "Аргументы", PlaceholderText = "например: status --short" };
+        var cwd = new TextBox { Header = "Относительный cwd", PlaceholderText = "." };
+        var timeout = new NumberBox { Header = "Timeout (мс)", Value = 30000, Minimum = 100, Maximum = 30000, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };
+        var run = new Button { Content = "Выполнить через Core", HorizontalAlignment = HorizontalAlignment.Left };
+        var status = new TextBlock { Text = "Команда ещё не запускалась.", TextWrapping = TextWrapping.Wrap, Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157) };
+        var output = CreateReadOnlyCodeBox("Вывод команды появится здесь");
+        run.Click += async (_, _) => await ExecuteTerminalAsync(program, args, cwd, timeout, status, output);
+        form.Children.Add(program);
+        form.Children.Add(args);
+        form.Children.Add(cwd);
+        form.Children.Add(timeout);
+        form.Children.Add(run);
+        Grid.SetRow(form, 0);
+        content.Children.Add(form);
+        Grid.SetRow(status, 1);
+        content.Children.Add(status);
+        Grid.SetRow(output, 2);
+        content.Children.Add(new Border { Child = output, Background = ThemeBrush("SurfaceRaisedBrush", 23, 28, 37), CornerRadius = new CornerRadius(10) });
+        Grid.SetRow(content, 1);
+        view.Children.Add(content);
+        return view;
+    }
+
+    private async Task ExecuteTerminalAsync(TextBox program, TextBox args, TextBox cwd, NumberBox timeout, TextBlock status, TextBox output)
+    {
+        var executable = program.Text.Trim();
+        if (string.IsNullOrWhiteSpace(executable))
+        {
+            status.Text = "Укажите программу.";
+            return;
+        }
+        var taskId = Guid.NewGuid().ToString();
+        var workspacePath = _state.WorkspacePath ?? Environment.CurrentDirectory;
+        var argumentList = args.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var workingDirectory = cwd.Text.Trim();
+        var timeoutMs = (uint)Math.Clamp(timeout.Value is double value ? value : 30000, 100, 30000);
+        try
+        {
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                using var requestTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+                if (!_ipc.IsConnected)
+                {
+                    await ConnectToCoreWithRetryAsync(requestTimeout.Token);
+                }
+                await _ipc.ExecuteTerminalAsync(taskId, workspacePath, executable, argumentList, workingDirectory, timeoutMs, string.Empty, requestTimeout.Token);
+                var response = await _ipc.ReadEventAsync(requestTimeout.Token);
+                if (response.EventType == "approval.required")
+                {
+                    using var approvalJson = JsonDocument.Parse(response.Payload);
+                    var approvalId = approvalJson.RootElement.GetProperty("approval_id").GetString() ?? string.Empty;
+                    var scope = approvalJson.RootElement.GetProperty("scope").GetString() ?? executable;
+                    var dialog = new ContentDialog
+                    {
+                        Title = "Разрешить команду?",
+                        Content = $"Core запросил ShellExecute для {scope}.\nКоманда: {executable} {string.Join(' ', argumentList)}",
+                        PrimaryButtonText = "Разрешить",
+                        CloseButtonText = "Отмена",
+                        XamlRoot = Content.XamlRoot,
+                    };
+                    var decision = await dialog.ShowAsync();
+                    await _ipc.ResolveApprovalAsync(approvalId, decision == ContentDialogResult.Primary, requestTimeout.Token);
+                    if (decision != ContentDialogResult.Primary)
+                    {
+                        status.Text = "Команда отменена до запуска.";
+                        output.Text = string.Empty;
+                        return;
+                    }
+                    await _ipc.ExecuteTerminalAsync(taskId, workspacePath, executable, argumentList, workingDirectory, timeoutMs, approvalId, requestTimeout.Token);
+                    response = await _ipc.ReadEventAsync(requestTimeout.Token);
+                }
+                if (response.EventType != "terminal.result")
+                {
+                    throw new InvalidOperationException($"Core вернул {response.EventType} вместо terminal.result.");
+                }
+                using var resultJson = JsonDocument.Parse(response.Payload);
+                var root = resultJson.RootElement;
+                var ok = root.GetProperty("ok").GetBoolean();
+                output.Text = root.TryGetProperty("output", out var outputValue) ? outputValue.GetString() ?? string.Empty : root.GetProperty("error").GetString() ?? string.Empty;
+                status.Text = ok
+                    ? (root.TryGetProperty("truncated", out var truncated) && truncated.GetBoolean() ? "Готово; вывод усечён bounded-лимитом Core." : "Готово через Core.")
+                    : "Команда не выполнена: Core отклонил или не смог запустить её.";
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+        }
+        catch (Exception error)
+        {
+            status.Text = $"Ошибка Terminal: {error.Message}";
+            output.Text = string.Empty;
         }
     }
 

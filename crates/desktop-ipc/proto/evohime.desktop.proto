@@ -186,6 +186,17 @@ message GitDiff {
   uint32 max_bytes = 3;
 }
 
+// Bounded shell invocation owned by Core; approval is handled by ToolRegistry.
+message TerminalExecute {
+  string task_id = 1;
+  string workspace_path = 2;
+  string program = 3;
+  repeated string args = 4;
+  string cwd = 5;
+  uint32 timeout_ms = 6;
+  string approval_id = 7;
+}
+
 message StopTask {
   string task_id = 1;
 }
@@ -450,6 +461,7 @@ message CommandEnvelope {
     ReadWorkspaceFile read_workspace_file = 53;
     GitStatus git_status = 54;
     GitDiff git_diff = 55;
+    TerminalExecute terminal_execute = 56;
   }
 }
 
