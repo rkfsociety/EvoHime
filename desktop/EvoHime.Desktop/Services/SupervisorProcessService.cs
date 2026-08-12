@@ -15,14 +15,16 @@ public sealed class SupervisorProcessService : IDisposable
 
         var baseDirectory = AppContext.BaseDirectory;
         var supervisorPath = Path.Combine(baseDirectory, "evohime-supervisor.exe");
-        var corePath = Environment.GetEnvironmentVariable("EVOHIME_CORE_EXE")
+        var corePath = NormalizeEnvironmentPath(
+            Environment.GetEnvironmentVariable("EVOHIME_CORE_EXE"))
             ?? Path.Combine(baseDirectory, "evohime-core.exe");
         if (!File.Exists(supervisorPath) || !File.Exists(corePath))
         {
             return false;
         }
 
-        var dataDirectory = Environment.GetEnvironmentVariable("EVOHIME_DATA_DIR")
+        var dataDirectory = NormalizeEnvironmentPath(
+            Environment.GetEnvironmentVariable("EVOHIME_DATA_DIR"))
             ?? Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "EvoHime");
@@ -45,6 +47,16 @@ public sealed class SupervisorProcessService : IDisposable
             },
         });
         return _process is not null;
+    }
+
+    private static string? NormalizeEnvironmentPath(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return Path.GetFullPath(value.Trim());
     }
 
     public bool Restart()

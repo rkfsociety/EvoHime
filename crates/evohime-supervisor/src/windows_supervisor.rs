@@ -228,8 +228,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             return Err(error.into());
         }
     }
-    let core_exe = std::env::var_os("EVOHIME_CORE_EXE")
-        .map(PathBuf::from)
+    let core_exe = normalized_env_path("EVOHIME_CORE_EXE")
         .unwrap_or_else(|| PathBuf::from("evohime-core.exe"));
     let max_restarts = std::env::var("EVOHIME_CORE_MAX_RESTARTS")
         .ok()
@@ -290,14 +289,21 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn core_data_dir() -> PathBuf {
-    std::env::var_os("EVOHIME_DATA_DIR")
-        .map(PathBuf::from)
+    normalized_env_path("EVOHIME_DATA_DIR")
         .or_else(|| {
             std::env::var_os("LOCALAPPDATA")
                 .map(PathBuf::from)
                 .map(|path| path.join("EvoHime"))
         })
         .unwrap_or_else(|| PathBuf::from(".evohime"))
+}
+
+fn normalized_env_path(name: &str) -> Option<PathBuf> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
 }
 
 fn heartbeat_is_stale(path: &Path, max_age: StdDuration) -> bool {
@@ -379,8 +385,8 @@ mod tests {
         recover_pending_update,
     };
     use evohime_tx::UpdateTransaction;
-    use std::fs;
     use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
+    use std::{fs, path::PathBuf};
 
     #[test]
     fn recovers_pending_update_before_core_start() {
@@ -414,6 +420,16 @@ mod tests {
         let path =
             std::env::temp_dir().join(format!("evohime-missing-heartbeat-{}", std::process::id()));
         assert!(heartbeat_is_stale(&path, StdDuration::from_secs(5)));
+    }
+
+    #[test]
+    fn normalized_env_path_removes_accidental_outer_whitespace() {
+        std::env::set_var("EVOHIME_TEST_PATH", "  C:\\EvoHime\\data  ");
+        assert_eq!(
+            super::normalized_env_path("EVOHIME_TEST_PATH"),
+            Some(PathBuf::from("C:\\EvoHime\\data"))
+        );
+        std::env::remove_var("EVOHIME_TEST_PATH");
     }
 
     #[test]

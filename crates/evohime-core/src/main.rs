@@ -1,8 +1,7 @@
 #[cfg(windows)]
 #[tokio::main]
 async fn main() {
-    let data_dir = std::env::var_os("EVOHIME_DATA_DIR")
-        .map(std::path::PathBuf::from)
+    let data_dir = normalized_env_path("EVOHIME_DATA_DIR")
         .or_else(|| {
             std::env::var_os("LOCALAPPDATA")
                 .map(|path| std::path::PathBuf::from(path).join("EvoHime"))
@@ -123,6 +122,15 @@ async fn main() {
         std::process::exit(1);
     }
     heartbeat_task.abort();
+}
+
+#[cfg(windows)]
+fn normalized_env_path(name: &str) -> Option<std::path::PathBuf> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from)
 }
 
 #[cfg(windows)]
