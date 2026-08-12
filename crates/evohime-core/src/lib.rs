@@ -224,7 +224,10 @@ fn parse_legacy_function_calls(content: &str, iteration: usize) -> Vec<NativeToo
             cursor = tag_end + 1;
             continue;
         };
-        let legacy_read_only = supported_names.contains(&name.as_str());
+        let legacy_read_only = matches!(
+            name.as_str(),
+            "filesystem.list" | "filesystem.read" | "filesystem.search"
+        );
         let body_start = tag_end + 1;
         let Some(body_end_relative) = content[body_start..].find("</invoke>") else {
             break;
@@ -474,6 +477,7 @@ struct DeliveryRequirements {
     research: bool,
     mutation: bool,
     verification: bool,
+    diff_check: bool,
     commit: bool,
 }
 
@@ -499,6 +503,7 @@ impl DeliveryRequirements {
             verification: ["проверь", "провер", "тест", "test", "собери", "запусти"]
                 .iter()
                 .any(|marker| prompt.contains(marker)),
+            diff_check: prompt.contains("git diff --check"),
             commit: prompt.contains("коммит") || prompt.contains("commit"),
         }
     }
@@ -1933,6 +1938,8 @@ impl ToolAgent {
         let mut mutation_done = false;
         let mut verification_done = false;
         let mut commit_done = false;
+        let mut verification_test_passed = false;
+        let mut diff_check_passed = false;
         let mut research_observations = 0usize;
         let mut research_has_overview = false;
         let mut research_has_content = false;
@@ -2130,51 +2137,59 @@ impl ToolAgent {
                 );
                 let input = serde_json::from_str(&call.arguments)
                     .unwrap_or_else(|_| serde_json::Value::Null);
-                let output = match tokio::select! {
-                    _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
-                    result = self.tools.execute_with_cancellation(&context, &call.name, input, cancellation.clone()) => result,
-                } {
-                    Ok(result) => result.output,
-                    Err(evohime_tool_runtime::ToolError::NeedsApproval {
-                        tool,
-                        permission,
-                        scope,
-                        approval_id,
-                        input,
-                    }) => {
-                        let receiver = self.approvals.register(approval_id).await;
-                        let _ = events.send(CoreEvent::ApprovalRequired {
-                            task_id: task_id.clone(),
-                            approval_id: approval_id.to_string(),
-                            tool_name: tool.clone(),
-                            permission: format!("{permission:?}"),
+                let commit_blocked = call.name == "git.commit"
+                    && delivery_requirements.commit
+                    && (!verification_test_passed
+                        || (delivery_requirements.diff_check && !diff_check_passed));
+                let output = if commit_blocked {
+                    "git.commit blocked: сначала успешно выполни обязательную проверку и git diff --check".to_string()
+                } else {
+                    match tokio::select! {
+                        _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
+                        result = self.tools.execute_with_cancellation(&context, &call.name, input, cancellation.clone()) => result,
+                    } {
+                        Ok(result) => result.output,
+                        Err(evohime_tool_runtime::ToolError::NeedsApproval {
+                            tool,
+                            permission,
                             scope,
-                            input: input.clone(),
-                        });
-                        let granted = tokio::select! {
-                            _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
-                            result = receiver => result.unwrap_or(false),
-                        };
-                        if !granted {
-                            "approval denied".to_string()
-                        } else {
-                            match self
-                                .tools
-                                .execute_after_approval(
-                                    &context,
-                                    &tool,
-                                    input,
-                                    approval_id,
-                                    cancellation.clone(),
-                                )
-                                .await
-                            {
-                                Ok(result) => result.output,
-                                Err(error) => error.to_string(),
+                            approval_id,
+                            input,
+                        }) => {
+                            let receiver = self.approvals.register(approval_id).await;
+                            let _ = events.send(CoreEvent::ApprovalRequired {
+                                task_id: task_id.clone(),
+                                approval_id: approval_id.to_string(),
+                                tool_name: tool.clone(),
+                                permission: format!("{permission:?}"),
+                                scope,
+                                input: input.clone(),
+                            });
+                            let granted = tokio::select! {
+                                _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
+                                result = receiver => result.unwrap_or(false),
+                            };
+                            if !granted {
+                                "approval denied".to_string()
+                            } else {
+                                match self
+                                    .tools
+                                    .execute_after_approval(
+                                        &context,
+                                        &tool,
+                                        input,
+                                        approval_id,
+                                        cancellation.clone(),
+                                    )
+                                    .await
+                                {
+                                    Ok(result) => result.output,
+                                    Err(error) => error.to_string(),
+                                }
                             }
                         }
+                        Err(error) => error.to_string(),
                     }
-                    Err(error) => error.to_string(),
                 };
                 let _ = events.send(CoreEvent::ToolOutput {
                     task_id: task_id.clone(),
@@ -2191,17 +2206,40 @@ impl ToolAgent {
                 );
                 let failed = output.to_lowercase().contains("failed")
                     || output.to_lowercase().contains("ошиб")
-                    || output.to_lowercase().contains("не удалось");
+                    || output.to_lowercase().contains("не удалось")
+                    || output.to_lowercase().contains("blocked")
+                    || output.to_lowercase().contains("exit_code: 1")
+                    || output.to_lowercase().contains("exit_code: 101")
+                    || output.to_lowercase().contains("error:");
                 mutation_done |= !failed
                     && matches!(call.name.as_str(), "filesystem.write" | "filesystem.patch");
                 commit_done |= !failed && call.name == "git.commit";
                 if call.name == "shell.execute" && !failed {
                     let arguments = call.arguments.to_lowercase();
-                    verification_done |= arguments.contains("test")
+                    if arguments.contains("diff") && arguments.contains("check") {
+                        diff_check_passed = true;
+                    } else if arguments.contains("test")
                         || arguments.contains("check")
                         || arguments.contains("build")
-                        || arguments.contains("собер");
+                        || arguments.contains("собер")
+                    {
+                        verification_test_passed = true;
+                    }
                 }
+                if call.name == "shell.execute" && failed {
+                    let arguments = call.arguments.to_lowercase();
+                    if arguments.contains("diff") && arguments.contains("check") {
+                        diff_check_passed = false;
+                    } else if arguments.contains("test")
+                        || arguments.contains("check")
+                        || arguments.contains("build")
+                        || arguments.contains("собер")
+                    {
+                        verification_test_passed = false;
+                    }
+                }
+                verification_done = verification_test_passed
+                    && (!delivery_requirements.diff_check || diff_check_passed);
                 messages.push(ChatMessage::tool_observation(call.id, output));
                 if failed {
                     messages.push(ChatMessage::text(
@@ -4740,10 +4778,21 @@ mod tests {
         assert!(requirements.mutation);
         assert!(requirements.verification);
         assert!(requirements.commit);
+        assert!(!requirements.diff_check);
         assert_eq!(
             requirements.missing(false, false, true, false),
             vec!["внести изменение", "создать commit"]
         );
+    }
+
+    #[test]
+    fn detects_diff_check_as_a_commit_prerequisite() {
+        let requirements = super::DeliveryRequirements::from_prompt(
+            "добавь тест, выполни cargo test, git diff --check и создай commit",
+        );
+        assert!(requirements.verification);
+        assert!(requirements.diff_check);
+        assert!(requirements.commit);
     }
 
     #[test]
