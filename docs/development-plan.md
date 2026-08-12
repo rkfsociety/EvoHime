@@ -25,7 +25,7 @@
 1. Foundation — solution, core, SQLite, IPC, logging. Завершён.
 2. Native shell — task workspace, replay/reconnect, tray and notifications. Завершён.
 3. Agent workflow — streaming, approvals, cancellation, checkpoints and diff review. В работе: streaming, cancellation, approval round-trip, bounded Build recovery checkpoints, Core-owned project policy и WinUI policy panel завершены; leases/reconciliation и расширенный diff review продолжаются.
-4. Developer tools — Files вертикальный срез (дерево workspace и read-only preview через Core) начат; Editor, Git и controlled terminal — следующие подэтапы.
+4. Developer tools — Files и Editor вертикальные срезы завершены; Git status/diff уже доступны через bounded Core IPC; controlled terminal остаётся следующим подэтапом.
 5. Product hardening — credentials, backup/restore, installer, update and crash recovery. Частично завершён.
 6. Release cleanup — единый installer, retention релизов, диагностика и чистый native CI. Основная часть завершена.
 
@@ -42,8 +42,10 @@ Legacy web UI, browser launcher, HTTP server и PostgreSQL persistence удал�
 | Core build policy, persistence и native policy panel | ✅ Завершён | `6352321`, `a087042` |
 | Durable run recovery foundation | ✅ Завершён | `cbb64e9` |
 | Автообновление, SHA-256 verification, upgrade smoke и rollback recovery | ✅ Завершён | `edaa8ec` |
-| Files | 🟡 В работе: read-only tree/file preview через Core IPC | текущий срез |
-| Editor, Git, Terminal | 🟡 В работе: read-only Git status/diff через bounded Core IPC | текущий native-срез |
+| Files | ✅ Завершён первый вертикальный срез: read-only tree/file preview через Core IPC | текущий native-срез |
+| Editor | ✅ Завершён bounded bridge через Plan/Build approval из Files и Tasks | `2162f6e` |
+| Git | ✅ Завершены bounded read-only status/diff через Core IPC и native Git page | `ea3f065`, `28d850d` |
+| Terminal | ⬜ Следующий подэтап: controlled Core command с approval и bounded output | — |
 | Leases/reconciliation и расширенный diff review | 🟡 В работе | — |
 | Permission policy rules и закрытие обходов approval | 🟡 В работе | `docs/plans/` |
 | Credentials, расширенный backup/restore и crash recovery UI | ⬜ Запланирован | — |

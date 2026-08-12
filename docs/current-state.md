@@ -36,12 +36,11 @@ Core и supervisor — внутренние компоненты установ�
 
 ## Следующий этап
 
-1. Files: read-only дерево workspace и preview текстовых файлов через Core IPC — первый вертикальный срез начат;
-2. Editor, Git и controlled Terminal;
-3. leases/reconciliation и расширенный diff/command preview в approval UI;
-4. permission policy rules с glob-областями и повторной проверкой approval-пути;
-5. Credential Manager/DPAPI, расширенный backup/restore и crash recovery UI;
-6. дальнейшая проверка установочного UX на чистой Windows 11.
+1. controlled Terminal: bounded Core command с approval, ограниченным выводом и audit;
+2. leases/reconciliation и расширенный diff/command preview в approval UI;
+3. permission policy rules с glob-областями и повторной проверкой approval-пути;
+4. Credential Manager/DPAPI, расширенный backup/restore и crash recovery UI;
+5. дальнейшая проверка установочного UX на чистой Windows 11.
 
 ## Граница продукта
 
