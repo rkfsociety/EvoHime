@@ -2266,13 +2266,19 @@ impl ToolAgent {
                 }
                 verification_done = verification_test_passed
                     && (!delivery_requirements.diff_check || diff_check_passed);
+                let patch_context_mismatch = output.to_lowercase().contains("patch context mismatch");
                 messages.push(ChatMessage::tool_observation(call.id, output));
                 if failed {
+                    let recovery = if patch_context_mismatch {
+                        " Для patch context mismatch сначала вызови git.diff или filesystem.read для актуального файла, затем сформируй новый patch по фактическому содержимому; старый patch не повторяй."
+                    } else {
+                        ""
+                    };
                     messages.push(ChatMessage::text(
                         ChatRole::User,
                         format!(
-                            "Инструмент {} завершился ошибкой. Не завершай задачу и не повторяй пустые аргументы. Повтори один вызов с полным workspace-relative JSON: filesystem.list={{\"path\":\".\"}}; filesystem.read={{\"path\":\"README.md\"}}; filesystem.search={{\"query\":\"нужный текст\",\"path\":\".\"}}. Для другого инструмента укажи все его обязательные поля.",
-                            call.name
+                            "Инструмент {} завершился ошибкой. Не завершай задачу и не повторяй пустые аргументы.{} Повтори один вызов с полным workspace-relative JSON: filesystem.list={{\"path\":\".\"}}; filesystem.read={{\"path\":\"README.md\"}}; filesystem.search={{\"query\":\"нужный текст\",\"path\":\".\"}}. Для другого инструмента укажи все его обязательные поля.",
+                            call.name, recovery
                         ),
                     ));
                 }
