@@ -666,6 +666,27 @@ pub enum CoreCommand {
         approval_required: bool,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    /// Captures one bounded, redacted piece of offline research evidence and
+    /// persists it against the real `research_evidence` table, tied to
+    /// `work_item_id` via `provenance_link`. Redaction and validation happen
+    /// in `research::ResearchEvidence::capture` before anything is stored.
+    SaveResearchEvidence {
+        work_item_id: String,
+        source_kind: String,
+        source_ref: String,
+        title: String,
+        publisher: String,
+        content_type: String,
+        raw_excerpt: String,
+        retrieved_at_ms: u64,
+        ttl_ms: u64,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Lists previously saved research evidence for a work item.
+    ListResearchEvidence {
+        work_item_id: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -893,6 +914,33 @@ impl EventJournal {
     ) -> Result<Option<evohime_local_storage::ProjectRecord>, StorageError> {
         let database = self.database.lock().await;
         database.get_project(id)
+    }
+
+    /// Persists one redacted, bounded research evidence record against the
+    /// real `research_evidence` table (SCHEMA_VERSION 8).
+    pub async fn save_research_evidence(
+        &self,
+        record: &evohime_local_storage::research_store::ResearchEvidenceRecord,
+    ) -> Result<(), String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::research_store::ResearchEvidenceSql::insert(
+            database.connection(),
+            record,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Lists research evidence records tied to a work item, oldest id first.
+    pub async fn list_research_evidence(
+        &self,
+        work_item_id: &str,
+    ) -> Result<Vec<evohime_local_storage::research_store::ResearchEvidenceRecord>, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::research_store::ResearchEvidenceSql::list_by_provenance(
+            database.connection(),
+            work_item_id,
+        )
+        .map_err(|error| error.to_string())
     }
 
     pub async fn get_or_create_build_policy(
@@ -2782,6 +2830,96 @@ impl TaskCoordinator {
                     let report = crate::doctor::DoctorReport::from_snapshot(&snapshot)
                         .map_err(|error| format!("{error:?}"))?;
                     Ok(report.to_bounded_json().into_bytes())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::SaveResearchEvidence {
+                work_item_id,
+                source_kind,
+                source_ref,
+                title,
+                publisher,
+                content_type,
+                raw_excerpt,
+                retrieved_at_ms,
+                ttl_ms,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    if work_item_id.trim().is_empty() {
+                        return Err("work_item_id must not be empty".to_string());
+                    }
+                    let source = crate::research::SourceMetadata::new(
+                        source_ref,
+                        title,
+                        publisher,
+                        content_type,
+                        retrieved_at_ms,
+                    )
+                    .map_err(|error| error.to_string())?;
+                    let captured_at_ms = SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    let evidence = crate::research::ResearchEvidence::capture(
+                        source,
+                        raw_excerpt,
+                        captured_at_ms,
+                        ttl_ms,
+                    )
+                    .map_err(|error| error.to_string())?;
+                    let id = uuid::Uuid::new_v4().to_string();
+                    let record = evohime_local_storage::research_store::ResearchEvidenceRecord {
+                        id: id.clone(),
+                        source_kind: source_kind.clone(),
+                        source_ref: evidence.source.url.clone(),
+                        redacted_excerpt: evidence.excerpt.clone(),
+                        source_hash: evidence.excerpt_sha256.clone(),
+                        fetched_at: evidence.captured_at_ms.to_string(),
+                        ttl_seconds: evidence.ttl_ms.div_ceil(1_000),
+                        provenance_link: Some(work_item_id.clone()),
+                    };
+                    journal.save_research_evidence(&record).await?;
+                    Self::record_audit(
+                        &state,
+                        crate::audit::AuditKind::Evidence,
+                        work_item_id.clone(),
+                        "research.evidence.saved",
+                        [
+                            ("evidence_id".to_owned(), id.clone()),
+                            ("source_kind".to_owned(), source_kind),
+                            ("source_hash".to_owned(), evidence.excerpt_sha256.clone()),
+                        ],
+                    )
+                    .await;
+                    serde_json::to_vec(&serde_json::json!({
+                        "id": id,
+                        "work_item_id": work_item_id,
+                        "evidence": evidence,
+                    }))
+                    .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::ListResearchEvidence {
+                work_item_id,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let records = journal.list_research_evidence(&work_item_id).await?;
+                    serde_json::to_vec(&serde_json::json!({
+                        "work_item_id": work_item_id,
+                        "records": records,
+                    }))
+                    .map_err(|error| error.to_string())
                 }
                 .await;
                 let _ = reply.send(result);

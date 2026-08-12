@@ -524,6 +524,18 @@ impl IpcBridge {
                     .await?;
                 self.write_response(writer, "doctor.report", result).await?;
             }
+            Some(generated::command_envelope::Command::SaveResearchEvidence(request)) => {
+                let result = self.dispatch_save_research_evidence(request).await?;
+                self.write_response(writer, "research.evidence.saved", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::ListResearchEvidence(request)) => {
+                let result = self
+                    .dispatch_list_research_evidence(request.work_item_id)
+                    .await?;
+                self.write_response(writer, "research.evidence.list", result)
+                    .await?;
+            }
             Some(generated::command_envelope::Command::ResolveApproval(resolve)) => {
                 let approval_id = uuid::Uuid::parse_str(&resolve.approval_id)
                     .map_err(|error| FrameError::Io(format!("invalid approval id: {error}")))?;
@@ -1007,6 +1019,60 @@ impl IpcBridge {
             .map_err(IpcBridgeError::from)
     }
 
+    async fn dispatch_save_research_evidence(
+        &self,
+        request: generated::SaveResearchEvidence,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::SaveResearchEvidence {
+                work_item_id: request.work_item_id,
+                source_kind: request.source_kind,
+                source_ref: request.source_ref,
+                title: request.title,
+                publisher: request.publisher,
+                content_type: request.content_type,
+                raw_excerpt: request.raw_excerpt,
+                retrieved_at_ms: request.retrieved_at_ms,
+                ttl_ms: request.ttl_ms,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_list_research_evidence(
+        &self,
+        work_item_id: String,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::ListResearchEvidence {
+                work_item_id,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
     /// Builds a Core Doctor provider probe from already-loaded, secret-free
     /// gateway configuration. Never exposes an API key value, only whether
     /// one is present.
@@ -1455,6 +1521,97 @@ mod tests {
         // No project_id was supplied, so the permissions probe is honestly
         // fail-closed rather than fabricated as healthy.
         assert_ne!(permissions_check["status"], serde_json::json!("OK"));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn saves_and_lists_research_evidence_against_real_storage() {
+        let path =
+            std::env::temp_dir().join(format!("evohime-ipc-research-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal, coordinator);
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+
+        let save = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "research-save-1".into(),
+            client_id: "research-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::SaveResearchEvidence(
+                generated::SaveResearchEvidence {
+                    work_item_id: "task-42".into(),
+                    source_kind: "url".into(),
+                    source_ref: "https://example.test/article".into(),
+                    title: "Example Article".into(),
+                    publisher: "Example Org".into(),
+                    content_type: "text/html".into(),
+                    raw_excerpt: "Useful finding sk-secret alice@example.test".into(),
+                    retrieved_at_ms: 1_700_000_000_000,
+                    ttl_ms: 3_600_000,
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &save.encode_to_vec())
+            .await
+            .expect("save writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("save serves");
+        let response = transport::read_frame(&mut client)
+            .await
+            .expect("save response reads");
+        let event = generated::EventEnvelope::decode(response.as_slice()).expect("event decodes");
+        assert_eq!(event.event_type, "research.evidence.saved");
+        let saved: serde_json::Value =
+            serde_json::from_slice(&event.payload).expect("save payload is valid json");
+        assert_eq!(saved["work_item_id"], serde_json::json!("task-42"));
+        let evidence_id = saved["id"].as_str().expect("id present").to_owned();
+        assert_eq!(
+            saved["evidence"]["excerpt"],
+            serde_json::json!("Useful finding [REDACTED] [REDACTED]")
+        );
+
+        let list = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "research-list-1".into(),
+            client_id: "research-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::ListResearchEvidence(
+                generated::ListResearchEvidence {
+                    work_item_id: "task-42".into(),
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &list.encode_to_vec())
+            .await
+            .expect("list writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("list serves");
+        let response = transport::read_frame(&mut client)
+            .await
+            .expect("list response reads");
+        let event = generated::EventEnvelope::decode(response.as_slice()).expect("event decodes");
+        assert_eq!(event.event_type, "research.evidence.list");
+        let listed: serde_json::Value =
+            serde_json::from_slice(&event.payload).expect("list payload is valid json");
+        let records = listed["records"].as_array().expect("records array");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0]["id"], serde_json::json!(evidence_id));
+        assert_eq!(records[0]["source_kind"], serde_json::json!("url"));
+        assert_eq!(
+            records[0]["redacted_excerpt"],
+            serde_json::json!("Useful finding [REDACTED] [REDACTED]")
+        );
+        assert_eq!(records[0]["provenance_link"], serde_json::json!("task-42"));
+
         let _ = std::fs::remove_file(path);
     }
 }

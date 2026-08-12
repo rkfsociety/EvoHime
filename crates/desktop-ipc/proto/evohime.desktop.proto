@@ -176,6 +176,26 @@ message RunDoctor {
   string project_id = 1;
 }
 
+// Saves a single piece of offline research evidence tied to a work item.
+// raw_excerpt is redacted server-side (evohime_core::research) before it is
+// ever persisted or echoed back.
+message SaveResearchEvidence {
+  string work_item_id = 1;
+  string source_kind = 2;
+  string source_ref = 3;
+  string title = 4;
+  string publisher = 5;
+  string content_type = 6;
+  string raw_excerpt = 7;
+  uint64 retrieved_at_ms = 8;
+  uint64 ttl_ms = 9;
+}
+
+// Lists bounded research evidence records previously saved for a work item.
+message ListResearchEvidence {
+  string work_item_id = 1;
+}
+
 message CommandEnvelope {
   ProtocolVersion protocol = 1;
   string request_id = 2;
@@ -209,6 +229,8 @@ message CommandEnvelope {
     SaveBuildPolicy save_build_policy = 33;
     ResyncRequest resync_request = 34;
     RunDoctor run_doctor = 35;
+    SaveResearchEvidence save_research_evidence = 36;
+    ListResearchEvidence list_research_evidence = 37;
   }
 }
 
