@@ -590,7 +590,7 @@ impl CoreVersion {
 }
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fs::{self, OpenOptions},
     io::Write,
     path::PathBuf,
@@ -1955,8 +1955,10 @@ impl ToolAgent {
             context_limit_tokens: 128_000,
         });
 
-        let mut legacy_seen = HashSet::new();
-        let mut seen_tool_calls = HashSet::new();
+        let mut recent_tool_calls = recovery::RecentToolCalls::new(6);
+        let mut consecutive_failures = HashMap::<String, u32>::new();
+        let mut escalation_remaining = HashMap::<String, u32>::new();
+        let mut failures_without_success = 0u32;
         let mut mutation_done = false;
         let mut verification_done = false;
         let mut commit_done = false;
@@ -2019,8 +2021,7 @@ impl ToolAgent {
                                         .map(str::to_string)
                                 })
                                 .is_some_and(|path| path == ".");
-                        let key = format!("{}:{}", call.name, call.arguments);
-                        !invalid_directory_read && legacy_seen.insert(key)
+                        !invalid_directory_read
                     }) {
                         tool_calls.push(call);
                     }
@@ -2076,7 +2077,9 @@ impl ToolAgent {
             }
             let mut duplicate_tool_call = None;
             tool_calls.retain(|call| {
-                let is_new = seen_tool_calls.insert(format!("{}:{}", call.name, call.arguments));
+                let is_new = recent_tool_calls.remember(
+                    recovery::canonical_call_signature(&call.name, &call.arguments),
+                );
                 if !is_new && duplicate_tool_call.is_none() {
                     duplicate_tool_call = Some(call.name.clone());
                 }
@@ -2175,7 +2178,21 @@ impl ToolAgent {
                     && delivery_requirements.commit
                     && (!verification_test_passed
                         || (delivery_requirements.diff_check && !diff_check_passed));
-                let outcome = if commit_blocked {
+                let outcome = if escalation_remaining.get(&call.name).copied().unwrap_or(0) > 0
+                    && !matches!(call.name.as_str(), "filesystem.read" | "filesystem.list" | "filesystem.search")
+                {
+                    if let Some(remaining) = escalation_remaining.get_mut(&call.name) {
+                        *remaining = remaining.saturating_sub(1);
+                    }
+                    recovery::ToolOutcome {
+                        ok: false,
+                        kind: Some(recovery::ToolFailureKind::Denied(
+                            recovery::DenialSource::Escalation,
+                        )),
+                        output: format!("{} временно заблокирован после повторных ошибок", call.name),
+                        structured: serde_json::Value::Null,
+                    }
+                } else if commit_blocked {
                     recovery::ToolOutcome::from_error(
                         evohime_tool_runtime::ToolError::Execution(
                             "git.commit blocked: сначала успешно выполни обязательную проверку и git diff --check".to_string(),
@@ -2245,6 +2262,20 @@ impl ToolAgent {
                     }),
                 );
                 let failed = !outcome.ok;
+                if outcome.ok {
+                    consecutive_failures.remove(&call.name);
+                    failures_without_success = 0;
+                    recent_tool_calls.forget_reads();
+                } else {
+                    let failures = consecutive_failures.entry(call.name.clone()).or_default();
+                    *failures += 1;
+                    failures_without_success += 1;
+                    if *failures >= 3
+                        && !matches!(call.name.as_str(), "filesystem.read" | "filesystem.list" | "filesystem.search")
+                    {
+                        escalation_remaining.insert(call.name.clone(), 2);
+                    }
+                }
                 mutation_done |= outcome.ok
                     && matches!(call.name.as_str(), "filesystem.write" | "filesystem.patch");
                 commit_done |= outcome.ok
@@ -2288,11 +2319,26 @@ impl ToolAgent {
                     .contains("patch context mismatch");
                 messages.push(ChatMessage::tool_observation(call.id, outcome.output));
                 if failed {
-                    let recovery = if patch_context_mismatch {
-                        " Для patch context mismatch сначала вызови git.diff или filesystem.read для актуального файла, затем сформируй новый patch по фактическому содержимому; старый patch не повторяй."
-                    } else {
-                        ""
-                    };
+                    let schema = tool_parameters(&call.name);
+                    let description = self
+                        .tools
+                        .list()
+                        .into_iter()
+                        .find(|tool| tool.name == call.name)
+                        .map(|tool| tool.description)
+                        .unwrap_or("проверь аргументы инструмента");
+                    let mut recovery = outcome.kind.map(|kind| {
+                        recovery::recovery_hint(
+                            &call.name,
+                            kind,
+                            &outcome.structured,
+                            &schema,
+                            description,
+                        )
+                    }).unwrap_or_default();
+                    if patch_context_mismatch {
+                        recovery.push_str(" Сначала вызови git.diff или filesystem.read для актуального файла, затем сформируй новый patch по фактическому содержимому.");
+                    }
                     messages.push(ChatMessage::text(
                         ChatRole::User,
                         format!(
@@ -2300,6 +2346,17 @@ impl ToolAgent {
                             call.name, recovery
                         ),
                     ));
+                }
+                if failures_without_success >= 5 {
+                    let message = format!(
+                        "Задача остановлена: 5 последовательных провалов инструментов; последний инструмент {} получил класс {:?}.",
+                        call.name, outcome.kind
+                    );
+                    let _ = events.send(CoreEvent::TaskFailed {
+                        task_id: task_id.clone(),
+                        error: message.clone(),
+                    });
+                    return Ok(message);
                 }
             }
         }
