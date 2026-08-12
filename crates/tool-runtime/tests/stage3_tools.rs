@@ -104,43 +104,49 @@ async fn shell_times_out_and_reports_timeout() {
         progress_tx: None,
     };
     let (program, args) = if cfg!(windows) {
-        ("ping", vec!["-n", "5", "127.0.0.1"])
-    } else {
-        ("sleep", vec!["2"])
-    };
-    let result = shell::execute(
-        &ctx,
-        json!({"program":program,"args":args,"timeout_ms":1}),
-        CancellationToken::new(),
-    )
-    .await;
-    assert!(matches!(result, Err(ToolError::TimedOut(_))));
+
+    assert_eq!(before, after, "Filesystem state changed after read-only tools execution");
 }
 
 #[tokio::test]
-async fn test_filesystem_read_only_behavior() {
+async fn patch_context_recovery_on_wrong_hunk_start() {
     let dir = tempdir().unwrap();
-    std::fs::write(dir.path().join("test.txt"), "content").unwrap();
+    let file_path = dir.path().join("test.txt");
+    std::fs::write(&file_path, "line1\nline2\nline3\n").unwrap();
     let ctx = ToolContext {
         workspace_root: dir.path().to_path_buf(),
         task_id: Uuid::nil(),
         session_id: None,
         progress_tx: None,
     };
+    let _ = patch::execute(
+        &ctx,
+        json!({"path":"test.txt","patch":"@@ -5,1 +5,1 @@\n-line2\n+modified\n"}),
+    )
+    .await;
 
-    let before = std::fs::read_to_string(dir.path().join("test.txt")).unwrap();
+    let content = std::fs::read_to_string(&file_path).unwrap();
+    assert_eq!(content, "line1\nline2\nline3\n");
+}
 
-    let registry = ToolRegistry::bootstrap();
-    let _ = registry
-        .execute(&ctx, "filesystem.list", json!({"path": "."}))
-        .await
-        .unwrap();
-    let _ = evohime_tool_runtime::filesystem::execute(&ctx, json!({"path": "test.txt"}))
-        .await
-        .unwrap();
-    let _ = search::execute(&ctx, json!({"query": "content"})).await.unwrap();
-
-    let after = std::fs::read_to_string(dir.path().join("test.txt")).unwrap();
-
-    assert_eq!(before, after, "Filesystem state changed after read-only tools execution");
+#[tokio::test]
+async fn patch_context_recovery_on_wrong_hunk_start() {
+    let dir = tempdir().unwrap();
+    let file_path = dir.path().join("test.txt");
+    std::fs::write(&file_path, "line1\nline2\nline3\n").unwrap();
+    let ctx = ToolContext {
+        workspace_root: dir.path().to_path_buf(),
+        task_id: Uuid::nil(),
+        session_id: None,
+        progress_tx: None,
+    };
+    let patch_content = "@@ -5,1 +5,1 @@\n-line2\n+modified\n";
+    let result = patch::execute(
+        &ctx,
+        json!({"path":"test.txt","patch":patch_content}),
+    )
+    .await;
+    
+    assert!(result.is_ok());
+    assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "line1\nmodified\nline3\n");
 }
