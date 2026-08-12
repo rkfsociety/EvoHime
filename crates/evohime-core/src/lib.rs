@@ -687,6 +687,60 @@ pub enum CoreCommand {
         work_item_id: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    /// Creates one bounded Memory v1 record. `memory_domain::MemoryDomain`
+    /// runs validation, TTL expansion and content redaction server-side
+    /// (its in-memory storage is not used: the real `memory_entries` table,
+    /// via `memory_store`, is the sole source of truth); `id` and
+    /// `created_at_ms` are computed here, never trusted from the caller.
+    CreateMemory {
+        scope_kind: String,
+        project_id: String,
+        secondary_id: String,
+        title: String,
+        content: String,
+        provenance_kind: String,
+        provenance_id: String,
+        provenance_locator: String,
+        privacy: String,
+        ttl_ms: u64,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Lists non-forgotten Memory v1 records for one exact scope.
+    ListMemory {
+        scope_kind: String,
+        project_id: String,
+        secondary_id: String,
+        include_archived: bool,
+        limit: u32,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Lexical, deterministic search over Memory v1 records for one exact
+    /// scope.
+    SearchMemory {
+        scope_kind: String,
+        project_id: String,
+        secondary_id: String,
+        query: String,
+        limit: u32,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Archives a memory record. Per the Memory v1 plan, this requires an
+    /// out-of-band approval token (`approval_id`), validated the same way
+    /// `memory_api::Approval` validates it: mirrors the `ApplyApprovedBuild`
+    /// trust model, where the client presents proof that the operation was
+    /// already approved before this command is sent.
+    ArchiveMemory {
+        id: String,
+        approval_id: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Permanently erases a memory record's title/content. Also requires an
+    /// out-of-band approval token; see `ArchiveMemory`.
+    ForgetMemory {
+        id: String,
+        approval_id: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -941,6 +995,74 @@ impl EventJournal {
             work_item_id,
         )
         .map_err(|error| error.to_string())
+    }
+
+    /// Persists one bounded, redacted Memory v1 record against the real
+    /// `memory_entries` table (SCHEMA_VERSION 8).
+    pub async fn save_memory(
+        &self,
+        record: &evohime_local_storage::memory_store::MemoryRecord,
+    ) -> Result<(), String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::insert(database.connection(), record)
+            .map_err(|error| error.to_string())
+    }
+
+    /// Lists non-forgotten Memory v1 records for one exact scope.
+    pub async fn list_memory(
+        &self,
+        scope: evohime_local_storage::memory_store::MemoryScope,
+        scope_id: &str,
+        include_archived: bool,
+        limit: u32,
+    ) -> Result<Vec<evohime_local_storage::memory_store::MemoryRecord>, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::list(
+            database.connection(),
+            scope,
+            scope_id,
+            include_archived,
+            limit,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Lexical, deterministic search over Memory v1 records for one exact
+    /// scope.
+    pub async fn search_memory(
+        &self,
+        scope: evohime_local_storage::memory_store::MemoryScope,
+        scope_id: &str,
+        query: &str,
+        now: &str,
+        limit: u32,
+    ) -> Result<Vec<evohime_local_storage::memory_store::MemoryRecord>, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::search(
+            database.connection(),
+            scope,
+            scope_id,
+            query,
+            now,
+            limit,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Archives a memory record. Returns `false` if no matching, non-forgotten
+    /// record was found.
+    pub async fn archive_memory(&self, id: &str) -> Result<bool, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::archive(database.connection(), id)
+            .map_err(|error| error.to_string())
+    }
+
+    /// Forgets (erases title/content of) a memory record. Returns `false` if
+    /// no matching row was found.
+    pub async fn forget_memory(&self, id: &str) -> Result<bool, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::forget(database.connection(), id)
+            .map_err(|error| error.to_string())
     }
 
     pub async fn get_or_create_build_policy(
@@ -2924,8 +3046,337 @@ impl TaskCoordinator {
                 .await;
                 let _ = reply.send(result);
             }
+            CoreCommand::CreateMemory {
+                scope_kind,
+                project_id,
+                secondary_id,
+                title,
+                content,
+                provenance_kind,
+                provenance_id,
+                provenance_locator,
+                privacy,
+                ttl_ms,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let domain_scope =
+                        memory_domain_scope(&scope_kind, &project_id, &secondary_id)?;
+                    let provenance = crate::memory_domain::ProvenanceRef::new(
+                        provenance_kind,
+                        provenance_id,
+                        (!provenance_locator.trim().is_empty()).then_some(provenance_locator),
+                    )
+                    .map_err(|error| error.to_string())?;
+                    let privacy_label = parse_memory_privacy(&privacy)?;
+                    let created_at_ms = SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    let id = uuid::Uuid::new_v4().to_string();
+                    let record = crate::memory_domain::MemoryDomain::new()
+                        .create(crate::memory_domain::CreateMemory {
+                            id: id.clone(),
+                            scope: domain_scope,
+                            title,
+                            content,
+                            provenance,
+                            privacy: privacy_label,
+                            created_at_ms,
+                            ttl_ms,
+                        })
+                        .map_err(|error| error.to_string())?;
+                    let store_scope = memory_store_scope(&scope_kind)?;
+                    let store_privacy = memory_store_privacy(record.privacy)?;
+                    let provenance_json = serde_json::to_string(&record.provenance)
+                        .map_err(|error| error.to_string())?;
+                    let store_record = evohime_local_storage::memory_store::MemoryRecord::new(
+                        record.id.clone(),
+                        store_scope,
+                        encode_memory_scope_id(&project_id, &secondary_id),
+                        record.title.clone(),
+                        record.content.clone(),
+                        provenance_json,
+                        store_privacy,
+                        record.created_at_ms.to_string(),
+                        Some(record.expires_at_ms.to_string()),
+                    )
+                    .map_err(|error| error.to_string())?;
+                    journal.save_memory(&store_record).await?;
+                    Self::record_audit(
+                        &state,
+                        crate::audit::AuditKind::Evidence,
+                        project_id.clone(),
+                        "memory.created",
+                        [
+                            ("memory_id".to_owned(), record.id.clone()),
+                            ("scope_kind".to_owned(), scope_kind),
+                        ],
+                    )
+                    .await;
+                    serde_json::to_vec(&serde_json::json!({ "record": record }))
+                        .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::ListMemory {
+                scope_kind,
+                project_id,
+                secondary_id,
+                include_archived,
+                limit,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let store_scope = memory_store_scope(&scope_kind)?;
+                    let scope_id = encode_memory_scope_id(&project_id, &secondary_id);
+                    let records = journal
+                        .list_memory(store_scope, &scope_id, include_archived, limit)
+                        .await?;
+                    let records = records
+                        .iter()
+                        .map(memory_record_to_json)
+                        .collect::<Result<Vec<_>, _>>()?;
+                    serde_json::to_vec(&serde_json::json!({ "records": records }))
+                        .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::SearchMemory {
+                scope_kind,
+                project_id,
+                secondary_id,
+                query,
+                limit,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let store_scope = memory_store_scope(&scope_kind)?;
+                    let scope_id = encode_memory_scope_id(&project_id, &secondary_id);
+                    let now_ms = SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    let records = journal
+                        .search_memory(store_scope, &scope_id, &query, &now_ms.to_string(), limit)
+                        .await?;
+                    let records = records
+                        .iter()
+                        .map(memory_record_to_json)
+                        .collect::<Result<Vec<_>, _>>()?;
+                    serde_json::to_vec(&serde_json::json!({ "records": records }))
+                        .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::ArchiveMemory {
+                id,
+                approval_id,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    crate::memory_api::Approval::new(
+                        approval_id.clone(),
+                        crate::memory_api::MemoryOperation::Archive,
+                    )
+                    .map_err(|error| error.to_string())?;
+                    let changed = journal.archive_memory(&id).await?;
+                    if !changed {
+                        return Err(
+                            "memory record was not found or is already archived/forgotten"
+                                .to_string(),
+                        );
+                    }
+                    Self::record_audit(
+                        &state,
+                        crate::audit::AuditKind::Approval,
+                        id.clone(),
+                        "memory.archived",
+                        [
+                            ("memory_id".to_owned(), id.clone()),
+                            ("approval_id".to_owned(), approval_id),
+                        ],
+                    )
+                    .await;
+                    serde_json::to_vec(&serde_json::json!({ "id": id, "archived": true }))
+                        .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::ForgetMemory {
+                id,
+                approval_id,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    crate::memory_api::Approval::new(
+                        approval_id.clone(),
+                        crate::memory_api::MemoryOperation::Forget,
+                    )
+                    .map_err(|error| error.to_string())?;
+                    let changed = journal.forget_memory(&id).await?;
+                    if !changed {
+                        return Err("memory record was not found".to_string());
+                    }
+                    Self::record_audit(
+                        &state,
+                        crate::audit::AuditKind::Approval,
+                        id.clone(),
+                        "memory.forgotten",
+                        [
+                            ("memory_id".to_owned(), id.clone()),
+                            ("approval_id".to_owned(), approval_id),
+                        ],
+                    )
+                    .await;
+                    serde_json::to_vec(&serde_json::json!({ "id": id, "forgotten": true }))
+                        .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
         }
     }
+}
+
+/// Maps an IPC-layer scope kind + project/secondary id pair into the
+/// `memory_domain::MemoryScope` used for validation and redaction.
+fn memory_domain_scope(
+    kind: &str,
+    project_id: &str,
+    secondary_id: &str,
+) -> Result<crate::memory_domain::MemoryScope, String> {
+    match kind {
+        "project" => crate::memory_domain::MemoryScope::project(project_id)
+            .map_err(|error| error.to_string()),
+        "task" => crate::memory_domain::MemoryScope::task(project_id, secondary_id)
+            .map_err(|error| error.to_string()),
+        "workspace" => crate::memory_domain::MemoryScope::workspace(project_id, secondary_id)
+            .map_err(|error| error.to_string()),
+        other => Err(format!("unsupported memory scope kind: {other}")),
+    }
+}
+
+/// Maps an IPC-layer scope kind into the `memory_store::MemoryScope` used by
+/// the real `memory_entries` table.
+fn memory_store_scope(
+    kind: &str,
+) -> Result<evohime_local_storage::memory_store::MemoryScope, String> {
+    match kind {
+        "project" => Ok(evohime_local_storage::memory_store::MemoryScope::Project),
+        "task" => Ok(evohime_local_storage::memory_store::MemoryScope::Task),
+        "workspace" => Ok(evohime_local_storage::memory_store::MemoryScope::Workspace),
+        other => Err(format!("unsupported memory scope kind: {other}")),
+    }
+}
+
+fn parse_memory_privacy(value: &str) -> Result<crate::memory_domain::PrivacyLabel, String> {
+    match value {
+        "public" => Ok(crate::memory_domain::PrivacyLabel::Public),
+        "internal" | "" => Ok(crate::memory_domain::PrivacyLabel::Internal),
+        "private" => Ok(crate::memory_domain::PrivacyLabel::Private),
+        other => Err(format!(
+            "unsupported memory privacy label: {other} (secret is not supported by persistent storage)"
+        )),
+    }
+}
+
+/// The persistent `memory_entries` table has no `secret` privacy label; the
+/// domain-level `PrivacyLabel::Secret` is rejected before it ever reaches
+/// storage (callers must not be able to persist a value they cannot express).
+fn memory_store_privacy(
+    label: crate::memory_domain::PrivacyLabel,
+) -> Result<evohime_local_storage::memory_store::MemoryPrivacy, String> {
+    match label {
+        crate::memory_domain::PrivacyLabel::Public => {
+            Ok(evohime_local_storage::memory_store::MemoryPrivacy::Public)
+        }
+        crate::memory_domain::PrivacyLabel::Internal => {
+            Ok(evohime_local_storage::memory_store::MemoryPrivacy::Internal)
+        }
+        crate::memory_domain::PrivacyLabel::Private => {
+            Ok(evohime_local_storage::memory_store::MemoryPrivacy::Private)
+        }
+        crate::memory_domain::PrivacyLabel::Secret => {
+            Err("secret privacy is not supported by persistent memory storage".to_string())
+        }
+    }
+}
+
+/// Encodes a project/secondary id pair into the single `scope_id` column the
+/// `memory_entries` table stores. Project scope uses the project id alone;
+/// task/workspace scope appends the secondary id after a `:` separator so
+/// list/search can still target one exact scope.
+fn encode_memory_scope_id(project_id: &str, secondary_id: &str) -> String {
+    if secondary_id.trim().is_empty() {
+        project_id.to_string()
+    } else {
+        format!("{project_id}:{secondary_id}")
+    }
+}
+
+fn decode_memory_scope_id(scope_id: &str) -> (String, String) {
+    match scope_id.split_once(':') {
+        Some((project_id, secondary_id)) => (project_id.to_string(), secondary_id.to_string()),
+        None => (scope_id.to_string(), String::new()),
+    }
+}
+
+/// Renders a stored `memory_store::MemoryRecord` back into the JSON shape
+/// returned over IPC, decoding the scope id and parsing the provenance JSON
+/// that was serialized at create time.
+fn memory_record_to_json(
+    record: &evohime_local_storage::memory_store::MemoryRecord,
+) -> Result<serde_json::Value, String> {
+    let (project_id, secondary_id) = decode_memory_scope_id(&record.scope_id);
+    let provenance: serde_json::Value = if record.provenance.trim().is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::from_str(&record.provenance).unwrap_or(serde_json::Value::Null)
+    };
+    let scope_kind = match record.scope {
+        evohime_local_storage::memory_store::MemoryScope::Project => "project",
+        evohime_local_storage::memory_store::MemoryScope::Task => "task",
+        evohime_local_storage::memory_store::MemoryScope::Workspace => "workspace",
+    };
+    let privacy = match record.privacy {
+        evohime_local_storage::memory_store::MemoryPrivacy::Public => "public",
+        evohime_local_storage::memory_store::MemoryPrivacy::Internal => "internal",
+        evohime_local_storage::memory_store::MemoryPrivacy::Private => "private",
+    };
+    Ok(serde_json::json!({
+        "id": record.id,
+        "scope_kind": scope_kind,
+        "project_id": project_id,
+        "secondary_id": secondary_id,
+        "title": record.title,
+        "content": record.content,
+        "provenance": provenance,
+        "privacy": privacy,
+        "created_at_ms": record.created_at,
+        "expires_at_ms": record.expires_at,
+        "archived": record.archived,
+        "forgotten": record.forgotten,
+    }))
 }
 
 /// Fail-closed permissions probe used when the doctor cannot ground its

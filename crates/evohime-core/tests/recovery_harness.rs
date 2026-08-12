@@ -2,8 +2,7 @@ use evohime_local_storage::{
     LocalDatabase, RunCheckpointRecord, RunEffectRecord, RunRecord, WorkItemRecord,
 };
 use std::{
-    env,
-    fs,
+    env, fs,
     path::PathBuf,
     process::{Child, Command},
     thread,
@@ -126,10 +125,17 @@ fn kill_restart_recovers_unknown_effect_without_retry() {
         .expect("unknown effect recovers");
     assert_eq!(recovered.len(), 1);
     assert_eq!(
-        database_handle.get_run("run-harness").expect("run reads").expect("run exists").status,
+        database_handle
+            .get_run("run-harness")
+            .expect("run reads")
+            .expect("run exists")
+            .status,
         "blocked"
     );
-    assert!(database_handle.recover_unknown_effects().expect("recovery repeats").is_empty());
+    assert!(database_handle
+        .recover_unknown_effects()
+        .expect("recovery repeats")
+        .is_empty());
 
     let _ = fs::remove_file(&marker);
     let _ = fs::remove_file(&database);
