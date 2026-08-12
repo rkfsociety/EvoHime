@@ -518,6 +518,12 @@ impl IpcBridge {
                         .map_err(|error| FrameError::Io(error.to_string()))?;
                 }
             }
+            Some(generated::command_envelope::Command::RunDoctor(request)) => {
+                let result = self
+                    .dispatch_run_doctor(request.project_id, command.protocol.clone())
+                    .await?;
+                self.write_response(writer, "doctor.report", result).await?;
+            }
             Some(generated::command_envelope::Command::ResolveApproval(resolve)) => {
                 let approval_id = uuid::Uuid::parse_str(&resolve.approval_id)
                     .map_err(|error| FrameError::Io(format!("invalid approval id: {error}")))?;
@@ -966,6 +972,69 @@ impl IpcBridge {
             .map_err(IpcBridgeError::from)
     }
 
+    async fn dispatch_run_doctor(
+        &self,
+        project_id: String,
+        protocol: Option<generated::ProtocolVersion>,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let approval_required = match &self.tools {
+            Some(tools) => !matches!(
+                tools.permissions().mode(Permission::FilesystemWrite).await,
+                PermissionMode::Allow
+            ),
+            None => true,
+        };
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::RunDoctor {
+                project_id,
+                protocol_major: protocol.map(|version| version.major),
+                expected_protocol_major: PROTOCOL_MAJOR,
+                provider: self.provider_probe(),
+                approval_required,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    /// Builds a Core Doctor provider probe from already-loaded, secret-free
+    /// gateway configuration. Never exposes an API key value, only whether
+    /// one is present.
+    fn provider_probe(&self) -> crate::doctor::ProviderProbe {
+        let (provider_id, model_id, configured) = match &self.model_config {
+            Some(config) => (
+                config.provider.clone(),
+                config.model.clone(),
+                config.configured,
+            ),
+            None => (String::new(), String::new(), false),
+        };
+        let key_present = self
+            .gateway_config
+            .as_ref()
+            .and_then(|config| config.routes.get(&config.default_route))
+            .map(|route| route.configured())
+            .unwrap_or(false);
+        let metadata_valid = !provider_id.is_empty() && !model_id.is_empty();
+        crate::doctor::ProviderProbe {
+            provider_id,
+            model_id,
+            configured,
+            key_present,
+            metadata_valid,
+        }
+    }
+
     async fn write_response<W: AsyncWrite + Unpin>(
         &self,
         writer: &mut W,
@@ -1329,6 +1398,63 @@ mod tests {
                 .len(),
             1
         );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn serves_run_doctor_with_real_storage_and_pipe_state() {
+        let path =
+            std::env::temp_dir().join(format!("evohime-ipc-doctor-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal, coordinator);
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+        let command = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "doctor-1".into(),
+            client_id: "doctor-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::RunDoctor(
+                generated::RunDoctor {
+                    project_id: String::new(),
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &command.encode_to_vec())
+            .await
+            .expect("command writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("doctor serves");
+        let response = transport::read_frame(&mut client)
+            .await
+            .expect("response reads");
+        let event = generated::EventEnvelope::decode(response.as_slice()).expect("event decodes");
+        assert_eq!(event.event_type, "doctor.report");
+        let report: serde_json::Value =
+            serde_json::from_slice(&event.payload).expect("doctor report is valid json");
+        assert_eq!(report["bounded"], serde_json::json!(true));
+        let checks = report["checks"].as_array().expect("checks array");
+        assert_eq!(checks.len(), 5);
+        let storage_check = checks
+            .iter()
+            .find(|check| check["id"] == "storage")
+            .expect("storage check present");
+        // A freshly-opened journal exists, is writable, and is on the
+        // current schema version, so this reflects real (not fabricated)
+        // storage state.
+        assert_eq!(storage_check["status"], serde_json::json!("OK"));
+        let permissions_check = checks
+            .iter()
+            .find(|check| check["id"] == "permissions")
+            .expect("permissions check present");
+        // No project_id was supplied, so the permissions probe is honestly
+        // fail-closed rather than fabricated as healthy.
+        assert_ne!(permissions_check["status"], serde_json::json!("OK"));
         let _ = std::fs::remove_file(path);
     }
 }

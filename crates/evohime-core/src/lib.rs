@@ -631,6 +631,19 @@ pub enum CoreCommand {
         proposal_json: Vec<u8>,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    /// Bounded, read-only Core Doctor diagnostic. `project_id` is optional;
+    /// when set, the permissions probe is grounded in that project's real
+    /// workspace path. `protocol_major`/`expected_protocol_major` and
+    /// `provider`/`approval_required` are supplied by the IPC layer, which
+    /// is where that state actually lives.
+    RunDoctor {
+        project_id: String,
+        protocol_major: Option<u32>,
+        expected_protocol_major: u32,
+        provider: crate::doctor::ProviderProbe,
+        approval_required: bool,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -790,6 +803,32 @@ impl EventJournal {
             gap_detected,
             first_available_sequence,
             last_sequence,
+        })
+    }
+
+    /// Bounded, read-only storage facts for diagnostics (Core Doctor).
+    pub async fn storage_snapshot(&self) -> Result<(PathBuf, u32), StorageError> {
+        let database = self.database.lock().await;
+        Ok((database.path().to_path_buf(), database.schema_version()?))
+    }
+
+    /// Bounded, read-only recovery facts for diagnostics (Core Doctor). This
+    /// only performs SELECTs and never mutates run/effect state.
+    pub async fn recovery_probe(&self) -> Result<crate::doctor::RecoveryProbe, StorageError> {
+        let database = self.database.lock().await;
+        let health = database.read_recovery_health()?;
+        let state = if health.unknown_effects > 0 || health.lease_expired {
+            "BLOCKED"
+        } else if health.resumable_runs > 0 {
+            "RESUMABLE"
+        } else {
+            "CLEAN"
+        };
+        Ok(crate::doctor::RecoveryProbe {
+            state: state.into(),
+            unknown_effects: health.unknown_effects.max(0) as u32,
+            lease_expired: health.lease_expired,
+            resumable_runs: health.resumable_runs.max(0) as u32,
         })
     }
 
@@ -2462,7 +2501,121 @@ impl TaskCoordinator {
                 .await;
                 let _ = reply.send(result);
             }
+            CoreCommand::RunDoctor {
+                project_id,
+                protocol_major,
+                expected_protocol_major,
+                provider,
+                approval_required,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let storage = match &journal {
+                        Some(journal) => {
+                            let (path, schema_version) = journal
+                                .storage_snapshot()
+                                .await
+                                .map_err(|error| error.to_string())?;
+                            let exists = path.exists();
+                            let writable = exists
+                                && std::fs::metadata(&path)
+                                    .map(|meta| !meta.permissions().readonly())
+                                    .unwrap_or(false);
+                            crate::doctor::StorageProbe {
+                                path_label: path.display().to_string(),
+                                exists,
+                                writable,
+                                schema_version: Some(schema_version),
+                                expected_schema_version: evohime_local_storage::SCHEMA_VERSION,
+                            }
+                        }
+                        None => crate::doctor::StorageProbe {
+                            path_label: "not-configured".into(),
+                            exists: false,
+                            writable: false,
+                            schema_version: None,
+                            expected_schema_version: evohime_local_storage::SCHEMA_VERSION,
+                        },
+                    };
+
+                    let pipe = crate::doctor::PipeProbe {
+                        pipe_label: "desktop-ipc".into(),
+                        reachable: true,
+                        protocol_major,
+                        expected_protocol_major,
+                    };
+
+                    let recovery = match &journal {
+                        Some(journal) => journal
+                            .recovery_probe()
+                            .await
+                            .map_err(|error| error.to_string())?,
+                        None => crate::doctor::RecoveryProbe {
+                            state: "NOT_CONFIGURED".into(),
+                            unknown_effects: 0,
+                            lease_expired: false,
+                            resumable_runs: 0,
+                        },
+                    };
+
+                    let permissions = match (&journal, project_id.is_empty()) {
+                        (Some(journal), false) => {
+                            match journal
+                                .get_project(&project_id)
+                                .await
+                                .map_err(|error| error.to_string())?
+                            {
+                                Some(project) => {
+                                    let workspace = std::path::Path::new(&project.workspace_path);
+                                    let workspace_readable = workspace.is_dir();
+                                    let workspace_writable = workspace_readable
+                                        && std::fs::metadata(workspace)
+                                            .map(|meta| !meta.permissions().readonly())
+                                            .unwrap_or(false);
+                                    let protected_paths_intact = [".git", ".evohime"]
+                                        .iter()
+                                        .all(|segment| workspace.join(segment).exists());
+                                    crate::doctor::PermissionsProbe {
+                                        workspace_readable,
+                                        workspace_writable,
+                                        protected_paths_intact,
+                                        approval_required,
+                                    }
+                                }
+                                None => unresolved_permissions_probe(approval_required),
+                            }
+                        }
+                        _ => unresolved_permissions_probe(approval_required),
+                    };
+
+                    let snapshot = crate::doctor::DoctorSnapshot {
+                        storage,
+                        pipe,
+                        provider,
+                        recovery,
+                        permissions,
+                    };
+                    let report = crate::doctor::DoctorReport::from_snapshot(&snapshot)
+                        .map_err(|error| format!("{error:?}"))?;
+                    Ok(report.to_bounded_json().into_bytes())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
         }
+    }
+}
+
+/// Fail-closed permissions probe used when the doctor cannot ground its
+/// permissions check in a real, resolved workspace (no project supplied or
+/// the project was not found). This intentionally does not claim health.
+fn unresolved_permissions_probe(approval_required: bool) -> crate::doctor::PermissionsProbe {
+    crate::doctor::PermissionsProbe {
+        workspace_readable: false,
+        workspace_writable: false,
+        protected_paths_intact: false,
+        approval_required,
     }
 }
 

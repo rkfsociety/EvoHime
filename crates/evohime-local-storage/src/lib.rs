@@ -303,6 +303,16 @@ pub struct DiagnosticsSummary {
 
 pub const MAX_DIAGNOSTICS_EVENT_TYPES: usize = 128;
 
+/// Bounded, read-only recovery health facts. Distinct from
+/// `recover_unknown_effects`, which mutates run/effect state; this snapshot
+/// performs only SELECTs so it is safe for diagnostic use (e.g. Core Doctor).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecoveryHealthSnapshot {
+    pub unknown_effects: i64,
+    pub lease_expired: bool,
+    pub resumable_runs: i64,
+}
+
 impl LocalDatabase {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, StorageError> {
         Self::open_internal(path.as_ref(), false)
@@ -1487,6 +1497,36 @@ impl LocalDatabase {
             event_counts,
             total_events,
             event_types_truncated,
+        })
+    }
+
+    /// Returns a bounded, read-only summary of recovery-relevant state.
+    ///
+    /// This performs only SELECTs; it does not transition run/effect state.
+    /// Use `recover_unknown_effects` for the mutating recovery flow.
+    pub fn read_recovery_health(&self) -> Result<RecoveryHealthSnapshot, StorageError> {
+        let unknown_effects: i64 = self.connection.query_row(
+            "SELECT COUNT(*) FROM run_effects WHERE state = 'unknown'",
+            [],
+            |row| row.get(0),
+        )?;
+        let lease_expired: bool = self.connection.query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM run_leases
+                 WHERE lease_expires_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             )",
+            [],
+            |row| row.get(0),
+        )?;
+        let resumable_runs: i64 = self.connection.query_row(
+            "SELECT COUNT(*) FROM runs WHERE status = 'blocked'",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(RecoveryHealthSnapshot {
+            unknown_effects,
+            lease_expired,
+            resumable_runs,
         })
     }
 
