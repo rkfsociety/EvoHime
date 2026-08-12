@@ -2003,8 +2003,17 @@ impl ToolAgent {
                     commit_done,
                 );
                 if !missing.is_empty() && iteration + 1 < self.max_iterations {
+                    let next_step = if !mutation_done && delivery_requirements.mutation {
+                        "НЕМЕДЛЕННО вызови filesystem.patch или filesystem.write и внеси требуемое изменение. Не вызывай read/search и не пиши отчёт."
+                    } else if !verification_done && delivery_requirements.verification {
+                        "НЕМЕДЛЕННО вызови shell.execute с требуемым тестом/проверкой. Не пиши отчёт."
+                    } else if !commit_done && delivery_requirements.commit {
+                        "НЕМЕДЛЕННО вызови git.commit с task-only сообщением. Не пиши отчёт."
+                    } else {
+                        "НЕМЕДЛЕННО вызови следующий нужный read-only инструмент с полным JSON и продолжи исследование. Не пиши отчёт."
+                    };
                     let continuation = format!(
-                        "Задача ещё не завершена. Обязательные результаты не выполнены: {}. Не пиши план и не заверши ответ текстом. Для исследования немедленно продолжи изучение workspace через filesystem.read или filesystem.search; для изменения — filesystem.patch или filesystem.write, для проверки — shell.execute с тестом/сборкой, для commit — git.commit. Выполни следующий шаг прямо сейчас.",
+                        "Задача ещё не завершена. Не выполнены: {}. {next_step}",
                         missing.join(", ")
                     );
                     write_model_trace(
