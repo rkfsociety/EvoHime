@@ -283,14 +283,11 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = logger.write("runtime.error", json!({"error": error.to_string()}));
             }
         }
-        if status.success() || restarts >= max_restarts {
-            return Ok(());
-        }
         let healthy = generation_started
             .elapsed()
             .map(|elapsed| elapsed >= healthy_uptime)
             .unwrap_or(false);
-        if healthy {
+        if should_reset_restart_budget(status.success(), healthy) {
             let previous_restarts = restarts;
             restarts = 0;
             let _ = logger.write(
@@ -302,6 +299,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }),
             );
         }
+        if status.success() || restarts >= max_restarts {
+            return Ok(());
+        }
         restarts += 1;
         let delay = restart_backoff(restarts, backoff_base, backoff_cap, now_ms());
         let _ = logger.write(
@@ -310,6 +310,10 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         );
         sleep(delay).await;
     }
+}
+
+fn should_reset_restart_budget(success: bool, healthy: bool) -> bool {
+    !success && healthy
 }
 
 fn healthy_uptime_threshold() -> StdDuration {
@@ -453,7 +457,7 @@ async fn wait_for_core(
 mod tests {
     use super::{
         heartbeat_is_current_generation, heartbeat_is_stale, heartbeat_is_stale_for_generation,
-        recover_pending_update, restart_backoff,
+        recover_pending_update, restart_backoff, should_reset_restart_budget,
     };
     use evohime_tx::UpdateTransaction;
     use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
@@ -568,5 +572,12 @@ mod tests {
         assert!(second >= first);
         assert!(capped > StdDuration::ZERO);
         assert!(capped <= cap);
+    }
+
+    #[test]
+    fn healthy_failed_generation_resets_budget_before_max_restart_guard() {
+        assert!(should_reset_restart_budget(false, true));
+        assert!(!should_reset_restart_budget(true, true));
+        assert!(!should_reset_restart_budget(false, false));
     }
 }
