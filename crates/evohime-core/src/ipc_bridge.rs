@@ -1954,6 +1954,89 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn terminal_requires_approval_and_denied_retry_does_not_execute() {
+        let root = std::env::temp_dir().join(format!("evohime-ipc-terminal-root-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("terminal root");
+        let journal_path = std::env::temp_dir().join(format!("evohime-ipc-terminal-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&journal_path);
+        let journal = EventJournal::open(&journal_path).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let tools = Arc::new(ToolRegistry::bootstrap());
+        let bridge = IpcBridge::with_coordinator_and_approvals(
+            journal,
+            coordinator,
+            ApprovalCoordinator::default(),
+            tools,
+            None,
+            None,
+        );
+        let task_id = uuid::Uuid::new_v4().to_string();
+        let make_terminal = |approval_id: String| generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "terminal-request".into(),
+            client_id: "test-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::TerminalExecute(
+                generated::TerminalExecute {
+                    task_id: task_id.clone(),
+                    workspace_path: root.display().to_string(),
+                    program: "git".into(),
+                    args: vec!["status".into()],
+                    cwd: String::new(),
+                    timeout_ms: 5_000,
+                    approval_id,
+                },
+            )),
+        };
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+        transport::write_frame(&mut client, &make_terminal(String::new()).encode_to_vec())
+            .await
+            .expect("terminal writes");
+        bridge.process_once(&mut server_reader, &mut server_writer).await.expect("approval serves");
+        let approval = generated::EventEnvelope::decode(
+            transport::read_frame(&mut client).await.expect("approval reads").as_slice(),
+        )
+        .expect("approval decodes");
+        assert_eq!(approval.event_type, "approval.required");
+        let approval_id = serde_json::from_slice::<serde_json::Value>(&approval.payload)
+            .expect("approval json")["approval_id"]
+            .as_str()
+            .expect("approval id")
+            .to_string();
+
+        let resolve = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "resolve-terminal".into(),
+            client_id: "test-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::ResolveApproval(
+                generated::ResolveApproval { approval_id: approval_id.clone(), granted: false },
+            )),
+        };
+        transport::write_frame(&mut client, &resolve.encode_to_vec()).await.expect("resolve writes");
+        bridge.process_once(&mut server_reader, &mut server_writer).await.expect("resolve serves");
+
+        transport::write_frame(&mut client, &make_terminal(approval_id).encode_to_vec())
+            .await
+            .expect("retry writes");
+        bridge.process_once(&mut server_reader, &mut server_writer).await.expect("retry serves");
+        let result = generated::EventEnvelope::decode(
+            transport::read_frame(&mut client).await.expect("result reads").as_slice(),
+        )
+        .expect("result decodes");
+        assert_eq!(result.event_type, "terminal.result");
+        let result_json: serde_json::Value = serde_json::from_slice(&result.payload).expect("result json");
+        assert_eq!(result_json["ok"], false);
+        assert_eq!(result_json["error"], "approval was denied for this call");
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_file(journal_path);
+    }
+
+    #[tokio::test]
     async fn serves_bounded_git_status_and_diff_through_core_tools() {
         let root = std::env::temp_dir().join(format!(
             "evohime-ipc-git-root-{}",
