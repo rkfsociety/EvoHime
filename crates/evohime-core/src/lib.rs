@@ -2258,8 +2258,8 @@ impl ToolAgent {
 
 fn tool_output_failed(output: &str) -> bool {
     let lower = output.to_lowercase();
-    if lower.contains("exit_code: 0") {
-        return false;
+    if lower.contains("exit_code:") {
+        return !lower.contains("exit_code: 0");
     }
     lower.contains("failed")
         || lower.contains("ошиб")
