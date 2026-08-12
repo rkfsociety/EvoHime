@@ -3,10 +3,8 @@ artifacts/
 .evohime-native/
 desktop/**/bin/
 desktop/**/obj/
-node_modules/
-dist/
 .env
 .DS_Store
 *.log
-*.tsbuildinfo
+.claude/worktrees/
 .superpowers/

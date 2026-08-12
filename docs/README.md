@@ -14,12 +14,15 @@
 
 ## Справочные разделы
 
-- [`features/`](features/) — отдельные контракты и описания функций агента;
+- [`features/`](features/) — отдельные контракты и описания функций агента:
+  - [`confidence-ask-gate.md`](features/confidence-ask-gate.md) — порог уверенности и уточняющие вопросы;
+  - [`extended-reasoning.md`](features/extended-reasoning.md) — extended reasoning в Core и model gateway;
+  - [`plugin-management.md`](features/plugin-management.md) — установка и trust/risk плагинов;
+  - [`reflection.md`](features/reflection.md) — reflection loop после tool-вызовов;
+  - [`task-dependency-graphs.md`](features/task-dependency-graphs.md) — графы зависимостей задач;
 - [`providers/`](providers/) — провайдеры моделей и их настройка;
 - [`security/`](security/) — расширенная модель угроз;
-- [`plugin-management-7.8.md`](plugin-management-7.8.md) — заметки по управлению плагинами;
-- [`sample-context.md`](sample-context.md) — демонстрационный контекст;
-- [`wave-3b-extended-reasoning.md`](wave-3b-extended-reasoning.md) — отдельный экспериментальный контракт.
+- [`sample-context.md`](sample-context.md) — фикстура для демонстрации `filesystem.read`, не документация.
 
 Планы и их ревью находятся в [`plans/`](plans/). На текущем этапе это рабочая зона: не трактуйте её документы как замену фактическому состоянию и не редактируйте без отдельного запроса.
 
