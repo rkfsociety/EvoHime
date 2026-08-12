@@ -67,6 +67,7 @@ public partial class MainWindow : Window
     private TextBox? _filePreview;
     private TextBlock? _filesPathText;
     private string _filesRelativePath = ".";
+    private string? _filesSelectedPath;
     private TextBox? _gitPathBox;
     private TextBox? _gitStatusPreview;
     private TextBox? _gitDiffPreview;
@@ -980,12 +981,17 @@ public partial class MainWindow : Window
         var toolbar = new Grid { ColumnSpacing = 8 };
         toolbar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         toolbar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        toolbar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         _filesPathText = new TextBlock { Text = ".", Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157), TextTrimming = TextTrimming.CharacterEllipsis };
         toolbar.Children.Add(_filesPathText);
         var refresh = new Button { Content = "Обновить" };
         refresh.Click += (_, _) => _ = LoadFilesAsync(_filesRelativePath);
         Grid.SetColumn(refresh, 1);
         toolbar.Children.Add(refresh);
+        var edit = new Button { Content = "Редактировать через Build" };
+        edit.Click += (_, _) => _ = OpenSelectedFileBuildAsync();
+        Grid.SetColumn(edit, 2);
+        toolbar.Children.Add(edit);
         browser.Children.Add(toolbar);
         _filesList = new StackPanel { Spacing = 4 };
         var filesScroll = new ScrollViewer { Content = _filesList, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
@@ -1111,6 +1117,7 @@ public partial class MainWindow : Window
 
         try
         {
+            _filesSelectedPath = relativePath.Replace('\\', '/');
             await _ipcRequestGate.WaitAsync();
             try
             {
@@ -1137,6 +1144,29 @@ public partial class MainWindow : Window
         {
             _filePreview.Text = $"Не удалось прочитать файл: {error.Message}";
         }
+    }
+
+    private async Task OpenSelectedFileBuildAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_filesSelectedPath) || _filePreview is null)
+        {
+            if (_filePreview is not null)
+            {
+                _filePreview.Text = "Сначала выберите файл для редактирования";
+            }
+            return;
+        }
+
+        var task = _lastTaskGraph?.Tasks
+            .FirstOrDefault(item => string.Equals(item.Status, "ready", StringComparison.OrdinalIgnoreCase))
+            ?? _lastTaskGraph?.Tasks.FirstOrDefault();
+        if (task is null)
+        {
+            _filePreview.Text = "Для bounded Build сначала создайте или загрузите задачу на странице «Задачи».";
+            return;
+        }
+
+        await PrepareBuildDialogAsync(task, _filesSelectedPath, _filePreview.Text);
     }
 
     private static string ParentWorkspacePath(string path)
@@ -1821,7 +1851,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task PrepareBuildDialogAsync(TaskDto task)
+    private async Task PrepareBuildDialogAsync(TaskDto task, string? initialPath = null, string? initialContent = null)
     {
         var project = ActiveProject();
         if (project is null || _taskWorkspaceStatus is null)
@@ -1829,8 +1859,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        var relativePath = new TextBox { Header = "Разрешённый относительный путь", Text = "src/README.md" };
-        var newContent = new TextBox { Header = "Новое содержимое", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 150 };
+        var relativePath = new TextBox { Header = "Разрешённый относительный путь", Text = initialPath ?? "src/README.md" };
+        var newContent = new TextBox { Header = "Новое содержимое", Text = initialContent ?? string.Empty, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 150 };
         var proposalDialog = new ContentDialog
         {
             Title = $"Build preview: {task.Title}",
