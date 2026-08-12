@@ -35,7 +35,7 @@ async fn literouter_streams_sse_chunks() {
     let provider = LiteRouterProvider::new(LiteRouterConfig {
         api_key: "lr_test".to_string(),
         base_url: format!("{}/v1", server.uri()),
-        model: "deepseek:free".to_string(),
+        model: "test-paid-model".to_string(),
     })
     .expect("provider");
 
@@ -71,7 +71,7 @@ async fn literouter_streams_usage_chunk() {
     let provider = LiteRouterProvider::new(LiteRouterConfig {
         api_key: "lr_test".to_string(),
         base_url: format!("{}/v1", server.uri()),
-        model: "deepseek:free".to_string(),
+        model: "test-paid-model".to_string(),
     })
     .expect("provider");
 
@@ -132,7 +132,7 @@ async fn literouter_retries_after_429_then_streams() {
         LiteRouterConfig {
             api_key: "lr_test".to_string(),
             base_url: format!("{}/v1", server.uri()),
-            model: "deepseek:free".to_string(),
+            model: "test-paid-model".to_string(),
         },
         RetryPolicy::for_tests(2),
     )
@@ -162,7 +162,7 @@ async fn literouter_does_not_retry_client_errors() {
         LiteRouterConfig {
             api_key: "lr_test".to_string(),
             base_url: format!("{}/v1", server.uri()),
-            model: "deepseek:free".to_string(),
+            model: "test-paid-model".to_string(),
         },
         RetryPolicy::for_tests(3),
     )

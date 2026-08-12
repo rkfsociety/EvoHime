@@ -28,6 +28,9 @@ pub struct LiteRouterProvider {
 }
 
 impl LiteRouterProvider {
+    const PAID_REQUEST_INTERVAL: Duration = Duration::from_secs(5);
+    const FREE_REQUEST_INTERVAL: Duration = Duration::from_millis(18_948);
+
     pub fn new(config: LiteRouterConfig) -> Result<Self, ProviderError> {
         Self::with_retry(config, RetryPolicy::from_env())
     }
@@ -95,7 +98,6 @@ impl LiteRouterProvider {
         stream: bool,
         thinking: Option<ThinkingConfig>,
     ) -> Result<reqwest::Response, ProviderError> {
-        self.wait_for_request_slot().await;
         let tools = tools.map(|specs| {
             specs
                 .iter()
@@ -128,6 +130,9 @@ impl LiteRouterProvider {
 
         let mut attempt: u32 = 0;
         loop {
+            // Count every provider attempt, including retries, against the
+            // free-tier budget and spread requests across the hour.
+            self.wait_for_request_slot(model).await;
             let send_result = self
                 .client
                 .post(self.config.chat_completions_url())
@@ -171,16 +176,24 @@ impl LiteRouterProvider {
         }
     }
 
-    async fn wait_for_request_slot(&self) {
-        const MIN_REQUEST_INTERVAL: Duration = Duration::from_secs(5);
+    async fn wait_for_request_slot(&self, model: &str) {
+        let interval = request_interval_for_model(model);
         let mut last_request = self.request_gate.lock().await;
         if let Some(previous) = *last_request {
             let elapsed = previous.elapsed();
-            if elapsed < MIN_REQUEST_INTERVAL {
-                tokio::time::sleep(MIN_REQUEST_INTERVAL - elapsed).await;
+            if elapsed < interval {
+                tokio::time::sleep(interval - elapsed).await;
             }
         }
         *last_request = Some(Instant::now());
+    }
+}
+
+fn request_interval_for_model(model: &str) -> Duration {
+    if model.trim().to_ascii_lowercase().ends_with(":free") {
+        LiteRouterProvider::FREE_REQUEST_INTERVAL
+    } else {
+        LiteRouterProvider::PAID_REQUEST_INTERVAL
     }
 }
 
@@ -767,5 +780,17 @@ mod tests {
         assert!(schema["properties"]["nested"]
             .get("additionalProperties")
             .is_none());
+    }
+
+    #[test]
+    fn spreads_free_models_across_190_requests_per_hour() {
+        assert_eq!(
+            request_interval_for_model("some-model:free"),
+            Duration::from_millis(18_948)
+        );
+        assert_eq!(
+            request_interval_for_model("gemini-3.1-flash-lite-thinking"),
+            Duration::from_secs(5)
+        );
     }
 }
