@@ -91,6 +91,28 @@ fn tool_parameters(name: &str) -> serde_json::Value {
     }
 }
 
+fn audit_log_path() -> PathBuf {
+    let data_dir = std::env::var_os("EVOHIME_DATA_DIR")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("LOCALAPPDATA").map(|path| PathBuf::from(path).join("EvoHime"))
+        })
+        .unwrap_or_else(|| PathBuf::from(".evohime"));
+    data_dir.join("logs").join("audit.jsonl")
+}
+
+fn append_audit_line(line: &str) {
+    let path = audit_log_path();
+    if let Some(parent) = path.parent() {
+        if fs::create_dir_all(parent).is_err() {
+            return;
+        }
+    }
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = file.write_all(line.as_bytes());
+    }
+}
+
 fn write_model_trace(event: &str, fields: serde_json::Value) {
     let data_dir = std::env::var_os("EVOHIME_DATA_DIR")
         .map(PathBuf::from)
@@ -1698,6 +1720,7 @@ impl TaskExecutor for ToolAgent {
 #[derive(Clone)]
 pub struct TaskCoordinator {
     commands: mpsc::Sender<CoreCommand>,
+    state: Arc<Mutex<CoordinatorState>>,
 }
 
 struct CoordinatorState {
@@ -1705,6 +1728,7 @@ struct CoordinatorState {
     events: broadcast::Sender<CoreEvent>,
     executor: Option<Arc<dyn TaskExecutor>>,
     journal: Option<EventJournal>,
+    audit: crate::audit::AuditTrail,
 }
 
 impl TaskCoordinator {
@@ -1739,6 +1763,7 @@ impl TaskCoordinator {
             events: events.clone(),
             executor,
             journal: journal.clone(),
+            audit: crate::audit::AuditTrail::default(),
         }));
         if let Some(journal) = journal {
             let mut journal_receiver = events.subscribe();
@@ -1748,13 +1773,20 @@ impl TaskCoordinator {
                 }
             });
         }
+        let audit_state = Arc::clone(&state);
+        let mut audit_receiver = events.subscribe();
+        tokio::spawn(async move {
+            while let Ok(event) = audit_receiver.recv().await {
+                Self::record_audit_for_event(&audit_state, &event).await;
+            }
+        });
         let worker_state = Arc::clone(&state);
         tokio::spawn(async move {
             while let Some(command) = command_rx.recv().await {
                 Self::handle_command(Arc::clone(&worker_state), command).await;
             }
         });
-        (Self { commands }, event_rx)
+        (Self { commands, state }, event_rx)
     }
 
     pub async fn dispatch(
@@ -1762,6 +1794,92 @@ impl TaskCoordinator {
         command: CoreCommand,
     ) -> Result<(), mpsc::error::SendError<CoreCommand>> {
         self.commands.send(command).await
+    }
+
+    /// Appends a bounded, durable audit record. Failures to append (bounds
+    /// exceeded, invalid fields) are non-fatal to the caller: audit logging
+    /// must never block or fail a live command.
+    async fn record_audit(
+        state: &Arc<Mutex<CoordinatorState>>,
+        kind: crate::audit::AuditKind,
+        actor: impl Into<String>,
+        event_id: impl Into<String>,
+        fields: impl IntoIterator<Item = (String, String)>,
+    ) {
+        let mut state_guard = state.lock().await;
+        let sequence = state_guard.audit.records().len() as u64;
+        let record = match crate::audit::AuditRecord::new(sequence, event_id, kind, actor, fields) {
+            Ok(record) => record,
+            Err(_) => return,
+        };
+        let Ok(line) = record.to_json_line() else {
+            return;
+        };
+        if state_guard.audit.append(record).is_ok() {
+            drop(state_guard);
+            append_audit_line(&line);
+        }
+    }
+
+    async fn record_audit_for_event(state: &Arc<Mutex<CoordinatorState>>, event: &CoreEvent) {
+        match event {
+            CoreEvent::ApprovalRequired {
+                task_id,
+                approval_id,
+                tool_name,
+                permission,
+                scope,
+                ..
+            } => {
+                Self::record_audit(
+                    state,
+                    crate::audit::AuditKind::Approval,
+                    task_id.to_string(),
+                    "approval.required",
+                    [
+                        ("approval_id".to_owned(), approval_id.to_string()),
+                        ("tool_name".to_owned(), tool_name.to_string()),
+                        ("permission".to_owned(), permission.to_string()),
+                        ("scope".to_owned(), scope.to_string()),
+                    ],
+                )
+                .await;
+            }
+            CoreEvent::ToolStarted { task_id, tool_name } => {
+                Self::record_audit(
+                    state,
+                    crate::audit::AuditKind::ToolCall,
+                    task_id.to_string(),
+                    "tool.started",
+                    [("tool_name".to_owned(), tool_name.to_string())],
+                )
+                .await;
+            }
+            CoreEvent::TaskFailed { task_id, error } => {
+                Self::record_audit(
+                    state,
+                    crate::audit::AuditKind::Failure,
+                    task_id.to_string(),
+                    "task.failed",
+                    [("error".to_owned(), error.to_string())],
+                )
+                .await;
+            }
+            _ => {}
+        }
+    }
+
+    /// Returns the current in-memory audit trail as JSONL, primarily for
+    /// tests and diagnostics. The durable copy lives on disk at
+    /// `<data_dir>/logs/audit.jsonl`.
+    pub async fn audit_jsonl(&self) -> String {
+        self.state.lock().await.audit.as_jsonl().unwrap_or_default()
+    }
+
+    /// Returns a snapshot of the current in-memory audit records, primarily
+    /// for tests and diagnostics.
+    pub async fn audit_records(&self) -> Vec<crate::audit::AuditRecord> {
+        self.state.lock().await.audit.records().to_vec()
     }
 
     async fn handle_command(state: Arc<Mutex<CoordinatorState>>, command: CoreCommand) {
@@ -2301,6 +2419,18 @@ impl TaskCoordinator {
                         .record_audit(&task_id, "snapshot.rollback.applied", &audit_payload)
                         .await
                         .map_err(|error| error.to_string())?;
+                    Self::record_audit(
+                        &state,
+                        crate::audit::AuditKind::Evidence,
+                        task_id.clone(),
+                        "snapshot.rollback.applied",
+                        [
+                            ("snapshot_id".to_owned(), snapshot_id.clone()),
+                            ("run_id".to_owned(), run_id.clone()),
+                            ("operation".to_owned(), "workspace_restore".to_owned()),
+                        ],
+                    )
+                    .await;
                     Ok(serde_json::to_vec(&serde_json::json!({
                         "snapshot_id": snapshot_id,
                         "restored": true,
@@ -2367,6 +2497,23 @@ impl TaskCoordinator {
                         Ok(snapshot) => snapshot,
                         Err(error) => {
                             let _ = journal.complete_build_effect(&run_id, false, None).await;
+                            Self::record_audit(
+                                &state,
+                                crate::audit::AuditKind::Failure,
+                                if task_id.is_empty() {
+                                    run_id.clone()
+                                } else {
+                                    task_id.clone()
+                                },
+                                "build.apply_failed",
+                                [
+                                    ("run_id".to_owned(), run_id.clone()),
+                                    ("task_id".to_owned(), task_id.clone()),
+                                    ("intent_hash".to_owned(), approved.intent_hash.clone()),
+                                    ("error".to_owned(), error.to_string()),
+                                ],
+                            )
+                            .await;
                             return Err(error.to_string());
                         }
                     };
@@ -2404,6 +2551,20 @@ impl TaskCoordinator {
                         .complete_build_effect(&run_id, true, Some(&snapshot.id))
                         .await
                         .map_err(|error| error.to_string())?;
+                    Self::record_audit(
+                        &state,
+                        crate::audit::AuditKind::Diff,
+                        audit_subject.to_string(),
+                        "build.applied",
+                        [
+                            ("run_id".to_owned(), run_id.clone()),
+                            ("task_id".to_owned(), task_id.clone()),
+                            ("snapshot_id".to_owned(), snapshot.id.clone()),
+                            ("intent_hash".to_owned(), approved.intent_hash.clone()),
+                            ("diff_count".to_owned(), snapshot.diff.len().to_string()),
+                        ],
+                    )
+                    .await;
                     Ok(payload)
                 }
                 .await;
@@ -2457,6 +2618,28 @@ impl TaskCoordinator {
                         .record_audit(&audit_subject, "build.approval_prepared", &audit_payload)
                         .await
                         .map_err(|error| error.to_string())?;
+                    Self::record_audit(
+                        &state,
+                        crate::audit::AuditKind::Budget,
+                        project_id.clone(),
+                        "build.approval_prepared",
+                        [
+                            ("intent_hash".to_owned(), approved.intent_hash.clone()),
+                            (
+                                "change_count".to_owned(),
+                                approved.changes.len().to_string(),
+                            ),
+                            (
+                                "max_files_changed".to_owned(),
+                                policy.max_files_changed.to_string(),
+                            ),
+                            (
+                                "max_bytes_changed".to_owned(),
+                                policy.max_bytes_changed.to_string(),
+                            ),
+                        ],
+                    )
+                    .await;
                     Ok(payload)
                 }
                 .await;
@@ -2561,6 +2744,130 @@ mod tests {
     #[test]
     fn core_exposes_version() {
         assert!(!CoreVersion::current().is_empty());
+    }
+
+    struct ToolCallingExecutor;
+
+    impl TaskExecutor for ToolCallingExecutor {
+        fn execute(
+            &self,
+            task_id: String,
+            _prompt: String,
+            _cancellation: CancellationToken,
+            events: tokio::sync::broadcast::Sender<CoreEvent>,
+        ) -> BoxFuture<'static, Result<String, AgentRunError>> {
+            Box::pin(async move {
+                let _ = events.send(CoreEvent::ToolStarted {
+                    task_id: task_id.clone(),
+                    tool_name: "filesystem.list".into(),
+                });
+                Ok("done".into())
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn tool_started_event_appends_a_real_audit_record() {
+        let (coordinator, mut events) =
+            TaskCoordinator::new_with_executor(8, Some(Arc::new(ToolCallingExecutor)));
+        coordinator
+            .dispatch(CoreCommand::StartTask {
+                task_id: "task-audit-tool".into(),
+                prompt: "list files".into(),
+                workspace_root: None,
+            })
+            .await
+            .expect("start dispatches");
+        assert!(matches!(
+            events.recv().await,
+            Ok(CoreEvent::TaskStarted { .. })
+        ));
+        assert!(matches!(
+            events.recv().await,
+            Ok(CoreEvent::ToolStarted { .. })
+        ));
+
+        let mut records = Vec::new();
+        for _ in 0..50 {
+            records = coordinator.audit_records().await;
+            if records
+                .iter()
+                .any(|record| record.kind == super::audit::AuditKind::ToolCall)
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+
+        let tool_call = records
+            .iter()
+            .find(|record| record.kind == super::audit::AuditKind::ToolCall)
+            .expect("tool call audit record is appended");
+        assert_eq!(tool_call.actor, "task-audit-tool");
+        assert_eq!(tool_call.event_id, "tool.started");
+        assert_eq!(
+            tool_call.fields.get("tool_name").map(String::as_str),
+            Some("filesystem.list")
+        );
+
+        let jsonl = coordinator.audit_jsonl().await;
+        assert!(jsonl.contains("\"kind\":\"tool_call\""));
+        assert!(jsonl.contains("filesystem.list"));
+    }
+
+    #[tokio::test]
+    async fn task_failed_event_appends_a_failure_audit_record() {
+        struct FailingExecutor;
+        impl TaskExecutor for FailingExecutor {
+            fn execute(
+                &self,
+                _task_id: String,
+                _prompt: String,
+                _cancellation: CancellationToken,
+                _events: tokio::sync::broadcast::Sender<CoreEvent>,
+            ) -> BoxFuture<'static, Result<String, AgentRunError>> {
+                Box::pin(async move { Err(AgentRunError::Timeout(1)) })
+            }
+        }
+
+        let (coordinator, mut events) =
+            TaskCoordinator::new_with_executor(8, Some(Arc::new(FailingExecutor)));
+        coordinator
+            .dispatch(CoreCommand::StartTask {
+                task_id: "task-audit-failure".into(),
+                prompt: "fail please".into(),
+                workspace_root: None,
+            })
+            .await
+            .expect("start dispatches");
+        assert!(matches!(
+            events.recv().await,
+            Ok(CoreEvent::TaskStarted { .. })
+        ));
+        assert!(matches!(
+            events.recv().await,
+            Ok(CoreEvent::TaskFailed { .. })
+        ));
+
+        let mut records = Vec::new();
+        for _ in 0..50 {
+            records = coordinator.audit_records().await;
+            if records
+                .iter()
+                .any(|record| record.kind == super::audit::AuditKind::Failure)
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+
+        let failure = records
+            .iter()
+            .find(|record| record.kind == super::audit::AuditKind::Failure)
+            .expect("failure audit record is appended");
+        assert_eq!(failure.actor, "task-audit-failure");
+        assert_eq!(failure.event_id, "task.failed");
+        assert!(failure.fields.get("error").is_some());
     }
 
     #[tokio::test]
