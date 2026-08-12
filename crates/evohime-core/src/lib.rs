@@ -1877,6 +1877,7 @@ impl ToolAgent {
         let mut research_observations = 0usize;
         let mut research_has_overview = false;
         let mut research_has_content = false;
+        let mut research_has_search = false;
         for iteration in 0..self.max_iterations {
             write_model_trace(
                 "model.request",
@@ -1989,9 +1990,10 @@ impl ToolAgent {
                 .retain(|call| seen_tool_calls.insert(format!("{}:{}", call.name, call.arguments)));
             if tool_calls.is_empty() {
                 let research_done = !delivery_requirements.research
-                    || (research_observations >= 3
+                    || (research_observations >= 5
                         && research_has_overview
-                        && research_has_content);
+                        && research_has_content
+                        && research_has_search);
                 let missing = delivery_requirements.missing(
                     research_done,
                     mutation_done,
@@ -2044,6 +2046,7 @@ impl ToolAgent {
                     research_has_overview |= call.name == "filesystem.list";
                     research_has_content |=
                         matches!(call.name.as_str(), "filesystem.read" | "filesystem.search");
+                    research_has_search |= call.name == "filesystem.search";
                 }
                 let _ = events.send(CoreEvent::ToolStarted {
                     task_id: task_id.clone(),
