@@ -142,5 +142,21 @@ async fn test_filesystem_read_only_behavior() {
 
     let after = std::fs::read_to_string(dir.path().join("test.txt")).unwrap();
 
+
     assert_eq!(before, after, "Filesystem state changed after read-only tools execution");
+}
+
+#[tokio::test]
+async fn patch_context_recovery_on_wrong_hunk_start() {
+    let dir = tempdir().unwrap();
+    std::fs::write(dir.path().join("file.txt"), "line1\nline2\nline3\n").unwrap();
+    let ctx = ToolContext {
+        workspace_root: dir.path().to_path_buf(),
+        task_id: Uuid::nil(),
+        session_id: None,
+        progress_tx: None,
+    };
+    patch::execute(&ctx, json!({"path":"file.txt","patch":"@@ -5,1 +5,1 @@\n-line2\n+modified\n"})).await.unwrap();
+    let content = std::fs::read_to_string(dir.path().join("file.txt")).unwrap();
+    assert_eq!(content, "line1\nmodified\nline3\n");
 }
