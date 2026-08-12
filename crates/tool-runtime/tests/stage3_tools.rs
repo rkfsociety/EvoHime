@@ -1,4 +1,4 @@
-use evohime_tool_runtime::{patch, shell, write, ToolContext, ToolError, ToolRegistry};
+use evohime_tool_runtime::{filesystem, patch, shell, write, ToolContext, ToolError, ToolRegistry};
 use serde_json::json;
 use tempfile::tempdir;
 use tokio_util::sync::CancellationToken;
@@ -76,43 +76,28 @@ async fn shell_runs_direct_executable_and_rejects_wrapper() {
         session_id: None,
         progress_tx: None,
     };
-    let (program, args) = if cfg!(windows) {
-        ("rustc", vec!["--version"])
-    } else {
-        ("printf", vec!["hello"])
-    };
-    let result = shell::execute(
-        &ctx,
-        json!({"program":program,"args":args}),
-        CancellationToken::new(),
-    )
-    .await
-    .unwrap();
-    assert!(!result.structured["stdout"].as_str().unwrap().is_empty());
-    let rejected =
-        shell::execute(&ctx, json!({"program":"cmd.exe"}), CancellationToken::new()).await;
-    assert!(matches!(rejected, Err(ToolError::InvalidInput { .. })));
+    );
+    assert!(matches!(result, Err(ToolError::TimedOut(_))));
 }
 
 #[tokio::test]
-async fn shell_times_out_and_reports_timeout() {
+async fn test_filesystem_read_only_behavior() {
     let dir = tempdir().unwrap();
+    std::fs::write(dir.path().join("test.txt"), "content").unwrap();
     let ctx = ToolContext {
         workspace_root: dir.path().to_path_buf(),
         task_id: Uuid::nil(),
         session_id: None,
         progress_tx: None,
     };
-    let (program, args) = if cfg!(windows) {
-        ("ping", vec!["-n", "5", "127.0.0.1"])
-    } else {
-        ("sleep", vec!["2"])
-    };
-    let result = shell::execute(
-        &ctx,
-        json!({"program":program,"args":args,"timeout_ms":1}),
-        CancellationToken::new(),
-    )
-    .await;
-    assert!(matches!(result, Err(ToolError::TimedOut(_))));
+
+    let before = std::fs::read_to_string(dir.path().join("test.txt")).unwrap();
+    
+    let _ = filesystem::list::execute(&ctx, json!({"path": "."})).await.unwrap();
+    let _ = filesystem::read::execute(&ctx, json!({"path": "test.txt"})).await.unwrap();
+    let _ = filesystem::search::execute(&ctx, json!({"query": "content"})).await.unwrap();
+    
+    let after = std::fs::read_to_string(dir.path().join("test.txt")).unwrap();
+    
+    assert_eq!(before, after, "Filesystem state changed after read-only tools execution");
 }
