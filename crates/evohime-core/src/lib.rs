@@ -2072,8 +2072,22 @@ impl ToolAgent {
                     tool_calls.push(call);
                 }
             }
-            tool_calls
-                .retain(|call| seen_tool_calls.insert(format!("{}:{}", call.name, call.arguments)));
+            let mut duplicate_tool_call = None;
+            tool_calls.retain(|call| {
+                let is_new = seen_tool_calls.insert(format!("{}:{}", call.name, call.arguments));
+                if !is_new && duplicate_tool_call.is_none() {
+                    duplicate_tool_call = Some(call.name.clone());
+                }
+                is_new
+            });
+            if let Some(tool_name) = duplicate_tool_call {
+                messages.push(ChatMessage::text(
+                    ChatRole::User,
+                    format!(
+                        "Ты уже выполняла точно такой вызов {tool_name}. Его повтор удалён Core. Самостоятельно выбери следующий новый шаг: используй другой подтверждённый путь или filesystem.search, затем продолжи исследование/реализацию. Не повторяй последний вызов и не завершай задачу отчётом."
+                    ),
+                ));
+            }
             if tool_calls.is_empty() {
                 let research_done = !delivery_requirements.research
                     || (research_observations >= 5
