@@ -2208,17 +2208,16 @@ public partial class MainWindow : Window
 
         try
         {
-            var selectedModel = _modelSelector.SelectedItem as string;
-            if (string.IsNullOrWhiteSpace(selectedModel))
-            {
-                throw new InvalidOperationException("Сначала выберите модель из списка.");
-            }
+            var selectedModel = (_modelSelector.SelectedItem as string)?.Trim();
+            var model = string.IsNullOrWhiteSpace(selectedModel)
+                ? _configuredModel?.Trim() ?? string.Empty
+                : selectedModel;
 
             var catalogMode = SelectedCatalogMode();
             _providerSettings.Save(new ProviderSettings(
                 _providerBox.Text.Trim(),
                 _baseUrlBox.Text.Trim(),
-                selectedModel,
+                model,
                 _apiKeyBox.Password)
             {
                 CatalogMode = catalogMode,
@@ -2240,7 +2239,9 @@ public partial class MainWindow : Window
             if (_settingsSaveStatus is not null)
             {
                 _settingsSaveStatus.Text = modelsLoaded
-                    ? "Сохранено. Модели загружены."
+                    ? (string.IsNullOrWhiteSpace(model)
+                        ? "Ключ сохранён. Выберите модель из загруженного списка."
+                        : "Сохранено. Модели загружены.")
                     : "Ключ сохранён, но провайдер не вернул каталог моделей.";
             }
         }
