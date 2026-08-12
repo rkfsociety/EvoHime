@@ -274,8 +274,9 @@ impl ToolRegistry {
             tools::patch::validate_input(&input)?;
         }
 
+        let scope = scope_from_input(name, &input);
+        let command = command_from_input(name, &input);
         for permission in definition.permissions {
-            let scope = scope_from_input(name, &input);
             match self
                 .permissions
                 .check_scoped(
@@ -283,6 +284,7 @@ impl ToolRegistry {
                     &evohime_permissions::PermissionCheck {
                         session_id: ctx.session_id,
                         path: Some(scope.as_str()),
+                        command: command.as_deref(),
                     },
                 )
                 .await
@@ -292,12 +294,13 @@ impl ToolRegistry {
                 PermissionDecision::NeedsApproval => {
                     let approval = self
                         .permissions
-                        .create_approval_scoped_for_call(
+                        .create_approval_scoped_for_call_with_command(
                             ctx.task_id,
                             ctx.session_id,
                             name,
                             *permission,
                             scope,
+                            command.clone(),
                             &input,
                         )
                         .await;
@@ -373,6 +376,7 @@ impl ToolRegistry {
             .get(name)
             .ok_or_else(|| ToolError::UnknownTool(name.to_string()))?;
         let scope = scope_from_input(name, &input);
+        let command = command_from_input(name, &input);
         for permission in definition.permissions {
             match self
                 .permissions
@@ -404,6 +408,7 @@ impl ToolRegistry {
                         &evohime_permissions::PermissionCheck {
                             session_id: ctx.session_id,
                             path: Some(scope.as_str()),
+                            command: command.as_deref(),
                         },
                     )
                     .await,
@@ -414,29 +419,39 @@ impl ToolRegistry {
         }
         let execution = async {
             match name {
-            tools::filesystem::NAME => tools::filesystem::execute(ctx, input).await,
-            tools::write::NAME => tools::write::execute(ctx, input).await,
-            tools::patch::NAME => tools::patch::execute(ctx, input).await,
-            tools::search::NAME => tools::search::execute(ctx, input).await,
-            tools::list::NAME => tools::list::execute(ctx, input).await,
-            tools::shell::NAME => tools::shell::execute(ctx, input, cancellation.clone()).await,
-            tools::git::STATUS_NAME => tools::git::status(ctx, input).await,
-            tools::git::DIFF_NAME => tools::git::diff(ctx, input).await,
-            tools::git::COMMIT_NAME => tools::git::commit(ctx, input).await,
-            tools::git::PULL_NAME => tools::git::pull(ctx, input).await,
-            tools::git::PUSH_NAME => tools::git::push(ctx, input).await,
-            tools::mcp::NAME => tools::mcp::execute(ctx, input).await,
-            tools::memory::NAME => tools::memory::execute(ctx, input).await,
-            tools::agent::NAME => tools::agent::execute(ctx, input).await,
-            tools::browser::OPEN_NAME => tools::browser::open(ctx, input).await,
-            tools::browser::EXTRACT_NAME => tools::browser::extract(ctx, input).await,
-            tools::browser_session::NAVIGATE_NAME => tools::browser_session::navigate(ctx, input).await,
-            tools::browser_session::READ_NAME => tools::browser_session::read(ctx, input).await,
-            tools::browser_session::CLICK_NAME => tools::browser_session::click(ctx, input).await,
-            tools::browser_session::SCREENSHOT_NAME => tools::browser_session::screenshot(ctx, input).await,
-            tools::browser_session::TYPE_NAME => tools::browser_session::type_text(ctx, input).await,
-            tools::browser_session::CLOSE_NAME => tools::browser_session::close(ctx, input).await,
-            tools::http::NAME => tools::http::fetch(ctx, input).await,
+                tools::filesystem::NAME => tools::filesystem::execute(ctx, input).await,
+                tools::write::NAME => tools::write::execute(ctx, input).await,
+                tools::patch::NAME => tools::patch::execute(ctx, input).await,
+                tools::search::NAME => tools::search::execute(ctx, input).await,
+                tools::list::NAME => tools::list::execute(ctx, input).await,
+                tools::shell::NAME => tools::shell::execute(ctx, input, cancellation.clone()).await,
+                tools::git::STATUS_NAME => tools::git::status(ctx, input).await,
+                tools::git::DIFF_NAME => tools::git::diff(ctx, input).await,
+                tools::git::COMMIT_NAME => tools::git::commit(ctx, input).await,
+                tools::git::PULL_NAME => tools::git::pull(ctx, input).await,
+                tools::git::PUSH_NAME => tools::git::push(ctx, input).await,
+                tools::mcp::NAME => tools::mcp::execute(ctx, input).await,
+                tools::memory::NAME => tools::memory::execute(ctx, input).await,
+                tools::agent::NAME => tools::agent::execute(ctx, input).await,
+                tools::browser::OPEN_NAME => tools::browser::open(ctx, input).await,
+                tools::browser::EXTRACT_NAME => tools::browser::extract(ctx, input).await,
+                tools::browser_session::NAVIGATE_NAME => {
+                    tools::browser_session::navigate(ctx, input).await
+                }
+                tools::browser_session::READ_NAME => tools::browser_session::read(ctx, input).await,
+                tools::browser_session::CLICK_NAME => {
+                    tools::browser_session::click(ctx, input).await
+                }
+                tools::browser_session::SCREENSHOT_NAME => {
+                    tools::browser_session::screenshot(ctx, input).await
+                }
+                tools::browser_session::TYPE_NAME => {
+                    tools::browser_session::type_text(ctx, input).await
+                }
+                tools::browser_session::CLOSE_NAME => {
+                    tools::browser_session::close(ctx, input).await
+                }
+                tools::http::NAME => tools::http::fetch(ctx, input).await,
                 _ => Err(ToolError::UnknownTool(name.to_string())),
             }
         };
@@ -492,6 +507,13 @@ impl Default for ToolRegistry {
 
 /// Derive a stable scope key from tool input (path, cwd, url, or `"workspace"`).
 fn scope_from_input(tool_name: &str, input: &Value) -> String {
+    if tool_name == tools::shell::NAME {
+        if let Some((_, _, cwd)) = tools::shell::resolve_invocation(input) {
+            if let Some(cwd) = cwd {
+                return cwd.replace('\\', "/");
+            }
+        }
+    }
     if let Some(path) = input.get("path").and_then(Value::as_str) {
         return path.replace('\\', "/");
     }
@@ -505,6 +527,28 @@ fn scope_from_input(tool_name: &str, input: &Value) -> String {
         return "browser".to_string();
     }
     "workspace".to_string()
+}
+
+/// Build the subject matched by permission rules.
+fn command_from_input(tool_name: &str, input: &Value) -> Option<String> {
+    if tool_name == tools::shell::NAME {
+        let (program, args, _) = tools::shell::resolve_invocation(input)?;
+        return Some(
+            std::iter::once(program)
+                .chain(args)
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+    }
+    let command = match tool_name {
+        tools::git::STATUS_NAME => "git status",
+        tools::git::DIFF_NAME => "git diff",
+        tools::git::COMMIT_NAME => "git commit",
+        tools::git::PULL_NAME => "git pull",
+        tools::git::PUSH_NAME => "git push",
+        _ => return None,
+    };
+    Some(command.to_string())
 }
 
 #[cfg(test)]
@@ -776,6 +820,74 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn policy_denies_shell_subject_after_cd_prefix_is_resolved() {
+        let permissions = evohime_permissions::PermissionEngine::new();
+        permissions
+            .set_policy_rules(evohime_permissions::PolicyRuleSet::new(vec![
+                evohime_permissions::PolicyRule {
+                    permission: evohime_permissions::Permission::ShellExecute,
+                    pattern: "rm *".into(),
+                    mode: evohime_permissions::PermissionMode::Deny,
+                },
+            ]))
+            .await;
+        let registry = ToolRegistry::bootstrap_with_permissions(permissions);
+        let dir = tempfile::tempdir().expect("workspace");
+        let context = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+        };
+        let error = registry
+            .execute(
+                &context,
+                "shell.execute",
+                serde_json::json!({"command": "cd nested && rm -rf target"}),
+            )
+            .await
+            .expect_err("policy deny must happen before approval or spawn");
+        assert!(matches!(
+            error,
+            ToolError::PermissionDenied(Permission::ShellExecute)
+        ));
+    }
+
+    #[tokio::test]
+    async fn policy_uses_a_separate_subject_for_git_push() {
+        let permissions = evohime_permissions::PermissionEngine::new();
+        permissions
+            .set_policy_rules(evohime_permissions::PolicyRuleSet::new(vec![
+                evohime_permissions::PolicyRule {
+                    permission: evohime_permissions::Permission::GitWrite,
+                    pattern: "git push*".into(),
+                    mode: evohime_permissions::PermissionMode::Deny,
+                },
+            ]))
+            .await;
+        let registry = ToolRegistry::bootstrap_with_permissions(permissions);
+        let dir = tempfile::tempdir().expect("workspace");
+        let context = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+        };
+        let error = registry
+            .execute(
+                &context,
+                "git.push",
+                serde_json::json!({"remote": "origin", "branch": "main"}),
+            )
+            .await
+            .expect_err("git subject policy must deny before git runs");
+        assert!(matches!(
+            error,
+            ToolError::PermissionDenied(Permission::GitWrite)
+        ));
+    }
+
+    #[tokio::test]
     async fn ask_mode_creates_scoped_approval() {
         let permissions = PermissionEngine::new();
         permissions
@@ -838,7 +950,10 @@ mod tests {
             ToolError::NeedsApproval { approval_id, .. } => approval_id,
             other => panic!("expected NeedsApproval, got {other:?}"),
         };
-        permissions.resolve(approval_id, true).await.expect("granted");
+        permissions
+            .resolve(approval_id, true)
+            .await
+            .expect("granted");
 
         let changed = serde_json::json!({
             "path": "notes/todo.txt",
@@ -895,7 +1010,10 @@ mod tests {
                 &input,
             )
             .await;
-        permissions.resolve(request.id, false).await.expect("denied");
+        permissions
+            .resolve(request.id, false)
+            .await
+            .expect("denied");
         let registry = ToolRegistry::bootstrap_with_permissions(permissions);
         let dir = tempfile::tempdir().expect("tempdir");
         let context = ToolContext {

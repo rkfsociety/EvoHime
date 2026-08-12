@@ -2,7 +2,7 @@ use crate::{ToolContext, ToolError, ToolResult};
 use evohime_permissions::Permission;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::{path::Path, process::Stdio, time::Duration};
+use std::{process::Stdio, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     process::Command,
@@ -36,39 +36,42 @@ pub async fn execute(
         tool: NAME.into(),
         message: e.to_string(),
     })?;
-    let (program, args, cwd) = if let Some(program) = input.program {
-        (program, input.args, input.cwd)
-    } else if let Some(command) = input.command {
-        let (cwd, command) = if let Some((prefix, rest)) = command.split_once("&&") {
-            let prefix = prefix.trim();
-            if let Some(path) = prefix.strip_prefix("cd ") {
-                let path = path.trim().trim_matches('"');
-                let cwd = if Path::new(path).is_absolute() && Path::new(path) == ctx.workspace_root {
-                    None
-                } else {
-                    Some(path.to_string())
-                };
-                (
-                    cwd,
-                    rest.trim().to_string(),
-                )
-            } else {
-                (None, command)
-            }
-        } else {
-            (None, command)
-        };
-        let mut parts = command.split_whitespace();
-        let program = parts.next().unwrap_or_default().to_string();
-        (program, parts.map(ToString::to_string).collect(), cwd)
-    } else {
-        (String::new(), Vec::new(), None)
-    };
+    let (program, args, cwd) =
+        resolve_invocation_from_input(&input).ok_or_else(|| ToolError::InvalidInput {
+            tool: NAME.into(),
+            message: "program or command is required".into(),
+        })?;
     if program.is_empty()
         || program.contains(['/', '\\'])
         || matches!(
             program.to_ascii_lowercase().as_str(),
-            "cmd" | "cmd.exe" | "powershell" | "powershell.exe" | "sh" | "bash"
+            "cmd"
+                | "cmd.exe"
+                | "powershell"
+                | "powershell.exe"
+                | "pwsh"
+                | "pwsh.exe"
+                | "sh"
+                | "bash"
+                | "zsh"
+                | "fish"
+                | "wsl"
+                | "wsl.exe"
+                | "python"
+                | "python3"
+                | "python.exe"
+                | "py"
+                | "node"
+                | "node.exe"
+                | "npm"
+                | "npm.cmd"
+                | "npx"
+                | "npx.cmd"
+                | "uv"
+                | "uvx"
+                | "perl"
+                | "ruby"
+                | "php"
         )
     {
         return Err(ToolError::InvalidInput {
@@ -168,6 +171,32 @@ pub async fn execute(
     })
 }
 
+/// Resolve the exact direct invocation that `execute` will spawn.
+pub fn resolve_invocation(value: &Value) -> Option<(String, Vec<String>, Option<String>)> {
+    let input: Input = serde_json::from_value(value.clone()).ok()?;
+    resolve_invocation_from_input(&input)
+}
+
+fn resolve_invocation_from_input(input: &Input) -> Option<(String, Vec<String>, Option<String>)> {
+    if let Some(program) = input.program.clone() {
+        return Some((program, input.args.clone(), input.cwd.clone()));
+    }
+    let command = input.command.as_deref()?;
+    let (cwd, command) = if let Some((prefix, rest)) = command.split_once("&&") {
+        let prefix = prefix.trim();
+        if let Some(path) = prefix.strip_prefix("cd ") {
+            (Some(path.trim().trim_matches('"').to_string()), rest.trim())
+        } else {
+            (None, command)
+        }
+    } else {
+        (None, command)
+    };
+    let mut parts = command.split_whitespace();
+    let program = parts.next()?.to_string();
+    Some((program, parts.map(ToString::to_string).collect(), cwd))
+}
+
 async fn pump_stream<R>(
     reader: R,
     stream: &'static str,
@@ -242,9 +271,8 @@ mod tests {
         );
     }
 
-    #[cfg(windows)]
     #[tokio::test]
-    async fn runs_pwsh_without_shell_wrapper() {
+    async fn blocks_dangerous_interpreters() {
         let dir = tempfile::tempdir().expect("tempdir");
         let permissions = PermissionEngine::new();
         permissions
@@ -265,13 +293,8 @@ mod tests {
             }),
             CancellationToken::new(),
         )
-        .await
-        .expect("pwsh should be allowed as a direct executable");
+        .await;
 
-        assert_eq!(result.structured["exit_code"], 0);
-        assert!(result.structured["stdout"]
-            .as_str()
-            .expect("pwsh stdout")
-            .contains("evohime-pwsh-ok"));
+        assert!(matches!(result, Err(ToolError::InvalidInput { .. })));
     }
 }

@@ -22,6 +22,7 @@ async fn main() {
     }
     let heartbeat_task = spawn_heartbeat(data_dir.join("core-heartbeat"));
     let tools = std::sync::Arc::new(evohime_tool_runtime::ToolRegistry::bootstrap());
+    evohime_core::permission_rules::apply_rules(tools.permissions(), &data_dir).await;
     let approvals = evohime_core::ApprovalCoordinator::default();
     let model_config = evohime_model_gateway::ModelGatewayConfig::from_env().ok();
     let model_snapshot = model_config.as_ref().and_then(|config| {

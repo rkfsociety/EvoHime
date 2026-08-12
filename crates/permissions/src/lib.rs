@@ -3,6 +3,11 @@
 //! Global modes persist via `app_settings.permissions`.
 //! Session overrides + path grants persist via `app_settings.permission_scopes` (Stage 7.22).
 
+mod pattern;
+mod policy;
+
+pub use pattern::glob_match;
+pub use policy::{PolicyRule, PolicyRuleSet};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -51,6 +56,8 @@ pub struct ApprovalRequest {
     pub permission: Permission,
     /// Relative path, URL, or `"workspace"`.
     pub scope: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
     /// Hash of the tool name, normalized scope, and exact canonical input.
     #[serde(default)]
     pub call_hash: String,
@@ -77,6 +84,7 @@ struct ApprovalRecord {
 pub struct PermissionCheck<'a> {
     pub session_id: Option<Uuid>,
     pub path: Option<&'a str>,
+    pub command: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -129,6 +137,7 @@ const MAX_AUDIT_ENTRIES: usize = 200;
 #[derive(Clone)]
 pub struct PermissionEngine {
     modes: Arc<RwLock<HashMap<Permission, PermissionMode>>>,
+    policy_rules: Arc<RwLock<PolicyRuleSet>>,
     session_modes: Arc<RwLock<HashMap<(Uuid, Permission), PermissionMode>>>,
     path_grants: Arc<RwLock<Vec<StoredPathGrant>>>,
     approvals: Arc<RwLock<HashMap<Uuid, ApprovalRecord>>>,
@@ -165,6 +174,7 @@ impl PermissionEngine {
         modes.insert(Permission::MemorySearch, PermissionMode::Ask);
         Self {
             modes: Arc::new(RwLock::new(modes)),
+            policy_rules: Arc::new(RwLock::new(PolicyRuleSet::default())),
             session_modes: Arc::new(RwLock::new(HashMap::new())),
             path_grants: Arc::new(RwLock::new(Vec::new())),
             approvals: Arc::new(RwLock::new(HashMap::new())),
@@ -284,6 +294,16 @@ impl PermissionEngine {
     ) -> PermissionDecision {
         self.purge_expired_grants().await;
 
+        let subject = check
+            .command
+            .map(str::to_owned)
+            .or_else(|| check.path.map(normalize_scope_path))
+            .unwrap_or_else(|| "workspace".to_string());
+        let policy_mode = self.policy_rules.read().await.resolve(permission, &subject);
+        if policy_mode == Some(PermissionMode::Deny) {
+            return PermissionDecision::Denied;
+        }
+
         if let Some(path) = check.path.map(normalize_scope_path) {
             if let Some(mode) = self
                 .find_path_mode(permission, &path, check.session_id)
@@ -305,6 +325,10 @@ impl PermissionEngine {
             }
         }
 
+        if let Some(mode) = policy_mode {
+            return mode_to_decision(mode);
+        }
+
         mode_to_decision(self.mode(permission).await)
     }
 
@@ -323,7 +347,7 @@ impl PermissionEngine {
             scope,
             &serde_json::Value::Null,
         )
-            .await
+        .await
     }
 
     pub async fn create_approval_scoped(
@@ -345,6 +369,14 @@ impl PermissionEngine {
         .await
     }
 
+    pub async fn set_policy_rules(&self, rules: PolicyRuleSet) {
+        *self.policy_rules.write().await = rules;
+    }
+
+    pub async fn policy_rules(&self) -> PolicyRuleSet {
+        self.policy_rules.read().await.clone()
+    }
+
     pub async fn create_approval_scoped_for_call(
         &self,
         task_id: Uuid,
@@ -352,6 +384,22 @@ impl PermissionEngine {
         tool_name: impl Into<String>,
         permission: Permission,
         scope: impl Into<String>,
+        input: &serde_json::Value,
+    ) -> ApprovalRequest {
+        self.create_approval_scoped_for_call_with_command(
+            task_id, session_id, tool_name, permission, scope, None, input,
+        )
+        .await
+    }
+
+    pub async fn create_approval_scoped_for_call_with_command(
+        &self,
+        task_id: Uuid,
+        session_id: Option<Uuid>,
+        tool_name: impl Into<String>,
+        permission: Permission,
+        scope: impl Into<String>,
+        command: Option<String>,
         input: &serde_json::Value,
     ) -> ApprovalRequest {
         let tool_name = tool_name.into();
@@ -364,6 +412,7 @@ impl PermissionEngine {
             tool_name,
             permission,
             scope,
+            command,
             call_hash,
         };
         self.approvals.write().await.insert(
@@ -472,7 +521,7 @@ impl PermissionEngine {
                 && request.permission == permission
                 && request.scope == normalize_scope_path(scope)
                 && request.call_hash == canonical_call_hash(tool_name, &request.scope, input))
-                .then_some(record.state)
+            .then_some(record.state)
         })
     }
 
@@ -800,6 +849,7 @@ mod tests {
                         &PermissionCheck {
                             session_id: Some(session),
                             path: None,
+                            command: None,
                         },
                     )
                     .await,
@@ -833,6 +883,7 @@ mod tests {
                         &PermissionCheck {
                             session_id: Some(session),
                             path: Some("docs/readme.md"),
+                            command: None,
                         },
                     )
                     .await,
@@ -845,6 +896,7 @@ mod tests {
                         &PermissionCheck {
                             session_id: Some(session),
                             path: Some("src/main.rs"),
+                            command: None,
                         },
                     )
                     .await,
@@ -880,6 +932,7 @@ mod tests {
                         &PermissionCheck {
                             session_id: Some(session),
                             path: Some("tmp/note.txt"),
+                            command: None,
                         },
                     )
                     .await,
@@ -947,6 +1000,7 @@ mod tests {
                         &PermissionCheck {
                             session_id: Some(session),
                             path: Some("secrets/key.env"),
+                            command: None,
                         },
                     )
                     .await,
@@ -993,6 +1047,7 @@ mod tests {
                         &PermissionCheck {
                             session_id: Some(session),
                             path: Some("src/main.rs"),
+                            command: None,
                         },
                     )
                     .await,
@@ -1005,6 +1060,7 @@ mod tests {
                         &PermissionCheck {
                             session_id: None,
                             path: Some("scripts/run.sh"),
+                            command: None,
                         },
                     )
                     .await,
@@ -1039,10 +1095,51 @@ mod tests {
                         &PermissionCheck {
                             session_id: Some(session),
                             path: Some("tmp/a.txt"),
+                            command: None,
                         },
                     )
                     .await,
                 PermissionDecision::NeedsApproval
+            );
+        });
+    }
+
+    #[test]
+    fn hard_policy_deny_beats_runtime_grants_and_session_modes() {
+        block_on(async {
+            let session = Uuid::new_v4();
+            let engine = PermissionEngine::new();
+            engine
+                .set_policy_rules(PolicyRuleSet::new(vec![PolicyRule {
+                    permission: Permission::ShellExecute,
+                    pattern: "rm *".into(),
+                    mode: PermissionMode::Deny,
+                }]))
+                .await;
+            engine
+                .set_session_mode(session, Permission::ShellExecute, PermissionMode::Allow)
+                .await;
+            engine
+                .set_path_grant(
+                    Permission::ShellExecute,
+                    "workspace",
+                    PermissionMode::Allow,
+                    Some(session),
+                    None,
+                )
+                .await;
+            assert_eq!(
+                engine
+                    .check_scoped(
+                        Permission::ShellExecute,
+                        &PermissionCheck {
+                            session_id: Some(session),
+                            path: Some("workspace"),
+                            command: Some("rm -rf target"),
+                        },
+                    )
+                    .await,
+                PermissionDecision::Denied
             );
         });
     }

@@ -624,6 +624,7 @@ pub mod doctor;
 pub mod memory_api;
 pub mod memory_domain;
 pub mod observability;
+pub mod permission_rules;
 pub mod plan;
 pub mod prd;
 pub mod research;
