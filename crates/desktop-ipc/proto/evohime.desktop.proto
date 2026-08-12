@@ -196,6 +196,23 @@ message ListResearchEvidence {
   string work_item_id = 1;
 }
 
+// Performs a real, policy-gated, SSRF-protected HTTP GET against `url` and
+// persists the result as research evidence tied to `work_item_id`. Domain
+// allowlisting, byte/latency/cost bounds are enforced server-side via
+// evohime_core::research_pipeline::ResearchPolicy before any network call is
+// made. This is a direct-URL fetch: no search-engine/query integration, and
+// no LLM-based summarization (see evohime_core::research_fetch docs).
+message RunResearchFetch {
+  string work_item_id = 1;
+  string url = 2;
+  string title = 3;
+  repeated string allowed_domains = 4;
+  uint64 max_bytes = 5;
+  uint64 max_latency_ms = 6;
+  uint64 max_cost_micros = 7;
+  uint64 ttl_ms = 8;
+}
+
 // Creates one bounded Memory v1 record (evohime_core::memory_domain
 // validation and redaction run server-side before persistence). scope_kind
 // is one of "project" | "task" | "workspace"; secondary_id is the task_id or
@@ -400,6 +417,7 @@ message CommandEnvelope {
     ListChildHandoffs list_child_handoffs = 48;
     SubmitChildRequest submit_child_request = 49;
     SubmitChildReport submit_child_report = 50;
+    RunResearchFetch run_research_fetch = 51;
   }
 }
 

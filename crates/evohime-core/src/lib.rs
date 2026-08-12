@@ -534,6 +534,7 @@ pub mod observability;
 pub mod plan;
 pub mod prd;
 pub mod research;
+pub mod research_fetch;
 pub mod research_pipeline;
 pub mod scope;
 pub mod workflow;
@@ -685,6 +686,24 @@ pub enum CoreCommand {
     /// Lists previously saved research evidence for a work item.
     ListResearchEvidence {
         work_item_id: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Performs a real, policy-gated, SSRF-protected HTTP GET against `url`,
+    /// driving `research_fetch::run_research_fetch` through the real
+    /// `research_pipeline` state machine, then persists the resulting
+    /// `ResearchEvidence` the same way `SaveResearchEvidence` does. `title`
+    /// is caller-supplied; content-type/publisher are derived from the
+    /// response and URL. No search-engine integration and no LLM-based
+    /// summarization happen here (see `research_fetch` module docs).
+    RunResearchFetch {
+        work_item_id: String,
+        url: String,
+        title: String,
+        allowed_domains: Vec<String>,
+        max_bytes: u64,
+        max_latency_ms: u64,
+        max_cost_micros: u64,
+        ttl_ms: u64,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
     /// Creates one bounded Memory v1 record. `memory_domain::MemoryDomain`
@@ -3253,6 +3272,99 @@ impl TaskCoordinator {
                         "records": records,
                     }))
                     .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::RunResearchFetch {
+                work_item_id,
+                url,
+                title,
+                allowed_domains,
+                max_bytes,
+                max_latency_ms,
+                max_cost_micros,
+                ttl_ms,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    if work_item_id.trim().is_empty() {
+                        return Err("work_item_id must not be empty".to_string());
+                    }
+                    let policy = crate::research_pipeline::ResearchPolicy {
+                        network_allowed: true,
+                        allowed_domains,
+                        max_bytes,
+                        max_latency_ms,
+                        max_cost_micros,
+                    };
+                    let fetch_result = crate::research_fetch::run_research_fetch(
+                        &work_item_id,
+                        &url,
+                        &title,
+                        &policy,
+                        ttl_ms,
+                        false,
+                    )
+                    .await;
+                    match fetch_result {
+                        Ok(outcome) => {
+                            let id = uuid::Uuid::new_v4().to_string();
+                            let record =
+                                evohime_local_storage::research_store::ResearchEvidenceRecord {
+                                    id: id.clone(),
+                                    source_kind: "url".to_string(),
+                                    source_ref: outcome.evidence.source.url.clone(),
+                                    redacted_excerpt: outcome.evidence.excerpt.clone(),
+                                    source_hash: outcome.evidence.excerpt_sha256.clone(),
+                                    fetched_at: outcome.evidence.captured_at_ms.to_string(),
+                                    ttl_seconds: outcome.evidence.ttl_ms.div_ceil(1_000),
+                                    provenance_link: Some(work_item_id.clone()),
+                                };
+                            journal.save_research_evidence(&record).await?;
+                            Self::record_audit(
+                                &state,
+                                crate::audit::AuditKind::Evidence,
+                                work_item_id.clone(),
+                                "research.fetch.completed",
+                                [
+                                    ("evidence_id".to_owned(), id.clone()),
+                                    ("url".to_owned(), outcome.citation.url.clone()),
+                                    (
+                                        "source_hash".to_owned(),
+                                        outcome.citation.source_hash.clone(),
+                                    ),
+                                ],
+                            )
+                            .await;
+                            serde_json::to_vec(&serde_json::json!({
+                                "id": id,
+                                "work_item_id": work_item_id,
+                                "state": outcome.state,
+                                "evidence": outcome.evidence,
+                                "citation": outcome.citation,
+                            }))
+                            .map_err(|error| error.to_string())
+                        }
+                        Err(error) => {
+                            Self::record_audit(
+                                &state,
+                                crate::audit::AuditKind::Failure,
+                                work_item_id.clone(),
+                                "research.fetch.failed",
+                                [
+                                    ("url".to_owned(), url.clone()),
+                                    ("state".to_owned(), format!("{:?}", error.state)),
+                                    ("error".to_owned(), error.message.clone()),
+                                ],
+                            )
+                            .await;
+                            Err(error.message)
+                        }
+                    }
                 }
                 .await;
                 let _ = reply.send(result);
