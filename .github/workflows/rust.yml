@@ -29,7 +29,7 @@ jobs:
         with:
           toolchain: stable-x86_64-pc-windows-msvc
       - name: Test native Rust foundation
-        run: cargo test --locked -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc -p evohime-updater
+        run: cargo test --locked -p evohime-permissions -p evohime-tool-runtime -p evohime-model-gateway -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc -p evohime-updater
       - name: Check supervisor
         run: cargo check --locked -p evohime-supervisor -p evohime-updater
 

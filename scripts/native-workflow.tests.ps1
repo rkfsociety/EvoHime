@@ -6,6 +6,7 @@ foreach ($required in @(
     'windows-latest',
     'scripts/build-windows-native.ps1',
     'actions/upload-artifact@v4',
+    'cargo test --locked -p evohime-permissions -p evohime-tool-runtime -p evohime-model-gateway',
     'installer/EvoHime.iss',
     'EvoHime-Setup.exe',
     '-Version $env:RELEASE_VERSION',

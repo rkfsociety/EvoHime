@@ -3,8 +3,7 @@ param(
     [string]$OutputPath = (Join-Path $PSScriptRoot '..\artifacts\native\windows-x64'),
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
-    [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.0.000032',
+    [string]$Version,
     [switch]$SkipBuild
 )
 
@@ -12,6 +11,21 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'native-package.ps1')
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$desktopProjectPath = Join-Path $repoRoot 'desktop\EvoHime.Desktop\EvoHime.Desktop.csproj'
+[xml]$desktopProject = Get-Content -LiteralPath $desktopProjectPath -Raw
+$projectVersion = [string]($desktopProject.Project.PropertyGroup |
+    Where-Object { $_.Version } |
+    Select-Object -First 1).Version
+if ([string]::IsNullOrWhiteSpace($projectVersion)) {
+    throw "Версия не найдена в проекте WinUI: $desktopProjectPath"
+}
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $Version = $projectVersion
+}
+if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "Некорректная версия native-пакета: $Version"
+}
+
 $outputCandidate = if ([System.IO.Path]::IsPathRooted($OutputPath)) {
     $OutputPath
 } else {
