@@ -249,6 +249,42 @@ message ForgetMemory {
   string approval_id = 2;
 }
 
+// Installs (or updates, when a manifest with the same name already exists)
+// one bounded capability manifest (evohime_core::capability_registry) into
+// the local catalog. manifest_json is the canonical JSON encoding of a
+// CapabilityManifest and is validated server-side (own field bounds plus
+// validate_registry/validate_update against the existing catalog) before
+// persistence. install_source must be "local_archive": this first wiring
+// pass only supports local-archive manifests -- "https_archive" is rejected
+// because the HTTPS/signature-verifying installer is separate, larger,
+// security-sensitive work that has not been built yet. source_path is the
+// local archive path and is carried through for audit purposes only; this
+// pass does not extract or execute archive contents.
+message InstallCapability {
+  string manifest_json = 1;
+  string install_source = 2;
+  string source_path = 3;
+}
+
+// Lists installed capability manifests (bounded, newest-first).
+message ListCapabilities {
+  uint32 limit = 1;
+}
+
+// Deterministic intent/tool/domain match against the installed catalog; see
+// evohime_core::capability_registry::MatchQuery.
+message MatchCapabilities {
+  string intent = 1;
+  repeated string required_tools = 2;
+  repeated string required_domains = 3;
+  string requested_risk = 4;
+}
+
+// Removes one installed capability manifest by id (manifest name).
+message RemoveCapability {
+  string id = 1;
+}
+
 message CommandEnvelope {
   ProtocolVersion protocol = 1;
   string request_id = 2;
@@ -289,6 +325,10 @@ message CommandEnvelope {
     SearchMemory search_memory = 40;
     ArchiveMemory archive_memory = 41;
     ForgetMemory forget_memory = 42;
+    InstallCapability install_capability = 43;
+    ListCapabilities list_capabilities = 44;
+    MatchCapabilities match_capabilities = 45;
+    RemoveCapability remove_capability = 46;
   }
 }
 

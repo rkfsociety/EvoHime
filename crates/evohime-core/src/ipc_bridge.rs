@@ -559,6 +559,26 @@ impl IpcBridge {
                 self.write_response(writer, "memory.forgotten", result)
                     .await?;
             }
+            Some(generated::command_envelope::Command::InstallCapability(request)) => {
+                let result = self.dispatch_install_capability(request).await?;
+                self.write_response(writer, "capability.installed", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::ListCapabilities(request)) => {
+                let result = self.dispatch_list_capabilities(request).await?;
+                self.write_response(writer, "capability.list", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::MatchCapabilities(request)) => {
+                let result = self.dispatch_match_capabilities(request).await?;
+                self.write_response(writer, "capability.match", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::RemoveCapability(request)) => {
+                let result = self.dispatch_remove_capability(request).await?;
+                self.write_response(writer, "capability.removed", result)
+                    .await?;
+            }
             Some(generated::command_envelope::Command::ResolveApproval(resolve)) => {
                 let approval_id = uuid::Uuid::parse_str(&resolve.approval_id)
                     .map_err(|error| FrameError::Io(format!("invalid approval id: {error}")))?;
@@ -1219,6 +1239,103 @@ impl IpcBridge {
             .dispatch(CoreCommand::ForgetMemory {
                 id: request.id,
                 approval_id: request.approval_id,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_install_capability(
+        &self,
+        request: generated::InstallCapability,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::InstallCapability {
+                manifest_json: request.manifest_json,
+                install_source: request.install_source,
+                source_path: request.source_path,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_list_capabilities(
+        &self,
+        request: generated::ListCapabilities,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::ListCapabilities {
+                limit: request.limit,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_match_capabilities(
+        &self,
+        request: generated::MatchCapabilities,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::MatchCapabilities {
+                intent: request.intent,
+                required_tools: request.required_tools,
+                required_domains: request.required_domains,
+                requested_risk: request.requested_risk,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_remove_capability(
+        &self,
+        request: generated::RemoveCapability,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::RemoveCapability {
+                id: request.id,
                 reply,
             })
             .await
@@ -2023,6 +2140,275 @@ mod tests {
         assert!(records_final
             .iter()
             .all(|record| record["id"] != serde_json::json!(memory_two_id)));
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    fn capability_manifest_json(name: &str, version: &str, risk_class: &str) -> String {
+        serde_json::json!({
+            "name": name,
+            "version": version,
+            "content_hash": "0123456789abcdef0123456789abcdef",
+            "signature": "sig:v1:trusted",
+            "roles": [{
+                "name": "reviewer",
+                "version": "1",
+                "content_hash": "abcdef0123456789abcdef0123456789"
+            }],
+            "skills": [],
+            "allowed_tools": ["filesystem.read", "git.diff"],
+            "allowed_domains": ["docs.example.com"],
+            "protected_paths": ["src"],
+            "risk_class": risk_class,
+            "install": {
+                "source": "local_archive",
+                "allow_install_scripts": false,
+                "allow_update": true,
+                "rollback_on_failure": true
+            }
+        })
+        .to_string()
+    }
+
+    #[tokio::test]
+    async fn capability_install_list_match_remove_round_trip_against_real_storage() {
+        let path =
+            std::env::temp_dir().join(format!("evohime-ipc-capability-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal, coordinator);
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+
+        async fn send(
+            bridge: &IpcBridge,
+            client: &mut tokio::io::DuplexStream,
+            server_reader: &mut (impl tokio::io::AsyncRead + Unpin),
+            server_writer: &mut (impl tokio::io::AsyncWrite + Unpin),
+            request_id: &str,
+            command: generated::command_envelope::Command,
+        ) -> generated::EventEnvelope {
+            let envelope = generated::CommandEnvelope {
+                protocol: Some(protocol()),
+                request_id: request_id.into(),
+                client_id: "capability-client".into(),
+                core_instance_id: String::new(),
+                session_epoch: 1,
+                command: Some(command),
+            };
+            transport::write_frame(client, &envelope.encode_to_vec())
+                .await
+                .expect("request writes");
+            bridge
+                .process_once(server_reader, server_writer)
+                .await
+                .expect("request serves");
+            let response = transport::read_frame(client).await.expect("response reads");
+            generated::EventEnvelope::decode(response.as_slice()).expect("event decodes")
+        }
+
+        // Installing a manifest that declares an unsupported https_archive
+        // install source must be rejected: that installer is out of scope
+        // for this pass.
+        let https_envelope = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "capability-install-https".into(),
+            client_id: "capability-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::InstallCapability(
+                generated::InstallCapability {
+                    manifest_json: capability_manifest_json("reviewer", "1.0.0", "medium"),
+                    install_source: "https_archive".into(),
+                    source_path: String::new(),
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &https_envelope.encode_to_vec())
+            .await
+            .expect("https install request writes");
+        let https_denied = bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await;
+        assert!(
+            https_denied.is_err(),
+            "https_archive install source must be rejected in this pass"
+        );
+
+        // Installing a manifest with a malformed content_hash must be
+        // rejected via the real RegistryError::InvalidHash path.
+        let bad_hash_envelope = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "capability-install-bad-hash".into(),
+            client_id: "capability-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::InstallCapability(
+                generated::InstallCapability {
+                    manifest_json: capability_manifest_json("bad-hash", "1.0.0", "medium")
+                        .replace("0123456789abcdef0123456789abcdef", "not-a-hex-hash"),
+                    install_source: "local_archive".into(),
+                    source_path: String::new(),
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &bad_hash_envelope.encode_to_vec())
+            .await
+            .expect("bad hash install request writes");
+        let bad_hash_denied = bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await;
+        assert!(
+            bad_hash_denied.is_err(),
+            "manifest with a malformed content_hash must be rejected"
+        );
+
+        // Installing a manifest with an invalid risk_class must be rejected
+        // before it ever reaches storage.
+        let bad_risk_envelope = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "capability-install-bad-risk".into(),
+            client_id: "capability-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::InstallCapability(
+                generated::InstallCapability {
+                    manifest_json: capability_manifest_json("bad-risk", "1.0.0", "extreme"),
+                    install_source: "local_archive".into(),
+                    source_path: String::new(),
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &bad_risk_envelope.encode_to_vec())
+            .await
+            .expect("bad risk install request writes");
+        let bad_risk_denied = bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await;
+        assert!(
+            bad_risk_denied.is_err(),
+            "manifest with an invalid risk_class must be rejected"
+        );
+
+        // A valid local-archive manifest installs successfully.
+        let install = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "capability-install-1",
+            generated::command_envelope::Command::InstallCapability(generated::InstallCapability {
+                manifest_json: capability_manifest_json("reviewer", "1.0.0", "medium"),
+                install_source: "local_archive".into(),
+                source_path: "C:/archives/reviewer.zip".into(),
+            }),
+        )
+        .await;
+        assert_eq!(install.event_type, "capability.installed");
+        let installed: serde_json::Value =
+            serde_json::from_slice(&install.payload).expect("install payload is valid json");
+        assert_eq!(installed["manifest"]["name"], serde_json::json!("reviewer"));
+
+        // List returns the installed manifest.
+        let list = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "capability-list-1",
+            generated::command_envelope::Command::ListCapabilities(generated::ListCapabilities {
+                limit: 10,
+            }),
+        )
+        .await;
+        assert_eq!(list.event_type, "capability.list");
+        let listed: serde_json::Value =
+            serde_json::from_slice(&list.payload).expect("list payload is valid json");
+        let manifests = listed["manifests"].as_array().expect("manifests array");
+        assert_eq!(manifests.len(), 1);
+        assert_eq!(manifests[0]["name"], serde_json::json!("reviewer"));
+
+        // Match selects the installed manifest for a fitting query.
+        let matched = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "capability-match-1",
+            generated::command_envelope::Command::MatchCapabilities(generated::MatchCapabilities {
+                intent: "review reviewer".into(),
+                required_tools: vec!["git.diff".into()],
+                required_domains: vec!["docs.example.com".into()],
+                requested_risk: "low".into(),
+            }),
+        )
+        .await;
+        assert_eq!(matched.event_type, "capability.match");
+        let matches: serde_json::Value =
+            serde_json::from_slice(&matched.payload).expect("match payload is valid json");
+        let hits = matches["matches"].as_array().expect("matches array");
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0]["manifest_name"], serde_json::json!("reviewer"));
+
+        // Remove deletes the manifest.
+        let removed = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "capability-remove-1",
+            generated::command_envelope::Command::RemoveCapability(generated::RemoveCapability {
+                id: "reviewer".into(),
+            }),
+        )
+        .await;
+        assert_eq!(removed.event_type, "capability.removed");
+        let removed_payload: serde_json::Value =
+            serde_json::from_slice(&removed.payload).expect("remove payload is valid json");
+        assert_eq!(removed_payload["removed"], serde_json::json!(true));
+
+        // Removing again is rejected: the manifest is already gone.
+        let remove_again_envelope = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "capability-remove-2".into(),
+            client_id: "capability-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::RemoveCapability(
+                generated::RemoveCapability {
+                    id: "reviewer".into(),
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &remove_again_envelope.encode_to_vec())
+            .await
+            .expect("second remove request writes");
+        let remove_again = bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await;
+        assert!(
+            remove_again.is_err(),
+            "removing a manifest that no longer exists must fail"
+        );
+
+        let list_after_remove = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "capability-list-2",
+            generated::command_envelope::Command::ListCapabilities(generated::ListCapabilities {
+                limit: 10,
+            }),
+        )
+        .await;
+        let listed_after: serde_json::Value =
+            serde_json::from_slice(&list_after_remove.payload).expect("list payload is valid json");
+        assert!(listed_after["manifests"]
+            .as_array()
+            .expect("manifests array")
+            .is_empty());
 
         let _ = std::fs::remove_file(path);
     }
