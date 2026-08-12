@@ -1800,7 +1800,7 @@ impl ToolAgent {
         Self {
             gateway,
             tools,
-            max_iterations: 8,
+            max_iterations: 16,
             approvals,
         }
     }
