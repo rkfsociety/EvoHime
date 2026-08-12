@@ -566,6 +566,46 @@ impl DeliveryRequirements {
     }
 }
 
+fn strict_delivery_gate_enabled() -> bool {
+    std::env::var("EVOHIME_DELIVERY_GATE_STRICT")
+        .map(|value| !matches!(value.trim().to_ascii_lowercase().as_str(), "0" | "false" | "off"))
+        .unwrap_or(true)
+}
+
+/// Returns `(verification_check, diff_check)` where `None` means that the
+/// direct invocation is unrelated to that gate. The result is based on the
+/// actual resolved program/arguments and the structured exit status.
+fn classify_shell_verification(
+    arguments: &str,
+    outcome: &recovery::ToolOutcome,
+) -> (Option<bool>, Option<bool>) {
+    let input = serde_json::from_str::<serde_json::Value>(arguments).unwrap_or(serde_json::Value::Null);
+    let Some((program, args, _cwd)) = evohime_tool_runtime::shell::resolve_invocation(&input) else {
+        return (None, None);
+    };
+    let program = program.to_ascii_lowercase();
+    let args = args.iter().map(|arg| arg.to_ascii_lowercase()).collect::<Vec<_>>();
+    let status_ok = outcome.ok
+        && outcome
+            .structured
+            .get("timed_out")
+            .and_then(serde_json::Value::as_bool)
+            != Some(true)
+        && outcome
+            .structured
+            .get("exit_code")
+            .and_then(serde_json::Value::as_i64)
+            == Some(0);
+    let diff_check = program == "git"
+        && args.first().map(String::as_str) == Some("diff")
+        && args.iter().any(|arg| arg == "--check");
+    let verification = matches!(program.as_str(), "cargo" | "dotnet" | "ctest")
+        && args.first().is_some_and(|arg| {
+            matches!(arg.as_str(), "test" | "check" | "build" | "clippy")
+        });
+    (verification.then_some(status_ok), diff_check.then_some(status_ok))
+}
+
 fn delivery_next_step(
     requirements: DeliveryRequirements,
     research_done: bool,
@@ -2463,28 +2503,45 @@ impl ToolAgent {
                         .get("status")
                         .and_then(serde_json::Value::as_str)
                         != Some("nothing_to_commit");
-                if call.name == "shell.execute" && outcome.ok {
+                if call.name == "shell.execute" {
                     let arguments = call.arguments.to_lowercase();
-                    if arguments.contains("diff") && arguments.contains("check") {
-                        diff_check_passed = true;
-                    } else if arguments.contains("test")
+                    let legacy_diff = arguments.contains("diff") && arguments.contains("check");
+                    let legacy_test = arguments.contains("test")
                         || arguments.contains("check")
                         || arguments.contains("build")
-                        || arguments.contains("собер")
-                    {
-                        verification_test_passed = true;
+                        || arguments.contains("собер");
+                    let (actual_test, actual_diff) =
+                        classify_shell_verification(&call.arguments, &outcome);
+                    let strict = strict_delivery_gate_enabled();
+                    let legacy_test_result = legacy_test.then_some(outcome.ok);
+                    let legacy_diff_result = legacy_diff.then_some(outcome.ok);
+                    if legacy_test_result != actual_test || legacy_diff_result != actual_diff {
+                        write_model_trace(
+                            "task.delivery_gate.shadow_difference",
+                            serde_json::json!({
+                                "task_id": task_id,
+                                "tool_name": call.name,
+                                "legacy_test": legacy_test_result,
+                                "actual_test": actual_test,
+                                "legacy_diff_check": legacy_diff_result,
+                                "actual_diff_check": actual_diff,
+                                "strict": strict
+                            }),
+                        );
                     }
-                }
-                if call.name == "shell.execute" && failed {
-                    let arguments = call.arguments.to_lowercase();
-                    if arguments.contains("diff") && arguments.contains("check") {
-                        diff_check_passed = false;
-                    } else if arguments.contains("test")
-                        || arguments.contains("check")
-                        || arguments.contains("build")
-                        || arguments.contains("собер")
-                    {
-                        verification_test_passed = false;
+                    if strict {
+                        if let Some(value) = actual_test {
+                            verification_test_passed = value;
+                        }
+                        if let Some(value) = actual_diff {
+                            diff_check_passed = value;
+                        }
+                    } else {
+                        if legacy_diff {
+                            diff_check_passed = outcome.ok;
+                        } else if legacy_test {
+                            verification_test_passed = outcome.ok;
+                        }
                     }
                 }
                 verification_done = verification_test_passed
@@ -5124,6 +5181,39 @@ mod tests {
         assert!(requirements.verification);
         assert!(requirements.diff_check);
         assert!(requirements.commit);
+    }
+
+    #[test]
+    fn delivery_gate_uses_resolved_command_and_exit_code() {
+        let success = super::recovery::ToolOutcome::success(evohime_tool_runtime::ToolResult {
+            output: String::new(),
+            structured: serde_json::json!({ "exit_code": 0, "timed_out": false }),
+        });
+        let failed = super::recovery::ToolOutcome::success(evohime_tool_runtime::ToolResult {
+            output: String::new(),
+            structured: serde_json::json!({ "exit_code": 1, "timed_out": false }),
+        });
+        assert_eq!(
+            super::classify_shell_verification(
+                r#"{"program":"echo","args":["check"]}"#,
+                &success,
+            ),
+            (None, None)
+        );
+        assert_eq!(
+            super::classify_shell_verification(
+                r#"{"program":"cargo","args":["test","-p","evohime-core"]}"#,
+                &success,
+            ),
+            (Some(true), None)
+        );
+        assert_eq!(
+            super::classify_shell_verification(
+                r#"{"program":"git","args":["diff","--check"]}"#,
+                &failed,
+            ),
+            (None, Some(false))
+        );
     }
 
     #[test]
