@@ -3,7 +3,10 @@ use crate::providers::{
     ChatFuture, ChatMessage, ModelProvider, ProviderError, ProviderKind, ThinkingConfig,
     TokenStream,
 };
-use crate::retry::{compute_backoff, is_retryable_status, parse_retry_after_seconds, RetryPolicy};
+use crate::retry::{
+    classify_rate_limit, compute_backoff, is_retryable_status, parse_retry_after_seconds,
+    RateLimitClass, RetryPolicy,
+};
 use crate::tools::{ChatResult, ChatStreamItem, LlmUsage, NativeToolCall, ToolSpec};
 use async_stream::stream;
 use futures_util::StreamExt;
@@ -147,16 +150,23 @@ impl LiteRouterProvider {
                     let status = response.status();
                     let retry_after = parse_retry_after_seconds(response.headers());
                     let text = response.text().await.unwrap_or_default();
-                    let rate_limited = status == reqwest::StatusCode::FORBIDDEN
-                        && text.to_ascii_lowercase().contains("rate limit");
-                    if (is_retryable_status(status) || rate_limited)
-                        && attempt < self.retry.max_retries
+                    let rate_limit = classify_rate_limit(status, &text);
+                    if matches!(rate_limit, Some(RateLimitClass::Exhausted)) {
+                        return Err(ProviderError::Api(format!(
+                            "{status}: provider quota exhausted: {text}"
+                        )));
+                    }
+                    let rate_limit_retryable = matches!(
+                        rate_limit,
+                        Some(RateLimitClass::Transient | RateLimitClass::Unknown)
+                    );
+                    let rate_limit_cap = matches!(rate_limit, Some(RateLimitClass::Unknown))
+                        .then_some(2)
+                        .unwrap_or(self.retry.max_retries);
+                    if (is_retryable_status(status) || rate_limit_retryable)
+                        && attempt < rate_limit_cap
                     {
-                        let delay = if rate_limited {
-                            Duration::from_secs(5)
-                        } else {
-                            compute_backoff(attempt, &self.retry, retry_after)
-                        };
+                        let delay = compute_backoff(attempt, &self.retry, retry_after);
                         tokio::time::sleep(delay).await;
                         attempt = attempt.saturating_add(1);
                         continue;
@@ -358,14 +368,22 @@ impl ModelProvider for LiteRouterProvider {
         let tools = tools.to_vec();
 
         Box::pin(async move {
-            let response = provider
-                .send_chat_request(&model, &request_messages, Some(&tools), false)
-                .await?;
-            let payload: CompletionResponse = response
-                .json()
-                .await
-                .map_err(|error| ProviderError::Api(error.to_string()))?;
-            Ok(payload.into_chat_result())
+            let mut attempt = 0;
+            loop {
+                let response = provider
+                    .send_chat_request(&model, &request_messages, Some(&tools), false)
+                    .await?;
+                match response.json::<CompletionResponse>().await {
+                    Ok(payload) => return Ok(payload.into_chat_result()),
+                    Err(error) if attempt < provider.retry.max_retries => {
+                        let delay = compute_backoff(attempt, &provider.retry, None);
+                        tokio::time::sleep(delay).await;
+                        attempt = attempt.saturating_add(1);
+                        let _ = error;
+                    }
+                    Err(error) => return Err(ProviderError::Api(error.to_string())),
+                }
+            }
         })
     }
 }

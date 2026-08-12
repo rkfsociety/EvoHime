@@ -19,6 +19,40 @@ pub struct RetryPolicy {
     pub max_delay: Duration,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RateLimitClass {
+    Transient,
+    Exhausted,
+    Unknown,
+}
+
+pub fn classify_rate_limit(status: StatusCode, body: &str) -> Option<RateLimitClass> {
+    let lower = body.to_ascii_lowercase();
+    let rate_limited = status == StatusCode::TOO_MANY_REQUESTS
+        || (status == StatusCode::FORBIDDEN && lower.contains("rate limit"));
+    if !rate_limited {
+        return None;
+    }
+    if [
+        "quota exceeded",
+        "quota_exceeded",
+        "daily limit",
+        "monthly limit",
+        "hourly limit",
+        "limit exceeded",
+        "billing",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker))
+    {
+        Some(RateLimitClass::Exhausted)
+    } else if lower.contains("retry") || lower.contains("temporar") {
+        Some(RateLimitClass::Transient)
+    } else {
+        Some(RateLimitClass::Unknown)
+    }
+}
+
 impl RetryPolicy {
     pub fn from_env() -> Self {
         Self {
@@ -109,6 +143,22 @@ mod tests {
         assert!(is_retryable_status(StatusCode::GATEWAY_TIMEOUT));
         assert!(!is_retryable_status(StatusCode::BAD_REQUEST));
         assert!(!is_retryable_status(StatusCode::UNAUTHORIZED));
+    }
+
+    #[test]
+    fn classifies_quota_and_ambiguous_rate_limits() {
+        assert_eq!(
+            classify_rate_limit(StatusCode::TOO_MANY_REQUESTS, "quota exceeded"),
+            Some(RateLimitClass::Exhausted)
+        );
+        assert_eq!(
+            classify_rate_limit(StatusCode::FORBIDDEN, "temporary rate limit; retry later"),
+            Some(RateLimitClass::Transient)
+        );
+        assert_eq!(
+            classify_rate_limit(StatusCode::TOO_MANY_REQUESTS, "rate limit"),
+            Some(RateLimitClass::Unknown)
+        );
     }
 
     #[test]
