@@ -7,7 +7,21 @@ use std::{
 const TEXT_EXTENSIONS: &[&str] = &[
     "cs", "json", "md", "proto", "ps1", "rs", "toml", "txt", "xaml", "yaml", "yml",
 ];
-const IGNORED_DIRECTORIES: &[&str] = &[".git", "target", "bin", "obj"];
+const IGNORED_DIRECTORIES: &[&str] = &[
+    ".git",
+    ".evohime",
+    ".evohime-native",
+    ".launcher-logs",
+    "artifacts",
+    "bin",
+    "build",
+    "dist",
+    "node_modules",
+    "obj",
+    "target",
+];
+pub const MAX_LIST_ENTRIES: usize = 200;
+pub const MAX_READ_BYTES: usize = 512 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ManifestEntry {
@@ -30,6 +44,147 @@ pub struct ContextInput<'a> {
     pub acceptance_criteria: &'a str,
     pub non_goals: &'a str,
     pub references: &'a [String],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WorkspaceEntry {
+    pub name: String,
+    pub relative_path: String,
+    pub directory: bool,
+    pub bytes: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct WorkspaceListing {
+    pub path: String,
+    pub entries: Vec<WorkspaceEntry>,
+    pub truncated: bool,
+}
+
+pub fn list_directory(
+    root: impl AsRef<Path>,
+    relative_path: &str,
+    max_entries: usize,
+) -> std::io::Result<WorkspaceListing> {
+    if max_entries == 0 || max_entries > MAX_LIST_ENTRIES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("workspace listing limit must be between 1 and {MAX_LIST_ENTRIES}"),
+        ));
+    }
+    let root = root.as_ref().canonicalize()?;
+    let directory = resolve_inside(&root, relative_path)?;
+    if !directory.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "workspace path is not a directory",
+        ));
+    }
+
+    let mut entries: Vec<WorkspaceEntry> = fs::read_dir(&directory)?
+        .map(|entry| {
+            let entry = entry?;
+            if is_ignored_directory(&entry) {
+                return Ok(None);
+            }
+            let path = entry.path();
+            let metadata = entry.metadata()?;
+            let relative_path = path
+                .strip_prefix(&root)
+                .expect("workspace entry is inside root")
+                .to_string_lossy()
+                .replace('\\', "/");
+            Ok(Some(WorkspaceEntry {
+                name: entry.file_name().to_string_lossy().into_owned(),
+                relative_path,
+                directory: metadata.is_dir(),
+                bytes: metadata.is_file().then_some(metadata.len() as usize),
+            }))
+        })
+        .collect::<std::io::Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect();
+    entries.sort_by(|left, right| {
+        right.directory.cmp(&left.directory).then_with(|| {
+            left.name
+                .to_ascii_lowercase()
+                .cmp(&right.name.to_ascii_lowercase())
+        })
+    });
+    let truncated = entries.len() > max_entries;
+    entries.truncate(max_entries);
+
+    Ok(WorkspaceListing {
+        path: normalize_relative_path(relative_path),
+        entries,
+        truncated,
+    })
+}
+
+pub fn read_text_file(
+    root: impl AsRef<Path>,
+    relative_path: &str,
+    max_bytes: usize,
+) -> std::io::Result<String> {
+    if max_bytes == 0 || max_bytes > MAX_READ_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("workspace read limit must be between 1 and {MAX_READ_BYTES}"),
+        ));
+    }
+    let root = root.as_ref().canonicalize()?;
+    let path = resolve_inside(&root, relative_path)?;
+    if !path.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "workspace path is not a file",
+        ));
+    }
+    let content = fs::read(&path)?;
+    if content.len() > max_bytes {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "workspace file exceeds the read limit",
+        ));
+    }
+    String::from_utf8(content)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.utf8_error()))
+}
+
+fn resolve_inside(root: &Path, relative_path: &str) -> std::io::Result<PathBuf> {
+    let candidate = root.join(relative_path);
+    let resolved = candidate.canonicalize()?;
+    if resolved.starts_with(root) {
+        Ok(resolved)
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "workspace path escapes the selected workspace",
+        ))
+    }
+}
+
+fn normalize_relative_path(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    if normalized.is_empty() {
+        ".".to_string()
+    } else {
+        normalized
+    }
+}
+
+fn is_ignored_directory(entry: &fs::DirEntry) -> bool {
+    entry
+        .file_type()
+        .map(|kind| {
+            kind.is_dir()
+                && entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| IGNORED_DIRECTORIES.contains(&name))
+        })
+        .unwrap_or(false)
 }
 
 pub fn build_manifest(
@@ -136,7 +291,10 @@ pub fn content_hash(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{assemble_context, build_manifest, ContextInput};
+    use super::{
+        assemble_context, build_manifest, list_directory, read_text_file, ContextInput,
+        MAX_LIST_ENTRIES, MAX_READ_BYTES,
+    };
     use std::{fs, path::PathBuf};
 
     fn temp_root(name: &str) -> PathBuf {
@@ -187,5 +345,65 @@ mod tests {
         );
         assert!(context.len() <= 80);
         assert!(context.contains("## Task"));
+    }
+
+    #[test]
+    fn lists_directories_before_files_and_ignores_build_output() {
+        let root = temp_root("listing");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(root.join("target")).unwrap();
+        fs::create_dir_all(root.join(".evohime-native")).unwrap();
+        fs::write(root.join("README.md"), "readme").unwrap();
+        fs::write(root.join("src/main.rs"), "fn main() {}").unwrap();
+
+        let listing = list_directory(&root, ".", 20).unwrap();
+
+        assert_eq!(listing.path, ".");
+        assert_eq!(
+            listing
+                .entries
+                .iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>(),
+            ["src", "README.md"]
+        );
+        assert!(!listing.truncated);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn listing_reports_truncation_and_rejects_escape() {
+        let root = temp_root("listing-bounds");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("a.txt"), "a").unwrap();
+        fs::write(root.join("b.txt"), "b").unwrap();
+
+        let listing = list_directory(&root, ".", 1).unwrap();
+        assert_eq!(listing.entries.len(), 1);
+        assert!(listing.truncated);
+        assert!(list_directory(&root, ".", MAX_LIST_ENTRIES + 1).is_err());
+        assert!(list_directory(&root, "..", 10).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn reads_bounded_utf8_file_and_rejects_binary_or_oversized_input() {
+        let root = temp_root("read");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("note.txt"), "hello\nworld").unwrap();
+        fs::write(root.join("binary.dat"), [0, 159, 146, 150]).unwrap();
+
+        assert_eq!(
+            read_text_file(&root, "note.txt", 100).unwrap(),
+            "hello\nworld"
+        );
+        assert!(read_text_file(&root, "note.txt", 5).is_err());
+        assert!(read_text_file(&root, "note.txt", MAX_READ_BYTES + 1).is_err());
+        assert!(read_text_file(&root, "binary.dat", 100).is_err());
+        assert!(read_text_file(&root, "../note.txt", 100).is_err());
+        fs::remove_dir_all(root).unwrap();
     }
 }

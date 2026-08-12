@@ -48,6 +48,18 @@ public sealed class CoreIpcClient
         CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.StartTask(taskId, prompt, workspacePath), cancellationToken);
 
+    public Task RequestWorkspaceListAsync(
+        string workspacePath,
+        string relativePath,
+        CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.ListWorkspace(workspacePath, relativePath), cancellationToken);
+
+    public Task RequestWorkspaceFileAsync(
+        string workspacePath,
+        string relativePath,
+        CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.ReadWorkspaceFile(workspacePath, relativePath), cancellationToken);
+
     public Task StopTaskAsync(string taskId, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.StopTask(taskId), cancellationToken);
 

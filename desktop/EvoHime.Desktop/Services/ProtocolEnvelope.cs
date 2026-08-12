@@ -147,6 +147,22 @@ public static class ProtocolEnvelope
         }
     });
 
+    public static byte[] ListWorkspace(string workspacePath, string relativePath = ".", uint maxEntries = 200) => TaskCommand(52, output =>
+    {
+        WriteString(output, 1, workspacePath);
+        WriteString(output, 2, relativePath);
+        output.WriteTag(3, WireFormat.WireType.Varint);
+        output.WriteUInt32(maxEntries);
+    });
+
+    public static byte[] ReadWorkspaceFile(string workspacePath, string relativePath, uint maxBytes = 512 * 1024) => TaskCommand(53, output =>
+    {
+        WriteString(output, 1, workspacePath);
+        WriteString(output, 2, relativePath);
+        output.WriteTag(3, WireFormat.WireType.Varint);
+        output.WriteUInt32(maxBytes);
+    });
+
     public static byte[] UpdateTaskStatus(string taskId, long expectedVersion, string status) => TaskCommand(20, output =>
     {
         output.WriteTag(1, WireFormat.WireType.LengthDelimited);

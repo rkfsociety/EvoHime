@@ -3,10 +3,10 @@
     <TargetFramework>net10.0</TargetFramework>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <Version>0.0.0001</Version>
-    <AssemblyVersion>0.0.0.1</AssemblyVersion>
-    <FileVersion>0.0.0.1</FileVersion>
-    <InformationalVersion>0.0.0001</InformationalVersion>
+    <Version>0.0.000032</Version>
+    <AssemblyVersion>0.0.0.32</AssemblyVersion>
+    <FileVersion>0.0.0.32</FileVersion>
+    <InformationalVersion>0.0.000032</InformationalVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
@@ -26,5 +26,6 @@
     <Compile Include="..\EvoHime.Desktop\Services\TrayIconService.cs" Link="Services\TrayIconService.cs" />
     <Compile Include="..\EvoHime.Desktop\Services\UpdateService.cs" Link="Services\UpdateService.cs" />
     <Compile Include="..\EvoHime.Desktop\Services\WorkspaceSettings.cs" Link="Services\WorkspaceSettings.cs" />
+    <Compile Include="..\EvoHime.Desktop\Services\ProjectCatalogService.cs" Link="Services\ProjectCatalogService.cs" />
   </ItemGroup>
 </Project>

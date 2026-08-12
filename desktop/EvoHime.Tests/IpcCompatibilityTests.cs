@@ -94,6 +94,48 @@ public sealed class IpcCompatibilityTests
     }
 
     [TestMethod]
+    public void WorkspaceBrowseEnvelopesUseStableCommandFields()
+    {
+        AssertWorkspaceCommand(ProtocolEnvelope.ListWorkspace("C:\\Projects\\demo", "src", 25), 52, "C:\\Projects\\demo", "src", 25);
+        AssertWorkspaceCommand(ProtocolEnvelope.ReadWorkspaceFile("C:\\Projects\\demo", "README.md", 4096), 53, "C:\\Projects\\demo", "README.md", 4096);
+    }
+
+    private static void AssertWorkspaceCommand(byte[] payload, int commandField, string workspacePath, string relativePath, uint bound)
+    {
+        using var input = new CodedInputStream(payload);
+        var nested = Array.Empty<byte>();
+        while (!input.IsAtEnd)
+        {
+            var tag = input.ReadTag();
+            if ((tag >> 3) == commandField)
+            {
+                nested = input.ReadBytes().ToByteArray();
+                break;
+            }
+            input.SkipLastField();
+        }
+
+        using var command = new CodedInputStream(nested);
+        var values = new Dictionary<int, string>();
+        uint actualBound = 0;
+        while (!command.IsAtEnd)
+        {
+            var tag = command.ReadTag();
+            switch (tag >> 3)
+            {
+                case 1: values[1] = command.ReadString(); break;
+                case 2: values[2] = command.ReadString(); break;
+                case 3: actualBound = command.ReadUInt32(); break;
+                default: command.SkipLastField(); break;
+            }
+        }
+
+        Assert.AreEqual(workspacePath, values[1]);
+        Assert.AreEqual(relativePath, values[2]);
+        Assert.AreEqual(bound, actualBound);
+    }
+
+    [TestMethod]
     public void ResolveApprovalEnvelopeCarriesDecision()
     {
         var payload = ProtocolEnvelope.ResolveApproval("approval-1", true);
@@ -265,7 +307,7 @@ public sealed class IpcCompatibilityTests
         {
             var service = new ProjectCatalogService(catalogPath);
             var catalog = service.Load();
-            var project = service.EnsureProject(catalog, Path.Combine(root, "Demo"));
+            var project = service.EnsureProject(catalog, Path.Combine(root, "Demo"))!;
             var chat = service.AddChat(project, "Проверить проект");
             service.Save(catalog);
 

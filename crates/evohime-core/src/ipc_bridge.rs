@@ -518,6 +518,45 @@ impl IpcBridge {
                         .map_err(|error| FrameError::Io(error.to_string()))?;
                 }
             }
+            Some(generated::command_envelope::Command::ListWorkspace(request)) => {
+                let listing = crate::workspace::list_directory(
+                    request.workspace_path,
+                    if request.relative_path.is_empty() {
+                        "."
+                    } else {
+                        &request.relative_path
+                    },
+                    if request.max_entries == 0 {
+                        crate::workspace::MAX_LIST_ENTRIES
+                    } else {
+                        request.max_entries as usize
+                    },
+                )
+                .map_err(|error| FrameError::Io(error.to_string()))?;
+                let payload = serde_json::to_vec(&listing)
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                self.write_response(writer, "workspace.list", payload)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::ReadWorkspaceFile(request)) => {
+                let content = crate::workspace::read_text_file(
+                    request.workspace_path,
+                    &request.relative_path,
+                    if request.max_bytes == 0 {
+                        crate::workspace::MAX_READ_BYTES
+                    } else {
+                        request.max_bytes as usize
+                    },
+                )
+                .map_err(|error| FrameError::Io(error.to_string()))?;
+                let payload = serde_json::to_vec(&serde_json::json!({
+                    "path": request.relative_path,
+                    "content": content,
+                }))
+                .map_err(|error| FrameError::Io(error.to_string()))?;
+                self.write_response(writer, "workspace.file", payload)
+                    .await?;
+            }
             Some(generated::command_envelope::Command::RunDoctor(request)) => {
                 let result = self
                     .dispatch_run_doctor(request.project_id, command.protocol.clone())
@@ -1635,6 +1674,88 @@ mod tests {
             .expect("payload utf8")
             .contains("replayed"));
         let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn serves_bounded_workspace_list_and_file_read_over_ipc() {
+        let root =
+            std::env::temp_dir().join(format!("evohime-ipc-workspace-root-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("src")).expect("src directory");
+        std::fs::write(root.join("README.md"), "hello from workspace").expect("readme");
+        let journal_path =
+            std::env::temp_dir().join(format!("evohime-ipc-workspace-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&journal_path);
+        let bridge = IpcBridge::new(EventJournal::open(&journal_path).expect("journal opens"));
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+
+        let list = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "workspace-list".into(),
+            client_id: "test-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::ListWorkspace(
+                generated::ListWorkspace {
+                    workspace_path: root.display().to_string(),
+                    relative_path: ".".into(),
+                    max_entries: 10,
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &list.encode_to_vec())
+            .await
+            .expect("list writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("list serves");
+        let response = generated::EventEnvelope::decode(
+            transport::read_frame(&mut client)
+                .await
+                .expect("list reads")
+                .as_slice(),
+        )
+        .expect("list event decodes");
+        assert_eq!(response.event_type, "workspace.list");
+        let listing: serde_json::Value =
+            serde_json::from_slice(&response.payload).expect("list json");
+        assert_eq!(listing["entries"][0]["name"], "src");
+
+        let read = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "workspace-read".into(),
+            client_id: "test-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::ReadWorkspaceFile(
+                generated::ReadWorkspaceFile {
+                    workspace_path: root.display().to_string(),
+                    relative_path: "README.md".into(),
+                    max_bytes: 100,
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &read.encode_to_vec())
+            .await
+            .expect("read writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("read serves");
+        let response = generated::EventEnvelope::decode(
+            transport::read_frame(&mut client)
+                .await
+                .expect("read response")
+                .as_slice(),
+        )
+        .expect("read event decodes");
+        assert_eq!(response.event_type, "workspace.file");
+        let file: serde_json::Value = serde_json::from_slice(&response.payload).expect("file json");
+        assert_eq!(file["content"], "hello from workspace");
+        let _ = std::fs::remove_dir_all(root);
+        let _ = std::fs::remove_file(journal_path);
     }
 
     #[tokio::test]

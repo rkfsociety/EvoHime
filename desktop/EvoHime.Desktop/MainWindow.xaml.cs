@@ -61,6 +61,11 @@ public partial class MainWindow : Window
     private Grid? _scheduledView;
     private Grid? _pluginsView;
     private Grid? _tasksView;
+    private Grid? _filesView;
+    private StackPanel? _filesList;
+    private TextBox? _filePreview;
+    private TextBlock? _filesPathText;
+    private string _filesRelativePath = ".";
     private StackPanel? _taskList;
     private TextBlock? _taskWorkspaceStatus;
     private TaskGraphDto? _lastTaskGraph;
@@ -592,6 +597,10 @@ public partial class MainWindow : Window
         Grid.SetColumn(_tasksView, 1);
         _tasksView.Visibility = Visibility.Collapsed;
         root.Children.Add(_tasksView);
+        _filesView = BuildFilesView();
+        Grid.SetColumn(_filesView, 1);
+        _filesView.Visibility = Visibility.Collapsed;
+        root.Children.Add(_filesView);
         _pluginsView = BuildPluginsView();
         Grid.SetColumn(_pluginsView, 1);
         _pluginsView.Visibility = Visibility.Collapsed;
@@ -776,6 +785,9 @@ public partial class MainWindow : Window
             case "Задачи":
                 ShowTasksView();
                 break;
+            case "Файлы":
+                ShowFilesView();
+                break;
             case "Запланировано":
                 ShowScheduledView();
                 break;
@@ -797,6 +809,7 @@ public partial class MainWindow : Window
         if (_settingsView is not null) _settingsView.Visibility = Visibility.Collapsed;
         if (_scheduledView is not null) _scheduledView.Visibility = Visibility.Collapsed;
         if (_tasksView is not null) _tasksView.Visibility = Visibility.Collapsed;
+        if (_filesView is not null) _filesView.Visibility = Visibility.Collapsed;
         if (_pluginsView is not null) _pluginsView.Visibility = Visibility.Collapsed;
     }
 
@@ -815,6 +828,206 @@ public partial class MainWindow : Window
             _ = LoadTaskWorkspaceAsync();
         }
     }
+
+    private void ShowFilesView()
+    {
+        HideShellViews();
+        if (_filesView is not null)
+        {
+            _filesView.Visibility = Visibility.Visible;
+            _ = LoadFilesAsync(_filesRelativePath);
+        }
+    }
+
+    private Grid BuildFilesView()
+    {
+        var view = BuildShellPage("Файлы", "Безопасный просмотр текущего workspace через Core.");
+        var content = new Grid { ColumnSpacing = 14 };
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(300) });
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var browser = new Grid { RowSpacing = 8 };
+        browser.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        browser.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        var toolbar = new Grid { ColumnSpacing = 8 };
+        toolbar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        toolbar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        _filesPathText = new TextBlock { Text = ".", Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157), TextTrimming = TextTrimming.CharacterEllipsis };
+        toolbar.Children.Add(_filesPathText);
+        var refresh = new Button { Content = "Обновить" };
+        refresh.Click += (_, _) => _ = LoadFilesAsync(_filesRelativePath);
+        Grid.SetColumn(refresh, 1);
+        toolbar.Children.Add(refresh);
+        browser.Children.Add(toolbar);
+        _filesList = new StackPanel { Spacing = 4 };
+        var filesScroll = new ScrollViewer { Content = _filesList, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Grid.SetRow(filesScroll, 1);
+        browser.Children.Add(filesScroll);
+        Grid.SetColumn(browser, 0);
+        content.Children.Add(browser);
+
+        _filePreview = new TextBox
+        {
+            IsReadOnly = true,
+            TextWrapping = TextWrapping.Wrap,
+            AcceptsReturn = true,
+            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Cascadia Mono"),
+            Foreground = ThemeBrush("TextBrush", 247, 244, 245),
+            Background = ThemeBrush("SurfaceRaisedBrush", 23, 28, 37),
+            Padding = new Thickness(14),
+            PlaceholderText = "Выберите текстовый файл",
+        };
+        var previewScroll = new ScrollViewer
+        {
+            Content = _filePreview,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+        Grid.SetColumn(previewScroll, 1);
+        content.Children.Add(previewScroll);
+        Grid.SetRow(content, 1);
+        view.Children.Add(content);
+        return view;
+    }
+
+    private async Task LoadFilesAsync(string relativePath)
+    {
+        if (_filesList is null || _filesPathText is null)
+        {
+            return;
+        }
+
+        var workspacePath = _state.WorkspacePath ?? Environment.CurrentDirectory;
+        _filesRelativePath = string.IsNullOrWhiteSpace(relativePath) ? "." : relativePath.Replace('\\', '/');
+        _filesPathText.Text = _filesRelativePath;
+        _filesList.Children.Clear();
+        _filesList.Children.Add(new TextBlock { Text = "Загружаю список…", Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157) });
+        try
+        {
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                if (!_ipc.IsConnected)
+                {
+                    await ConnectToCoreWithRetryAsync(timeout.Token);
+                }
+                await _ipc.RequestWorkspaceListAsync(workspacePath, _filesRelativePath, timeout.Token);
+                var response = await _ipc.ReadEventAsync(timeout.Token);
+                if (response.EventType != "workspace.list")
+                {
+                    throw new InvalidOperationException($"Core вернул {response.EventType} вместо workspace.list.");
+                }
+
+                var listing = JsonSerializer.Deserialize<WorkspaceListingDto>(response.Payload)
+                    ?? throw new InvalidOperationException("Core вернул пустой список workspace.");
+                _filesList.Children.Clear();
+                if (_filesRelativePath != ".")
+                {
+                    var back = new Button { Content = "←  Вверх", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left };
+                    back.Click += (_, _) => _ = LoadFilesAsync(ParentWorkspacePath(_filesRelativePath));
+                    _filesList.Children.Add(back);
+                }
+                foreach (var entry in listing.Entries)
+                {
+                    var button = new Button
+                    {
+                        Content = entry.Directory ? $"▸  {entry.Name}" : $"▱  {entry.Name}",
+                        Tag = entry,
+                        HorizontalAlignment = HorizontalAlignment.Stretch,
+                        HorizontalContentAlignment = HorizontalAlignment.Left,
+                    };
+                    button.Click += (_, _) =>
+                    {
+                        if (button.Tag is WorkspaceEntryDto selected)
+                        {
+                            if (selected.Directory)
+                            {
+                                _ = LoadFilesAsync(selected.RelativePath);
+                            }
+                            else
+                            {
+                                _ = LoadFileAsync(selected.RelativePath);
+                            }
+                        }
+                    };
+                    _filesList.Children.Add(button);
+                }
+                if (listing.Entries.Count == 0)
+                {
+                    _filesList.Children.Add(new TextBlock { Text = "Каталог пуст.", Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157) });
+                }
+                if (listing.Truncated)
+                {
+                    _filesList.Children.Add(new TextBlock { Text = "Список ограничен лимитом Core.", Foreground = ThemeBrush("MutedTextBrush", 143, 146, 157), TextWrapping = TextWrapping.Wrap });
+                }
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+        }
+        catch (Exception error)
+        {
+            _filesList.Children.Clear();
+            _filesList.Children.Add(new TextBlock { Text = $"Не удалось получить список: {error.Message}", Foreground = ThemeBrush("ErrorBrush", 255, 120, 130), TextWrapping = TextWrapping.Wrap });
+        }
+    }
+
+    private async Task LoadFileAsync(string relativePath)
+    {
+        if (_filePreview is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                if (!_ipc.IsConnected)
+                {
+                    await ConnectToCoreWithRetryAsync(timeout.Token);
+                }
+                await _ipc.RequestWorkspaceFileAsync(_state.WorkspacePath ?? Environment.CurrentDirectory, relativePath, timeout.Token);
+                var response = await _ipc.ReadEventAsync(timeout.Token);
+                if (response.EventType != "workspace.file")
+                {
+                    throw new InvalidOperationException($"Core вернул {response.EventType} вместо workspace.file.");
+                }
+                using var json = JsonDocument.Parse(response.Payload);
+                _filePreview.Text = json.RootElement.GetProperty("content").GetString() ?? string.Empty;
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+        }
+        catch (Exception error)
+        {
+            _filePreview.Text = $"Не удалось прочитать файл: {error.Message}";
+        }
+    }
+
+    private static string ParentWorkspacePath(string path)
+    {
+        var normalized = path.Replace('\\', '/').TrimEnd('/');
+        var separator = normalized.LastIndexOf('/');
+        return separator <= 0 ? "." : normalized[..separator];
+    }
+
+    private sealed record WorkspaceListingDto(
+        [property: JsonPropertyName("path")] string Path,
+        [property: JsonPropertyName("entries")] List<WorkspaceEntryDto> Entries,
+        [property: JsonPropertyName("truncated")] bool Truncated);
+
+    private sealed record WorkspaceEntryDto(
+        [property: JsonPropertyName("name")] string Name,
+        [property: JsonPropertyName("relative_path")] string RelativePath,
+        [property: JsonPropertyName("directory")] bool Directory,
+        [property: JsonPropertyName("bytes")] int? Bytes);
 
     private void ShowPluginsView()
     {

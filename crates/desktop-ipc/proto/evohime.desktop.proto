@@ -161,6 +161,19 @@ message StartTask {
   string workspace_path = 3;
 }
 
+// Bounded read-only workspace browsing for the native Files surface.
+message ListWorkspace {
+  string workspace_path = 1;
+  string relative_path = 2;
+  uint32 max_entries = 3;
+}
+
+message ReadWorkspaceFile {
+  string workspace_path = 1;
+  string relative_path = 2;
+  uint32 max_bytes = 3;
+}
+
 message StopTask {
   string task_id = 1;
 }
@@ -421,6 +434,8 @@ message CommandEnvelope {
     SubmitChildRequest submit_child_request = 49;
     SubmitChildReport submit_child_report = 50;
     RunResearchFetch run_research_fetch = 51;
+    ListWorkspace list_workspace = 52;
+    ReadWorkspaceFile read_workspace_file = 53;
   }
 }
 
