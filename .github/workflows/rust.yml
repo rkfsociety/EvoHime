@@ -43,6 +43,12 @@ jobs:
       - name: Test package manifest and idempotent staging
         shell: pwsh
         run: ./scripts/native-package.tests.ps1
+      - name: Test release version, workflow and retention contracts
+        shell: pwsh
+        run: |
+          ./scripts/version.tests.ps1
+          ./scripts/native-workflow.tests.ps1
+          ./scripts/github-retention.tests.ps1
       - name: Restore WinUI shell
         shell: pwsh
         run: dotnet restore desktop/EvoHime.Tests/EvoHime.Tests.csproj --nologo

@@ -38,11 +38,22 @@ UI не обращается к workspace, SQLite или model provider напр
 # Сборка переносимого native-пакета
 .\scripts\build-windows-native.ps1
 
-# Smoke manifest и идемпотентность staging
-& (Join-Path $PSHOME 'pwsh.exe') -NoProfile -File scripts\native-package.tests.ps1
+# Запуск без терминала (double-click): debug-сборка пакета и старт UI
+.\start-agent.cmd
 
-# WinUI tests
+# Разовый прогон одной задачи через консольный режим Core
+.\scripts\test-agent.ps1 -Prompt 'проверь репозиторий'
+
+# Smoke-тесты packaging, версии, workflow и release retention
+$pwsh = Join-Path $PSHOME 'pwsh.exe'
+& $pwsh -NoProfile -File scripts\native-package.tests.ps1
+& $pwsh -NoProfile -File scripts\version.tests.ps1
+& $pwsh -NoProfile -File scripts\native-workflow.tests.ps1
+& $pwsh -NoProfile -File scripts\github-retention.tests.ps1
+
+# WinUI tests (CI прогоняет headless-зеркало EvoHime.IpcTests)
 & 'C:\Program Files\dotnet\dotnet.exe' test desktop\EvoHime.Tests\EvoHime.Tests.csproj -p:Platform=x64
+& 'C:\Program Files\dotnet\dotnet.exe' test desktop\EvoHime.IpcTests\EvoHime.IpcTests.csproj
 
 # Rust native foundation
 cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc
@@ -87,7 +98,10 @@ NuGet и crates.io — независимые источники: успешны
 
 ## Документы
 
-- `docs/architecture.md` — архитектура;
+- `docs/README.md` — карта документации и правило источника истины;
+- `docs/architecture.md` — архитектура, runtime, IPC и упаковка;
+- `docs/current-state.md` — подтверждённое состояние checkout;
 - `docs/development-plan.md` — актуальный implementation plan;
-- `docs/plans/` — рабочие планы и результаты их ревью;
-- `docs/architecture.md` — deployment/runtime overview.
+- `docs/roadmap.md` — долгосрочные направления без деталей реализации;
+- `docs/features/`, `docs/providers/`, `docs/security/` — справочные разделы;
+- `docs/plans/` — рабочие планы и результаты их ревью.

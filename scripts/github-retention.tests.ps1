@@ -10,7 +10,7 @@ foreach ($required in @(
     'cleanup-github-releases.ps1',
     'KeepCount',
     '--cleanup-tag',
-    'refs/tags/v'
+    'git/refs/tags/'
 )) {
     if ($workflow -notmatch [regex]::Escape($required) -and $cleanup -notmatch [regex]::Escape($required)) {
         throw "Retention configuration is missing: $required"
