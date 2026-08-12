@@ -83,6 +83,8 @@ pub struct MemoryRecord {
     pub expires_at: Option<String>,
     pub archived: bool,
     pub forgotten: bool,
+    pub confirmations: i64,
+    pub lesson_key: Option<String>,
 }
 
 impl MemoryRecord {
@@ -109,6 +111,8 @@ impl MemoryRecord {
             expires_at,
             archived: false,
             forgotten: false,
+            confirmations: 1,
+            lesson_key: None,
         };
         record.validate()?;
         Ok(record)
@@ -182,22 +186,30 @@ pub struct MemoryStoreSql;
 impl MemoryStoreSql {
     pub const INSERT: &'static str = "INSERT INTO memory_entries
         (id, scope_kind, scope_id, title, content, provenance, privacy,
-         created_at, expires_at, archived, forgotten)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)";
+         created_at, expires_at, archived, forgotten, confirmations, lesson_key)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)";
     pub const SELECT_BY_ID: &'static str = "SELECT id, scope_kind, scope_id,
         title, content, provenance, privacy, created_at, expires_at,
-        archived, forgotten FROM memory_entries WHERE id = ?1";
+        archived, forgotten, confirmations, lesson_key FROM memory_entries WHERE id = ?1";
     pub const SEARCH: &'static str = "SELECT id, scope_kind, scope_id,
         title, content, provenance, privacy, created_at, expires_at,
-        archived, forgotten FROM memory_entries
+        archived, forgotten, confirmations, lesson_key FROM memory_entries
         WHERE scope_kind = ?1 AND scope_id = ?2
           AND forgotten = 0 AND archived = 0
           AND (expires_at IS NULL OR expires_at > ?3)
           AND (lower(title) LIKE lower(?4) OR lower(content) LIKE lower(?4))
         ORDER BY id ASC LIMIT ?5";
+    pub const SEARCH_LESSONS: &'static str = "SELECT id, scope_kind, scope_id,
+        title, content, provenance, privacy, created_at, expires_at,
+        archived, forgotten, confirmations, lesson_key FROM memory_entries
+        WHERE scope_kind = ?1 AND scope_id = ?2
+          AND forgotten = 0 AND archived = 0 AND lesson_key IS NOT NULL
+          AND (expires_at IS NULL OR expires_at > ?3)
+          AND (lower(title) LIKE lower(?4) OR lower(content) LIKE lower(?4))
+        ORDER BY confirmations DESC, created_at DESC, id ASC LIMIT ?5";
     pub const LIST: &'static str = "SELECT id, scope_kind, scope_id,
         title, content, provenance, privacy, created_at, expires_at,
-        archived, forgotten FROM memory_entries
+        archived, forgotten, confirmations, lesson_key FROM memory_entries
         WHERE scope_kind = ?1 AND scope_id = ?2
           AND forgotten = 0
           AND (?3 = 1 OR archived = 0)
@@ -223,9 +235,48 @@ impl MemoryStoreSql {
                 record.expires_at,
                 record.archived as i64,
                 record.forgotten as i64,
+                record.confirmations,
+                record.lesson_key,
             ],
         )?;
         Ok(())
+    }
+
+    pub fn upsert_lesson(
+        connection: &Connection,
+        record: &MemoryRecord,
+    ) -> Result<MemoryRecord, MemoryStoreError> {
+        record.validate()?;
+        let Some(lesson_key) = record.lesson_key.as_deref() else {
+            Self::insert(connection, record)?;
+            return Ok(record.clone());
+        };
+        let existing_id: Option<String> = connection
+            .query_row(
+                "SELECT id FROM memory_entries WHERE scope_kind = ?1 AND scope_id = ?2 AND lesson_key = ?3 AND forgotten = 0 LIMIT 1",
+                params![record.scope.as_str(), record.scope_id, lesson_key],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(id) = existing_id {
+            connection.execute(
+                "UPDATE memory_entries SET confirmations = confirmations + 1, created_at = ?2, expires_at = ?3 WHERE id = ?1",
+                params![id, record.created_at, record.expires_at],
+            )?;
+            return Self::get_by_id(connection, &id)?.ok_or_else(|| {
+                MemoryStoreError::Sqlite(rusqlite::Error::QueryReturnedNoRows)
+            });
+        }
+        Self::insert(connection, record)?;
+        connection.execute(
+            "DELETE FROM memory_entries WHERE id IN (
+                SELECT id FROM memory_entries
+                WHERE scope_kind = ?1 AND scope_id = ?2 AND lesson_key IS NOT NULL
+                ORDER BY confirmations DESC, created_at DESC, id ASC LIMIT -1 OFFSET 128
+            )",
+            params![record.scope.as_str(), record.scope_id],
+        )?;
+        Ok(record.clone())
     }
 
     pub fn get_by_id(
@@ -297,6 +348,39 @@ impl MemoryStoreSql {
         Ok(records)
     }
 
+    pub fn search_lessons(
+        connection: &Connection,
+        scope: MemoryScope,
+        scope_id: &str,
+        query: &str,
+        now: &str,
+        limit: u32,
+    ) -> Result<Vec<MemoryRecord>, MemoryStoreError> {
+        if query.len() > MAX_QUERY_BYTES {
+            return Err(MemoryStoreError::Limit {
+                field: "query",
+                max: MAX_QUERY_BYTES,
+            });
+        }
+        validate_required("scope_id", scope_id, MAX_SCOPE_ID_BYTES)?;
+        validate_required("now", now, MAX_TIMESTAMP_BYTES)?;
+        let pattern = format!("%{}%", query.replace('%', "\\%").replace('_', "\\_"));
+        let mut statement = connection.prepare(Self::SEARCH_LESSONS)?;
+        let records = statement
+            .query_map(
+                params![
+                    scope.as_str(),
+                    scope_id,
+                    now,
+                    pattern,
+                    i64::from(limit.min(100))
+                ],
+                map_record,
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(records)
+    }
+
     pub fn archive(connection: &Connection, id: &str) -> Result<bool, MemoryStoreError> {
         Ok(connection.execute(Self::ARCHIVE, params![id])? == 1)
     }
@@ -321,6 +405,8 @@ fn map_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryRecord> {
         expires_at: row.get(8)?,
         archived: archived != 0,
         forgotten: forgotten != 0,
+        confirmations: row.get(11).unwrap_or(1),
+        lesson_key: row.get(12).unwrap_or(None),
     })
 }
 
@@ -346,7 +432,9 @@ mod tests {
                     created_at TEXT NOT NULL,
                     expires_at TEXT,
                     archived INTEGER NOT NULL,
-                    forgotten INTEGER NOT NULL
+                    forgotten INTEGER NOT NULL,
+                    confirmations INTEGER NOT NULL DEFAULT 1,
+                    lesson_key TEXT
                 );",
             )
             .expect("memory schema creates");

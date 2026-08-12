@@ -666,6 +666,7 @@ pub mod research;
 pub mod research_fetch;
 pub mod research_pipeline;
 pub mod scope;
+pub mod task_memory;
 pub mod workflow;
 pub mod workflow_runner;
 pub mod workspace;
@@ -1138,6 +1139,37 @@ impl EventJournal {
     ) -> Result<Vec<ToolMetricRecord>, StorageError> {
         let database = self.database.lock().await;
         database.read_tool_metrics(task_id, limit)
+    }
+
+    pub async fn search_lessons(
+        &self,
+        scope_id: &str,
+        query: &str,
+        now: &str,
+        limit: u32,
+    ) -> Result<Vec<evohime_local_storage::memory_store::MemoryRecord>, StorageError> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::search_lessons(
+            database.connection(),
+            evohime_local_storage::memory_store::MemoryScope::Project,
+            scope_id,
+            query,
+            now,
+            limit,
+        )
+        .map_err(|error| StorageError::InvalidRecovery(error.to_string()))
+    }
+
+    pub async fn record_lesson(
+        &self,
+        record: &evohime_local_storage::memory_store::MemoryRecord,
+    ) -> Result<evohime_local_storage::memory_store::MemoryRecord, StorageError> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::upsert_lesson(
+            database.connection(),
+            record,
+        )
+        .map_err(|error| StorageError::InvalidRecovery(error.to_string()))
     }
 
     pub async fn replay(
@@ -1961,6 +1993,19 @@ impl ToolAgent {
         self
     }
 
+    async fn persist_lesson(&self, task_id: &str, workspace_root: &std::path::Path) {
+        let Some(journal) = &self.journal else {
+            return;
+        };
+        let Ok(metrics) = journal.tool_metrics(task_id, 256).await else {
+            return;
+        };
+        let Some(lesson) = task_memory::build_lesson(task_id, workspace_root, &metrics) else {
+            return;
+        };
+        let _ = journal.record_lesson(&lesson).await;
+    }
+
     pub async fn run_once(
         &self,
         task_id: impl Into<String>,
@@ -2015,6 +2060,44 @@ impl ToolAgent {
 
         let user_prompt = messages[1].content.clone();
         let context_text = format!("{system_prompt}\n{user_prompt}\n{}", tool_names.join("\n"));
+        if let Some(journal) = &self.journal {
+            let scope_id = task_memory::workspace_scope_id(&context.workspace_root);
+            if let Ok(lessons) = journal
+                .search_lessons(
+                    &scope_id,
+                    &user_prompt,
+                    &task_memory::now_millis().to_string(),
+                    5,
+                )
+                .await
+            {
+                if !lessons.is_empty() {
+                    let lesson_context = lessons
+                        .iter()
+                        .map(|lesson| format!("- {}: {}", lesson.title, lesson.content))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    messages.insert(
+                        1,
+                        ChatMessage::text(
+                            ChatRole::System,
+                            format!(
+                                "Прошлый опыт для проверки, не факт о текущем workspace:\n{lesson_context}"
+                            ),
+                        ),
+                    );
+                    write_model_trace(
+                        "task.memory.retrieved",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "scope_id": scope_id,
+                            "lesson_count": lessons.len(),
+                            "lesson_ids": lessons.iter().map(|lesson| &lesson.id).collect::<Vec<_>>()
+                        }),
+                    );
+                }
+            }
+        }
         let delivery_requirements = DeliveryRequirements::from_prompt(&user_prompt);
         let _ = events.send(CoreEvent::ModelContext {
             task_id: task_id.clone(),
@@ -2208,6 +2291,7 @@ impl ToolAgent {
                         "Задача не завершена: не выполнены обязательные результаты: {}.",
                         missing.join(", ")
                     );
+                    self.persist_lesson(&task_id, &context.workspace_root).await;
                     let _ = events.send(CoreEvent::TaskFailed {
                         task_id,
                         error: message.clone(),
@@ -2215,6 +2299,7 @@ impl ToolAgent {
                     return Ok(message);
                 }
                 let final_message = strip_legacy_function_blocks(&result.content);
+                self.persist_lesson(&task_id, &context.workspace_root).await;
                 let _ = events.send(CoreEvent::TaskCompleted {
                     task_id,
                     final_message: final_message.clone(),
@@ -2487,6 +2572,7 @@ impl ToolAgent {
                         "Задача остановлена: 5 последовательных провалов инструментов; последний инструмент {} получил класс {:?}.",
                         call.name, outcome.kind
                     );
+                    self.persist_lesson(&task_id, &context.workspace_root).await;
                     let _ = events.send(CoreEvent::TaskFailed {
                         task_id: task_id.clone(),
                         error: message.clone(),
@@ -2497,6 +2583,7 @@ impl ToolAgent {
         }
 
         let message = "agent exceeded the tool iteration limit".to_string();
+        self.persist_lesson(&task_id, &context.workspace_root).await;
         let _ = events.send(CoreEvent::TaskFailed {
             task_id,
             error: message.clone(),
