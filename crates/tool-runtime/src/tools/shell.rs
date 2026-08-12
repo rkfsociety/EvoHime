@@ -2,7 +2,7 @@ use crate::{ToolContext, ToolError, ToolResult};
 use evohime_permissions::Permission;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::{process::Stdio, time::Duration};
+use std::{path::Path, process::Stdio, time::Duration};
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
     process::Command,
@@ -19,7 +19,8 @@ const MAX_OUTPUT: usize = 1024 * 1024;
 
 #[derive(Deserialize)]
 struct Input {
-    program: String,
+    program: Option<String>,
+    command: Option<String>,
     #[serde(default)]
     args: Vec<String>,
     cwd: Option<String>,
@@ -35,10 +36,38 @@ pub async fn execute(
         tool: NAME.into(),
         message: e.to_string(),
     })?;
-    if input.program.is_empty()
-        || input.program.contains(['/', '\\'])
+    let (program, args, cwd) = if let Some(program) = input.program {
+        (program, input.args, input.cwd)
+    } else if let Some(command) = input.command {
+        let (cwd, command) = if let Some((prefix, rest)) = command.split_once("&&") {
+            let prefix = prefix.trim();
+            if let Some(path) = prefix.strip_prefix("cd ") {
+                let path = path.trim().trim_matches('"');
+                let cwd = if Path::new(path).is_absolute() && Path::new(path) == ctx.workspace_root {
+                    None
+                } else {
+                    Some(path.to_string())
+                };
+                (
+                    cwd,
+                    rest.trim().to_string(),
+                )
+            } else {
+                (None, command)
+            }
+        } else {
+            (None, command)
+        };
+        let mut parts = command.split_whitespace();
+        let program = parts.next().unwrap_or_default().to_string();
+        (program, parts.map(ToString::to_string).collect(), cwd)
+    } else {
+        (String::new(), Vec::new(), None)
+    };
+    if program.is_empty()
+        || program.contains(['/', '\\'])
         || matches!(
-            input.program.to_ascii_lowercase().as_str(),
+            program.to_ascii_lowercase().as_str(),
             "cmd" | "cmd.exe" | "powershell" | "powershell.exe" | "sh" | "bash"
         )
     {
@@ -48,13 +77,13 @@ pub async fn execute(
         });
     }
     let sandbox = ctx.sandbox()?;
-    let cwd = match input.cwd.as_deref() {
+    let cwd = match cwd.as_deref() {
         Some(path) => sandbox.resolve_existing(path)?,
         None => sandbox.root().to_path_buf(),
     };
-    let mut command = Command::new(&input.program);
+    let mut command = Command::new(&program);
     command
-        .args(&input.args)
+        .args(&args)
         .current_dir(cwd.clone())
         .kill_on_drop(true)
         .stdin(Stdio::null())
@@ -110,7 +139,7 @@ pub async fn execute(
     let exit_code = status.code();
     let output = format!(
         "program: {}\ncwd: {}\nexit_code: {}\nstdout:\n{}\nstderr:\n{}",
-        input.program,
+        program,
         cwd.display(),
         exit_code
             .map(|code| code.to_string())
@@ -129,7 +158,7 @@ pub async fn execute(
     Ok(ToolResult {
         output,
         structured: json!({
-            "program": input.program,
+            "program": program,
             "cwd": cwd.display().to_string(),
             "stdout": stdout,
             "stderr": stderr,

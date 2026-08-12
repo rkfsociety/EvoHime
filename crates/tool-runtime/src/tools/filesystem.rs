@@ -38,8 +38,8 @@ pub async fn execute(ctx: &ToolContext, input: Value) -> Result<ToolResult, Tool
 }
 
 fn truncate_for_display(content: &str) -> String {
-    let mut lines = content.lines().take(8).collect::<Vec<_>>().join("\n");
-    if content.lines().count() > 8 {
+    let mut lines = content.lines().take(200).collect::<Vec<_>>().join("\n");
+    if content.lines().count() > 200 {
         lines.push_str("\n...");
     }
     lines
