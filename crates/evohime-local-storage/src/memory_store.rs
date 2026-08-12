@@ -440,10 +440,14 @@ mod tests {
         MemoryStoreSql::insert(&connection, &other).expect("insert other");
         assert!(MemoryStoreSql::archive(&connection, "a").expect("archive a"));
 
-        let active = MemoryStoreSql::list(&connection, MemoryScope::Project, "project-1", false, 10)
-            .expect("list active");
+        let active =
+            MemoryStoreSql::list(&connection, MemoryScope::Project, "project-1", false, 10)
+                .expect("list active");
         assert_eq!(
-            active.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(),
+            active
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
             ["b"]
         );
 
