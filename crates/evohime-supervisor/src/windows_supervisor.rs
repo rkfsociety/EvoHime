@@ -234,6 +234,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .ok()
         .and_then(|value| value.parse::<u32>().ok())
         .unwrap_or(3);
+    let healthy_uptime = healthy_uptime_threshold();
+    let backoff_base = restart_backoff_base();
+    let backoff_cap = restart_backoff_cap();
     let mut restarts = 0;
     let heartbeat_path = core_data_dir().join("core-heartbeat");
 
@@ -255,6 +258,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         let _ = logger.write("core.spawn", json!({"restart": restarts}));
+        let generation_started = SystemTime::now();
         match runtime.start_generation(now_ms()) {
             Ok(events) => log_runtime_events(&logger, &events),
             Err(error) => {
@@ -282,10 +286,77 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         if status.success() || restarts >= max_restarts {
             return Ok(());
         }
+        let healthy = generation_started
+            .elapsed()
+            .map(|elapsed| elapsed >= healthy_uptime)
+            .unwrap_or(false);
+        if healthy {
+            let previous_restarts = restarts;
+            restarts = 0;
+            let _ = logger.write(
+                "core.restart_budget_reset",
+                json!({
+                    "reason": "healthy_generation_uptime",
+                    "previous_restarts": previous_restarts,
+                    "healthy_uptime_ms": healthy_uptime.as_millis()
+                }),
+            );
+        }
         restarts += 1;
-        let _ = logger.write("core.restart", json!({"restart": restarts}));
-        sleep(Duration::from_millis(250 * u64::from(restarts))).await;
+        let delay = restart_backoff(restarts, backoff_base, backoff_cap, now_ms());
+        let _ = logger.write(
+            "core.restart",
+            json!({"restart": restarts, "backoff_ms": delay.as_millis()}),
+        );
+        sleep(delay).await;
     }
+}
+
+fn healthy_uptime_threshold() -> StdDuration {
+    let seconds = std::env::var("EVOHIME_CORE_HEALTHY_UPTIME_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(600)
+        .clamp(1, 86_400);
+    StdDuration::from_secs(seconds)
+}
+
+fn restart_backoff_base() -> StdDuration {
+    let millis = std::env::var("EVOHIME_CORE_RESTART_BACKOFF_BASE_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(250)
+        .clamp(1, 10_000);
+    StdDuration::from_millis(millis)
+}
+
+fn restart_backoff_cap() -> StdDuration {
+    let millis = std::env::var("EVOHIME_CORE_RESTART_BACKOFF_MAX_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(30_000)
+        .clamp(1, 300_000);
+    StdDuration::from_millis(millis)
+}
+
+fn restart_backoff(
+    restart: u32,
+    base: StdDuration,
+    cap: StdDuration,
+    entropy: u64,
+) -> Duration {
+    let exponent = restart.saturating_sub(1).min(20);
+    let exponential_ms = base
+        .as_millis()
+        .saturating_mul(1u128 << exponent)
+        .min(cap.as_millis());
+    let jitter_bound = (base.as_millis() / 2).max(1);
+    let jitter_ms = u128::from(entropy) % (jitter_bound + 1);
+    let delay_ms = exponential_ms
+        .saturating_add(jitter_ms)
+        .min(cap.as_millis())
+        .max(1);
+    Duration::from_millis(delay_ms as u64)
 }
 
 fn core_data_dir() -> PathBuf {
@@ -382,7 +453,7 @@ async fn wait_for_core(
 mod tests {
     use super::{
         heartbeat_is_current_generation, heartbeat_is_stale, heartbeat_is_stale_for_generation,
-        recover_pending_update,
+        recover_pending_update, restart_backoff,
     };
     use evohime_tx::UpdateTransaction;
     use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
@@ -483,5 +554,19 @@ mod tests {
             StdDuration::from_secs(5),
         ));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn restart_backoff_is_exponential_bounded_and_nonzero() {
+        let base = StdDuration::from_millis(250);
+        let cap = StdDuration::from_millis(1_000);
+        let first = restart_backoff(1, base, cap, 0);
+        let second = restart_backoff(2, base, cap, 0);
+        let capped = restart_backoff(10, base, cap, u64::MAX);
+
+        assert!(first >= StdDuration::from_millis(250));
+        assert!(second >= first);
+        assert!(capped > StdDuration::ZERO);
+        assert!(capped <= cap);
     }
 }
