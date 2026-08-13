@@ -92,6 +92,17 @@ Renderer не получает `ipcRenderer`, EventEmitter, MessagePort, `fs`, `
 | WinUI fallback | компилируется, C# suite (24 теста) зелёная, роль `compatibility-shell` принимается настоящим Core |
 | Запуск подписанного package | supervisor → Core → packaged `EvoHime.exe`: окно «EvoHime» открыто, `packaged: true`, `developerLaunch: false`, `ipc.client_authenticated role=shell`, ошибок и reconnect-предупреждений нет |
 
+## Результаты Gate 2 (проверено на Windows 11 x64, 2026-08-13)
+
+| Проверка | Результат |
+| --- | --- |
+| Поверхность preload | regression test фиксирует ровно `apiVersion/invoke/subscribe/writeClipboardText/openExternal`, замороженный объект, отсутствие `ipcRenderer`, emitter, `require`, `process`, `fs`, `shell` |
+| Allow-list команд | неизвестная команда, `null`, лишние типы, пустые и слишком длинные поля отклоняются без отправки в Core; переполнение очереди отдаёт типизированный `queue-full` |
+| Clipboard/external | пишется только bounded текст, чтение буфера не экспортируется; открываются только https из allow-list, `file://` и `javascript:` отклонены |
+| Static checks bundle | `npm run check:bundle`: нет source maps, guard'ы (`enableSandbox`, permission handlers, `will-navigate`, CSP, single-instance) на месте, sandbox/contextIsolation/nodeIntegration/webviewTag не ослаблены, preload требует только `electron`, renderer без `require`/`ipcRenderer` |
+| Негативная проверка самих checks | подброшенные source map и `unsafe-eval` в CSP роняют проверку — она не пустая |
+| Redaction | пути, токены, argv, стек-трейсы и sensitive-ключи скрываются до записи диагностики |
+
 ## Область проверки
 
 Проверка выполняется на текущей машине разработки (Windows 11 x64) —

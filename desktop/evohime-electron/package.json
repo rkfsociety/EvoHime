@@ -16,6 +16,7 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
+    "check:bundle": "node scripts/check-production-bundle.mjs",
     "generate:protocol": "node scripts/generate-protocol.mjs",
     "check:protocol": "node scripts/generate-protocol.mjs --check",
     "package": "npm run build && electron-builder --dir --config electron-builder.yml"

@@ -61,6 +61,8 @@ jobs:
         run: npm test
       - name: Build shell bundles
         run: npm run build
+      - name: Static security checks over the production bundles
+        run: npm run check:bundle
       - name: Build unpacked package smoke
         run: npx electron-builder --dir --config electron-builder.yml
 

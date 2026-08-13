@@ -1,7 +1,7 @@
 # Подплан 0 — замена desktop shell на Electron
 
-Статус: этапы 0 и 1 выполнены (Gate 0 и Gate 1 пройдены); следующий — этап 2
-(security foundation) и UI-срезы этапа 3
+Статус: этапы 0, 1 и 2 выполнены (Gate 0, 1 и 2 пройдены); следующий — этап 3,
+вертикальные UI-срезы, начиная с workspace picker
 Порядок: 0 из 6; prerequisite для UI-частей планов 1–5
 Зафиксированный стек и результаты spike: `docs/plans/0-electron-stack-decision.md`
 
@@ -197,6 +197,20 @@ ticket и expiry date.
   postinstall scripts и исключать devDependencies из production package;
 - покрыть preload API, redaction, navigation policy и неразрешённые команды
   regression tests.
+
+Выполнено: `window.evohime.v1` отдаёт только `invoke/subscribe/clipboard/
+openExternal`, ничего Electron-подобного через мост не проходит; sandbox,
+contextIsolation и запрет nodeIntegration включены; production CSP без
+`unsafe-eval` и inline-скриптов; навигация, новые окна, webview и внешние схемы
+запрещены по умолчанию, внешние ссылки — только по allow-list; в production
+DevTools, меню и их шорткаты выключены, debug-флаги приводят к отказу запуска,
+source maps не собираются; redaction выполняется общим слоем до записи любой
+диагностики; permission handlers deny-by-default; lockfile в репозитории,
+lifecycle-скрипты зависимостей выключены и разрешены поимённо.
+Regression tests покрывают preload-поверхность, allow-list команд, redaction и
+navigation policy; `npm run check:bundle` статически проверяет собранные
+bundles (потеря guard, source map, ослабленный CSP, Node-примитив в preload,
+`ipcRenderer` в renderer) и включён в CI.
 
 **Gate 2:** security tests и production static checks проходят; ни renderer, ни
 main не могут выполнить secret/workspace/shell operation вне Core policy.

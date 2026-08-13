@@ -66,7 +66,8 @@ cd desktop\evohime-electron
 npm run bootstrap        # npm ci без lifecycle-скриптов + allow-list installers
 npm run check:protocol   # генерируемые IPC-типы совпадают с каноническим proto
 npm run typecheck
-npm test                 # adapter, security policy, real-Core E2E (skip без Core)
+npm test                 # adapter, security policy, preload, real-Core E2E (skip без Core)
+npm run build; npm run check:bundle   # статические security-проверки production bundles
 npm run dev              # dev-запуск оболочки
 npm run package          # распакованный Windows package в release\win-unpacked
 ```
