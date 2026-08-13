@@ -201,6 +201,7 @@ export function App(): React.JSX.Element {
               }}
               identityName={identity?.name ?? null}
               chatRevision={chatRevision}
+              onOpenGit={() => setView('files')}
             />
           ) : (
             <div className="main__scroll">

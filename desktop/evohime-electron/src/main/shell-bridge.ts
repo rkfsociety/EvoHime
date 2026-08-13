@@ -18,7 +18,7 @@ import {
 import type { ShellLog } from './diagnostics/logger'
 import type { CorePipeClient } from './ipc/pipe-client'
 import type { ChatStore } from './chat-store'
-import { resolveIdentity } from './identity'
+import { resolveIdentity, resolveRepository } from './identity'
 import {
   normalizeApiKey,
   normalizeBaseUrl,
@@ -277,6 +277,12 @@ function dispatch(
 
     case 'identity.get':
       return resolveIdentity().then((value) => ({ ok: true, value }))
+
+    case 'repository.get': {
+      const workspacePath = asBoundedString(asRecord(payload)['workspacePath'])
+      if (workspacePath === null) return failure('invalid-payload', 'Некорректный путь проекта.')
+      return resolveRepository(workspacePath).then((value) => ({ ok: true, value }))
+    }
 
     case 'chat.list': {
       const workspacePath = asBoundedString(asRecord(payload)['workspacePath'])

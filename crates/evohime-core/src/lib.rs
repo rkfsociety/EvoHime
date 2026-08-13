@@ -3231,6 +3231,7 @@ impl TaskExecutor for ToolAgent {
 pub struct TaskCoordinator {
     commands: mpsc::Sender<CoreCommand>,
     state: Arc<Mutex<CoordinatorState>>,
+    journalled: tokio::sync::watch::Receiver<u64>,
 }
 
 struct CoordinatorState {
@@ -3251,6 +3252,13 @@ impl TaskCoordinator {
     /// know when to flush the journal tail to a connected shell.
     pub async fn subscribe(&self) -> broadcast::Receiver<CoreEvent> {
         self.state.lock().await.events.subscribe()
+    }
+
+    /// Fires after an event is durably recorded, carrying its sequence. The
+    /// pipe server flushes the journal tail on this, so a shell never has to
+    /// wait for the next event to see the previous one.
+    pub fn journalled(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.journalled.clone()
     }
 
     pub fn new_with_executor(
@@ -3283,11 +3291,17 @@ impl TaskCoordinator {
             journal: journal.clone(),
             audit: crate::audit::AuditTrail::default(),
         }));
+        // The shell is fed from the journal, so it must be told after a record
+        // lands — not when the event was broadcast. Watching the broadcast
+        // directly raced the writer and left the last event of a task unsent.
+        let (journalled, journalled_rx) = tokio::sync::watch::channel(0_u64);
         if let Some(journal) = journal {
             let mut journal_receiver = events.subscribe();
             tokio::spawn(async move {
                 while let Ok(event) = journal_receiver.recv().await {
-                    let _ = journal.record(&event).await;
+                    if let Ok(sequence) = journal.record(&event).await {
+                        let _ = journalled.send(sequence.max(0) as u64);
+                    }
                 }
             });
         }
@@ -3304,7 +3318,14 @@ impl TaskCoordinator {
                 Self::handle_command(Arc::clone(&worker_state), command).await;
             }
         });
-        (Self { commands, state }, event_rx)
+        (
+            Self {
+                commands,
+                state,
+                journalled: journalled_rx,
+            },
+            event_rx,
+        )
     }
 
     pub async fn dispatch(
@@ -6418,6 +6439,43 @@ mod tests {
             matches!(receiver.recv().await, Ok(CoreEvent::TaskCompleted { final_message, .. }) if final_message == "found it")
         );
         let _ = std::fs::remove_dir_all(workspace);
+    }
+
+    /// Regression: the shell is fed by pushing the journal tail whenever an
+    /// event arrives. Waiting on the broadcast raced the journal writer, so the
+    /// tail was read before the event landed and the last event of a task —
+    /// the one saying it finished — was never sent.
+    #[tokio::test]
+    async fn journal_signal_arrives_after_the_event_is_readable() {
+        let path = std::env::temp_dir()
+            .join(format!("evohime-core-signal-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let (coordinator, _events) =
+            TaskCoordinator::new_with_journal(64, None, journal.clone());
+        let mut journalled = coordinator.journalled();
+
+        coordinator
+            .dispatch(CoreCommand::StartTask {
+                task_id: "task-signal".into(),
+                prompt: "persist me".into(),
+                workspace_root: None,
+            })
+            .await
+            .expect("command dispatches");
+
+        // The signal must not fire before the event can be read back.
+        journalled.changed().await.expect("journal signals");
+        let sequence = *journalled.borrow_and_update();
+        let batch = journal
+            .replay_bounded(sequence as i64 - 1, 16)
+            .await
+            .expect("tail reads");
+        assert!(
+            batch.events.iter().any(|record| record.task_id == "task-signal"),
+            "event must be readable when its sequence is announced"
+        );
+        let _ = std::fs::remove_file(&path);
     }
 
     #[tokio::test]

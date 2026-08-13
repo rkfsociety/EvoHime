@@ -158,13 +158,11 @@ impl IpcBridge {
 
     /// Listener that fires whenever a task emits, so the server knows there is
     /// a journal tail worth flushing.
-    pub async fn subscribe_events(
-        &self,
-    ) -> Option<tokio::sync::broadcast::Receiver<crate::CoreEvent>> {
-        match &self.coordinator {
-            Some(coordinator) => Some(coordinator.subscribe().await),
-            None => None,
-        }
+    /// Signal that fires once an event is durably journalled. The pipe server
+    /// pushes the journal tail on this instead of on the broadcast itself,
+    /// which used to overtake the writer and strand the last event of a task.
+    pub fn journalled(&self) -> Option<tokio::sync::watch::Receiver<u64>> {
+        self.coordinator.as_ref().map(|coordinator| coordinator.journalled())
     }
 
     pub async fn process_once<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(

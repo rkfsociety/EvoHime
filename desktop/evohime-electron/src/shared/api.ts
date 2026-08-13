@@ -79,6 +79,13 @@ export interface UserIdentity {
   readonly source: IdentitySource
 }
 
+/** Git state of the open project, shown above the composer. */
+export interface RepositorySummary {
+  readonly branch: string
+  readonly added: number
+  readonly removed: number
+}
+
 /** One prompt the user sent from a chat, and the task it started. */
 export interface ChatMessage {
   readonly taskId: string
@@ -136,6 +143,7 @@ export const RENDERER_COMMANDS = [
   'core.listModelCatalog',
   'core.selectModel',
   'identity.get',
+  'repository.get',
   'chat.list',
   'chat.create',
   'chat.open',
@@ -189,6 +197,7 @@ export interface CommandPayloads {
   'core.listModelCatalog': { mode: ModelTier }
   'core.selectModel': { model: string }
   'identity.get': Record<string, never>
+  'repository.get': { workspacePath: string }
   'chat.list': { workspacePath: string }
   'chat.create': { workspacePath: string }
   'chat.open': { chatId: string }
@@ -228,6 +237,7 @@ export interface CommandResults {
   'core.listModelCatalog': { accepted: boolean }
   'core.selectModel': { accepted: boolean }
   'identity.get': UserIdentity
+  'repository.get': RepositorySummary | null
   'chat.list': readonly ChatSummary[]
   'chat.create': ChatRecord
   'chat.open': ChatRecord | null

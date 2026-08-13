@@ -704,6 +704,74 @@ body {
   margin: 0 auto;
 }
 
+.repobar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 6px 8px 6px 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 12px;
+}
+
+.repobar__project {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.repobar__branch {
+  color: var(--fg-muted);
+  font-family: var(--mono);
+}
+
+.repobar__spacer {
+  flex: 1;
+}
+
+.repobar__diff {
+  display: inline-flex;
+  gap: 8px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-active);
+  font-family: var(--mono);
+}
+
+.repobar__added { color: var(--success); }
+.repobar__removed { color: var(--danger); }
+
+.repobar__clean {
+  color: var(--fg-faint);
+}
+
+.repobar__action {
+  padding: 3px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.repobar__action:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.repobar__close {
+  padding: 3px 6px;
+  border: none;
+  background: none;
+  color: var(--fg-faint);
+  font-size: 11px;
+}
+
+.repobar__close:hover {
+  color: var(--fg);
+}
+
 .composer__box {
   display: flex;
   align-items: flex-end;

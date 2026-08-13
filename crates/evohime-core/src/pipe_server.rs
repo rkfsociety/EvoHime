@@ -149,12 +149,12 @@ pub async fn run_windows_pipe(
             }
         });
 
-        let pump = bridge.subscribe_events().await.map(|mut events| {
+        let pump = bridge.journalled().map(|mut journalled| {
             let bridge = Arc::clone(&bridge);
             let mut sink = ChannelWriter(frames.clone());
             tokio::spawn(async move {
                 let mut pushed = bridge.latest_sequence().await;
-                while events.recv().await.is_ok() {
+                while journalled.changed().await.is_ok() {
                     match bridge.push_journal_tail(&mut sink, pushed).await {
                         Ok(sequence) => pushed = sequence,
                         Err(_) => break,

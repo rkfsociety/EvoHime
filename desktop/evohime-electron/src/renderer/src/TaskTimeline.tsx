@@ -5,6 +5,7 @@ import type { ChatRecord, ConnectionState, CoreEvent } from '@shared/api'
 import { useShellApi } from './shell-api'
 import { ModelPicker } from './ModelPicker'
 import { HomeScreen } from './HomeScreen'
+import { RepositoryBar } from './RepositoryBar'
 import { ActivityLine } from './ActivityLine'
 import { buildTranscript } from './transcript'
 
@@ -28,6 +29,8 @@ export interface TaskTimelineProps {
   readonly onChatOpened: (chatId: string) => void
   readonly identityName: string | null
   readonly chatRevision: number
+  /** Opens the Files and Git section from the project row. */
+  readonly onOpenGit: () => void
 }
 
 export function TaskTimeline({
@@ -38,7 +41,8 @@ export function TaskTimeline({
   onChatTouched,
   onChatOpened,
   identityName,
-  chatRevision
+  chatRevision,
+  onOpenGit
 }: TaskTimelineProps): React.JSX.Element {
   const api = useShellApi()
   const [chat, setChat] = useState<ChatRecord | null>(null)
@@ -230,6 +234,11 @@ export function TaskTimeline({
       {workspace === null ? null : (
       <div className="composer">
         <div className="composer__inner">
+          <RepositoryBar
+            workspace={workspace}
+            refreshKey={finished ? entries.length : 0}
+            onOpenGit={onOpenGit}
+          />
           <div className="composer__box">
             <label htmlFor="task-prompt" className="visually-hidden">Задача</label>
             <textarea
