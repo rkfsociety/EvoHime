@@ -71,6 +71,34 @@ export interface ProviderSummary {
   readonly configured: boolean
 }
 
+/** One prompt the user sent from a chat, and the task it started. */
+export interface ChatMessage {
+  readonly taskId: string
+  readonly prompt: string
+  readonly atMs: number
+}
+
+/** A conversation of the shell, scoped to one workspace. */
+export interface ChatRecord {
+  readonly id: string
+  readonly workspacePath: string
+  readonly title: string
+  readonly createdMs: number
+  readonly updatedMs: number
+  /** Tasks started from this chat; the transcript is filtered by them. */
+  readonly taskIds: readonly string[]
+  readonly messages: readonly ChatMessage[]
+}
+
+/** Row of the chat list: enough to render it without loading transcripts. */
+export interface ChatSummary {
+  readonly id: string
+  readonly workspacePath: string
+  readonly title: string
+  readonly updatedMs: number
+  readonly messageCount: number
+}
+
 /**
  * Commands the renderer may ask the main process to forward to Core. The main
  * process only forwards; Core re-validates capability, policy and approval for
@@ -99,6 +127,11 @@ export const RENDERER_COMMANDS = [
   'core.getModelConfig',
   'core.listModelCatalog',
   'core.selectModel',
+  'chat.list',
+  'chat.create',
+  'chat.open',
+  'chat.appendPrompt',
+  'chat.remove',
   'provider.get',
   'provider.save',
   'provider.clearKey',
@@ -146,6 +179,11 @@ export interface CommandPayloads {
   'core.getModelConfig': Record<string, never>
   'core.listModelCatalog': { mode: ModelTier }
   'core.selectModel': { model: string }
+  'chat.list': { workspacePath: string }
+  'chat.create': { workspacePath: string }
+  'chat.open': { chatId: string }
+  'chat.appendPrompt': { chatId: string; taskId: string; prompt: string }
+  'chat.remove': { chatId: string }
   'provider.get': Record<string, never>
   'provider.save': { provider: ProviderKind; apiKey: string; model: string; baseUrl: string; tier: ModelTier }
   'provider.clearKey': Record<string, never>
@@ -179,6 +217,11 @@ export interface CommandResults {
   'core.getModelConfig': { accepted: boolean }
   'core.listModelCatalog': { accepted: boolean }
   'core.selectModel': { accepted: boolean }
+  'chat.list': readonly ChatSummary[]
+  'chat.create': ChatRecord
+  'chat.open': ChatRecord | null
+  'chat.appendPrompt': ChatRecord | null
+  'chat.remove': readonly ChatSummary[]
   'provider.get': ProviderSummary
   /** `restarted` is false when Core could not be relaunched with the new key. */
   'provider.save': { summary: ProviderSummary; restarted: boolean }

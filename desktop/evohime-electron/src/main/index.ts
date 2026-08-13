@@ -5,6 +5,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 
 import type { ShellState } from '@shared/api'
 
+import { ChatStore } from './chat-store'
 import { JsonlLogger } from './diagnostics/logger'
 import { readLaunchContext } from './ipc/launch-context'
 import { CorePipeClient } from './ipc/pipe-client'
@@ -93,6 +94,7 @@ if (!app.requestSingleInstanceLock()) {
         chooseDirectory: windowChooser(mainWindow)
       }),
       providers,
+      chats: new ChatStore(ChatStore.defaultPath(dataDirectory())),
       restartCore,
       log
     })

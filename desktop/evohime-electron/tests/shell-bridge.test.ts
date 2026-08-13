@@ -107,6 +107,23 @@ const providers = {
   }
 }
 
+/** Stands in for the chat store; persistence is covered by its own tests. */
+const chats = {
+  list: () => [],
+  create: (workspacePath: string) => ({
+    id: 'chat-1',
+    workspacePath,
+    title: 'Новый чат',
+    createdMs: 0,
+    updatedMs: 0,
+    taskIds: [],
+    messages: []
+  }),
+  open: () => null,
+  appendPrompt: () => null,
+  remove: () => {}
+}
+
 /** Stands in for the workspace service; its own behaviour is tested separately. */
 const workspaces = {
   list: () => ({ selected: null, options: [] }),
@@ -136,6 +153,7 @@ beforeEach(() => {
     client: client as never,
     workspaces: workspaces as never,
     providers: providers as never,
+    chats: chats as never,
     restartCore: async () => {
       restarts.push(true)
       return true

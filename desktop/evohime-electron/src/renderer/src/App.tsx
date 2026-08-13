@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
-import type { ConnectionState, CoreEvent, ShellState, WorkspaceSelection } from '@shared/api'
+import type { ConnectionState, CoreEvent, ShellState } from '@shared/api'
 
 import { useShellApi } from './shell-api'
-import { WorkspacePicker } from './WorkspacePicker'
+import { ProjectSidebar } from './ProjectSidebar'
 import { TaskTimeline } from './TaskTimeline'
 import { DeveloperTools } from './DeveloperTools'
 import { EditorPanel } from './EditorPanel'
@@ -56,6 +56,9 @@ export function App(): React.JSX.Element {
   const [apiMissing, setApiMissing] = useState(false)
   const [view, setView] = useState<ViewId>('chat')
   const [workspace, setWorkspace] = useState<string | null>(null)
+  const [chatId, setChatId] = useState<string | null>(null)
+  // Bumped when a chat is renamed or reordered so the sidebar reloads its list.
+  const [chatRevision, setChatRevision] = useState(0)
 
   const api = useShellApi()
 
@@ -81,10 +84,6 @@ export function App(): React.JSX.Element {
 
     return unsubscribe
   }, [api])
-
-  const trackWorkspace = useCallback((selection: WorkspaceSelection) => {
-    setWorkspace(selection.selected)
-  }, [])
 
   // Ожидающее разрешение подсвечивается в навигации: пользователь может стоять
   // в другом разделе, когда Core просит подтверждение.
@@ -134,7 +133,14 @@ export function App(): React.JSX.Element {
         </div>
 
         <div className="sidebar__workspace">
-          <WorkspacePicker connection={connection} onSelectionChange={trackWorkspace} />
+          <ProjectSidebar
+            connection={connection}
+            workspace={workspace}
+            chatId={chatId}
+            onWorkspaceChange={setWorkspace}
+            onChatChange={setChatId}
+            revision={chatRevision}
+          />
         </div>
       </nav>
 
@@ -148,7 +154,13 @@ export function App(): React.JSX.Element {
 
         <div className="main__body">
           {view === 'chat' ? (
-            <TaskTimeline connection={connection} events={events} workspace={workspace} />
+            <TaskTimeline
+              connection={connection}
+              events={events}
+              workspace={workspace}
+              chatId={chatId}
+              onChatTouched={() => setChatRevision((value) => value + 1)}
+            />
           ) : (
             <div className="main__scroll">
               {view === 'files' ? <DeveloperTools connection={connection} events={events} /> : null}

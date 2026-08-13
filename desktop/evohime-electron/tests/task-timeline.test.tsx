@@ -33,7 +33,20 @@ function event(eventType: string, payload: Record<string, unknown>, taskId = 'ta
 
 beforeEach(() => {
   calls.length = 0
-  respond = () => ok({ selected: 'C:\\work\\repo', options: [] })
+  // The transcript only shows tasks of the open chat, so the store must
+  // report this chat as owning them.
+  respond = (command) =>
+    command === 'chat.open' || command === 'chat.appendPrompt'
+      ? ok({
+          id: 'chat-1',
+          workspacePath: 'C:\\work\\repo',
+          title: 'Чат',
+          createdMs: 0,
+          updatedMs: 0,
+          taskIds: ['task-1'],
+          messages: []
+        })
+      : ok({ selected: 'C:\\work\\repo', options: [] })
   installApi()
 })
 
@@ -43,16 +56,16 @@ describe('task timeline', () => {
   it('unlocks the composer as soon as a workspace is picked', async () => {
     // Regression: the composer used to read the workspace once on mount, so a
     // folder picked afterwards in the sidebar left it permanently disabled.
-    const view = render(<TaskTimeline connection="connected" events={[]} workspace={null} />)
+    const view = render(<TaskTimeline connection="connected" events={[]} workspace={null} chatId="chat-1" onChatTouched={() => {}} />)
     expect((await screen.findByLabelText('Задача')).hasAttribute('disabled')).toBe(true)
 
-    view.rerender(<TaskTimeline connection="connected" events={[]} workspace="C:\work\repo" />)
+    view.rerender(<TaskTimeline connection="connected" events={[]} workspace="C:\work\repo" chatId="chat-1" onChatTouched={() => {}} />)
 
     expect(screen.getByLabelText('Задача').hasAttribute('disabled')).toBe(false)
   })
 
   it('starts a task only through the typed bridge', async () => {
-    render(<TaskTimeline connection="connected" events={[]} workspace="C:\work\repo" />)
+    render(<TaskTimeline connection="connected" events={[]} workspace="C:\work\repo" chatId="chat-1" onChatTouched={() => {}} />)
     await userEvent.type(await screen.findByLabelText('Задача'), 'Проверь тесты')
     await userEvent.click(screen.getByRole('button', { name: 'Запустить задачу' }))
 

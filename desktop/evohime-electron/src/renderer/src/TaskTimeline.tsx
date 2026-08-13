@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { ConnectionState, CoreEvent } from '@shared/api'
+import type { ChatRecord, ConnectionState, CoreEvent } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { ModelPicker } from './ModelPicker'
@@ -19,14 +19,21 @@ export interface TaskTimelineProps {
    * immediately.
    */
   readonly workspace: string | null
+  /** Open conversation; null means the user has not picked one yet. */
+  readonly chatId: string | null
+  /** Told when a prompt changed a chat, so the sidebar reloads its list. */
+  readonly onChatTouched: () => void
 }
 
 export function TaskTimeline({
   connection,
   events,
-  workspace
+  workspace,
+  chatId,
+  onChatTouched
 }: TaskTimelineProps): React.JSX.Element {
   const api = useShellApi()
+  const [chat, setChat] = useState<ChatRecord | null>(null)
   const [prompt, setPrompt] = useState('')
   const [taskId, setTaskId] = useState<string | null>(null)
   const [sentPrompt, setSentPrompt] = useState<string | null>(null)
@@ -34,13 +41,25 @@ export function TaskTimeline({
   const [busy, setBusy] = useState(false)
   const bottomRef = useRef<HTMLDivElement | null>(null)
 
-  const taskEvents = useMemo(
-    () =>
-      events
-        .filter((event) => event.taskId.length > 0 && (!taskId || event.taskId === taskId))
-        .slice(0, MAX_RENDERED_ITEMS),
-    [events, taskId]
-  )
+  useEffect(() => {
+    if (!api || chatId === null) {
+      setChat(null)
+      return
+    }
+    void api.invoke('chat.open', { chatId }).then((outcome) => {
+      if (outcome.ok) setChat(outcome.value)
+    })
+  }, [api, chatId])
+
+  // A chat shows only its own tasks; before the first prompt only the task
+  // just started from here belongs to it.
+  const taskEvents = useMemo(() => {
+    const known = new Set(chat?.taskIds ?? [])
+    if (taskId) known.add(taskId)
+    return events
+      .filter((event) => event.taskId.length > 0 && known.has(event.taskId))
+      .slice(0, MAX_RENDERED_ITEMS)
+  }, [chat?.taskIds, events, taskId])
 
   const { entries, approval, finished } = useMemo(
     () => buildTranscript(taskEvents),
@@ -56,7 +75,7 @@ export function TaskTimeline({
   }, [entries.length, approval])
 
   const start = useCallback(async () => {
-    if (!api || !workspace || prompt.trim().length === 0) return
+    if (!api || !workspace || chatId === null || prompt.trim().length === 0) return
     const nextTaskId = makeTaskId()
     const text = prompt.trim()
     setBusy(true)
@@ -74,7 +93,14 @@ export function TaskTimeline({
     setTaskId(nextTaskId)
     setSentPrompt(text)
     setPrompt('')
-  }, [api, prompt, workspace])
+    const stored = await api.invoke('chat.appendPrompt', {
+      chatId,
+      taskId: nextTaskId,
+      prompt: text
+    })
+    if (stored.ok && stored.value) setChat(stored.value)
+    onChatTouched()
+  }, [api, chatId, onChatTouched, prompt, workspace])
 
   const stop = useCallback(async () => {
     if (!api || !taskId) return
@@ -99,10 +125,13 @@ export function TaskTimeline({
   )
 
   const connected = CONNECTED_STATES.includes(connection)
-  const canStart = connected && workspace !== null && prompt.trim().length > 0 && !busy
+  const canStart =
+    connected && workspace !== null && chatId !== null && prompt.trim().length > 0 && !busy
   const running = taskId !== null && !finished
+  const history = chat?.messages ?? []
   // Запрос разрешения может прийти раньше любой другой записи ленты.
-  const empty = entries.length === 0 && sentPrompt === null && approval === null
+  const empty =
+    entries.length === 0 && sentPrompt === null && approval === null && history.length === 0
 
   return (
     <section className="chat" aria-label="Ход задачи">
@@ -112,14 +141,21 @@ export function TaskTimeline({
             <span className="chat__empty-logo" aria-hidden="true">E</span>
             <h2>Чем займёмся?</h2>
             <p>
-              {workspace
-                ? 'Опиши задачу — агент выполнит её в выбранной рабочей папке и покажет каждый шаг здесь.'
-                : 'Сначала выбери рабочую папку в левой панели, затем поставь задачу агенту.'}
+              {workspace === null
+                ? 'Сначала выбери проект в левой панели, затем создай чат.'
+                : chatId === null
+                  ? 'Создай чат в левой панели, чтобы поставить задачу агенту.'
+                  : 'Опиши задачу — агент выполнит её в выбранной рабочей папке и покажет каждый шаг здесь.'}
             </p>
           </div>
         ) : (
           <ol className="chat__stream">
-            {sentPrompt ? (
+            {history.map((message) => (
+              <li key={`${message.taskId}-${message.atMs}`} className="message message--user">
+                <div className="message__bubble">{message.prompt}</div>
+              </li>
+            ))}
+            {sentPrompt && !history.some((message) => message.prompt === sentPrompt) ? (
               <li className="message message--user">
                 <div className="message__bubble">{sentPrompt}</div>
               </li>
@@ -186,8 +222,14 @@ export function TaskTimeline({
                   if (canStart) void start()
                 }
               }}
-              placeholder={workspace ? 'Опиши задачу для агента…' : 'Сначала выбери рабочую папку'}
-              disabled={!connected || workspace === null || busy}
+              placeholder={
+                workspace === null
+                  ? 'Сначала выбери проект'
+                  : chatId === null
+                    ? 'Создай чат, чтобы начать'
+                    : 'Опиши задачу для агента…'
+              }
+              disabled={!connected || workspace === null || chatId === null || busy}
               rows={1}
             />
             <button
@@ -219,6 +261,8 @@ export function TaskTimeline({
           ) : null}
           {workspace === null ? (
             <p className="shell__reason">Выбери рабочую папку перед запуском задачи.</p>
+          ) : chatId === null ? (
+            <p className="shell__reason">Создай чат, чтобы поставить задачу.</p>
           ) : null}
           {commandError ? <p role="alert" className="shell__reason">{commandError}</p> : null}
         </div>

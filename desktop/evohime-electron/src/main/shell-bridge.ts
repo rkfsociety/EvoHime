@@ -17,6 +17,7 @@ import {
 
 import type { ShellLog } from './diagnostics/logger'
 import type { CorePipeClient } from './ipc/pipe-client'
+import type { ChatStore } from './chat-store'
 import {
   normalizeApiKey,
   normalizeBaseUrl,
@@ -41,6 +42,7 @@ export interface ShellBridgeOptions {
   readonly client: CorePipeClient
   readonly workspaces: WorkspaceService
   readonly providers: ProviderStore
+  readonly chats: ChatStore
   /**
    * Relaunches Core so it picks up the stored credentials: the model gateway
    * is built from the environment at Core startup and has no live setter.
@@ -91,7 +93,7 @@ function dispatch(
   command: RendererCommand,
   payload: unknown
 ): unknown {
-  const { client, workspaces, providers, restartCore, log } = options
+  const { client, workspaces, providers, chats, restartCore, log } = options
   switch (command) {
     case 'shell.getState':
       return { ok: true, value: client.state }
@@ -270,6 +272,45 @@ function dispatch(
         return failure('invalid-payload', 'Некорректный идентификатор модели.')
       }
       return accepted(client.send({ selectModel: { model } }))
+    }
+
+    case 'chat.list': {
+      const workspacePath = asBoundedString(asRecord(payload)['workspacePath'])
+      if (workspacePath === null) return failure('invalid-payload', 'Некорректный путь проекта.')
+      return { ok: true, value: chats.list(workspacePath) }
+    }
+
+    case 'chat.create': {
+      const workspacePath = asBoundedString(asRecord(payload)['workspacePath'])
+      const chat = workspacePath === null ? null : chats.create(workspacePath)
+      if (chat === null) return failure('invalid-payload', 'Некорректный путь проекта.')
+      return { ok: true, value: chat }
+    }
+
+    case 'chat.open': {
+      const chatId = asBoundedString(asRecord(payload)['chatId'])
+      if (chatId === null) return failure('invalid-payload', 'Некорректный идентификатор чата.')
+      return { ok: true, value: chats.open(chatId) }
+    }
+
+    case 'chat.appendPrompt': {
+      const value = asRecord(payload)
+      const chatId = asBoundedString(value['chatId'])
+      const taskId = asBoundedString(value['taskId'])
+      const prompt = asBoundedString(value['prompt'])
+      if (chatId === null || taskId === null || prompt === null) {
+        return failure('invalid-payload', 'Некорректное сообщение чата.')
+      }
+      return { ok: true, value: chats.appendPrompt(chatId, taskId, prompt) }
+    }
+
+    case 'chat.remove': {
+      const value = asRecord(payload)
+      const chatId = asBoundedString(value['chatId'])
+      if (chatId === null) return failure('invalid-payload', 'Некорректный идентификатор чата.')
+      const chat = chats.open(chatId)
+      chats.remove(chatId)
+      return { ok: true, value: chat ? chats.list(chat.workspacePath) : [] }
     }
 
     case 'provider.get':

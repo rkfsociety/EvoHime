@@ -800,7 +800,7 @@ select:focus {
   outline: none;
 }
 
-/* ─────────────────────────── воркспейсы ─────────────────────────── */
+/* ─────────────────────────── проекты и чаты ─────────────────────────── */
 
 .visually-hidden {
   position: absolute;
@@ -813,7 +813,7 @@ select:focus {
   white-space: nowrap;
 }
 
-.workspace-picker h2 {
+.projects h2 {
   margin: 0;
   color: var(--fg-faint);
   font-size: 11px;
@@ -822,7 +822,7 @@ select:focus {
   text-transform: uppercase;
 }
 
-.workspace-picker__heading {
+.projects__heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -830,7 +830,7 @@ select:focus {
   margin-bottom: 8px;
 }
 
-.workspace-picker__heading button {
+.projects__heading button {
   padding: 3px 8px;
   border: none;
   background: none;
@@ -838,73 +838,58 @@ select:focus {
   font-size: 12px;
 }
 
-.workspace-picker__heading button:hover:not(:disabled) {
+.projects__heading button:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--fg);
 }
 
-.workspace-picker .shell__empty,
-.workspace-picker .shell__reason {
+.projects .shell__empty,
+.projects .shell__reason {
   margin: 0;
   font-size: 12px;
 }
 
-.shell__selected {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 0 0 10px;
-}
-
-.shell__path {
-  color: var(--fg-muted);
-  font-family: var(--mono);
-  font-size: 12px;
-  word-break: break-all;
-}
-
-.shell__workspaces {
+.projects__list {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin: 10px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.shell__workspace {
+.projects__row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
-.shell__workspace button:first-child {
+.projects__name {
   flex: 1;
   overflow: hidden;
   padding: 6px 8px;
   border: none;
   background: none;
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: 13px;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
-  direction: rtl;
 }
 
-.shell__workspace button:first-child:hover:not(:disabled) {
+.projects__name:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--fg);
 }
 
-.shell__workspace button:first-child[aria-current='true'] {
-  background: var(--bg-active);
+.projects__name[aria-current='true'] {
   color: var(--fg);
-  opacity: 1;
+  font-weight: 500;
 }
 
-.shell__workspace button:last-child {
-  padding: 4px 7px;
+.projects__forget,
+.chats__remove {
+  padding: 3px 6px;
   border: none;
   background: none;
   color: var(--fg-faint);
@@ -912,11 +897,12 @@ select:focus {
   visibility: hidden;
 }
 
-.shell__workspace:hover button:last-child {
+.projects__row:hover .projects__forget,
+.chats__list li:hover .chats__remove {
   visibility: visible;
 }
 
-.shell__workspace--missing button:first-child {
+.projects__item--missing .projects__name {
   opacity: 0.55;
   text-decoration: line-through;
 }
@@ -924,6 +910,73 @@ select:focus {
 .shell__badge {
   color: var(--warning);
   font-size: 11px;
+}
+
+.chats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 8px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+
+.chats__new {
+  padding: 5px 8px;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 12px;
+  text-align: left;
+}
+
+.chats__new:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.chats__empty {
+  margin: 0;
+  padding: 4px 8px;
+  color: var(--fg-faint);
+  font-size: 12px;
+}
+
+.chats__list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chats__list li {
+  display: flex;
+  align-items: center;
+}
+
+.chats__item {
+  flex: 1;
+  overflow: hidden;
+  padding: 5px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-muted);
+  font-size: 12.5px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chats__item:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.chats__item[aria-current='true'] {
+  background: var(--bg-active);
+  color: var(--fg);
 }
 
 /* ─────────────────────────── одобрения ─────────────────────────── */
