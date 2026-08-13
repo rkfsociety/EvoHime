@@ -1,38 +1,44 @@
-# Подплан 0 — переход с WinUI на Electron
+# Подплан 0 — замена desktop shell на Electron
 
-Статус: утверждённый план миграции; реализация не начата
+Статус: план миграции; реализация не начата
 Порядок: 0 из 6; prerequisite для UI-частей планов 1–5
 
-## Цель
+## Цель и архитектурный invariant
 
-Заменить нестабильную WinUI 3 оболочку на Electron desktop shell, сохранив
-Rust Core, supervisor, transaction worker, SQLite, права, секреты и
-versioned named-pipe IPC. Приложение должно быть единым Windows desktop
-продуктом: Electron renderer не является отдельной web-панелью и не запускает
-HTTP-сервер, браузер или внешний Node runtime.
+Заменить WinUI 3 desktop shell на Electron, сохранив Rust Core, supervisor,
+transaction worker, SQLite, права, секреты и versioned named-pipe IPC.
+Electron — заменяемая оболочка; Core не должен зависеть от Electron-specific
+semantics. Renderer не является web-панелью, не поднимает HTTP-сервер и не
+использует внешний Node runtime.
 
-## Целевая архитектура
+## Целевая архитектура и ownership
 
 ```text
 EvoHime.exe                 Electron main process
-        │ preload/contextBridge, typed commands/events
-        ▼
-Electron renderer           bundled TypeScript UI, без nodeIntegration
-        │ desktop-ipc-v1 / Windows named pipe через main process
-        ▼
-evohime-core.exe            Rust agent loop, tools, policies, secrets, SQLite
-        ▲
-evohime-supervisor.exe     mutex, Job Object, restart, JSONL diagnostics
-        │
-evohime-transaction.exe    backup, update and rollback worker
+        │                   single-instance, tray, windows, preload, IPC adapter
+        └─ evohime-supervisor.exe
+               └─ evohime-core.exe
+        evohime-transaction.exe  backup, update, rollback worker
+        Electron renderer       bundled TypeScript UI, без Node API
 ```
 
+`EvoHime.exe` владеет пользовательским окном, tray и Electron single-instance
+lock. Supervisor остаётся единственным владельцем Core lifecycle: он владеет
+mutex/Job Object, запускает, перезапускает и корректно завершает Core. Electron
+не создаёт вторую lifecycle-цепочку и не владеет Job Object. Supervisor получает
+от main parent-liveness token/heartbeat и завершает Core при потере владельца,
+кроме явно поддержанного tray-состояния. При падении renderer окно
+восстанавливается; при падении Electron supervisor завершает Core по штатной
+политике, а новый запуск поднимает Core через supervisor. При закрытии окна
+Core завершается только по явной политике quit; закрытие в tray не завершает
+Core.
+
 Renderer получает только типизированный allow-list API через `preload` и
-`contextBridge`. Он не имеет доступа к файловой системе, shell, environment,
-SQLite, Credential Manager, DPAPI или model provider. Core остаётся единственным
-владельцем состояния и security boundary. Electron main process отвечает за
-окно, single-instance, tray, lifecycle и транспорт IPC, но не переносит в себя
-бизнес-логику Core.
+`contextBridge`. Уровни доверия: renderer — недоверенный, preload — узкий
+bridge, Electron main — transport/orchestration layer, Core — единственная
+security authority. Core самостоятельно проверяет capabilities, policy,
+approvals, paths, workspace scope, executable/argv и secret operations даже
+если команда пришла от Electron main.
 
 ## Что не меняется
 
@@ -41,122 +47,193 @@ SQLite, Credential Manager, DPAPI или model provider. Core остаётся �
   совместимость major-версии;
 - supervisor, Job Object, recovery, SQLite migrations, event journal и
   transaction worker остаются native-компонентами;
-- Credential Manager/DPAPI используются для секретов, plaintext secrets в
-  renderer, Electron logs и settings запрещены;
-- поддерживаются Windows 10 и Windows 11 x64, без привязки к одной версии
-  Windows 11;
-- установочный сценарий и один desktop shortcut сохраняются, пока новый
-  Electron runtime не пройдёт полный acceptance.
+- Credential Manager/DPAPI используются для секретов;
+- plaintext secrets запрещены в renderer, preload, main, settings, stdout/stderr,
+  crash reports, JSONL и IPC diagnostics;
+- поддерживаются Windows 10 и Windows 11 x64;
+- до acceptance сохраняются один пользовательский shortcut и WinUI fallback.
 
 ## Этапы реализации
 
-### 0. Контракт и migration spike
+### 0. Контракт, стек и migration spike
 
-- зафиксировать Electron и Node версии, TypeScript target, renderer framework
-  и способ упаковки;
-- создать desktop-only проект `desktop/evohime-electron` с main, preload и
-  renderer слоями;
-- запустить пустое окно из `start-dev.ps1` рядом с текущим WinUI smoke;
-- проверить single-instance, graceful close, DPI/scaling, темную тему и
-  запуск на Windows 10/11;
-- не подключать renderer напрямую к workspace или Core socket.
+- зафиксировать конкретные Electron major/LTS, Node runtime Electron, TypeScript
+  target, renderer framework, bundler, package manager и packaging tool;
+- создать `desktop/evohime-electron` с main, preload и renderer слоями;
+- зафиксировать production/dev security profiles: DevTools/hot reload допустимы
+  только в dev, production использует строгий CSP и не принимает debug flags;
+- проверить `sandbox: true` вместе с фактическим preload API, оставить только
+  минимально необходимые Electron APIs и не ослаблять sandbox как workaround;
+- провести spike named-pipe клиента: async I/O, reconnect, backpressure,
+  bounded queue, timeout и crash/restart Core; pipe-логика живёт в одном thin
+  adapter layer main process;
+- определить `asar`/unpacked layout, code signing и package smoke;
+- проверить single-instance, graceful close, tray/quit, DPI/scaling, dark theme
+  и Windows 10/11 на реальных машинах или зафиксировать недоступную проверку;
+- renderer не получает прямой доступ к workspace, pipe, shell или Core socket.
 
-### 1. IPC adapter
+**Gate 0:** выбранный стек собирает подписываемый desktop package, пустое окно
+запускается без консоли и браузера, sandbox/CSP проходят smoke, а pipe spike
+подтверждает reconnect и bounded behavior либо документирует переход к bridge.
 
-- реализовать в main process клиент `desktop-ipc-v1` поверх Windows named pipe;
-- сгенерировать TypeScript envelope/types из канонического protobuf-контракта
-  либо добавить проверяемый ручной adapter без расхождения схем;
-- поддержать handshake, major/minor compatibility, bounded frames,
-  sequence replay, reconnect и `StopTask`;
-- добавить Rust↔Electron compatibility tests для нормальных, malformed,
-  oversized, replay и disconnect cases;
-- до удаления WinUI временно сохранить C# IPC tests как cross-client oracle.
+### 1. IPC adapter и контракт
 
-### 2. Вертикальные UI-срезы
+- реализовать в main process клиент `desktop-ipc-v1` через Windows named pipe;
+- сделать генерацию TypeScript envelope/types из канонического protobuf
+  обязательной CI-проверкой; ручные типы допустимы только как временный
+  проверяемый bootstrap;
+- pipe создаёт только Core; supervisor управляет его lifecycle, но не подменяет
+  endpoint. Применяются Windows security descriptor с DACL для ожидаемого
+  пользователя/session и непредсказуемое имя endpoint; Core не полагается
+  только на секретность имени;
+- handshake фиксирует major/minor, nonce/challenge, client role и capabilities;
+  challenge связывается с контролируемым supervisor launch/session context.
+  Core отвергает несовместимую версию, malformed identity и неверный challenge.
+  PID/path/signature могут использоваться как дополнительные проверки, но не
+  считаются единственной аутентификацией. Защита от процесса другого
+  пользователя обеспечивается ACL; модель угроз для полностью доверенного
+  текущего пользователя документируется отдельно;
+- adapter владеет handshake/reconnect/retry, sequence replay, duplicate/replay
+  behavior, stale-pipe cleanup, timeouts, bounded frames, max queue и
+  backpressure. Утраченный sequence не считается успешно восстановленным;
+- добавить contract tests normal/malformed/oversized/replay/duplicate/
+  disconnect/timeout cases и E2E tests с настоящим собранным Core, включая
+  kill/restart Core;
+- до удаления WinUI сохранять C# IPC tests как compatibility oracle.
 
-Переносить экраны по одному, не копируя бизнес-логику в renderer:
+**Gate 1:** generated types совпадают с protobuf, adapter проходит contract и
+real-Core E2E tests, reconnect/replay не теряют state, лимиты и ACL проверены,
+а Electron main не содержит Core business/security logic.
 
-1. workspace picker, persisted selection и startup/reconnect state;
-2. task timeline, streaming, cancellation, approval и recovery states;
-3. Files, Editor, Git и bounded Terminal;
+### 2. Базовый security foundation
+
+- реализовать узкий preload allow-list с `contextIsolation: true`,
+  `sandbox: true`, `nodeIntegration: false`;
+- production CSP: `default-src 'self'`, без `unsafe-eval`, без remote content,
+  inline scripts и произвольной навигации; `unsafe-inline` для стилей не
+  разрешать без обоснования и отдельного security review;
+- `will-navigate`, `window.open`, новые окна, `webviewTag`, внешние схемы и
+  `file://` вне packaged renderer запрещены по умолчанию; external URL
+  открывается только через проверенный allow-list и явный shell-open path;
+- в production отключить DevTools, menu и shortcuts, отфильтровать
+  `--remote-debugging-port` и debug flags; source maps в production package не
+  включать;
+- redaction выполнять до записи diagnostics в main/Core; не кэшировать secret
+  values и не пересылать их в crash reports, stdout/stderr или settings;
+- dependency lockfile хранить в репозитории, использовать frozen-lockfile в CI,
+  pin Electron/Node, выполнять dependency audit, явно allow-list-ить
+  postinstall scripts и исключать devDependencies из production package;
+- покрыть preload API, redaction, navigation policy и неразрешённые команды
+  regression tests.
+
+**Gate 2:** security tests и production static checks проходят; ни renderer, ни
+main не могут выполнить secret/workspace/shell operation вне Core policy.
+
+### 3. Вертикальные UI-срезы
+
+Переносить экраны по одному и допускать следующий срез только после его gate:
+
+1. workspace picker, persisted selection, startup/reconnect и failure states;
+2. task timeline, streaming, cancellation, approval и recovery;
+3. Files, Editor и Git;
 4. policy/permission panel, backup/restore progress и diagnostics;
-5. settings/provider references, tray, notifications и safe error states.
+5. tray, notifications, settings/provider references;
+6. bounded Terminal — последним среди shell-like функций.
 
-Каждый срез должен использовать только IPC-команды и события Core. UI-тесты
-проверяют отображение и пользовательские переходы, а security-решения и
-валидацию повторно проверяются Core.
+Каждый срез использует только IPC-команды/события Core. UI-тесты проверяют
+отображение и переходы, а Core повторно выполняет security validation.
 
-### 3. Secrets и trusted boundary
+Обязательные UI-состояния: Core/supervisor не запустился, pipe disconnected,
+reconnecting, replaying, Core killed during task, disk full, read-only или
+locked workspace, provider outage, degraded и fatal recovery screen. Ошибка
+preload логируется redacted-событием в main и даёт reload renderer без полного
+перезапуска приложения, если это безопасно.
 
-- перенести оставшиеся provider settings/secret operations из UI-специфичного
-  C# слоя в Core IPC;
-- оставить в Electron только logical credential reference и redacted status;
-- запретить plaintext secret в renderer state, DevTools output, crash reports,
-  JSONL и IPC diagnostics;
-- добавить regression tests на preload API, redaction и попытки renderer
-  вызвать неразрешённые команды.
+Для Terminal renderer не управляет PTY напрямую: команды идут через Core
+policy/approval. Вывод ограничивает scrollback и фильтрует опасные escape/OSC;
+file/exec links не кликабельны без явного подтверждения.
 
-### 4. Безопасность Electron
+**Gate каждого среза:** focused UI tests, real-Core IPC scenario, reconnect/
+failure-state check и проверка отсутствия прямых filesystem/shell calls.
 
-Обязательная конфигурация production window:
+### 4. Packaging, lifecycle и diagnostics
 
-- `contextIsolation: true`;
-- `sandbox: true`, где это совместимо с preload;
-- `nodeIntegration: false`;
-- строгий CSP без `unsafe-eval` и без произвольной навигации;
-- запрет remote content, открытых DevTools и непроверенных external links;
-- allow-list для IPC методов, схем URL и window lifecycle;
-- renderer не принимает пути, executable, argv или policy decisions как
-  доверенные значения.
+- Electron runtime встраивается в переносимый Windows package; проверить
+  `asar`/unpacked native assets, подпись всех исполняемых компонентов и
+  отсутствие лишних Chromium/Node artifacts;
+- текущие Inno Setup и transaction worker остаются единственным install,
+  upgrade, rollback и update path. Electron `autoUpdater`, Squirrel и второй
+  update механизм запрещены;
+- transaction tests покрывают clean install, upgrade, interrupted update,
+  reboot during update, rollback, uninstall, orphan cleanup, signature и
+  отсутствие console window/browser launcher;
+- Electron main/renderer events пишутся redacted JSONL в контролируемый каталог
+  diagnostics с разделением потоков, rotation и max-size policy; Core journal
+  остаётся authoritative для agent events. Экспорт diagnostics удаляет secrets;
+- проверить tray, quit, single-instance Electron и supervisor mutex/Job Object
+  совместно, включая coexistence WinUI fallback без одинаковых mutex/shortcut
+  conflicts.
 
-Проверить dependency lockfile, Electron code signing/update artifacts, secret
-search и отсутствие старого browser launcher/HTTP server.
+**Gate 4:** подписанный package проходит install/upgrade/rollback/uninstall и
+diagnostics smoke на Windows 10/11 без второй lifecycle/update цепочки.
 
-### 5. Packaging и lifecycle
+### 5. Нефункциональные и fault-injection проверки
 
-- Electron runtime встраивается в переносимый Windows package;
-- текущий Inno Setup и transaction worker сохраняются как outer installer,
-  пока install/upgrade/rollback не будут подтверждены на новом package;
-- `EvoHime.exe` остаётся пользовательской точкой запуска;
-- supervisor по-прежнему запускает и контролирует Core, а Electron не создаёт
-  вторую конкурирующую lifecycle-цепочку;
-- проверить clean install, upgrade, interrupted upgrade, rollback, uninstall,
-  single-instance и запуск без консоли/браузера.
+Зафиксировать baseline и budget для startup, idle/soak memory, CPU, IPC latency,
+queue growth и package size; конкретные лимиты утверждаются после spike, а не
+берутся произвольно. CI/acceptance fault injection включает kill Core, kill
+supervisor, Core restart, long-running task, provider/network outage, disk full,
+read-only/locked workspace, low-memory pressure и reboot во время обновления.
+
+**Gate 5:** budget не нарушен, leak/soak не выявлен, fault matrix имеет
+ожидаемые UI/recovery outcomes и redacted diagnostics.
 
 ### 6. Удаление WinUI и release acceptance
 
-После прохождения всех gates удалить WinUI runtime из production package,
-launcher и CI. Сначала оставить проект и тесты как временный compatibility
-набор, затем удалить их отдельным task-only коммитом после двух успешных
-Windows acceptance cycles.
+После Gate 0–5 удалить WinUI runtime из production package, launcher и CI.
+Проект и тесты остаются только как явно помеченный временный compatibility
+набор до отдельного task-only коммита после двух одинаково определённых
+acceptance cycles. В cycle входят clean install, upgrade, forced Core и
+supervisor crash/recovery, forced Electron/renderer recovery, interrupted
+update, rollback, uninstall и проверки Windows 10/11. Отдельная ветка для
+исторического кода не создаётся.
 
 ## Acceptance criteria
 
-- приложение запускается на чистой Windows 10 и Windows 11 x64 без установки
-  Node.js, .NET SDK, Rust, браузера или WSL;
-- один `EvoHime.exe` открывает Electron UI, не создаёт консоль и не поднимает
-  HTTP server;
-- Core restart, reconnect, replay, cancellation, approval и recovery работают
-  через тот же versioned IPC contract;
-- Files/Git/Editor/Terminal не получают прямой доступ к workspace и shell из
-  renderer;
-- secret values отсутствуют в renderer logs, diagnostics, crash dumps,
+- чистая Windows 10/11 x64 запускает приложение без Node.js, .NET SDK, Rust,
+  браузера или WSL;
+- один `EvoHime.exe` открывает Electron UI, не создаёт консоль/HTTP server и
+  не запускает конкурирующий lifecycle;
+- supervisor владеет Core restart/Job Object, Electron main владеет только
+  shell/transport orchestration, Core остаётся security authority;
+- pipe ACL/handshake, version negotiation, bounded frames, replay,
+  reconnect, cancellation, approval и recovery проходят tests;
+- Files/Git/Editor/Terminal не имеют прямого доступа к workspace и shell из
+  renderer или PTY;
+- secret values отсутствуют в renderer/main logs, diagnostics, crash dumps,
   settings и exported events;
-- install, upgrade, rollback, uninstall и single-instance проходят на Windows
-  10 и Windows 11;
-- `cargo test --workspace`, Electron typecheck/unit tests, IPC compatibility,
-  package smoke и Windows UI acceptance проходят свежим прогоном;
-- `git diff --check` чист, package содержит только необходимые runtime
-  компоненты, а WinUI больше не является обязательной зависимостью запуска.
+- fault-injection matrix и install/upgrade/rollback/uninstall проходят на
+  Windows 10 и Windows 11;
+- `cargo test --workspace`, generated IPC contract tests, Electron
+  typecheck/unit/E2E tests, package smoke и Windows UI acceptance проходят
+  свежим прогоном;
+- package содержит только необходимые runtime components, подписан, без
+  browser launcher, console window и production source maps; `git diff --check`
+  чист.
 
 ## Риски и rollback
 
-- Если Electron main process не сможет стабильно работать с named pipe,
-  добавляется отдельный Rust IPC bridge с тем же контрактом; прямой доступ
-  renderer к pipe не допускается.
-- Если sandbox preload несовместим с нужным API, сначала сужается API и
-  обновляются tests; отключение `contextIsolation` или включение
-  `nodeIntegration` не является допустимым workaround.
-- До полного acceptance сохраняется запускаемый WinUI fallback в исходниках и
-  CI compatibility path. Production installer переключается на Electron только
-  после install/upgrade/rollback gate.
+- Если named-pipe adapter не достигает подтверждённых reliability/security
+  gates, до UI-срезов выбирается отдельный Rust IPC bridge с тем же контрактом;
+  renderer никогда не получает прямой доступ к pipe.
+- Если sandbox несовместим с нужным preload API, API сужается и проверяется
+  повторно. Отключение `contextIsolation`, `sandbox` или включение
+  `nodeIntegration` не является локальным workaround и требует отдельного
+  security decision.
+- До двух acceptance cycles сохраняется запускаемый WinUI fallback и
+  compatibility tests. Production installer переключается на Electron только
+  после install/upgrade/rollback/fault gates; rollback возвращает предыдущий
+  подписанный package через transaction worker.
+- При несовместимости IPC major/minor handshake приложение показывает safe
+  recovery state и предлагает обновить согласованный package; silent fallback
+  на неизвестную схему запрещён.
