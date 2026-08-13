@@ -217,6 +217,18 @@ export function TaskTimeline({
               )
             })}
 
+            {running && !approval && !entries.some(
+              (entry) => entry.kind === 'activity' && entry.running
+            ) ? (
+              <li className="message message--working" role="status" aria-label="Агент формирует ответ">
+                <span className="working-indicator" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </span>
+              </li>
+            ) : null}
+
             {approval ? (
               <li className="approval" role="alert">
                 <strong>Нужно разрешение: {approval.toolName}</strong>

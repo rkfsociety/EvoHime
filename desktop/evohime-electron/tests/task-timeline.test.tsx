@@ -199,6 +199,44 @@ describe('task timeline', () => {
     await waitFor(() => expect(calls.at(-1)?.command).toBe('core.stopTask'))
   })
 
+  it('shows an animated chat indicator while the agent is forming an answer', async () => {
+    const view = render(
+      <TaskTimeline
+        connection="connected"
+        events={[]}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+        onOpenGit={() => {}}
+      />
+    )
+
+    await userEvent.type(await screen.findByLabelText('Задача'), 'Продолжи проверку')
+    await userEvent.click(screen.getByRole('button', { name: 'Запустить задачу' }))
+    await waitFor(() => expect(calls.some((call) => call.command === 'core.startTask')).toBe(true))
+
+    const taskId = (calls.find((call) => call.command === 'core.startTask')?.payload as { taskId: string }).taskId
+    view.rerender(
+      <TaskTimeline
+        connection="connected"
+        events={[event('agent.message.delta', { content: 'Проверяю результаты…' }, taskId)]}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+        onOpenGit={() => {}}
+      />
+    )
+
+    expect(screen.getByRole('status', { name: 'Агент формирует ответ' })).toBeTruthy()
+    expect(screen.getByText('Проверяю результаты…')).toBeTruthy()
+  })
+
   it('renders streamed output and terminal recovery state', async () => {
     render(
       <TaskTimeline

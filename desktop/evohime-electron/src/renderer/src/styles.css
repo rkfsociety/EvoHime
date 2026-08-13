@@ -651,6 +651,37 @@ body {
   font-size: 12.5px;
 }
 
+.message--working {
+  min-height: 22px;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.working-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 10px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+}
+
+.working-indicator span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: working-dot 1.2s ease-in-out infinite;
+}
+
+.working-indicator span:nth-child(2) { animation-delay: 160ms; }
+.working-indicator span:nth-child(3) { animation-delay: 320ms; }
+
+@keyframes working-dot {
+  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
+}
+
 .activity {
   width: 100%;
 }
