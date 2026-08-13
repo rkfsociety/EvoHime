@@ -970,7 +970,7 @@ approval: none
 - [x] HTTPS capability installer с shared SSRF guard, trusted out-of-band SHA-256, bounded download и проверкой до записи в registry.
 - [ ] Runtime/UI wiring registry: UI показывает выбранные role/skill, version, причины, risk, tools и acceptance criteria; пользователь может закрепить или заменить выбор.
 - [ ] Lifecycle snapshot: активная definition immutable в рамках run; skill не расширяет permissions и не меняет порядок context.
-- [ ] Public-key signature trust root; install scripts запрещены по умолчанию, update staged, rollback сохраняется.
+- [x] Public-key signature trust root; install scripts запрещены по умолчанию, update staged, rollback сохраняется.
 
 Проверки: invalid risk/tool, missing reference, version conflict, hash/signature mismatch, path escape, prompt injection, unknown skill, disable/rollback.
 
