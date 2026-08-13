@@ -44,6 +44,16 @@ pub struct ContextInput<'a> {
     pub acceptance_criteria: &'a str,
     pub non_goals: &'a str,
     pub references: &'a [String],
+    /// Context contributed by installed skills, as `(skill_name, content)`
+    /// pairs. Assembly never trusts caller-supplied order: entries are
+    /// always sorted by `skill_name` before being rendered into a single
+    /// "Skill context" section at a fixed position in the output (after
+    /// non-goals, before workspace references). This guarantees two runs
+    /// with the same skill set produce byte-identical context regardless
+    /// of registry iteration order or which skill matched first, and that
+    /// no skill can push its content earlier/later relative to task fields
+    /// by controlling insertion order.
+    pub skill_context: &'a [(String, String)],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -238,7 +248,17 @@ pub fn assemble_context(input: ContextInput<'_>, max_chars: usize) -> String {
         ("Acceptance criteria", input.acceptance_criteria),
         ("Non-goals", input.non_goals),
     ];
+    // Deterministic, caller-order-independent rendering: sort by skill
+    // name so registry/matcher iteration order can never change output.
+    let mut skill_entries = input.skill_context.to_vec();
+    skill_entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let skill_context = skill_entries
+        .iter()
+        .map(|(name, content)| format!("### {name}\n{}", content.trim()))
+        .collect::<Vec<_>>()
+        .join("\n\n");
     let references = input.references.join("\n");
+    sections.push(("Skill context", &skill_context));
     sections.push(("Workspace references", &references));
     let mut output = String::new();
     for (label, value) in sections {
@@ -340,11 +360,74 @@ mod tests {
                 acceptance_criteria: "Tests pass",
                 non_goals: "No network",
                 references: &references,
+                skill_context: &[],
             },
             80,
         );
         assert!(context.len() <= 80);
         assert!(context.contains("## Task"));
+    }
+
+    #[test]
+    fn skill_context_is_ordered_deterministically_regardless_of_input_order() {
+        let references: Vec<String> = Vec::new();
+        let base = |skill_context: &[(String, String)]| {
+            assemble_context(
+                ContextInput {
+                    title: "Implement feature",
+                    description: "A bounded context",
+                    acceptance_criteria: "Tests pass",
+                    non_goals: "No network",
+                    references: &references,
+                    skill_context,
+                },
+                4_096,
+            )
+        };
+        let forward = vec![
+            ("zeta".to_string(), "zeta content".to_string()),
+            ("alpha".to_string(), "alpha content".to_string()),
+        ];
+        let reversed = vec![
+            ("alpha".to_string(), "alpha content".to_string()),
+            ("zeta".to_string(), "zeta content".to_string()),
+        ];
+        let first = base(&forward);
+        let second = base(&reversed);
+        assert_eq!(first, second, "skill context order must not depend on caller-supplied insertion order");
+        assert!(first.contains("## Skill context"));
+        let alpha_pos = first.find("### alpha").unwrap();
+        let zeta_pos = first.find("### zeta").unwrap();
+        let skill_pos = first.find("## Skill context").unwrap();
+        let refs_pos = first.find("## Workspace references");
+        assert!(alpha_pos < zeta_pos, "entries must be sorted by skill name");
+        assert!(skill_pos > first.find("## Non-goals").unwrap(), "skill context is fixed after non-goals");
+        if let Some(refs_pos) = refs_pos {
+            assert!(skill_pos < refs_pos, "skill context is fixed before workspace references");
+        }
+    }
+
+    #[test]
+    fn context_assembly_is_deterministic_across_repeated_runs_with_same_inputs() {
+        let references = vec!["src/main.rs".into(), "src/lib.rs".into()];
+        let skills = vec![
+            ("reviewer".to_string(), "Review the diff".to_string()),
+            ("planner".to_string(), "Plan the next step".to_string()),
+        ];
+        let make = || {
+            assemble_context(
+                ContextInput {
+                    title: "Implement feature",
+                    description: "A bounded context",
+                    acceptance_criteria: "Tests pass",
+                    non_goals: "No network",
+                    references: &references,
+                    skill_context: &skills,
+                },
+                4_096,
+            )
+        };
+        assert_eq!(make(), make());
     }
 
     #[test]

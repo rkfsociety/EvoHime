@@ -7,6 +7,7 @@ use std::{
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+pub mod capability_selection_store;
 pub mod capability_store;
 pub mod child_store;
 pub mod memory_store;
