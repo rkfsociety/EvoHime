@@ -10,7 +10,7 @@ foreach ($required in @(
     'installer/EvoHime.iss',
     'EvoHime-Setup.exe',
     '-Version $env:RELEASE_VERSION',
-    'EvoHime.runtimeconfig.json',
+    'npm run package',
     'Rollback smoke after failed installer start',
     '--blame-hang',
     '--blame-hang-timeout 5m',
@@ -52,29 +52,8 @@ if ($workflow -match 'path: native-package\s*$' -or $workflow -match 'evohime-na
 
 $installer = Get-Content -Raw (Join-Path $PSScriptRoot '..\installer\EvoHime.iss')
 $buildScript = Get-Content -Raw (Join-Path $PSScriptRoot 'build-windows-native.ps1')
-$desktopProject = Get-Content -Raw (Join-Path $PSScriptRoot '..\desktop\EvoHime.Desktop\EvoHime.Desktop.csproj')
-$trayService = Get-Content -Raw (Join-Path $PSScriptRoot '..\desktop\EvoHime.Desktop\Services\TrayIconService.cs')
-$mainWindow = Get-Content -Raw (Join-Path $PSScriptRoot '..\desktop\EvoHime.Desktop\MainWindow.xaml.cs')
-if ($buildScript -notmatch '--self-contained.*true') {
-    throw 'The WinUI publish must be self-contained.'
-}
-if ($buildScript -notmatch 'EvoHime\.Desktop\.pri') {
-    throw 'The native package must include the WinUI PRI resource index.'
-}
-if ($trayService -notmatch 'EntryPoint = "Shell_NotifyIcon"') {
-    throw 'The tray service must import the Shell_NotifyIcon Win32 entry point.'
-}
-if ($mainWindow -notmatch 'BuildUi\(\);') {
-    throw 'The desktop window must build its controls through the stable native UI path.'
-}
-foreach ($required in @(
-    '<WindowsPackageType>None</WindowsPackageType>',
-    '<WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>',
-    '<WindowsAppSdkUndockedRegFreeWinRTInitialize>true</WindowsAppSdkUndockedRegFreeWinRTInitialize>'
-)) {
-    if ($desktopProject -notmatch [regex]::Escape($required)) {
-        throw "The WinUI project is missing unpackaged self-contained setting: $required"
-    }
+if ($buildScript -notmatch 'electron-builder') {
+    throw 'The native package must build the Electron payload.'
 }
 if ($installer -notmatch 'IconFilename:') {
     throw 'The desktop shortcut must define an icon.'

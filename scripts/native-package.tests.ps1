@@ -5,7 +5,7 @@ $ErrorActionPreference = 'Stop'
 $manifest = New-NativePackageManifest -Architecture 'x64' -OsMinimum 'Windows 10 2004 / Windows 11'
 
 if ($manifest.product -ne 'EvoHime') { throw 'manifest product is not EvoHime' }
-if ($manifest.client -ne 'native-winui') { throw 'manifest client must be native-winui' }
+if ($manifest.client -ne 'electron-shell') { throw 'manifest client must be electron-shell' }
 if ($manifest.architecture -ne 'x64') { throw 'manifest architecture must be x64' }
 if ($manifest.components.core -ne 'evohime-core.exe') { throw 'core component is missing' }
 if ($manifest.components.supervisor -ne 'evohime-supervisor.exe') { throw 'supervisor component is missing' }
@@ -20,7 +20,6 @@ if (Test-Path -LiteralPath $packageRoot) {
 }
 New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
 Set-Content -LiteralPath (Join-Path $packageRoot 'EvoHime.exe') -Value 'ui'
-Set-Content -LiteralPath (Join-Path $packageRoot 'EvoHime.Desktop.pri') -Value 'ui-resources'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-core.exe') -Value 'core'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-supervisor.exe') -Value 'supervisor'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-transaction.exe') -Value 'updater'

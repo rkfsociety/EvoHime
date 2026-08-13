@@ -10,7 +10,7 @@ function New-NativePackageManifest {
 
     [pscustomobject]@{
         product      = 'EvoHime'
-        client       = 'native-winui'
+        client       = 'electron-shell'
         architecture = $Architecture
         os_minimum   = $OsMinimum
         protocol     = 'desktop-ipc-v1'

@@ -32,7 +32,7 @@ CloseApplicationsFilter=EvoHime.exe
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autodesktop}\EvoHime"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\Assets\evohime-agent.ico"
+Name: "{autodesktop}\EvoHime"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\resources\evohime-agent.ico"
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Запустить EvoHime"; Flags: nowait postinstall skipifsilent

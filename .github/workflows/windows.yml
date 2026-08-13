@@ -64,7 +64,7 @@ jobs:
       - name: Static security checks over the production bundles
         run: npm run check:bundle
       - name: Build unpacked package smoke
-        run: npx electron-builder --dir --config electron-builder.yml
+        run: npm run package
 
   windows-check:
     runs-on: windows-latest
@@ -183,7 +183,7 @@ jobs:
           $setup = Join-Path $env:GITHUB_WORKSPACE 'installer-output\EvoHime-Setup.exe'
           & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installPath"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($component in @('EvoHime.exe', 'EvoHime.runtimeconfig.json', 'EvoHime.deps.json', 'evohime-core.exe', 'evohime-supervisor.exe')) {
+          foreach ($component in @('EvoHime.exe', 'resources\app.asar', 'resources\evohime-agent.ico', 'evohime-core.exe', 'evohime-supervisor.exe', 'evohime-transaction.exe', 'evohime.manifest.json')) {
             if (-not (Test-Path -LiteralPath (Join-Path $installPath $component))) { throw "Installed component missing: $component" }
           }
           & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installPath"

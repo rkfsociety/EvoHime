@@ -1,4 +1,7 @@
 import { app, BrowserWindow, Notification } from 'electron'
+import { existsSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { spawn } from 'node:child_process'
 
 import type { ShellState } from '@shared/api'
 
@@ -25,7 +28,6 @@ import { WorkspaceStore } from './workspace-store'
 const logger = new JsonlLogger({ directory: logDirectory(), stream: 'main' })
 const log: HardeningOptions['log'] = (level, event, fields) => logger.write(level, event, fields)
 
-const launch = readLaunchContext()
 const reloadLimiter = new ReloadLimiter()
 
 let mainWindow: BrowserWindow | null = null
@@ -53,9 +55,10 @@ if (!app.requestSingleInstanceLock()) {
     }
   })
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     hardenSession(hardening)
 
+    const launch = await ensureSupervisorSession()
     client = new CorePipeClient({ launch, refreshLaunch: () => readLaunchContext(), log })
 
     client.on('state', (state: ShellState) => broadcast({ kind: 'state', state }))
@@ -96,6 +99,56 @@ if (!app.requestSingleInstanceLock()) {
     tray?.destroy()
     log('info', 'shell.stopping', {})
   })
+}
+
+async function ensureSupervisorSession(): Promise<ReturnType<typeof readLaunchContext>> {
+  const current = readLaunchContext()
+  if (!current.developerLaunch) return current
+
+  const supervisorPath = supervisorExecutablePath()
+  if (!supervisorPath || !existsSync(supervisorPath)) {
+    log('warn', 'shell.supervisor_missing', {})
+    return current
+  }
+  const child = spawn(supervisorPath, [], {
+    cwd: dirname(supervisorPath),
+    detached: false,
+    windowsHide: true,
+    stdio: 'ignore',
+    env: {
+      ...process.env,
+      EVOHIME_CORE_EXE: coreExecutablePath() ?? process.env['EVOHIME_CORE_EXE'],
+      EVOHIME_DATA_DIR: dataDirectory()
+    }
+  })
+  child.unref()
+  log('info', 'shell.supervisor_started', {})
+
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const next = readLaunchContext()
+    if (!next.developerLaunch) return next
+  }
+  log('warn', 'shell.supervisor_context_timeout', {})
+  return readLaunchContext()
+}
+
+function supervisorExecutablePath(): string | null {
+  return process.env['EVOHIME_SUPERVISOR_EXE'] || packagedSibling('evohime-supervisor.exe')
+}
+
+function coreExecutablePath(): string | null {
+  return process.env['EVOHIME_CORE_EXE'] || packagedSibling('evohime-core.exe')
+}
+
+function packagedSibling(name: string): string | null {
+  const candidates = [
+    join(process.resourcesPath, '..', name),
+    join(process.cwd(), name),
+    join(app.getAppPath(), '..', name)
+  ]
+  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0] ?? null
 }
 
 function notifyWhenHidden(eventType: string): void {
