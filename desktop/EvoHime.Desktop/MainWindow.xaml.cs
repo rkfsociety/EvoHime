@@ -729,6 +729,9 @@ public partial class MainWindow : Window
         var doctor = new Button { Content = "Core Doctor", Margin = new Thickness(0, 8, 0, 0) };
         doctor.Click += async (_, _) => await ShowDoctorReportAsync();
         runtime.Children.Add(doctor);
+        var capabilitySelection = new Button { Content = "Capability Selection", Margin = new Thickness(0, 8, 0, 0) };
+        capabilitySelection.Click += async (_, _) => await ShowCapabilitySelectionAsync();
+        runtime.Children.Add(capabilitySelection);
         sections.Children.Add(CreateSettingsSection("Состояние и диагностика", "Служебная информация приложения.", runtime, raised));
 
         var scroll = new ScrollViewer { Content = sections, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
@@ -2315,6 +2318,245 @@ public partial class MainWindow : Window
         await RefreshAsync();
         await dialog.ShowAsync();
     }
+
+    private async Task ShowCapabilitySelectionAsync()
+    {
+        var taskId = ActiveProject()?.Id ?? "default-task";
+        var statusText = new TextBlock { Text = string.Empty, TextWrapping = TextWrapping.Wrap, FontSize = 11 };
+        var selectionPanel = new StackPanel { Spacing = 4 };
+        var taskIdBox = new TextBox { Header = "Task ID", Text = taskId };
+        var intentBox = new TextBox { Header = "Intent", Text = string.Empty };
+        var riskBox = new ComboBox
+        {
+            Header = "Requested risk",
+            ItemsSource = new[] { "low", "medium", "high" },
+            SelectedIndex = 0,
+        };
+        var replacePicker = new ComboBox { Header = "Заменить на", ItemsSource = Array.Empty<string>() };
+        var getButton = new Button { Content = "Получить выбор" };
+        var pinButton = new Button { Content = "Закрепить" };
+        var replaceButton = new Button { Content = "Заменить" };
+
+        async Task RefreshManifestsAsync()
+        {
+            try
+            {
+                await _ipcRequestGate.WaitAsync();
+                try
+                {
+                    await _ipc.RequestCapabilityListAsync(50, CancellationToken.None);
+                    var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                    if (response.EventType != "capability.list")
+                    {
+                        return;
+                    }
+                    var listed = JsonSerializer.Deserialize<CapabilityListDto>(response.Payload);
+                    replacePicker.ItemsSource = listed?.Manifests.Select(manifest => manifest.Name).ToArray()
+                        ?? Array.Empty<string>();
+                }
+                finally
+                {
+                    _ipcRequestGate.Release();
+                }
+            }
+            catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+            {
+                statusText.Text = $"Список манифестов недоступен: {error.Message}";
+            }
+        }
+
+        async Task RunGetAsync()
+        {
+            selectionPanel.Children.Clear();
+            statusText.Text = "Загрузка…";
+            try
+            {
+                await _ipcRequestGate.WaitAsync();
+                try
+                {
+                    await _ipc.RequestCapabilitySelectionAsync(
+                        taskIdBox.Text,
+                        intentBox.Text,
+                        Array.Empty<string>(),
+                        Array.Empty<string>(),
+                        riskBox.SelectedItem as string ?? "low",
+                        CancellationToken.None);
+                    var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                    if (response.EventType != "capability.selection")
+                    {
+                        throw new InvalidOperationException("Core не вернул capability.selection.");
+                    }
+                    var state = JsonSerializer.Deserialize<CapabilitySelectionStateDto>(response.Payload)
+                        ?? throw new InvalidOperationException("Core вернул пустой capability selection.");
+                    RenderCapabilitySelection(selectionPanel, state);
+                    statusText.Text = $"Origin: {state.Origin}";
+                }
+                finally
+                {
+                    _ipcRequestGate.Release();
+                }
+            }
+            catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+            {
+                statusText.Text = $"Selection недоступен: {error.Message}";
+            }
+        }
+
+        getButton.Click += async (_, _) => await RunGetAsync();
+
+        pinButton.Click += async (_, _) =>
+        {
+            try
+            {
+                await _ipcRequestGate.WaitAsync();
+                try
+                {
+                    await _ipc.PinCapabilitySelectionAsync(taskIdBox.Text, CancellationToken.None);
+                    var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                    if (response.EventType != "capability.selection.pinned")
+                    {
+                        throw new InvalidOperationException("Core не подтвердил pin.");
+                    }
+                    var state = JsonSerializer.Deserialize<CapabilitySelectionStateDto>(response.Payload)
+                        ?? throw new InvalidOperationException("Core вернул пустой capability selection.");
+                    RenderCapabilitySelection(selectionPanel, state);
+                    statusText.Text = $"Закреплено. Origin: {state.Origin}";
+                }
+                finally
+                {
+                    _ipcRequestGate.Release();
+                }
+            }
+            catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+            {
+                statusText.Text = $"Pin не выполнен: {error.Message}";
+            }
+        };
+
+        replaceButton.Click += async (_, _) =>
+        {
+            var manifestName = replacePicker.SelectedItem as string;
+            if (string.IsNullOrWhiteSpace(manifestName))
+            {
+                statusText.Text = "Укажите имя манифеста для замены.";
+                return;
+            }
+            try
+            {
+                await _ipcRequestGate.WaitAsync();
+                try
+                {
+                    await _ipc.ReplaceCapabilitySelectionAsync(
+                        taskIdBox.Text,
+                        manifestName,
+                        intentBox.Text,
+                        Array.Empty<string>(),
+                        Array.Empty<string>(),
+                        riskBox.SelectedItem as string ?? "low",
+                        CancellationToken.None);
+                    var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                    if (response.EventType != "capability.selection.replaced")
+                    {
+                        throw new InvalidOperationException("Core не подтвердил замену.");
+                    }
+                    var state = JsonSerializer.Deserialize<CapabilitySelectionStateDto>(response.Payload)
+                        ?? throw new InvalidOperationException("Core вернул пустой capability selection.");
+                    RenderCapabilitySelection(selectionPanel, state);
+                    statusText.Text = $"Заменено. Origin: {state.Origin}";
+                }
+                finally
+                {
+                    _ipcRequestGate.Release();
+                }
+            }
+            catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+            {
+                statusText.Text = $"Замена не выполнена: {error.Message}";
+            }
+        };
+
+        var dialog = new ContentDialog
+        {
+            Title = "Capability Selection",
+            Content = new ScrollViewer
+            {
+                MaxHeight = 480,
+                Content = new StackPanel
+                {
+                    Spacing = 10,
+                    Children =
+                    {
+                        taskIdBox,
+                        intentBox,
+                        riskBox,
+                        getButton,
+                        statusText,
+                        selectionPanel,
+                        replacePicker,
+                        new StackPanel
+                        {
+                            Orientation = Orientation.Horizontal,
+                            Spacing = 8,
+                            Children = { pinButton, replaceButton },
+                        },
+                    },
+                },
+            },
+            CloseButtonText = "Закрыть",
+            XamlRoot = ((FrameworkElement)Content).XamlRoot,
+        };
+        await RefreshManifestsAsync();
+        await dialog.ShowAsync();
+    }
+
+    private static void RenderCapabilitySelection(StackPanel panel, CapabilitySelectionStateDto state)
+    {
+        panel.Children.Clear();
+        var selection = state.Selection;
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"{selection.ManifestName} v{selection.Version} ({state.Origin}{(selection.Pinned ? ", pinned" : string.Empty)})",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+        });
+        if (selection.Reasons.Length > 0)
+        {
+            panel.Children.Add(new TextBlock { Text = "Причины: " + string.Join("; ", selection.Reasons), TextWrapping = TextWrapping.Wrap, FontSize = 12 });
+        }
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"Risk: {selection.Permissions.RiskClass}; Tools: {string.Join(", ", selection.Permissions.AllowedTools)}",
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12,
+        });
+        if (selection.AcceptanceCriteria.Length > 0)
+        {
+            panel.Children.Add(new TextBlock { Text = "Acceptance criteria: " + string.Join("; ", selection.AcceptanceCriteria), TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = 0.8 });
+        }
+    }
+
+    private sealed record CapabilitySelectionStateDto(
+        [property: JsonPropertyName("selection")] CapabilitySelectionViewDto Selection,
+        [property: JsonPropertyName("origin")] string Origin);
+
+    private sealed record CapabilitySelectionViewDto(
+        [property: JsonPropertyName("manifest_name")] string ManifestName,
+        [property: JsonPropertyName("version")] string Version,
+        [property: JsonPropertyName("reasons")] string[] Reasons,
+        [property: JsonPropertyName("permissions")] CapabilityPermissionsDto Permissions,
+        [property: JsonPropertyName("acceptance_criteria")] string[] AcceptanceCriteria,
+        [property: JsonPropertyName("pinned")] bool Pinned);
+
+    private sealed record CapabilityPermissionsDto(
+        [property: JsonPropertyName("allowed_tools")] string[] AllowedTools,
+        [property: JsonPropertyName("allowed_domains")] string[] AllowedDomains,
+        [property: JsonPropertyName("risk_class")] string RiskClass);
+
+    private sealed record CapabilityListDto(
+        [property: JsonPropertyName("manifests")] CapabilityManifestNameDto[] Manifests);
+
+    private sealed record CapabilityManifestNameDto(
+        [property: JsonPropertyName("name")] string Name);
 
     private static Border BuildDoctorCheckRow(DoctorCheckDto check)
     {

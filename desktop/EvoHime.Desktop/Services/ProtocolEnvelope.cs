@@ -316,6 +316,73 @@ public static class ProtocolEnvelope
     public static byte[] ExportDoctorLogs(string destinationPath) => TaskCommand(57, output =>
         WriteString(output, 1, destinationPath));
 
+    /// <summary>Lists installed capability manifests (bounded, newest-first).</summary>
+    public static byte[] ListCapabilities(uint limit = 50) => TaskCommand(44, output =>
+    {
+        output.WriteTag(1, WireFormat.WireType.Varint);
+        output.WriteUInt32(limit);
+    });
+
+    /// <summary>
+    /// Runtime/UI wiring for capability-registry selection: runs the
+    /// deterministic matcher for taskId's query, reconciles against any
+    /// selection previously pinned/replaced for the same taskId, persists
+    /// the reconciled state, and returns it as capability.selection.
+    /// </summary>
+    public static byte[] GetCapabilitySelection(
+        string taskId,
+        string intent,
+        IReadOnlyList<string> requiredTools,
+        IReadOnlyList<string> requiredDomains,
+        string requestedRisk) => TaskCommand(58, output =>
+    {
+        WriteString(output, 1, taskId);
+        WriteString(output, 2, intent);
+        foreach (var tool in requiredTools)
+        {
+            WriteString(output, 3, tool);
+        }
+        foreach (var domain in requiredDomains)
+        {
+            WriteString(output, 4, domain);
+        }
+        WriteString(output, 5, requestedRisk);
+    });
+
+    /// <summary>
+    /// Pins the selection currently persisted for taskId so future
+    /// GetCapabilitySelection calls cannot silently swap it.
+    /// </summary>
+    public static byte[] PinCapabilitySelection(string taskId) => TaskCommand(59, output =>
+        WriteString(output, 1, taskId));
+
+    /// <summary>
+    /// Explicitly switches the selection persisted for taskId to
+    /// manifestName, re-deriving permissions/reasons against the same
+    /// query.
+    /// </summary>
+    public static byte[] ReplaceCapabilitySelection(
+        string taskId,
+        string manifestName,
+        string intent,
+        IReadOnlyList<string> requiredTools,
+        IReadOnlyList<string> requiredDomains,
+        string requestedRisk) => TaskCommand(60, output =>
+    {
+        WriteString(output, 1, taskId);
+        WriteString(output, 2, manifestName);
+        WriteString(output, 3, intent);
+        foreach (var tool in requiredTools)
+        {
+            WriteString(output, 4, tool);
+        }
+        foreach (var domain in requiredDomains)
+        {
+            WriteString(output, 5, domain);
+        }
+        WriteString(output, 6, requestedRisk);
+    });
+
     public static byte[] SaveBuildPolicy(string projectId, byte[] policyJson, long expectedVersion) => TaskCommand(33, output =>
     {
         WriteString(output, 1, projectId);

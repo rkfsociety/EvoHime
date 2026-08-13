@@ -418,6 +418,44 @@ message SubmitChildReport {
   uint32 confidence_percent = 6;
 }
 
+// Runtime/UI wiring for the capability-registry selection
+// (evohime_core::capability_selection). Runs the deterministic matcher for
+// `task_id`'s query against the installed catalog, reconciles the result
+// against any previously pinned/replaced selection persisted for the same
+// task_id (evohime_local_storage::capability_selection_store), and returns
+// the reconciled CapabilitySelectionState (manifest/version/reasons/risk/
+// tools/acceptance criteria/origin) as JSON. The reconciled state is
+// persisted so it survives reconnect.
+message GetCapabilitySelection {
+  string task_id = 1;
+  string intent = 2;
+  repeated string required_tools = 3;
+  repeated string required_domains = 4;
+  string requested_risk = 5;
+}
+
+// Pins the selection currently persisted for task_id so future
+// GetCapabilitySelection calls cannot silently swap it for a higher-scoring
+// auto-match. Fails if no selection has been recorded for task_id yet (call
+// GetCapabilitySelection first).
+message PinCapabilitySelection {
+  string task_id = 1;
+}
+
+// Explicitly switches the selection persisted for task_id to
+// manifest_name, re-deriving permissions/reasons against the same query so
+// the UI never shows stale grants (evohime_core::capability_selection::
+// replace). Rejects a manifest_name outside the registry or outside the
+// query's own risk/tool/domain bounds.
+message ReplaceCapabilitySelection {
+  string task_id = 1;
+  string manifest_name = 2;
+  string intent = 3;
+  repeated string required_tools = 4;
+  repeated string required_domains = 5;
+  string requested_risk = 6;
+}
+
 message CommandEnvelope {
   ProtocolVersion protocol = 1;
   string request_id = 2;
@@ -473,6 +511,9 @@ message CommandEnvelope {
     GitDiff git_diff = 55;
     TerminalExecute terminal_execute = 56;
     ExportDoctorLogs export_doctor_logs = 57;
+    GetCapabilitySelection get_capability_selection = 58;
+    PinCapabilitySelection pin_capability_selection = 59;
+    ReplaceCapabilitySelection replace_capability_selection = 60;
   }
 }
 
