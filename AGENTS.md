@@ -24,7 +24,9 @@ UI не обращается к workspace, SQLite или model provider напр
 
 - Windows 10 2004+ или Windows 11, x64;
 - .NET SDK 10;
-- Rust MSVC toolchain.
+- Rust MSVC toolchain;
+- Node.js 22 LTS — только для разработки Electron shell; в продукт внешний
+  Node.js не входит.
 
 ## Команды
 
@@ -58,9 +60,21 @@ $pwsh = Join-Path $PSHOME 'pwsh.exe'
 # Rust Core foundation
 cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc
 cargo check -p evohime-supervisor
+
+# Electron shell (desktop\evohime-electron)
+cd desktop\evohime-electron
+npm run bootstrap        # npm ci без lifecycle-скриптов + allow-list installers
+npm run check:protocol   # генерируемые IPC-типы совпадают с каноническим proto
+npm run typecheck
+npm test                 # adapter, security policy, real-Core E2E (skip без Core)
+npm run dev              # dev-запуск оболочки
+npm run package          # распакованный Windows package в release\win-unpacked
 ```
 
-Для текущих desktop-задач используй Windows launcher, Rust crates, WinUI/IPC tests и Windows packaging scripts. Для работ по миграции используй отдельный план `docs/plans/0-electron-shell-migration.md` и Electron tests после появления проекта.
+Real-Core E2E тесты требуют собранный Core: `cargo build -p evohime-core`
+(или `--release`); без бинарника они помечаются как пропущенные.
+
+Для текущих desktop-задач используй Windows launcher, Rust crates, WinUI/IPC tests и Windows packaging scripts. Для работ по миграции используй план `docs/plans/0-electron-shell-migration.md`, зафиксированный стек `docs/plans/0-electron-stack-decision.md` и Electron tests в `desktop/evohime-electron`.
 Electron renderer — встроенная часть desktop-приложения, а не web-панель: HTTP server, browser launcher и внешний Node.js runtime не возвращаются в продукт.
 
 Если Rust-сборка останавливается на `prost-build` или другом crate, сначала проверь доступ Cargo к crates.io:
@@ -104,4 +118,6 @@ NuGet и crates.io — независимые источники: успешны
 - `docs/development-plan.md` — актуальный implementation plan;
 - `docs/roadmap.md` — долгосрочные направления без деталей реализации;
 - `docs/features/`, `docs/providers/`, `docs/security/` — справочные разделы;
-- `docs/plans/` — рабочие планы и результаты их ревью.
+- `docs/plans/` — рабочие планы и результаты их ревью;
+- `docs/plans/0-electron-stack-decision.md` — зафиксированный стек Electron
+  shell и результаты Gate 0 spike.

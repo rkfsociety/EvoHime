@@ -10,7 +10,7 @@ EvoHime — локальный Windows-клиент для coding-agent зада
 
 ## Runtime
 
-- `EvoHime.exe` — текущий WinUI 3 интерфейс; целевая оболочка — Electron, но Electron-проект ещё не создан;
+- `EvoHime.exe` — текущий WinUI 3 интерфейс; целевая оболочка — Electron: проект `desktop/evohime-electron` создан, Gate 0 пройден, production installer пока собирает WinUI;
 - `evohime-core.exe` — Rust agent loop, model gateway, tools, permissions, approvals и SQLite;
 - `evohime-supervisor.exe` — single-instance mutex, Job Object, restart и диагностика;
 - `evohime-transaction.exe` — скрытый transaction worker для backup, commit и rollback обновлений;
@@ -38,11 +38,11 @@ Core и supervisor — внутренние компоненты установ�
 - filesystem.search исключает hard-default secret/auth paths, не следует symlink/reparse-обходам и не требует POSIX shell;
 - shell blocklist расширен для Windows launcher/LOLBin семейств; recovery timeline различает `RECOVERING`, `BLOCKED`, `WAITING_APPROVAL` и `FAILED`;
 - Core IPC wiring для backup preview/restore и отображения storage progress/error;
-- Electron shell migration plan создан, но реализация Electron и production acceptance ещё не завершены.
+- Electron shell: этап 0 подплана 0 выполнен (стек зафиксирован, оболочка собирается и подключается к настоящему Core), UI-срезы, ACL/challenge и production acceptance ещё не завершены.
 
 ## Следующий этап
 
-1. реализовать Electron shell migration и IPC adapter;
+1. завершить Electron shell migration: ACL/challenge для pipe, UI-срезы и packaging acceptance;
 2. перенести UI-срезы и выполнить install/upgrade/rollback acceptance на Windows 10 и Windows 11;
 3. leases/reconciliation и расширенный diff/command preview в approval UI;
 4. informative ARM64/Insider compatibility runs.

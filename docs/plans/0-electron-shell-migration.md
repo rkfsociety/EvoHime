@@ -1,7 +1,9 @@
 # Подплан 0 — замена desktop shell на Electron
 
-Статус: план миграции; реализация не начата
+Статус: этап 0 выполнен (Gate 0 пройден), этап 1 частично — adapter и contract
+tests готовы, ACL/challenge на стороне Core и supervisor не сделаны
 Порядок: 0 из 6; prerequisite для UI-частей планов 1–5
+Зафиксированный стек и результаты spike: `docs/plans/0-electron-stack-decision.md`
 
 ## Цель и архитектурный invariant
 
@@ -87,6 +89,11 @@ approvals, paths, workspace scope, executable/argv и secret operations даже
   и Windows 10/11 на реальных машинах или зафиксировать недоступную проверку;
 - renderer не получает прямой доступ к workspace, pipe, shell или Core socket.
 
+Выполнено: `desktop/evohime-electron` содержит main/preload/renderer,
+зафиксированный стек, production/dev профили, sandbox+CSP, allow-list
+postinstall и named-pipe spike. Результаты — в
+`docs/plans/0-electron-stack-decision.md`.
+
 **Gate 0:** выбранный стек собирает подписываемый desktop package, пустое окно
 запускается без консоли и браузера, sandbox/CSP проходят smoke, launch contract
 подтверждает independent supervisor/liveness behavior, а pipe spike имеет
@@ -131,6 +138,14 @@ stale-pipe/concurrent-reconnect и ACL/challenge результаты. При п
   disconnect/timeout cases и E2E tests с настоящим собранным Core, включая
   kill/restart Core;
 - до удаления WinUI сохранять C# IPC tests как compatibility oracle.
+
+Выполнено: TypeScript-биндинги генерируются из канонического protobuf и
+проверяются в CI (`npm run check:protocol`), adapter владеет handshake,
+reconnect, sequence/gap-детекцией, resync, bounded frames и bounded очередью
+команд, contract- и real-Core E2E тесты (включая kill/restart Core) проходят.
+Не сделано: security descriptor/DACL и непредсказуемое имя pipe, одноразовый
+challenge, user SID и logon session/LUID binding — это изменения в Core и
+supervisor.
 
 **Gate 1:** generated types совпадают с protobuf, adapter проходит contract и
 real-Core E2E tests, reconnect/replay либо детерминированно восстанавливают

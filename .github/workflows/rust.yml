@@ -33,6 +33,37 @@ jobs:
       - name: Check supervisor
         run: cargo check --locked -p evohime-supervisor -p evohime-updater
 
+  electron-shell:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop/evohime-electron
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install shell dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Run allow-listed dependency installers
+        run: node scripts/postinstall-allowlist.mjs
+      - name: Verify generated IPC bindings match the canonical proto
+        run: npm run check:protocol
+      - name: Typecheck main, preload and renderer
+        run: npm run typecheck
+      - name: Build Core for the real-Core IPC E2E tests
+        working-directory: .
+        run: cargo build --locked -p evohime-core
+      - name: Test shell adapter, security policy and real-Core IPC
+        run: npm test
+      - name: Build shell bundles
+        run: npm run build
+      - name: Build unpacked package smoke
+        run: npx electron-builder --dir --config electron-builder.yml
+
   windows-check:
     runs-on: windows-latest
     steps:

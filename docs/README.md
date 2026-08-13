@@ -52,7 +52,7 @@
 
 ## Рабочие правила
 
-Для текущей разработки используйте `.\start-dev.ps1`, native package tests, WinUI/IPC tests и Windows CI. Electron tests появятся вместе с проектом из подплана 0. Установщик и пользовательский запуск пока работают через WinUI `EvoHime.exe`.
+Для текущей разработки используйте `.\start-dev.ps1`, native package tests, WinUI/IPC tests и Windows CI. Electron shell живёт в `desktop/evohime-electron`; его typecheck, unit-, contract- и real-Core E2E тесты запускаются через `npm test` и входят в Windows CI. Установщик и пользовательский запуск пока работают через WinUI `EvoHime.exe`.
 
 Веб-панель полностью выведена из продукта. Будущий Electron renderer будет встроенным desktop UI; HTTP server и browser launcher не используются. Сейчас `start-dev.ps1` собирает native package и открывает WinUI `EvoHime.exe`; клиент сам запускает единственный скрытый supervisor, а supervisor — Core. `-SkipBuild` допустим только при наличии готового `.evohime-native\windows-x64`.
 

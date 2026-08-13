@@ -1,0 +1,27 @@
+appId: dev.evohime.shell
+productName: EvoHime
+copyright: EvoHime
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+# Tray and window icons ship as signed package resources; the shell never loads
+# them from a writable directory.
+extraResources:
+  - from: resources
+    to: .
+asar: true
+# Inno Setup plus evohime-transaction.exe stay the only install/update/rollback
+# path (plan 0, stage 4): electron-builder only produces the unpacked payload,
+# and no autoUpdater/Squirrel channel is configured.
+win:
+  icon: resources/evohime-agent.ico
+  target:
+    - dir
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  signAndEditExecutable: true
+publish: null
+electronDownload:
+  cache: .electron-cache

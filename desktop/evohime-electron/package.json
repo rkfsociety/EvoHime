@@ -1,0 +1,42 @@
+{
+  "name": "evohime-electron",
+  "version": "0.1.0",
+  "private": true,
+  "description": "EvoHime Electron desktop shell (main, preload, renderer)",
+  "license": "UNLICENSED",
+  "author": "EvoHime",
+  "main": "out/main/index.js",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "bootstrap": "npm ci --ignore-scripts && node scripts/postinstall-allowlist.mjs",
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "generate:protocol": "node scripts/generate-protocol.mjs",
+    "check:protocol": "node scripts/generate-protocol.mjs --check",
+    "package": "npm run build && electron-builder --dir --config electron-builder.yml"
+  },
+  "dependencies": {
+    "long": "5.3.2",
+    "protobufjs": "8.7.2",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "5.2.0",
+    "electron": "43.4.0",
+    "electron-builder": "26.15.3",
+    "electron-vite": "5.0.0",
+    "protobufjs-cli": "2.6.2",
+    "typescript": "5.9.3",
+    "vite": "7.3.6",
+    "vitest": "3.2.7"
+  }
+}

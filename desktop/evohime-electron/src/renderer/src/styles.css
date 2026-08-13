@@ -1,0 +1,116 @@
+:root {
+  color-scheme: dark light;
+  font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+}
+
+body {
+  margin: 0;
+  background: #101014;
+  color: #e8e8ef;
+}
+
+@media (prefers-color-scheme: light) {
+  body {
+    background: #f5f5f7;
+    color: #1b1b1f;
+  }
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+}
+
+.shell__header h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.shell__status {
+  margin: 4px 0 0;
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.shell__status--connected {
+  color: #4ec9a4;
+}
+
+.shell__status--reconnecting,
+.shell__status--replaying,
+.shell__status--resyncing,
+.shell__status--state-gap {
+  color: #e0b341;
+}
+
+.shell__status--version-mismatch,
+.shell__status--degraded,
+.shell__status--fatal {
+  color: #e26d6d;
+}
+
+.shell__panel {
+  border: 1px solid rgb(128 128 150 / 25%);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.shell__panel h2 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.shell__panel dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0;
+}
+
+.shell__panel dt {
+  opacity: 0.7;
+}
+
+.shell__panel dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.shell__reason {
+  margin: 12px 0 0;
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.shell__events {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.shell__events li {
+  display: flex;
+  gap: 12px;
+}
+
+.shell__sequence {
+  opacity: 0.6;
+}
+
+.shell__empty {
+  margin: 0;
+  opacity: 0.7;
+}
+
+.shell--recovery {
+  max-width: 480px;
+}
