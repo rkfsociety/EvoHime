@@ -4,6 +4,7 @@ import type { ConnectionState, CoreEvent, ShellState } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { WorkspacePicker } from './WorkspacePicker'
+import { TaskTimeline } from './TaskTimeline'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -90,21 +91,7 @@ export function App(): React.JSX.Element {
 
       <WorkspacePicker connection={connection} />
 
-      <section className="shell__panel">
-        <h2>События Core</h2>
-        {events.length === 0 ? (
-          <p className="shell__empty">Пока нет событий.</p>
-        ) : (
-          <ul className="shell__events">
-            {events.map((event) => (
-              <li key={`${event.sequenceId}-${event.eventType}`}>
-                <span className="shell__sequence">#{event.sequenceId}</span>
-                <span>{event.eventType}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <TaskTimeline connection={connection} events={events} />
     </main>
   )
 }

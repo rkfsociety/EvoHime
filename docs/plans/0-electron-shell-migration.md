@@ -1,7 +1,7 @@
 # Подплан 0 — замена desktop shell на Electron
 
-Статус: этапы 0, 1 и 2 выполнены (Gate 0, 1 и 2 пройдены); этап 3 начат —
-срез 1 (workspace picker) готов, следующий срез 2 (task timeline)
+Статус: этапы 0, 1 и 2 закрыты; этап 3 в работе — срез 2 (task timeline)
+после завершённого среза 1.
 Порядок: 0 из 6; prerequisite для UI-частей планов 1–5
 Зафиксированный стек и результаты spike: `docs/plans/0-electron-stack-decision.md`
 
@@ -89,10 +89,9 @@ approvals, paths, workspace scope, executable/argv и secret operations даже
   и Windows 10/11 на реальных машинах или зафиксировать недоступную проверку;
 - renderer не получает прямой доступ к workspace, pipe, shell или Core socket.
 
-Выполнено: `desktop/evohime-electron` содержит main/preload/renderer,
-зафиксированный стек, production/dev профили, sandbox+CSP, allow-list
-postinstall и named-pipe spike. Результаты — в
-`docs/plans/0-electron-stack-decision.md`.
+Gate 0 закрыт. Зафиксированный стек и текущие ограничения остаются в
+`docs/plans/0-electron-stack-decision.md`; результаты проверок здесь не
+дублируются.
 
 **Gate 0:** выбранный стек собирает подписываемый desktop package, пустое окно
 запускается без консоли и браузера, sandbox/CSP проходят smoke, launch contract
@@ -139,22 +138,7 @@ stale-pipe/concurrent-reconnect и ACL/challenge результаты. При п
   kill/restart Core;
 - до удаления WinUI сохранять C# IPC tests как compatibility oracle.
 
-Выполнено: TypeScript-биндинги генерируются из канонического protobuf и
-проверяются в CI (`npm run check:protocol`); adapter владеет handshake,
-reconnect, sequence/gap-детекцией, resync, bounded frames и bounded очередью
-команд; contract- и real-Core E2E тесты (включая kill/restart Core) проходят.
-
-Транспортная аутентификация: supervisor выдаёт на сессию protected launch
-context (непредсказуемое имя pipe, session secret, ожидаемые user SID и logon
-session) в каталоге с owner-only DACL и удаляет его при завершении сессии.
-Core сам создаёт pipe с DACL `D:P(A;;GA;;;<user SID>)`, на каждое подключение
-выдаёт одноразовый nonce с TTL и требует ответ
-`HMAC-SHA256(secret, role | client_id | nonce)`; идентичность клиента берётся у
-ОС через impersonation. Отвергаются несовместимый major, чужая идентичность,
-неизвестная роль, просроченный, повторно использованный или не совпавший nonce
-и неверный proof. Роли: `shell` (Electron) и `compatibility-shell` (WinUI).
-Threat model для доверенного текущего пользователя описан в
-`docs/security/threat-model.md`.
+Gate 1 закрыт; transport и типизированный IPC готовы для UI-срезов.
 
 **Gate 1:** generated types совпадают с protobuf, adapter проходит contract и
 real-Core E2E tests, reconnect/replay либо детерминированно восстанавливают
@@ -198,19 +182,8 @@ ticket и expiry date.
 - покрыть preload API, redaction, navigation policy и неразрешённые команды
   regression tests.
 
-Выполнено: `window.evohime.v1` отдаёт только `invoke/subscribe/clipboard/
-openExternal`, ничего Electron-подобного через мост не проходит; sandbox,
-contextIsolation и запрет nodeIntegration включены; production CSP без
-`unsafe-eval` и inline-скриптов; навигация, новые окна, webview и внешние схемы
-запрещены по умолчанию, внешние ссылки — только по allow-list; в production
-DevTools, меню и их шорткаты выключены, debug-флаги приводят к отказу запуска,
-source maps не собираются; redaction выполняется общим слоем до записи любой
-диагностики; permission handlers deny-by-default; lockfile в репозитории,
-lifecycle-скрипты зависимостей выключены и разрешены поимённо.
-Regression tests покрывают preload-поверхность, allow-list команд, redaction и
-navigation policy; `npm run check:bundle` статически проверяет собранные
-bundles (потеря guard, source map, ослабленный CSP, Node-примитив в preload,
-`ipcRenderer` в renderer) и включён в CI.
+Gate 2 закрыт; renderer и main используют только утверждённый bridge/Core
+контракт.
 
 **Gate 2:** security tests и production static checks проходят; ни renderer, ни
 main не могут выполнить secret/workspace/shell operation вне Core policy.
@@ -248,14 +221,7 @@ policy/approval. Вывод имеет зафиксированный после
 фильтрует ANSI/OSC, включая OSC 8, а file/exec links запускаются только после
 explicit approval через Core, не после одного UI-confirm.
 
-Срез 1 выполнен: рабочая папка выбирается через нативный диалог, которым
-владеет main process, выбор и bounded-список последних папок хранятся в
-`%LOCALAPPDATA%\EvoHime\shell\workspaces.json` (атомарная запись, устойчивость
-к повреждённому файлу, регистронезависимая дедупликация). UI показывает
-восстановленный после перезапуска выбор, отсутствие выбора, исчезнувшую папку,
-недоступность Core, отказ выбора и отсутствие preload-моста. Renderer не имеет
-доступа к файловой системе: путь приходит только из main, а Core повторно
-проверяет workspace scope на каждой команде.
+Срез 1 закрыт: workspace picker готов и передаёт выбор только через main/Core.
 
 **Gate каждого среза:** focused UI tests, real-Core IPC scenario, reconnect/
 failure-state check и проверка отсутствия прямых filesystem/shell calls.
