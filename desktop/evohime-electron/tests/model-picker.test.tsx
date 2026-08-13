@@ -83,6 +83,24 @@ describe('model picker', () => {
     expect(calls).toContainEqual({ command: 'core.selectModel', payload: { model: 'b:free' } })
   })
 
+  it('commits to the model it displays instead of leaving Core on its default', async () => {
+    // Regression: the dropdown rendered the first option while Core still used
+    // the route default, so a task ran against a model the user never saw.
+    render(
+      <ModelPicker
+        connection="connected"
+        events={[event('model.catalog', { mode: 'free', models: ['first:free', 'second:free'] })]}
+      />
+    )
+
+    await waitFor(() =>
+      expect(calls).toContainEqual({
+        command: 'core.selectModel',
+        payload: { model: 'first:free' }
+      })
+    )
+  })
+
   it('points at the key when the catalogue could not be read', async () => {
     render(
       <ModelPicker

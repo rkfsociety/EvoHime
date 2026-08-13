@@ -117,6 +117,56 @@ impl IpcBridge {
         self
     }
 
+    /// Streams journal entries newer than `after_sequence` to a connected
+    /// client and returns the sequence it has now seen.
+    ///
+    /// Task progress reaches the shell this way rather than straight from the
+    /// in-memory broadcast: the journal is what assigns sequence numbers, and
+    /// the shell relies on them for resync after a reconnect.
+    pub async fn push_journal_tail<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        after_sequence: u64,
+    ) -> Result<u64, IpcBridgeError> {
+        let batch = self
+            .journal
+            .replay_bounded(after_sequence as i64, 256)
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        let mut last_sequence = after_sequence;
+        for record in batch.events {
+            last_sequence = record.sequence_id as u64;
+            let event = generated::EventEnvelope {
+                protocol: Some(protocol()),
+                sequence_id: record.sequence_id as u64,
+                task_id: record.task_id,
+                event_type: record.event_type,
+                payload: record.payload,
+                core_instance_id: self.core_instance_id.clone(),
+                session_epoch: self.session_epoch,
+                event: None,
+            };
+            transport::write_frame(writer, &event.encode_to_vec()).await?;
+        }
+        Ok(last_sequence)
+    }
+
+    /// Sequence the journal has already durably recorded.
+    pub async fn latest_sequence(&self) -> u64 {
+        self.journal.latest_sequence().await.max(0) as u64
+    }
+
+    /// Listener that fires whenever a task emits, so the server knows there is
+    /// a journal tail worth flushing.
+    pub async fn subscribe_events(
+        &self,
+    ) -> Option<tokio::sync::broadcast::Receiver<crate::CoreEvent>> {
+        match &self.coordinator {
+            Some(coordinator) => Some(coordinator.subscribe().await),
+            None => None,
+        }
+    }
+
     pub async fn process_once<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
         &self,
         reader: &mut R,

@@ -71,6 +71,16 @@ export function ModelPicker({ connection, events }: ModelPickerProps): React.JSX
     [api]
   )
 
+  // A dropdown whose value is not in its own list still renders the first
+  // option, which would show one model while Core used another — the route
+  // default, which need not even exist in this tier. Commit to what is shown.
+  useEffect(() => {
+    if (models.length === 0) return
+    if (current !== '' && models.includes(current)) return
+    const first = models[0]
+    if (first !== undefined) void select(first)
+  }, [current, models, select])
+
   if (!connected) {
     return null
   }
@@ -85,18 +95,18 @@ export function ModelPicker({ connection, events }: ModelPickerProps): React.JSX
     )
   }
 
-  const options = current && !models.includes(current) ? [current, ...models] : models
+  const known = models.includes(current)
 
   return (
     <label className="model-picker">
       <span className="visually-hidden">Модель</span>
       <select
-        value={current}
+        value={known ? current : ''}
         onChange={(event) => void select(event.target.value)}
-        disabled={options.length === 0}
+        disabled={models.length === 0}
       >
-        {options.length === 0 ? <option value="">загрузка моделей…</option> : null}
-        {options.map((model) => (
+        {known ? null : <option value="">загрузка моделей…</option>}
+        {models.map((model) => (
           <option key={model} value={model}>{model}</option>
         ))}
       </select>

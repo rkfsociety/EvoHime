@@ -34,6 +34,39 @@ pub struct PipeServerConfig {
     pub enforce_authentication: bool,
 }
 
+/// Writer that hands frames to the single task owning the pipe's write half.
+/// Ordering is preserved, so a frame written in several calls stays contiguous.
+struct ChannelWriter(tokio::sync::mpsc::UnboundedSender<Vec<u8>>);
+
+impl tokio::io::AsyncWrite for ChannelWriter {
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        _context: &mut std::task::Context<'_>,
+        buffer: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        match self.0.send(buffer.to_vec()) {
+            Ok(()) => std::task::Poll::Ready(Ok(buffer.len())),
+            Err(_) => std::task::Poll::Ready(Err(std::io::Error::from(
+                std::io::ErrorKind::BrokenPipe,
+            ))),
+        }
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        _context: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        _context: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+}
+
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -46,6 +79,8 @@ pub async fn run_windows_pipe(
     bridge: IpcBridge,
     logger: Arc<StructuredLogger>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Shared so the event pump can outlive one command loop iteration.
+    let bridge = Arc::new(bridge);
     let pipe_name = config.context.pipe_name.clone();
     let enforce = config.enforce_authentication;
     let mut verifier = HandshakeVerifier::new(config.context, DEFAULT_NONCE_TTL_MS)
@@ -97,8 +132,40 @@ pub async fn run_windows_pipe(
             }
         }
 
+        // Task progress is pushed rather than polled: without this the shell
+        // only ever saw events when it happened to ask for a replay. Frames go
+        // through one channel so the command loop and the event pump never
+        // interleave a half-written frame, and reading a command is never
+        // cancelled mid-frame by an event arriving.
+        let (frames, mut outbound) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let writer_task = tokio::spawn(async move {
+            while let Some(bytes) = outbound.recv().await {
+                if tokio::io::AsyncWriteExt::write_all(&mut writer, &bytes)
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+
+        let pump = bridge.subscribe_events().await.map(|mut events| {
+            let bridge = Arc::clone(&bridge);
+            let mut sink = ChannelWriter(frames.clone());
+            tokio::spawn(async move {
+                let mut pushed = bridge.latest_sequence().await;
+                while events.recv().await.is_ok() {
+                    match bridge.push_journal_tail(&mut sink, pushed).await {
+                        Ok(sequence) => pushed = sequence,
+                        Err(_) => break,
+                    }
+                }
+            })
+        });
+
+        let mut sink = ChannelWriter(frames);
         loop {
-            if let Err(error) = bridge.process_once(&mut reader, &mut writer).await {
+            if let Err(error) = bridge.process_once(&mut reader, &mut sink).await {
                 let _ = logger.write(
                     "warn",
                     "ipc.connection_closed",
@@ -107,6 +174,10 @@ pub async fn run_windows_pipe(
                 break;
             }
         }
+        if let Some(pump) = pump {
+            pump.abort();
+        }
+        writer_task.abort();
     }
 }
 

@@ -1355,6 +1355,12 @@ impl EventJournal {
         database.read_events_after(after_sequence, limit)
     }
 
+    /// Highest recorded sequence; zero when nothing has been journalled yet.
+    pub async fn latest_sequence(&self) -> i64 {
+        let database = self.database.lock().await;
+        database.latest_event_sequence().unwrap_or(0)
+    }
+
     pub async fn replay_bounded(
         &self,
         after_sequence: i64,
@@ -3197,6 +3203,12 @@ struct CoordinatorState {
 impl TaskCoordinator {
     pub fn new(buffer: usize) -> (Self, broadcast::Receiver<CoreEvent>) {
         Self::build(buffer, None, None)
+    }
+
+    /// Additional listener on the same event stream. Used by the pipe server to
+    /// know when to flush the journal tail to a connected shell.
+    pub async fn subscribe(&self) -> broadcast::Receiver<CoreEvent> {
+        self.state.lock().await.events.subscribe()
     }
 
     pub fn new_with_executor(

@@ -1477,6 +1477,14 @@ impl LocalDatabase {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Highest sequence the journal has recorded, or zero when it is empty.
+    pub fn latest_event_sequence(&self) -> Result<i64, StorageError> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT COALESCE(MAX(sequence_id), 0) FROM events")?;
+        Ok(statement.query_row([], |row| row.get(0))?)
+    }
+
     pub fn read_events_after(
         &self,
         after_sequence: i64,
