@@ -75,7 +75,7 @@ npm run package          # распакованный Windows package в release
 Real-Core E2E тесты требуют собранный Core: `cargo build -p evohime-core`
 (или `--release`); без бинарника они помечаются как пропущенные.
 
-Для текущих desktop-задач используй Windows launcher, Rust crates, WinUI/IPC tests и Windows packaging scripts. Для работ по миграции используй план `docs/plans/0-electron-shell-migration.md`, зафиксированный стек `docs/plans/0-electron-stack-decision.md` и Electron tests в `desktop/evohime-electron`.
+Для текущих desktop-задач используй Windows launcher, Rust crates, WinUI/IPC tests и Windows packaging scripts. Для работ по миграции используй план `docs/plans/0-electron-shell-migration.md` и Electron tests в `desktop/evohime-electron`; принятые архитектурные решения и стек хранятся в памяти проекта.
 Electron renderer — встроенная часть desktop-приложения, а не web-панель: HTTP server, browser launcher и внешний Node.js runtime не возвращаются в продукт.
 
 Если Rust-сборка останавливается на `prost-build` или другом crate, сначала проверь доступ Cargo к crates.io:
@@ -122,5 +122,3 @@ NuGet и crates.io — независимые источники: успешны
 - `docs/roadmap.md` — долгосрочные направления без деталей реализации;
 - `docs/features/`, `docs/providers/`, `docs/security/` — справочные разделы;
 - `docs/plans/` — рабочие планы и результаты их ревью;
-- `docs/plans/0-electron-stack-decision.md` — зафиксированный стек Electron
-  shell и результаты Gate 0 spike.
