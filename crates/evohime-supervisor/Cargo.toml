@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 tokio = { version = "1", features = ["macros", "process", "rt-multi-thread", "signal", "time"] }
 serde_json = "1"
+serde = { version = "1", features = ["derive"] }
 evohime-updater = { path = "../evohime-updater" }
 evohime-desktop-ipc = { path = "../desktop-ipc" }
 

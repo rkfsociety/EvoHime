@@ -1,6 +1,7 @@
 mod runtime_loop;
 mod schedule_contract;
 mod scheduler_state;
+mod pulse;
 
 #[cfg(windows)]
 mod windows_supervisor;

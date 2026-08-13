@@ -534,6 +534,7 @@ version = "0.1.0"
 dependencies = [
  "evohime-desktop-ipc",
  "evohime-updater",
+ "serde",
  "serde_json",
  "tokio",
  "windows-sys 0.61.2",

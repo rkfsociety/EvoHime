@@ -1708,3 +1708,54 @@ select:focus {
   display: flex;
   gap: 8px;
 }
+.operations-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.operations-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.operations-card {
+  display: grid;
+  gap: 5px;
+  padding: 16px;
+  border: 1px solid var(--border, #2c3546);
+  border-radius: 12px;
+  background: var(--surface, #171c27);
+}
+
+.operations-card--warning {
+  border-color: #b77a42;
+}
+
+.operations-card strong {
+  font-size: 1.35rem;
+}
+
+.operations-card small {
+  color: var(--muted, #8d98aa);
+}
+
+.operations-timeline {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.operations-timeline li {
+  display: flex;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface, #171c27) 82%, transparent);
+}
+
+@media (max-width: 900px) {
+  .operations-grid { grid-template-columns: 1fr; }
+}
