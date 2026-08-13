@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Notification } from 'electron'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 
 import type { ShellState } from '@shared/api'
 
@@ -33,6 +33,7 @@ const reloadLimiter = new ReloadLimiter()
 let mainWindow: BrowserWindow | null = null
 let tray: TrayController | null = null
 let client: CorePipeClient | null = null
+let supervisorProcess: ChildProcess | null = null
 let recoveryMode = false
 
 const rendererOrigin = isProduction()
@@ -96,6 +97,10 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('before-quit', () => {
     client?.stop()
+    if (supervisorProcess && !supervisorProcess.killed) {
+      supervisorProcess.kill()
+      supervisorProcess = null
+    }
     tray?.destroy()
     log('info', 'shell.stopping', {})
   })
@@ -120,6 +125,14 @@ async function ensureSupervisorSession(): Promise<ReturnType<typeof readLaunchCo
       EVOHIME_CORE_EXE: coreExecutablePath() ?? process.env['EVOHIME_CORE_EXE'],
       EVOHIME_DATA_DIR: dataDirectory()
     }
+  })
+  supervisorProcess = child
+  child.once('error', (error) => {
+    log('error', 'shell.supervisor_process_error', { error })
+  })
+  child.once('exit', (code, signal) => {
+    if (supervisorProcess === child) supervisorProcess = null
+    log('warn', 'shell.supervisor_exited', { code: code ?? -1, signal: signal ?? '' })
   })
   child.unref()
   log('info', 'shell.supervisor_started', {})
