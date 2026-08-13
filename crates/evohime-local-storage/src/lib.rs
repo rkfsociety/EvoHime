@@ -2669,6 +2669,100 @@ mod tests {
     }
 
     #[test]
+    fn migration_12_is_idempotent_and_preserves_pre_existing_memory_rows() {
+        // Reproduces the pre-wave-VI state: a v8 `memory_entries` table
+        // (no `confirmations` / `lesson_key`) with one real row already in
+        // it, then confirms the 11 -> 12 migration both preserves that row
+        // and can be re-applied (guarded re-open) without altering the
+        // already-migrated columns a second time.
+        let path = temp_database_path("migration-12-idempotent");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db.bak"));
+        {
+            let connection = rusqlite::Connection::open(&path).expect("legacy database opens");
+            connection
+                .execute_batch(
+                    "CREATE TABLE memory_entries (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        scope_kind TEXT NOT NULL,
+                        scope_id TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        provenance TEXT NOT NULL,
+                        privacy TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        expires_at TEXT,
+                        archived INTEGER NOT NULL,
+                        forgotten INTEGER NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_memory_entries_scope
+                        ON memory_entries(scope_kind, scope_id);
+                    INSERT INTO memory_entries
+                        (id, scope_kind, scope_id, title, content, provenance, privacy,
+                         created_at, expires_at, archived, forgotten)
+                    VALUES
+                        ('pre-existing', 'project', 'scope-a', 'Old title', 'Old content',
+                         'task:pre-wave-vi', 'internal', '2026-01-01T00:00:00Z', NULL, 0, 0);
+                    PRAGMA user_version = 11;",
+                )
+                .expect("v8-shaped legacy memory table seeds");
+        }
+
+        let database = LocalDatabase::open(&path).expect("database migrates 11 -> 12");
+        assert_eq!(
+            database.schema_version().expect("version reads"),
+            SCHEMA_VERSION
+        );
+        let (confirmations, lesson_key): (i64, Option<String>) = database
+            .connection()
+            .query_row(
+                "SELECT confirmations, lesson_key FROM memory_entries WHERE id = 'pre-existing'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("pre-existing row survives migration with new columns defaulted");
+        assert_eq!(confirmations, 1, "DEFAULT 1 applied to pre-existing rows");
+        assert_eq!(lesson_key, None);
+        let title: String = database
+            .connection()
+            .query_row(
+                "SELECT title FROM memory_entries WHERE id = 'pre-existing'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("original content untouched by migration");
+        assert_eq!(title, "Old title");
+        drop(database);
+
+        // Re-opening an already-migrated database must not re-run the
+        // ALTER TABLE (which would error on a duplicate column) and must
+        // not disturb existing data.
+        let database = LocalDatabase::open(&path).expect("re-open is idempotent");
+        assert_eq!(
+            database.schema_version().expect("version reads"),
+            SCHEMA_VERSION
+        );
+        let confirmations_after_reopen: i64 = database
+            .connection()
+            .query_row(
+                "SELECT confirmations FROM memory_entries WHERE id = 'pre-existing'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("row still present after idempotent re-open");
+        assert_eq!(confirmations_after_reopen, 1);
+        let row_count: i64 = database
+            .connection()
+            .query_row("SELECT COUNT(*) FROM memory_entries", [], |row| row.get(0))
+            .expect("count reads");
+        assert_eq!(row_count, 1, "no duplicate rows created by re-migration");
+
+        drop(database);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db.bak"));
+    }
+
+    #[test]
     fn research_and_memory_stores_round_trip_against_shared_migrated_database() {
         use crate::memory_store::{MemoryPrivacy, MemoryRecord, MemoryScope, MemoryStoreSql};
         use crate::research_store::{ResearchEvidenceRecord, ResearchEvidenceSql};
