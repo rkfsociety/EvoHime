@@ -4,22 +4,11 @@ import type { ConnectionState, CoreEvent } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { ModelPicker } from './ModelPicker'
+import { ActivityLine } from './ActivityLine'
+import { buildTranscript } from './transcript'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 const MAX_RENDERED_ITEMS = 80
-const MAX_PAYLOAD_CHARS = 8_192
-
-type TimelineItem = {
-  readonly event: CoreEvent
-  readonly payload: Record<string, unknown>
-}
-
-type PendingApproval = {
-  readonly approvalId: string
-  readonly toolName: string
-  readonly permission: string
-  readonly scope: string
-}
 
 export interface TaskTimelineProps {
   readonly connection: ConnectionState
@@ -49,26 +38,14 @@ export function TaskTimeline({
     () =>
       events
         .filter((event) => event.taskId.length > 0 && (!taskId || event.taskId === taskId))
-        .slice(0, MAX_RENDERED_ITEMS)
-        .map((event) => ({ event, payload: parsePayload(event.payload) })),
+        .slice(0, MAX_RENDERED_ITEMS),
     [events, taskId]
   )
 
-  // Поток событий приходит от новых к старым, а читается сверху вниз.
-  const stream = useMemo(() => [...taskEvents].reverse(), [taskEvents])
-
-  const approval = useMemo(() => {
-    const required = taskEvents.find((item) => item.event.eventType === 'approval.required')
-    if (!required) return null
-    const approvalId = stringField(required.payload, 'approval_id')
-    if (!approvalId) return null
-    return {
-      approvalId,
-      toolName: stringField(required.payload, 'tool_name') ?? 'операция Core',
-      permission: stringField(required.payload, 'permission') ?? 'требуется разрешение',
-      scope: stringField(required.payload, 'scope') ?? 'область не указана'
-    } satisfies PendingApproval
-  }, [taskEvents])
+  const { entries, approval, finished } = useMemo(
+    () => buildTranscript(taskEvents),
+    [taskEvents]
+  )
 
   useEffect(() => {
     // scrollIntoView отсутствует в jsdom, поэтому вызов защищён проверкой.
@@ -76,7 +53,7 @@ export function TaskTimeline({
     if (typeof anchor?.scrollIntoView === 'function') {
       anchor.scrollIntoView({ block: 'end' })
     }
-  }, [stream.length, approval])
+  }, [entries.length, approval])
 
   const start = useCallback(async () => {
     if (!api || !workspace || prompt.trim().length === 0) return
@@ -123,8 +100,9 @@ export function TaskTimeline({
 
   const connected = CONNECTED_STATES.includes(connection)
   const canStart = connected && workspace !== null && prompt.trim().length > 0 && !busy
-  const running = taskId !== null && !hasTerminalEvent(taskEvents)
-  const empty = stream.length === 0 && sentPrompt === null
+  const running = taskId !== null && !finished
+  // Запрос разрешения может прийти раньше любой другой записи ленты.
+  const empty = entries.length === 0 && sentPrompt === null && approval === null
 
   return (
     <section className="chat" aria-label="Ход задачи">
@@ -147,19 +125,37 @@ export function TaskTimeline({
               </li>
             ) : null}
 
-            {stream.map(({ event, payload }) => (
-              <li
-                key={`${event.sequenceId}-${event.eventType}`}
-                className={`message message--${role(event.eventType)} message--${tone(event.eventType)}`}
-              >
-                <div className="message__meta">
-                  <span className="message__dot" aria-hidden="true" />
-                  <span className="message__author">{labelFor(event.eventType)}</span>
-                  <span className="message__sequence">#{event.sequenceId}</span>
-                </div>
-                <div className="message__bubble">{summaryFor(event, payload)}</div>
-              </li>
-            ))}
+            {entries.map((entry, index) => {
+              if (entry.kind === 'activity') {
+                return (
+                  <li key={`${entry.kind}-${entry.id}-${index}`} className="message message--activity">
+                    <ActivityLine calls={entry.calls} running={entry.running} />
+                  </li>
+                )
+              }
+              if (entry.kind === 'stopped') {
+                return (
+                  <li key={`${entry.kind}-${entry.id}-${index}`} className="message message--note">
+                    <span className="message__note">Задача остановлена</span>
+                  </li>
+                )
+              }
+              if (entry.kind === 'result') {
+                return (
+                  <li
+                    key={`${entry.kind}-${entry.id}-${index}`}
+                    className={`message message--agent${entry.failed ? ' message--error' : ''}`}
+                  >
+                    <div className="message__bubble">{entry.text}</div>
+                  </li>
+                )
+              }
+              return (
+                <li key={`${entry.kind}-${entry.id}-${index}`} className="message message--agent">
+                  <div className="message__bubble">{entry.text}</div>
+                </li>
+              )
+            })}
 
             {approval ? (
               <li className="approval" role="alert">
@@ -229,57 +225,6 @@ export function TaskTimeline({
       </div>
     </section>
   )
-}
-
-function parsePayload(payload: string): Record<string, unknown> {
-  if (payload.length === 0 || payload.length > MAX_PAYLOAD_CHARS) return {}
-  try {
-    const value: unknown = JSON.parse(payload)
-    return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
-  } catch {
-    return {}
-  }
-}
-
-function stringField(payload: Record<string, unknown>, key: string): string | null {
-  const value = payload[key]
-  return typeof value === 'string' && value.length > 0 ? value : null
-}
-
-function summaryFor(event: CoreEvent, payload: Record<string, unknown>): string {
-  const value = stringField(payload, 'content') ?? stringField(payload, 'output') ?? stringField(payload, 'error') ?? stringField(payload, 'final_message')
-  return value ? value.slice(0, MAX_PAYLOAD_CHARS) : event.eventType
-}
-
-function labelFor(eventType: string): string {
-  return ({
-    'task.started': 'Задача запущена',
-    'agent.message.delta': 'Ответ агента',
-    'tool.started': 'Инструмент запущен',
-    'tool.output': 'Результат инструмента',
-    'approval.required': 'Ожидается разрешение',
-    'task.completed': 'Задача завершена',
-    'task.failed': 'Задача завершилась ошибкой',
-    'task.stopped': 'Задача остановлена'
-  } satisfies Record<string, string>)[eventType] ?? eventType
-}
-
-/** Реплика агента читается как текст, всё остальное — как служебная запись. */
-function role(eventType: string): string {
-  if (eventType === 'agent.message.delta') return 'agent'
-  if (eventType.startsWith('tool.')) return 'tool'
-  return 'event'
-}
-
-function tone(eventType: string): string {
-  if (eventType === 'task.completed') return 'success'
-  if (eventType === 'task.failed') return 'error'
-  if (eventType === 'approval.required') return 'approval'
-  return 'default'
-}
-
-function hasTerminalEvent(items: readonly TimelineItem[]): boolean {
-  return items.some(({ event }) => ['task.completed', 'task.failed', 'task.stopped'].includes(event.eventType))
 }
 
 function makeTaskId(): string {

@@ -76,9 +76,10 @@ describe('task timeline', () => {
       />
     )
 
-    expect(await screen.findByText('Ответ агента')).toBeTruthy()
-    expect(screen.getByText('Проверка выполнена')).toBeTruthy()
-    expect(screen.getByText('Задача завершилась ошибкой')).toBeTruthy()
+    // Служебные события не попадают в ленту, а ошибка читается текстом.
+    expect(await screen.findByText('Проверка выполнена')).toBeTruthy()
+    expect(screen.getByText('Провайдер недоступен')).toBeTruthy()
+    expect(screen.queryByText('task.started')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Остановить' })).toBeNull()
   })
 

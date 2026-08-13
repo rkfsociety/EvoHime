@@ -418,6 +418,107 @@ body {
   background: none;
 }
 
+/* ── строка активности ── */
+
+.message--activity,
+.message--note {
+  gap: 0;
+}
+
+.message__note {
+  color: var(--fg-faint);
+  font-size: 12.5px;
+}
+
+.activity {
+  width: 100%;
+}
+
+.activity__summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-muted);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.activity__summary:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.activity__icon {
+  color: var(--fg-faint);
+}
+
+.activity--running .activity__icon {
+  color: var(--accent);
+  animation: activity-spin 1.2s linear infinite;
+}
+
+@keyframes activity-spin {
+  to { transform: rotate(360deg); }
+}
+
+.activity--running .activity__label {
+  font-family: var(--mono);
+  color: var(--fg-muted);
+}
+
+.activity__label {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.activity__chevron {
+  color: var(--fg-faint);
+  font-size: 10px;
+}
+
+.activity__calls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 6px 0 4px;
+  padding: 0 0 0 24px;
+  list-style: none;
+}
+
+.activity__tool {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--fg-muted);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.activity__pending {
+  color: var(--fg-faint);
+  font-size: 12px;
+}
+
+.activity__output {
+  max-height: 220px;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  font: 12px/1.5 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .message--tool .message__bubble,
 .message--event .message__bubble {
   width: 100%;
