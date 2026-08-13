@@ -22,8 +22,22 @@ const SKIP_DIR_NAMES: &[&str] = &[
     ".venv",
     "venv",
 ];
-const HARD_SKIP_DIR_NAMES: &[&str] = &[".git", ".svn", ".aws", ".azure", ".docker", ".gnupg", ".kube"];
-const HARD_SKIP_FILE_NAMES: &[&str] = &["id_rsa", "id_ed25519", "secrets.yml", "secrets.yaml", ".netrc", ".npmrc", "credentials", "credentials.json", "token", "token.json", "auth.json"];
+const HARD_SKIP_DIR_NAMES: &[&str] = &[
+    ".git", ".svn", ".aws", ".azure", ".docker", ".gnupg", ".kube",
+];
+const HARD_SKIP_FILE_NAMES: &[&str] = &[
+    "id_rsa",
+    "id_ed25519",
+    "secrets.yml",
+    "secrets.yaml",
+    ".netrc",
+    ".npmrc",
+    "credentials",
+    "credentials.json",
+    "token",
+    "token.json",
+    "auth.json",
+];
 
 #[derive(Deserialize)]
 struct Input {
@@ -116,7 +130,14 @@ async fn ripgrep_search(
 ) -> Result<Vec<Value>, RgFailure> {
     let mut command = Command::new("rg");
     command
-        .args(["--json", "--no-heading", "--color", "never", "--no-follow", query])
+        .args([
+            "--json",
+            "--no-heading",
+            "--color",
+            "never",
+            "--no-follow",
+            query,
+        ])
         .arg(base)
         .current_dir(workspace_root)
         .stdout(Stdio::piped())
@@ -124,7 +145,17 @@ async fn ripgrep_search(
     if let Some(glob) = glob {
         command.args(["--glob", glob]);
     }
-    for pattern in ["!.env*", "!*.pem", "!*.key", "!**/.git/**", "!**/.svn/**", "!**/id_rsa", "!**/id_ed25519", "!**/secrets.yml", "!**/secrets.yaml"] {
+    for pattern in [
+        "!.env*",
+        "!*.pem",
+        "!*.key",
+        "!**/.git/**",
+        "!**/.svn/**",
+        "!**/id_rsa",
+        "!**/id_ed25519",
+        "!**/secrets.yml",
+        "!**/secrets.yaml",
+    ] {
         command.args(["--glob", pattern]);
     }
     let output = match command.output().await {
@@ -257,12 +288,51 @@ fn scan_file(
 }
 
 fn is_hard_excluded(path: &Path) -> bool {
-    let components = path.components().filter_map(|component| component.as_os_str().to_str()).map(|name| name.nfc().collect::<String>().to_lowercase()).collect::<Vec<_>>();
-    if components.iter().any(|component| HARD_SKIP_DIR_NAMES.iter().any(|name| component == name)) {
+    let components = path
+        .components()
+        .filter_map(|component| component.as_os_str().to_str())
+        .map(|name| name.nfc().collect::<String>().to_lowercase())
+        .collect::<Vec<_>>();
+    if components
+        .iter()
+        .any(|component| has_alternate_data_stream(component))
+    {
         return true;
     }
-    let Some(name) = components.last() else { return false; };
-    name.starts_with(".env") || name.ends_with(".pem") || name.ends_with(".key") || HARD_SKIP_FILE_NAMES.iter().any(|blocked| name == blocked)
+    if components
+        .iter()
+        .any(|component| HARD_SKIP_DIR_NAMES.iter().any(|name| component == name))
+    {
+        return true;
+    }
+    let Some(name) = components.last() else {
+        return false;
+    };
+    name.starts_with(".env")
+        || name.ends_with(".pem")
+        || name.ends_with(".key")
+        || HARD_SKIP_FILE_NAMES.iter().any(|blocked| name == blocked)
+}
+
+fn has_alternate_data_stream(component: &str) -> bool {
+    let Some((index, _)) = component
+        .char_indices()
+        .find(|(_, character)| *character == ':')
+    else {
+        return false;
+    };
+    if index == 1
+        && component
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_alphabetic())
+    {
+        return false;
+    }
+    if index == 5 && component.starts_with(r"\\?\") {
+        return false;
+    }
+    true
 }
 
 fn path_matches_glob(path: &Path, pattern: &str) -> bool {
@@ -425,5 +495,27 @@ mod tests {
         assert!(path_matches_glob(Path::new("foo.rs"), "foo.*"));
         assert!(wildcard_match("readme.md", "read*.md"));
         assert!(!wildcard_match("readme.txt", "read*.md"));
+    }
+
+    #[test]
+    fn hard_defaults_cover_unicode_auth_names_and_alternate_data_streams() {
+        assert!(is_hard_excluded(Path::new(".env.production")));
+        assert!(is_hard_excluded(Path::new(".git/config")));
+        assert!(is_hard_excluded(Path::new("credentials.json")));
+        assert!(is_hard_excluded(Path::new("token.txt:secret")));
+        assert!(!is_hard_excluded(Path::new("src/tokenizer.rs")));
+    }
+
+    #[test]
+    fn fallback_search_does_not_return_secret_or_ads_paths() {
+        let dir = tempdir().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join(".aws")).expect("auth dir");
+        std::fs::write(dir.path().join(".aws").join("config"), "needle").expect("auth file");
+        std::fs::write(dir.path().join("credentials.json"), "needle").expect("credential file");
+        std::fs::write(dir.path().join("safe.txt"), "needle").expect("safe file");
+
+        let matches = fallback_search(dir.path(), dir.path(), "needle", None, 10);
+        assert_eq!(matches.len(), 1);
+        assert!(matches[0]["path"].as_str().unwrap().ends_with("safe.txt"));
     }
 }
