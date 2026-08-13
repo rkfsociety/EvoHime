@@ -71,6 +71,14 @@ export interface ProviderSummary {
   readonly configured: boolean
 }
 
+/** Where the shell learned the user's name. */
+export type IdentitySource = 'github' | 'git' | 'os'
+
+export interface UserIdentity {
+  readonly name: string
+  readonly source: IdentitySource
+}
+
 /** One prompt the user sent from a chat, and the task it started. */
 export interface ChatMessage {
   readonly taskId: string
@@ -127,6 +135,7 @@ export const RENDERER_COMMANDS = [
   'core.getModelConfig',
   'core.listModelCatalog',
   'core.selectModel',
+  'identity.get',
   'chat.list',
   'chat.create',
   'chat.open',
@@ -179,6 +188,7 @@ export interface CommandPayloads {
   'core.getModelConfig': Record<string, never>
   'core.listModelCatalog': { mode: ModelTier }
   'core.selectModel': { model: string }
+  'identity.get': Record<string, never>
   'chat.list': { workspacePath: string }
   'chat.create': { workspacePath: string }
   'chat.open': { chatId: string }
@@ -217,6 +227,7 @@ export interface CommandResults {
   'core.getModelConfig': { accepted: boolean }
   'core.listModelCatalog': { accepted: boolean }
   'core.selectModel': { accepted: boolean }
+  'identity.get': UserIdentity
   'chat.list': readonly ChatSummary[]
   'chat.create': ChatRecord
   'chat.open': ChatRecord | null

@@ -220,10 +220,62 @@ body {
   text-align: center;
 }
 
-.sidebar__workspace {
+.sidebar__projects {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 12px 12px;
+}
+
+/* ── аккаунт ── */
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-top: auto;
-  padding: 12px;
+  padding: 10px 12px;
   border-top: 1px solid var(--border);
+}
+
+.account__avatar {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg-active);
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.account__name {
+  flex: 1;
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.account__settings {
+  padding: 4px 7px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-faint);
+  font-size: 14px;
+}
+
+.account__settings:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.account__settings[aria-current='page'] {
+  background: var(--bg-active);
+  color: var(--fg);
 }
 
 /* ─────────────────────────── рабочая область ─────────────────────────── */
@@ -824,10 +876,11 @@ select:focus {
 
 .projects__heading {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+  padding-top: 6px;
 }
 
 .projects__heading button {

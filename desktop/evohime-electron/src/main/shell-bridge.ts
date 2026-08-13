@@ -18,6 +18,7 @@ import {
 import type { ShellLog } from './diagnostics/logger'
 import type { CorePipeClient } from './ipc/pipe-client'
 import type { ChatStore } from './chat-store'
+import { resolveIdentity } from './identity'
 import {
   normalizeApiKey,
   normalizeBaseUrl,
@@ -273,6 +274,9 @@ function dispatch(
       }
       return accepted(client.send({ selectModel: { model } }))
     }
+
+    case 'identity.get':
+      return resolveIdentity().then((value) => ({ ok: true, value }))
 
     case 'chat.list': {
       const workspacePath = asBoundedString(asRecord(payload)['workspacePath'])

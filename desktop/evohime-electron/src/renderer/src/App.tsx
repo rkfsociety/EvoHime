@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import type { ConnectionState, CoreEvent, ShellState } from '@shared/api'
+import type { ConnectionState, CoreEvent, ShellState, UserIdentity } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { ProjectSidebar } from './ProjectSidebar'
@@ -46,9 +46,11 @@ const VIEWS: readonly ViewDescriptor[] = [
   { id: 'files', label: 'Файлы и Git', icon: '▤', group: 'tools' },
   { id: 'editor', label: 'Редактор', icon: '✎', group: 'tools' },
   { id: 'terminal', label: 'Терминал', icon: '❯', group: 'tools' },
-  { id: 'safety', label: 'Безопасность', icon: '◈', group: 'tools' },
-  { id: 'settings', label: 'Настройки', icon: '⚙', group: 'tools' }
+  { id: 'safety', label: 'Безопасность', icon: '◈', group: 'tools' }
 ]
+
+/** Not a nav row: reached through the gear next to the account. */
+const SETTINGS_LABEL = 'Настройки'
 
 export function App(): React.JSX.Element {
   const [state, setState] = useState<ShellState | null>(null)
@@ -59,6 +61,7 @@ export function App(): React.JSX.Element {
   const [chatId, setChatId] = useState<string | null>(null)
   // Bumped when a chat is renamed or reordered so the sidebar reloads its list.
   const [chatRevision, setChatRevision] = useState(0)
+  const [identity, setIdentity] = useState<UserIdentity | null>(null)
 
   const api = useShellApi()
 
@@ -85,6 +88,13 @@ export function App(): React.JSX.Element {
     return unsubscribe
   }, [api])
 
+  useEffect(() => {
+    if (!api) return
+    void api.invoke('identity.get', {}).then((outcome) => {
+      if (outcome.ok) setIdentity(outcome.value)
+    })
+  }, [api])
+
   // Ожидающее разрешение подсвечивается в навигации: пользователь может стоять
   // в другом разделе, когда Core просит подтверждение.
   const pendingApprovals = useMemo(
@@ -102,8 +112,7 @@ export function App(): React.JSX.Element {
   }
 
   const connection = state?.connection ?? 'starting'
-  const activeView = VIEWS.find((item) => item.id === view)
-  const title = activeView?.label ?? 'Диалог'
+  const title = view === 'settings' ? SETTINGS_LABEL : (VIEWS.find((item) => item.id === view)?.label ?? 'Диалог')
 
   return (
     <div className="shell">
@@ -125,6 +134,21 @@ export function App(): React.JSX.Element {
           ))}
         </div>
 
+        <div className="sidebar__projects">
+          <ProjectSidebar
+            connection={connection}
+            workspace={workspace}
+            chatId={chatId}
+            onWorkspaceChange={setWorkspace}
+            onChatChange={(id) => {
+              setChatId(id)
+              // Picking a chat means going back to the conversation.
+              if (id !== null) setView('chat')
+            }}
+            revision={chatRevision}
+          />
+        </div>
+
         <p className="sidebar__section">Инструменты</p>
         <div className="sidebar__nav">
           {VIEWS.filter((item) => item.group === 'tools').map((item) => (
@@ -132,15 +156,22 @@ export function App(): React.JSX.Element {
           ))}
         </div>
 
-        <div className="sidebar__workspace">
-          <ProjectSidebar
-            connection={connection}
-            workspace={workspace}
-            chatId={chatId}
-            onWorkspaceChange={setWorkspace}
-            onChatChange={setChatId}
-            revision={chatRevision}
-          />
+        <div className="account">
+          <span className="account__avatar" aria-hidden="true">
+            {(identity?.name ?? '?').slice(0, 1).toUpperCase()}
+          </span>
+          <span className="account__name" title={identityTitle(identity)}>
+            {identity?.name ?? '…'}
+          </span>
+          <button
+            type="button"
+            className="account__settings"
+            aria-label={SETTINGS_LABEL}
+            aria-current={view === 'settings' ? 'page' : undefined}
+            onClick={() => setView('settings')}
+          >
+            ⚙
+          </button>
         </div>
       </nav>
 
@@ -183,6 +214,17 @@ export function App(): React.JSX.Element {
       </footer>
     </div>
   )
+}
+
+/** Says where the name came from, so an unexpected one is explainable. */
+function identityTitle(identity: UserIdentity | null): string {
+  if (!identity) return ''
+  const source = {
+    github: 'GitHub CLI',
+    git: 'git config user.name',
+    os: 'учётная запись Windows'
+  }[identity.source]
+  return `${identity.name} · ${source}`
 }
 
 interface NavItemProps {
