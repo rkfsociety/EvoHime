@@ -145,6 +145,19 @@ describe('renderer command surface', () => {
     ])
   })
 
+  it('forwards policy, diagnostics and backup commands using the canonical proto fields', () => {
+    expect(invoke('core.setPermissionMode', { mode: 'read_only' })).toEqual({ ok: true, value: { accepted: true } })
+    expect(invoke('core.runDoctor', { detailLevel: 1 })).toEqual({ ok: true, value: { accepted: true } })
+    expect(invoke('core.createDatabaseBackup', { destinationPath: 'C:\\backup.evohime' })).toEqual({ ok: true, value: { accepted: true } })
+    expect(invoke('core.prepareDatabaseRestore', { backupPath: 'C:\\backup.evohime' })).toEqual({ ok: true, value: { accepted: true } })
+    expect(invoke('core.restoreDatabase', { backupPath: 'C:\\backup.evohime', approvalId: 'approval-1' })).toEqual({ ok: true, value: { accepted: true } })
+    expect(sent).toContainEqual({ permissionMode: { mode: 'read_only' } })
+    expect(sent).toContainEqual({ runDoctor: { projectId: '', detailLevel: 1 } })
+    expect(sent).toContainEqual({ createDatabaseBackup: { destinationPath: 'C:\\backup.evohime' } })
+    expect(sent).toContainEqual({ prepareDatabaseRestore: { backupPath: 'C:\\backup.evohime' } })
+    expect(sent).toContainEqual({ restoreDatabase: { backupPath: 'C:\\backup.evohime', approvalId: 'approval-1' } })
+  })
+
   it('rejects a command outside the allow-list', () => {
     for (const command of ['core.deleteEverything', 'shell.exec', '__proto__', '']) {
       const outcome = invoke(command, {}) as CommandFailure

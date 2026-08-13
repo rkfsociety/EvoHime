@@ -68,7 +68,13 @@ export const RENDERER_COMMANDS = [
   'core.listWorkspace',
   'core.readWorkspaceFile',
   'core.gitStatus',
-  'core.gitDiff'
+  'core.gitDiff',
+  'core.setPermissionMode',
+  'core.runDoctor',
+  'core.exportDoctorLogs',
+  'core.createDatabaseBackup',
+  'core.prepareDatabaseRestore',
+  'core.restoreDatabase'
 ] as const
 
 export type RendererCommand = (typeof RENDERER_COMMANDS)[number]
@@ -100,6 +106,12 @@ export interface CommandPayloads {
   'core.readWorkspaceFile': { workspacePath: string; relativePath: string; maxBytes?: number }
   'core.gitStatus': { workspacePath: string; maxBytes?: number }
   'core.gitDiff': { workspacePath: string; relativePath?: string; maxBytes?: number }
+  'core.setPermissionMode': { mode: 'ask' | 'read_only' | 'full' }
+  'core.runDoctor': { projectId?: string; detailLevel?: 0 | 1 }
+  'core.exportDoctorLogs': { destinationPath: string }
+  'core.createDatabaseBackup': { destinationPath: string }
+  'core.prepareDatabaseRestore': { backupPath: string }
+  'core.restoreDatabase': { backupPath: string; approvalId: string }
 }
 
 export interface CommandResults {
@@ -117,6 +129,12 @@ export interface CommandResults {
   'core.readWorkspaceFile': { accepted: boolean }
   'core.gitStatus': { accepted: boolean }
   'core.gitDiff': { accepted: boolean }
+  'core.setPermissionMode': { accepted: boolean }
+  'core.runDoctor': { accepted: boolean }
+  'core.exportDoctorLogs': { accepted: boolean }
+  'core.createDatabaseBackup': { accepted: boolean }
+  'core.prepareDatabaseRestore': { accepted: boolean }
+  'core.restoreDatabase': { accepted: boolean }
 }
 
 export type CommandFailureCode =

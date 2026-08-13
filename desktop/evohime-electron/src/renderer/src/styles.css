@@ -340,3 +340,72 @@ button:disabled {
 .developer-tools__git {
   margin-top: 16px;
 }
+
+.safety-panel__heading,
+.safety-panel__modes,
+.safety-panel__backup-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.safety-panel__heading {
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.safety-panel__modes {
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+
+.safety-panel__doctor,
+.safety-panel__backup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.safety-panel h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.safety-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.safety-panel input {
+  min-width: 0;
+  font: inherit;
+  color: inherit;
+  background: rgb(128 128 150 / 10%);
+  border: 1px solid rgb(128 128 150 / 30%);
+  border-radius: 6px;
+  padding: 7px 9px;
+}
+
+.safety-panel__doctor pre,
+.safety-panel__progress {
+  margin: 0;
+  padding: 10px;
+  background: rgb(0 0 0 / 20%);
+  border-radius: 6px;
+  font: 12px/1.5 'Cascadia Mono', Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.safety-panel__backup-actions {
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.safety-panel__backup-actions input {
+  flex: 1;
+}

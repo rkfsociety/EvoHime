@@ -190,6 +190,56 @@ function dispatch(
       }
       return accepted(client.send({ gitDiff: { workspacePath, relativePath, maxBytes } }))
     }
+
+    case 'core.setPermissionMode': {
+      const mode = asPermissionMode(asRecord(payload)['mode'])
+      if (mode === null) return failure('invalid-payload', 'Некорректный режим разрешений.')
+      return accepted(client.send({ permissionMode: { mode } }))
+    }
+
+    case 'core.runDoctor': {
+      const value = asRecord(payload)
+      const projectId = value['projectId'] === undefined ? '' : asBoundedString(value['projectId'])
+      const detailLevel = value['detailLevel'] === undefined ? 0 : value['detailLevel']
+      if (projectId === null || (detailLevel !== 0 && detailLevel !== 1)) {
+        return failure('invalid-payload', 'Некорректные параметры диагностики.')
+      }
+      return accepted(client.send({ runDoctor: { projectId, detailLevel } }))
+    }
+
+    case 'core.exportDoctorLogs': {
+      const destinationPath = asBoundedString(asRecord(payload)['destinationPath'])
+      if (destinationPath === null) return failure('invalid-payload', 'Некорректный путь экспорта диагностики.')
+      return accepted(client.send({ exportDoctorLogs: { destinationPath } }))
+    }
+
+    case 'core.createDatabaseBackup': {
+      const value = asRecord(payload)
+      const destinationPath = asBoundedString(value['destinationPath'])
+      if (destinationPath === null) {
+        return failure('invalid-payload', 'Некорректные параметры backup.')
+      }
+      return accepted(client.send({ createDatabaseBackup: { destinationPath } }))
+    }
+
+    case 'core.prepareDatabaseRestore': {
+      const value = asRecord(payload)
+      const backupPath = asBoundedString(value['backupPath'])
+      if (backupPath === null) {
+        return failure('invalid-payload', 'Некорректные параметры проверки backup.')
+      }
+      return accepted(client.send({ prepareDatabaseRestore: { backupPath } }))
+    }
+
+    case 'core.restoreDatabase': {
+      const value = asRecord(payload)
+      const backupPath = asBoundedString(value['backupPath'])
+      const approvalId = asBoundedString(value['approvalId'])
+      if (backupPath === null || approvalId === null) {
+        return failure('invalid-payload', 'Некорректные параметры восстановления.')
+      }
+      return accepted(client.send({ restoreDatabase: { backupPath, approvalId } }))
+    }
   }
 }
 
@@ -228,4 +278,8 @@ function asRelativePath(value: unknown): string | null {
   if (value.includes('\\') && value.split('\\').includes('..')) return null
   if (value.includes('/') && value.split('/').includes('..')) return null
   return value
+}
+
+function asPermissionMode(value: unknown): 'ask' | 'read_only' | 'full' | null {
+  return value === 'ask' || value === 'read_only' || value === 'full' ? value : null
 }
