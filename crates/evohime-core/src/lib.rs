@@ -568,7 +568,12 @@ impl DeliveryRequirements {
 
 fn strict_delivery_gate_enabled() -> bool {
     std::env::var("EVOHIME_DELIVERY_GATE_STRICT")
-        .map(|value| !matches!(value.trim().to_ascii_lowercase().as_str(), "0" | "false" | "off"))
+        .map(|value| {
+            !matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "0" | "false" | "off"
+            )
+        })
         .unwrap_or(true)
 }
 
@@ -579,12 +584,17 @@ fn classify_shell_verification(
     arguments: &str,
     outcome: &recovery::ToolOutcome,
 ) -> (Option<bool>, Option<bool>) {
-    let input = serde_json::from_str::<serde_json::Value>(arguments).unwrap_or(serde_json::Value::Null);
-    let Some((program, args, _cwd)) = evohime_tool_runtime::shell::resolve_invocation(&input) else {
+    let input =
+        serde_json::from_str::<serde_json::Value>(arguments).unwrap_or(serde_json::Value::Null);
+    let Some((program, args, _cwd)) = evohime_tool_runtime::shell::resolve_invocation(&input)
+    else {
         return (None, None);
     };
     let program = program.to_ascii_lowercase();
-    let args = args.iter().map(|arg| arg.to_ascii_lowercase()).collect::<Vec<_>>();
+    let args = args
+        .iter()
+        .map(|arg| arg.to_ascii_lowercase())
+        .collect::<Vec<_>>();
     let status_ok = outcome.ok
         && outcome
             .structured
@@ -600,10 +610,13 @@ fn classify_shell_verification(
         && args.first().map(String::as_str) == Some("diff")
         && args.iter().any(|arg| arg == "--check");
     let verification = matches!(program.as_str(), "cargo" | "dotnet" | "ctest")
-        && args.first().is_some_and(|arg| {
-            matches!(arg.as_str(), "test" | "check" | "build" | "clippy")
-        });
-    (verification.then_some(status_ok), diff_check.then_some(status_ok))
+        && args
+            .first()
+            .is_some_and(|arg| matches!(arg.as_str(), "test" | "check" | "build" | "clippy"));
+    (
+        verification.then_some(status_ok),
+        diff_check.then_some(status_ok),
+    )
 }
 
 fn delivery_next_step(
@@ -673,9 +686,9 @@ use std::{
 };
 
 use evohime_local_storage::{
-    EventRecord, ImportedTask, LocalDatabase, ProjectPolicyRecord, RecoveryState,
-    RunCheckpointRecord, RunEffectRecord, RunRecord, RunRecoveryRecord, StorageError,
-    ToolMetricRecord, WorkItemRecord,
+    BackupPreview, BackupProgress, BackupResult, EventRecord, ImportedTask, LocalDatabase,
+    ProjectPolicyRecord, RecoveryState, RestoreResult, RunCheckpointRecord, RunEffectRecord,
+    RunRecord, RunRecoveryRecord, StorageError, ToolMetricRecord, WorkItemRecord,
 };
 use evohime_model_gateway::{
     providers::{ChatMessage, ChatRole, ProviderError},
@@ -705,7 +718,10 @@ pub mod permission_rules;
 pub mod plan;
 pub mod prd;
 pub mod provider_resilience;
-pub use provider_resilience::{ProviderResilienceConfig, is_retriable_error, handle_provider_error, default_tool_specs, filter_readonly_tools};
+pub use provider_resilience::{
+    default_tool_specs, filter_readonly_tools, handle_provider_error, is_retriable_error,
+    ProviderResilienceConfig,
+};
 pub mod recovery;
 pub use recovery::{classify_tool_outcome, DenialSource, ToolFailureKind, ToolOutcome};
 pub mod research;
@@ -857,6 +873,24 @@ pub enum CoreCommand {
     /// touches eval fixtures or feedback storage.
     ExportDoctorLogs {
         destination_path: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    CreateDatabaseBackup {
+        operation_id: String,
+        destination_path: String,
+        progress: mpsc::UnboundedSender<BackupProgress>,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    PrepareDatabaseRestore {
+        operation_id: String,
+        backup_path: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    RestoreDatabase {
+        operation_id: String,
+        backup_path: String,
+        approval_id: String,
+        progress: mpsc::UnboundedSender<BackupProgress>,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
     /// Captures one bounded, redacted piece of offline research evidence and
@@ -1151,6 +1185,10 @@ pub enum CoreEvent {
     TaskStopped {
         task_id: String,
     },
+    StorageProgress {
+        operation_id: String,
+        progress: BackupProgress,
+    },
 }
 
 #[derive(Clone)]
@@ -1194,6 +1232,42 @@ fn harden_build_policy(mut policy: crate::scope::BuildScope) -> crate::scope::Bu
     policy
 }
 
+fn safe_file_name(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("database-backup")
+        .chars()
+        .take(128)
+        .collect()
+}
+
+fn safe_file_stem(path: &std::path::Path) -> String {
+    path.file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("events")
+        .chars()
+        .filter(|value| value.is_ascii_alphanumeric() || *value == '-' || *value == '_')
+        .take(64)
+        .collect::<String>()
+        .trim()
+        .to_owned()
+}
+
+fn error_category(error: &str) -> &'static str {
+    if error.contains("checksum") {
+        "checksum"
+    } else if error.contains("schema") {
+        "schema"
+    } else if error.contains("approval") {
+        "approval"
+    } else if error.contains("destination") {
+        "destination"
+    } else {
+        "storage"
+    }
+}
+
 impl EventJournal {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, StorageError> {
         Ok(Self {
@@ -1212,6 +1286,7 @@ impl EventJournal {
             | CoreEvent::TaskCompleted { task_id, .. }
             | CoreEvent::TaskFailed { task_id, .. }
             | CoreEvent::TaskStopped { task_id } => task_id,
+            CoreEvent::StorageProgress { operation_id, .. } => operation_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -1223,6 +1298,7 @@ impl EventJournal {
             CoreEvent::TaskCompleted { .. } => "task.completed",
             CoreEvent::TaskFailed { .. } => "task.failed",
             CoreEvent::TaskStopped { .. } => "task.stopped",
+            CoreEvent::StorageProgress { .. } => "storage.progress",
         };
         let payload = serde_json::to_vec(event).expect("core events serialize");
         let database = self.database.lock().await;
@@ -1323,6 +1399,34 @@ impl EventJournal {
             first_available_sequence,
             last_sequence,
         })
+    }
+
+    pub async fn preview_database_backup(
+        &self,
+        path: impl AsRef<std::path::Path>,
+    ) -> Result<BackupPreview, StorageError> {
+        LocalDatabase::preview_backup(path)
+    }
+
+    pub async fn create_database_backup(
+        &self,
+        path: impl AsRef<std::path::Path>,
+        app_version: &str,
+        progress: impl FnMut(BackupProgress),
+    ) -> Result<BackupResult, StorageError> {
+        let database = self.database.lock().await;
+        database.create_backup(path, app_version, progress)
+    }
+
+    pub async fn restore_database(
+        &self,
+        backup_path: impl AsRef<std::path::Path>,
+        safety_path: impl AsRef<std::path::Path>,
+        app_version: &str,
+        progress: impl FnMut(BackupProgress),
+    ) -> Result<RestoreResult, StorageError> {
+        let mut database = self.database.lock().await;
+        database.restore_backup(backup_path, safety_path, app_version, progress)
     }
 
     /// Bounded, read-only storage facts for diagnostics (Core Doctor).
@@ -2317,7 +2421,8 @@ impl ToolAgent {
 
             let result: Result<evohime_model_gateway::ChatResult, ProviderError> = match timeout(
                 timeout_duration,
-                self.gateway.chat_with_tools_for_route("default", None, messages, specs),
+                self.gateway
+                    .chat_with_tools_for_route("default", None, messages, specs),
             )
             .await
             {
@@ -3066,6 +3171,7 @@ pub struct TaskCoordinator {
 
 struct CoordinatorState {
     tasks: HashMap<String, CancellationToken>,
+    backup_approvals: HashMap<String, String>,
     events: broadcast::Sender<CoreEvent>,
     executor: Option<Arc<dyn TaskExecutor>>,
     journal: Option<EventJournal>,
@@ -3101,6 +3207,7 @@ impl TaskCoordinator {
         let (events, event_rx) = broadcast::channel(buffer.max(1));
         let state = Arc::new(Mutex::new(CoordinatorState {
             tasks: HashMap::new(),
+            backup_approvals: HashMap::new(),
             events: events.clone(),
             executor,
             journal: journal.clone(),
@@ -4112,6 +4219,184 @@ impl TaskCoordinator {
                 let result = crate::export::export_logs(std::path::Path::new(&destination_path))
                     .map(|summary| summary.to_bounded_json().into_bytes())
                     .map_err(|error| format!("{error:?}"));
+                let _ = reply.send(result);
+            }
+            CoreCommand::CreateDatabaseBackup {
+                operation_id,
+                destination_path,
+                progress,
+                reply,
+            } => {
+                let (journal, events) = {
+                    let guard = state.lock().await;
+                    (guard.journal.clone(), guard.events.clone())
+                };
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let start_payload = serde_json::to_vec(&serde_json::json!({
+                        "operation_id": operation_id,
+                        "result": "started",
+                        "destination_name": safe_file_name(&destination_path),
+                    }))
+                    .map_err(|error| error.to_string())?;
+                    journal
+                        .record_audit(&operation_id, "storage.started", &start_payload)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    let operation_for_events = operation_id.clone();
+                    let progress = progress;
+                    let result = journal
+                        .create_database_backup(
+                            std::path::Path::new(&destination_path),
+                            env!("CARGO_PKG_VERSION"),
+                            |item| {
+                                let _ = progress.send(item.clone());
+                                let _ = events.send(CoreEvent::StorageProgress {
+                                    operation_id: operation_for_events.clone(),
+                                    progress: item,
+                                });
+                            },
+                        )
+                        .await
+                        .map_err(|error| error.to_string());
+                    let audit = serde_json::to_vec(&serde_json::json!({
+                        "operation_id": operation_id,
+                        "result": if result.is_ok() { "created" } else { "failed" },
+                        "destination_name": safe_file_name(&destination_path),
+                        "error_category": result.as_ref().err().map(|error| error_category(error)),
+                    }))
+                    .map_err(|error| error.to_string())?;
+                    journal
+                        .record_audit(&operation_id, "storage.completed", &audit)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    result.and_then(|value| {
+                        serde_json::to_vec(&value).map_err(|error| error.to_string())
+                    })
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::PrepareDatabaseRestore {
+                operation_id,
+                backup_path,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let preview = LocalDatabase::preview_backup(&backup_path)
+                        .map_err(|error| error.to_string())?;
+                    let approval_id = uuid::Uuid::new_v4().to_string();
+                    state
+                        .lock()
+                        .await
+                        .backup_approvals
+                        .insert(approval_id.clone(), backup_path.clone());
+                    if let Some(journal) = journal {
+                        let payload = serde_json::to_vec(&serde_json::json!({
+                            "operation_id": operation_id,
+                            "result": "previewed",
+                            "backup_name": safe_file_name(&backup_path),
+                            "schema_version": preview.schema_version,
+                            "checksum_sha256": preview.checksum_sha256,
+                        }))
+                        .map_err(|error| error.to_string())?;
+                        journal
+                            .record_audit(&operation_id, "storage.previewed", &payload)
+                            .await
+                            .map_err(|error| error.to_string())?;
+                    }
+                    serde_json::to_vec(&serde_json::json!({
+                        "operation_id": operation_id,
+                        "approval_id": approval_id,
+                        "preview": preview,
+                    }))
+                    .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::RestoreDatabase {
+                operation_id,
+                backup_path,
+                approval_id,
+                progress,
+                reply,
+            } => {
+                let approved = {
+                    let mut guard = state.lock().await;
+                    guard
+                        .backup_approvals
+                        .get(&approval_id)
+                        .is_some_and(|path| path == &backup_path)
+                        .then(|| guard.backup_approvals.remove(&approval_id))
+                        .flatten()
+                        .is_some()
+                };
+                let (journal, events) = {
+                    let guard = state.lock().await;
+                    (guard.journal.clone(), guard.events.clone())
+                };
+                let result = async {
+                    if !approved {
+                        if let Some(journal) = &journal {
+                            let payload = serde_json::to_vec(&serde_json::json!({
+                                "operation_id": operation_id,
+                                "result": "rejected",
+                                "backup_name": safe_file_name(&backup_path),
+                                "error_category": "approval",
+                            }))
+                            .map_err(|error| error.to_string())?;
+                            journal
+                                .record_audit(&operation_id, "storage.restore.rejected", &payload)
+                                .await
+                                .map_err(|error| error.to_string())?;
+                        }
+                        return Err("restore approval is missing or does not match the preview".into());
+                    }
+                    let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let (database_path, _) = journal
+                        .storage_snapshot()
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    let safety_path = database_path.with_file_name(format!(
+                        "{}.pre-restore-{}.evohime",
+                        safe_file_stem(&database_path),
+                        uuid::Uuid::new_v4()
+                    ));
+                    let operation_for_events = operation_id.clone();
+                    let progress = progress;
+                    let restore = journal
+                        .restore_database(
+                            std::path::Path::new(&backup_path),
+                            &safety_path,
+                            env!("CARGO_PKG_VERSION"),
+                            |item| {
+                                let _ = progress.send(item.clone());
+                                let _ = events.send(CoreEvent::StorageProgress {
+                                    operation_id: operation_for_events.clone(),
+                                    progress: item,
+                                });
+                            },
+                        )
+                        .await;
+                    let audit = serde_json::to_vec(&serde_json::json!({
+                        "operation_id": operation_id,
+                        "result": if restore.is_ok() { "restored" } else { "failed" },
+                        "backup_name": safe_file_name(&backup_path),
+                        "error_category": restore.as_ref().err().map(|error| error_category(&error.to_string())),
+                    }))
+                    .map_err(|error| error.to_string())?;
+                    journal
+                        .record_audit(&operation_id, "storage.restore.completed", &audit)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    restore
+                        .map(|value| serde_json::to_vec(&value).map_err(|error| error.to_string()))
+                        .map_err(|error| error.to_string())?
+                }
+                .await;
                 let _ = reply.send(result);
             }
             CoreCommand::SaveResearchEvidence {
@@ -5514,8 +5799,8 @@ fn unresolved_permissions_probe(approval_required: bool) -> crate::doctor::Permi
 #[cfg(test)]
 mod tests {
     use super::{
-        observability, recovery, AgentRunError, CoreCommand, CoreEvent, CoreVersion,
-        EventJournal, ModelAgent, TaskCoordinator, TaskExecutor, ToolAgent,
+        observability, recovery, AgentRunError, CoreCommand, CoreEvent, CoreVersion, EventJournal,
+        ModelAgent, TaskCoordinator, TaskExecutor, ToolAgent,
     };
     use evohime_model_gateway::{
         providers::mock::MockProvider, ChatResult, ModelGateway, NativeToolCall,
@@ -5829,10 +6114,7 @@ mod tests {
             structured: serde_json::json!({ "exit_code": 1, "timed_out": false }),
         });
         assert_eq!(
-            super::classify_shell_verification(
-                r#"{"program":"echo","args":["check"]}"#,
-                &success,
-            ),
+            super::classify_shell_verification(r#"{"program":"echo","args":["check"]}"#, &success,),
             (None, None)
         );
         assert_eq!(
@@ -6114,9 +6396,11 @@ mod tests {
             tokio::task::yield_now().await;
         }
         assert_eq!(history.len(), 2);
-        assert!(history.iter().all(|entry| entry.event_type == "approval.audit"));
-        let payload: serde_json::Value = serde_json::from_slice(&history[1].payload)
-            .expect("audit payload is JSON");
+        assert!(history
+            .iter()
+            .all(|entry| entry.event_type == "approval.audit"));
+        let payload: serde_json::Value =
+            serde_json::from_slice(&history[1].payload).expect("audit payload is JSON");
         assert_eq!(payload["approval_id"], request.id.to_string());
         assert_eq!(payload["decision"], "denied");
 
@@ -6165,13 +6449,19 @@ mod tests {
 
     #[test]
     fn approval_denied_outcome_has_ok_false() {
-        let outcome = recovery::ToolOutcome::denied_by_user("approval denied: mutation not performed");
+        let outcome =
+            recovery::ToolOutcome::denied_by_user("approval denied: mutation not performed");
         // Critical: denied_by_user must set ok to false, so mutation_done remains unchanged
-        assert!(!outcome.ok, "denied_by_user must set ok: false to prevent false success");
+        assert!(
+            !outcome.ok,
+            "denied_by_user must set ok: false to prevent false success"
+        );
         assert_eq!(outcome.output, "approval denied: mutation not performed");
         assert!(matches!(
             outcome.kind,
-            Some(recovery::ToolFailureKind::Denied(recovery::DenialSource::User))
+            Some(recovery::ToolFailureKind::Denied(
+                recovery::DenialSource::User
+            ))
         ));
     }
 
@@ -6252,10 +6542,9 @@ mod tests {
                     .map(String::from),
             )
             .unwrap();
-            let payload = observability::HookPayload::new([
-                ("hook_name".into(), format!("{hook:?}")),
-            ])
-            .unwrap();
+            let payload =
+                observability::HookPayload::new([("hook_name".into(), format!("{hook:?}"))])
+                    .unwrap();
             let event = observability::HookEvent::new(
                 hook,
                 "e1",

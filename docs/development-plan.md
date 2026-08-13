@@ -48,7 +48,7 @@ Legacy web UI, browser launcher, HTTP server и PostgreSQL persistence удал�
 | Terminal | ✅ Завершён bounded Core command: sandbox, approval retry, timeout и ограниченный output | текущий native-срез |
 | Leases/reconciliation и расширенный diff review | 🟡 В работе | — |
 | Permission policy rules и закрытие обходов approval | 🟡 В работе | `docs/plans/` |
-| Credentials, расширенный backup/restore и crash recovery UI | ⬜ Запланирован | — |
+| Credentials, расширенный backup/restore и crash recovery UI | ✅ Реализован Core/UI MVP | текущий native-срез; `cargo test`, WinUI и IPC tests |
 
 ## Acceptance criteria
 

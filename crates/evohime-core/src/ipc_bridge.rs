@@ -9,7 +9,7 @@ use evohime_model_gateway::ModelGatewayConfig;
 use evohime_permissions::{Permission, PermissionMode};
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use std::sync::Arc;
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 
 const PROTOCOL_MAJOR: u32 = 1;
 /// Number of tools `ToolRegistry::bootstrap()` is expected to register.
@@ -581,12 +581,7 @@ impl IpcBridge {
                     serde_json::json!({"path": request.relative_path})
                 };
                 let payload = self
-                    .dispatch_git_read(
-                        request.workspace_path,
-                        "git.diff",
-                        input,
-                        request.max_bytes,
-                    )
+                    .dispatch_git_read(request.workspace_path, "git.diff", input, request.max_bytes)
                     .await?;
                 self.write_response(writer, "git.diff", payload).await?;
             }
@@ -609,6 +604,26 @@ impl IpcBridge {
                     .await?;
                 self.write_response(writer, "doctor.export.completed", result)
                     .await?;
+            }
+            Some(generated::command_envelope::Command::CreateDatabaseBackup(request)) => {
+                self.dispatch_create_database_backup(request_id, request.destination_path, writer)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::PrepareDatabaseRestore(request)) => {
+                let result = self
+                    .dispatch_prepare_database_restore(request_id, request.backup_path)
+                    .await?;
+                self.write_response(writer, "storage.restore.preview", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::RestoreDatabase(request)) => {
+                self.dispatch_restore_database(
+                    request_id,
+                    request.backup_path,
+                    request.approval_id,
+                    writer,
+                )
+                .await?;
             }
             Some(generated::command_envelope::Command::SaveResearchEvidence(request)) => {
                 let result = self.dispatch_save_research_evidence(request).await?;
@@ -681,9 +696,7 @@ impl IpcBridge {
                     .await?;
             }
             Some(generated::command_envelope::Command::ReplaceCapabilitySelection(request)) => {
-                let result = self
-                    .dispatch_replace_capability_selection(request)
-                    .await?;
+                let result = self.dispatch_replace_capability_selection(request).await?;
                 self.write_response(writer, "capability.selection.replaced", result)
                     .await?;
             }
@@ -1237,6 +1250,115 @@ impl IpcBridge {
             .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
             .map_err(FrameError::Io)
             .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_create_database_backup<W: AsyncWrite + Unpin>(
+        &self,
+        operation_id: String,
+        destination_path: String,
+        writer: &mut W,
+    ) -> Result<(), IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (progress, mut progress_rx) = mpsc::unbounded_channel();
+        let (reply, mut response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::CreateDatabaseBackup {
+                operation_id,
+                destination_path,
+                progress,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        loop {
+            tokio::select! {
+                item = progress_rx.recv() => {
+                    if let Some(item) = item {
+                        self.write_response(writer, "storage.progress", serde_json::to_vec(&item)?).await?;
+                    }
+                }
+                result = &mut response => {
+                    let payload = result
+                        .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+                        .map_err(FrameError::Io)
+                        .map_err(IpcBridgeError::from)?;
+                    self.write_response(writer, "storage.backup.created", payload).await?;
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn dispatch_prepare_database_restore(
+        &self,
+        operation_id: String,
+        backup_path: String,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::PrepareDatabaseRestore {
+                operation_id,
+                backup_path,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_restore_database<W: AsyncWrite + Unpin>(
+        &self,
+        operation_id: String,
+        backup_path: String,
+        approval_id: String,
+        writer: &mut W,
+    ) -> Result<(), IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (progress, mut progress_rx) = mpsc::unbounded_channel();
+        let (reply, mut response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::RestoreDatabase {
+                operation_id,
+                backup_path,
+                approval_id,
+                progress,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        loop {
+            tokio::select! {
+                item = progress_rx.recv() => {
+                    if let Some(item) = item {
+                        self.write_response(writer, "storage.progress", serde_json::to_vec(&item)?).await?;
+                    }
+                }
+                result = &mut response => {
+                    let payload = result
+                        .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+                        .map_err(FrameError::Io)
+                        .map_err(IpcBridgeError::from)?;
+                    self.write_response(writer, "storage.restore.completed", payload).await?;
+                    break;
+                }
+            }
+        }
+        Ok(())
     }
 
     async fn dispatch_save_research_evidence(
@@ -1902,57 +2024,57 @@ impl IpcBridge {
         let cancellation = tokio_util::sync::CancellationToken::new();
         let result = if request.approval_id.is_empty() {
             match tools
-                .execute_with_cancellation(&context, "shell.execute", input.clone(), cancellation.clone())
-                .await
-            {
-            Ok(result) => result,
-            Err(evohime_tool_runtime::ToolError::NeedsApproval {
-                tool,
-                permission,
-                scope,
-                approval_id,
-                input,
-            }) => {
-                self.write_response(
-                    writer,
-                    "approval.required",
-                    serde_json::to_vec(&serde_json::json!({
-                        "task_id": task_id.to_string(),
-                        "approval_id": approval_id.to_string(),
-                        "tool_name": tool,
-                        "permission": format!("{permission:?}"),
-                        "scope": scope,
-                        "input": input,
-                    }))?,
-                )
-                .await?;
-                return Ok(());
-            }
-            Err(error) => {
-                return self
-                    .write_response(
-                        writer,
-                        "terminal.result",
-                        serde_json::to_vec(&serde_json::json!({
-                            "task_id": task_id.to_string(),
-                            "ok": false,
-                            "error": error.to_string(),
-                        }))?,
-                    )
-                    .await;
-            }
-            }
-        } else {
-            let approval_id = uuid::Uuid::parse_str(&request.approval_id)
-                .map_err(|error| FrameError::Io(format!("invalid terminal approval id: {error}")))?;
-            match tools
-                .execute_after_approval(
+                .execute_with_cancellation(
                     &context,
                     "shell.execute",
-                    input,
-                    approval_id,
-                    cancellation,
+                    input.clone(),
+                    cancellation.clone(),
                 )
+                .await
+            {
+                Ok(result) => result,
+                Err(evohime_tool_runtime::ToolError::NeedsApproval {
+                    tool,
+                    permission,
+                    scope,
+                    approval_id,
+                    input,
+                }) => {
+                    self.write_response(
+                        writer,
+                        "approval.required",
+                        serde_json::to_vec(&serde_json::json!({
+                            "task_id": task_id.to_string(),
+                            "approval_id": approval_id.to_string(),
+                            "tool_name": tool,
+                            "permission": format!("{permission:?}"),
+                            "scope": scope,
+                            "input": input,
+                        }))?,
+                    )
+                    .await?;
+                    return Ok(());
+                }
+                Err(error) => {
+                    return self
+                        .write_response(
+                            writer,
+                            "terminal.result",
+                            serde_json::to_vec(&serde_json::json!({
+                                "task_id": task_id.to_string(),
+                                "ok": false,
+                                "error": error.to_string(),
+                            }))?,
+                        )
+                        .await;
+                }
+            }
+        } else {
+            let approval_id = uuid::Uuid::parse_str(&request.approval_id).map_err(|error| {
+                FrameError::Io(format!("invalid terminal approval id: {error}"))
+            })?;
+            match tools
+                .execute_after_approval(&context, "shell.execute", input, approval_id, cancellation)
                 .await
             {
                 Ok(result) => result,
@@ -2169,10 +2291,12 @@ mod tests {
 
     #[tokio::test]
     async fn terminal_requires_approval_and_denied_retry_does_not_execute() {
-        let root = std::env::temp_dir().join(format!("evohime-ipc-terminal-root-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("evohime-ipc-terminal-root-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("terminal root");
-        let journal_path = std::env::temp_dir().join(format!("evohime-ipc-terminal-{}.db", std::process::id()));
+        let journal_path =
+            std::env::temp_dir().join(format!("evohime-ipc-terminal-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&journal_path);
         let journal = EventJournal::open(&journal_path).expect("journal opens");
         let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
@@ -2209,9 +2333,15 @@ mod tests {
         transport::write_frame(&mut client, &make_terminal(String::new()).encode_to_vec())
             .await
             .expect("terminal writes");
-        bridge.process_once(&mut server_reader, &mut server_writer).await.expect("approval serves");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("approval serves");
         let approval = generated::EventEnvelope::decode(
-            transport::read_frame(&mut client).await.expect("approval reads").as_slice(),
+            transport::read_frame(&mut client)
+                .await
+                .expect("approval reads")
+                .as_slice(),
         )
         .expect("approval decodes");
         assert_eq!(approval.event_type, "approval.required");
@@ -2228,22 +2358,37 @@ mod tests {
             core_instance_id: String::new(),
             session_epoch: 1,
             command: Some(generated::command_envelope::Command::ResolveApproval(
-                generated::ResolveApproval { approval_id: approval_id.clone(), granted: false },
+                generated::ResolveApproval {
+                    approval_id: approval_id.clone(),
+                    granted: false,
+                },
             )),
         };
-        transport::write_frame(&mut client, &resolve.encode_to_vec()).await.expect("resolve writes");
-        bridge.process_once(&mut server_reader, &mut server_writer).await.expect("resolve serves");
+        transport::write_frame(&mut client, &resolve.encode_to_vec())
+            .await
+            .expect("resolve writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("resolve serves");
 
         transport::write_frame(&mut client, &make_terminal(approval_id).encode_to_vec())
             .await
             .expect("retry writes");
-        bridge.process_once(&mut server_reader, &mut server_writer).await.expect("retry serves");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("retry serves");
         let result = generated::EventEnvelope::decode(
-            transport::read_frame(&mut client).await.expect("result reads").as_slice(),
+            transport::read_frame(&mut client)
+                .await
+                .expect("result reads")
+                .as_slice(),
         )
         .expect("result decodes");
         assert_eq!(result.event_type, "terminal.result");
-        let result_json: serde_json::Value = serde_json::from_slice(&result.payload).expect("result json");
+        let result_json: serde_json::Value =
+            serde_json::from_slice(&result.payload).expect("result json");
         assert_eq!(result_json["ok"], false);
         assert_eq!(result_json["error"], "approval was denied for this call");
         let _ = std::fs::remove_dir_all(root);
@@ -2252,10 +2397,8 @@ mod tests {
 
     #[tokio::test]
     async fn serves_bounded_git_status_and_diff_through_core_tools() {
-        let root = std::env::temp_dir().join(format!(
-            "evohime-ipc-git-root-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("evohime-ipc-git-root-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("git root");
         let status = std::process::Command::new("git")
@@ -2272,10 +2415,8 @@ mod tests {
             .expect("git add starts");
         assert!(status.success());
         std::fs::write(root.join("notes.txt"), "hello\nworld\n").expect("changed notes");
-        let journal_path = std::env::temp_dir().join(format!(
-            "evohime-ipc-git-{}.db",
-            std::process::id()
-        ));
+        let journal_path =
+            std::env::temp_dir().join(format!("evohime-ipc-git-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&journal_path);
         let journal = EventJournal::open(&journal_path).expect("journal opens");
         let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
@@ -2300,7 +2441,10 @@ mod tests {
             .expect("git status reads");
         let status_json: serde_json::Value =
             serde_json::from_slice(&status_payload).expect("status json");
-        assert!(status_json["output"].as_str().unwrap().contains("notes.txt"));
+        assert!(status_json["output"]
+            .as_str()
+            .unwrap()
+            .contains("notes.txt"));
         assert_eq!(status_json["truncated"], false);
 
         let diff_payload = bridge
@@ -3698,11 +3842,13 @@ mod tests {
             client_id: "capability-selection-client".into(),
             core_instance_id: String::new(),
             session_epoch: 1,
-            command: Some(generated::command_envelope::Command::PinCapabilitySelection(
-                generated::PinCapabilitySelection {
-                    task_id: "task-never-selected".into(),
-                },
-            )),
+            command: Some(
+                generated::command_envelope::Command::PinCapabilitySelection(
+                    generated::PinCapabilitySelection {
+                        task_id: "task-never-selected".into(),
+                    },
+                ),
+            ),
         };
         transport::write_frame(&mut client, &pin_missing_envelope.encode_to_vec())
             .await

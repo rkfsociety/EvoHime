@@ -222,6 +222,23 @@ message ExportDoctorLogs {
   string destination_path = 1;
 }
 
+// Creates a Core-owned SQLite backup container. The response contains only
+// bounded manifest metadata; progress is emitted as storage.progress events.
+message CreateDatabaseBackup {
+  string destination_path = 1;
+}
+
+// Reads a backup manifest and returns a one-shot approval token for restore.
+message PrepareDatabaseRestore {
+  string backup_path = 1;
+}
+
+// Restores a backup after the explicit approval token returned above.
+message RestoreDatabase {
+  string backup_path = 1;
+  string approval_id = 2;
+}
+
 // Saves a single piece of offline research evidence tied to a work item.
 // raw_excerpt is redacted server-side (evohime_core::research) before it is
 // ever persisted or echoed back.
@@ -542,6 +559,9 @@ message CommandEnvelope {
     ReplaceCapabilitySelection replace_capability_selection = 60;
     SubmitFeedback submit_feedback = 61;
     ListFeedback list_feedback = 62;
+    CreateDatabaseBackup create_database_backup = 63;
+    PrepareDatabaseRestore prepare_database_restore = 64;
+    RestoreDatabase restore_database = 65;
   }
 }
 

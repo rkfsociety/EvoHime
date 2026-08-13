@@ -72,6 +72,14 @@ pub async fn execute(
                 | "perl"
                 | "ruby"
                 | "php"
+                | "wscript"
+                | "wscript.exe"
+                | "cscript"
+                | "cscript.exe"
+                | "mshta"
+                | "mshta.exe"
+                | "rundll32"
+                | "rundll32.exe"
         )
     {
         return Err(ToolError::InvalidInput {

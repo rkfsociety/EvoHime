@@ -7,6 +7,7 @@ use std::{
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+pub mod backup;
 pub mod capability_selection_store;
 pub mod capability_store;
 pub mod child_store;
@@ -14,6 +15,11 @@ pub mod feedback_store;
 pub mod memory_store;
 pub mod reconciliation_verifier;
 pub mod research_store;
+
+pub use backup::{
+    BackupObjectSummary, BackupPreview, BackupProgress, BackupProgressPhase, BackupResult,
+    RestoreResult, BACKUP_FORMAT_VERSION,
+};
 
 pub const SCHEMA_VERSION: u32 = 14;
 
@@ -47,6 +53,18 @@ pub enum StorageError {
     InvalidRunEffect(String),
     #[error("invalid recovery transition: {0}")]
     InvalidRecovery(String),
+    #[error("backup operation failed: {0}")]
+    Backup(String),
+    #[error("backup format is invalid: {0}")]
+    BackupFormat(String),
+    #[error("backup checksum mismatch: expected {expected}, got {actual}")]
+    BackupChecksumMismatch { expected: String, actual: String },
+    #[error("backup schema mismatch: expected {expected}, got {actual}")]
+    BackupSchemaMismatch { expected: u32, actual: u32 },
+    #[error("backup is too large: {0} bytes")]
+    BackupTooLarge(u64),
+    #[error("backup destination already exists: {0}")]
+    BackupDestinationExists(String),
 }
 
 pub struct LocalDatabase {

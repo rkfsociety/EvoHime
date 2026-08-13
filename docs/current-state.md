@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-12.
+Обновлено: 2026-08-13.
 
 ## Продукт
 
@@ -33,13 +33,17 @@ Core и supervisor — внутренние компоненты установ�
 - имя агента «Ева» передаётся в system context Core;
 - Core-owned build policy, её хранение и native policy panel;
 - durable recovery foundation для длительных запусков и reconciliation.
+- provider secrets хранятся в Credential Manager текущего Windows-пользователя; settings содержат только logical reference, предусмотрены миграция legacy и ручная ротация;
+- Core-first SQLite backup/restore: Online Backup API, WAL checkpoint, DPAPI payload protection, checksum, preview, approval, progress, safety backup, rollback и redacted audit;
+- filesystem.search исключает hard-default secret/auth paths, не следует symlink/reparse-обходам и не требует POSIX shell;
+- shell blocklist расширен для Windows launcher/LOLBin семейств; recovery timeline различает `RECOVERING`, `BLOCKED`, `WAITING_APPROVAL` и `FAILED`;
+- native IPC/UI wiring для backup preview/restore и отображения storage progress/error.
 
 ## Следующий этап
 
 1. leases/reconciliation и расширенный diff/command preview в approval UI;
-2. permission policy rules с glob-областями и повторной проверкой approval-пути;
-3. Credential Manager/DPAPI, расширенный backup/restore и crash recovery UI;
-4. дальнейшая проверка установочного UX на чистой Windows 11.
+2. повторная проверка installer/recovery UX на чистой Windows 11 22H2 reference VM;
+3. informative ARM64/Insider compatibility runs.
 
 ## Граница продукта
 

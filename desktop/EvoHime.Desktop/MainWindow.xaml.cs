@@ -732,6 +732,27 @@ public partial class MainWindow : Window
         var capabilitySelection = new Button { Content = "Capability Selection", Margin = new Thickness(0, 8, 0, 0) };
         capabilitySelection.Click += async (_, _) => await ShowCapabilitySelectionAsync();
         runtime.Children.Add(capabilitySelection);
+        var backupPath = new TextBox
+        {
+            Header = "Файл backup/restore",
+            Text = Path.Combine(dataDirectory, "evohime-backup.evohime"),
+            TextWrapping = TextWrapping.NoWrap,
+        };
+        var backupStatus = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = muted,
+        };
+        var backupActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var createBackup = new Button { Content = "Создать backup" };
+        createBackup.Click += async (_, _) => await CreateDatabaseBackupAsync(backupPath.Text, backupStatus);
+        var restoreBackup = new Button { Content = "Восстановить…" };
+        restoreBackup.Click += async (_, _) => await RestoreDatabaseBackupAsync(backupPath.Text, backupStatus);
+        backupActions.Children.Add(createBackup);
+        backupActions.Children.Add(restoreBackup);
+        runtime.Children.Add(backupPath);
+        runtime.Children.Add(backupActions);
+        runtime.Children.Add(backupStatus);
         sections.Children.Add(CreateSettingsSection("Состояние и диагностика", "Служебная информация приложения.", runtime, raised));
 
         var scroll = new ScrollViewer { Content = sections, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
@@ -739,6 +760,141 @@ public partial class MainWindow : Window
         view.Children.Add(scroll);
         Grid.SetRow(view, 0);
         return view;
+    }
+
+    private async Task CreateDatabaseBackupAsync(string path, TextBlock status)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            status.Text = "Укажите путь к backup-файлу.";
+            return;
+        }
+
+        try
+        {
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                await ConnectToCoreWithRetryAsync(CancellationToken.None);
+                await _ipc.RequestDatabaseBackupAsync(path.Trim(), CancellationToken.None);
+                while (true)
+                {
+                    var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                    if (response.EventType == "storage.progress")
+                    {
+                        status.Text = FormatStorageProgress(response.Payload);
+                        continue;
+                    }
+
+                    if (response.EventType == "storage.backup.created")
+                    {
+                        status.Text = "Backup создан. В manifest не входят provider secrets.";
+                        break;
+                    }
+                }
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+        {
+            status.Text = $"Backup не создан: {error.Message}";
+        }
+    }
+
+    private async Task RestoreDatabaseBackupAsync(string path, TextBlock status)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            status.Text = "Укажите путь к backup-файлу.";
+            return;
+        }
+
+        try
+        {
+            await _ipcRequestGate.WaitAsync();
+            try
+            {
+                await ConnectToCoreWithRetryAsync(CancellationToken.None);
+                await _ipc.PrepareDatabaseRestoreAsync(path.Trim(), CancellationToken.None);
+                var previewResponse = await _ipc.ReadEventAsync(CancellationToken.None);
+                if (previewResponse.EventType != "storage.restore.preview")
+                {
+                    throw new InvalidOperationException("Core не вернул preview restore.");
+                }
+
+                using var previewJson = JsonDocument.Parse(previewResponse.Payload);
+                var root = previewJson.RootElement;
+                var approvalId = root.GetProperty("approval_id").GetString();
+                var preview = root.GetProperty("preview");
+                var summary = $"Файл: {preview.GetProperty("source_name").GetString()}\n" +
+                              $"Формат: {preview.GetProperty("format_version").GetUInt32()}\n" +
+                              $"Schema: {preview.GetProperty("schema_version").GetUInt32()}\n" +
+                              $"Размер: {preview.GetProperty("database_size_bytes").GetUInt64()} байт\n" +
+                              $"Объекты: {preview.GetProperty("objects").GetArrayLength()}\n\n" +
+                              "Будет создан safety backup текущей базы. Provider secrets не восстанавливаются.";
+                var dialog = new ContentDialog
+                {
+                    Title = "Подтвердить восстановление базы",
+                    Content = new TextBlock { Text = summary, TextWrapping = TextWrapping.Wrap },
+                    PrimaryButtonText = "Одобрить restore",
+                    CloseButtonText = "Отмена",
+                    XamlRoot = ((FrameworkElement)Content).XamlRoot,
+                };
+                if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                {
+                    status.Text = "Restore отменён до atomic swap.";
+                    return;
+                }
+
+                await _ipc.RestoreDatabaseAsync(path.Trim(), approvalId ?? string.Empty, CancellationToken.None);
+                while (true)
+                {
+                    var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                    if (response.EventType == "storage.progress")
+                    {
+                        status.Text = FormatStorageProgress(response.Payload);
+                        continue;
+                    }
+
+                    if (response.EventType == "storage.restore.completed")
+                    {
+                        status.Text = "Restore завершён; рабочая база переоткрыта и audit записан.";
+                        break;
+                    }
+                }
+            }
+            finally
+            {
+                _ipcRequestGate.Release();
+            }
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+        {
+            status.Text = $"Restore не выполнен: {error.Message}";
+        }
+    }
+
+    private static string FormatStorageProgress(byte[] payload)
+    {
+        try
+        {
+            using var json = JsonDocument.Parse(payload);
+            var root = json.RootElement;
+            var phase = root.GetProperty("phase").GetString() ?? "storage";
+            var message = root.GetProperty("message").GetString() ?? string.Empty;
+            var completed = root.GetProperty("completed").GetUInt64();
+            var total = root.TryGetProperty("total", out var totalValue) && totalValue.ValueKind != JsonValueKind.Null
+                ? $"{completed}/{totalValue.GetUInt64()}"
+                : completed.ToString();
+            return $"{phase}: {total} — {message}";
+        }
+        catch (JsonException)
+        {
+            return "storage: выполняется";
+        }
     }
 
     private static Border CreateSettingsSection(string title, string description, UIElement content, Brush background) =>

@@ -4,6 +4,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{fs, io::ErrorKind, path::Path, process::Stdio, time::Duration};
 use tokio::process::Command;
+use unicode_normalization::UnicodeNormalization;
 
 pub const NAME: &str = "filesystem.search";
 pub const DESCRIPTION: &str =
@@ -21,6 +22,8 @@ const SKIP_DIR_NAMES: &[&str] = &[
     ".venv",
     "venv",
 ];
+const HARD_SKIP_DIR_NAMES: &[&str] = &[".git", ".svn", ".aws", ".azure", ".docker", ".gnupg", ".kube"];
+const HARD_SKIP_FILE_NAMES: &[&str] = &["id_rsa", "id_ed25519", "secrets.yml", "secrets.yaml", ".netrc", ".npmrc", "credentials", "credentials.json", "token", "token.json", "auth.json"];
 
 #[derive(Deserialize)]
 struct Input {
@@ -113,13 +116,16 @@ async fn ripgrep_search(
 ) -> Result<Vec<Value>, RgFailure> {
     let mut command = Command::new("rg");
     command
-        .args(["--json", "--no-heading", "--color", "never", query])
+        .args(["--json", "--no-heading", "--color", "never", "--no-follow", query])
         .arg(base)
         .current_dir(workspace_root)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if let Some(glob) = glob {
         command.args(["--glob", glob]);
+    }
+    for pattern in ["!.env*", "!*.pem", "!*.key", "!**/.git/**", "!**/.svn/**", "!**/id_rsa", "!**/id_ed25519", "!**/secrets.yml", "!**/secrets.yaml"] {
+        command.args(["--glob", pattern]);
     }
     let output = match command.output().await {
         Ok(output) => output,
@@ -137,6 +143,10 @@ async fn ripgrep_search(
     for line in String::from_utf8_lossy(&output.stdout).lines() {
         if let Ok(item) = serde_json::from_str::<Value>(line) {
             if item["type"] == "match" {
+                let reported = item["data"]["path"]["text"].as_str().unwrap_or("");
+                if is_hard_excluded(Path::new(reported)) {
+                    continue;
+                }
                 for sub in item["data"]["lines"]["text"].as_str().unwrap_or("").lines() {
                     matches.push(json!({
                         "path": item["data"]["path"]["text"],
@@ -172,12 +182,15 @@ fn fallback_search(
         };
         for entry in entries.flatten() {
             let path = entry.path();
+            if is_hard_excluded(&path) {
+                continue;
+            }
             let Ok(file_type) = entry.file_type() else {
                 continue;
             };
             if file_type.is_dir() {
                 let name = entry.file_name().to_string_lossy().to_string();
-                if SKIP_DIR_NAMES.contains(&name.as_str()) {
+                if SKIP_DIR_NAMES.contains(&name.as_str()) || is_hard_excluded(&path) {
                     continue;
                 }
                 stack.push(path);
@@ -210,7 +223,7 @@ fn scan_file(
     query: &str,
     remaining: usize,
 ) -> Option<Vec<Value>> {
-    if remaining == 0 {
+    if remaining == 0 || is_hard_excluded(path) {
         return None;
     }
     let bytes = fs::read(path).ok()?;
@@ -241,6 +254,15 @@ fn scan_file(
     } else {
         Some(out)
     }
+}
+
+fn is_hard_excluded(path: &Path) -> bool {
+    let components = path.components().filter_map(|component| component.as_os_str().to_str()).map(|name| name.nfc().collect::<String>().to_lowercase()).collect::<Vec<_>>();
+    if components.iter().any(|component| HARD_SKIP_DIR_NAMES.iter().any(|name| component == name)) {
+        return true;
+    }
+    let Some(name) = components.last() else { return false; };
+    name.starts_with(".env") || name.ends_with(".pem") || name.ends_with(".key") || HARD_SKIP_FILE_NAMES.iter().any(|blocked| name == blocked)
 }
 
 fn path_matches_glob(path: &Path, pattern: &str) -> bool {

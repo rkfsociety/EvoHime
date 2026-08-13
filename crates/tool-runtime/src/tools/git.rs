@@ -4,6 +4,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{process::Stdio, time::Duration};
 use tokio::process::Command;
+use reqwest::Url;
 
 pub const STATUS_NAME: &str = "git.status";
 pub const STATUS_DESCRIPTION: &str = "Show repository status";
@@ -88,6 +89,7 @@ pub async fn commit(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolE
 
 pub async fn pull(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
     let input = parse_optional_input::<RemoteInput>(&input, PULL_NAME)?;
+    validate_configured_remote(ctx, input.remote.as_deref().unwrap_or("origin")).await?;
     let mut args = vec!["pull", "--ff-only"];
     if let Some(remote) = input.remote.as_deref() {
         args.push(remote);
@@ -103,6 +105,7 @@ pub async fn push(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
 
     // Validate network policy (7.12)
     validate_push_policy(&input)?;
+    validate_configured_remote(ctx, input.remote.as_deref().unwrap_or("origin")).await?;
 
     let mut args = vec!["push"];
     if let Some(remote) = input.remote.as_deref() {
@@ -157,6 +160,49 @@ fn validate_push_policy(input: &RemoteInput) -> Result<(), ToolError> {
         }
     }
 
+    Ok(())
+}
+
+async fn validate_configured_remote(ctx: &ToolContext, remote: &str) -> Result<(), ToolError> {
+    if remote.is_empty() || remote.starts_with('-') || remote.contains(['/', '\\']) {
+        return Err(ToolError::Execution("git remote name is not safe".into()));
+    }
+    let output = Command::new("git")
+        .arg("-C").arg(&ctx.workspace_root)
+        .args(["remote", "get-url", remote])
+        .output().await
+        .map_err(|error| ToolError::Execution(format!("failed to inspect git remote: {error}")))?;
+    if !output.status.success() {
+        return Err(ToolError::Execution("git remote URL is unavailable".into()));
+    }
+    let raw = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    #[cfg(test)]
+    if std::path::Path::new(&raw).is_absolute() {
+        return Ok(());
+    }
+    let (host, path) = if raw.contains("://") {
+        let url = Url::parse(&raw).map_err(|_| ToolError::Execution("git remote URL is invalid".into()))?;
+        if !matches!(url.scheme(), "https" | "ssh" | "git") || url.query().is_some() || url.fragment().is_some() {
+            return Err(ToolError::Execution("git remote URL scheme is not allowed".into()));
+        }
+        if !url.username().is_empty() || url.password().is_some() {
+            return Err(ToolError::Execution("credential-bearing git remote is not allowed".into()));
+        }
+        (url.host_str().unwrap_or_default().to_ascii_lowercase(), url.path().to_owned())
+    } else {
+        let (user_host, path) = raw.split_once(':').ok_or_else(|| ToolError::Execution("local or UNC git remotes are not allowed".into()))?;
+        let (user, host) = user_host.split_once('@').ok_or_else(|| ToolError::Execution("SSH git remote must use git@host:path".into()))?;
+        if user != "git" { return Err(ToolError::Execution("SSH git remote user must be git".into())); }
+        (host.to_ascii_lowercase(), path.to_owned())
+    };
+    let allowed = std::env::var("EVOHIME_GIT_ALLOWED_REMOTE_HOSTS").unwrap_or_else(|_| "github.com,gitlab.com,bitbucket.org".into());
+    if !allowed.split(',').map(|value| value.trim().to_ascii_lowercase()).any(|value| value == host) {
+        return Err(ToolError::Execution("git remote host is not allowlisted".into()));
+    }
+    let path = path.trim_matches('/');
+    if path.is_empty() || path.contains("..") || path.contains("//") || path.contains('\\') {
+        return Err(ToolError::Execution("git remote repository path is not canonical".into()));
+    }
     Ok(())
 }
 

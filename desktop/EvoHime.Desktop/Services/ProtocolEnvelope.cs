@@ -316,6 +316,18 @@ public static class ProtocolEnvelope
     public static byte[] ExportDoctorLogs(string destinationPath) => TaskCommand(57, output =>
         WriteString(output, 1, destinationPath));
 
+    public static byte[] CreateDatabaseBackup(string destinationPath) => TaskCommand(63, output =>
+        WriteString(output, 1, destinationPath));
+
+    public static byte[] PrepareDatabaseRestore(string backupPath) => TaskCommand(64, output =>
+        WriteString(output, 1, backupPath));
+
+    public static byte[] RestoreDatabase(string backupPath, string approvalId) => TaskCommand(65, output =>
+    {
+        WriteString(output, 1, backupPath);
+        WriteString(output, 2, approvalId);
+    });
+
     /// <summary>Lists installed capability manifests (bounded, newest-first).</summary>
     public static byte[] ListCapabilities(uint limit = 50) => TaskCommand(44, output =>
     {

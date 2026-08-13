@@ -1,6 +1,9 @@
+#nullable enable
+
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using EvoHime.Desktop;
 using EvoHime.Desktop.Services;
+using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.IO;

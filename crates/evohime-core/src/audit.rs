@@ -24,6 +24,7 @@ pub enum AuditKind {
     Failure,
     Diff,
     Evidence,
+    Storage,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

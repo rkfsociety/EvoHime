@@ -16,8 +16,8 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::{mpsc, RwLock};
-use uuid::Uuid;
 use tracing;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -560,11 +560,7 @@ impl PermissionEngine {
 
     /// Check if approval matches a specific call based on call_hash alone.
     /// Returns true if the approval exists, is in Granted state, and the call_hash matches.
-    pub async fn approval_matches(
-        &self,
-        id: Uuid,
-        call_hash: &str,
-    ) -> bool {
+    pub async fn approval_matches(&self, id: Uuid, call_hash: &str) -> bool {
         if let Some(record) = self.approvals.read().await.get(&id) {
             record.state == ApprovalState::Granted && record.request.call_hash == call_hash
         } else {
@@ -1389,6 +1385,41 @@ mod tests {
     }
 
     #[test]
+    fn canonical_policy_subject_cannot_be_replaced_by_display_name() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            engine
+                .set_policy_rules(PolicyRuleSet::new(vec![PolicyRule {
+                    permission: Permission::FilesystemRead,
+                    pattern: "c:/workspace/secrets/*".into(),
+                    mode: PermissionMode::Deny,
+                }]))
+                .await;
+
+            let check = PermissionCheck {
+                path: Some("friendly-name/token.txt"),
+                ..PermissionCheck::default()
+            };
+            assert_eq!(
+                engine
+                    .check_scoped_with_subject(
+                        Permission::FilesystemRead,
+                        &check,
+                        r"C:\workspace\secrets\token.txt",
+                    )
+                    .await,
+                PermissionDecision::Denied
+            );
+            assert_eq!(
+                engine
+                    .check_scoped(Permission::FilesystemRead, &check)
+                    .await,
+                PermissionDecision::Allowed
+            );
+        });
+    }
+
+    #[test]
     fn approval_matches_detects_different_inputs() {
         block_on(async {
             let engine = PermissionEngine::new();
@@ -1409,7 +1440,11 @@ mod tests {
             engine.resolve(request.id, true).await.expect("granted");
 
             // Same hash matches
-            assert!(engine.approval_matches(request.id, &request.call_hash).await);
+            assert!(
+                engine
+                    .approval_matches(request.id, &request.call_hash)
+                    .await
+            );
 
             // Different input has different hash
             let different_hash = canonical_call_hash("shell.execute", "workspace", &input2);
@@ -1438,7 +1473,11 @@ mod tests {
             engine.resolve(request.id, false).await.expect("denied");
 
             // Denied approval should not match even with correct hash
-            assert!(!engine.approval_matches(request.id, &request.call_hash).await);
+            assert!(
+                !engine
+                    .approval_matches(request.id, &request.call_hash)
+                    .await
+            );
         });
     }
 
@@ -1461,7 +1500,11 @@ mod tests {
                 .await;
 
             // Pending approval should not match
-            assert!(!engine.approval_matches(request.id, &request.call_hash).await);
+            assert!(
+                !engine
+                    .approval_matches(request.id, &request.call_hash)
+                    .await
+            );
         });
     }
 
@@ -1497,7 +1540,8 @@ mod tests {
             let engine = PermissionEngine::new();
             let task_id = Uuid::new_v4();
             let input1 = serde_json::json!({"path": "src/main.rs", "content": "fn main() {}"});
-            let input2 = serde_json::json!({"path": "src/main.rs", "content": "fn main() { panic!(); }"});
+            let input2 =
+                serde_json::json!({"path": "src/main.rs", "content": "fn main() { panic!(); }"});
 
             let request = engine
                 .create_approval_scoped_for_call(
@@ -1565,7 +1609,11 @@ mod tests {
             engine.resolve(request.id, true).await.expect("granted");
 
             // Approval matches initially
-            assert!(engine.approval_matches(request.id, &request.call_hash).await);
+            assert!(
+                engine
+                    .approval_matches(request.id, &request.call_hash)
+                    .await
+            );
 
             // Now add a hard deny policy for this command
             engine
@@ -1578,7 +1626,11 @@ mod tests {
 
             // Check with same input still shows approval matches
             // (approval_matches only checks approval state, not policy)
-            assert!(engine.approval_matches(request.id, &request.call_hash).await);
+            assert!(
+                engine
+                    .approval_matches(request.id, &request.call_hash)
+                    .await
+            );
 
             // But check_scoped now denies due to hard policy
             let check = PermissionCheck {

@@ -200,6 +200,15 @@ public sealed class CoreIpcClient
     public Task RequestDoctorExportAsync(string destinationPath, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.ExportDoctorLogs(destinationPath), cancellationToken);
 
+    public Task RequestDatabaseBackupAsync(string destinationPath, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.CreateDatabaseBackup(destinationPath), cancellationToken);
+
+    public Task PrepareDatabaseRestoreAsync(string backupPath, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.PrepareDatabaseRestore(backupPath), cancellationToken);
+
+    public Task RestoreDatabaseAsync(string backupPath, string approvalId, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.RestoreDatabase(backupPath, approvalId), cancellationToken);
+
     public Task RequestCapabilityListAsync(uint limit, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.ListCapabilities(limit), cancellationToken);
 
