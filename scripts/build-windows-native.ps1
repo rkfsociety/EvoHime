@@ -56,7 +56,14 @@ $uiPackaged = Join-Path $resolvedOutput 'EvoHime.exe'
 if (-not $SkipBuild) {
     if (-not (Test-Path -LiteralPath $electronPayload)) { throw "Electron package не найден: $electronPayload" }
     foreach ($item in Get-ChildItem -LiteralPath $electronPayload -Force) {
-        Copy-Item -LiteralPath $item.FullName -Destination (Join-Path $resolvedOutput $item.Name) -Force -Recurse
+        $destination = Join-Path $resolvedOutput $item.Name
+        # Copy-Item -Recurse вкладывает каталог внутрь уже существующего вместо
+        # замены, поэтому повторная сборка оставляла прежний app.asar и создавала
+        # resources\resources. Каталог сносится целиком перед копированием.
+        if ($item.PSIsContainer -and (Test-Path -LiteralPath $destination)) {
+            Remove-Item -LiteralPath $destination -Recurse -Force
+        }
+        Copy-Item -LiteralPath $item.FullName -Destination $destination -Force -Recurse
     }
 }
 if (-not (Test-Path -LiteralPath $uiPackaged)) { throw "Electron UI не найден: $uiPackaged" }
