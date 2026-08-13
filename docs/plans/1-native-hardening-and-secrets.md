@@ -21,9 +21,10 @@
 
 ### Переносимые проверки
 
-- Тестовая фикстура должна запускать короткий процесс, возвращающий заданный exit code, через API/исполняемый файл, доступный в Windows CI; тесты не должны зависеть от наличия `true`, `false`, Bash или WSL.
+- Тестовая фикстура должна запускать короткий процесс, возвращающий заданный exit code, через Windows-compatible helper (предпочтительно `std::process::Command` с явным executable и аргументами, без shell parsing); допустимый минимальный вариант — `cmd.exe /d /c exit 0|1` только внутри Windows fixture. Тесты не должны зависеть от наличия `true`, `false`, Bash или WSL.
 - Список мест, где использовались POSIX-команды, фиксируется в regression test или комментарии рядом с фикстурой. Linux/macOS остаются валидными средами для Rust-тестов, но эта фикстура не должна ухудшать их совместимость.
 - WSL не является reference-средой для WinUI, supervisor и native packaging. При наличии WSL в CI допускается отдельная диагностическая проверка, но её результат не смешивается с Windows acceptance criteria.
+- IPC portability tests отдельно проверяют временные каталоги и endpoints: Unix-style `/tmp`/Unix sockets не должны быть скрытой зависимостью; Windows path и named pipe формируются штатными platform APIs.
 
 ### Секреты и миграция
 
@@ -31,6 +32,8 @@
 - В production fallback в plaintext settings, логах или SQLite не допускается. Credential Manager/DPAPI привязаны к профилю Windows и машине; восстановление на другой машине выполняется повторной авторизацией или явным импортом секрета пользователем.
 - Для dev/CI разрешается только ephemeral fallback через переменную окружения или секрет CI, действующий на время процесса и не попадающий в snapshots, traces, exports и логи. Он не должен автоматически становиться постоянным хранилищем.
 - Ротация выполняется по схеме `write new credential -> verify access -> atomically switch reference -> delete old credential`; при ошибке проверки или переключения старое значение и reference сохраняются. Документация должна описывать повторную авторизацию, восстановление после повреждения профиля и удаление отозванного секрета.
+- Ротация в scope подплана запускается вручную из UI/CLI; автоматическое расписание не требуется. Если Credential Manager недоступен или нет интерактивной Windows-сессии, production operation завершается безопасной ошибкой и не откатывается к plaintext/мастер-паролю-файлу; CI использует только описанный ephemeral secret.
+- Миграция legacy plaintext settings сначала читает и проверяет значение, записывает Credential Manager и reference, затем атомарно переписывает settings без старого значения, удаляет временные копии и повторно сканирует конфигурацию. При любой ошибке исходный файл сохраняется для повторной миграции, но секрет не выводится в ошибку или лог.
 
 ### SQLite backup/restore
 
@@ -39,6 +42,10 @@
 - `preview` — версионируемый JSON-план: источник, время, schema/app version, размер, список затрагиваемых объектов, ожидаемые миграции и потенциальные конфликты; preview не содержит секретов.
 - `progress` сообщает фазу (`prepare`, `backup`, `validate`, `restore`, `reopen`, `cleanup`), completed/total для определимых операций и человекочитаемую ошибку. Процент показывается только там, где total достоверен.
 - Restore выполняется во временную копию с integrity/schema validation, затем проходит reopen, migrations/reconciliation и только после успешной проверки — атомарную замену. Сбой миграции, валидации, записи, reopen/reconciliation или переполнения диска оставляет рабочую БД нетронутой и предлагает rollback к pre-restore backup; если ошибка произошла после замены, исходное состояние восстанавливается из safety backup. Частично записанная временная копия удаляется после audit.
+- Пользовательский preview показывает безопасное summary из JSON-плана: версии, размер, число/типы объектов, ожидаемые миграции и конфликты; первые N строк и diff данных не показываются. Approval — отдельное явное подтверждение перед restore, а не побочный эффект crash recovery.
+- Audit записывается в существующий redacted Core JSONL event journal с operation id, actor, timestamps, phase/result и error category; значения секретов и содержимое записей не логируются. Отдельный зашифрованный audit-файл не требуется.
+- Regression test подаёт повреждённый/неполный backup и проверяет контролируемую ошибку в UI, отсутствие падения Core, сохранение рабочей БД и audit результата.
+- Для Windows locking tests включают WAL mode, активного reader и попытку restore; writer lock/transaction boundary должны корректно завершиться до замены, а незавершённая транзакция не должна попасть в backup.
 
 ### Crash-recovery UI
 
@@ -53,15 +60,17 @@
 | `BLOCKED` | причину блокировки и условие разблокировки | `retry`, `resolve`, `open details` |
 | `FAILED` | последнюю безопасно отредактированную ошибку и correlation id | `retry`, `abort`, `open details` |
 
-Эта матрица является контрактом UI/Core: неизвестный effect может перейти к `approve` только после reconciliation и явного approval, а недоступное действие не отображается.
+Эта матрица является контрактом UI/Core: неизвестный effect может перейти к `approve` только после reconciliation и явного approval, а недоступное действие не отображается. UI получает state transitions и progress через versioned IPC event stream с request id/sequence replay, а не через прямой доступ к Core/SQLite или обязательный polling.
 
 ### Search и security edge cases
 
 - `filesystem.search` фильтрует результаты по canonical path после разрешения symlink/reparse-point, проверяет containment относительно разрешённых roots и повторно применяет ту же path/policy validation, что и прямой filesystem access, перед выдачей. Проверка относится к пути и содержимому результата, а не к любому совпадению имени легитимного файла.
 - Regression tests покрывают symlink/reparse escape, `..`, alternate path forms, Unicode normalization и похожие символы. Unicode-омографы проверяются как обход сопоставления запрещённых имён/команд, а не объявляются запрещёнными сами по себе.
 - Blocklist интерпретаторов запрещает прямые `cmd`/`powershell`/`python` и indirect launcher aliases или переименованные executable paths, если это предусмотрено policy model; позитивные тесты подтверждают, что разрешённые инструменты не блокируются.
+- Запрет относится к запуску interpreter/launcher процессов и их обходам, а не к текстовым словам `eval`/`exec` в обычных пользовательских данных; policy явно перечисляет executable families и indirect launchers.
 - Policy subject проверяется после canonical resolution против canonical resolved subject, а не против пользовательского display name или неподтверждённой строки input.
-- Git remote разрешает только ожидаемые scheme, host и repository scope; tests покрывают `file://`, UNC, arbitrary SSH hosts, credential-bearing URLs, смену origin и redirect/canonicalization cases. Запрещённые remote не должны обходить policy через alias, redirect или альтернативную форму URL.
+- По умолчанию `filesystem.search` исключает `.env*`, `.git/`, `*.pem`, `*.key`, `secrets.yml` и эквивалентные canonical/normalized forms. Конфигурация может добавлять ограничения, но не ослабляет hard defaults без отдельной policy/approval.
+- Git remote разрешает только ожидаемые `https`, `ssh` и `git` forms с allowlisted host и repository scope; tests покрывают `file://`, UNC, arbitrary SSH hosts, credential-bearing URLs, смену origin и redirect/canonicalization cases. Запрещённые remote не должны обходить policy через alias, redirect или альтернативную форму URL.
 
 ### Windows reference и rollback
 
@@ -69,7 +78,7 @@
 - Insider Preview не является обязательным гейтом этого подплана, но может использоваться как informative compatibility run с отдельным результатом.
 - Upgrade/install проверяет нехватку диска и сбой на каждом этапе, сохранение текущей рабочей версии, очистку staging и повторный запуск после освобождения места. Rollback должен быть идемпотентным и не удалять пользовательские данные.
 
-Smoke-матрица на reference-системе: clean install → launch → configure provider secret → создать проверяемое DB state → upgrade `N` → `N+1` → симулировать failed migration/startup → rollback → проверить DB и доступность secret reference → uninstall/reinstall согласно зафиксированной policy сохранения пользовательских данных. Для каждого сценария записываются версия/build, exit result, логи без секретов и итоговое состояние данных.
+Smoke-матрица на reference-системе: clean install → launch → configure provider secret → создать проверяемое DB state → upgrade `N` → `N+1` → симулировать failed migration/startup → rollback → проверить DB и доступность secret reference → uninstall/reinstall согласно зафиксированной policy сохранения пользовательских данных. Для каждого сценария записываются версия/build, exit result, логи без секретов и итоговое состояние данных. Автоматизированный GitHub Actions `windows-latest` smoke выполняет доступную install/upgrade/recovery часть как regression gate; чистая 22H2 VM остаётся release acceptance reference.
 
 ## Порядок реализации
 
@@ -84,6 +93,7 @@ Smoke-матрица на reference-системе: clean install → launch →
 - `cargo test --workspace`, WinUI tests и IPC tests проходят без environment-only failures;
 - POSIX-команды не требуются для native-тестов, а WSL не используется как скрытая зависимость acceptance run;
 - provider key и распространённые encoded forms не хранятся в settings, logs, traces, prompts/tool payload history, audit events, diagnostic bundle/Core Doctor export, backup metadata или crash dump annotations;
+- synthetic crash-dump/core-dump test не содержит provider key или encoded forms в проверяемых annotations и serialized diagnostic fields; полноценное доказательство отсутствия значения во всей памяти ОС не заявляется этим подпланом;
 - fallback для dev/CI является только ephemeral и не сохраняется после завершения процесса;
 - preview backup имеет проверяемый JSON-контракт, progress содержит фазу и достоверный прогресс, а ошибка restore не повреждает рабочую БД;
 - backup восстанавливается после ошибки миграции и явно показывает область восстановления, pre-restore backup и доступный rollback;
@@ -91,6 +101,7 @@ Smoke-матрица на reference-системе: clean install → launch →
 - `.env`, запрещённые результаты поиска, symlink/reparse escapes и обходы blocklist не выдаются через `filesystem.search`;
 - Git remote policy отклоняет запрещённые scheme/host/scope, credential-bearing URLs, UNC/file URLs и redirect/canonicalization обходы;
 - smoke-матрица покрывает install, launch, secret setup, DB state, upgrade, failed migration/startup, rollback и uninstall/reinstall policy;
+- изменения secret reference/API сохраняют versioned IPC compatibility с task runner; Core остаётся единственным владельцем получения секрета, а UI и task runner не получают новый plaintext boundary;
 - установщик, rollback и повторное восстановление после нехватки диска проходят на чистой reference Windows 11 22H2+.
 
 ## Зависимости
