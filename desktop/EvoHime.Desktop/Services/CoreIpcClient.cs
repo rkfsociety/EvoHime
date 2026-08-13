@@ -182,6 +182,35 @@ public sealed class CoreIpcClient
     public Task RequestDoctorExportAsync(string destinationPath, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.ExportDoctorLogs(destinationPath), cancellationToken);
 
+    public Task RequestCapabilityListAsync(uint limit, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.ListCapabilities(limit), cancellationToken);
+
+    public Task RequestCapabilitySelectionAsync(
+        string taskId,
+        string intent,
+        IReadOnlyList<string> requiredTools,
+        IReadOnlyList<string> requiredDomains,
+        string requestedRisk,
+        CancellationToken cancellationToken) =>
+        SendPayloadAsync(
+            ProtocolEnvelope.GetCapabilitySelection(taskId, intent, requiredTools, requiredDomains, requestedRisk),
+            cancellationToken);
+
+    public Task PinCapabilitySelectionAsync(string taskId, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.PinCapabilitySelection(taskId), cancellationToken);
+
+    public Task ReplaceCapabilitySelectionAsync(
+        string taskId,
+        string manifestName,
+        string intent,
+        IReadOnlyList<string> requiredTools,
+        IReadOnlyList<string> requiredDomains,
+        string requestedRisk,
+        CancellationToken cancellationToken) =>
+        SendPayloadAsync(
+            ProtocolEnvelope.ReplaceCapabilitySelection(taskId, manifestName, intent, requiredTools, requiredDomains, requestedRisk),
+            cancellationToken);
+
     public async Task<ulong> ReadReplayAsync(
         ulong afterSequence,
         Func<CoreEventEnvelope, Task> onEvent,

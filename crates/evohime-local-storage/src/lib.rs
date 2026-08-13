@@ -14,7 +14,7 @@ pub mod memory_store;
 pub mod reconciliation_verifier;
 pub mod research_store;
 
-pub const SCHEMA_VERSION: u32 = 12;
+pub const SCHEMA_VERSION: u32 = 13;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -1876,6 +1876,18 @@ impl LocalDatabase {
                  CREATE INDEX IF NOT EXISTS idx_memory_entries_lesson
                     ON memory_entries(scope_kind, scope_id, lesson_key);
                  PRAGMA user_version = 12;",
+            )?;
+        }
+        if current < 13 {
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS capability_selections (
+                    task_id TEXT PRIMARY KEY NOT NULL,
+                    origin TEXT NOT NULL,
+                    manifest_name TEXT NOT NULL,
+                    state_json BLOB NOT NULL,
+                    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                );
+                PRAGMA user_version = 13;",
             )?;
         }
         transaction.commit()?;

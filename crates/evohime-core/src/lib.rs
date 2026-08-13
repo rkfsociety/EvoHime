@@ -988,6 +988,39 @@ pub enum CoreCommand {
         id: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    /// Runtime/UI wiring for capability-registry selection
+    /// (`capability_selection::select_for_task`/`reconcile_with_pin`): runs
+    /// the deterministic matcher for the query, reconciles against any
+    /// selection already persisted for `task_id`, persists the reconciled
+    /// state, and returns it.
+    GetCapabilitySelection {
+        task_id: String,
+        intent: String,
+        required_tools: Vec<String>,
+        required_domains: Vec<String>,
+        requested_risk: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Pins the selection persisted for `task_id`
+    /// (`capability_selection::pin`) so future `GetCapabilitySelection`
+    /// calls cannot silently swap it. Fails if no selection is persisted
+    /// yet for `task_id`.
+    PinCapabilitySelection {
+        task_id: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Explicitly switches the selection persisted for `task_id` to
+    /// `manifest_name` (`capability_selection::replace`), re-deriving
+    /// permissions/reasons against the same query.
+    ReplaceCapabilitySelection {
+        task_id: String,
+        manifest_name: String,
+        intent: String,
+        required_tools: Vec<String>,
+        required_domains: Vec<String>,
+        requested_risk: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     /// Validates and persists one bounded, redacted task handoff between
     /// child roles (`child_roles::HandoffEnvelope::new`). This only records
     /// the handoff; it does not deliver or act on it for any real child
@@ -1479,6 +1512,36 @@ impl EventJournal {
         evohime_local_storage::capability_store::CapabilityStoreSql::delete_by_id(
             database.connection(),
             id,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Persists (upserts by task_id) the reconciled capability-selection
+    /// state for a task, so the pin/replace/auto choice survives reconnect.
+    pub async fn save_capability_selection(
+        &self,
+        record: &evohime_local_storage::capability_selection_store::CapabilitySelectionRecord,
+    ) -> Result<(), String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::capability_selection_store::CapabilitySelectionStoreSql::upsert(
+            database.connection(),
+            record,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Fetches the persisted capability-selection state for a task, if any.
+    pub async fn get_capability_selection(
+        &self,
+        task_id: &str,
+    ) -> Result<
+        Option<evohime_local_storage::capability_selection_store::CapabilitySelectionRecord>,
+        String,
+    > {
+        let database = self.database.lock().await;
+        evohime_local_storage::capability_selection_store::CapabilitySelectionStoreSql::get_by_task_id(
+            database.connection(),
+            task_id,
         )
         .map_err(|error| error.to_string())
     }
@@ -4549,6 +4612,152 @@ impl TaskCoordinator {
                 .await;
                 let _ = reply.send(result);
             }
+            CoreCommand::GetCapabilitySelection {
+                task_id,
+                intent,
+                required_tools,
+                required_domains,
+                requested_risk,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let requested_risk = parse_capability_risk_class(&requested_risk)?;
+                    let records = journal
+                        .list_capability_manifests(crate::capability_registry::MAX_MANIFESTS as u32)
+                        .await?;
+                    let manifests = records
+                        .iter()
+                        .map(|record| {
+                            serde_json::from_str::<crate::capability_registry::CapabilityManifest>(
+                                &record.manifest_json,
+                            )
+                            .map_err(|error| error.to_string())
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let query = crate::capability_registry::MatchQuery {
+                        intent,
+                        required_tools,
+                        required_domains,
+                        requested_risk,
+                    };
+                    let stored = journal.get_capability_selection(&task_id).await?;
+                    let current_state = stored
+                        .map(|record| {
+                            serde_json::from_str::<
+                                crate::capability_selection::CapabilitySelectionState,
+                            >(&record.state_json)
+                            .map_err(|error| error.to_string())
+                        })
+                        .transpose()?;
+                    let auto_match =
+                        crate::capability_selection::select_for_task(&manifests, &query);
+                    let reconciled = crate::capability_selection::reconcile_with_pin(
+                        current_state.as_ref(),
+                        auto_match,
+                    )
+                    .map_err(|error| error.to_string())?;
+                    let state_json = serde_json::to_string(&reconciled)
+                        .map_err(|error| error.to_string())?;
+                    let selection_record =
+                        evohime_local_storage::capability_selection_store::CapabilitySelectionRecord {
+                            task_id: task_id.clone(),
+                            origin: capability_selection_origin_to_store(reconciled.origin),
+                            manifest_name: reconciled.selection.manifest_name.clone(),
+                            state_json,
+                        };
+                    journal.save_capability_selection(&selection_record).await?;
+                    serde_json::to_vec(&reconciled).map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::PinCapabilitySelection { task_id, reply } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let stored = journal
+                        .get_capability_selection(&task_id)
+                        .await?
+                        .ok_or_else(|| {
+                            "no capability selection recorded for this task yet".to_string()
+                        })?;
+                    let current_state = serde_json::from_str::<
+                        crate::capability_selection::CapabilitySelectionState,
+                    >(&stored.state_json)
+                    .map_err(|error| error.to_string())?;
+                    let pinned = crate::capability_selection::pin(current_state);
+                    let state_json =
+                        serde_json::to_string(&pinned).map_err(|error| error.to_string())?;
+                    let selection_record =
+                        evohime_local_storage::capability_selection_store::CapabilitySelectionRecord {
+                            task_id: task_id.clone(),
+                            origin: capability_selection_origin_to_store(pinned.origin),
+                            manifest_name: pinned.selection.manifest_name.clone(),
+                            state_json,
+                        };
+                    journal.save_capability_selection(&selection_record).await?;
+                    serde_json::to_vec(&pinned).map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::ReplaceCapabilitySelection {
+                task_id,
+                manifest_name,
+                intent,
+                required_tools,
+                required_domains,
+                requested_risk,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let requested_risk = parse_capability_risk_class(&requested_risk)?;
+                    let records = journal
+                        .list_capability_manifests(crate::capability_registry::MAX_MANIFESTS as u32)
+                        .await?;
+                    let manifests = records
+                        .iter()
+                        .map(|record| {
+                            serde_json::from_str::<crate::capability_registry::CapabilityManifest>(
+                                &record.manifest_json,
+                            )
+                            .map_err(|error| error.to_string())
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let query = crate::capability_registry::MatchQuery {
+                        intent,
+                        required_tools,
+                        required_domains,
+                        requested_risk,
+                    };
+                    let replaced = crate::capability_selection::replace(
+                        &manifests,
+                        &query,
+                        &manifest_name,
+                    )
+                    .map_err(|error| error.to_string())?;
+                    let state_json =
+                        serde_json::to_string(&replaced).map_err(|error| error.to_string())?;
+                    let selection_record =
+                        evohime_local_storage::capability_selection_store::CapabilitySelectionRecord {
+                            task_id: task_id.clone(),
+                            origin: capability_selection_origin_to_store(replaced.origin),
+                            manifest_name: replaced.selection.manifest_name.clone(),
+                            state_json,
+                        };
+                    journal.save_capability_selection(&selection_record).await?;
+                    serde_json::to_vec(&replaced).map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
             CoreCommand::RequestChildHandoff {
                 handoff_id,
                 task_id,
@@ -5007,6 +5216,22 @@ fn capability_risk_class_str(risk: crate::capability_registry::RiskClass) -> &'s
         crate::capability_registry::RiskClass::Low => "low",
         crate::capability_registry::RiskClass::Medium => "medium",
         crate::capability_registry::RiskClass::High => "high",
+    }
+}
+
+fn capability_selection_origin_to_store(
+    origin: crate::capability_selection::SelectionOrigin,
+) -> evohime_local_storage::capability_selection_store::SelectionOrigin {
+    match origin {
+        crate::capability_selection::SelectionOrigin::Auto => {
+            evohime_local_storage::capability_selection_store::SelectionOrigin::Auto
+        }
+        crate::capability_selection::SelectionOrigin::Pinned => {
+            evohime_local_storage::capability_selection_store::SelectionOrigin::Pinned
+        }
+        crate::capability_selection::SelectionOrigin::Replaced => {
+            evohime_local_storage::capability_selection_store::SelectionOrigin::Replaced
+        }
     }
 }
 

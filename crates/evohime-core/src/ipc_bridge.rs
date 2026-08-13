@@ -670,6 +670,23 @@ impl IpcBridge {
                 self.write_response(writer, "capability.removed", result)
                     .await?;
             }
+            Some(generated::command_envelope::Command::GetCapabilitySelection(request)) => {
+                let result = self.dispatch_get_capability_selection(request).await?;
+                self.write_response(writer, "capability.selection", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::PinCapabilitySelection(request)) => {
+                let result = self.dispatch_pin_capability_selection(request).await?;
+                self.write_response(writer, "capability.selection.pinned", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::ReplaceCapabilitySelection(request)) => {
+                let result = self
+                    .dispatch_replace_capability_selection(request)
+                    .await?;
+                self.write_response(writer, "capability.selection.replaced", result)
+                    .await?;
+            }
             Some(generated::command_envelope::Command::RequestChildHandoff(request)) => {
                 let result = self.dispatch_request_child_handoff(request).await?;
                 self.write_response(writer, "child.handoff.requested", result)
@@ -1518,6 +1535,84 @@ impl IpcBridge {
         coordinator
             .dispatch(CoreCommand::RemoveCapability {
                 id: request.id,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_get_capability_selection(
+        &self,
+        request: generated::GetCapabilitySelection,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::GetCapabilitySelection {
+                task_id: request.task_id,
+                intent: request.intent,
+                required_tools: request.required_tools,
+                required_domains: request.required_domains,
+                requested_risk: request.requested_risk,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_pin_capability_selection(
+        &self,
+        request: generated::PinCapabilitySelection,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::PinCapabilitySelection {
+                task_id: request.task_id,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_replace_capability_selection(
+        &self,
+        request: generated::ReplaceCapabilitySelection,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::ReplaceCapabilitySelection {
+                task_id: request.task_id,
+                manifest_name: request.manifest_name,
+                intent: request.intent,
+                required_tools: request.required_tools,
+                required_domains: request.required_domains,
+                requested_risk: request.requested_risk,
                 reply,
             })
             .await
@@ -3353,6 +3448,208 @@ mod tests {
             .as_array()
             .expect("manifests array")
             .is_empty());
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn capability_selection_get_pin_replace_round_trip_against_real_storage() {
+        let path = std::env::temp_dir().join(format!(
+            "evohime-ipc-capability-selection-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal, coordinator);
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+
+        async fn send(
+            bridge: &IpcBridge,
+            client: &mut tokio::io::DuplexStream,
+            server_reader: &mut (impl tokio::io::AsyncRead + Unpin),
+            server_writer: &mut (impl tokio::io::AsyncWrite + Unpin),
+            request_id: &str,
+            command: generated::command_envelope::Command,
+        ) -> generated::EventEnvelope {
+            let envelope = generated::CommandEnvelope {
+                protocol: Some(protocol()),
+                request_id: request_id.into(),
+                client_id: "capability-selection-client".into(),
+                core_instance_id: String::new(),
+                session_epoch: 1,
+                command: Some(command),
+            };
+            transport::write_frame(client, &envelope.encode_to_vec())
+                .await
+                .expect("request writes");
+            bridge
+                .process_once(server_reader, server_writer)
+                .await
+                .expect("request serves");
+            let response = transport::read_frame(client).await.expect("response reads");
+            generated::EventEnvelope::decode(response.as_slice()).expect("event decodes")
+        }
+
+        // Install two candidate manifests so replace() has a real
+        // alternative to switch to.
+        for name in ["reviewer", "planner"] {
+            let install = send(
+                &bridge,
+                &mut client,
+                &mut server_reader,
+                &mut server_writer,
+                &format!("capability-selection-install-{name}"),
+                generated::command_envelope::Command::InstallCapability(
+                    generated::InstallCapability {
+                        manifest_json: capability_manifest_json(name, "1.0.0", "medium"),
+                        install_source: "local_archive".into(),
+                        source_path: format!("C:/archives/{name}.zip"),
+                        expected_content_hash: String::new(),
+                    },
+                ),
+            )
+            .await;
+            assert_eq!(install.event_type, "capability.installed");
+        }
+
+        let query_fields = || generated::GetCapabilitySelection {
+            task_id: "task-1".into(),
+            intent: "review reviewer".into(),
+            required_tools: vec!["git.diff".into()],
+            required_domains: vec!["docs.example.com".into()],
+            requested_risk: "low".into(),
+        };
+
+        // First GetCapabilitySelection: no prior state, so the matcher's
+        // top-scoring manifest is auto-selected and persisted.
+        let selected = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "capability-selection-get-1",
+            generated::command_envelope::Command::GetCapabilitySelection(query_fields()),
+        )
+        .await;
+        assert_eq!(selected.event_type, "capability.selection");
+        let selected_json: serde_json::Value =
+            serde_json::from_slice(&selected.payload).expect("selection payload is valid json");
+        assert_eq!(
+            selected_json["selection"]["manifest_name"],
+            serde_json::json!("reviewer")
+        );
+        assert_eq!(selected_json["origin"], serde_json::json!("auto"));
+
+        // Pinning persists origin=pinned for the same task_id.
+        let pinned = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "capability-selection-pin-1",
+            generated::command_envelope::Command::PinCapabilitySelection(
+                generated::PinCapabilitySelection {
+                    task_id: "task-1".into(),
+                },
+            ),
+        )
+        .await;
+        assert_eq!(pinned.event_type, "capability.selection.pinned");
+        let pinned_json: serde_json::Value =
+            serde_json::from_slice(&pinned.payload).expect("pin payload is valid json");
+        assert_eq!(pinned_json["origin"], serde_json::json!("pinned"));
+        assert!(pinned_json["selection"]["pinned"].as_bool().unwrap());
+
+        // A subsequent GetCapabilitySelection must not silently override the
+        // pin, even though the matcher would still pick "reviewer" here --
+        // the persisted origin stays "pinned".
+        let reconciled = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "capability-selection-get-2",
+            generated::command_envelope::Command::GetCapabilitySelection(query_fields()),
+        )
+        .await;
+        let reconciled_json: serde_json::Value =
+            serde_json::from_slice(&reconciled.payload).expect("selection payload is valid json");
+        assert_eq!(reconciled_json["origin"], serde_json::json!("pinned"));
+
+        // Explicitly replacing switches the persisted selection to
+        // "planner" and marks origin=replaced.
+        let replaced = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "capability-selection-replace-1",
+            generated::command_envelope::Command::ReplaceCapabilitySelection(
+                generated::ReplaceCapabilitySelection {
+                    task_id: "task-1".into(),
+                    manifest_name: "planner".into(),
+                    intent: "review reviewer".into(),
+                    required_tools: vec!["git.diff".into()],
+                    required_domains: vec!["docs.example.com".into()],
+                    requested_risk: "low".into(),
+                },
+            ),
+        )
+        .await;
+        assert_eq!(replaced.event_type, "capability.selection.replaced");
+        let replaced_json: serde_json::Value =
+            serde_json::from_slice(&replaced.payload).expect("replace payload is valid json");
+        assert_eq!(
+            replaced_json["selection"]["manifest_name"],
+            serde_json::json!("planner")
+        );
+        assert_eq!(replaced_json["origin"], serde_json::json!("replaced"));
+
+        // A fresh GetCapabilitySelection still returns the replaced choice
+        // -- proving persistence survives a new request (simulated
+        // reconnect), matching the store's own round-trip contract.
+        let after_replace = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "capability-selection-get-3",
+            generated::command_envelope::Command::GetCapabilitySelection(query_fields()),
+        )
+        .await;
+        let after_replace_json: serde_json::Value = serde_json::from_slice(&after_replace.payload)
+            .expect("selection payload is valid json");
+        assert_eq!(
+            after_replace_json["selection"]["manifest_name"],
+            serde_json::json!("planner")
+        );
+        assert_eq!(after_replace_json["origin"], serde_json::json!("replaced"));
+
+        // Pinning for a task_id with no persisted selection must fail.
+        let pin_missing_envelope = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "capability-selection-pin-missing".into(),
+            client_id: "capability-selection-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::PinCapabilitySelection(
+                generated::PinCapabilitySelection {
+                    task_id: "task-never-selected".into(),
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &pin_missing_envelope.encode_to_vec())
+            .await
+            .expect("pin-missing request writes");
+        let pin_missing = bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await;
+        assert!(
+            pin_missing.is_err(),
+            "pinning a task with no persisted selection must fail"
+        );
 
         let _ = std::fs::remove_file(path);
     }
