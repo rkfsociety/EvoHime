@@ -914,7 +914,7 @@ Exit criteria: kill-9 не создаёт второй effect; checkpoint вос
 - [x] Bounded durable recovery state machine `RECOVERING → RECONCILING → RESUMABLE | BLOCKED | WAITING_APPROVAL | FAILED` с идемпотентностью и audit decisions.
 - [x] Durable Core command/event wiring для protocol replay/resync.
 - [x] Логирование reconciliation в audit: effect id, глобально уникальный idempotency key, verifier, evidence и решение.
-- [ ] Отдельный protocol design review и kill-9 model tests до production implementation.
+- [x] Отдельный protocol design review и kill-9 model tests до production implementation.
 
 Exit criteria: partial gap корректно восстанавливается или приводит к full snapshot; старый клиент проходит compatibility fixtures; ни один verifier не делает blind retry.
 

@@ -10,6 +10,10 @@ path = "src/lib.rs"
 name = "evohime-core"
 path = "src/main.rs"
 
+[[bin]]
+name = "kill9-worker-test-helper"
+path = "tests/bin/kill9_worker.rs"
+
 [dependencies]
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync"] }
 evohime-model-gateway = { path = "../model-gateway" }
