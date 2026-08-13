@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$workflow = Get-Content -Raw (Join-Path $PSScriptRoot '..\.github\workflows\rust.yml')
+$workflow = Get-Content -Raw (Join-Path $PSScriptRoot '..\.github\workflows\windows.yml')
 $cleanup = Get-Content -Raw (Join-Path $PSScriptRoot 'cleanup-github-releases.ps1')
 
 foreach ($required in @(

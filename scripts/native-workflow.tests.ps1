@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$workflow = Get-Content -Raw (Join-Path $PSScriptRoot '..\.github\workflows\rust.yml')
+$workflow = Get-Content -Raw (Join-Path $PSScriptRoot '..\.github\workflows\windows.yml')
 
 foreach ($required in @(
     'windows-latest',
