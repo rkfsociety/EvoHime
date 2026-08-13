@@ -238,6 +238,14 @@ impl SupervisorSession {
         let logon_session = current_logon_session()?;
         let runtime_dir = core_data_dir().join("runtime");
         create_protected_directory(&runtime_dir, &user_sid)?;
+        let context_path = runtime_dir.join("session.json");
+        // A previous supervisor can leave a context file whose DACL is bound
+        // to an old Windows logon session. The single-instance mutex is held
+        // before this function runs, so removing that stale file cannot race
+        // with a live supervisor and lets the new session self-heal.
+        if context_path.exists() {
+            fs::remove_file(&context_path)?;
+        }
 
         let mut context = LaunchContext::generate(user_sid, logon_session, now_ms())?;
         context.supervisor_pid = std::process::id();
@@ -253,7 +261,6 @@ impl SupervisorSession {
         if liveness.is_null() {
             return Err(io::Error::last_os_error().into());
         }
-        let context_path = runtime_dir.join("session.json");
         if let Err(error) = write_launch_context(&context_path, &context) {
             unsafe { CloseHandle(liveness) };
             return Err(error.into());
@@ -709,6 +716,11 @@ mod tests {
             std::env::temp_dir().join(format!("evohime-session-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&data_dir);
         std::env::set_var("EVOHIME_DATA_DIR", &data_dir);
+        let stale_path = data_dir.join("runtime/session.json");
+        fs::create_dir_all(stale_path.parent().expect("runtime parent"))
+            .expect("runtime directory");
+        fs::write(&stale_path, b"stale session from an earlier logon")
+            .expect("stale context writes");
 
         let context_path = {
             let session = SupervisorSession::establish().expect("session establishes");
