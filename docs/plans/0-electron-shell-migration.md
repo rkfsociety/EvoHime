@@ -1,7 +1,7 @@
 # Подплан 0 — замена desktop shell на Electron
 
-Статус: этапы 0, 1 и 2 закрыты; срезы 1 и 2 этапа 3 завершены.
-Следующий срез — Files, Editor и Git.
+Статус: этапы 0, 1 и 2 закрыты; срезы 1–3 этапа 3 завершены.
+Следующий срез — policy/permission panel, backup/restore progress и diagnostics.
 Порядок: 0 из 6; prerequisite для UI-частей планов 1–5
 Зафиксированный стек и результаты spike: `docs/plans/0-electron-stack-decision.md`
 

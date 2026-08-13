@@ -64,7 +64,11 @@ export const RENDERER_COMMANDS = [
   'workspace.forget',
   'core.startTask',
   'core.stopTask',
-  'core.resolveApproval'
+  'core.resolveApproval',
+  'core.listWorkspace',
+  'core.readWorkspaceFile',
+  'core.gitStatus',
+  'core.gitDiff'
 ] as const
 
 export type RendererCommand = (typeof RENDERER_COMMANDS)[number]
@@ -92,6 +96,10 @@ export interface CommandPayloads {
   'core.startTask': { taskId: string; prompt: string; workspacePath: string }
   'core.stopTask': { taskId: string }
   'core.resolveApproval': { approvalId: string; granted: boolean }
+  'core.listWorkspace': { workspacePath: string; relativePath: string; maxEntries?: number }
+  'core.readWorkspaceFile': { workspacePath: string; relativePath: string; maxBytes?: number }
+  'core.gitStatus': { workspacePath: string; maxBytes?: number }
+  'core.gitDiff': { workspacePath: string; relativePath?: string; maxBytes?: number }
 }
 
 export interface CommandResults {
@@ -105,6 +113,10 @@ export interface CommandResults {
   'core.startTask': { accepted: boolean }
   'core.stopTask': { accepted: boolean }
   'core.resolveApproval': { accepted: boolean }
+  'core.listWorkspace': { accepted: boolean }
+  'core.readWorkspaceFile': { accepted: boolean }
+  'core.gitStatus': { accepted: boolean }
+  'core.gitDiff': { accepted: boolean }
 }
 
 export type CommandFailureCode =

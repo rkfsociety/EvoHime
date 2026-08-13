@@ -267,3 +267,76 @@ button:disabled {
   opacity: 0.5;
   cursor: default;
 }
+
+.developer-tools__heading,
+.developer-tools__actions,
+.developer-tools__grid {
+  display: flex;
+  gap: 12px;
+}
+
+.developer-tools__heading {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.developer-tools__actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.developer-tools__grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(300px, 1.5fr);
+  margin-top: 16px;
+}
+
+.developer-tools h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.developer-tools__files {
+  max-height: 280px;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.developer-tools__files li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.developer-tools__files button {
+  flex: 1;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.developer-tools__files span {
+  font-size: 12px;
+  opacity: 0.55;
+}
+
+.developer-tools__preview pre,
+.developer-tools__git pre {
+  max-height: 280px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  background: rgb(0 0 0 / 20%);
+  border-radius: 6px;
+  font: 12px/1.5 'Cascadia Mono', Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.developer-tools__git {
+  margin-top: 16px;
+}

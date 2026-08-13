@@ -147,6 +147,49 @@ function dispatch(
       log('info', 'shell.command_forwarded', { command })
       return accepted(client.send({ resolveApproval: { approvalId, granted } }))
     }
+
+    case 'core.listWorkspace': {
+      const value = asRecord(payload)
+      const workspacePath = asBoundedString(value['workspacePath'])
+      const relativePath = asRelativePath(value['relativePath'])
+      const maxEntries = asBoundedNumber(value['maxEntries'], 200)
+      if (workspacePath === null || relativePath === null || maxEntries === null) {
+        return failure('invalid-payload', 'Некорректные параметры списка файлов.')
+      }
+      return accepted(client.send({ listWorkspace: { workspacePath, relativePath, maxEntries } }))
+    }
+
+    case 'core.readWorkspaceFile': {
+      const value = asRecord(payload)
+      const workspacePath = asBoundedString(value['workspacePath'])
+      const relativePath = asRelativePath(value['relativePath'])
+      const maxBytes = asBoundedNumber(value['maxBytes'], 512 * 1024)
+      if (workspacePath === null || relativePath === null || maxBytes === null) {
+        return failure('invalid-payload', 'Некорректные параметры чтения файла.')
+      }
+      return accepted(client.send({ readWorkspaceFile: { workspacePath, relativePath, maxBytes } }))
+    }
+
+    case 'core.gitStatus': {
+      const value = asRecord(payload)
+      const workspacePath = asBoundedString(value['workspacePath'])
+      const maxBytes = asBoundedNumber(value['maxBytes'], 512 * 1024)
+      if (workspacePath === null || maxBytes === null) {
+        return failure('invalid-payload', 'Некорректные параметры Git status.')
+      }
+      return accepted(client.send({ gitStatus: { workspacePath, maxBytes } }))
+    }
+
+    case 'core.gitDiff': {
+      const value = asRecord(payload)
+      const workspacePath = asBoundedString(value['workspacePath'])
+      const relativePath = value['relativePath'] === undefined ? '' : asRelativePath(value['relativePath'])
+      const maxBytes = asBoundedNumber(value['maxBytes'], 512 * 1024)
+      if (workspacePath === null || relativePath === null || maxBytes === null) {
+        return failure('invalid-payload', 'Некорректные параметры Git diff.')
+      }
+      return accepted(client.send({ gitDiff: { workspacePath, relativePath, maxBytes } }))
+    }
   }
 }
 
@@ -172,5 +215,17 @@ function asBoundedString(value: unknown): string | null {
   if (typeof value !== 'string' || value.length === 0 || value.length > MAX_TEXT_FIELD_CHARS) {
     return null
   }
+  return value
+}
+
+function asBoundedNumber(value: unknown, maximum: number): number | null {
+  if (value === undefined) return maximum
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= maximum ? value : null
+}
+
+function asRelativePath(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length === 0 || value.length > MAX_TEXT_FIELD_CHARS) return null
+  if (value.includes('\\') && value.split('\\').includes('..')) return null
+  if (value.includes('/') && value.split('/').includes('..')) return null
   return value
 }

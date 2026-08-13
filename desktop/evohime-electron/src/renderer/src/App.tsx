@@ -5,6 +5,7 @@ import type { ConnectionState, CoreEvent, ShellState } from '@shared/api'
 import { useShellApi } from './shell-api'
 import { WorkspacePicker } from './WorkspacePicker'
 import { TaskTimeline } from './TaskTimeline'
+import { DeveloperTools } from './DeveloperTools'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -92,6 +93,7 @@ export function App(): React.JSX.Element {
       <WorkspacePicker connection={connection} />
 
       <TaskTimeline connection={connection} events={events} />
+      <DeveloperTools connection={connection} events={events} />
     </main>
   )
 }

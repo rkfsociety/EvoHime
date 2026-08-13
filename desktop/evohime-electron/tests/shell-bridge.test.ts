@@ -124,6 +124,27 @@ describe('renderer command surface', () => {
     ])
   })
 
+  it('forwards bounded Files and Git reads without exposing filesystem access', () => {
+    expect(invoke('core.listWorkspace', {
+      workspacePath: 'C:\\work', relativePath: '.', maxEntries: 20
+    })).toEqual({ ok: true, value: { accepted: true } })
+    expect(invoke('core.readWorkspaceFile', {
+      workspacePath: 'C:\\work', relativePath: 'src\\main.rs'
+    })).toEqual({ ok: true, value: { accepted: true } })
+    expect(invoke('core.gitStatus', { workspacePath: 'C:\\work' })).toEqual({
+      ok: true, value: { accepted: true }
+    })
+    expect(invoke('core.gitDiff', {
+      workspacePath: 'C:\\work', relativePath: 'src\\main.rs'
+    })).toEqual({ ok: true, value: { accepted: true } })
+    expect(sent).toEqual([
+      { listWorkspace: { workspacePath: 'C:\\work', relativePath: '.', maxEntries: 20 } },
+      { readWorkspaceFile: { workspacePath: 'C:\\work', relativePath: 'src\\main.rs', maxBytes: 512 * 1024 } },
+      { gitStatus: { workspacePath: 'C:\\work', maxBytes: 512 * 1024 } },
+      { gitDiff: { workspacePath: 'C:\\work', relativePath: 'src\\main.rs', maxBytes: 512 * 1024 } }
+    ])
+  })
+
   it('rejects a command outside the allow-list', () => {
     for (const command of ['core.deleteEverything', 'shell.exec', '__proto__', '']) {
       const outcome = invoke(command, {}) as CommandFailure
@@ -140,7 +161,9 @@ describe('renderer command surface', () => {
       ['core.startTask', null],
       ['core.stopTask', { taskId: 42 }],
       ['core.resolveApproval', { approvalId: 'a-1' }],
-      ['core.resolveApproval', { approvalId: 'a-1', granted: 'yes' }]
+      ['core.resolveApproval', { approvalId: 'a-1', granted: 'yes' }],
+      ['core.listWorkspace', { workspacePath: 'C:\\work', relativePath: '..\\secret' }],
+      ['core.gitStatus', { workspacePath: 'C:\\work', maxBytes: 0 }]
     ]
     for (const [command, payload] of cases) {
       const outcome = invoke(command, payload) as CommandFailure
