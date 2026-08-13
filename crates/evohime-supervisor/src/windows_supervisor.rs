@@ -457,11 +457,43 @@ async fn wait_for_core(
 mod tests {
     use super::{
         heartbeat_is_current_generation, heartbeat_is_stale, heartbeat_is_stale_for_generation,
-        recover_pending_update, restart_backoff, should_reset_restart_budget,
+        recover_pending_update, restart_backoff, should_reset_restart_budget, JobObject,
     };
     use evohime_tx::UpdateTransaction;
     use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
     use std::{fs, path::PathBuf};
+    use tokio::process::Command;
+
+    /// Proves the Job Object cleanup path actually works end to end: a real
+    /// child process assigned to a `JobObject` must be killed by Windows when
+    /// the job handle is closed (via `Drop`), thanks to
+    /// `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. This is what protects against
+    /// orphaned core processes surviving supervisor restarts/crashes.
+    #[tokio::test]
+    async fn job_object_kill_on_close_terminates_child_process() {
+        let mut child = Command::new("cmd")
+            .args(["/C", "ping", "-n", "60", "127.0.0.1"])
+            .spawn()
+            .expect("spawn long-lived test child process");
+
+        {
+            let job = JobObject::create().expect("create job object");
+            job.assign(&child).expect("assign child to job object");
+            // `job` drops here, closing the handle. Combined with
+            // KILL_ON_JOB_CLOSE this must terminate the child immediately.
+        }
+
+        // Give Windows a moment to tear the process down.
+        tokio::time::sleep(StdDuration::from_millis(500)).await;
+
+        let status = child
+            .try_wait()
+            .expect("try_wait should not error after job cleanup");
+        assert!(
+            status.is_some(),
+            "child process should have been killed when its JobObject was dropped"
+        );
+    }
 
     #[test]
     fn recovers_pending_update_before_core_start() {

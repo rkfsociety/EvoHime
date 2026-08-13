@@ -900,7 +900,7 @@ Exit criteria (выполнены): повторный запуск миграц
 - [x] При старте Core незавершённый `executing` effect переводится в `unknown`, run — в `blocked`, пишется replayable `run.recovery.blocked`, blind retry не выполняется.
 - [x] Перед записью Build создаётся checkpoint/effect, после успешного snapshot effect завершается; UI показывает truthful recovery notification.
 - [x] Kill/restart harness принудительно завершает дочерний Core-like процесс с `executing` effect и подтверждает recovery без blind retry.
-- [ ] Базовый supervisor health-ping и Job Object cleanup для MVP-2.
+- [x] Базовый supervisor health-ping и Job Object cleanup для MVP-2.
 
 Exit criteria: kill-9 не создаёт второй effect; checkpoint восстанавливается ≤ 5 s на reference workstation; unknown effect не возобновляется автоматически; UI показывает `RECOVERING`, затем `BLOCKED`/`WAITING_APPROVAL`.
 
