@@ -76,7 +76,8 @@ export const RENDERER_COMMANDS = [
   'core.prepareDatabaseRestore',
   'core.restoreDatabase',
   'core.getModelConfig',
-  'core.listModelCatalog'
+  'core.listModelCatalog',
+  'core.terminalExecute'
 ] as const
 
 export type RendererCommand = (typeof RENDERER_COMMANDS)[number]
@@ -116,6 +117,7 @@ export interface CommandPayloads {
   'core.restoreDatabase': { backupPath: string; approvalId: string }
   'core.getModelConfig': Record<string, never>
   'core.listModelCatalog': { mode: 'free' | 'paid' }
+  'core.terminalExecute': { taskId: string; workspacePath: string; program: string; args: readonly string[]; cwd?: string; timeoutMs?: number; approvalId?: string }
 }
 
 export interface CommandResults {
@@ -141,6 +143,7 @@ export interface CommandResults {
   'core.restoreDatabase': { accepted: boolean }
   'core.getModelConfig': { accepted: boolean }
   'core.listModelCatalog': { accepted: boolean }
+  'core.terminalExecute': { accepted: boolean }
 }
 
 export type CommandFailureCode =

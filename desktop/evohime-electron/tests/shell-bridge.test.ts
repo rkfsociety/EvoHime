@@ -167,6 +167,18 @@ describe('renderer command surface', () => {
     expect(sent).toContainEqual({ modelCatalog: { mode: 'paid' } })
   })
 
+  it('bounds Terminal program, arguments and timeout before Core', () => {
+    expect(invoke('core.terminalExecute', {
+      taskId: 'task-1', workspacePath: 'C:\\work', program: 'git', args: ['status', '--short'], cwd: '', timeoutMs: 30_000
+    })).toEqual({ ok: true, value: { accepted: true } })
+    expect(sent).toContainEqual({ terminalExecute: {
+      taskId: 'task-1', workspacePath: 'C:\\work', program: 'git', args: ['status', '--short'], cwd: '', timeoutMs: 30_000, approvalId: ''
+    } })
+    expect((invoke('core.terminalExecute', {
+      taskId: 'task-1', workspacePath: 'C:\\work', program: 'git', args: ['status'], timeoutMs: 30_001
+    }) as CommandFailure).code).toBe('invalid-payload')
+  })
+
   it('rejects a command outside the allow-list', () => {
     for (const command of ['core.deleteEverything', 'shell.exec', '__proto__', '']) {
       const outcome = invoke(command, {}) as CommandFailure

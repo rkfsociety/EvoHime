@@ -8,6 +8,7 @@ import { TaskTimeline } from './TaskTimeline'
 import { DeveloperTools } from './DeveloperTools'
 import { SafetyPanel } from './SafetyPanel'
 import { SettingsPanel } from './SettingsPanel'
+import { TerminalPanel } from './TerminalPanel'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -98,6 +99,7 @@ export function App(): React.JSX.Element {
       <DeveloperTools connection={connection} events={events} />
       <SafetyPanel connection={connection} events={events} />
       <SettingsPanel connection={connection} events={events} />
+      <TerminalPanel connection={connection} events={events} />
     </main>
   )
 }

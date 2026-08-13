@@ -451,3 +451,71 @@ button:disabled {
   margin: 8px 0 0;
   padding-left: 20px;
 }
+
+.terminal-panel__heading,
+.terminal-panel__form,
+.terminal-panel__approval {
+  display: flex;
+  gap: 10px;
+}
+
+.terminal-panel__heading {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.terminal-panel__limit {
+  white-space: nowrap;
+  font-size: 12px;
+  color: #4ec9a4;
+}
+
+.terminal-panel__form {
+  align-items: flex-end;
+  margin: 16px 0;
+}
+
+.terminal-panel__form label {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.terminal-panel__form input {
+  min-width: 0;
+  font: inherit;
+  color: inherit;
+  background: rgb(128 128 150 / 10%);
+  border: 1px solid rgb(128 128 150 / 30%);
+  border-radius: 6px;
+  padding: 7px 9px;
+}
+
+.terminal-panel__approval {
+  flex-direction: column;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid rgb(224 179 65 / 50%);
+  border-radius: 6px;
+  color: #f0cf75;
+}
+
+.terminal-panel__approval div {
+  display: flex;
+  gap: 8px;
+}
+
+.terminal-panel__output {
+  max-height: 300px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  background: rgb(0 0 0 / 20%);
+  border-radius: 6px;
+  font: 12px/1.5 'Cascadia Mono', Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

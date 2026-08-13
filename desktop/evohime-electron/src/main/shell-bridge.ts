@@ -249,6 +249,21 @@ function dispatch(
       if (mode === null) return failure('invalid-payload', 'Некорректный режим каталога моделей.')
       return accepted(client.send({ modelCatalog: { mode } }))
     }
+
+    case 'core.terminalExecute': {
+      const value = asRecord(payload)
+      const taskId = asBoundedString(value['taskId'])
+      const workspacePath = asBoundedString(value['workspacePath'])
+      const program = asBoundedString(value['program'])
+      const args = asArguments(value['args'])
+      const cwd = asOptionalBoundedString(value['cwd'])
+      const approvalId = asOptionalBoundedString(value['approvalId'])
+      const timeoutMs = value['timeoutMs'] === undefined ? 30_000 : asBoundedNumber(value['timeoutMs'], 30_000)
+      if (taskId === null || workspacePath === null || program === null || args === null || cwd === null || approvalId === null || timeoutMs === null) {
+        return failure('invalid-payload', 'Некорректные параметры Terminal.')
+      }
+      return accepted(client.send({ terminalExecute: { taskId, workspacePath, program, args, cwd, timeoutMs, approvalId } }))
+    }
   }
 }
 
@@ -277,6 +292,11 @@ function asBoundedString(value: unknown): string | null {
   return value
 }
 
+function asOptionalBoundedString(value: unknown): string | null {
+  if (value === undefined || value === '') return ''
+  return asBoundedString(value)
+}
+
 function asBoundedNumber(value: unknown, maximum: number): number | null {
   if (value === undefined) return maximum
   return typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= maximum ? value : null
@@ -295,4 +315,10 @@ function asPermissionMode(value: unknown): 'ask' | 'read_only' | 'full' | null {
 
 function asModelCatalogMode(value: unknown): 'free' | 'paid' | null {
   return value === 'free' || value === 'paid' ? value : null
+}
+
+function asArguments(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > 64) return null
+  const args = value.map((item) => asBoundedString(item))
+  return args.every((item): item is string => item !== null) ? args : null
 }
