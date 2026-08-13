@@ -1,0 +1,5 @@
+# The shell project keeps LF in the working tree on every platform: the
+# protobuf bindings are generated with LF, and CI compares the generated output
+# against the committed files byte for byte.
+* text=auto eol=lf
+*.ico binary

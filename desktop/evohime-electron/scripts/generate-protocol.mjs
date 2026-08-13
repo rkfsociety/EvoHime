@@ -84,7 +84,7 @@ try {
   const stale = [
     [jsPath, tempJs],
     [dtsPath, tempDts]
-  ].filter(([committed, fresh]) => readOrEmpty(committed) !== readFileSync(fresh, 'utf8'))
+  ].filter(([committed, fresh]) => normalize(readOrEmpty(committed)) !== normalize(readFileSync(fresh, 'utf8')))
   if (stale.length > 0) {
     for (const [committed] of stale) {
       console.error(`stale generated binding: ${committed}`)
@@ -95,6 +95,14 @@ try {
   console.log('generated protobuf bindings match the canonical proto')
 } finally {
   rmSync(tempDir, { recursive: true, force: true })
+}
+
+/**
+ * Compares content, not line endings: a checkout that materialised the
+ * committed bindings with CRLF must not read as a stale binding.
+ */
+function normalize(content) {
+  return content.replace(/\r\n/g, '\n')
 }
 
 function readOrEmpty(path) {
