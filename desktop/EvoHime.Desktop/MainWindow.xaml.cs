@@ -689,7 +689,7 @@ public partial class MainWindow : Window
         providerForm.Children.Add(_modelModeBox);
         providerForm.Children.Add(_modelSelector);
         providerForm.Children.Add(_apiKeyBox);
-        providerForm.Children.Add(new TextBlock { Text = "Ключ хранится в профиле Windows через DPAPI и не записывается в репозиторий.", FontSize = 11, Foreground = muted, TextWrapping = TextWrapping.Wrap });
+        providerForm.Children.Add(new TextBlock { Text = "Ключ хранится в Credential Manager текущего пользователя Windows; в настройках остаётся только ссылка.", FontSize = 11, Foreground = muted, TextWrapping = TextWrapping.Wrap });
         providerForm.Children.Add(saveProvider);
         providerForm.Children.Add(_settingsSaveStatus);
         sections.Children.Add(CreateSettingsSection(
