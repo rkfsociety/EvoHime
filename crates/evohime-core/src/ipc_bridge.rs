@@ -675,6 +675,15 @@ impl IpcBridge {
                 self.write_response(writer, "child.report.accepted", result)
                     .await?;
             }
+            Some(generated::command_envelope::Command::SubmitFeedback(request)) => {
+                let result = self.dispatch_submit_feedback(request).await?;
+                self.write_response(writer, "feedback.submitted", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::ListFeedback(request)) => {
+                let result = self.dispatch_list_feedback(request).await?;
+                self.write_response(writer, "feedback.list", result).await?;
+            }
             Some(generated::command_envelope::Command::ResolveApproval(resolve)) => {
                 let approval_id = uuid::Uuid::parse_str(&resolve.approval_id)
                     .map_err(|error| FrameError::Io(format!("invalid approval id: {error}")))?;
@@ -1577,6 +1586,61 @@ impl IpcBridge {
                 findings: request.findings,
                 sources: request.sources,
                 confidence_percent: request.confidence_percent,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_submit_feedback(
+        &self,
+        request: generated::SubmitFeedback,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::SubmitFeedback {
+                run_id: request.run_id,
+                task_id: (!request.task_id.trim().is_empty()).then_some(request.task_id),
+                subject_ref: (!request.subject_ref.trim().is_empty())
+                    .then_some(request.subject_ref),
+                signal: request.signal,
+                correction: (!request.correction.trim().is_empty()).then_some(request.correction),
+                rejection_reason: (!request.rejection_reason.trim().is_empty())
+                    .then_some(request.rejection_reason),
+                outcome: (!request.outcome.trim().is_empty()).then_some(request.outcome),
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_list_feedback(
+        &self,
+        request: generated::ListFeedback,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::ListFeedback {
+                run_id: request.run_id,
+                limit: request.limit,
                 reply,
             })
             .await

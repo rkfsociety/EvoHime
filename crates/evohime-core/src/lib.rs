@@ -1026,6 +1026,30 @@ pub enum CoreCommand {
         confidence_percent: u32,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    /// Persists one bounded, redacted feedback record (useful/not-useful,
+    /// optional correction, optional rejection reason) against the real
+    /// `feedback_entries` table. `run_id` must correlate to an existing
+    /// `runs.id`; `subject_ref` is an existing tool-call/effect/approval id
+    /// when the feedback is about a specific result, not a newly minted
+    /// correlation id. Local-only: this command never sends data anywhere,
+    /// see `evohime_local_storage::feedback_store::external_telemetry_allowed`.
+    SubmitFeedback {
+        run_id: String,
+        task_id: Option<String>,
+        subject_ref: Option<String>,
+        signal: String,
+        correction: Option<String>,
+        rejection_reason: Option<String>,
+        outcome: Option<String>,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Lists feedback for one run (newest first) plus the local aggregation
+    /// (signal counts, top rejection reasons/outcomes by frequency).
+    ListFeedback {
+        run_id: String,
+        limit: u32,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1410,6 +1434,52 @@ impl EventJournal {
         let database = self.database.lock().await;
         evohime_local_storage::memory_store::MemoryStoreSql::forget(database.connection(), id)
             .map_err(|error| error.to_string())
+    }
+
+    /// Persists one bounded, redacted feedback record against the real
+    /// `feedback_entries` table (SCHEMA_VERSION 13). Feedback never leaves
+    /// this local table; see `evohime_local_storage::feedback_store::external_telemetry_allowed`.
+    pub async fn save_feedback(
+        &self,
+        record: &evohime_local_storage::feedback_store::FeedbackRecord,
+    ) -> Result<(), String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::feedback_store::FeedbackStoreSql::insert(
+            database.connection(),
+            record,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Lists feedback tied to one run, newest first.
+    pub async fn list_feedback(
+        &self,
+        run_id: &str,
+        limit: u32,
+    ) -> Result<Vec<evohime_local_storage::feedback_store::FeedbackRecord>, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::feedback_store::FeedbackStoreSql::list_by_run(
+            database.connection(),
+            run_id,
+            limit,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Local aggregation: signal counts plus top rejection reasons/outcomes
+    /// by frequency. No data leaves the local store as part of this call.
+    pub async fn aggregate_feedback(
+        &self,
+        reason_limit: u32,
+        outcome_limit: u32,
+    ) -> Result<evohime_local_storage::feedback_store::FeedbackAggregate, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::feedback_store::FeedbackStoreSql::aggregate(
+            database.connection(),
+            reason_limit,
+            outcome_limit,
+        )
+        .map_err(|error| error.to_string())
     }
 
     /// Installs (inserts) or updates (replaces by id) one bounded capability
@@ -4683,6 +4753,84 @@ impl TaskCoordinator {
                     .await;
                     serde_json::to_vec(&serde_json::json!({ "report": accepted }))
                         .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::SubmitFeedback {
+                run_id,
+                task_id,
+                subject_ref,
+                signal,
+                correction,
+                rejection_reason,
+                outcome,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let signal_parsed = match signal.as_str() {
+                        "useful" => evohime_local_storage::feedback_store::FeedbackSignal::Useful,
+                        "not_useful" => {
+                            evohime_local_storage::feedback_store::FeedbackSignal::NotUseful
+                        }
+                        "neutral" => evohime_local_storage::feedback_store::FeedbackSignal::Neutral,
+                        other => return Err(format!("unknown feedback signal: {other}")),
+                    };
+                    let created_at_ms = SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64;
+                    let id = uuid::Uuid::new_v4().to_string();
+                    let record = evohime_local_storage::feedback_store::FeedbackRecord::new(
+                        id.clone(),
+                        run_id.clone(),
+                        task_id,
+                        subject_ref,
+                        signal_parsed,
+                        correction,
+                        rejection_reason,
+                        outcome,
+                        "user:feedback",
+                        created_at_ms.to_string(),
+                    )
+                    .map_err(|error| error.to_string())?;
+                    journal.save_feedback(&record).await?;
+                    Self::record_audit(
+                        &state,
+                        crate::audit::AuditKind::Evidence,
+                        run_id.clone(),
+                        "feedback.submitted",
+                        [
+                            ("feedback_id".to_owned(), record.id.clone()),
+                            ("signal".to_owned(), signal),
+                        ],
+                    )
+                    .await;
+                    serde_json::to_vec(&serde_json::json!({ "record": record }))
+                        .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::ListFeedback {
+                run_id,
+                limit,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let records = journal.list_feedback(&run_id, limit).await?;
+                    let aggregate = journal.aggregate_feedback(20, 20).await?;
+                    serde_json::to_vec(&serde_json::json!({
+                        "records": records,
+                        "aggregate": aggregate,
+                    }))
+                    .map_err(|error| error.to_string())
                 }
                 .await;
                 let _ = reply.send(result);

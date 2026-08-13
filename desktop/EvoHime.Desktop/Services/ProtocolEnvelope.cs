@@ -294,6 +294,29 @@ public static class ProtocolEnvelope
 
     public static byte[] GetBuildPolicy(string projectId) => TaskCommand(32, output => WriteString(output, 1, projectId));
 
+    // Submits one bounded, local-only feedback record (useful/not-useful,
+    // optional correction, optional rejection reason) about an existing
+    // run's tool result or approval decision. signal is one of
+    // "useful" | "not_useful" | "neutral". Mirrors the field numbers in
+    // evohime.desktop.proto's SubmitFeedback message.
+    public static byte[] SubmitFeedback(
+        string runId,
+        string taskId,
+        string subjectRef,
+        string signal,
+        string correction = "",
+        string rejectionReason = "",
+        string outcome = "") => TaskCommand(57, output =>
+    {
+        WriteString(output, 1, runId);
+        WriteString(output, 2, taskId);
+        WriteString(output, 3, subjectRef);
+        WriteString(output, 4, signal);
+        WriteString(output, 5, correction);
+        WriteString(output, 6, rejectionReason);
+        WriteString(output, 7, outcome);
+    });
+
     public static byte[] SaveBuildPolicy(string projectId, byte[] policyJson, long expectedVersion) => TaskCommand(33, output =>
     {
         WriteString(output, 1, projectId);

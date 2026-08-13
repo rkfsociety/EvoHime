@@ -97,6 +97,24 @@ public sealed class CoreIpcClient
     public Task ResolveApprovalAsync(string approvalId, bool granted, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.ResolveApproval(approvalId, granted), cancellationToken);
 
+    /// Submits one bounded, local-only feedback record about an existing
+    /// run's tool result or approval decision (thumbs-up/down, optional
+    /// correction, optional rejection reason on denial). Feedback never
+    /// leaves the local SQLite store as part of this call; see
+    /// evohime_local_storage::feedback_store::external_telemetry_allowed.
+    public Task SubmitFeedbackAsync(
+        string runId,
+        string taskId,
+        string subjectRef,
+        string signal,
+        string correction,
+        string rejectionReason,
+        string outcome,
+        CancellationToken cancellationToken) =>
+        SendPayloadAsync(
+            ProtocolEnvelope.SubmitFeedback(runId, taskId, subjectRef, signal, correction, rejectionReason, outcome),
+            cancellationToken);
+
     public Task RequestTaskGraphAsync(string projectId, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.GetTaskGraph(projectId), cancellationToken);
 

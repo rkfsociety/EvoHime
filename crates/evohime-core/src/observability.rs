@@ -224,7 +224,10 @@ fn is_sensitive_name(name: &str) -> bool {
     .any(|marker| lower.contains(marker))
 }
 
-fn redact_text(input: &str) -> String {
+/// Redacts bearer tokens, API keys, and email-shaped tokens from free text.
+/// Shared by other bounded local-storage contracts (e.g. `feedback_store`)
+/// that need the same redaction behavior at the domain layer.
+pub fn redact_text(input: &str) -> String {
     input
         .split_inclusive(char::is_whitespace)
         .map(|token| {

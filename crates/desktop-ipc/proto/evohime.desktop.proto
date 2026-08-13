@@ -408,6 +408,32 @@ message SubmitChildReport {
   uint32 confidence_percent = 6;
 }
 
+// Submits one bounded, redacted feedback record (useful/not-useful signal,
+// optional correction, optional rejection reason) about an existing run's
+// tool result or approval decision. run_id/task_id/subject_ref must
+// correlate to identifiers already threaded through the audit trail
+// (runs.id, task id, effect/approval id) -- this does not mint a new
+// correlation id. signal is one of "useful" | "not_useful" | "neutral".
+// Feedback is local-only: see evohime_local_storage::feedback_store::
+// external_telemetry_allowed for the (default-closed) opt-in gate any
+// future external telemetry send must check.
+message SubmitFeedback {
+  string run_id = 1;
+  string task_id = 2;
+  string subject_ref = 3;
+  string signal = 4;
+  string correction = 5;
+  string rejection_reason = 6;
+  string outcome = 7;
+}
+
+// Lists feedback for one run (newest first) plus a simple local aggregation
+// (signal counts, top rejection reasons/outcomes by frequency).
+message ListFeedback {
+  string run_id = 1;
+  uint32 limit = 2;
+}
+
 message CommandEnvelope {
   ProtocolVersion protocol = 1;
   string request_id = 2;
@@ -462,6 +488,8 @@ message CommandEnvelope {
     GitStatus git_status = 54;
     GitDiff git_diff = 55;
     TerminalExecute terminal_execute = 56;
+    SubmitFeedback submit_feedback = 57;
+    ListFeedback list_feedback = 58;
   }
 }
 
