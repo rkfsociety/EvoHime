@@ -38,15 +38,17 @@ interface ViewDescriptor {
   readonly id: ViewId
   readonly label: string
   readonly icon: string
-  readonly group: 'work' | 'tools'
 }
 
+/**
+ * Tool sections only. The conversation is not a nav row: it is reached by
+ * opening a chat, which is where the user already looks for it.
+ */
 const VIEWS: readonly ViewDescriptor[] = [
-  { id: 'chat', label: 'Диалог', icon: '◆', group: 'work' },
-  { id: 'files', label: 'Файлы и Git', icon: '▤', group: 'tools' },
-  { id: 'editor', label: 'Редактор', icon: '✎', group: 'tools' },
-  { id: 'terminal', label: 'Терминал', icon: '❯', group: 'tools' },
-  { id: 'safety', label: 'Безопасность', icon: '◈', group: 'tools' }
+  { id: 'files', label: 'Файлы и Git', icon: '▤' },
+  { id: 'editor', label: 'Редактор', icon: '✎' },
+  { id: 'terminal', label: 'Терминал', icon: '❯' },
+  { id: 'safety', label: 'Безопасность', icon: '◈' }
 ]
 
 /** Not a nav row: reached through the gear next to the account. */
@@ -112,7 +114,12 @@ export function App(): React.JSX.Element {
   }
 
   const connection = state?.connection ?? 'starting'
-  const title = view === 'settings' ? SETTINGS_LABEL : (VIEWS.find((item) => item.id === view)?.label ?? 'Диалог')
+  const title =
+    view === 'settings'
+      ? SETTINGS_LABEL
+      : view === 'chat'
+        ? 'Диалог'
+        : (VIEWS.find((item) => item.id === view)?.label ?? 'Диалог')
 
   return (
     <div className="shell">
@@ -120,18 +127,6 @@ export function App(): React.JSX.Element {
         <div className="sidebar__brand">
           <span className="sidebar__logo" aria-hidden="true">E</span>
           <h1 className="sidebar__title">EvoHime</h1>
-        </div>
-
-        <div className="sidebar__nav">
-          {VIEWS.filter((item) => item.group === 'work').map((item) => (
-            <NavItem
-              key={item.id}
-              view={item}
-              active={item.id === view}
-              badge={item.id === 'chat' && pendingApprovals > 0 ? pendingApprovals : 0}
-              onSelect={setView}
-            />
-          ))}
         </div>
 
         <div className="sidebar__projects">
@@ -151,8 +146,8 @@ export function App(): React.JSX.Element {
 
         <p className="sidebar__section">Инструменты</p>
         <div className="sidebar__nav">
-          {VIEWS.filter((item) => item.group === 'tools').map((item) => (
-            <NavItem key={item.id} view={item} active={item.id === view} badge={0} onSelect={setView} />
+          {VIEWS.map((item) => (
+            <NavItem key={item.id} view={item} active={item.id === view} onSelect={setView} />
           ))}
         </div>
 
@@ -178,6 +173,15 @@ export function App(): React.JSX.Element {
       <main className="main">
         <header className="topbar">
           <h2 className="topbar__title">{title}</h2>
+          {pendingApprovals > 0 ? (
+            <button
+              type="button"
+              className="topbar__approvals"
+              onClick={() => setView('chat')}
+            >
+              Нужно разрешение
+            </button>
+          ) : null}
           <span className="topbar__path">{workspace ?? 'папка не выбрана'}</span>
           <span className="topbar__spacer" />
           <span className={`status-pill status-pill--${connection}`}>{STATE_LABELS[connection]}</span>
@@ -230,11 +234,10 @@ function identityTitle(identity: UserIdentity | null): string {
 interface NavItemProps {
   readonly view: ViewDescriptor
   readonly active: boolean
-  readonly badge: number
   readonly onSelect: (id: ViewId) => void
 }
 
-function NavItem({ view, active, badge, onSelect }: NavItemProps): React.JSX.Element {
+function NavItem({ view, active, onSelect }: NavItemProps): React.JSX.Element {
   return (
     <button
       type="button"
@@ -244,7 +247,6 @@ function NavItem({ view, active, badge, onSelect }: NavItemProps): React.JSX.Ele
     >
       <span className="nav-item__icon" aria-hidden="true">{view.icon}</span>
       {view.label}
-      {badge > 0 ? <span className="nav-item__badge">{badge}</span> : null}
     </button>
   )
 }
