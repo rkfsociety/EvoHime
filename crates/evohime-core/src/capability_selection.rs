@@ -205,11 +205,18 @@ mod tests {
     use crate::capability_registry::{InstallPolicy, InstallSource, RiskClass, RoleRef, SkillRef};
 
     fn manifest(name: &str) -> CapabilityManifest {
+        let content_hash = "0123456789abcdef0123456789abcdef".to_string();
+        let signature = crate::capability_registry::test_sign_with_trusted_key(
+            name,
+            "1.0.0",
+            &content_hash,
+        );
         CapabilityManifest {
             name: name.into(),
             version: "1.0.0".into(),
-            content_hash: "0123456789abcdef0123456789abcdef".into(),
-            signature: "sig:v1:trusted".into(),
+            content_hash,
+            signature,
+            signing_key_id: "evohime-dev-1".into(),
             roles: vec![RoleRef {
                 name: "reviewer".into(),
                 version: "1".into(),
