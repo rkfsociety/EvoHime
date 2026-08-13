@@ -39,7 +39,9 @@ read-only выполнению и сделать его наблюдаемым �
   восстанавливается: незавершённый child получает immutable terminal state
   `aborted` с причиной `core_restart`. Durable request/report/event journal
   сохраняются для диагностики и replay, но продолжение требует нового child с
-  новым id.
+  новым id. UUIDv4 генерирует Core при создании request; SQLite unique
+  constraint и проверка при старте Core гарантируют отсутствие повторного id
+  после рестарта или восстановления базы.
 
 ## Объём
 
@@ -112,6 +114,16 @@ read-only выполнению и сделать его наблюдаемым �
 contract constants; отсутствие обязательного поля, неизвестный enum или
 несовпадение request hash переводят report в validation rejection.
 
+Короткий индекс контрактов для реализации: `ChildTaskKind` — закрытый enum
+`onboarding | code_search | threat_model_review | test_plan_review |
+documentation`; неизвестный kind отклоняется на protobuf/Core decode и ещё раз
+в dispatcher, до создания adapter job. `ChildTaskInput` и `ChildTaskReport` —
+versioned JSON внутри Core domain, protobuf envelope на UI/Core IPC; полная
+схема и bounds должны быть закреплены compatibility fixtures до runtime
+implementation. Child events используют `event_id`, `child_sequence`,
+глобальный Core `sequence_id`, `event_type`, timestamp и bounded redacted
+payload. Lifecycle contract описан ниже; UI не является его владельцем.
+
 ## Policy defaults для MVP
 
 Значения должны попасть в Core-owned immutable policy snapshot, чтобы UI не мог
@@ -127,6 +139,12 @@ contract constants; отсутствие обязательного поля, н
   `budget_exceeded`. Model-token budget учитывается только если provider
   возвращает измерение; его отсутствие не снимает wall-clock/tool/output
   limits;
+- Defaults принадлежат Core-owned policy snapshot и могут иметь только более
+  строгие per-kind значения; parent/UI не могут повысить лимиты. Parent может
+  уменьшить budget до запуска через descriptor, но не отменить hard maximum.
+  Cancellation инициируется parent command, WinUI operator command или Core
+  watchdog (timeout/budget/restart); все пути сходятся в один idempotent
+  dispatcher cancellation token.
 - report confidence хранится как integer `0..100` и означает bounded
   self-assessment child, а не доказанную достоверность и не security signal.
   Он показывается родителю и может использоваться для сортировки/запроса
@@ -164,6 +182,11 @@ Core является единственным владельцем этой sta
   поздний report/cancel получает idempotent result и не изменяет состояние.
 - `validating` охватывает schema, provenance, bounds и policy validation; до
   его завершения report не виден как evidence.
+- Только Core dispatcher/runtime может переводить child из `created` в
+  `queued`, `running`, `validating` и terminal states. Adapter может вернуть
+  только result/error, parent gate — только `accepted` или `rejected` после
+  `waiting_parent_acceptance`, а UI может лишь отправить command через IPC и
+  отобразить результат. Parent/UI/system не могут напрямую записать state.
 
 ## Lifecycle и ошибки
 
@@ -261,6 +284,14 @@ blocked и rejected child не удаляется до завершения pare
 UI показывает `history truncated`, не придумывая пропущенные переходы.
 
 ## Workflow editor и UI MVP
+
+Must-have этого подплана: Core-driven timeline, evidence panel и truthful
+`blocked`/`failed`/`cancelled`/`timed_out`/`accepted`/`rejected`/`degraded`
+states, reconnect/replay и минимальная форма запуска одного bounded child.
+Catalog здесь ограничен read-only справочником kinds/capabilities/limits.
+Полноценный visual DAG editor, свободное связывание цепочек, drag-and-drop,
+массовое редактирование и advanced catalog UX — deferred scope подплана 4+;
+они не должны задерживать security boundary и execution inspector.
 
 - Catalog показывает только разрешённые kinds, их read-only capabilities,
   limits, expected report shape и доступные роли.
@@ -379,6 +410,11 @@ payload в metrics не попадают.
 - `child_roles`, `child_runtime`, child storage и базовые IPC commands уже
   существуют как контрактный/persistence слой, но их execution wiring ещё не
   готов — это основной объём данного подплана;
+- До начала adapters обязательна enforcement-аудитка: `ChildTaskRequest::validate`,
+  dispatcher и tool runtime должны независимо отвергать nested child,
+  mutation capability, shell/process spawn, network capability и path escape.
+  Unit-тесты контрактов недостаточны; требуются end-to-end negative IPC tests,
+  доказывающие отказ на реальном Core command path без участия UI.
 - task lifecycle, event journal, cancellation, replay/reconnect и bounded
   checkpoint/recovery foundation уже существуют в Core, однако child-specific
   lifecycle/events/lease integration ещё нужно добавить;
