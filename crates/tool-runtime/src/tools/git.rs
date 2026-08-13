@@ -353,9 +353,19 @@ fn ensure_no_input(input: Value) -> Result<(), ToolError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs as std_fs, path::Path, process::Command as StdCommand};
+    use std::{
+        fs as std_fs,
+        path::Path,
+        process::Command as StdCommand,
+        sync::{Mutex, OnceLock},
+    };
     use tempfile::tempdir;
     use uuid::Uuid;
+
+    fn policy_env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().expect("policy env lock")
+    }
 
     fn run(workdir: &Path, args: &[&str]) {
         let status = StdCommand::new(args[0])
@@ -545,6 +555,7 @@ mod tests {
 
     #[test]
     fn validate_push_policy_allows_safe_remotes() {
+        let _lock = policy_env_lock();
         std::env::set_var("EVOHIME_GIT_ALLOWED_REMOTES", "origin,upstream");
         let input = RemoteInput {
             remote: Some("origin".to_string()),
@@ -557,6 +568,7 @@ mod tests {
 
     #[test]
     fn validate_push_policy_blocks_disallowed_remotes() {
+        let _lock = policy_env_lock();
         std::env::set_var("EVOHIME_GIT_ALLOWED_REMOTES", "origin,upstream");
         let input = RemoteInput {
             remote: Some("evil-mirror".to_string()),
@@ -569,6 +581,7 @@ mod tests {
 
     #[test]
     fn validate_push_policy_no_allowlist_allows_all() {
+        let _lock = policy_env_lock();
         std::env::remove_var("EVOHIME_GIT_ALLOWED_REMOTES");
         let input = RemoteInput {
             remote: Some("any-remote".to_string()),

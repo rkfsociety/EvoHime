@@ -65,6 +65,8 @@ pub enum StorageError {
     BackupTooLarge(u64),
     #[error("backup destination already exists: {0}")]
     BackupDestinationExists(String),
+    #[error("backup operation was cancelled")]
+    BackupCancelled,
 }
 
 pub struct LocalDatabase {

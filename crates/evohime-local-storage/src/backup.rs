@@ -128,17 +128,27 @@ impl LocalDatabase {
         &self,
         destination: impl AsRef<Path>,
         app_version: &str,
+        progress: impl FnMut(BackupProgress),
+    ) -> Result<BackupResult, StorageError> {
+        self.create_backup_with_cancel(destination, app_version, progress, || false)
+    }
+
+    pub fn create_backup_with_cancel(
+        &self,
+        destination: impl AsRef<Path>,
+        app_version: &str,
         mut progress: impl FnMut(BackupProgress),
+        mut cancelled: impl FnMut() -> bool,
     ) -> Result<BackupResult, StorageError> {
         let destination = destination.as_ref();
         reject_existing_destination(destination)?;
         ensure_parent(destination)?;
-        progress(progress_event(
+        report_progress(&mut progress, &mut cancelled, progress_event(
             BackupProgressPhase::Prepare,
             0,
             Some(5),
             "preparing SQLite backup",
-        ));
+        ))?;
 
         checkpoint(&self.connection)?;
         let sqlite_path = temporary_sibling(destination, "sqlite");
@@ -146,14 +156,17 @@ impl LocalDatabase {
         let container_path = temporary_sibling(destination, "container");
         let result = (|| {
             let objects = object_summary(&self.connection)?;
-            let _sqlite_size = online_backup(&self.connection, &sqlite_path, &mut progress)?;
-            progress(progress_event(
+            let _sqlite_size = online_backup(&self.connection, &sqlite_path, &mut progress, &mut cancelled)?;
+            report_progress(&mut progress, &mut cancelled, progress_event(
                 BackupProgressPhase::Validate,
                 2,
                 Some(5),
                 "validating SQLite backup",
-            ));
+            ))?;
             validate_sqlite(&sqlite_path, self.schema_version()?)?;
+            if cancelled() {
+                return Err(StorageError::BackupCancelled);
+            }
             let protected_size = protect_file(&sqlite_path, &protected_path)?;
             let checksum = sha256_file(&protected_path)?;
             let manifest = BackupManifest {
@@ -166,27 +179,27 @@ impl LocalDatabase {
                 objects,
                 source_name: file_name(self.path()),
             };
-            progress(progress_event(
+            report_progress(&mut progress, &mut cancelled, progress_event(
                 BackupProgressPhase::Backup,
                 3,
                 Some(5),
                 "writing backup container",
-            ));
+            ))?;
             write_container(&container_path, &protected_path, &manifest)?;
-            progress(progress_event(
+            report_progress(&mut progress, &mut cancelled, progress_event(
                 BackupProgressPhase::Cleanup,
                 4,
                 Some(5),
                 "committing backup container",
-            ));
+            ))?;
             fs::rename(&container_path, destination)?;
             let container_size = fs::metadata(destination)?.len();
-            progress(progress_event(
+            report_progress(&mut progress, &mut cancelled, progress_event(
                 BackupProgressPhase::Cleanup,
                 5,
                 Some(5),
                 "backup completed",
-            ));
+            ))?;
             Ok(BackupResult {
                 preview: manifest.preview(container_size),
                 destination_name: file_name(destination),
@@ -206,67 +219,68 @@ impl LocalDatabase {
         backup_path: impl AsRef<Path>,
         safety_backup_path: impl AsRef<Path>,
         app_version: &str,
+        progress: impl FnMut(BackupProgress),
+    ) -> Result<RestoreResult, StorageError> {
+        self.restore_backup_with_cancel(backup_path, safety_backup_path, app_version, progress, || false)
+    }
+
+    pub fn restore_backup_with_cancel(
+        &mut self,
+        backup_path: impl AsRef<Path>,
+        safety_backup_path: impl AsRef<Path>,
+        app_version: &str,
         mut progress: impl FnMut(BackupProgress),
+        mut cancelled: impl FnMut() -> bool,
     ) -> Result<RestoreResult, StorageError> {
         let backup_path = backup_path.as_ref();
         let safety_backup_path = safety_backup_path.as_ref();
         reject_existing_destination(safety_backup_path)?;
         ensure_parent(safety_backup_path)?;
-        progress(progress_event(
+        report_progress(&mut progress, &mut cancelled, progress_event(
             BackupProgressPhase::Prepare,
             0,
             Some(6),
             "preparing restore",
-        ));
+        ))?;
         let expected_schema = self.schema_version()?;
-        let extracted = extract_database(backup_path, expected_schema, &mut progress)?;
+        let extracted = extract_database(backup_path, expected_schema, &mut progress, &mut cancelled)?;
         if extracted.preview.app_version.is_empty() || app_version.trim().is_empty() {
             return Err(StorageError::BackupFormat(
                 "backup and application versions must be present".into(),
             ));
         }
-        progress(progress_event(
+        report_progress(&mut progress, &mut cancelled, progress_event(
             BackupProgressPhase::Backup,
             2,
             Some(6),
             "creating pre-restore safety backup",
-        ));
-        self.create_backup(safety_backup_path, app_version, |_| {})?;
+        ))?;
+        self.create_backup_with_cancel(safety_backup_path, app_version, |_| {}, &mut cancelled)?;
 
         let restore_result = (|| {
-            progress(progress_event(
+            report_progress(&mut progress, &mut cancelled, progress_event(
                 BackupProgressPhase::Restore,
                 3,
                 Some(6),
                 "restoring validated SQLite image",
-            ));
-            let source =
-                Connection::open_with_flags(&extracted.path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-            let backup = Backup::new(&source, &mut self.connection)?;
-            loop {
-                match backup.step(16)? {
-                    StepResult::Done => break,
-                    StepResult::More | StepResult::Busy | StepResult::Locked => {
-                        thread::sleep(Duration::from_millis(2));
-                    }
-                    _ => thread::sleep(Duration::from_millis(2)),
-                }
+            ))?;
+            if cancelled() {
+                return Err(StorageError::BackupCancelled);
             }
-            drop(backup);
-            checkpoint(&self.connection)?;
-            progress(progress_event(
+            atomic_swap_database(self, &extracted.path, expected_schema)?;
+            report_progress(&mut progress, &mut cancelled, progress_event(
                 BackupProgressPhase::Reopen,
                 4,
                 Some(6),
                 "reopening restored SQLite state",
-            ));
+            ))?;
             validate_sqlite_connection(&self.connection, expected_schema)?;
-            progress(progress_event(
+            report_progress(&mut progress, &mut cancelled, progress_event(
                 BackupProgressPhase::Cleanup,
                 5,
                 Some(6),
                 "restore completed",
-            ));
+            ))?;
             Ok(RestoreResult {
                 preview: extracted.preview.clone(),
                 safety_backup_name: file_name(safety_backup_path),
@@ -285,10 +299,66 @@ impl LocalDatabase {
     }
 }
 
+/// Replaces the live database only after the extracted image has passed all
+/// integrity/schema checks. The old file remains available until the new
+/// connection has reopened and validated successfully.
+fn atomic_swap_database(
+    database: &mut LocalDatabase,
+    replacement: &Path,
+    expected_schema: u32,
+) -> Result<(), StorageError> {
+    let database_path = database.path().to_path_buf();
+    let old_path = database_path.with_file_name(format!(
+        ".{}.pre-swap-{}.db",
+        file_name(&database_path),
+        std::process::id()
+    ));
+    reject_existing_destination(&old_path)?;
+
+    let placeholder = Connection::open_in_memory()?;
+    let current = std::mem::replace(&mut database.connection, placeholder);
+    drop(current);
+    remove_sqlite_sidecars(&database_path);
+
+    if let Err(error) = fs::rename(&database_path, &old_path) {
+        database.connection = reopen_connection(&database_path)?;
+        return Err(error.into());
+    }
+
+    let swap_result = (|| {
+        fs::rename(replacement, &database_path)?;
+        let reopened = reopen_connection(&database_path)?;
+        validate_sqlite_connection(&reopened, expected_schema)?;
+        database.connection = reopened;
+        // Cleanup is deliberately best-effort after the new connection has
+        // been validated. A cleanup failure must not roll back a valid swap
+        // and must never turn into data loss.
+        let _ = fs::remove_file(&old_path);
+        Ok::<(), StorageError>(())
+    })();
+
+    if let Err(error) = swap_result {
+        let _ = fs::remove_file(&database_path);
+        remove_sqlite_sidecars(&database_path);
+        let _ = fs::rename(&old_path, &database_path);
+        database.connection = reopen_connection(&database_path)?;
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn reopen_connection(path: &Path) -> Result<Connection, StorageError> {
+    let connection = Connection::open(path)?;
+    connection.pragma_update(None, "foreign_keys", true)?;
+    connection.pragma_update(None, "journal_mode", "WAL")?;
+    Ok(connection)
+}
+
 fn online_backup(
     source: &Connection,
     destination: &Path,
     progress: &mut impl FnMut(BackupProgress),
+    cancelled: &mut impl FnMut() -> bool,
 ) -> Result<u64, StorageError> {
     let mut destination_connection = Connection::open(destination)?;
     let backup = Backup::new(source, &mut destination_connection)?;
@@ -297,12 +367,12 @@ fn online_backup(
         let current = backup.progress();
         let completed = current.pagecount.saturating_sub(current.remaining).max(0) as u64;
         let total = (current.pagecount > 0).then_some(current.pagecount as u64);
-        progress(progress_event(
+        report_progress(progress, cancelled, progress_event(
             BackupProgressPhase::Backup,
             completed,
             total,
             "copying SQLite pages",
-        ));
+        ))?;
         match step {
             StepResult::Done => break,
             StepResult::More | StepResult::Busy | StepResult::Locked => {
@@ -321,6 +391,7 @@ fn extract_database(
     backup_path: &Path,
     expected_schema: u32,
     progress: &mut impl FnMut(BackupProgress),
+    cancelled: &mut impl FnMut() -> bool,
 ) -> Result<ExtractedDatabase, StorageError> {
     let (manifest, container_size) = read_manifest(backup_path)?;
     validate_manifest(&manifest)?;
@@ -330,12 +401,12 @@ fn extract_database(
             actual: manifest.schema_version,
         });
     }
-    progress(progress_event(
+    report_progress(progress, cancelled, progress_event(
         BackupProgressPhase::Validate,
         1,
         Some(6),
         "validating backup checksum",
-    ));
+    ))?;
     let extracted_path = temporary_sibling(backup_path, "restore");
     let encrypted_path = temporary_sibling(backup_path, "encrypted");
     let result = (|| {
@@ -346,6 +417,9 @@ fn extract_database(
         let mut hasher = Sha256::new();
         let mut buffer = vec![0_u8; COPY_BUFFER_BYTES];
         while remaining > 0 {
+            if cancelled() {
+                return Err(StorageError::BackupCancelled);
+            }
             let wanted = remaining.min(buffer.len() as u64) as usize;
             let read = file.read(&mut buffer[..wanted])?;
             if read == 0 {
@@ -504,20 +578,24 @@ fn rollback_from_safety(
     database: &mut LocalDatabase,
     safety_path: &Path,
 ) -> Result<(), StorageError> {
-    let extracted = extract_database(safety_path, database.schema_version()?, &mut |_| {})?;
-    let source = Connection::open_with_flags(&extracted.path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-    let backup = Backup::new(&source, &mut database.connection)?;
-    loop {
-        match backup.step(16)? {
-            StepResult::Done => break,
-            StepResult::More | StepResult::Busy | StepResult::Locked => {
-                thread::sleep(Duration::from_millis(2));
-            }
-            _ => thread::sleep(Duration::from_millis(2)),
-        }
+    let schema = database.schema_version()?;
+    let extracted = extract_database(safety_path, schema, &mut |_| {}, &mut || false)?;
+    atomic_swap_database(database, &extracted.path, schema)
+}
+
+fn report_progress(
+    progress: &mut impl FnMut(BackupProgress),
+    cancelled: &mut impl FnMut() -> bool,
+    item: BackupProgress,
+) -> Result<(), StorageError> {
+    if cancelled() {
+        return Err(StorageError::BackupCancelled);
     }
-    drop(backup);
-    checkpoint(&database.connection)
+    progress(item);
+    if cancelled() {
+        return Err(StorageError::BackupCancelled);
+    }
+    Ok(())
 }
 
 fn read_manifest(path: &Path) -> Result<(BackupManifest, u64), StorageError> {
@@ -787,6 +865,23 @@ mod tests {
         let serialized = serde_json::to_string(&preview).expect("preview serializes");
         assert!(!serialized.contains("not in preview"));
         assert_eq!(preview.checksum_sha256.len(), 64);
+        cleanup(&paths);
+    }
+
+    #[test]
+    fn cancellation_does_not_publish_partial_backup() {
+        let paths = paths("cancel");
+        let database = LocalDatabase::open(&paths.0).expect("database opens");
+        let error = database
+            .create_backup_with_cancel(&paths.1, "core-test", |_| {}, || true)
+            .expect_err("backup must be cancelled");
+        assert!(matches!(error, StorageError::BackupCancelled));
+        assert!(!paths.1.exists());
+        let partials = fs::read_dir(paths.1.parent().expect("parent"))
+            .expect("parent reads")
+            .filter_map(Result::ok)
+            .any(|entry| entry.file_name().to_string_lossy().contains("partial"));
+        assert!(!partials);
         cleanup(&paths);
     }
 

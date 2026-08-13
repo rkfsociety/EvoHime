@@ -214,12 +214,14 @@ describe('renderer command surface', () => {
     expect(invoke('core.createDatabaseBackup', { destinationPath: 'C:\\backup.evohime' })).toEqual({ ok: true, value: { accepted: true } })
     expect(invoke('core.prepareDatabaseRestore', { backupPath: 'C:\\backup.evohime' })).toEqual({ ok: true, value: { accepted: true } })
     expect(invoke('core.restoreDatabase', { backupPath: 'C:\\backup.evohime', approvalId: 'approval-1' })).toEqual({ ok: true, value: { accepted: true } })
+    expect(invoke('core.cancelDatabaseOperation', { operationId: 'operation-1' })).toEqual({ ok: true, value: { accepted: true } })
     expect(sent).toContainEqual({ permissionMode: { mode: 'read_only' } })
     expect(sent).toContainEqual({ runDoctor: { projectId: '', detailLevel: 1 } })
     expect(sent).toContainEqual({ exportDoctorLogs: { destinationPath: 'C:\\diagnostics.jsonl' } })
     expect(sent).toContainEqual({ createDatabaseBackup: { destinationPath: 'C:\\backup.evohime' } })
     expect(sent).toContainEqual({ prepareDatabaseRestore: { backupPath: 'C:\\backup.evohime' } })
     expect(sent).toContainEqual({ restoreDatabase: { backupPath: 'C:\\backup.evohime', approvalId: 'approval-1' } })
+    expect(sent).toContainEqual({ cancelDatabaseOperation: { operationId: 'operation-1' } })
   })
 
   it('forwards provider reference requests without accepting secret fields', () => {

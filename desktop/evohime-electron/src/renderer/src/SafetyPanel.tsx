@@ -23,12 +23,24 @@ export function SafetyPanel({ connection, events }: SafetyPanelProps): React.JSX
   const [restorePath, setRestorePath] = useState('')
   const [restoreApproval, setRestoreApproval] = useState('')
   const [message, setMessage] = useState<string | null>(null)
+  const [cancelling, setCancelling] = useState(false)
 
   useEffect(() => {
     const report = latestEvent(events, 'doctor.report')
     if (report) setDoctor(parseJson(report.payload))
     const progressEvent = latestEvent(events, 'storage.progress')
-    if (progressEvent) setProgress(parseJson(progressEvent.payload))
+    if (progressEvent) {
+      const nextProgress = parseJson(progressEvent.payload)
+      setProgress(nextProgress)
+      const progressMessage = stringField(nextProgress, 'message')
+      if (progressMessage === 'backup completed') {
+        setCancelling(false)
+        setMessage('Backup создан и проверен Core.')
+      } else if (progressMessage === 'restore completed') {
+        setCancelling(false)
+        setMessage('Восстановление завершено. Перезапусти shell, если Core запросит resync.')
+      }
+    }
     const preview = latestEvent(events, 'storage.restore.preview')
     if (preview) {
       const payload = parseJson(preview.payload)
@@ -37,9 +49,15 @@ export function SafetyPanel({ connection, events }: SafetyPanelProps): React.JSX
       setMessage('Backup проверен Core. Для восстановления требуется approval token.')
     }
     const completed = latestEvent(events, 'storage.backup.created')
-    if (completed) setMessage('Backup создан и проверен Core.')
+    if (completed) {
+      setCancelling(false)
+      setMessage('Backup создан и проверен Core.')
+    }
     const restored = latestEvent(events, 'storage.restore.completed')
-    if (restored) setMessage('Восстановление завершено. Перезапусти shell, если Core запросит resync.')
+    if (restored) {
+      setCancelling(false)
+      setMessage('Восстановление завершено. Перезапусти shell, если Core запросит resync.')
+    }
     const exported = latestEvent(events, 'doctor.export.completed')
     if (exported) setMessage('Диагностика экспортирована.')
   }, [events])
@@ -91,6 +109,23 @@ export function SafetyPanel({ connection, events }: SafetyPanelProps): React.JSX
     }))
   }, [api, restoreApproval, restorePath, send])
 
+  const cancelOperation = useCallback(async () => {
+    if (!api || !latestProgressOperation(events)) return
+    setCancelling(true)
+    const outcome = await api.invoke('core.cancelDatabaseOperation', {
+      operationId: latestProgressOperation(events)!
+    })
+    if (!outcome.ok) {
+      setCancelling(false)
+      setMessage(outcome.message)
+    } else if (!outcome.value.accepted) {
+      setCancelling(false)
+      setMessage('Core уже завершил или не нашёл эту операцию.')
+    } else {
+      setMessage('Core получил запрос на отмену. Изменения не будут применены.')
+    }
+  }, [api, events])
+
   const exportLogs = useCallback(async () => {
     if (!api) return
     const destinationPath = window.prompt('Путь JSONL для redacted diagnostics')
@@ -137,6 +172,7 @@ export function SafetyPanel({ connection, events }: SafetyPanelProps): React.JSX
           <button type="button" onClick={() => void restore()} disabled={!connected || restoreApproval.trim().length === 0}>Восстановить</button>
         </div>
         {progress ? <p className="safety-panel__progress">{String(progress.phase ?? 'операция')} · {String(progress.completed ?? 0)} / {String(progress.total ?? '?')} · {String(progress.message ?? '')}</p> : null}
+        {progress && isCancellablePhase(progress.phase) ? <button type="button" onClick={() => void cancelOperation()} disabled={!connected || cancelling}>{cancelling ? 'Отмена запрошена…' : 'Отменить операцию'}</button> : null}
       </div>
     </section>
   )
@@ -158,6 +194,14 @@ function parseJson(payload: string): Record<string, unknown> {
 function stringField(payload: Record<string, unknown>, key: string): string | null {
   const value = payload[key]
   return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function latestProgressOperation(events: readonly CoreEvent[]): string | null {
+  return latestEvent(events, 'storage.progress')?.taskId ?? null
+}
+
+function isCancellablePhase(phase: unknown): boolean {
+  return phase === 'prepare' || phase === 'backup' || phase === 'validate' || phase === 'restore'
 }
 
 function formatDoctor(doctor: Record<string, unknown>): string {

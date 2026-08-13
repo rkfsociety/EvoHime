@@ -1,6 +1,6 @@
 # Подплан 1 — hardening, secrets и переносимые проверки
 
-Статус: следующий самый простой подплан
+Статус: завершён 2026-08-13
 Порядок: 1 из 6; UI-части выполняются после подплана 0
 Источник: бывший единый мастер-план; актуальная детализация находится в этом подплане.
 
@@ -128,4 +128,12 @@ Smoke-матрица на проверяемой системе: clean install �
 
 ## Зависимости
 
-Использует завершённые этапы 0b/0c и Core Doctor. Не блокирует разработку task runner, но должен быть закрыт до release hardening.
+Использует завершённые этапы 0b/0c и Core Doctor. Подплан закрыт; дальнейшие расширения backup browser, recovery wizard и дополнительные Windows reference-прогоны остаются отдельными задачами.
+
+## Результат выполнения
+
+- Rust portable fixture, provider secret hardening, Core-first backup/restore, DPAPI payload protection, atomic swap/rollback и redacted audit завершены.
+- Cooperative cancellation проведена через versioned IPC до Core и Electron SafetyPanel; отмена не публикует частичные backup-файлы и не проходит за atomic swap.
+- Electron recovery banner покрывает `RECOVERING`, `BLOCKED`, `WAITING_APPROVAL` и `FAILED` без автоматического approval/retry.
+- Security regression suites и Windows packaging/install/upgrade/rollback smoke проходят.
+- Проверки 2026-08-13: `cargo test --workspace`, 151 Electron tests, protocol/typecheck/build/bundle, 24 C# IPC compatibility tests и native packaging/workflow/version/retention smoke.

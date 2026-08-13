@@ -258,6 +258,15 @@ function dispatch(
       return accepted(client.send({ restoreDatabase: { backupPath, approvalId } }))
     }
 
+    case 'core.cancelDatabaseOperation': {
+      const value = asRecord(payload)
+      const operationId = asBoundedString(value['operationId'])
+      if (operationId === null) {
+        return failure('invalid-payload', 'Некорректный идентификатор операции.')
+      }
+      return accepted(client.send({ cancelDatabaseOperation: { operationId } }))
+    }
+
     case 'core.getModelConfig':
       return accepted(client.send({ modelConfig: {} }))
 

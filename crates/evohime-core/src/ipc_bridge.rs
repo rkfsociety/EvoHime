@@ -701,6 +701,13 @@ impl IpcBridge {
                 )
                 .await?;
             }
+            Some(generated::command_envelope::Command::CancelDatabaseOperation(request)) => {
+                let result = self
+                    .dispatch_cancel_database_operation(request.operation_id)
+                    .await?;
+                self.write_response(writer, "storage.cancel.requested", result)
+                    .await?;
+            }
             Some(generated::command_envelope::Command::SaveResearchEvidence(request)) => {
                 let result = self.dispatch_save_research_evidence(request).await?;
                 self.write_response(writer, "research.evidence.saved", result)
@@ -1338,8 +1345,8 @@ impl IpcBridge {
             .coordinator
             .as_ref()
             .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
-        let (progress, mut progress_rx) = mpsc::unbounded_channel();
-        let (reply, mut response) = oneshot::channel();
+        let (progress, _progress_rx) = mpsc::unbounded_channel();
+        let (reply, _response) = oneshot::channel();
         coordinator
             .dispatch(CoreCommand::CreateDatabaseBackup {
                 operation_id,
@@ -1349,23 +1356,8 @@ impl IpcBridge {
             })
             .await
             .map_err(|error| FrameError::Io(error.to_string()))?;
-        loop {
-            tokio::select! {
-                item = progress_rx.recv() => {
-                    if let Some(item) = item {
-                        self.write_response(writer, "storage.progress", serde_json::to_vec(&item)?).await?;
-                    }
-                }
-                result = &mut response => {
-                    let payload = result
-                        .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
-                        .map_err(FrameError::Io)
-                        .map_err(IpcBridgeError::from)?;
-                    self.write_response(writer, "storage.backup.created", payload).await?;
-                    break;
-                }
-            }
-        }
+        let payload = serde_json::to_vec(&serde_json::json!({"accepted": true}))?;
+        self.write_response(writer, "storage.backup.started", payload).await?;
         Ok(())
     }
 
@@ -1405,8 +1397,8 @@ impl IpcBridge {
             .coordinator
             .as_ref()
             .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
-        let (progress, mut progress_rx) = mpsc::unbounded_channel();
-        let (reply, mut response) = oneshot::channel();
+        let (progress, _progress_rx) = mpsc::unbounded_channel();
+        let (reply, _response) = oneshot::channel();
         coordinator
             .dispatch(CoreCommand::RestoreDatabase {
                 operation_id,
@@ -1417,24 +1409,32 @@ impl IpcBridge {
             })
             .await
             .map_err(|error| FrameError::Io(error.to_string()))?;
-        loop {
-            tokio::select! {
-                item = progress_rx.recv() => {
-                    if let Some(item) = item {
-                        self.write_response(writer, "storage.progress", serde_json::to_vec(&item)?).await?;
-                    }
-                }
-                result = &mut response => {
-                    let payload = result
-                        .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
-                        .map_err(FrameError::Io)
-                        .map_err(IpcBridgeError::from)?;
-                    self.write_response(writer, "storage.restore.completed", payload).await?;
-                    break;
-                }
-            }
-        }
+        let payload = serde_json::to_vec(&serde_json::json!({"accepted": true}))?;
+        self.write_response(writer, "storage.restore.started", payload).await?;
         Ok(())
+    }
+
+    async fn dispatch_cancel_database_operation(
+        &self,
+        operation_id: String,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::CancelDatabaseOperation {
+                operation_id,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
     }
 
     async fn dispatch_save_research_evidence(

@@ -901,6 +901,10 @@ pub enum CoreCommand {
         progress: mpsc::UnboundedSender<BackupProgress>,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    CancelDatabaseOperation {
+        operation_id: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     /// Captures one bounded, redacted piece of offline research evidence and
     /// persists it against the real `research_evidence` table, tied to
     /// `work_item_id` via `provenance_link`. Redaction and validation happen
@@ -1308,7 +1312,12 @@ impl EventJournal {
             CoreEvent::TaskStopped { .. } => "task.stopped",
             CoreEvent::StorageProgress { .. } => "storage.progress",
         };
-        let payload = serde_json::to_vec(event).expect("core events serialize");
+        let payload = match event {
+            CoreEvent::StorageProgress { progress, .. } => {
+                serde_json::to_vec(progress).expect("storage progress serializes")
+            }
+            _ => serde_json::to_vec(event).expect("core events serialize"),
+        };
         let database = self.database.lock().await;
         database.append_event(task_id, event_type, &payload)
     }
@@ -1432,6 +1441,17 @@ impl EventJournal {
         database.create_backup(path, app_version, progress)
     }
 
+    pub async fn create_database_backup_with_cancel(
+        &self,
+        path: impl AsRef<std::path::Path>,
+        app_version: &str,
+        progress: impl FnMut(BackupProgress),
+        cancelled: impl FnMut() -> bool,
+    ) -> Result<BackupResult, StorageError> {
+        let database = self.database.lock().await;
+        database.create_backup_with_cancel(path, app_version, progress, cancelled)
+    }
+
     pub async fn restore_database(
         &self,
         backup_path: impl AsRef<std::path::Path>,
@@ -1441,6 +1461,18 @@ impl EventJournal {
     ) -> Result<RestoreResult, StorageError> {
         let mut database = self.database.lock().await;
         database.restore_backup(backup_path, safety_path, app_version, progress)
+    }
+
+    pub async fn restore_database_with_cancel(
+        &self,
+        backup_path: impl AsRef<std::path::Path>,
+        safety_path: impl AsRef<std::path::Path>,
+        app_version: &str,
+        progress: impl FnMut(BackupProgress),
+        cancelled: impl FnMut() -> bool,
+    ) -> Result<RestoreResult, StorageError> {
+        let mut database = self.database.lock().await;
+        database.restore_backup_with_cancel(backup_path, safety_path, app_version, progress, cancelled)
     }
 
     /// Bounded, read-only storage facts for diagnostics (Core Doctor).
@@ -3236,6 +3268,7 @@ pub struct TaskCoordinator {
 
 struct CoordinatorState {
     tasks: HashMap<String, CancellationToken>,
+    backup_cancellations: HashMap<String, CancellationToken>,
     backup_approvals: HashMap<String, String>,
     events: broadcast::Sender<CoreEvent>,
     executor: Option<Arc<dyn TaskExecutor>>,
@@ -3285,6 +3318,7 @@ impl TaskCoordinator {
         let (events, event_rx) = broadcast::channel(buffer.max(1));
         let state = Arc::new(Mutex::new(CoordinatorState {
             tasks: HashMap::new(),
+            backup_cancellations: HashMap::new(),
             backup_approvals: HashMap::new(),
             events: events.clone(),
             executor,
@@ -4320,11 +4354,18 @@ impl TaskCoordinator {
                 progress,
                 reply,
             } => {
+                let cancellation = CancellationToken::new();
                 let (journal, events) = {
                     let guard = state.lock().await;
                     (guard.journal.clone(), guard.events.clone())
                 };
-                let result = async {
+                state
+                    .lock()
+                    .await
+                    .backup_cancellations
+                    .insert(operation_id.clone(), cancellation.clone());
+                tokio::spawn(async move {
+                    let result = async {
                     let journal =
                         journal.ok_or_else(|| "storage journal is not configured".to_string())?;
                     let start_payload = serde_json::to_vec(&serde_json::json!({
@@ -4339,8 +4380,9 @@ impl TaskCoordinator {
                         .map_err(|error| error.to_string())?;
                     let operation_for_events = operation_id.clone();
                     let progress = progress;
+                    let operation_cancellation = cancellation.clone();
                     let result = journal
-                        .create_database_backup(
+                        .create_database_backup_with_cancel(
                             std::path::Path::new(&destination_path),
                             env!("CARGO_PKG_VERSION"),
                             |item| {
@@ -4350,12 +4392,13 @@ impl TaskCoordinator {
                                     progress: item,
                                 });
                             },
+                            move || operation_cancellation.is_cancelled(),
                         )
                         .await
                         .map_err(|error| error.to_string());
                     let audit = serde_json::to_vec(&serde_json::json!({
                         "operation_id": operation_id,
-                        "result": if result.is_ok() { "created" } else { "failed" },
+                        "result": if result.is_ok() { "created" } else if result.as_ref().err().is_some_and(|error| error.to_string().contains("cancelled")) { "cancelled" } else { "failed" },
                         "destination_name": safe_file_name(&destination_path),
                         "error_category": result.as_ref().err().map(|error| error_category(error)),
                     }))
@@ -4367,9 +4410,11 @@ impl TaskCoordinator {
                     result.and_then(|value| {
                         serde_json::to_vec(&value).map_err(|error| error.to_string())
                     })
-                }
-                .await;
-                let _ = reply.send(result);
+                    }
+                    .await;
+                    state.lock().await.backup_cancellations.remove(&operation_id);
+                    let _ = reply.send(result);
+                });
             }
             CoreCommand::PrepareDatabaseRestore {
                 operation_id,
@@ -4417,6 +4462,7 @@ impl TaskCoordinator {
                 progress,
                 reply,
             } => {
+                let cancellation = CancellationToken::new();
                 let approved = {
                     let mut guard = state.lock().await;
                     guard
@@ -4431,7 +4477,15 @@ impl TaskCoordinator {
                     let guard = state.lock().await;
                     (guard.journal.clone(), guard.events.clone())
                 };
-                let result = async {
+                if approved {
+                    state
+                        .lock()
+                        .await
+                        .backup_cancellations
+                        .insert(operation_id.clone(), cancellation.clone());
+                }
+                tokio::spawn(async move {
+                    let result = async {
                     if !approved {
                         if let Some(journal) = &journal {
                             let payload = serde_json::to_vec(&serde_json::json!({
@@ -4460,8 +4514,9 @@ impl TaskCoordinator {
                     ));
                     let operation_for_events = operation_id.clone();
                     let progress = progress;
+                    let operation_cancellation = cancellation.clone();
                     let restore = journal
-                        .restore_database(
+                        .restore_database_with_cancel(
                             std::path::Path::new(&backup_path),
                             &safety_path,
                             env!("CARGO_PKG_VERSION"),
@@ -4472,11 +4527,12 @@ impl TaskCoordinator {
                                     progress: item,
                                 });
                             },
+                            move || operation_cancellation.is_cancelled(),
                         )
                         .await;
                     let audit = serde_json::to_vec(&serde_json::json!({
                         "operation_id": operation_id,
-                        "result": if restore.is_ok() { "restored" } else { "failed" },
+                        "result": if restore.is_ok() { "restored" } else if restore.as_ref().err().is_some_and(|error| error.to_string().contains("cancelled")) { "cancelled" } else { "failed" },
                         "backup_name": safe_file_name(&backup_path),
                         "error_category": restore.as_ref().err().map(|error| error_category(&error.to_string())),
                     }))
@@ -4488,8 +4544,28 @@ impl TaskCoordinator {
                     restore
                         .map(|value| serde_json::to_vec(&value).map_err(|error| error.to_string()))
                         .map_err(|error| error.to_string())?
-                }
-                .await;
+                    }
+                    .await;
+                    state.lock().await.backup_cancellations.remove(&operation_id);
+                    let _ = reply.send(result);
+                });
+            }
+            CoreCommand::CancelDatabaseOperation {
+                operation_id,
+                reply,
+            } => {
+                let accepted = state
+                    .lock()
+                    .await
+                    .backup_cancellations
+                    .get(&operation_id)
+                    .map(CancellationToken::cancel)
+                    .is_some();
+                let result = serde_json::to_vec(&serde_json::json!({
+                    "operation_id": operation_id,
+                    "accepted": accepted,
+                }))
+                .map_err(|error| error.to_string());
                 let _ = reply.send(result);
             }
             CoreCommand::SaveResearchEvidence {

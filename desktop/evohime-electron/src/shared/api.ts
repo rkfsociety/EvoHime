@@ -139,6 +139,7 @@ export const RENDERER_COMMANDS = [
   'core.createDatabaseBackup',
   'core.prepareDatabaseRestore',
   'core.restoreDatabase',
+  'core.cancelDatabaseOperation',
   'core.getModelConfig',
   'core.listModelCatalog',
   'core.selectModel',
@@ -193,6 +194,7 @@ export interface CommandPayloads {
   'core.createDatabaseBackup': { destinationPath: string }
   'core.prepareDatabaseRestore': { backupPath: string }
   'core.restoreDatabase': { backupPath: string; approvalId: string }
+  'core.cancelDatabaseOperation': { operationId: string }
   'core.getModelConfig': Record<string, never>
   'core.listModelCatalog': { mode: ModelTier }
   'core.selectModel': { model: string }
@@ -233,6 +235,7 @@ export interface CommandResults {
   'core.createDatabaseBackup': { accepted: boolean }
   'core.prepareDatabaseRestore': { accepted: boolean }
   'core.restoreDatabase': { accepted: boolean }
+  'core.cancelDatabaseOperation': { accepted: boolean }
   'core.getModelConfig': { accepted: boolean }
   'core.listModelCatalog': { accepted: boolean }
   'core.selectModel': { accepted: boolean }

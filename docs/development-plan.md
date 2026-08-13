@@ -26,7 +26,7 @@
 2. Desktop shell — Electron task workspace, replay/reconnect, tray and notifications. Миграция закрыта на Windows; WinUI — compatibility runtime.
 3. Agent workflow — streaming, approvals, cancellation, checkpoints and diff review. В работе: streaming, cancellation, approval round-trip, bounded Build recovery checkpoints и Core-owned project policy завершены; leases/reconciliation и расширенный diff review продолжаются.
 4. Developer tools — Files, Editor и controlled Terminal вертикальные срезы завершены; Git status/diff доступны через bounded Core IPC.
-5. Product hardening — credentials, backup/restore, installer, update and crash recovery. Частично завершён.
+5. Product hardening — credentials, backup/restore, installer, update and crash recovery. Завершён для текущего Windows target; расширенные recovery/reconciliation задачи продолжаются отдельно.
 6. Release cleanup — единый Electron installer, retention релизов, диагностика и чистый Windows CI. Завершён для текущего Windows target.
 
 ## Текущий статус desktop shell

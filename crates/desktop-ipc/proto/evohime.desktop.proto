@@ -263,6 +263,11 @@ message RestoreDatabase {
   string approval_id = 2;
 }
 
+// Requests cooperative cancellation of an in-flight backup or restore.
+message CancelDatabaseOperation {
+  string operation_id = 1;
+}
+
 // Saves a single piece of offline research evidence tied to a work item.
 // raw_excerpt is redacted server-side (evohime_core::research) before it is
 // ever persisted or echoed back.
@@ -587,6 +592,7 @@ message CommandEnvelope {
     PrepareDatabaseRestore prepare_database_restore = 64;
     RestoreDatabase restore_database = 65;
     SelectModelRequest select_model = 66;
+    CancelDatabaseOperation cancel_database_operation = 67;
   }
 }
 

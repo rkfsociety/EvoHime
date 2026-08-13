@@ -10,6 +10,7 @@ import { EditorPanel } from './EditorPanel'
 import { SafetyPanel } from './SafetyPanel'
 import { ProviderForm } from './ProviderForm'
 import { TerminalPanel } from './TerminalPanel'
+import { RecoveryBanner } from './RecoveryBanner'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -188,6 +189,11 @@ export function App(): React.JSX.Element {
         </header>
 
         <div className="main__body">
+          <RecoveryBanner
+            connection={connection}
+            events={events}
+            onOpenTask={() => setView('chat')}
+          />
           {view === 'chat' ? (
             <TaskTimeline
               connection={connection}
