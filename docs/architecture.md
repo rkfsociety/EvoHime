@@ -1,12 +1,12 @@
 # EvoHime — Windows desktop architecture
 
-Статус: поддерживаемая архитектура продукта. Фактическое состояние реализации и ближайшие задачи см. в [`current-state.md`](current-state.md) и [`development-plan.md`](development-plan.md).
+Статус: утверждённая целевая архитектура продукта. Фактическое состояние реализации см. в [`current-state.md`](current-state.md); ближайшая миграция — [`plans/0-electron-shell-migration.md`](plans/0-electron-shell-migration.md).
 
 EvoHime — локальное Windows-приложение.
 Пользовательское короткое имя агента — «Ева».
 
 ```text
-EvoHime.exe               Electron main + bundled renderer
+EvoHime.exe               Electron main + bundled renderer (после migration)
         │ preload/contextBridge → desktop-ipc-v1 / named pipe
 evohime-core.exe          agent loop, model gateway, tools, SQLite
         ▲
@@ -16,6 +16,9 @@ evohime-transaction.exe   transactional update worker
 ```
 
 Renderer не имеет node integration, не выполняет shell-команды и не открывает базу. Electron main ограничен окном, lifecycle и IPC adapter. Core владеет workspace, инструментами, моделью, секретами и локальным состоянием. Supervisor запускает core в Job Object и завершает дочернее дерево при остановке.
+
+До завершения подплана 0 фактической оболочкой остаётся WinUI 3. Это временный
+compatibility runtime, а не параллельная целевая архитектура.
 
 ## IPC
 

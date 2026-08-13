@@ -1,6 +1,6 @@
 # Confidence Ask-Gate
 
-Confidence Ask-Gate — native Core-механизм, который перед опасным tool-вызовом оценивает уверенность модели, опыт прошлых операций, статистику tools и reflection history.
+Confidence Ask-Gate — Core-механизм, который перед опасным tool-вызовом оценивает уверенность модели, опыт прошлых операций, статистику tools и reflection history.
 
 ## Поведение
 
@@ -17,7 +17,7 @@ Confidence Ask-Gate — native Core-механизм, который перед 
 - `tool_execution_stats` — сглаженная статистика успеха;
 - `confidence_audit_log` — объяснение решения;
 - `confidence_settings` — thresholds;
-- `approval.required` — native IPC event.
+- `approval.required` — versioned IPC event.
 
 ## Проверки
 

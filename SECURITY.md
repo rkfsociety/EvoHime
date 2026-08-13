@@ -1,6 +1,6 @@
 # Политика безопасности EvoHime
 
-EvoHime — локальный single-user Windows-клиент. Пользовательский интерфейс не открывает сетевой порт: WinUI общается с Rust Core через защищённый versioned Windows named pipe.
+EvoHime — локальный single-user Windows-клиент. Пользовательский интерфейс не открывает сетевой порт: текущий WinUI, а после миграции Electron main process, общается с Rust Core через защищённый versioned Windows named pipe.
 
 ## Защищаемые границы
 

@@ -1,6 +1,6 @@
 # EvoHime — security threat model
 
-Дата: 2026-08-04. Версия клиента: `0.0.0001`.
+Дата: 2026-08-13. Версия клиента: `0.0.000032`.
 
 ## Граница доверия
 
@@ -37,4 +37,4 @@
 
 ## Проверка перед релизом
 
-Публикация установщика разрешена только после Rust tests, Electron tests, package smoke, `git diff --check` и успешной Windows package compilation на Windows CI.
+Публикация текущего установщика разрешена только после Rust tests, WinUI/IPC tests, package smoke, `git diff --check` и успешной Windows package compilation на Windows CI. После Electron migration этот gate заменяется Electron acceptance из подплана 0.

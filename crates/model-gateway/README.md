@@ -16,7 +16,7 @@ LITEROUTER_MODEL=deepseek:free
 
 - `ModelGateway::stream_chat(messages)` — token stream
 - `ModelGateway::stream_chat_for_route(route, messages)` — named route token stream
-- `GET /api/models/config` — exposed by server
+- model route configuration is owned by Core and exposed to the desktop UI through versioned IPC
 - `MODEL_ROUTES_JSON` — optional JSON map for multiple task-scoped routes
 
 ## Status

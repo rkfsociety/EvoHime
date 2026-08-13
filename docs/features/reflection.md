@@ -6,7 +6,7 @@ ReflectionStage выполняется в Rust Core после observation ка�
 
 ## События
 
-- `agent.reflection` — native task event;
+- `agent.reflection` — versioned task event;
 - `task.failed` — финальная ошибка после исчерпания recovery;
 - `task.completed` — успешное завершение.
 

@@ -2,7 +2,7 @@
 
 Первая версия Windows-клиента — `0.0.0001`. Пользовательское короткое имя агента — **Ева**. Обращения «Ева» и «EvoHime» означают одного и того же агента.
 
-Локальный Windows-агент. Приложение состоит из Electron desktop UI, Rust core и supervisor; состояние хранится локально в SQLite, обмен идёт через версионируемый named pipe IPC.
+Локальный Windows-агент. Текущий runtime состоит из WinUI 3 UI, Rust Core и supervisor; состояние хранится локально в SQLite, обмен идёт через версионируемый named pipe IPC. Утверждённая целевая оболочка — Electron; переход описан в [`docs/plans/0-electron-shell-migration.md`](docs/plans/0-electron-shell-migration.md).
 
 ## Требования
 
@@ -16,7 +16,7 @@
 .\start-dev.ps1
 ```
 
-Скрипт собирает Windows-пакет и открывает Electron-приложение. Клиент сам запускает единственный скрытый supervisor, а supervisor — Core. Для запуска уже собранного каталога:
+Скрипт собирает текущий Windows-пакет и открывает WinUI-клиент. Клиент сам запускает единственный скрытый supervisor, а supervisor — Core. После завершения Electron migration этот launcher должен открывать Electron-клиент. Для запуска уже собранного каталога:
 
 ```powershell
 .\start-dev.ps1 -SkipBuild
@@ -35,7 +35,7 @@
 ## Архитектура
 
 ```text
-EvoHime.exe
+EvoHime.exe               WinUI 3 UI (сейчас) / Electron UI (цель)
         │ versioned named pipe
 evohime-core.exe ── SQLite + model gateway + tools
         ▲
@@ -53,4 +53,4 @@ $dotnet = 'C:\Program Files\dotnet\dotnet.exe'
 cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc
 ```
 
-Архитектура и поэтапный план находятся в `docs/architecture.md` и `docs/development-plan.md`; рабочие планы — в `docs/plans/`.
+Архитектура цели находится в [`docs/architecture.md`](docs/architecture.md), фактическое состояние — в [`docs/current-state.md`](docs/current-state.md), общий порядок — в [`docs/development-plan.md`](docs/development-plan.md), подробные работы — в [`docs/plans/`](docs/plans/).

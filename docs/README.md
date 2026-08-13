@@ -34,10 +34,26 @@
 
 Если документы расходятся, приоритет такой: код и тесты → `current-state.md` → `architecture.md` → `development-plan.md` → `roadmap.md`. Историю решений и незавершённые варианты не переносите в статус продукта без подтверждения реализацией.
 
+## Владельцы информации
+
+| Вопрос | Канонический документ |
+| --- | --- |
+| Что реально собрано и проверено в checkout | [`current-state.md`](current-state.md) |
+| Какой runtime является утверждённой целью | [`architecture.md`](architecture.md) |
+| В каком порядке выполнять ближайшую работу | [`development-plan.md`](development-plan.md) |
+| Подробность текущей миграции и feature-подпланов | [`plans/`](plans/) |
+| Долгосрочные направления без пошаговой реализации | [`roadmap.md`](roadmap.md) |
+| Security boundaries и release security gates | [`../SECURITY.md`](../SECURITY.md), [`security/`](security/) |
+| Provider-specific configuration | [`providers/`](providers/) |
+| Core crate contracts and implementation notes | соответствующий `crates/*/README.md` |
+
+Один факт не должен поддерживаться вручную в нескольких статусных документах:
+ссылки на факт допустимы, копирование таблиц состояния — нет.
+
 ## Рабочие правила
 
-Для разработки используйте `.\start-dev.ps1`, package/Electron tests и Windows CI. Установщик и пользовательский запуск работают через `EvoHime.exe`.
+Для текущей разработки используйте `.\start-dev.ps1`, native package tests, WinUI/IPC tests и Windows CI. Electron tests появятся вместе с проектом из подплана 0. Установщик и пользовательский запуск пока работают через WinUI `EvoHime.exe`.
 
-Веб-панель полностью выведена из продукта. Electron renderer является встроенным desktop UI, а HTTP server и browser launcher не используются. `start-dev.ps1` собирает пакет и открывает `EvoHime.exe`; клиент сам запускает единственный скрытый supervisor, а supervisor — Core. `-SkipBuild` допустим только при наличии готового Windows package.
+Веб-панель полностью выведена из продукта. Будущий Electron renderer будет встроенным desktop UI; HTTP server и browser launcher не используются. Сейчас `start-dev.ps1` собирает native package и открывает WinUI `EvoHime.exe`; клиент сам запускает единственный скрытый supervisor, а supervisor — Core. `-SkipBuild` допустим только при наличии готового `.evohime-native\windows-x64`.
 
 При изменении архитектуры, runtime-контрактов или статуса реализации обновляйте соответствующий канонический документ и дату состояния. Не дублируйте подробный план в `roadmap.md` и не добавляйте инструкции для отдельного web-продукта.

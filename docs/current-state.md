@@ -10,7 +10,7 @@ EvoHime — локальный Windows-клиент для coding-agent зада
 
 ## Runtime
 
-- `EvoHime.exe` — текущий legacy WinUI 3 интерфейс; целевая оболочка — Electron;
+- `EvoHime.exe` — текущий WinUI 3 интерфейс; целевая оболочка — Electron, но Electron-проект ещё не создан;
 - `evohime-core.exe` — Rust agent loop, model gateway, tools, permissions, approvals и SQLite;
 - `evohime-supervisor.exe` — single-instance mutex, Job Object, restart и диагностика;
 - `evohime-transaction.exe` — скрытый transaction worker для backup, commit и rollback обновлений;
