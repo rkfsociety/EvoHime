@@ -695,6 +695,7 @@ pub mod capability_registry;
 pub mod child_roles;
 pub mod child_runtime;
 pub mod doctor;
+pub mod evals;
 pub mod memory_api;
 pub mod memory_domain;
 pub mod observability;
