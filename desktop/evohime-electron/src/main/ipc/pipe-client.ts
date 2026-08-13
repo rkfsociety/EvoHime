@@ -10,7 +10,7 @@ import { CommandQueue, type EnqueueResult } from './command-queue'
 import { encodeFrame, FrameError, MAX_FRAME_BYTES } from './frame-codec'
 import { FrameReader } from './frame-reader'
 import { evohime } from './generated/protocol.js'
-import type { LaunchContext } from './launch-context'
+import { handshakeProof, type LaunchContext } from './launch-context'
 import { LOCAL_PROTOCOL, negotiateProtocol, NegotiationError } from './protocol-version'
 
 const { CommandEnvelope, EventEnvelope } = evohime.desktop.v1
@@ -31,8 +31,15 @@ export const CLIENT_CAPABILITIES = ['replay', 'resync'] as const
 export const DEFAULT_CONNECT_TIMEOUT_MS = 5_000
 export const DEFAULT_HANDSHAKE_TIMEOUT_MS = 5_000
 
+export const MAX_AUTH_REJECTIONS = 3
+
 export interface PipeClientOptions {
   readonly launch: LaunchContext
+  /**
+   * Re-reads the launch context before each connection attempt so a rotated
+   * supervisor session is picked up without restarting the shell.
+   */
+  readonly refreshLaunch?: () => LaunchContext
   readonly connectTimeoutMs?: number
   readonly handshakeTimeoutMs?: number
   readonly backoff?: BackoffOptions
@@ -53,7 +60,8 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
   private readonly options: Required<
     Pick<PipeClientOptions, 'connectTimeoutMs' | 'handshakeTimeoutMs' | 'backoff'>
   >
-  private readonly launch: LaunchContext
+  private launch: LaunchContext
+  private readonly refreshLaunch: (() => LaunchContext) | null
   private readonly createSocket: (pipeName: string) => Socket
   private readonly log: NonNullable<PipeClientOptions['log']>
 
@@ -70,10 +78,12 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
   private writable = true
   private reconnectTimer: NodeJS.Timeout | null = null
   private handshakeTimer: NodeJS.Timeout | null = null
+  private authRejections = 0
 
   constructor(options: PipeClientOptions) {
     super()
     this.launch = options.launch
+    this.refreshLaunch = options.refreshLaunch ?? null
     this.options = {
       connectTimeoutMs: options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
       handshakeTimeoutMs: options.handshakeTimeoutMs ?? DEFAULT_HANDSHAKE_TIMEOUT_MS,
@@ -155,6 +165,13 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
     if (this.stopped || this.socket) {
       return
     }
+    if (this.refreshLaunch) {
+      try {
+        this.launch = this.refreshLaunch()
+      } catch (error) {
+        this.log('warn', 'ipc.launch_context_unreadable', { error })
+      }
+    }
     this.setState(this.reconnectAttempts === 0 ? 'connecting' : 'reconnecting', null)
     this.reader.reset()
 
@@ -192,13 +209,26 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
     })
   }
 
+  /**
+   * Core speaks first: it issues a single-use nonce, and only then does the
+   * shell send a handshake carrying the proof. Nothing is sent before the
+   * challenge arrives.
+   */
   private onConnected(): void {
     this.handshakeTimer = setTimeout(() => {
       this.log('warn', 'ipc.handshake_timeout', {})
       this.destroySocket()
       this.scheduleReconnect('handshake-timeout', null)
     }, this.options.handshakeTimeoutMs)
+  }
 
+  private answerChallenge(nonce: string, expiresAtMs: number): void {
+    if (expiresAtMs > 0 && Date.now() > expiresAtMs) {
+      this.log('warn', 'ipc.challenge_expired', {})
+      this.destroySocket()
+      this.scheduleReconnect('challenge-expired', null)
+      return
+    }
     this.send({
       handshake: {
         protocol: LOCAL_PROTOCOL,
@@ -206,9 +236,30 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
         sessionId: this.launch.sessionId,
         sessionEpoch: this.sessionEpoch,
         lastEventSequence: this.lastSequence,
-        capabilities: [...CLIENT_CAPABILITIES]
+        capabilities: [...CLIENT_CAPABILITIES],
+        clientRole: this.launch.clientRole,
+        nonce,
+        proof: handshakeProof(this.launch, nonce)
       }
     })
+  }
+
+  /**
+   * Core refused the handshake. Retrying is only useful if the launch context
+   * changed, so a few attempts are allowed before the shell stops and shows a
+   * recovery state instead of looping.
+   */
+  private onAuthRejected(reason: string): void {
+    this.authRejections += 1
+    this.log('error', 'ipc.auth_rejected', { attempt: this.authRejections })
+    this.destroySocket()
+    if (this.authRejections >= MAX_AUTH_REJECTIONS) {
+      this.setState('fatal', reason)
+      this.stop()
+      return
+    }
+    this.setState('degraded', reason)
+    this.scheduleReconnect('auth-rejected', null)
   }
 
   private onData(chunk: Buffer): void {
@@ -242,6 +293,17 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       return
     }
 
+    if (event.authChallenge) {
+      this.answerChallenge(
+        event.authChallenge.nonce ?? '',
+        Number(event.authChallenge.expiresAtMs ?? 0)
+      )
+      return
+    }
+    if (event.eventType === 'ipc.rejected') {
+      this.onAuthRejected('auth-rejected')
+      return
+    }
     if (event.ready) {
       this.onReady(event)
       return
@@ -311,6 +373,7 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
     this.coreInstanceId = event.coreInstanceId ?? ''
     this.sessionEpoch = Number(event.sessionEpoch ?? 0)
     this.reconnectAttempts = 0
+    this.authRejections = 0
     this.setState('connected', null)
 
     if (this.lastSequence > 0) {
@@ -371,7 +434,7 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
 
   private scheduleReconnect(reason: string, error: unknown): void {
     this.destroySocket()
-    if (this.stopped || this.connection === 'version-mismatch') {
+    if (this.stopped || this.connection === 'version-mismatch' || this.connection === 'fatal') {
       return
     }
     if (this.reconnectTimer) {

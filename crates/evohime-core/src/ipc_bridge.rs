@@ -2115,6 +2115,39 @@ impl IpcBridge {
         .await
     }
 
+    /// Builds a control envelope (challenge, ready, protocol error) that the
+    /// transport layer sends outside the command/response loop. Sequence 0
+    /// keeps these events out of the replayable event stream.
+    pub fn control_event(
+        &self,
+        event_type: &str,
+        event: Option<generated::event_envelope::Event>,
+        payload: Vec<u8>,
+    ) -> generated::EventEnvelope {
+        generated::EventEnvelope {
+            protocol: Some(protocol()),
+            sequence_id: 0,
+            task_id: String::new(),
+            event_type: event_type.into(),
+            payload,
+            core_instance_id: self.core_instance_id.clone(),
+            session_epoch: self.session_epoch,
+            event,
+        }
+    }
+
+    /// The `core.ready` envelope this bridge answers a verified handshake with.
+    pub fn ready_event(&self) -> generated::EventEnvelope {
+        self.control_event(
+            "core.ready",
+            Some(generated::event_envelope::Event::Ready(generated::Ready {
+                protocol: Some(protocol()),
+                core_version: env!("CARGO_PKG_VERSION").into(),
+            })),
+            Vec::new(),
+        )
+    }
+
     async fn write_response<W: AsyncWrite + Unpin>(
         &self,
         writer: &mut W,
@@ -2487,6 +2520,9 @@ mod tests {
                     session_epoch: 9,
                     last_event_sequence: 0,
                     capabilities: vec!["task.crud".into()],
+                    client_role: "shell".into(),
+                    nonce: String::new(),
+                    proof: String::new(),
                 },
             )),
         };

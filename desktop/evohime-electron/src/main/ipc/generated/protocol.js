@@ -357,6 +357,9 @@ export const evohime = $root.evohime = (() => {
                  * @property {number|null} [sessionEpoch] Handshake sessionEpoch
                  * @property {number|null} [lastEventSequence] Handshake lastEventSequence
                  * @property {Array.<string>|null} [capabilities] Handshake capabilities
+                 * @property {string|null} [clientRole] Handshake clientRole
+                 * @property {string|null} [nonce] Handshake nonce
+                 * @property {string|null} [proof] Handshake proof
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -438,6 +441,30 @@ export const evohime = $root.evohime = (() => {
                 Handshake.prototype.capabilities = $util.emptyArray;
 
                 /**
+                 * Handshake clientRole.
+                 * @member {string} clientRole
+                 * @memberof evohime.desktop.v1.Handshake
+                 * @instance
+                 */
+                Handshake.prototype.clientRole = "";
+
+                /**
+                 * Handshake nonce.
+                 * @member {string} nonce
+                 * @memberof evohime.desktop.v1.Handshake
+                 * @instance
+                 */
+                Handshake.prototype.nonce = "";
+
+                /**
+                 * Handshake proof.
+                 * @member {string} proof
+                 * @memberof evohime.desktop.v1.Handshake
+                 * @instance
+                 */
+                Handshake.prototype.proof = "";
+
+                /**
                  * Encodes the specified Handshake message. Does not implicitly {@link evohime.desktop.v1.Handshake.verify|verify} messages.
                  * @function encode
                  * @memberof evohime.desktop.v1.Handshake
@@ -466,6 +493,12 @@ export const evohime = $root.evohime = (() => {
                     if (message.capabilities != null && message.capabilities.length)
                         for (let i = 0; i < message.capabilities.length; ++i)
                             writer.uint32(/* id 6, wireType 2 =*/50).string(message.capabilities[i]);
+                    if (message.clientRole != null && $Object.hasOwnProperty.call(message, "clientRole") && message.clientRole !== "")
+                        writer.uint32(/* id 7, wireType 2 =*/58).string(message.clientRole);
+                    if (message.nonce != null && $Object.hasOwnProperty.call(message, "nonce") && message.nonce !== "")
+                        writer.uint32(/* id 8, wireType 2 =*/66).string(message.nonce);
+                    if (message.proof != null && $Object.hasOwnProperty.call(message, "proof") && message.proof !== "")
+                        writer.uint32(/* id 9, wireType 2 =*/74).string(message.proof);
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -550,6 +583,33 @@ export const evohime = $root.evohime = (() => {
                                 message.capabilities.push(reader.stringVerify());
                                 continue;
                             }
+                        case 7: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.clientRole = value;
+                                else
+                                    delete message.clientRole;
+                                continue;
+                            }
+                        case 8: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.nonce = value;
+                                else
+                                    delete message.nonce;
+                                continue;
+                            }
+                        case 9: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.proof = value;
+                                else
+                                    delete message.proof;
+                                continue;
+                            }
                         }
                         reader.skipType(wireType, _depth, tag);
                         if (!reader.discardUnknown) {
@@ -577,6 +637,161 @@ export const evohime = $root.evohime = (() => {
                 };
 
                 return Handshake;
+            })();
+
+            v1.AuthChallenge = (function() {
+
+                /**
+                 * Properties of an AuthChallenge.
+                 * @typedef {Object} evohime.desktop.v1.AuthChallenge.$Properties
+                 * @property {string|null} [nonce] AuthChallenge nonce
+                 * @property {number|null} [expiresAtMs] AuthChallenge expiresAtMs
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+
+                /**
+                 * Properties of an AuthChallenge.
+                 * @memberof evohime.desktop.v1
+                 * @interface IAuthChallenge
+                 * @augments evohime.desktop.v1.AuthChallenge.$Properties
+                 * @deprecated Use evohime.desktop.v1.AuthChallenge.$Properties instead.
+                 */
+
+                /**
+                 * Shape of an AuthChallenge.
+                 * @typedef {evohime.desktop.v1.AuthChallenge.$Properties} evohime.desktop.v1.AuthChallenge.$Shape
+                 */
+
+                /**
+                 * Constructs a new AuthChallenge.
+                 * @memberof evohime.desktop.v1
+                 * @classdesc Represents an AuthChallenge.
+                 * @constructor
+                 * @param {evohime.desktop.v1.AuthChallenge.$Properties=} [properties] Properties to set
+                 * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
+                 */
+                const AuthChallenge = function (properties) {
+                    if (properties)
+                        for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
+                            if (properties[keys[i]] != null && keys[i] !== "__proto__")
+                                this[keys[i]] = properties[keys[i]];
+                };
+
+                /**
+                 * AuthChallenge nonce.
+                 * @member {string} nonce
+                 * @memberof evohime.desktop.v1.AuthChallenge
+                 * @instance
+                 */
+                AuthChallenge.prototype.nonce = "";
+
+                /**
+                 * AuthChallenge expiresAtMs.
+                 * @member {number} expiresAtMs
+                 * @memberof evohime.desktop.v1.AuthChallenge
+                 * @instance
+                 */
+                AuthChallenge.prototype.expiresAtMs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                /**
+                 * Encodes the specified AuthChallenge message. Does not implicitly {@link evohime.desktop.v1.AuthChallenge.verify|verify} messages.
+                 * @function encode
+                 * @memberof evohime.desktop.v1.AuthChallenge
+                 * @static
+                 * @param {evohime.desktop.v1.AuthChallenge.$Properties} message AuthChallenge message or plain object to encode
+                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                 * @returns {$protobuf.Writer} Writer
+                 */
+                AuthChallenge.encode = function (message, writer, _depth) {
+                    if (!writer)
+                        writer = $Writer.create();
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $util.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    if (message.nonce != null && $Object.hasOwnProperty.call(message, "nonce") && message.nonce !== "")
+                        writer.uint32(/* id 1, wireType 2 =*/10).string(message.nonce);
+                    if (message.expiresAtMs != null && $Object.hasOwnProperty.call(message, "expiresAtMs") && (typeof message.expiresAtMs === "object" ? message.expiresAtMs.low || message.expiresAtMs.high : message.expiresAtMs !== 0))
+                        writer.uint32(/* id 2, wireType 0 =*/16).uint64(message.expiresAtMs);
+                    if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
+                        for (let i = 0; i < message.$unknowns.length; ++i)
+                            writer.raw(message.$unknowns[i]);
+                    return writer;
+                };
+
+                /**
+                 * Decodes an AuthChallenge message from the specified reader or buffer.
+                 * @function decode
+                 * @memberof evohime.desktop.v1.AuthChallenge
+                 * @static
+                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                 * @param {number} [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.AuthChallenge & evohime.desktop.v1.AuthChallenge.$Shape} AuthChallenge
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                AuthChallenge.decode = function (reader, length, _end, _depth, _target) {
+                    if (!(reader instanceof $Reader))
+                        reader = $Reader.create(reader);
+                    if (_depth === $undefined)
+                        _depth = 0;
+                    if (_depth > $Reader.recursionLimit)
+                        throw $Error("max depth exceeded");
+                    let end = length === $undefined ? reader.len : reader.pos + length, message = _target || new $root.evohime.desktop.v1.AuthChallenge(), value;
+                    while (reader.pos < end) {
+                        let start = reader.pos;
+                        let tag = reader.tag();
+                        if (tag === _end) {
+                            _end = $undefined;
+                            break;
+                        }
+                        let wireType = tag & 7;
+                        switch (tag >>>= 3) {
+                        case 1: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.nonce = value;
+                                else
+                                    delete message.nonce;
+                                continue;
+                            }
+                        case 2: {
+                                if (wireType !== 0)
+                                    break;
+                                if (typeof (value = reader.uint64()) === "object" ? value.low || value.high : value !== 0)
+                                    message.expiresAtMs = value;
+                                else
+                                    delete message.expiresAtMs;
+                                continue;
+                            }
+                        }
+                        reader.skipType(wireType, _depth, tag);
+                        if (!reader.discardUnknown) {
+                            $util.makeProp(message, "$unknowns", false);
+                            (message.$unknowns || (message.$unknowns = [])).push(reader.raw(start, reader.pos));
+                        }
+                    }
+                    if (_end !== $undefined)
+                        throw $Error("missing end group");
+                    return message;
+                };
+
+                /**
+                 * Gets the type url for AuthChallenge
+                 * @function getTypeUrl
+                 * @memberof evohime.desktop.v1.AuthChallenge
+                 * @static
+                 * @param {string} [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns {string} The type url
+                 */
+                AuthChallenge.getTypeUrl = function(prefix) {
+                    if (prefix === $undefined)
+                        prefix = "type.googleapis.com";
+                    return prefix + "/evohime.desktop.v1.AuthChallenge";
+                };
+
+                return AuthChallenge;
             })();
 
             v1.ReplayEvents = (function() {
@@ -12203,7 +12418,8 @@ export const evohime = $root.evohime = (() => {
                  * @property {evohime.desktop.v1.Ready.$Properties|null} [ready] EventEnvelope ready
                  * @property {evohime.desktop.v1.ReplayGap.$Properties|null} [replayGap] EventEnvelope replayGap
                  * @property {evohime.desktop.v1.FullSnapshot.$Properties|null} [fullSnapshot] EventEnvelope fullSnapshot
-                 * @property {"ready"|"replayGap"|"fullSnapshot"} [event] EventEnvelope event
+                 * @property {evohime.desktop.v1.AuthChallenge.$Properties|null} [authChallenge] EventEnvelope authChallenge
+                 * @property {"ready"|"replayGap"|"fullSnapshot"|"authChallenge"} [event] EventEnvelope event
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -12228,9 +12444,10 @@ export const evohime = $root.evohime = (() => {
                  *   ready?: evohime.desktop.v1.Ready.$Shape|null;
                  *   replayGap?: evohime.desktop.v1.ReplayGap.$Shape|null;
                  *   fullSnapshot?: evohime.desktop.v1.FullSnapshot.$Shape|null;
+                 *   authChallenge?: evohime.desktop.v1.AuthChallenge.$Shape|null;
                  *   $unknowns?: Array.<Uint8Array>;
                  * } & (
-                 *   ({ event?: undefined; ready?: null; replayGap?: null; fullSnapshot?: null }|{ event?: "ready"; ready: evohime.desktop.v1.Ready.$Shape; replayGap?: null; fullSnapshot?: null }|{ event?: "replayGap"; ready?: null; replayGap: evohime.desktop.v1.ReplayGap.$Shape; fullSnapshot?: null }|{ event?: "fullSnapshot"; ready?: null; replayGap?: null; fullSnapshot: evohime.desktop.v1.FullSnapshot.$Shape })
+                 *   ({ event?: undefined; ready?: null; replayGap?: null; fullSnapshot?: null; authChallenge?: null }|{ event?: "ready"; ready: evohime.desktop.v1.Ready.$Shape; replayGap?: null; fullSnapshot?: null; authChallenge?: null }|{ event?: "replayGap"; ready?: null; replayGap: evohime.desktop.v1.ReplayGap.$Shape; fullSnapshot?: null; authChallenge?: null }|{ event?: "fullSnapshot"; ready?: null; replayGap?: null; fullSnapshot: evohime.desktop.v1.FullSnapshot.$Shape; authChallenge?: null }|{ event?: "authChallenge"; ready?: null; replayGap?: null; fullSnapshot?: null; authChallenge: evohime.desktop.v1.AuthChallenge.$Shape })
                  * )} evohime.desktop.v1.EventEnvelope.$Shape
                  */
 
@@ -12329,17 +12546,25 @@ export const evohime = $root.evohime = (() => {
                  */
                 EventEnvelope.prototype.fullSnapshot = null;
 
+                /**
+                 * EventEnvelope authChallenge.
+                 * @member {evohime.desktop.v1.AuthChallenge.$Properties|null|undefined} authChallenge
+                 * @memberof evohime.desktop.v1.EventEnvelope
+                 * @instance
+                 */
+                EventEnvelope.prototype.authChallenge = null;
+
                 // OneOf field names bound to virtual getters and setters
                 let $oneOfFields;
 
                 /**
                  * EventEnvelope event.
-                 * @member {"ready"|"replayGap"|"fullSnapshot"|undefined} event
+                 * @member {"ready"|"replayGap"|"fullSnapshot"|"authChallenge"|undefined} event
                  * @memberof evohime.desktop.v1.EventEnvelope
                  * @instance
                  */
                 $Object.defineProperty(EventEnvelope.prototype, "event", {
-                    get: $util.oneOfGetter($oneOfFields = ["ready", "replayGap", "fullSnapshot"]),
+                    get: $util.oneOfGetter($oneOfFields = ["ready", "replayGap", "fullSnapshot", "authChallenge"]),
                     set: $util.oneOfSetter($oneOfFields)
                 });
 
@@ -12379,6 +12604,8 @@ export const evohime = $root.evohime = (() => {
                         $root.evohime.desktop.v1.ReplayGap.encode(message.replayGap, writer.uint32(/* id 11, wireType 2 =*/90).fork(), _depth + 1).ldelim();
                     if (message.fullSnapshot != null && $Object.hasOwnProperty.call(message, "fullSnapshot"))
                         $root.evohime.desktop.v1.FullSnapshot.encode(message.fullSnapshot, writer.uint32(/* id 12, wireType 2 =*/98).fork(), _depth + 1).ldelim();
+                    if (message.authChallenge != null && $Object.hasOwnProperty.call(message, "authChallenge"))
+                        $root.evohime.desktop.v1.AuthChallenge.encode(message.authChallenge, writer.uint32(/* id 13, wireType 2 =*/106).fork(), _depth + 1).ldelim();
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -12492,6 +12719,13 @@ export const evohime = $root.evohime = (() => {
                                     break;
                                 message.fullSnapshot = $root.evohime.desktop.v1.FullSnapshot.decode(reader, reader.uint32(), $undefined, _depth + 1, message.fullSnapshot);
                                 message.event = "fullSnapshot";
+                                continue;
+                            }
+                        case 13: {
+                                if (wireType !== 2)
+                                    break;
+                                message.authChallenge = $root.evohime.desktop.v1.AuthChallenge.decode(reader, reader.uint32(), $undefined, _depth + 1, message.authChallenge);
+                                message.event = "authChallenge";
                                 continue;
                             }
                         }

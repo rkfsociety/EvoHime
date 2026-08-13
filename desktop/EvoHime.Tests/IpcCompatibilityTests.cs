@@ -15,6 +15,74 @@ namespace EvoHime.Tests;
 [TestClass]
 public sealed class IpcCompatibilityTests
 {
+    /// Known-answer vector shared with `evohime_desktop_ipc::session` and the
+    /// Electron adapter, so all three implementations derive the same proof.
+    private const string SharedSecret =
+        "abababababababababababababababababababababababababababababababab";
+    private const string SharedNonce =
+        "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
+    private const string SharedProof =
+        "e7c7b06966269a86caf38e32d01ceccf5f1e9c52ab1e6646ac486c6e074941f3";
+
+    [TestMethod]
+    public void LaunchContextProofMatchesTheSharedVector()
+    {
+        var context = LaunchContext.Parse(
+            $$"""{"pipe_name":"\\\\.\\pipe\\evohime-core-abc","secret":"{{SharedSecret}}"}""");
+        Assert.IsTrue(context.IsAuthenticated);
+        Assert.AreEqual("evohime-core-abc", context.PipeName);
+        Assert.AreEqual(SharedProof, context.Proof(ProtocolEnvelope.ClientId, SharedNonce));
+    }
+
+    [TestMethod]
+    public void MalformedLaunchContextFallsBackToTheLegacyPipe()
+    {
+        Assert.AreEqual(LaunchContext.Legacy, LaunchContext.Parse("not json"));
+        Assert.AreEqual(
+            LaunchContext.Legacy,
+            LaunchContext.Parse($$"""{"pipe_name":"\\\\host\\pipe\\evohime","secret":"{{SharedSecret}}"}"""));
+        Assert.AreEqual(
+            LaunchContext.Legacy,
+            LaunchContext.Parse("""{"pipe_name":"\\\\.\\pipe\\evohime-core-abc","secret":"ab"}"""));
+        Assert.AreEqual(string.Empty, LaunchContext.Legacy.Proof(ProtocolEnvelope.ClientId, SharedNonce));
+    }
+
+    [TestMethod]
+    public void HandshakeCarriesRoleNonceAndProof()
+    {
+        var payload = ProtocolEnvelope.Handshake(LaunchContext.ClientRole, SharedNonce, SharedProof);
+        var text = System.Text.Encoding.UTF8.GetString(payload);
+        StringAssert.Contains(text, LaunchContext.ClientRole);
+        StringAssert.Contains(text, SharedNonce);
+        StringAssert.Contains(text, SharedProof);
+    }
+
+    [TestMethod]
+    public void ChallengeEventExposesTheNonce()
+    {
+        // EventEnvelope { event_type = "ipc.challenge", auth_challenge { nonce } }
+        using var buffer = new MemoryStream();
+        using (var output = new Google.Protobuf.CodedOutputStream(buffer, leaveOpen: true))
+        {
+            output.WriteTag(4, Google.Protobuf.WireFormat.WireType.LengthDelimited);
+            output.WriteString("ipc.challenge");
+            using var challenge = new MemoryStream();
+            using (var nested = new Google.Protobuf.CodedOutputStream(challenge, leaveOpen: true))
+            {
+                nested.WriteTag(1, Google.Protobuf.WireFormat.WireType.LengthDelimited);
+                nested.WriteString(SharedNonce);
+                nested.Flush();
+            }
+            output.WriteTag(13, Google.Protobuf.WireFormat.WireType.LengthDelimited);
+            output.WriteBytes(Google.Protobuf.ByteString.CopyFrom(challenge.ToArray()));
+            output.Flush();
+        }
+
+        var envelope = ProtocolEnvelope.ReadEvent(buffer.ToArray());
+        Assert.AreEqual("ipc.challenge", envelope.EventType);
+        Assert.AreEqual(SharedNonce, envelope.AuthNonce);
+    }
+
     [TestMethod]
     public void AdditiveMinorVersionIsCompatible()
     {

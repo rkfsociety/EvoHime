@@ -90,6 +90,8 @@ NuGet и crates.io — независимые источники: успешны
 
 Протокол редактируется в `crates/desktop-ipc/proto/evohime.desktop.proto`. Rust transport и Electron main/preload adapter должны сохранять совместимость major-версии, sequence replay и bounded frame size. Изменение протокола требует обновить обе стороны и compatibility tests; C# suite сохраняется только как временный compatibility oracle.
 
+Подключение к Core аутентифицируется: supervisor выдаёт launch context (`%LOCALAPPDATA%/EvoHime/runtime/session.json`, owner-only DACL) с именем pipe и session secret, Core выдаёт одноразовый nonce, клиент отвечает `HMAC-SHA256(secret, role | client_id | nonce)`. Роли: `shell` (Electron) и `compatibility-shell` (WinUI). Общий known-answer вектор proof продублирован в Rust, Electron и C# тестах — менять его можно только во всех трёх сразу.
+
 ## Данные и диагностика
 
 - SQLite и backup: `%LOCALAPPDATA%\EvoHime` или `EVOHIME_DATA_DIR`;

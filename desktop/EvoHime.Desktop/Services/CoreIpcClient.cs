@@ -5,22 +5,35 @@ namespace EvoHime.Desktop.Services;
 
 public sealed class CoreIpcClient
 {
+    private static readonly TimeSpan HandshakeTimeout = TimeSpan.FromSeconds(5);
+
     public const uint CurrentProtocolMajor = 1;
     public const uint CurrentProtocolMinor = 0;
 
-    private readonly string _pipeName;
+    private readonly string? _fixedPipeName;
+    private LaunchContext _launch = LaunchContext.Legacy;
     private NamedPipeClientStream? _pipe;
 
+    /// Resolves the endpoint from the supervisor's launch context on every
+    /// connect, so a rotated session is picked up without restarting the shell.
+    public CoreIpcClient()
+    {
+    }
+
+    /// Test/diagnostic entry point that pins one pipe name.
     public CoreIpcClient(string pipeName)
     {
-        _pipeName = pipeName;
+        _fixedPipeName = pipeName;
     }
 
     public async Task ConnectAsync(CancellationToken cancellationToken)
     {
+        _launch = _fixedPipeName is null
+            ? LaunchContext.Load()
+            : new LaunchContext(_fixedPipeName, string.Empty);
         var pipe = new NamedPipeClientStream(
             ".",
-            _pipeName,
+            _launch.PipeName,
             PipeDirection.InOut,
             PipeOptions.Asynchronous | PipeOptions.WriteThrough);
         await pipe.ConnectAsync(cancellationToken);
@@ -29,10 +42,43 @@ public sealed class CoreIpcClient
 
     public bool IsConnected => _pipe?.IsConnected == true;
 
+    /// <summary>
+    /// Connects and answers Core's authentication challenge. Core speaks first
+    /// with a single-use nonce; the shell replies with a handshake carrying the
+    /// proof derived from the launch context. A Core started without a context
+    /// sends no nonce, and the legacy handshake is used instead.
+    /// </summary>
     public async Task ConnectAndHandshakeAsync(CancellationToken cancellationToken)
     {
         await ConnectAsync(cancellationToken);
-        await SendPayloadAsync(ProtocolEnvelope.Handshake(), cancellationToken);
+        var challenge = await ReadChallengeAsync(cancellationToken);
+        if (challenge is null || string.IsNullOrEmpty(challenge.AuthNonce))
+        {
+            await SendPayloadAsync(ProtocolEnvelope.Handshake(), cancellationToken);
+            return;
+        }
+        await SendPayloadAsync(
+            ProtocolEnvelope.Handshake(
+                LaunchContext.ClientRole,
+                challenge.AuthNonce,
+                _launch.Proof(ProtocolEnvelope.ClientId, challenge.AuthNonce)),
+            cancellationToken);
+    }
+
+    /// Waits a bounded time for the challenge. A Core that never sends one is
+    /// treated as a pre-authentication build and gets the legacy handshake.
+    private async Task<CoreEventEnvelope?> ReadChallengeAsync(CancellationToken cancellationToken)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(HandshakeTimeout);
+        try
+        {
+            return await ReadEventAsync(timeout.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
     }
 
     public Task RequestReplayAsync(ulong afterSequence, CancellationToken cancellationToken) =>

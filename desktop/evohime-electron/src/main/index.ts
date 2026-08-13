@@ -54,7 +54,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     hardenSession(hardening)
 
-    client = new CorePipeClient({ launch, log })
+    client = new CorePipeClient({ launch, refreshLaunch: () => readLaunchContext(), log })
     registerShellBridge({ client, log })
 
     client.on('state', (state: ShellState) => broadcast({ kind: 'state', state }))

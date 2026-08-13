@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto'
 import { createServer, type Server, type Socket } from 'node:net'
 
 import { afterEach, describe, expect, it } from 'vitest'
@@ -42,6 +43,8 @@ interface StubOptions {
     socket: Socket
   ) => Uint8Array[] | void
   readonly onConnection?: (socket: Socket) => void
+  /** Set to false to simulate a Core that never issues a nonce. */
+  readonly issueChallenge?: boolean
 }
 
 function uniquePipeName(): string {
@@ -53,6 +56,10 @@ async function startStubCore(pipeName: string, options: StubOptions): Promise<Se
   const stub = createServer((socket) => {
     const reader = new FrameReader()
     options.onConnection?.(socket)
+    if (options.issueChallenge !== false) {
+      // Core speaks first on every connection.
+      socket.write(challengeFrame())
+    }
     socket.on('data', (chunk) => {
       for (const frame of reader.push(chunk)) {
         const command = CommandEnvelope.decode(frame)
@@ -66,6 +73,27 @@ async function startStubCore(pipeName: string, options: StubOptions): Promise<Se
   })
   await new Promise<void>((resolve) => stub.listen(pipeName, resolve))
   return stub
+}
+
+const TEST_NONCE = 'cd'.repeat(32)
+
+function challengeFrame(nonce = TEST_NONCE, expiresAtMs = 0): Uint8Array {
+  return encodeFrame(
+    EventEnvelope.encode({
+      protocol: { major: 1, minor: 0 },
+      eventType: 'ipc.challenge',
+      authChallenge: { nonce, expiresAtMs }
+    }).finish()
+  )
+}
+
+function rejectedFrame(): Uint8Array {
+  return encodeFrame(
+    EventEnvelope.encode({
+      protocol: { major: 1, minor: 0 },
+      eventType: 'ipc.rejected'
+    }).finish()
+  )
 }
 
 function readyFrame(minor = 0): Uint8Array {
@@ -95,20 +123,23 @@ function eventFrame(sequenceId: number, eventType: string, payload = ''): Uint8A
   )
 }
 
-function launchContext(pipeName: string): LaunchContext {
+const TEST_SECRET = 'ab'.repeat(32)
+
+function launchContext(pipeName: string, secret = ''): LaunchContext {
   return {
     pipeName,
     clientId: 'test-shell',
     sessionId: 'test-session',
-    challenge: '',
+    clientRole: 'shell',
+    secret,
     livenessEvent: '',
-    developerLaunch: true
+    developerLaunch: secret.length === 0
   }
 }
 
-function createClient(pipeName: string): CorePipeClient {
+function createClient(pipeName: string, secret = ''): CorePipeClient {
   const created = new CorePipeClient({
-    launch: launchContext(pipeName),
+    launch: launchContext(pipeName, secret),
     connectTimeoutMs: 2_000,
     handshakeTimeoutMs: 2_000,
     backoff: { baseMs: 20, maxMs: 60, jitterRatio: 0 }
@@ -294,6 +325,71 @@ describe.runIf(process.platform === 'win32')('core pipe client', () => {
     await waitForState(target, (state) => state.connection === 'connected')
 
     expect(connections).toBeGreaterThanOrEqual(2)
+  })
+
+  it('answers the nonce with an HMAC proof bound to role and client id', async () => {
+    const pipeName = uniquePipeName()
+    let proof = ''
+    let role = ''
+    let nonce = ''
+    server = await startStubCore(pipeName, {
+      onCommand: (command) => {
+        if (!command.handshake) {
+          return []
+        }
+        proof = command.handshake.proof ?? ''
+        role = command.handshake.clientRole ?? ''
+        nonce = command.handshake.nonce ?? ''
+        return [readyFrame()]
+      }
+    })
+
+    const target = createClient(pipeName, TEST_SECRET)
+    const connected = waitForState(target, (state) => state.connection === 'connected')
+    target.start()
+    await connected
+
+    expect(nonce).toBe(TEST_NONCE)
+    expect(role).toBe('shell')
+    expect(proof).toBe(
+      createHmac('sha256', Buffer.from(TEST_SECRET, 'utf8'))
+        .update(`shell
+test-shell
+${TEST_NONCE}`, 'utf8')
+        .digest('hex')
+    )
+  })
+
+  it('sends nothing before Core issues a nonce', async () => {
+    const pipeName = uniquePipeName()
+    let commands = 0
+    server = await startStubCore(pipeName, {
+      issueChallenge: false,
+      onCommand: () => {
+        commands += 1
+        return []
+      }
+    })
+
+    const target = createClient(pipeName, TEST_SECRET)
+    target.start()
+    await new Promise((resolve) => setTimeout(resolve, 200))
+
+    expect(commands).toBe(0)
+    expect(target.state.connection).not.toBe('connected')
+  })
+
+  it('stops retrying after Core keeps rejecting the handshake', async () => {
+    const pipeName = uniquePipeName()
+    server = await startStubCore(pipeName, {
+      onCommand: (command) => (command.handshake ? [rejectedFrame()] : [])
+    })
+
+    const target = createClient(pipeName, TEST_SECRET)
+    const fatal = waitForState(target, (state) => state.connection === 'fatal')
+    target.start()
+
+    expect((await fatal).reason).toBe('auth-rejected')
   })
 
   it('rejects commands with a controlled failure once the queue is full', async () => {

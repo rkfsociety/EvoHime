@@ -1,7 +1,7 @@
 # Подплан 0 — замена desktop shell на Electron
 
-Статус: этап 0 выполнен (Gate 0 пройден), этап 1 частично — adapter и contract
-tests готовы, ACL/challenge на стороне Core и supervisor не сделаны
+Статус: этапы 0 и 1 выполнены (Gate 0 и Gate 1 пройдены); следующий — этап 2
+(security foundation) и UI-срезы этапа 3
 Порядок: 0 из 6; prerequisite для UI-частей планов 1–5
 Зафиксированный стек и результаты spike: `docs/plans/0-electron-stack-decision.md`
 
@@ -140,12 +140,21 @@ stale-pipe/concurrent-reconnect и ACL/challenge результаты. При п
 - до удаления WinUI сохранять C# IPC tests как compatibility oracle.
 
 Выполнено: TypeScript-биндинги генерируются из канонического protobuf и
-проверяются в CI (`npm run check:protocol`), adapter владеет handshake,
+проверяются в CI (`npm run check:protocol`); adapter владеет handshake,
 reconnect, sequence/gap-детекцией, resync, bounded frames и bounded очередью
-команд, contract- и real-Core E2E тесты (включая kill/restart Core) проходят.
-Не сделано: security descriptor/DACL и непредсказуемое имя pipe, одноразовый
-challenge, user SID и logon session/LUID binding — это изменения в Core и
-supervisor.
+команд; contract- и real-Core E2E тесты (включая kill/restart Core) проходят.
+
+Транспортная аутентификация: supervisor выдаёт на сессию protected launch
+context (непредсказуемое имя pipe, session secret, ожидаемые user SID и logon
+session) в каталоге с owner-only DACL и удаляет его при завершении сессии.
+Core сам создаёт pipe с DACL `D:P(A;;GA;;;<user SID>)`, на каждое подключение
+выдаёт одноразовый nonce с TTL и требует ответ
+`HMAC-SHA256(secret, role | client_id | nonce)`; идентичность клиента берётся у
+ОС через impersonation. Отвергаются несовместимый major, чужая идентичность,
+неизвестная роль, просроченный, повторно использованный или не совпавший nonce
+и неверный proof. Роли: `shell` (Electron) и `compatibility-shell` (WinUI).
+Threat model для доверенного текущего пользователя описан в
+`docs/security/threat-model.md`.
 
 **Gate 1:** generated types совпадают с protobuf, adapter проходит contract и
 real-Core E2E tests, reconnect/replay либо детерминированно восстанавливают

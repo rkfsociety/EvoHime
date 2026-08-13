@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { DEFAULT_CORE_PIPE_NAME, normalizePipeName, readLaunchContext } from '../src/main/ipc/launch-context'
+import {
+  DEFAULT_CORE_PIPE_NAME,
+  handshakeProof,
+  normalizePipeName,
+  readLaunchContext
+} from '../src/main/ipc/launch-context'
 import { ReloadLimiter } from '../src/main/recovery'
 import {
   CONTENT_SECURITY_POLICY,
@@ -39,27 +44,78 @@ describe('production security policy', () => {
 })
 
 describe('launch contract', () => {
-  it('falls back to the developer pipe when the supervisor passed nothing', () => {
-    const context = readLaunchContext({}, () => 'fixed-id')
+  const SECRET = 'ab'.repeat(32)
+  const PIPE = '\\\\.\\pipe\\evohime-core-abc123'
+
+  const missingFile = (): string => {
+    throw new Error('no launch context')
+  }
+
+  const contextFile =
+    (pipeName: string, secret: string) =>
+    (): string =>
+      JSON.stringify({ pipe_name: pipeName, secret })
+
+  it('falls back to the developer pipe when the supervisor left no context', () => {
+    const context = readLaunchContext({}, () => 'fixed-id', missingFile)
     expect(context.pipeName).toBe(DEFAULT_CORE_PIPE_NAME)
     expect(context.developerLaunch).toBe(true)
-    expect(context.challenge).toBe('')
+    expect(context.secret).toBe('')
+    // Without a secret the shell sends an empty proof, and Core decides whether
+    // an unauthenticated connection is acceptable.
+    expect(handshakeProof(context, 'a'.repeat(64))).toBe('')
   })
 
-  it('takes pipe, challenge and liveness handle from the launcher environment', () => {
+  it('takes the pipe and secret from the protected launch context file', () => {
     const context = readLaunchContext(
-      {
-        EVOHIME_CORE_PIPE: 'evohime-core-abc123',
-        EVOHIME_IPC_CHALLENGE: 'challenge-value',
-        EVOHIME_SUPERVISOR_LIVENESS_EVENT: 'evohime-liveness',
-        EVOHIME_CLIENT_ID: 'shell-1',
-        EVOHIME_SESSION_ID: 'session-1'
-      },
-      () => 'fixed-id'
+      { EVOHIME_LAUNCH_CONTEXT: 'C:\\ctx\\session.json', EVOHIME_CLIENT_ID: 'shell-1' },
+      () => 'fixed-id',
+      contextFile(PIPE, SECRET)
     )
-    expect(context.pipeName).toBe('\\\\.\\pipe\\evohime-core-abc123')
-    expect(context.developerLaunch).toBe(false)
+    expect(context.pipeName).toBe(PIPE)
+    expect(context.secret).toBe(SECRET)
     expect(context.clientId).toBe('shell-1')
+    expect(context.clientRole).toBe('shell')
+    expect(context.developerLaunch).toBe(false)
+  })
+
+  it('ignores a launch context with a remote pipe or a malformed secret', () => {
+    const remotePipe = readLaunchContext(
+      {},
+      () => 'fixed-id',
+      contextFile('\\\\attacker\\pipe\\evohime', SECRET)
+    )
+    expect(remotePipe.developerLaunch).toBe(true)
+
+    const shortSecret = readLaunchContext({}, () => 'fixed-id', contextFile(PIPE, 'ab'))
+    expect(shortSecret.developerLaunch).toBe(true)
+
+    const malformedJson = readLaunchContext({}, () => 'fixed-id', () => 'not json')
+    expect(malformedJson.developerLaunch).toBe(true)
+  })
+
+  it('binds the proof to the role, the client id and the nonce', () => {
+    const nonce = 'ef'.repeat(32)
+    const base = readLaunchContext({}, () => 'fixed-id', contextFile(PIPE, SECRET))
+    const proof = handshakeProof(base, nonce)
+
+    expect(proof).toHaveLength(64)
+    expect(handshakeProof({ ...base, clientId: 'other' }, nonce)).not.toBe(proof)
+    expect(handshakeProof({ ...base, clientRole: 'compatibility-shell' }, nonce)).not.toBe(proof)
+    expect(handshakeProof(base, 'aa'.repeat(32))).not.toBe(proof)
+    expect(handshakeProof({ ...base, secret: 'cd'.repeat(32) }, nonce)).not.toBe(proof)
+  })
+
+  it('derives the shared cross-implementation proof vector', () => {
+    // The same vector is asserted by evohime_desktop_ipc::session and by the
+    // WinUI compatibility shell, so all three stay wire-compatible.
+    const context = readLaunchContext({}, () => 'fixed-id', contextFile(PIPE, SECRET))
+    expect(
+      handshakeProof(
+        { ...context, clientRole: 'compatibility-shell', clientId: 'EvoHime.Desktop' },
+        'cd'.repeat(32)
+      )
+    ).toBe('e7c7b06966269a86caf38e32d01ceccf5f1e9c52ab1e6646ac486c6e074941f3')
   })
 
   it('rejects remote or malformed pipe names', () => {

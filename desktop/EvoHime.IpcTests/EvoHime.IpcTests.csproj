@@ -19,6 +19,7 @@
   <ItemGroup>
     <Compile Include="..\EvoHime.Tests\IpcCompatibilityTests.cs" Link="IpcCompatibilityTests.cs" />
     <Compile Include="..\EvoHime.Desktop\Services\FrameCodec.cs" Link="Services\FrameCodec.cs" />
+    <Compile Include="..\EvoHime.Desktop\Services\LaunchContext.cs" Link="Services\LaunchContext.cs" />
     <Compile Include="..\EvoHime.Desktop\Services\NativeEventFormatter.cs" Link="Services\NativeEventFormatter.cs" />
     <Compile Include="..\EvoHime.Desktop\Services\NativeShellState.cs" Link="Services\NativeShellState.cs" />
     <Compile Include="..\EvoHime.Desktop\Services\ProtocolEnvelope.cs" Link="Services\ProtocolEnvelope.cs" />

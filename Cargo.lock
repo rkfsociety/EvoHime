@@ -478,11 +478,16 @@ dependencies = [
 name = "evohime-desktop-ipc"
 version = "0.1.0"
 dependencies = [
+ "getrandom 0.3.4",
  "prost",
  "prost-build",
  "protoc-bin-vendored",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
  "thiserror",
  "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -527,6 +532,7 @@ dependencies = [
 name = "evohime-supervisor"
 version = "0.1.0"
 dependencies = [
+ "evohime-desktop-ipc",
  "evohime-updater",
  "serde_json",
  "tokio",

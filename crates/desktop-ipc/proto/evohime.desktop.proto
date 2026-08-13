@@ -22,6 +22,23 @@ message Handshake {
   uint64 session_epoch = 4;
   uint64 last_event_sequence = 5;
   repeated string capabilities = 6;
+  // Additive session authentication (see evohime_desktop_ipc::session).
+  // client_role is one of the transport-accepted roles; nonce echoes the
+  // single-use value Core issued on this connection, and proof is
+  // HMAC-SHA256(session secret, role | client_id | nonce). A Core started
+  // without a launch context keeps accepting legacy handshakes and logs the
+  // connection as unauthenticated.
+  string client_role = 7;
+  string nonce = 8;
+  string proof = 9;
+}
+
+// Sent by Core immediately after a client connects, before any command is
+// accepted. The nonce is single-use and expires; a replayed or late answer is
+// rejected without mutating any state.
+message AuthChallenge {
+  string nonce = 1;
+  uint64 expires_at_ms = 2;
 }
 
 message ReplayEvents {
@@ -582,6 +599,7 @@ message EventEnvelope {
     Ready ready = 10;
     ReplayGap replay_gap = 11;
     FullSnapshot full_snapshot = 12;
+    AuthChallenge auth_challenge = 13;
   }
 }
 

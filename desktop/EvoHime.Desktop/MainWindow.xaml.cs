@@ -34,7 +34,7 @@ public partial class MainWindow : Window
     public event Action<string, string>? NotificationRequested;
     public event Action? UpdateReadyToInstall;
 
-    private readonly CoreIpcClient _ipc = new("evohime-core-v1");
+    private readonly CoreIpcClient _ipc = new();
     private readonly SemaphoreSlim _ipcRequestGate = new(1, 1);
     private readonly NativeShellState _state = new();
     private readonly WorkspaceSettings _settings = new();

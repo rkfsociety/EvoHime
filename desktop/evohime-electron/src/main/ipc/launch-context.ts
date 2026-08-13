@@ -1,15 +1,23 @@
-import { randomUUID } from 'node:crypto'
+import { createHmac, randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 /**
  * Launch contract between the supervisor and the Electron main process.
  *
- * The pipe name, the handshake challenge and the liveness handle are passed by
- * the signed launcher through the process environment. They are never accepted
- * from renderer input or from a command line the renderer can influence
- * (plan 0, stage 1).
+ * The supervisor writes one protected launch context per session (see
+ * `evohime_desktop_ipc::session`) into a directory whose DACL grants only the
+ * current user. It holds the unpredictable pipe name and the session secret
+ * the shell proves knowledge of during the handshake. The context is never
+ * accepted from renderer input or from a command line the renderer can
+ * influence.
  */
 
 export const DEFAULT_CORE_PIPE_NAME = '\\\\.\\pipe\\evohime-core-v1'
+export const LAUNCH_CONTEXT_FILE = 'session.json'
+export const CLIENT_ROLE = 'shell'
+
+const SECRET_HEX_LENGTH = 64
 
 export interface LaunchContext {
   /** Full Windows pipe path of the Core endpoint. */
@@ -17,30 +25,63 @@ export interface LaunchContext {
   /** Stable identity of this shell instance for the Core handshake. */
   readonly clientId: string
   readonly sessionId: string
-  /** One-time supervisor challenge, empty when launched without a supervisor. */
-  readonly challenge: string
+  readonly clientRole: string
+  /** Session secret; empty in a developer launch without a supervisor. */
+  readonly secret: string
   /** Name of the OS liveness event owned by the supervisor, when provided. */
   readonly livenessEvent: string
-  /** True when no supervisor-provided context was found (developer run). */
+  /** True when no supervisor-provided context was found. */
   readonly developerLaunch: boolean
 }
 
+/** Answer to Core's single-use nonce: HMAC-SHA256(secret, role|client|nonce). */
+export function handshakeProof(context: LaunchContext, nonce: string): string {
+  if (context.secret.length === 0) {
+    return ''
+  }
+  return createHmac('sha256', Buffer.from(context.secret, 'utf8'))
+    .update(`${context.clientRole}\n${context.clientId}\n${nonce}`, 'utf8')
+    .digest('hex')
+}
+
+export function launchContextPath(environment: NodeJS.ProcessEnv = process.env): string {
+  const explicit = sanitize(environment['EVOHIME_LAUNCH_CONTEXT'])
+  if (explicit) {
+    return explicit
+  }
+  const dataDir =
+    sanitize(environment['EVOHIME_DATA_DIR']) ||
+    join(sanitize(environment['LOCALAPPDATA']) || '', 'EvoHime')
+  return join(dataDir, 'runtime', LAUNCH_CONTEXT_FILE)
+}
+
+/**
+ * Reads the current launch context. It is re-read before every connection
+ * attempt so a supervisor that rotated the session is picked up without
+ * restarting the shell.
+ */
 export function readLaunchContext(
   environment: NodeJS.ProcessEnv = process.env,
-  newId: () => string = randomUUID
+  newId: () => string = randomUUID,
+  readFile: (path: string) => string = (path) => readFileSync(path, 'utf8')
 ): LaunchContext {
-  const pipeName = sanitize(environment['EVOHIME_CORE_PIPE'])
-  const challenge = sanitize(environment['EVOHIME_IPC_CHALLENGE'])
-  const livenessEvent = sanitize(environment['EVOHIME_SUPERVISOR_LIVENESS_EVENT'])
-  const sessionId = sanitize(environment['EVOHIME_SESSION_ID']) || newId()
+  const identity = {
+    clientId: sanitize(environment['EVOHIME_CLIENT_ID']) || `electron-${newId()}`,
+    sessionId: sanitize(environment['EVOHIME_SESSION_ID']) || newId(),
+    clientRole: CLIENT_ROLE,
+    livenessEvent: sanitize(environment['EVOHIME_SUPERVISOR_LIVENESS_EVENT'])
+  }
+
+  const file = parseContextFile(readSafely(readFile, launchContextPath(environment)))
+  if (file) {
+    return { ...identity, pipeName: file.pipeName, secret: file.secret, developerLaunch: false }
+  }
 
   return {
-    pipeName: normalizePipeName(pipeName) ?? DEFAULT_CORE_PIPE_NAME,
-    clientId: sanitize(environment['EVOHIME_CLIENT_ID']) || `electron-${newId()}`,
-    sessionId,
-    challenge,
-    livenessEvent,
-    developerLaunch: pipeName.length === 0 && challenge.length === 0
+    ...identity,
+    pipeName: normalizePipeName(sanitize(environment['EVOHIME_CORE_PIPE'])) ?? DEFAULT_CORE_PIPE_NAME,
+    secret: '',
+    developerLaunch: true
   }
 }
 
@@ -57,6 +98,38 @@ export function normalizePipeName(value: string): string | null {
     return null
   }
   return `\\\\.\\pipe\\${name}`
+}
+
+function parseContextFile(raw: string | null): { pipeName: string; secret: string } | null {
+  if (raw === null) {
+    return null
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (typeof parsed !== 'object' || parsed === null) {
+    return null
+  }
+  const record = parsed as Record<string, unknown>
+  const pipeName = normalizePipeName(
+    typeof record['pipe_name'] === 'string' ? record['pipe_name'] : ''
+  )
+  const secret = typeof record['secret'] === 'string' ? record['secret'] : ''
+  if (pipeName === null || !/^[0-9a-f]+$/.test(secret) || secret.length !== SECRET_HEX_LENGTH) {
+    return null
+  }
+  return { pipeName, secret }
+}
+
+function readSafely(readFile: (path: string) => string, path: string): string | null {
+  try {
+    return readFile(path)
+  } catch {
+    return null
+  }
 }
 
 function sanitize(value: string | undefined): string {

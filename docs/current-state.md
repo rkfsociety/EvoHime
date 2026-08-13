@@ -38,11 +38,11 @@ Core и supervisor — внутренние компоненты установ�
 - filesystem.search исключает hard-default secret/auth paths, не следует symlink/reparse-обходам и не требует POSIX shell;
 - shell blocklist расширен для Windows launcher/LOLBin семейств; recovery timeline различает `RECOVERING`, `BLOCKED`, `WAITING_APPROVAL` и `FAILED`;
 - Core IPC wiring для backup preview/restore и отображения storage progress/error;
-- Electron shell: этап 0 подплана 0 выполнен (стек зафиксирован, оболочка собирается и подключается к настоящему Core), UI-срезы, ACL/challenge и production acceptance ещё не завершены.
+- Electron shell: этапы 0 и 1 подплана 0 выполнены (стек зафиксирован, оболочка собирается, IPC adapter и аутентифицированный транспорт работают против настоящего Core), UI-срезы и production acceptance ещё не завершены.
 
 ## Следующий этап
 
-1. завершить Electron shell migration: ACL/challenge для pipe, UI-срезы и packaging acceptance;
+1. завершить Electron shell migration: UI-срезы, packaging и acceptance (транспорт и его аутентификация готовы);
 2. перенести UI-срезы и выполнить install/upgrade/rollback acceptance на Windows 10 и Windows 11;
 3. leases/reconciliation и расширенный diff/command preview в approval UI;
 4. informative ARM64/Insider compatibility runs.

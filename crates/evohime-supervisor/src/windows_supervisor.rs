@@ -208,6 +208,42 @@ impl Drop for JobObject {
     }
 }
 
+
+/// Protected launch context for one supervisor session.
+///
+/// The context file lives in a directory whose DACL grants only the owning
+/// user, so Core and the shell can read it while another user or another logon
+/// session cannot. It is removed when the supervisor stops.
+struct SupervisorSession {
+    context_path: PathBuf,
+}
+
+impl SupervisorSession {
+    fn establish() -> Result<Self, Box<dyn std::error::Error>> {
+        use evohime_desktop_ipc::session::{write_launch_context, LaunchContext};
+        use evohime_desktop_ipc::windows_security::{
+            create_protected_directory, current_logon_session, current_user_sid,
+        };
+
+        let user_sid = current_user_sid()?;
+        let logon_session = current_logon_session()?;
+        let runtime_dir = core_data_dir().join("runtime");
+        create_protected_directory(&runtime_dir, &user_sid)?;
+
+        let context = LaunchContext::generate(user_sid, logon_session, now_ms())?;
+        let context_path = runtime_dir.join("session.json");
+        write_launch_context(&context_path, &context)?;
+        Ok(Self { context_path })
+    }
+}
+
+impl Drop for SupervisorSession {
+    fn drop(&mut self) {
+        // A stale secret must not outlive the session that issued it.
+        let _ = fs::remove_file(&self.context_path);
+    }
+}
+
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let _instance = SingleInstance::acquire("Local\\EvoHime.Supervisor")?;
     let logger = SupervisorLogger::open()?;
@@ -230,6 +266,26 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     let core_exe = normalized_env_path("EVOHIME_CORE_EXE")
         .unwrap_or_else(|| PathBuf::from("evohime-core.exe"));
+
+    // One launch context per supervisor session: an unpredictable pipe name, a
+    // session secret and the identity the shell must run as. It survives Core
+    // restarts so a connected shell keeps its credentials, and it is rotated
+    // when this supervisor session ends.
+    let session = match SupervisorSession::establish() {
+        Ok(session) => {
+            let _ = logger.write(
+                "session.established",
+                json!({"context": session.context_path.display().to_string()}),
+            );
+            Some(session)
+        }
+        Err(error) => {
+            // Without a context Core falls back to the legacy pipe and reports
+            // the connection as unauthenticated instead of refusing to start.
+            let _ = logger.write("session.unavailable", json!({"error": error.to_string()}));
+            None
+        }
+    };
     let max_restarts = std::env::var("EVOHIME_CORE_MAX_RESTARTS")
         .ok()
         .and_then(|value| value.parse::<u32>().ok())
@@ -266,7 +322,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         let job = JobObject::create()?;
-        let mut child = Command::new(&core_exe).kill_on_drop(true).spawn()?;
+        let mut command = Command::new(&core_exe);
+        command.kill_on_drop(true);
+        if let Some(session) = session.as_ref() {
+            command.env("EVOHIME_LAUNCH_CONTEXT", &session.context_path);
+        }
+        let mut child = command.spawn()?;
         job.assign(&child)?;
         let status = wait_for_core(&mut child, &heartbeat_path, &logger, &mut runtime).await?;
         let _ = logger.write(
@@ -458,6 +519,7 @@ mod tests {
     use super::{
         heartbeat_is_current_generation, heartbeat_is_stale, heartbeat_is_stale_for_generation,
         recover_pending_update, restart_backoff, should_reset_restart_budget, JobObject,
+        SupervisorSession,
     };
     use evohime_tx::UpdateTransaction;
     use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
@@ -611,5 +673,35 @@ mod tests {
         assert!(should_reset_restart_budget(false, true));
         assert!(!should_reset_restart_budget(true, true));
         assert!(!should_reset_restart_budget(false, false));
+    }
+
+    /// The supervisor session must hand Core a usable, validated launch
+    /// context bound to this user, and must not leave the secret behind when
+    /// the session ends.
+    #[test]
+    fn session_writes_a_protected_launch_context_and_removes_it_on_drop() {
+        let data_dir =
+            std::env::temp_dir().join(format!("evohime-session-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&data_dir);
+        std::env::set_var("EVOHIME_DATA_DIR", &data_dir);
+
+        let context_path = {
+            let session = SupervisorSession::establish().expect("session establishes");
+            let path = session.context_path.clone();
+            let context = evohime_desktop_ipc::session::read_launch_context(&path)
+                .expect("context is readable and valid");
+            assert!(context.is_authenticated(), "context binds a Windows identity");
+            assert!(context
+                .pipe_name
+                .starts_with(evohime_desktop_ipc::session::PIPE_PREFIX));
+            path
+        };
+
+        assert!(
+            !context_path.exists(),
+            "the session secret must not outlive the supervisor session"
+        );
+        std::env::remove_var("EVOHIME_DATA_DIR");
+        let _ = fs::remove_dir_all(&data_dir);
     }
 }

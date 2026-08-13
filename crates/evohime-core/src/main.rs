@@ -7,8 +7,6 @@ async fn main() {
                 .map(|path| std::path::PathBuf::from(path).join("EvoHime"))
         })
         .unwrap_or_else(|| std::path::PathBuf::from(".evohime"));
-    let pipe_name =
-        std::env::var("EVOHIME_CORE_PIPE").unwrap_or_else(|_| r"\\.\pipe\evohime-core-v1".into());
     let journal = match evohime_core::EventJournal::open(data_dir.join("events.db")) {
         Ok(journal) => journal,
         Err(error) => {
@@ -118,12 +116,28 @@ async fn main() {
             std::process::exit(1);
         }
     };
+    let context = match launch_context() {
+        Ok(context) => context,
+        Err(error) => {
+            eprintln!("evohime-core launch context failed: {error}");
+            std::process::exit(1);
+        }
+    };
+    let authenticated = context.is_authenticated();
     let _ = logger.write(
         "info",
         "core.started",
-        serde_json::json!({"pipe": pipe_name, "protocol_major": 1, "protocol_minor": 0}),
+        serde_json::json!({
+            "protocol_major": 1,
+            "protocol_minor": 0,
+            "authenticated": authenticated,
+        }),
     );
-    if let Err(error) = evohime_core::run_windows_pipe(&pipe_name, bridge, logger).await {
+    let config = evohime_core::PipeServerConfig {
+        context,
+        enforce_authentication: authenticated,
+    };
+    if let Err(error) = evohime_core::run_windows_pipe(config, bridge, logger).await {
         eprintln!("evohime-core failed: {error}");
         std::process::exit(1);
     }
@@ -243,4 +257,34 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
 #[cfg(not(windows))]
 fn main() {
     println!("evohime-core {}", evohime_core::CoreVersion::current());
+}
+
+/// Resolves the launch context that binds this Core generation to one pipe,
+/// one session secret and one Windows identity.
+///
+/// The supervisor passes a protected context file through
+/// `EVOHIME_LAUNCH_CONTEXT`. Without it Core keeps serving the legacy pipe
+/// name with a freshly generated secret and no identity binding, which is the
+/// developer and WinUI-compatibility path; such a connection is reported as
+/// unauthenticated in the log and in `core.started`.
+#[cfg(windows)]
+fn launch_context() -> Result<evohime_desktop_ipc::session::LaunchContext, std::io::Error> {
+    use evohime_desktop_ipc::session::{
+        read_launch_context, validate_pipe_name, LaunchContext, SessionSecret,
+    };
+
+    if let Some(path) = std::env::var_os("EVOHIME_LAUNCH_CONTEXT") {
+        return read_launch_context(std::path::Path::new(&path));
+    }
+
+    let pipe_name = std::env::var("EVOHIME_CORE_PIPE").unwrap_or_else(|_| r"\\.\pipe\evohime-core-v1".into());
+    validate_pipe_name(&pipe_name).map_err(|error| std::io::Error::other(error.to_string()))?;
+    Ok(LaunchContext {
+        pipe_name,
+        secret: SessionSecret::generate()
+            .map_err(|error| std::io::Error::other(error.to_string()))?,
+        expected_user_sid: String::new(),
+        expected_logon_session: String::new(),
+        issued_at_ms: 0,
+    })
 }

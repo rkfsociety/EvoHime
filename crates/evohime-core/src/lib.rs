@@ -645,30 +645,9 @@ mod logging;
 pub use logging::StructuredLogger;
 
 #[cfg(windows)]
-pub async fn run_windows_pipe(
-    pipe_name: &str,
-    bridge: IpcBridge,
-    logger: std::sync::Arc<StructuredLogger>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    use tokio::io::split;
-    use tokio::net::windows::named_pipe::ServerOptions;
-
-    loop {
-        let server = ServerOptions::new().create(pipe_name)?;
-        server.connect().await?;
-        let (mut reader, mut writer) = split(server);
-        loop {
-            if let Err(error) = bridge.process_once(&mut reader, &mut writer).await {
-                let _ = logger.write(
-                    "warn",
-                    "ipc.connection_closed",
-                    serde_json::json!({"error": error.to_string()}),
-                );
-                break;
-            }
-        }
-    }
-}
+mod pipe_server;
+#[cfg(windows)]
+pub use pipe_server::{run_windows_pipe, PipeServerConfig};
 
 impl CoreVersion {
     pub const fn current() -> &'static str {

@@ -1,7 +1,10 @@
 pub mod generated {
     include!(concat!(env!("OUT_DIR"), "/evohime.desktop.v1.rs"));
 }
+pub mod session;
 pub mod transport;
+#[cfg(windows)]
+pub mod windows_security;
 
 pub const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
 pub const DEFAULT_RESYNC_MAX_EVENTS: u32 = 512;

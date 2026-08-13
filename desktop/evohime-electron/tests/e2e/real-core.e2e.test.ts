@@ -76,7 +76,8 @@ function createClient(pipeName: string): CorePipeClient {
       pipeName,
       clientId: 'e2e-shell',
       sessionId: 'e2e-session',
-      challenge: '',
+      clientRole: 'shell',
+      secret: '',
       livenessEvent: '',
       developerLaunch: true
     } satisfies LaunchContext,

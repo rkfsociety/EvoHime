@@ -77,11 +77,24 @@ Renderer не получает `ipcRenderer`, EventEmitter, MessagePort, `fs`, `
 | Redaction | пути, токены, argv и стек-трейсы скрыты в `shell-main.jsonl` |
 | packaged shell + real Core | packaged `EvoHime.exe` подключается к запущенному Core без единого reconnect-предупреждения |
 
-Не проверено на этом этапе и вынесено дальше: ACL/security descriptor pipe,
-одноразовый challenge и session/LUID binding (требуют изменений в Core и
-supervisor, этап 1), Windows 10 (в наличии только Windows 11 x64), UAC/
-elevation, session change, memory pressure, DPI/scaling и dark-theme прогон на
-реальных машинах.
+## Результаты Gate 1 (проверено на Windows 11 x64, 2026-08-13)
+
+| Проверка | Результат |
+| --- | --- |
+| Generated types = canonical proto | `npm run check:protocol` проходит и падает на устаревшем биндинге |
+| Owner-only DACL на pipe | Core создаёт endpoint с `D:P(A;;GA;;;<user SID>)`, лог `ipc.listening acl=owner-only` |
+| Непредсказуемое имя pipe | supervisor генерирует `evohime-core-<16 байт hex>` на сессию |
+| Одноразовый nonce с TTL | повтор, просрочка и подмена nonce отвергаются (unit-тесты `session.rs`) |
+| HMAC-proof | один known-answer вектор проверяется в Rust, Electron и WinUI tests |
+| Session/identity binding | user SID клиента читается у ОС через impersonation; чужая идентичность отвергается |
+| Enforced handshake E2E | настоящий Core: корректный secret подключается, подделанный secret и неизвестная роль дают `fatal` без retry-цикла |
+| Полная цепочка | supervisor → protected context → Core (`authenticated: true`) → Electron: `ipc.client_authenticated role=shell` без reconnect-предупреждений |
+| WinUI fallback | компилируется, C# suite (24 теста) зелёная, роль `compatibility-shell` принимается настоящим Core |
+
+Не проверено на этом этапе: Windows 10 (в наличии только Windows 11 x64),
+UAC/elevation, session change, memory pressure, DPI/scaling, dark theme и
+запуск WinUI-оболочки под supervisor вручную (покрыто только тестами и
+общим вектором proof).
 
 ## Решение по риску bridge
 

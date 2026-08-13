@@ -6,14 +6,28 @@ public sealed record CoreEventEnvelope(
     ulong SequenceId,
     string TaskId,
     string EventType,
-    byte[] Payload);
+    byte[] Payload)
+{
+    /// Single-use nonce carried by an `ipc.challenge` event; empty otherwise.
+    public string AuthNonce { get; init; } = string.Empty;
+}
 
 public static class ProtocolEnvelope
 {
     public const uint ProtocolMajor = 1;
     public const uint ProtocolMinor = 0;
 
-    public static byte[] Handshake()
+    /// Identity this shell claims in the handshake; the proof is bound to it.
+    public const string ClientId = "EvoHime.Desktop";
+
+    public static byte[] Handshake() => Handshake(string.Empty, string.Empty, string.Empty);
+
+    /// <summary>
+    /// Builds a handshake. When Core issued a nonce, the client role and the
+    /// HMAC proof from the launch context are included; an unauthenticated
+    /// developer launch sends them empty and Core decides whether to accept.
+    /// </summary>
+    public static byte[] Handshake(string clientRole, string nonce, string proof)
     {
         using var buffer = new MemoryStream();
         using var output = new CodedOutputStream(buffer, leaveOpen: true);
@@ -26,7 +40,10 @@ public static class ProtocolEnvelope
         {
             WriteProtocol(nested);
             nested.WriteTag(2, WireFormat.WireType.LengthDelimited);
-            nested.WriteString("EvoHime.Desktop");
+            nested.WriteString(ClientId);
+            WriteString(nested, 7, clientRole);
+            WriteString(nested, 8, nonce);
+            WriteString(nested, 9, proof);
             nested.Flush();
         }
         output.WriteBytes(ByteString.CopyFrom(handshake.ToArray()));
@@ -442,11 +459,15 @@ public static class ProtocolEnvelope
         string taskId = string.Empty;
         string eventType = string.Empty;
         byte[] eventPayload = [];
+        var authNonce = string.Empty;
         while (!input.IsAtEnd)
         {
             var tag = input.ReadTag();
             switch (tag >> 3)
             {
+                case 13:
+                    authNonce = ReadAuthNonce(input.ReadBytes().ToByteArray());
+                    break;
                 case 1:
                     input.ReadBytes();
                     break;
@@ -467,7 +488,29 @@ public static class ProtocolEnvelope
                     break;
             }
         }
-        return new CoreEventEnvelope(sequenceId, taskId, eventType, eventPayload);
+        return new CoreEventEnvelope(sequenceId, taskId, eventType, eventPayload)
+        {
+            AuthNonce = authNonce,
+        };
+    }
+
+    private static string ReadAuthNonce(byte[] challenge)
+    {
+        using var input = new CodedInputStream(challenge);
+        var nonce = string.Empty;
+        while (!input.IsAtEnd)
+        {
+            var tag = input.ReadTag();
+            if (tag >> 3 == 1)
+            {
+                nonce = input.ReadString();
+            }
+            else
+            {
+                input.SkipLastField();
+            }
+        }
+        return nonce;
     }
 
     private static void WriteProtocol(CodedOutputStream output)

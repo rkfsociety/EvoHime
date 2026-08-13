@@ -10,6 +10,20 @@ path = "src/lib.rs"
 prost = "0.14"
 tokio = { version = "1", features = ["io-util", "macros", "rt"] }
 thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+getrandom = "0.3"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Pipes",
+  "Win32_System_Threading",
+] }
 
 [build-dependencies]
 prost-build = "0.14"

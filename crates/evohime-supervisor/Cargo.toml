@@ -11,6 +11,7 @@ path = "src/main.rs"
 tokio = { version = "1", features = ["macros", "process", "rt-multi-thread", "signal", "time"] }
 serde_json = "1"
 evohime-updater = { path = "../evohime-updater" }
+evohime-desktop-ipc = { path = "../desktop-ipc" }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading"] }

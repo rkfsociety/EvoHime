@@ -190,6 +190,15 @@ export namespace evohime {
                 /** Handshake capabilities. */
                 capabilities: string[];
 
+                /** Handshake clientRole. */
+                clientRole: string;
+
+                /** Handshake nonce. */
+                nonce: string;
+
+                /** Handshake proof. */
+                proof: string;
+
                 /**
                  * Encodes the specified Handshake message. Does not implicitly {@link evohime.desktop.v1.Handshake.verify|verify} messages.
                  * @param message Handshake message or plain object to encode
@@ -239,12 +248,91 @@ export namespace evohime {
                     /** Handshake capabilities */
                     capabilities?: (string[]|null);
 
+                    /** Handshake clientRole */
+                    clientRole?: (string|null);
+
+                    /** Handshake nonce */
+                    nonce?: (string|null);
+
+                    /** Handshake proof */
+                    proof?: (string|null);
+
                     /** Unknown fields preserved while decoding when enabled */
                     $unknowns?: Uint8Array[];
                 }
 
                 /** Shape of a Handshake. */
                 type $Shape = evohime.desktop.v1.Handshake.$Properties;
+            }
+
+            /**
+             * Properties of an AuthChallenge.
+             * @deprecated Use evohime.desktop.v1.AuthChallenge.$Properties instead.
+             */
+            interface IAuthChallenge extends evohime.desktop.v1.AuthChallenge.$Properties {
+            }
+
+            /** Represents an AuthChallenge. */
+            class AuthChallenge {
+
+                /**
+                 * Constructs a new AuthChallenge.
+                 * @param [properties] Properties to set
+                 */
+                constructor(properties?: evohime.desktop.v1.AuthChallenge.$Properties);
+
+                /** Unknown fields preserved while decoding when enabled */
+                $unknowns?: Uint8Array[];
+
+                /** AuthChallenge nonce. */
+                nonce: string;
+
+                /** AuthChallenge expiresAtMs. */
+                expiresAtMs: number;
+
+                /**
+                 * Encodes the specified AuthChallenge message. Does not implicitly {@link evohime.desktop.v1.AuthChallenge.verify|verify} messages.
+                 * @param message AuthChallenge message or plain object to encode
+                 * @param [writer] Writer to encode to
+                 * @returns Writer
+                 */
+                static encode(message: evohime.desktop.v1.AuthChallenge.$Properties, writer?: $protobuf.Writer): $protobuf.Writer;
+
+                /**
+                 * Decodes an AuthChallenge message from the specified reader or buffer.
+                 * @param reader Reader or buffer to decode from
+                 * @param [length] Message length if known beforehand
+                 * @returns {evohime.desktop.v1.AuthChallenge & evohime.desktop.v1.AuthChallenge.$Shape} AuthChallenge
+                 * @throws {Error} If the payload is not a reader or valid buffer
+                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                 */
+                static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): evohime.desktop.v1.AuthChallenge & evohime.desktop.v1.AuthChallenge.$Shape;
+
+                /**
+                 * Gets the type url for AuthChallenge
+                 * @param [prefix] Custom type url prefix, defaults to `"type.googleapis.com"`
+                 * @returns The type url
+                 */
+                static getTypeUrl(prefix?: string): string;
+            }
+
+            namespace AuthChallenge {
+
+                /** Properties of an AuthChallenge. */
+                interface $Properties {
+
+                    /** AuthChallenge nonce */
+                    nonce?: (string|null);
+
+                    /** AuthChallenge expiresAtMs */
+                    expiresAtMs?: (number|null);
+
+                    /** Unknown fields preserved while decoding when enabled */
+                    $unknowns?: Uint8Array[];
+                }
+
+                /** Shape of an AuthChallenge. */
+                type $Shape = evohime.desktop.v1.AuthChallenge.$Properties;
             }
 
             /**
@@ -5204,8 +5292,11 @@ export namespace evohime {
                 /** EventEnvelope fullSnapshot. */
                 fullSnapshot?: (evohime.desktop.v1.FullSnapshot.$Properties|null);
 
+                /** EventEnvelope authChallenge. */
+                authChallenge?: (evohime.desktop.v1.AuthChallenge.$Properties|null);
+
                 /** EventEnvelope event. */
-                event?: ("ready"|"replayGap"|"fullSnapshot");
+                event?: ("ready"|"replayGap"|"fullSnapshot"|"authChallenge");
 
                 /**
                  * Encodes the specified EventEnvelope message. Does not implicitly {@link evohime.desktop.v1.EventEnvelope.verify|verify} messages.
@@ -5268,8 +5359,11 @@ export namespace evohime {
                     /** EventEnvelope fullSnapshot */
                     fullSnapshot?: (evohime.desktop.v1.FullSnapshot.$Properties|null);
 
+                    /** EventEnvelope authChallenge */
+                    authChallenge?: (evohime.desktop.v1.AuthChallenge.$Properties|null);
+
                     /** EventEnvelope event */
-                    event?: ("ready"|"replayGap"|"fullSnapshot");
+                    event?: ("ready"|"replayGap"|"fullSnapshot"|"authChallenge");
 
                     /** Unknown fields preserved while decoding when enabled */
                     $unknowns?: Uint8Array[];
@@ -5287,9 +5381,10 @@ export namespace evohime {
                   ready?: evohime.desktop.v1.Ready.$Shape|null;
                   replayGap?: evohime.desktop.v1.ReplayGap.$Shape|null;
                   fullSnapshot?: evohime.desktop.v1.FullSnapshot.$Shape|null;
+                  authChallenge?: evohime.desktop.v1.AuthChallenge.$Shape|null;
                   $unknowns?: Uint8Array[];
                 } & (
-                  ({ event?: undefined; ready?: null; replayGap?: null; fullSnapshot?: null }|{ event?: "ready"; ready: evohime.desktop.v1.Ready.$Shape; replayGap?: null; fullSnapshot?: null }|{ event?: "replayGap"; ready?: null; replayGap: evohime.desktop.v1.ReplayGap.$Shape; fullSnapshot?: null }|{ event?: "fullSnapshot"; ready?: null; replayGap?: null; fullSnapshot: evohime.desktop.v1.FullSnapshot.$Shape })
+                  ({ event?: undefined; ready?: null; replayGap?: null; fullSnapshot?: null; authChallenge?: null }|{ event?: "ready"; ready: evohime.desktop.v1.Ready.$Shape; replayGap?: null; fullSnapshot?: null; authChallenge?: null }|{ event?: "replayGap"; ready?: null; replayGap: evohime.desktop.v1.ReplayGap.$Shape; fullSnapshot?: null; authChallenge?: null }|{ event?: "fullSnapshot"; ready?: null; replayGap?: null; fullSnapshot: evohime.desktop.v1.FullSnapshot.$Shape; authChallenge?: null }|{ event?: "authChallenge"; ready?: null; replayGap?: null; fullSnapshot?: null; authChallenge: evohime.desktop.v1.AuthChallenge.$Shape })
                 );
             }
 
