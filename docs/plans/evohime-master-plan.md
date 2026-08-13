@@ -992,7 +992,7 @@ approval: none
 - [x] Bounded Memory v1 domain contract со scoped retrieval, lexical search, TTL, privacy labels, provenance и forget/archive.
 - [x] Bounded memory persistence contract со scoped search, provenance, TTL, redaction, archive/forget и параметризованным SQL.
 - [x] Bounded Memory API contract с CRUD/search/provenance, scoped retrieval, TTL/privacy, deterministic export и approval gates для archive/forget/delete.
-- [ ] Storage/migration wiring (пересекается с волной VI — см. раздел 14).
+- [x] Storage/migration wiring (пересекается с волной VI — см. раздел 14).
 - [ ] Extraction фактов и решений после run только по policy; пользователь подтверждает важные записи.
 - [ ] Memory UX: create, list, search, update, archive, forget, provenance inspection; export/delete требуют approval и audit.
 
