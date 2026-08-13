@@ -3682,6 +3682,7 @@ impl TaskCoordinator {
                         .map_err(|error| error.to_string())?;
                     let snapshot = match crate::build::apply_approved_build(
                         &project.workspace_path,
+                        &run_id,
                         &approved,
                     ) {
                         Ok(snapshot) => snapshot,

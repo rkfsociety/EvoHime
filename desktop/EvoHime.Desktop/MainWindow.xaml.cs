@@ -1870,12 +1870,17 @@ public partial class MainWindow : Window
                     ? string.Join("\n", diffValue.EnumerateArray().Select(item =>
                         $"{item.GetProperty("operation").GetString()}: {item.GetProperty("relative_path").GetString()}"))
                     : "diff отсутствует";
+                var rollbackScope = snapshot.TryGetProperty("rollback_scope", out var scopeValue)
+                    ? scopeValue.GetString()
+                    : "workspace_files_only";
                 var dialog = new ContentDialog
                 {
                     Title = "Подтвердить rollback snapshot",
                     Content = new TextBlock
                     {
-                        Text = $"Snapshot: {snapshotId}\nRun: {snapshotRoot.GetProperty("run_id").GetString()}\nWorkspace hash: {snapshotRoot.GetProperty("workspace_hash").GetString()}\n\nИзменения будут восстановлены только для файлов snapshot.\n{diff}",
+                        Text = $"Snapshot: {snapshotId}\nRun: {snapshotRoot.GetProperty("run_id").GetString()}\nWorkspace hash: {snapshotRoot.GetProperty("workspace_hash").GetString()}\n\n" +
+                               $"ГРАНИЦА ROLLBACK: {rollbackScope}\nВосстанавливаются ТОЛЬКО файлы workspace из snapshot. " +
+                               $"SQLite/durable состояние НЕ откатывается. Внешние эффекты (сеть, процессы) НЕ отменяются.\n\n{diff}",
                         TextWrapping = TextWrapping.Wrap,
                     },
                     PrimaryButtonText = "Одобрить rollback",
@@ -2045,7 +2050,20 @@ public partial class MainWindow : Window
             var effectivePermissionsHash = approved.RootElement.GetProperty("effective_permissions_hash").GetString();
             var baseline = approved.RootElement.GetProperty("expected_workspace_hash").GetString();
             var changes = approved.RootElement.GetProperty("changes");
-            var change = changes.GetArrayLength() == 0 ? "нет изменений" : changes[0].GetProperty("relative_path").GetString();
+            var changedFiles = changes.GetArrayLength() == 0
+                ? "нет изменений"
+                : string.Join(", ", changes.EnumerateArray().Select(item => item.GetProperty("relative_path").GetString()));
+            var diffSummary = "нет diff";
+            if (approved.RootElement.TryGetProperty("preview_diff", out var previewDiff) && previewDiff.GetArrayLength() > 0)
+            {
+                diffSummary = string.Join("\n", previewDiff.EnumerateArray().Select(item =>
+                {
+                    var path = item.GetProperty("relative_path").GetString();
+                    var operation = item.GetProperty("operation").GetString();
+                    var bytes = item.GetProperty("bytes_changed").GetInt64();
+                    return $"  {operation}: {path} ({bytes} bytes)";
+                }));
+            }
             var scope = approved.RootElement.GetProperty("scope");
             var allowedPaths = string.Join(", ", scope.GetProperty("allowed_paths").EnumerateArray().Select(item => item.GetString()));
             var allowedOperations = string.Join(", ", scope.GetProperty("allowed_operations").EnumerateArray().Select(item => item.GetString()));
@@ -2064,7 +2082,7 @@ public partial class MainWindow : Window
                 Title = "Подтвердить bounded Build",
                 Content = new TextBlock
                 {
-                    Text = $"Файл: {change}\nОперации: {allowedOperations}\nОжидаемый output: {expectedOutputs}\nAllowed paths: {allowedPaths}\nТипы файлов: {allowedTypes}\nЛимит файлов: {maxFiles}\nЛимит байт: {maxBytes}\nСоздание: {(allowCreate ? "разрешено" : "запрещено")} · удаление: {(allowDelete ? "разрешено" : "запрещено")} · rename: {(allowRename ? "разрешено" : "запрещено")}\nRisk: {riskClass} · timeout: {timeoutMs} ms\nAcceptance criteria: {acceptanceCriteria}\nBaseline: {baseline}\nEffective permissions hash: {effectivePermissionsHash}\nIntent hash: {intentHash}\n\nЗапись ещё не выполнялась.",
+                    Text = $"Файлы: {changedFiles}\nDiff:\n{diffSummary}\nОперации: {allowedOperations}\nОжидаемый output: {expectedOutputs}\nAllowed paths: {allowedPaths}\nТипы файлов: {allowedTypes}\nЛимит файлов: {maxFiles}\nЛимит байт: {maxBytes}\nСоздание: {(allowCreate ? "разрешено" : "запрещено")} · удаление: {(allowDelete ? "разрешено" : "запрещено")} · rename: {(allowRename ? "разрешено" : "запрещено")}\nRisk: {riskClass} · timeout: {timeoutMs} ms\nAcceptance criteria: {acceptanceCriteria}\nBaseline: {baseline}\nEffective permissions hash: {effectivePermissionsHash}\nIntent hash: {intentHash}\n\nЗапись ещё не выполнялась. Rollback после apply восстановит только файлы workspace — не SQLite и не внешние эффекты.",
                     TextWrapping = TextWrapping.Wrap,
                 },
                 PrimaryButtonText = "Одобрить и применить",
@@ -2092,7 +2110,7 @@ public partial class MainWindow : Window
             {
                 _ipcRequestGate.Release();
             }
-            _taskWorkspaceStatus.Text = $"Build применён с approval intent {intentHash}. Run-linked snapshot сохранён Core.";
+            _taskWorkspaceStatus.Text = $"Build применён с approval intent {intentHash}. Run-linked snapshot сохранён Core. Rollback scope: только файлы workspace (не SQLite, не внешние эффекты).";
         }
         catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
         {
