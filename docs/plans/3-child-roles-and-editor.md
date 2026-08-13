@@ -1,6 +1,6 @@
 # Подплан 3 — child roles и native workflow editor
 
-Статус: средняя сложность
+Статус: высокая сложность; два связанных трека реализации
 Порядок: 3 из 5
 Источник: бывший единый мастер-план; актуальная детализация находится в этом подплане.
 
@@ -45,6 +45,17 @@ read-only выполнению и сделать его наблюдаемым �
 
 ## Объём
 
+Работа разделяется на два трека с независимыми gate-ами:
+
+- **Track A — Core child runtime/security/acceptance:** policy preflight,
+  dispatcher, sandbox boundary, adapters, lifecycle, report gate, provenance,
+  durable events и replay. Этот трек обязателен и должен быть завершён до
+  запуска production child.
+- **Track B — WinUI catalog/editor/inspector:** Core-driven catalog, minimal
+  policy-safe descriptor form, approval surface, timeline, evidence и error
+  states. UI не расширяет Track A и может быть смонтирован на MockChildAdapter
+  до подключения реальных adapters.
+
 - Core dispatcher только для текущего `ChildTaskKind` allow-list и только из
   non-child parent context;
 - выдача урезанного context и глобально уникального UUIDv4 `child_task_id` из Core, без передачи
@@ -71,12 +82,22 @@ read-only выполнению и сделать его наблюдаемым �
 - filesystem boundary нормализует absolute path, запрещает traversal и
   symlink/reparse-point escape, и проверяет принадлежность итогового пути
   разрешённому workspace root перед каждой операцией;
+- policy preflight до запуска проверяет non-empty allow-list workspace roots и
+  normalized path scopes. Logical-child MVP не создаёт OS mounts; adapter
+  получает read-only path capability object, а любая запись/rename/delete,
+  traversal, symlink/reparse escape или path вне allow-list отклоняется.
+  Environment/credential access запрещён: child не получает process environment,
+  Credential Manager/DPAPI handles, inherited secrets или provider tokens;
+  context и adapter output проходят secret/PII redaction до journal/logging;
 - reduced context строится Core из явного scope descriptor: для
   `code_search` — только найденные совпадения и запрошенные диапазоны строк,
   для `workspace.read` — только перечисленные normalized paths/ranges, для
   `git.diff/status` — только выбранный diff/status scope. Полный prompt,
   соседние файлы, secrets и неуказанные project data не передаются; secret
   redaction выполняется до сериализации context.
+- Core сохраняет только redacted context manifest: scope descriptor hash,
+  перечисленные path/range ids, item count/bytes, redaction count, policy
+  snapshot id и timestamp. Полный context и secrets в audit не пишутся.
 - network policy MVP — `deny all`: у текущего child runtime нет network
   capability. Read-only HTTP, если он понадобится позже, вводится отдельным
   capability/profile с host/port/redirect/private-range/credential policy и
@@ -130,10 +151,17 @@ payload. Lifecycle contract описан ниже; UI не является ег
 ослабить их после запуска. Это стартовые defaults, а не обещание навсегда:
 
 - timeout: 5 минут на child; hard maximum — 15 минут;
+- max wall-clock parent budget: 15 минут на child и 30 минут на parent child
+  batch; child не может продлить budget через report или новый descriptor;
 - `max_output_bytes`: default 16 KiB, hard maximum текущего контракта — 32 KiB;
 - reduced context: hard maximum текущего контракта — 16 KiB;
 - tool budget: максимум 32 read-only tool calls на child; каждая операция
   дополнительно ограничивается своим filesystem/search/git лимитом;
+- max concurrent children: 2 на parent и 4 на Core process; max automatic
+  retries: 0 для того же request/report и не более 1 нового child retry по
+  explicit parent/human decision. Если OS-level memory/CPU quotas недоступны
+  для logical-child MVP, Core обязан ограничивать concurrency/output/time и
+  фиксировать это как non-guarantee, а не выдавать ложный resource isolation;
 - composite budget считается по wall-clock, числу tool calls и output bytes;
   превышение любого компонента немедленно переводит child в terminal
   `budget_exceeded`. Model-token budget учитывается только если provider
@@ -236,10 +264,19 @@ envelope дополняет их полями `schema_version`, разрешён
 - все collection/item/serialized size limits, включая отдельные bounds для
   findings, sources и limitations;
 - `confidence_percent` строго в `0..100`;
+- `confidence_percent < 70` помечает report как `needs_review` и запрещает
+  автоматическое evidence acceptance; это metadata threshold, не security
+  proof. Значение `0` допустимо как metadata, но не может пройти automatic
+  acceptance;
 - непустой summary, уникальные bounded sources, допустимый source format и
   provenance, который указывает на реально прочитанные Core операции;
 - отсутствие secret-like content, mutation result или неразрешённого
   capability claim;
+- prompt-injection markers и instructions внутри summary/findings/sources не
+  исполняются и не меняют policy. Они сохраняются только как untrusted report
+  text; явные попытки выдать себя за system/parent instruction, попросить
+  secrets, расширить capabilities или обойти gate дают `rejected` с reason
+  `untrusted_report_instruction`;
 - `output_bytes` в пределах фактического output budget и корректный порядок
   `started_at <= finished_at`.
 
@@ -259,6 +296,11 @@ Parent rejection переводит child в immutable `rejected` и не мен
 task автоматически. Parent может запросить ручную проверку, создать новый
 child с новым UUID и изменённым descriptor либо завершить ветку как
 `blocked`. Автоматический retry того же request/report запрещён.
+Invalid schema/source/provenance отправляется в quarantine (не в evidence),
+пишется redacted rejection reason и требует нового report или human review.
+Low confidence остаётся валидным `needs_review` report, но не принимается
+автоматически; parent может принять его только отдельной explicit decision с
+audit reason.
 
 ## Replay и reconnect
 
@@ -268,6 +310,13 @@ timestamp и bounded redacted payload. При reconnect UI передаёт по
 полученный Core `sequence_id`; Core возвращает snapshot child lifecycle и
 последующий journal replay. Snapshot закрывает старую историю, а replay
 достраивает её после snapshot sequence.
+
+События принимаются только из authenticated current-user named pipe session
+Core; UI не может публиковать child events обратно в journal. Core проверяет
+parent/child ids против durable request, schema version, sequence ownership,
+event type, payload bounds и policy snapshot. Malformed, forged, unknown-kind,
+wrong-parent или out-of-order event отклоняется и получает redacted audit
+reason; он не попадает в timeline/evidence.
 
 Transport может доставить event повторно. Consumer обязан быть idempotent по
 `event_id` (и проверять child sequence); exactly-once delivery не обещается.
@@ -312,6 +361,11 @@ Catalog здесь ограничен read-only справочником kinds/c
   role, context bounds, duplicate ids, dependencies и policy compatibility.
   Arbitrary dependency graph и reorder semantics переносятся в task graph
   contract подплана 4.
+- Workflow валидируется дважды: при сохранении draft и непосредственно перед
+  execution. Обе проверки выполняются Core, а не только WinUI: закрытый kind,
+  role, capabilities, path scope, budgets, report requirements и approval
+  mode сверяются с policy snapshot. Невалидный workflow не сохраняется как
+  runnable и не получает command id.
 - Workflow configuration и runtime state — разные модели и persistence:
   configuration содержит descriptors и пользовательский порядок, runtime
   state содержит Core-owned lifecycle/events/reports. Конфигурация UI/IPC не
@@ -338,6 +392,13 @@ Catalog здесь ограничен read-only справочником kinds/c
   child terminal states: UI показывает, какой advisory child отсутствует и
   какое действие доступно. `waiting human approval` и
   `waiting_parent_acceptance` показываются раздельно.
+- Human approval card показывает parent/child ids, kind/role, reduced-context
+  manifest, read-only capabilities, path scope, budget/timeout, expected
+  output, risk/reason и действия `approve`/`reject`. Решение, actor, timestamp
+  и reason сохраняются в audit; reject переводит parent overlay в blocked и
+  child остаётся queued либо получает cancelled по Core policy. Evidence
+  доступно отдельной read-only панелью до и после acceptance, с явной
+  маркировкой `untrusted`, `needs_review`, `accepted` или `rejected`.
 
 ## Наблюдаемость и диагностика
 
@@ -374,6 +435,10 @@ payload в metrics не попадают.
    oversized-output, rejected-report и crash сценариями для UI/timeline tests;
    Mock adapter не получает production capabilities и не используется как
    security proof.
+8. Провести отдельный security/contract suite: report schema, invalid
+   evidence/source, prompt-injection report, malformed/forged IPC event,
+   duplicate/gap replay, path traversal, symlink/reparse escape, environment
+   secret access, mutation/shell/install/commit/network/nested-child attempts.
 
 ## Критерии готовности
 
@@ -402,6 +467,15 @@ payload в metrics не попадают.
 - child crash даёт `failed` с machine-readable reason, внутренний gate failure
   даёт `blocked` с redacted detail, а sandbox negative tests подтверждают
   denial для write/shell/nested child/network mutation/traversal/symlink escape;
+- 100% negative attempts в security suite получают denial/terminal bounded
+  result; oversized output никогда не публикуется как evidence;
+- каждый published child event содержит parent_task_id, child_task_id, kind,
+  timestamp, event_id, sequence и policy/budget provenance;
+- reconnect suite показывает 0 duplicate timeline events по event_id при
+  повторной at-least-once доставке и корректно обрабатывает checkpoint gap;
+- acceptance suite принимает только schema-valid report с разрешёнными
+  sources и matching request/provenance, а invalid/low-confidence/injection
+  report остаётся в quarantine или `needs_review`;
 - focused Rust tests, IPC compatibility tests, WinUI smoke и `git diff --check`
   проходят; generated artifacts очищены.
 
@@ -415,6 +489,11 @@ payload в metrics не попадают.
   mutation capability, shell/process spawn, network capability и path escape.
   Unit-тесты контрактов недостаточны; требуются end-to-end negative IPC tests,
   доказывающие отказ на реальном Core command path без участия UI.
+- Execution gate закрыт, пока не утверждён Core child runtime policy snapshot
+  со всеми полями: разрешённые `ChildTaskKind`, capabilities и path scopes,
+  forbidden actions, concurrency/retry/wall-clock/output/tool budgets,
+  timeout/cancellation rules, report/event schemas и evidence requirements.
+  Документация без enforceable code/tests не считается завершённой policy.
 - task lifecycle, event journal, cancellation, replay/reconnect и bounded
   checkpoint/recovery foundation уже существуют в Core, однако child-specific
   lifecycle/events/lease integration ещё нужно добавить;
