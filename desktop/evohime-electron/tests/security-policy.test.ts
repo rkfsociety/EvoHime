@@ -79,6 +79,15 @@ describe('launch contract', () => {
     expect(context.developerLaunch).toBe(false)
   })
 
+  it('takes the supervisor owner pid from the protected launch context', () => {
+    const context = readLaunchContext(
+      { EVOHIME_LAUNCH_CONTEXT: 'C:\\ctx\\session.json' },
+      () => 'fixed-id',
+      () => JSON.stringify({ pipe_name: PIPE, secret: SECRET, supervisor_pid: 4242 })
+    )
+    expect(context.supervisorPid).toBe(4242)
+  })
+
   it('ignores a launch context with a remote pipe or a malformed secret', () => {
     const remotePipe = readLaunchContext(
       {},

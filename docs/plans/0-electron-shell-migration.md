@@ -71,9 +71,10 @@ startup/IPC/package budgets и soak/low-memory проверки.
 
 ## Остаток реализации
 
-1. Завершить supervisor liveness contract: записывать liveness identity в
-   launch context и отслеживать owner loss в Electron main; heartbeat остаётся
-   только дополнительным health signal.
+1. Довести supervisor liveness contract до OS-owned handle/event; текущая
+   реализация уже записывает supervisor PID в защищённый launch context и
+   отслеживает owner loss в Electron main, heartbeat остаётся дополнительным
+   health signal.
 2. Добавить локальный package/lifecycle smoke без зависимости от WinUI и
    проверить, что release version действительно попадает в Electron package.
 3. Расширить fault/acceptance scripts сценариями read-only и locked workspace,

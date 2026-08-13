@@ -230,7 +230,8 @@ impl SupervisorSession {
         let runtime_dir = core_data_dir().join("runtime");
         create_protected_directory(&runtime_dir, &user_sid)?;
 
-        let context = LaunchContext::generate(user_sid, logon_session, now_ms())?;
+        let mut context = LaunchContext::generate(user_sid, logon_session, now_ms())?;
+        context.supervisor_pid = std::process::id();
         let context_path = runtime_dir.join("session.json");
         write_launch_context(&context_path, &context)?;
         Ok(Self { context_path })

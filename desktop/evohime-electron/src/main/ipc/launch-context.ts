@@ -30,6 +30,7 @@ export interface LaunchContext {
   readonly secret: string
   /** Name of the OS liveness event owned by the supervisor, when provided. */
   readonly livenessEvent: string
+  readonly supervisorPid?: number
   /** True when no supervisor-provided context was found. */
   readonly developerLaunch: boolean
 }
@@ -74,7 +75,13 @@ export function readLaunchContext(
 
   const file = parseContextFile(readSafely(readFile, launchContextPath(environment)))
   if (file) {
-    return { ...identity, pipeName: file.pipeName, secret: file.secret, developerLaunch: false }
+    const context = {
+      ...identity,
+      pipeName: file.pipeName,
+      secret: file.secret,
+      developerLaunch: false
+    }
+    return file.supervisorPid === undefined ? context : { ...context, supervisorPid: file.supervisorPid }
   }
 
   return {
@@ -100,7 +107,7 @@ export function normalizePipeName(value: string): string | null {
   return `\\\\.\\pipe\\${name}`
 }
 
-function parseContextFile(raw: string | null): { pipeName: string; secret: string } | null {
+function parseContextFile(raw: string | null): { pipeName: string; secret: string; supervisorPid?: number } | null {
   if (raw === null) {
     return null
   }
@@ -118,10 +125,13 @@ function parseContextFile(raw: string | null): { pipeName: string; secret: strin
     typeof record['pipe_name'] === 'string' ? record['pipe_name'] : ''
   )
   const secret = typeof record['secret'] === 'string' ? record['secret'] : ''
+  const supervisorPid = typeof record['supervisor_pid'] === 'number' && Number.isInteger(record['supervisor_pid']) && record['supervisor_pid'] > 0
+    ? record['supervisor_pid']
+    : undefined
   if (pipeName === null || !/^[0-9a-f]+$/.test(secret) || secret.length !== SECRET_HEX_LENGTH) {
     return null
   }
-  return { pipeName, secret }
+  return supervisorPid === undefined ? { pipeName, secret } : { pipeName, secret, supervisorPid }
 }
 
 function readSafely(readFile: (path: string) => string, path: string): string | null {

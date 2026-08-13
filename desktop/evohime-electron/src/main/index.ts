@@ -34,6 +34,7 @@ let mainWindow: BrowserWindow | null = null
 let tray: TrayController | null = null
 let client: CorePipeClient | null = null
 let supervisorProcess: ChildProcess | null = null
+let supervisorLivenessTimer: NodeJS.Timeout | null = null
 let recoveryMode = false
 
 const rendererOrigin = isProduction()
@@ -61,6 +62,7 @@ if (!app.requestSingleInstanceLock()) {
 
     const launch = await ensureSupervisorSession()
     client = new CorePipeClient({ launch, refreshLaunch: () => readLaunchContext(), log })
+    supervisorLivenessTimer = monitorSupervisorLiveness()
 
     client.on('state', (state: ShellState) => broadcast({ kind: 'state', state }))
     client.on('core-event', (event) => {
@@ -97,6 +99,10 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('before-quit', () => {
     client?.stop()
+    if (supervisorLivenessTimer) {
+      clearInterval(supervisorLivenessTimer)
+      supervisorLivenessTimer = null
+    }
     if (supervisorProcess && !supervisorProcess.killed) {
       supervisorProcess.kill()
       supervisorProcess = null
@@ -191,4 +197,21 @@ function handleRendererFailure(reason: string): void {
   // recovery surface so diagnostics can still be exported.
   recoveryMode = true
   log('error', 'shell.recovery_mode', { failures: reloadLimiter.recentFailures })
+}
+
+function monitorSupervisorLiveness(): NodeJS.Timeout {
+  const timer = setInterval(() => {
+    const launch = readLaunchContext()
+    const pid = launch.supervisorPid
+    if (launch.developerLaunch || !pid) return
+    try {
+      process.kill(pid, 0)
+    } catch {
+      log('error', 'shell.supervisor_owner_lost', { pid })
+      client?.stop()
+      clearInterval(timer)
+    }
+  }, 1_000)
+  timer.unref()
+  return timer
 }

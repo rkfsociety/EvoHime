@@ -179,6 +179,8 @@ pub struct LaunchContext {
     pub expected_logon_session: String,
     #[serde(default)]
     pub issued_at_ms: u64,
+    #[serde(default)]
+    pub supervisor_pid: u32,
 }
 
 impl LaunchContext {
@@ -193,6 +195,7 @@ impl LaunchContext {
             expected_user_sid,
             expected_logon_session,
             issued_at_ms,
+            supervisor_pid: 0,
         })
     }
 
@@ -400,6 +403,7 @@ mod tests {
             expected_user_sid: "S-1-5-21-1-2-3-1001".into(),
             expected_logon_session: "0:123456".into(),
             issued_at_ms: 1_000,
+            supervisor_pid: 0,
         }
     }
 
