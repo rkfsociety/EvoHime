@@ -15,14 +15,11 @@
 ## Справочные разделы
 
 - [`features/`](features/) — отдельные контракты и описания функций агента:
-  - [`confidence-ask-gate.md`](features/confidence-ask-gate.md) — порог уверенности и уточняющие вопросы;
   - [`extended-reasoning.md`](features/extended-reasoning.md) — extended reasoning в Core и model gateway;
-  - [`plugin-management.md`](features/plugin-management.md) — установка и trust/risk плагинов;
   - [`reflection.md`](features/reflection.md) — reflection loop после tool-вызовов;
   - [`task-dependency-graphs.md`](features/task-dependency-graphs.md) — графы зависимостей задач;
 - [`providers/`](providers/) — провайдеры моделей и их настройка;
 - [`security/`](security/) — расширенная модель угроз;
-- [`sample-context.md`](sample-context.md) — фикстура для демонстрации `filesystem.read`, не документация.
 
 Планы и их ревью находятся в [`plans/`](plans/). Файлы `1-`…`5-` содержат незавершённые исполняемые работы и должны учитывать уже принятую Electron UI. Это рабочая зона: не трактуйте её документы как замену фактическому состоянию.
 
