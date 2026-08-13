@@ -59,6 +59,13 @@ message ModelCatalogRequest {
   string mode = 1;
 }
 
+// Selects the model used for the next request. The gateway resolves the model
+// per call, so this takes effect without restarting Core. An empty value
+// returns to the model the route is configured with.
+message SelectModelRequest {
+  string model = 1;
+}
+
 message PermissionModeRequest {
   string mode = 1;
 }
@@ -579,6 +586,7 @@ message CommandEnvelope {
     CreateDatabaseBackup create_database_backup = 63;
     PrepareDatabaseRestore prepare_database_restore = 64;
     RestoreDatabase restore_database = 65;
+    SelectModelRequest select_model = 66;
   }
 }
 

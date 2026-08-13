@@ -1,16 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { PROVIDER_KINDS, type ProviderKind, type ProviderSummary } from '@shared/api'
+import {
+  PROVIDER_KINDS,
+  type ModelTier,
+  type ProviderKind,
+  type ProviderSummary
+} from '@shared/api'
 
 import { useShellApi } from './shell-api'
 
 /**
  * Credentials surface.
  *
- * The key is write-only from here: it goes straight to the main process, which
- * encrypts it with the OS key store and hands it to Core through the
- * supervisor's environment. Nothing ever reads it back into the renderer — the
- * form only learns whether one is stored.
+ * Everyday use needs two decisions: paste a key and pick free or paid models.
+ * Provider and endpoint stay behind a disclosure so the common path is not
+ * buried under them. The key itself is write-only from here: it goes to the
+ * main process, which encrypts it with the OS key store and hands it to Core.
  */
 
 const PROVIDER_LABELS: Record<ProviderKind, string> = {
@@ -19,11 +24,10 @@ const PROVIDER_LABELS: Record<ProviderKind, string> = {
   mock: 'Заглушка (без сети)'
 }
 
-const KEY_PLACEHOLDERS: Record<ProviderKind, string> = {
-  literouter: 'sk-…',
-  openai_compatible: 'sk-…',
-  mock: 'ключ не нужен'
-}
+const TIERS: readonly { readonly id: ModelTier; readonly label: string; readonly hint: string }[] = [
+  { id: 'free', label: 'Бесплатные', hint: 'модели с суффиксом :free' },
+  { id: 'paid', label: 'Платные', hint: 'списываются с баланса провайдера' }
+]
 
 type Status =
   | { readonly kind: 'idle' }
@@ -36,7 +40,7 @@ export function ProviderForm(): React.JSX.Element {
   const [summary, setSummary] = useState<ProviderSummary | null>(null)
   const [provider, setProvider] = useState<ProviderKind>('literouter')
   const [apiKey, setApiKey] = useState('')
-  const [model, setModel] = useState('')
+  const [tier, setTier] = useState<ModelTier>('free')
   const [baseUrl, setBaseUrl] = useState('')
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
 
@@ -44,7 +48,7 @@ export function ProviderForm(): React.JSX.Element {
   const apply = useCallback((value: ProviderSummary) => {
     setSummary(value)
     setProvider(PROVIDER_KINDS.includes(value.provider) ? value.provider : 'literouter')
-    setModel(value.model ?? '')
+    setTier(value.tier === 'paid' ? 'paid' : 'free')
     setBaseUrl(value.baseUrl ?? '')
   }, [])
 
@@ -58,7 +62,14 @@ export function ProviderForm(): React.JSX.Element {
   const save = useCallback(async () => {
     if (!api) return
     setStatus({ kind: 'saving' })
-    const outcome = await api.invoke('provider.save', { provider, apiKey, model, baseUrl })
+    const outcome = await api.invoke('provider.save', {
+      provider,
+      apiKey,
+      // The model is chosen per task in the composer, so it is not edited here.
+      model: summary?.model ?? '',
+      baseUrl,
+      tier
+    })
     if (!outcome.ok) {
       setStatus({ kind: 'failed', message: outcome.message })
       return
@@ -66,7 +77,7 @@ export function ProviderForm(): React.JSX.Element {
     apply(outcome.value.summary)
     setApiKey('')
     setStatus({ kind: 'saved', restarted: outcome.value.restarted })
-  }, [api, apiKey, apply, baseUrl, model, provider])
+  }, [api, apiKey, apply, baseUrl, provider, summary?.model, tier])
 
   const clearKey = useCallback(async () => {
     if (!api) return
@@ -89,10 +100,9 @@ export function ProviderForm(): React.JSX.Element {
     <section className="shell__panel provider-form" aria-label="Ключ провайдера">
       <div className="settings-panel__heading">
         <div>
-          <h2>Ключ провайдера</h2>
+          <h2>Доступ к моделям</h2>
           <p className="shell__empty">
-            Ключ шифруется средствами Windows и хранится локально. Оболочка его не показывает и не
-            передаёт никуда, кроме выбранного провайдера.
+            Ключ шифруется средствами Windows и хранится локально. Модель выбирается в чате.
           </p>
         </div>
         <span
@@ -102,61 +112,37 @@ export function ProviderForm(): React.JSX.Element {
         </span>
       </div>
 
-      <div className="provider-form__grid">
-        <label htmlFor="provider-kind">
-          Провайдер
-          <select
-            id="provider-kind"
-            value={provider}
-            onChange={(event) => setProvider(event.target.value as ProviderKind)}
-            disabled={busy}
-          >
-            {PROVIDER_KINDS.map((kind) => (
-              <option key={kind} value={kind}>{PROVIDER_LABELS[kind]}</option>
-            ))}
-          </select>
-        </label>
+      <label className="provider-form__key" htmlFor="provider-key">
+        Ключ API
+        <input
+          id="provider-key"
+          type="password"
+          value={apiKey}
+          autoComplete="off"
+          spellCheck={false}
+          onChange={(event) => setApiKey(event.target.value)}
+          placeholder={summary?.configured ? 'сохранён — введи новый, чтобы заменить' : 'sk-…'}
+          disabled={busy || !needsKey}
+        />
+      </label>
 
-        <label htmlFor="provider-key">
-          Ключ API
-          <input
-            id="provider-key"
-            type="password"
-            value={apiKey}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => setApiKey(event.target.value)}
-            placeholder={summary?.configured ? 'сохранён — введи новый, чтобы заменить' : KEY_PLACEHOLDERS[provider]}
-            disabled={busy || !needsKey}
-          />
-        </label>
-
-        <label htmlFor="provider-model">
-          Модель
-          <input
-            id="provider-model"
-            value={model}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => setModel(event.target.value)}
-            placeholder={provider === 'openai_compatible' ? 'gpt-4o-mini' : 'deepseek:free'}
-            disabled={busy}
-          />
-        </label>
-
-        <label htmlFor="provider-url">
-          Адрес API
-          <input
-            id="provider-url"
-            value={baseUrl}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => setBaseUrl(event.target.value)}
-            placeholder="по умолчанию провайдера"
-            disabled={busy}
-          />
-        </label>
-      </div>
+      <fieldset className="provider-form__tier">
+        <legend>Какие модели показывать</legend>
+        {TIERS.map((item) => (
+          <label key={item.id}>
+            <input
+              type="radio"
+              name="model-tier"
+              value={item.id}
+              checked={tier === item.id}
+              onChange={() => setTier(item.id)}
+              disabled={busy}
+            />
+            <span>{item.label}</span>
+            <span className="provider-form__hint">{item.hint}</span>
+          </label>
+        ))}
+      </fieldset>
 
       <div className="provider-form__actions">
         <button type="button" onClick={() => void save()} disabled={!canSave}>
@@ -179,6 +165,38 @@ export function ProviderForm(): React.JSX.Element {
       {status.kind === 'failed' ? (
         <p role="alert" className="shell__reason">{status.message}</p>
       ) : null}
+
+      <details className="provider-form__advanced">
+        <summary>Другой провайдер или адрес</summary>
+        <div className="provider-form__grid">
+          <label htmlFor="provider-kind">
+            Провайдер
+            <select
+              id="provider-kind"
+              value={provider}
+              onChange={(event) => setProvider(event.target.value as ProviderKind)}
+              disabled={busy}
+            >
+              {PROVIDER_KINDS.map((kind) => (
+                <option key={kind} value={kind}>{PROVIDER_LABELS[kind]}</option>
+              ))}
+            </select>
+          </label>
+
+          <label htmlFor="provider-url">
+            Адрес API
+            <input
+              id="provider-url"
+              value={baseUrl}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => setBaseUrl(event.target.value)}
+              placeholder="по умолчанию провайдера"
+              disabled={busy}
+            />
+          </label>
+        </div>
+      </details>
     </section>
   )
 }

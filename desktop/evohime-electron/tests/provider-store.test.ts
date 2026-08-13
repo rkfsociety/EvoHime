@@ -55,13 +55,15 @@ describe('provider store', () => {
       provider: 'literouter',
       apiKey: 'sk-secret-value',
       model: 'deepseek:free',
-      baseUrl: ''
+      baseUrl: '',
+      tier: 'free'
     })
 
     expect(summary).toEqual({
       provider: 'literouter',
       model: 'deepseek:free',
       baseUrl: '',
+      tier: 'free',
       configured: true
     })
     expect(readFileSync(path, 'utf8')).not.toContain('sk-secret-value')
@@ -70,7 +72,7 @@ describe('provider store', () => {
 
   it('exports only the selected provider variables', () => {
     const store = new ProviderStore(storePath(), reversibleCipher())
-    store.save({ provider: 'openai_compatible', apiKey: 'sk-openai', model: 'gpt-4o-mini', baseUrl: '' })
+    store.save({ provider: 'openai_compatible', apiKey: 'sk-openai', model: 'gpt-4o-mini', baseUrl: '', tier: 'paid' })
 
     expect(store.environment()).toEqual({
       MODEL_PROVIDER: 'openai_compatible',
@@ -82,9 +84,9 @@ describe('provider store', () => {
 
   it('keeps the stored key when the update carries an empty one', () => {
     const store = new ProviderStore(storePath(), reversibleCipher())
-    store.save({ provider: 'literouter', apiKey: 'sk-first', model: 'a', baseUrl: '' })
+    store.save({ provider: 'literouter', apiKey: 'sk-first', model: 'a', baseUrl: '', tier: 'free' })
 
-    const summary = store.save({ provider: 'literouter', apiKey: '', model: 'b', baseUrl: '' })
+    const summary = store.save({ provider: 'literouter', apiKey: '', model: 'b', baseUrl: '', tier: 'free' })
 
     expect(summary?.configured).toBe(true)
     expect(store.environment()['LITEROUTER_API_KEY']).toBe('sk-first')
@@ -95,7 +97,9 @@ describe('provider store', () => {
     const path = storePath()
     const store = new ProviderStore(path, reversibleCipher(false))
 
-    expect(store.save({ provider: 'literouter', apiKey: 'sk-plain', model: '', baseUrl: '' })).toBeNull()
+    expect(
+      store.save({ provider: 'literouter', apiKey: 'sk-plain', model: '', baseUrl: '', tier: 'free' })
+    ).toBeNull()
     expect(() => readFileSync(path, 'utf8')).toThrow()
   })
 
@@ -105,7 +109,8 @@ describe('provider store', () => {
       provider: 'literouter',
       apiKey: 'sk-other-user',
       model: '',
-      baseUrl: ''
+      baseUrl: '',
+      tier: 'free'
     })
 
     const foreign = new ProviderStore(path, {
@@ -121,12 +126,13 @@ describe('provider store', () => {
 
   it('forgets the key but keeps the provider choice', () => {
     const store = new ProviderStore(storePath(), reversibleCipher())
-    store.save({ provider: 'openai_compatible', apiKey: 'sk-drop', model: 'm', baseUrl: '' })
+    store.save({ provider: 'openai_compatible', apiKey: 'sk-drop', model: 'm', baseUrl: '', tier: 'paid' })
 
     expect(store.clearKey()).toEqual({
       provider: 'openai_compatible',
       model: 'm',
       baseUrl: '',
+      tier: 'paid',
       configured: false
     })
     expect(store.environment()['OPENAI_API_KEY']).toBeUndefined()

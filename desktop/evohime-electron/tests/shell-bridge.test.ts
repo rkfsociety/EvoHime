@@ -81,6 +81,7 @@ let providerSummary: ProviderSummary = {
   provider: 'literouter',
   model: '',
   baseUrl: '',
+  tier: 'free',
   configured: false
 }
 const providerWrites: ProviderUpdate[] = []
@@ -95,6 +96,7 @@ const providers = {
       provider: update.provider,
       model: update.model,
       baseUrl: update.baseUrl,
+      tier: update.tier,
       configured: update.apiKey.length > 0 || providerSummary.configured
     }
     return providerSummary
@@ -127,7 +129,7 @@ beforeEach(() => {
   clipboardWrites.length = 0
   openedUrls.length = 0
   enqueueResult = 'queued'
-  providerSummary = { provider: 'literouter', model: '', baseUrl: '', configured: false }
+  providerSummary = { provider: 'literouter', model: '', baseUrl: '', tier: 'free', configured: false }
   providerWrites.length = 0
   restarts.length = 0
   registerShellBridge({
@@ -216,7 +218,8 @@ describe('renderer command surface', () => {
       provider: 'literouter',
       apiKey: 'sk-secret-value',
       model: 'deepseek:free',
-      baseUrl: 'https://api.literouter.com/v1'
+      baseUrl: 'https://api.literouter.com/v1',
+      tier: 'paid'
     })) as { ok: true; value: { summary: ProviderSummary; restarted: boolean } }
 
     expect(outcome.value.summary.configured).toBe(true)
@@ -226,7 +229,13 @@ describe('renderer command surface', () => {
     expect(JSON.stringify(sent)).not.toContain('sk-secret-value')
     expect(invoke('provider.get', {})).toEqual({
       ok: true,
-      value: { provider: 'literouter', model: 'deepseek:free', baseUrl: 'https://api.literouter.com/v1', configured: true }
+      value: {
+        provider: 'literouter',
+        model: 'deepseek:free',
+        baseUrl: 'https://api.literouter.com/v1',
+        tier: 'paid',
+        configured: true
+      }
     })
   })
 
@@ -235,13 +244,26 @@ describe('renderer command surface', () => {
       provider: 'literouter',
       apiKey: 'sk-secret-value',
       model: '',
-      baseUrl: 'http://example.com/v1'
+      baseUrl: 'http://example.com/v1',
+      tier: 'free'
     })) as CommandFailure
 
     expect(outcome.ok).toBe(false)
     expect(outcome.code).toBe('invalid-payload')
     expect(providerWrites).toHaveLength(0)
     expect(restarts).toHaveLength(0)
+  })
+
+  it('forwards a bounded model selection to Core', () => {
+    expect(invoke('core.selectModel', { model: 'deepseek:free' })).toEqual({
+      ok: true,
+      value: { accepted: true }
+    })
+    expect(sent).toContainEqual({ selectModel: { model: 'deepseek:free' } })
+
+    const rejected = invoke('core.selectModel', { model: 'two words' }) as CommandFailure
+    expect(rejected.ok).toBe(false)
+    expect(sent).toHaveLength(1)
   })
 
   it('forwards the Core-owned editor build flow as bounded protobuf payloads', () => {

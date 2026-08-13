@@ -22,7 +22,13 @@ function ok<C extends RendererCommand>(value: unknown): CommandOutcome<C> {
 beforeEach(() => {
   calls.length = 0
   saveOutcome = ok({
-    summary: { provider: 'literouter', model: 'deepseek:free', baseUrl: '', configured: true },
+    summary: {
+      provider: 'literouter',
+      model: 'deepseek:free',
+      baseUrl: '',
+      tier: 'free',
+      configured: true
+    },
     restarted: true
   })
   const api: EvoHimeApiV1 = {
@@ -30,7 +36,13 @@ beforeEach(() => {
     invoke: (async (command: RendererCommand, payload: unknown) => {
       calls.push({ command, payload })
       if (command === 'provider.get') {
-        return ok({ provider: 'literouter', model: 'deepseek:free', baseUrl: '', configured: false })
+        return ok({
+          provider: 'literouter',
+          model: 'deepseek:free',
+          baseUrl: '',
+          tier: 'free',
+          configured: false
+        })
       }
       return saveOutcome
     }) as EvoHimeApiV1['invoke'],
@@ -58,8 +70,10 @@ describe('provider form', () => {
     expect(save?.payload).toEqual({
       provider: 'literouter',
       apiKey: 'sk-secret-value',
+      // The model belongs to the composer; settings only carry it through.
       model: 'deepseek:free',
-      baseUrl: ''
+      baseUrl: '',
+      tier: 'free'
     })
     await waitFor(() => expect(screen.getByText(/Core перезапущен/)).toBeTruthy())
     // The stored value is never echoed back into the form.
@@ -81,7 +95,7 @@ describe('provider form', () => {
 
   it('warns when the key was stored but Core did not come back', async () => {
     saveOutcome = ok({
-      summary: { provider: 'literouter', model: '', baseUrl: '', configured: true },
+      summary: { provider: 'literouter', model: '', baseUrl: '', tier: 'free', configured: true },
       restarted: false
     })
     render(<ProviderForm />)

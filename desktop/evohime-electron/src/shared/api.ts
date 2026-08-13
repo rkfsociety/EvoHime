@@ -55,6 +55,10 @@ export const PROVIDER_KINDS = ['literouter', 'openai_compatible', 'mock'] as con
 
 export type ProviderKind = (typeof PROVIDER_KINDS)[number]
 
+/** Which half of the provider catalogue the user works with. */
+export type ModelTier = 'free' | 'paid'
+
+
 /**
  * Secret-free view of the stored provider settings. The key itself never
  * crosses into the renderer — only whether one is stored.
@@ -63,6 +67,7 @@ export interface ProviderSummary {
   readonly provider: ProviderKind
   readonly model: string
   readonly baseUrl: string
+  readonly tier: ModelTier
   readonly configured: boolean
 }
 
@@ -93,6 +98,7 @@ export const RENDERER_COMMANDS = [
   'core.restoreDatabase',
   'core.getModelConfig',
   'core.listModelCatalog',
+  'core.selectModel',
   'provider.get',
   'provider.save',
   'provider.clearKey',
@@ -138,9 +144,10 @@ export interface CommandPayloads {
   'core.prepareDatabaseRestore': { backupPath: string }
   'core.restoreDatabase': { backupPath: string; approvalId: string }
   'core.getModelConfig': Record<string, never>
-  'core.listModelCatalog': { mode: 'free' | 'paid' }
+  'core.listModelCatalog': { mode: ModelTier }
+  'core.selectModel': { model: string }
   'provider.get': Record<string, never>
-  'provider.save': { provider: ProviderKind; apiKey: string; model: string; baseUrl: string }
+  'provider.save': { provider: ProviderKind; apiKey: string; model: string; baseUrl: string; tier: ModelTier }
   'provider.clearKey': Record<string, never>
   'core.createProject': { projectId: string; title: string; workspacePath: string; sourceRef?: string }
   'core.prepareBuild': { projectId: string; proposalJson: string }
@@ -171,6 +178,7 @@ export interface CommandResults {
   'core.restoreDatabase': { accepted: boolean }
   'core.getModelConfig': { accepted: boolean }
   'core.listModelCatalog': { accepted: boolean }
+  'core.selectModel': { accepted: boolean }
   'provider.get': ProviderSummary
   /** `restarted` is false when Core could not be relaunched with the new key. */
   'provider.save': { summary: ProviderSummary; restarted: boolean }

@@ -37,6 +37,9 @@ async fn main() {
             })
     });
     let gateway_config = model_config.clone();
+    // One selection shared by the agent and the IPC bridge: the shell changes
+    // it, the next request picks it up without a Core restart.
+    let selected_model = evohime_core::SelectedModel::default();
     let executor = model_config
         .and_then(|config| evohime_model_gateway::ModelGateway::from_config(&config).ok())
         .map(|gateway| {
@@ -46,7 +49,8 @@ async fn main() {
                     tools.clone(),
                     approvals.clone(),
                 )
-                .with_journal(journal.clone()),
+                .with_journal(journal.clone())
+                .with_selected_model(selected_model.clone()),
             ) as std::sync::Arc<dyn evohime_core::TaskExecutor>
         });
     if let Some((prompt, workspace_root, approve_writes)) = console_request() {
@@ -108,7 +112,8 @@ async fn main() {
         tools,
         model_snapshot,
         gateway_config,
-    );
+    )
+    .with_selected_model(selected_model);
     let logger = match evohime_core::StructuredLogger::open(data_dir.join("logs/core.jsonl")) {
         Ok(logger) => std::sync::Arc::new(logger),
         Err(error) => {

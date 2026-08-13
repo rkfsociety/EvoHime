@@ -2318,12 +2318,37 @@ impl TaskExecutor for ModelAgent {
     }
 }
 
+/// Model the shell picked for the next request.
+///
+/// The gateway resolves the model per call, so a selection takes effect on the
+/// following request without rebuilding the gateway or restarting Core. An
+/// empty value means "whatever the route is configured with".
+#[derive(Clone, Default)]
+pub struct SelectedModel(Arc<std::sync::RwLock<String>>);
+
+impl SelectedModel {
+    pub fn set(&self, model: &str) {
+        if let Ok(mut current) = self.0.write() {
+            *current = model.trim().to_string();
+        }
+    }
+
+    pub fn get(&self) -> Option<String> {
+        self.0
+            .read()
+            .ok()
+            .map(|value| value.clone())
+            .filter(|value| !value.is_empty())
+    }
+}
+
 pub struct ToolAgent {
     gateway: Arc<ModelGateway>,
     tools: Arc<ToolRegistry>,
     max_iterations: usize,
     approvals: ApprovalCoordinator,
     journal: Option<EventJournal>,
+    selected_model: SelectedModel,
 }
 
 impl ToolAgent {
@@ -2342,7 +2367,14 @@ impl ToolAgent {
             max_iterations: 16,
             approvals,
             journal: None,
+            selected_model: SelectedModel::default(),
         }
+    }
+
+    /// Shares the shell's model selection with this agent.
+    pub fn with_selected_model(mut self, selected: SelectedModel) -> Self {
+        self.selected_model = selected;
+        self
     }
 
     pub fn with_journal(mut self, journal: EventJournal) -> Self {
@@ -2400,8 +2432,12 @@ impl ToolAgent {
 
             let result: Result<evohime_model_gateway::ChatResult, ProviderError> = match timeout(
                 timeout_duration,
-                self.gateway
-                    .chat_with_tools_for_route("default", None, messages, specs),
+                self.gateway.chat_with_tools_for_route(
+                    "default",
+                    self.selected_model.get().as_deref(),
+                    messages,
+                    specs,
+                ),
             )
             .await
             {
@@ -3133,6 +3169,7 @@ impl TaskExecutor for ToolAgent {
             max_iterations: self.max_iterations,
             approvals: self.approvals.clone(),
             journal: self.journal.clone(),
+            selected_model: self.selected_model.clone(),
         };
         Box::pin(async move {
             agent

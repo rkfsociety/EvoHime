@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ConnectionState, CoreEvent, WorkspaceSelection } from '@shared/api'
 
 import { useShellApi } from './shell-api'
+import { ModelPicker } from './ModelPicker'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 const MAX_RENDERED_ITEMS = 80
@@ -206,13 +207,17 @@ export function TaskTimeline({ connection, events }: TaskTimelineProps): React.J
           </div>
 
           <p className="composer__hint">
-            <kbd>Enter</kbd> отправить · <kbd>Shift</kbd>+<kbd>Enter</kbd> перенос строки
+            <ModelPicker connection={connection} events={events} />
+            <span className="composer__keys">
+              <kbd>Enter</kbd> отправить · <kbd>Shift</kbd>+<kbd>Enter</kbd> перенос строки
+            </span>
             {running ? (
               <button type="button" onClick={() => void stop()} disabled={busy || !connected}>
                 Остановить
               </button>
             ) : null}
           </p>
+
 
           {!connected ? (
             <p className="shell__reason">Core недоступен: запуск и управление задачей приостановлены.</p>

@@ -3,7 +3,7 @@ use prost::Message;
 use serde::Serialize;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use crate::{ApprovalCoordinator, CoreCommand, EventJournal, TaskCoordinator};
+use crate::{ApprovalCoordinator, CoreCommand, EventJournal, SelectedModel, TaskCoordinator};
 use evohime_local_storage::WorkItemRecord;
 use evohime_model_gateway::ModelGatewayConfig;
 use evohime_permissions::{Permission, PermissionMode};
@@ -43,6 +43,7 @@ pub struct IpcBridge {
     tools: Option<Arc<ToolRegistry>>,
     model_config: Option<ModelConfigSnapshot>,
     gateway_config: Option<ModelGatewayConfig>,
+    selected_model: SelectedModel,
     core_instance_id: String,
     session_epoch: u64,
 }
@@ -67,6 +68,7 @@ impl IpcBridge {
             tools: None,
             model_config: None,
             gateway_config: None,
+            selected_model: SelectedModel::default(),
             core_instance_id,
             session_epoch,
         }
@@ -81,6 +83,7 @@ impl IpcBridge {
             tools: None,
             model_config: None,
             gateway_config: None,
+            selected_model: SelectedModel::default(),
             core_instance_id,
             session_epoch,
         }
@@ -102,9 +105,16 @@ impl IpcBridge {
             tools: Some(tools),
             model_config,
             gateway_config,
+            selected_model: SelectedModel::default(),
             core_instance_id,
             session_epoch,
         }
+    }
+
+    /// Shares the agent's model selection so `SelectModelRequest` can change it.
+    pub fn with_selected_model(mut self, selected: SelectedModel) -> Self {
+        self.selected_model = selected;
+        self
     }
 
     pub async fn process_once<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
@@ -260,9 +270,27 @@ impl IpcBridge {
                 };
                 transport::write_frame(writer, &end.encode_to_vec()).await?;
             }
+            Some(generated::command_envelope::Command::SelectModel(request)) => {
+                // Bounded: a model identifier is a short single-line token.
+                let model = request.model.trim();
+                if model.len() > 128 || model.contains(char::is_whitespace) {
+                    self.write_response(
+                        writer,
+                        "model.select.rejected",
+                        serde_json::to_vec(&serde_json::json!({ "reason": "invalid_model" }))
+                            .unwrap_or_default(),
+                    )
+                    .await?;
+                    return Ok(());
+                }
+                self.selected_model.set(model);
+                let payload = serde_json::to_vec(&self.current_model_config())
+                    .unwrap_or_else(|_| b"null".to_vec());
+                self.write_response(writer, "model.config", payload).await?;
+            }
             Some(generated::command_envelope::Command::ModelConfig(_)) => {
-                let payload =
-                    serde_json::to_vec(&self.model_config).unwrap_or_else(|_| b"null".to_vec());
+                let payload = serde_json::to_vec(&self.current_model_config())
+                    .unwrap_or_else(|_| b"null".to_vec());
                 let event = generated::EventEnvelope {
                     protocol: Some(protocol()),
                     sequence_id: 0,
@@ -1922,6 +1950,19 @@ impl IpcBridge {
             .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
             .map_err(FrameError::Io)
             .map_err(IpcBridgeError::from)
+    }
+
+    /// Configuration as the shell should see it: the route's own model unless
+    /// the shell selected another one for the next request.
+    fn current_model_config(&self) -> Option<ModelConfigSnapshot> {
+        let config = self.model_config.as_ref()?;
+        let Some(model) = self.selected_model.get() else {
+            return Some(config.clone());
+        };
+        Some(ModelConfigSnapshot {
+            model,
+            ..config.clone()
+        })
     }
 
     /// Builds a Core Doctor provider probe from already-loaded, secret-free

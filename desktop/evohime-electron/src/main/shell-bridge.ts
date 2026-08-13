@@ -264,6 +264,14 @@ function dispatch(
       return accepted(client.send({ modelCatalog: { mode } }))
     }
 
+    case 'core.selectModel': {
+      const model = normalizeModel(asRecord(payload)['model'])
+      if (model === null) {
+        return failure('invalid-payload', 'Некорректный идентификатор модели.')
+      }
+      return accepted(client.send({ selectModel: { model } }))
+    }
+
     case 'provider.get':
       return { ok: true, value: providers.summary() }
 
@@ -273,10 +281,17 @@ function dispatch(
       const apiKey = normalizeApiKey(value['apiKey'])
       const model = normalizeModel(value['model'])
       const baseUrl = normalizeBaseUrl(value['baseUrl'])
-      if (provider === null || apiKey === null || model === null || baseUrl === null) {
+      const tier = asModelCatalogMode(value['tier'])
+      if (
+        provider === null ||
+        apiKey === null ||
+        model === null ||
+        baseUrl === null ||
+        tier === null
+      ) {
         return failure('invalid-payload', 'Проверь ключ, модель и адрес: адрес должен быть https.')
       }
-      const summary = providers.save({ provider, apiKey, model, baseUrl })
+      const summary = providers.save({ provider, apiKey, model, baseUrl, tier })
       if (summary === null) {
         log('error', 'shell.provider_encryption_unavailable', {})
         return failure('protocol-error', 'Windows не даёт зашифровать ключ — он не сохранён.')

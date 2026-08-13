@@ -1,7 +1,12 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-import { PROVIDER_KINDS, type ProviderKind, type ProviderSummary } from '@shared/api'
+import {
+  PROVIDER_KINDS,
+  type ModelTier,
+  type ProviderKind,
+  type ProviderSummary
+} from '@shared/api'
 
 /**
  * Provider credentials owned by the main process.
@@ -24,6 +29,7 @@ export interface ProviderUpdate {
   readonly apiKey: string
   readonly model: string
   readonly baseUrl: string
+  readonly tier: ModelTier
 }
 
 /** OS-backed encryption, injected so the store stays testable. */
@@ -37,10 +43,17 @@ interface StoredDocument {
   readonly provider: ProviderKind
   readonly model: string
   readonly baseUrl: string
+  readonly tier: ModelTier
   readonly secret: string
 }
 
-const EMPTY: StoredDocument = { provider: 'literouter', model: '', baseUrl: '', secret: '' }
+const EMPTY: StoredDocument = {
+  provider: 'literouter',
+  model: '',
+  baseUrl: '',
+  tier: 'free',
+  secret: ''
+}
 
 export function isProviderKind(value: unknown): value is ProviderKind {
   return typeof value === 'string' && (PROVIDER_KINDS as readonly string[]).includes(value)
@@ -115,6 +128,7 @@ export class ProviderStore {
       provider: document.provider,
       model: document.model,
       baseUrl: document.baseUrl,
+      tier: document.tier,
       configured: document.secret.length > 0
     }
   }
@@ -136,6 +150,7 @@ export class ProviderStore {
       provider: update.provider,
       model: update.model,
       baseUrl: update.baseUrl,
+      tier: update.tier,
       secret
     }
     this.write(next)
@@ -143,6 +158,7 @@ export class ProviderStore {
       provider: next.provider,
       model: next.model,
       baseUrl: next.baseUrl,
+      tier: next.tier,
       configured: next.secret.length > 0
     }
   }
@@ -151,7 +167,13 @@ export class ProviderStore {
   clearKey(): ProviderSummary {
     const current = this.readDocument()
     this.write({ ...current, secret: '' })
-    return { provider: current.provider, model: current.model, baseUrl: current.baseUrl, configured: false }
+    return {
+      provider: current.provider,
+      model: current.model,
+      baseUrl: current.baseUrl,
+      tier: current.tier,
+      configured: false
+    }
   }
 
   /**
@@ -209,7 +231,8 @@ export class ProviderStore {
     const model = normalizeModel(record['model']) ?? ''
     const baseUrl = normalizeBaseUrl(record['baseUrl']) ?? ''
     const secret = typeof record['secret'] === 'string' ? record['secret'] : ''
-    return { provider, model, baseUrl, secret }
+    const tier: ModelTier = record['tier'] === 'paid' ? 'paid' : 'free'
+    return { provider, model, baseUrl, tier, secret }
   }
 
   private write(document: StoredDocument): void {

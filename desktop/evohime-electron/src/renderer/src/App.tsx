@@ -8,7 +8,7 @@ import { TaskTimeline } from './TaskTimeline'
 import { DeveloperTools } from './DeveloperTools'
 import { EditorPanel } from './EditorPanel'
 import { SafetyPanel } from './SafetyPanel'
-import { SettingsPanel } from './SettingsPanel'
+import { ProviderForm } from './ProviderForm'
 import { TerminalPanel } from './TerminalPanel'
 
 /**
@@ -155,7 +155,7 @@ export function App(): React.JSX.Element {
               {view === 'editor' ? <EditorPanel connection={connection} events={events} /> : null}
               {view === 'terminal' ? <TerminalPanel connection={connection} events={events} /> : null}
               {view === 'safety' ? <SafetyPanel connection={connection} events={events} /> : null}
-              {view === 'settings' ? <SettingsPanel connection={connection} events={events} /> : null}
+              {view === 'settings' ? <ProviderForm /> : null}
             </div>
           )}
         </div>
