@@ -6,22 +6,29 @@
 
 ## Цель
 
-Закрыть оставшиеся небольшие product-hardening задачи и сделать проверки воспроизводимыми на Windows 11. Этот подплан не добавляет новый агентный orchestration loop.
+Закрыть оставшиеся небольшие product-hardening задачи и сделать проверки воспроизводимыми на Windows 11. Backup/restore и crash recovery выполняются как Core-first MVP: UI получает минимальные действия и состояние через IPC, без отдельного полноформатного backup-продукта или нового агентного orchestration loop.
 
 ## Объём
 
-- заменить POSIX-зависимые тестовые команды `true`/`false` на Windows-совместимую тестовую фикстуру; зафиксировать, какие тесты её используют, и не объявлять WSL поддерживаемой native-средой;
+- заменить POSIX-зависимые тестовые команды `true`/`false` на кроссплатформенный Rust mock binary `test-stub-exitcode` внутри workspace; зафиксировать, какие тесты его используют, и не объявлять WSL поддерживаемой native-средой;
 - завершить хранение provider secrets через Credential Manager/DPAPI с ротацией и удалением старых значений;
-- добавить пользовательский backup/restore SQLite с JSON preview, фазовым progress, approval и audit;
-- добавить crash-recovery UI для состояний `RECOVERING`, `BLOCKED`, `WAITING_APPROVAL`, `FAILED`;
+- добавить Core-first backup/restore SQLite с JSON preview, фазовым progress, approval и audit; UI ограничить одной командой создания/восстановления файла и отображением IPC progress/error;
+- добавить минимальный crash-recovery UI для состояний `RECOVERING`, `BLOCKED`, `WAITING_APPROVAL`, `FAILED`, без отдельного сложного workflow-экрана;
 - закрыть security gaps: фильтрация результатов `filesystem.search`, расширенный blocklist интерпретаторов, проверка policy subject и ограничений Git remote;
 - выполнить upgrade/install smoke на чистой Windows 11 22H2+ с проверкой rollback при нехватке диска.
 
 ## Зафиксированные решения по границам
 
+### Что не входит в этот подплан
+
+- отдельный backup browser, табличный diff, просмотр первых N строк и сложный визуальный progress dashboard;
+- автоматическая ротация secret по расписанию;
+- запуск Core как Windows Service/`SYSTEM` с отдельным machine-wide secret store;
+- полноценный recovery wizard. Эти функции могут быть отдельными последующими этапами после закрытия Core hardening MVP.
+
 ### Переносимые проверки
 
-- Тестовая фикстура должна запускать короткий процесс, возвращающий заданный exit code, через Windows-compatible helper (предпочтительно `std::process::Command` с явным executable и аргументами, без shell parsing); допустимый минимальный вариант — `cmd.exe /d /c exit 0|1` только внутри Windows fixture. Тесты не должны зависеть от наличия `true`, `false`, Bash или WSL.
+- В workspace добавляется маленький Rust mock binary `test-stub-exitcode`, принимающий exit code аргументом и завершающийся с ним. `std::process::Command` запускает его с явным executable/path и аргументами, без shell parsing; тесты не зависят от `true`, `false`, Bash, `cmd.exe` или WSL.
 - Список мест, где использовались POSIX-команды, фиксируется в regression test или комментарии рядом с фикстурой. Linux/macOS остаются валидными средами для Rust-тестов, но эта фикстура не должна ухудшать их совместимость.
 - WSL не является reference-средой для WinUI, supervisor и native packaging. При наличии WSL в CI допускается отдельная диагностическая проверка, но её результат не смешивается с Windows acceptance criteria.
 - IPC portability tests отдельно проверяют временные каталоги и endpoints: Unix-style `/tmp`/Unix sockets не должны быть скрытой зависимостью; Windows path и named pipe формируются штатными platform APIs.
@@ -33,12 +40,14 @@
 - Для dev/CI разрешается только ephemeral fallback через переменную окружения или секрет CI, действующий на время процесса и не попадающий в snapshots, traces, exports и логи. Он не должен автоматически становиться постоянным хранилищем.
 - Ротация выполняется по схеме `write new credential -> verify access -> atomically switch reference -> delete old credential`; при ошибке проверки или переключения старое значение и reference сохраняются. Документация должна описывать повторную авторизацию, восстановление после повреждения профиля и удаление отозванного секрета.
 - Ротация в scope подплана запускается вручную из UI/CLI; автоматическое расписание не требуется. Если Credential Manager недоступен или нет интерактивной Windows-сессии, production operation завершается безопасной ошибкой и не откатывается к plaintext/мастер-паролю-файлу; CI использует только описанный ephemeral secret.
+- Core запускается supervisor'ом от имени вошедшего интерактивного Windows-пользователя. Работа как Windows Service или под `SYSTEM` не входит в поддерживаемый режим этого подплана; при обнаружении другой identity Core завершается fail closed с безопасным diagnostic event и не пытается читать чужой Credential Manager.
 - Миграция legacy plaintext settings сначала читает и проверяет значение, записывает Credential Manager и reference, затем атомарно переписывает settings без старого значения, удаляет временные копии и повторно сканирует конфигурацию. При любой ошибке исходный файл сохраняется для повторной миграции, но секрет не выводится в ошибку или лог.
 
 ### SQLite backup/restore
 
 - Backup выполняется через SQLite Online Backup API, а не копированием открытого `.db`. В backup входит SQLite database и минимальный несекретный app metadata manifest (schema/app version, timestamps, format version); provider secrets и их значения туда не входят.
-- Restore запускается только после остановки или контролируемой блокировки всех DB writers. Перед ним автоматически создаётся safety/pre-restore backup текущего состояния тем же безопасным механизмом.
+- Restore запускается только после Core-level Connection Pool Drain: новые DB operations блокируются, активные транзакции корректно завершаются или отменяются по timeout, соединения закрываются/unmount выполняется до замены файлов, а pool повторно инициализируется только после успешного restore/reopen. Восстановление до инициализации pool допускается как эквивалентный startup path.
+- Перед restore автоматически создаётся safety/pre-restore backup текущего состояния тем же безопасным механизмом.
 - `preview` — версионируемый JSON-план: источник, время, schema/app version, размер, список затрагиваемых объектов, ожидаемые миграции и потенциальные конфликты; preview не содержит секретов.
 - `progress` сообщает фазу (`prepare`, `backup`, `validate`, `restore`, `reopen`, `cleanup`), completed/total для определимых операций и человекочитаемую ошибку. Процент показывается только там, где total достоверен.
 - Restore выполняется во временную копию с integrity/schema validation, затем проходит reopen, migrations/reconciliation и только после успешной проверки — атомарную замену. Сбой миграции, валидации, записи, reopen/reconciliation или переполнения диска оставляет рабочую БД нетронутой и предлагает rollback к pre-restore backup; если ошибка произошла после замены, исходное состояние восстанавливается из safety backup. Частично записанная временная копия удаляется после audit.
@@ -70,6 +79,7 @@
 - Запрет относится к запуску interpreter/launcher процессов и их обходам, а не к текстовым словам `eval`/`exec` в обычных пользовательских данных; policy явно перечисляет executable families и indirect launchers.
 - Policy subject проверяется после canonical resolution против canonical resolved subject, а не против пользовательского display name или неподтверждённой строки input.
 - По умолчанию `filesystem.search` исключает `.env*`, `.git/`, `*.pem`, `*.key`, `secrets.yml` и эквивалентные canonical/normalized forms. Конфигурация может добавлять ограничения, но не ослабляет hard defaults без отдельной policy/approval.
+- Hard defaults также исключают `.svn/`, `id_rsa`/`id_ed25519`, системные credential/token stores и распространённые auth-файлы; конфигурация может только добавлять ограничения и не ослабляет defaults без отдельной policy/approval.
 - Git remote разрешает только ожидаемые `https`, `ssh` и `git` forms с allowlisted host и repository scope; tests покрывают `file://`, UNC, arbitrary SSH hosts, credential-bearing URLs, смену origin и redirect/canonicalization cases. Запрещённые remote не должны обходить policy через alias, redirect или альтернативную форму URL.
 
 ### Windows reference и rollback
@@ -84,8 +94,8 @@ Smoke-матрица на reference-системе: clean install → launch →
 
 1. Исправить переносимость тестовых фикстур и прогнать Rust/WinUI/IPC проверки.
 2. Вынести секреты из обычных настроек в Credential Manager/DPAPI; добавить тесты отсутствия секретов в logs/traces/exports.
-3. Реализовать backup/restore и crash-recovery UI поверх существующего Core recovery state.
-4. Закрыть search/interpreter/policy edge cases отдельными regression tests, включая symlink/reparse-point и Unicode cases.
+3. Реализовать Core backup/restore и минимальные UI-команды/состояния поверх существующего Core recovery state; не добавлять отдельный backup browser или recovery wizard.
+4. Закрыть search/interpreter/policy edge cases отдельными regression tests, включая symlink/reparse-point, Unicode и Git remote audit cases.
 5. Проверить установку, обновление, rollback и recovery на чистой Windows 11 reference-системе; отдельно записать informative результат Insider/WSL, если такой прогон доступен.
 
 ## Критерии готовности
@@ -100,6 +110,7 @@ Smoke-матрица на reference-системе: clean install → launch →
 - UI не предлагает продолжить неизвестный effect без reconciliation/approval и явно различает `RECOVERING`, `BLOCKED`, `WAITING_APPROVAL` и `FAILED`;
 - `.env`, запрещённые результаты поиска, symlink/reparse escapes и обходы blocklist не выдаются через `filesystem.search`;
 - Git remote policy отклоняет запрещённые scheme/host/scope, credential-bearing URLs, UNC/file URLs и redirect/canonicalization обходы;
+- Попытки взаимодействия с недоверенными или внешними Git remote блокируются policy check и получают redacted audit event с operation id, причиной и canonical remote scope;
 - smoke-матрица покрывает install, launch, secret setup, DB state, upgrade, failed migration/startup, rollback и uninstall/reinstall policy;
 - изменения secret reference/API сохраняют versioned IPC compatibility с task runner; Core остаётся единственным владельцем получения секрета, а UI и task runner не получают новый plaintext boundary;
 - установщик, rollback и повторное восстановление после нехватки диска проходят на чистой reference Windows 11 22H2+.
