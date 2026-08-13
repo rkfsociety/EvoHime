@@ -24,7 +24,7 @@ jobs:
   rust-native:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable-x86_64-pc-windows-msvc
@@ -39,11 +39,11 @@ jobs:
       run:
         working-directory: desktop/evohime-electron
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable-x86_64-pc-windows-msvc
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
       - name: Install shell dependencies without lifecycle scripts
@@ -67,7 +67,7 @@ jobs:
   windows-check:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable-x86_64-pc-windows-msvc
@@ -103,7 +103,7 @@ jobs:
           --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type mini
       - name: Upload WinUI hang diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: winui-test-diagnostics
           path: TestResults
@@ -119,7 +119,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Determine release from project version
         id: version
         shell: pwsh
@@ -156,7 +156,7 @@ jobs:
       RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
       RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable-x86_64-pc-windows-msvc
@@ -210,7 +210,7 @@ jobs:
           if ($before -ne $after) { throw 'Rollback did not restore the previous client.' }
           if (Test-Path -LiteralPath (Join-Path $statePath 'transaction.json')) { throw 'Rollback left a transaction journal.' }
       - name: Upload single installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: evohime-windows-installer
           path: installer-output\EvoHime-Setup.exe
@@ -236,7 +236,7 @@ jobs:
       GITHUB_REPOSITORY: ${{ github.repository }}
       KEEP_COUNT: ${{ inputs.keep_count || '1' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Remove old releases and version tags
         shell: pwsh
         run: ./scripts/cleanup-github-releases.ps1 -KeepCount ([int]$env:KEEP_COUNT)

@@ -5,7 +5,7 @@ $workflow = Get-Content -Raw (Join-Path $PSScriptRoot '..\.github\workflows\wind
 foreach ($required in @(
     'windows-latest',
     'scripts/build-windows-native.ps1',
-    'actions/upload-artifact@v4',
+    'actions/upload-artifact@v7',
     'cargo test --locked -p evohime-permissions -p evohime-tool-runtime -p evohime-model-gateway',
     'installer/EvoHime.iss',
     'EvoHime-Setup.exe',
