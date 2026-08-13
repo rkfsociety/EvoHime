@@ -21,6 +21,8 @@
 
 Незавершёнными остаются именно продуктовые runtime/UI-интеграции этапов 5, 6, 8 и 9, а не их bounded domain contracts. Чекбокс означает готовность соответствующего пользовательского или runtime-сценария; наличие контракта, API или тестовой фикстуры само по себе чекбокс не закрывает.
 
+Аудит выполненных пунктов: все оставленные `[x]` сопоставлены с исполняемым кодом и тестовым покрытием; пункты, которые являются именно bounded contract, не выдаются за end-to-end product feature. Локальный `cargo test --workspace` имеет отдельное ограничение среды: два теста `shell.execute` используют POSIX-команды `true`/`false`, отсутствующие в стандартном Windows `PATH`; это дефект переносимости тестовой фикстуры, а не отсутствие реализации semantic `ok`/`exit_code`.
+
 ---
 
 ## 1. Как читать этот план
@@ -956,7 +958,7 @@ MVP-1 milestone: пользователь видит пустой task workspace
 - [x] Bounded research pipeline policy с network/domain allowlist, budgets, cancellation и citation/source integrity.
 - [x] Общий bounded network capability policy layer в tool-runtime: HTTPS/SSRF, domain allowlist, response/latency/cost budgets, cancellation, refresh decisions.
 - [x] Bounded direct-URL research pipeline: запрос → SSRF/domain policy → HTTP → извлечение → bounded deterministic excerpt → citations → сохранение.
-- [x] Search API и LLM summary (`research_search.rs`: policy-gated `SearchProvider` trait + offline stub, per-result reuse of the direct-URL pipeline, bounded/redacted `Summarizer`-produced `SummaryEvidence`; a real LLM-backed `Summarizer` is left as a trait implementation for the caller to supply, see scope note).
+- [x] Search API и bounded summary contract (`research_search.rs`: policy-gated `SearchProvider` trait + offline stub, per-result reuse of the direct-URL pipeline, bounded/redacted `Summarizer`-produced `SummaryEvidence`; сейчас используется extractive/offline summarizer, а real LLM-backed `Summarizer` оставлен отдельной реализацией для caller).
 - [x] Side-effectful runner поверх deterministic contract (`workflow_execution.rs`: real `tokio::time::timeout`/`sleep`-based retry, live `ApprovalGate`/`CancellationSource`, wired over `workflow_runner::plan_workflow`).
 - [x] Policy, требующая research перед запуском для security, dependency и API-вопросов (`research_gate.rs`: keyword-heuristic classifier + freshness-checked evidence gate).
 
