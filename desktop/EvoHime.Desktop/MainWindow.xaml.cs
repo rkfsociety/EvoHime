@@ -726,6 +726,9 @@ public partial class MainWindow : Window
             Process.Start(new ProcessStartInfo { FileName = "explorer.exe", Arguments = $"\"{logs}\"", UseShellExecute = true });
         };
         runtime.Children.Add(diagnostics);
+        var doctor = new Button { Content = "Core Doctor", Margin = new Thickness(0, 8, 0, 0) };
+        doctor.Click += async (_, _) => await ShowDoctorReportAsync();
+        runtime.Children.Add(doctor);
         sections.Children.Add(CreateSettingsSection("Состояние и диагностика", "Служебная информация приложения.", runtime, raised));
 
         var scroll = new ScrollViewer { Content = sections, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
@@ -2176,6 +2179,144 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task ShowDoctorReportAsync()
+    {
+        var projectId = ActiveProject()?.Id ?? string.Empty;
+        var detailLevel = 0;
+        var statusText = new TextBlock { Text = string.Empty, TextWrapping = TextWrapping.Wrap, FontSize = 11 };
+        var checksList = new StackPanel { Spacing = 6 };
+        var detailToggle = new ComboBox
+        {
+            Header = "Уровень детализации",
+            ItemsSource = new[] { "Summary", "Detailed" },
+            SelectedIndex = 0,
+        };
+        var refresh = new Button { Content = "Обновить" };
+        var export = new Button { Content = "Экспорт логов и метрик…" };
+
+        async Task RefreshAsync()
+        {
+            checksList.Children.Clear();
+            statusText.Text = "Загрузка…";
+            try
+            {
+                await _ipcRequestGate.WaitAsync();
+                try
+                {
+                    if (!string.IsNullOrEmpty(projectId))
+                    {
+                        var project = ActiveProject();
+                        if (project is not null)
+                        {
+                            await EnsureCoreProjectAsync(project);
+                        }
+                    }
+                    await _ipc.RequestDoctorReportAsync(projectId, detailLevel, CancellationToken.None);
+                    var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                    if (response.EventType != "doctor.report")
+                    {
+                        throw new InvalidOperationException("Core не вернул doctor.report.");
+                    }
+                    var report = JsonSerializer.Deserialize<DoctorReportDto>(response.Payload)
+                        ?? throw new InvalidOperationException("Core вернул пустой doctor report.");
+                    statusText.Text = report.IsActionable() ? "Есть пункты, требующие внимания." : "Всё в порядке.";
+                    foreach (var check in report.Checks)
+                    {
+                        checksList.Children.Add(BuildDoctorCheckRow(check));
+                    }
+                }
+                finally
+                {
+                    _ipcRequestGate.Release();
+                }
+            }
+            catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+            {
+                statusText.Text = $"Doctor недоступен: {error.Message}";
+            }
+        }
+
+        detailToggle.SelectionChanged += async (_, _) =>
+        {
+            detailLevel = detailToggle.SelectedIndex == 1 ? 1 : 0;
+            await RefreshAsync();
+        };
+        refresh.Click += async (_, _) => await RefreshAsync();
+        export.Click += async (_, _) =>
+        {
+            var picker = new FileSavePicker();
+            picker.FileTypeChoices.Add("JSON Lines", new List<string> { ".jsonl" });
+            picker.SuggestedFileName = "evohime-doctor-export";
+            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
+            var file = await picker.PickSaveFileAsync();
+            if (file is null)
+            {
+                return;
+            }
+            try
+            {
+                await _ipcRequestGate.WaitAsync();
+                try
+                {
+                    await _ipc.RequestDoctorExportAsync(file.Path, CancellationToken.None);
+                    var response = await _ipc.ReadEventAsync(CancellationToken.None);
+                    if (response.EventType != "doctor.export.completed")
+                    {
+                        throw new InvalidOperationException("Core не подтвердил экспорт.");
+                    }
+                    using var json = JsonDocument.Parse(response.Payload);
+                    var lines = json.RootElement.GetProperty("lines_exported").GetInt64();
+                    statusText.Text = $"Экспортировано строк: {lines}. Файл: {file.Path}";
+                }
+                finally
+                {
+                    _ipcRequestGate.Release();
+                }
+            }
+            catch (Exception error) when (error is IOException or InvalidOperationException or JsonException or OperationCanceledException)
+            {
+                statusText.Text = $"Экспорт не выполнен: {error.Message}";
+            }
+        };
+
+        var dialog = new ContentDialog
+        {
+            Title = "Core Doctor",
+            Content = new ScrollViewer
+            {
+                MaxHeight = 480,
+                Content = new StackPanel
+                {
+                    Spacing = 10,
+                    Children = { detailToggle, refresh, statusText, checksList, export },
+                },
+            },
+            CloseButtonText = "Закрыть",
+            XamlRoot = ((FrameworkElement)Content).XamlRoot,
+        };
+        await RefreshAsync();
+        await dialog.ShowAsync();
+    }
+
+    private static Border BuildDoctorCheckRow(DoctorCheckDto check)
+    {
+        var (background, statusLabel) = check.Status switch
+        {
+            "OK" => (new SolidColorBrush(Windows.UI.Color.FromArgb(40, 60, 200, 100)), "OK"),
+            "WARN" => (new SolidColorBrush(Windows.UI.Color.FromArgb(40, 220, 180, 40)), "WARN"),
+            "FAIL" => (new SolidColorBrush(Windows.UI.Color.FromArgb(40, 220, 70, 70)), "FAIL"),
+            _ => (new SolidColorBrush(Windows.UI.Color.FromArgb(40, 220, 70, 70)), "BLOCKED"),
+        };
+        var stack = new StackPanel { Spacing = 2, Margin = new Thickness(10, 6, 10, 6) };
+        stack.Children.Add(new TextBlock { Text = $"[{statusLabel}] {check.Id}: {check.Summary}", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
+        stack.Children.Add(new TextBlock { Text = check.Action, TextWrapping = TextWrapping.Wrap, FontSize = 12 });
+        if (!string.IsNullOrEmpty(check.Details))
+        {
+            stack.Children.Add(new TextBlock { Text = check.Details, TextWrapping = TextWrapping.Wrap, FontSize = 11, Opacity = 0.75 });
+        }
+        return new Border { Background = background, CornerRadius = new CornerRadius(8), Child = stack };
+    }
+
     private static string[] SplitPolicyList(string value) => value
         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
         .Where(item => !string.IsNullOrWhiteSpace(item))
@@ -2454,6 +2595,21 @@ public partial class MainWindow : Window
         [property: JsonPropertyName("acceptance_criteria")] string AcceptanceCriteria,
         [property: JsonPropertyName("risk_class")] string RiskClass,
         [property: JsonPropertyName("timeout_ms")] int TimeoutMs);
+
+    private sealed record DoctorReportDto(
+        [property: JsonPropertyName("contract_version")] int ContractVersion,
+        [property: JsonPropertyName("bounded")] bool Bounded,
+        [property: JsonPropertyName("checks")] DoctorCheckDto[] Checks)
+    {
+        public bool IsActionable() => Checks.Any(check => check.Status != "OK");
+    }
+
+    private sealed record DoctorCheckDto(
+        [property: JsonPropertyName("id")] string Id,
+        [property: JsonPropertyName("status")] string Status,
+        [property: JsonPropertyName("summary")] string Summary,
+        [property: JsonPropertyName("action")] string Action,
+        [property: JsonPropertyName("details")] string? Details);
 
     private sealed record BuildChangeDto(
         [property: JsonPropertyName("relative_path")] string RelativePath,

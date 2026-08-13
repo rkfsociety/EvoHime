@@ -294,6 +294,28 @@ public static class ProtocolEnvelope
 
     public static byte[] GetBuildPolicy(string projectId) => TaskCommand(32, output => WriteString(output, 1, projectId));
 
+    /// <summary>
+    /// Runs the bounded, read-only Core Doctor diagnostic. detailLevel: 0 = summary
+    /// (default), 1 = detailed. Both levels apply the same redaction; detailed only
+    /// adds bounded, already-redacted `details` text, never secrets.
+    /// </summary>
+    public static byte[] RunDoctor(string projectId, int detailLevel = 0) => TaskCommand(35, output =>
+    {
+        WriteString(output, 1, projectId);
+        if (detailLevel != 0)
+        {
+            output.WriteTag(2, WireFormat.WireType.Varint);
+            output.WriteInt32(detailLevel);
+        }
+    });
+
+    /// <summary>
+    /// Exports the local structured logs (core.jsonl / supervisor.jsonl) and recent
+    /// run_tool_metrics aggregates, redacted, to a user-chosen JSONL file.
+    /// </summary>
+    public static byte[] ExportDoctorLogs(string destinationPath) => TaskCommand(57, output =>
+        WriteString(output, 1, destinationPath));
+
     public static byte[] SaveBuildPolicy(string projectId, byte[] policyJson, long expectedVersion) => TaskCommand(33, output =>
     {
         WriteString(output, 1, projectId);

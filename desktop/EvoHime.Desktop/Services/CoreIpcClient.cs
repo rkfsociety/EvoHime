@@ -176,6 +176,12 @@ public sealed class CoreIpcClient
     public Task SaveBuildPolicyAsync(string projectId, byte[] policyJson, long expectedVersion, CancellationToken cancellationToken) =>
         SendPayloadAsync(ProtocolEnvelope.SaveBuildPolicy(projectId, policyJson, expectedVersion), cancellationToken);
 
+    public Task RequestDoctorReportAsync(string projectId, int detailLevel, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.RunDoctor(projectId, detailLevel), cancellationToken);
+
+    public Task RequestDoctorExportAsync(string destinationPath, CancellationToken cancellationToken) =>
+        SendPayloadAsync(ProtocolEnvelope.ExportDoctorLogs(destinationPath), cancellationToken);
+
     public async Task<ulong> ReadReplayAsync(
         ulong afterSequence,
         Func<CoreEventEnvelope, Task> onEvent,

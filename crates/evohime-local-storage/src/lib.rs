@@ -1430,6 +1430,33 @@ impl LocalDatabase {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Reads the most recent `run_tool_metrics` rows across all tasks,
+    /// newest first, bounded by `limit`. Used by Core Doctor log/metrics
+    /// export; carries no secrets (tool names, outcomes, recovery hints).
+    pub fn read_recent_tool_metrics(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ToolMetricRecord>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, task_id, tool_name, iteration, ok, failure_kind, recovery_hint, escalated, created_at
+             FROM run_tool_metrics ORDER BY id DESC LIMIT ?1",
+        )?;
+        let rows = statement.query_map(rusqlite::params![limit as i64], |row| {
+            Ok(ToolMetricRecord {
+                id: row.get(0)?,
+                task_id: row.get(1)?,
+                tool_name: row.get(2)?,
+                iteration: row.get(3)?,
+                ok: row.get::<_, i64>(4)? != 0,
+                failure_kind: row.get(5)?,
+                recovery_hint: row.get::<_, i64>(6)? != 0,
+                escalated: row.get::<_, i64>(7)? != 0,
+                created_at: row.get(8)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     pub fn read_events_after(
         &self,
         after_sequence: i64,

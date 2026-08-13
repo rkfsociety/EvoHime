@@ -695,6 +695,7 @@ pub mod capability_registry;
 pub mod child_roles;
 pub mod child_runtime;
 pub mod doctor;
+pub mod export;
 pub mod memory_api;
 pub mod memory_domain;
 pub mod observability;
@@ -839,6 +840,18 @@ pub enum CoreCommand {
         expected_protocol_major: u32,
         provider: crate::doctor::ProviderProbe,
         approval_required: bool,
+        registered_tools: u32,
+        expected_tools: u32,
+        unavailable_tools: Vec<String>,
+        detail_level: crate::doctor::DetailLevel,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Exports the local `logs/core.jsonl` (and `supervisor.jsonl`, when
+    /// present) plus recent `run_tool_metrics` aggregates to a caller-chosen
+    /// destination path, redacted the same way hook payloads are. Never
+    /// touches eval fixtures or feedback storage.
+    ExportDoctorLogs {
+        destination_path: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
     /// Captures one bounded, redacted piece of offline research evidence and
@@ -3797,6 +3810,10 @@ impl TaskCoordinator {
                 expected_protocol_major,
                 provider,
                 approval_required,
+                registered_tools,
+                expected_tools,
+                unavailable_tools,
+                detail_level,
                 reply,
             } => {
                 let journal = state.lock().await.journal.clone();
@@ -3879,18 +3896,38 @@ impl TaskCoordinator {
                         _ => unresolved_permissions_probe(approval_required),
                     };
 
+                    let scheduler = crate::export::scheduler_probe();
+
                     let snapshot = crate::doctor::DoctorSnapshot {
                         storage,
                         pipe,
                         provider,
                         recovery,
                         permissions,
+                        tools: crate::doctor::ToolsProbe {
+                            registered_tools,
+                            expected_tools,
+                            unavailable_tools,
+                        },
+                        scheduler,
                     };
-                    let report = crate::doctor::DoctorReport::from_snapshot(&snapshot)
-                        .map_err(|error| format!("{error:?}"))?;
+                    let report = crate::doctor::DoctorReport::from_snapshot_with_detail(
+                        &snapshot,
+                        detail_level,
+                    )
+                    .map_err(|error| format!("{error:?}"))?;
                     Ok(report.to_bounded_json().into_bytes())
                 }
                 .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::ExportDoctorLogs {
+                destination_path,
+                reply,
+            } => {
+                let result = crate::export::export_logs(std::path::Path::new(&destination_path))
+                    .map(|summary| summary.to_bounded_json().into_bytes())
+                    .map_err(|error| format!("{error:?}"));
                 let _ = reply.send(result);
             }
             CoreCommand::SaveResearchEvidence {
