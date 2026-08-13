@@ -6,7 +6,7 @@
 
 ## Цель
 
-Превратить готовые Memory domain, SQLite persistence, API и IPC-контракты в ограниченный пользовательский workflow без скрытой записи фактов.
+Превратить готовые Memory domain, SQLite persistence, API и IPC-контракты в ограниченный пользовательский workflow без скрытой записи фактов. После подтверждения запись сохраняется только в явно выбранный `scope`; полное содержимое факта не дублируется в логах, metrics, telemetry, crash reports или иных side-channel.
 
 В v1 «важной» считается запись, которая может влиять на будущие решения или поведение агента: решение, предпочтение, ограничение, правило, исправление или подтверждённый результат. Важность определяется детерминированным `SensitivityLevel`: `routine` — безопасные метрики и статусы, `decision` — решения/предпочтения/ограничения, `sensitive` — данные с повышенным privacy impact, `secret_like` — секреты и credential material. `routine` может пройти auto-save только при allowlisted kind; `decision` и `sensitive` требуют подтверждения, `secret_like` отклоняется. Пользовательский флаг не может понизить уровень чувствительности или обойти policy.
 
@@ -17,12 +17,13 @@
 - подтверждение пользователем важных записей до сохранения;
 - native inspector UI: create, list, search, update, archive, forget, provenance;
 - export/delete только через approval и audit;
-- scope isolation для workspace/project/task и deterministic retrieval.
+- scope isolation для workspace/project/task и deterministic retrieval; Inspector и search scoped по умолчанию.
 
 ### Термины и границы v1
 
 - Scope иерархичен: `workspace > project > task`. Запись имеет ровно один `owner_scope`; при запросе дочернего scope разрешены его собственные записи и явно разрешённые записи предков, но не записи соседних scope. Наследование не даёт права записи в родительский scope.
 - Cross-scope факт не сохраняется как одна общая запись. Extractor либо создаёт отдельные кандидаты с доказательством для каждого scope, либо оставляет один кандидат в confirmation queue с обязательным выбором `owner_scope`; неоднозначный кандидат нельзя автоматически принять.
+- Retrieval и Inspector никогда не пересекают scope неявно. Cross-scope просмотр в v1 не поддерживается; если в будущем потребуется отдельный audited flow, он должен быть явно подтверждён пользователем и ограничен списком scope.
 - Deterministic retrieval означает и детерминированный набор, и порядок: участвуют запрошенный scope и его предки, с precedence `task > project > workspace`; соседние scope исключаются. Из набора исключаются `archived` и `expired`, а стабильная сортировка использует `scope_depth`, точное совпадение `canonical_key`, `kind`, `updated_at` и `id`. Лимит по умолчанию — 50 результатов, заданный лимит — часть IPC-запроса и ограничен policy. В v1 нет embeddings, fuzzy- или vector-поиска.
 - Stale/conflicting определяется по точному `canonical_key` и пересечению scope: устаревшая запись получает состояние `expired` и исключается из normal retrieval, а конфликтующий кандидат явно ссылается на существующую запись, хранится отдельно в confirmation queue и требует решения policy/user; автоматического merge, скрытой замены или выбора только более свежей версии нет.
 - Audit — append-only журнал действий и ревизий: actor, action, record id, scope, timestamp, reason, provenance hash, результат, а для update — безопасные old/new metadata и diff значения, если это разрешено privacy policy. Для массовых операций дополнительно фиксируются operation id, полный список record id, approval и итог по каждому id. `forget` оставляет содержимое только для явного restore и исключает его из дальнейшего использования, а после `delete` содержимое и секретоподобные данные физически удаляются — остаётся только минимальный tombstone аудита.
@@ -31,17 +32,17 @@
 
 ## Порядок реализации
 
-1. Описать `MemoryCandidate` и deterministic extractor из run metrics/evidence; extractor работает только с перечисленными структурированными полями и не делает смысловой вывод из свободного текста.
+1. Описать `MemoryCandidate` и deterministic extractor из run metrics/evidence; extractor работает только с перечисленными структурированными полями и не делает смысловой вывод из свободного текста. Fixtures для allowlist, secrets, stale/conflict и scope запускаются параллельно с extractor-ом.
 2. Добавить policy decision и confirmation queue без автоматического сохранения неподтверждённых важных фактов.
-3. Подключить post-run hook к Core task lifecycle после terminal outcome; extraction и policy запускаются асинхронно, не задерживают фиксацию terminal status и не блокируют IPC/UI.
-4. Добавить WinUI inspector поверх существующего IPC API.
-5. Добавить integration/eval fixtures для stale, conflicting, secret-like и cross-scope записей.
+3. Подключить post-run hook к Core task lifecycle после terminal outcome только после того, как policy/queue умеют атомарно `reject` и не сохранять candidate; extraction и policy запускаются асинхронно, не задерживают фиксацию terminal status и не блокируют IPC/UI.
+4. Добавить WinUI inspector поверх существующего готового IPC API.
+5. Завершить integration/eval fixtures для stale, conflicting, secret-like и cross-scope записей, начатые вместе с extractor-ом.
 
 ## Модель кандидата, evidence и policy
 
 Минимальный `MemoryCandidate` содержит `candidate_id`, `kind`, безопасное `content`, `scope`, `provenance`, `privacy_label`, `ttl`, `confidence`, `source_run_id`, `created_at` и `requires_confirmation`. Для детерминированного сопоставления policy также вычисляются `sensitivity_level`, `canonical_key`, `risk` и `policy_decision`; это производные поля контракта, а не альтернативные названия базовых полей. В provenance допускаются тип evidence и стабильный digest/идентификатор артефакта, но не полный stdout/stderr, argv, секреты или пути в исходном абсолютном виде.
 
-Allowlist bounded evidence: structured task outcome, structured tool results, explicit user/agent decisions, selected task metrics и manifest безопасных артефактов/временных файлов внутри workspace. Denylist: сырые `stdout`/`stderr`, полный `argv`, secrets, credential material и неограниченные логи/файлы. Источник, не попавший в allowlist, не читается extractor-ом. Любые пути, включая пути внутри workspace, до формирования candidate нормализуются относительно корня workspace (`./...`); исходные абсолютные пути не попадают в content, provenance, audit или telemetry.
+Allowlist bounded evidence: structured task outcome, structured tool results, explicit user/agent decisions, selected task metrics, безопасный diff summary и manifest безопасных артефактов/временных файлов внутри workspace. Denylist: полный `stdout`/`stderr`, raw `argv`, environment, secrets, credential material, абсолютные пути вне workspace и неограниченные логи/файлы. Источник, не попавший в allowlist, не читается extractor-ом. Любые пути, включая пути внутри workspace, до формирования candidate нормализуются относительно корня workspace (`./...`); исходные абсолютные пути не попадают в content, provenance, audit или telemetry.
 
 Правила extractor-а версионируются и задаются только конфигурацией Core из allowlisted `kind`, полей и безопасных шаблонов/регулярных выражений. Пользовательские правила могут расширять разрешённые kind и pattern-ы в пределах текущего scope, но не могут открыть denylist-источник, повысить privacy label или обойти policy. Конфигурация имеет bounded размер и проходит ту же валидацию, что и входной evidence.
 
@@ -56,13 +57,15 @@ Policy вычисляется детерминированно по `kind + priv
 
 Решение policy сохраняется вместе с версией policy. Примеры TTL: решение и пользовательское предпочтение — 1 год; техническая диагностика с безопасной provenance — 30 дней. Точные TTL и лимиты — константы policy, покрытые тестами, а не UI. Ограничиваются и общий размер `content`, и число полей/элементов структурированного content; превышение любого лимита даёт `reject`.
 
+Перед policy decision candidate проходит redaction: regex для известных credential/token formats, denylist ключей полей и secret-like heuristics. При срабатывании redaction безопасные части могут быть замаскированы (`<redacted>`), но candidate с неустранимым секретом получает `reject`; в confirmation UI попадает только уже очищенный candidate. Неважные `routine` candidates не попадают в queue: allowlisted безопасные метрики сохраняются автоматически с коротким TTL, остальные отбрасываются и учитываются только в агрегированной extractor metric. При конфликте того же `canonical_key` в том же scope новый candidate не overwrite-ит старый: создаётся `confirm_conflict` с ссылкой на существующую запись, а решение пользователя создаёт новую ревизию или оставляет старую.
+
 Post-run extractor не обязан угадывать факты за пределами bounded evidence. В v1 «решение» извлекается только из явного структурированного поля decision/decision marker или explicit user/agent decision; semantic inference из свободного текста и LLM-extraction не входят в scope. Контракт evidence обязан включать структурированные метрики, безопасные tool-result summaries и manifest ссылок на допустимые артефакты/временные файлы; сырые логи остаются диагностикой и не становятся памятью. Если контекста недостаточно, candidate не создаётся — скрытого расширения области чтения нет.
 
 Confirmation queue сохраняет только безопасный кандидат и его срок действия. Её lifecycle: `pending -> accepted | rejected | expired`; переходы атомарны и попадают в audit. Pending candidates переживают restart, повторно показывают provenance до подтверждения и истекают по TTL; после `expired` они не сохраняются и не возвращаются в normal retrieval. Inspector показывает badge с числом pending, немодальный banner после нового post-run extraction и, если разрешено системной privacy policy, локальное notification; modal dialog после run не используется. В UI пользователь видит kind, scope, content, provenance, TTL и diff с текущей записью и может подтвердить, изменить scope/content, отложить или отклонить. Бесконечной очереди нет.
 
 ## Native UI, offline и миграции
 
-Inspector показывает pending queue до сохранения важных записей и после подтверждения — list/search/update/archive/forget/provenance. Queue асинхронна: terminal outcome и Core task lifecycle не блокируются модальным диалогом; пользователь получает ненавязчивое уведомление и открывает очередь при удобном случае. Export и физическое удаление требуют отдельного approval, явного scope и audit confirmation; для массовых операций UI показывает число, scope и сводку объектов, а approval фиксирует полный список id и применяется атомарно.
+Inspector показывает pending queue до сохранения важных записей и после подтверждения — list/search/update/archive/forget/provenance. В списке видны `scope`, `kind`, `privacy_label`, TTL, lifecycle и причина предложения; карточка показывает «почему предложено»: provenance и безопасный snippet source evidence. Queue асинхронна: terminal outcome и Core task lifecycle не блокируются модальным диалогом; пользователь получает ненавязчивое уведомление и открывает очередь при удобном случае. Для forgotten записей доступен audited recently-forgotten список и явный restore; undo/redo общего назначения в v1 нет. Export и физическое удаление требуют отдельного approval, явного scope и audit confirmation; для массовых операций UI показывает число, scope и сводку объектов, а approval фиксирует полный список id и применяется атомарно. Export всегда направляется в выбранное пользователем локальное место и никогда не попадает в telemetry или logs.
 
 TTL обслуживается фоновым Core cleanup job: он переводит истёкшие active/pending записи в `expired`, исключает их из retrieval и сохраняет audit, но не удаляет содержимое автоматически. Cleanup идемпотентен, ограничен batch size и повторяется после restart.
 
@@ -74,12 +77,15 @@ Offline все эти операции выполняются локально �
 
 - успешный и неуспешный run могут создавать bounded candidates, но важные записи требуют подтверждения;
 - в памяти нет stdout/stderr, полного argv, секретов и абсолютных путей; пути представлены только относительно корня workspace;
+- после accepted запись существует только в выбранном scope, а полное content отсутствует в logs/metrics/telemetry/crash reports;
 - запись доступна только в своём scope и имеет provenance/TTL/privacy;
 - archive/forget/export/delete корректно отображаются в UI и попадают в audit;
 - schema migration rollback восстанавливает схему и данные из pre-migration backup; rollback приложения на предыдущую версию отдельно проверяет совместимость чтения и не считается заменой rollback миграции;
 - одинаковый входной evidence даёт одинаковые candidates, policy decisions и порядок retrieval;
 - cross-scope, stale, conflicting и secret-like кандидаты проходят описанный безопасный путь без автоматического merge или повышения scope;
 - pending candidates истекают по TTL, а update/archive/forget/export/delete оставляют проверяемый audit trail;
+- confirmation flow считается успешным для `accepted`, `rejected` и `expired`: каждый переход атомарен, виден в UI и отражён в audit, при этом rejected/expired не становятся memory records;
+- non-terminal и cancelled runs не создают candidates; это правило нарушается только отдельным будущим явным пользовательским действием, не входящим в v1;
 - benchmark: extraction bounded evidence до 10 MiB укладывается в 2 секунды, retrieval до 10 000 записей — в 100 мс на локальном SQLite; storage ограничен 1 GiB на workspace с предупреждением на 80% и отказом сверх лимита.
 
 ## Зависимости
