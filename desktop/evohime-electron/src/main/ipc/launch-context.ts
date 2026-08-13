@@ -79,6 +79,7 @@ export function readLaunchContext(
       ...identity,
       pipeName: file.pipeName,
       secret: file.secret,
+      livenessEvent: file.livenessEvent,
       developerLaunch: false
     }
     return file.supervisorPid === undefined ? context : { ...context, supervisorPid: file.supervisorPid }
@@ -107,7 +108,7 @@ export function normalizePipeName(value: string): string | null {
   return `\\\\.\\pipe\\${name}`
 }
 
-function parseContextFile(raw: string | null): { pipeName: string; secret: string; supervisorPid?: number } | null {
+function parseContextFile(raw: string | null): { pipeName: string; secret: string; supervisorPid?: number; livenessEvent: string } | null {
   if (raw === null) {
     return null
   }
@@ -128,10 +129,18 @@ function parseContextFile(raw: string | null): { pipeName: string; secret: strin
   const supervisorPid = typeof record['supervisor_pid'] === 'number' && Number.isInteger(record['supervisor_pid']) && record['supervisor_pid'] > 0
     ? record['supervisor_pid']
     : undefined
+  const livenessEvent = typeof record['supervisor_liveness_event'] === 'string'
+    ? record['supervisor_liveness_event'].trim()
+    : ''
+  if (livenessEvent.length > 256 || (livenessEvent !== '' && !/^Local\\EvoHime\.Supervisor\.Liveness\.[A-Za-z0-9]+$/.test(livenessEvent))) {
+    return null
+  }
   if (pipeName === null || !/^[0-9a-f]+$/.test(secret) || secret.length !== SECRET_HEX_LENGTH) {
     return null
   }
-  return supervisorPid === undefined ? { pipeName, secret } : { pipeName, secret, supervisorPid }
+  return supervisorPid === undefined
+    ? { pipeName, secret, livenessEvent }
+    : { pipeName, secret, supervisorPid, livenessEvent }
 }
 
 function readSafely(readFile: (path: string) => string, path: string): string | null {

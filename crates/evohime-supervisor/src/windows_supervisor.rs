@@ -24,10 +24,18 @@ use windows_sys::Win32::{
         SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     },
-    System::Threading::CreateMutexW,
+    System::Threading::{CreateEventW, CreateMutexW},
 };
 
 struct SingleInstance(HANDLE);
+
+struct SupervisorLiveness(HANDLE);
+
+impl Drop for SupervisorLiveness {
+    fn drop(&mut self) {
+        unsafe { CloseHandle(self.0) };
+    }
+}
 
 struct SupervisorLogger(Mutex<std::io::BufWriter<std::fs::File>>);
 
@@ -216,6 +224,7 @@ impl Drop for JobObject {
 /// session cannot. It is removed when the supervisor stops.
 struct SupervisorSession {
     context_path: PathBuf,
+    _liveness: SupervisorLiveness,
 }
 
 impl SupervisorSession {
@@ -232,9 +241,24 @@ impl SupervisorSession {
 
         let mut context = LaunchContext::generate(user_sid, logon_session, now_ms())?;
         context.supervisor_pid = std::process::id();
+        context.supervisor_liveness_event = format!(
+            "Local\\EvoHime.Supervisor.Liveness.{}",
+            context.pipe_name.rsplit('-').next().unwrap_or("session")
+        );
+        let event_name: Vec<u16> = OsStr::new(&context.supervisor_liveness_event)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let liveness = unsafe { CreateEventW(ptr::null(), 1, 1, event_name.as_ptr()) };
+        if liveness.is_null() {
+            return Err(io::Error::last_os_error().into());
+        }
         let context_path = runtime_dir.join("session.json");
-        write_launch_context(&context_path, &context)?;
-        Ok(Self { context_path })
+        if let Err(error) = write_launch_context(&context_path, &context) {
+            unsafe { CloseHandle(liveness) };
+            return Err(error.into());
+        }
+        Ok(Self { context_path, _liveness: SupervisorLiveness(liveness) })
     }
 }
 
@@ -695,6 +719,9 @@ mod tests {
             assert!(context
                 .pipe_name
                 .starts_with(evohime_desktop_ipc::session::PIPE_PREFIX));
+            assert!(context
+                .supervisor_liveness_event
+                .starts_with("Local\\EvoHime.Supervisor.Liveness."));
             path
         };
 

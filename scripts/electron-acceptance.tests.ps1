@@ -22,11 +22,16 @@ foreach ($component in $required) {
     }
 }
 
-$dataPath = Join-Path $resolvedPackage '.acceptance-data'
+$dataPath = Join-Path $resolvedPackage ('.acceptance-data-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $dataPath | Out-Null
 $previousDataDir = $env:EVOHIME_DATA_DIR
 $env:EVOHIME_DATA_DIR = $dataPath
 $shell = $null
+function Get-PackageProcesses {
+    Get-CimInstance Win32_Process | Where-Object {
+        $_.ExecutablePath -and $_.ExecutablePath.StartsWith($resolvedPackage, [System.StringComparison]::OrdinalIgnoreCase)
+    }
+}
 try {
     $shell = Start-Process -FilePath (Join-Path $resolvedPackage 'EvoHime.exe') `
         -WorkingDirectory $resolvedPackage -PassThru
@@ -45,11 +50,13 @@ finally {
         Stop-Process -Id $shell.Id -Force -ErrorAction SilentlyContinue
     }
     Start-Sleep -Milliseconds 500
-    $nativeProcesses = Get-CimInstance Win32_Process | Where-Object {
-        $_.ExecutablePath -like "$resolvedPackage\*" -and $_.ProcessId -ne $PID
-    }
-    foreach ($process in $nativeProcesses) {
-        Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+    for ($attempt = 0; $attempt -lt 4; $attempt++) {
+        $packageProcesses = @(Get-PackageProcesses | Where-Object { $_.ProcessId -ne $PID })
+        foreach ($process in $packageProcesses) {
+            Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+        if ($packageProcesses.Count -eq 0) { break }
+        Start-Sleep -Milliseconds 250
     }
     if ($null -eq $previousDataDir) {
         Remove-Item Env:EVOHIME_DATA_DIR -ErrorAction SilentlyContinue

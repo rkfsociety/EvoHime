@@ -172,6 +172,9 @@ jobs:
       - name: Run Electron Core and supervisor fault smoke
         shell: pwsh
         run: ./scripts/electron-fault.tests.ps1 -PackagePath "$env:GITHUB_WORKSPACE\native-package"
+      - name: Run Electron acceptance matrix
+        shell: pwsh
+        run: ./scripts/electron-matrix.tests.ps1 -PackagePath "$env:GITHUB_WORKSPACE\native-package"
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress --yes

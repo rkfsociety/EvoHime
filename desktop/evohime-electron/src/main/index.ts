@@ -114,7 +114,12 @@ if (!app.requestSingleInstanceLock()) {
 
 async function ensureSupervisorSession(): Promise<ReturnType<typeof readLaunchContext>> {
   const current = readLaunchContext()
-  if (!current.developerLaunch) return current
+  if (!current.developerLaunch && (!current.supervisorPid || processIsAlive(current.supervisorPid))) {
+    return current
+  }
+  if (!current.developerLaunch) {
+    log('warn', 'shell.stale_supervisor_context', { pid: current.supervisorPid ?? 0 })
+  }
 
   const supervisorPath = supervisorExecutablePath()
   if (!supervisorPath || !existsSync(supervisorPath)) {
@@ -151,6 +156,15 @@ async function ensureSupervisorSession(): Promise<ReturnType<typeof readLaunchCo
   }
   log('warn', 'shell.supervisor_context_timeout', {})
   return readLaunchContext()
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function supervisorExecutablePath(): string | null {

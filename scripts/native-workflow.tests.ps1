@@ -13,6 +13,7 @@ foreach ($required in @(
     'npm run package',
     'scripts/electron-acceptance.tests.ps1',
     'scripts/electron-fault.tests.ps1',
+    'scripts/electron-matrix.tests.ps1',
     'Rollback smoke after failed installer start',
     '--blame-hang',
     '--blame-hang-timeout 5m',

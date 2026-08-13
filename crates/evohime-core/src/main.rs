@@ -287,5 +287,6 @@ fn launch_context() -> Result<evohime_desktop_ipc::session::LaunchContext, std::
         expected_logon_session: String::new(),
         issued_at_ms: 0,
         supervisor_pid: 0,
+        supervisor_liveness_event: String::new(),
     })
 }

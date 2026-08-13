@@ -181,6 +181,8 @@ pub struct LaunchContext {
     pub issued_at_ms: u64,
     #[serde(default)]
     pub supervisor_pid: u32,
+    #[serde(default)]
+    pub supervisor_liveness_event: String,
 }
 
 impl LaunchContext {
@@ -196,6 +198,7 @@ impl LaunchContext {
             expected_logon_session,
             issued_at_ms,
             supervisor_pid: 0,
+            supervisor_liveness_event: String::new(),
         })
     }
 
@@ -206,6 +209,15 @@ impl LaunchContext {
             if identifier.chars().count() > MAX_IDENTIFIER_CHARS {
                 return Err(SessionError::InvalidIdentifier);
             }
+        }
+        if !self.supervisor_liveness_event.is_empty()
+            && (self.supervisor_liveness_event.chars().count() > MAX_IDENTIFIER_CHARS
+                || !self
+                    .supervisor_liveness_event
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_' | '\\')))
+        {
+            return Err(SessionError::InvalidIdentifier);
         }
         Ok(())
     }
@@ -404,6 +416,7 @@ mod tests {
             expected_logon_session: "0:123456".into(),
             issued_at_ms: 1_000,
             supervisor_pid: 0,
+            supervisor_liveness_event: String::new(),
         }
     }
 

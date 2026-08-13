@@ -83,9 +83,24 @@ describe('launch contract', () => {
     const context = readLaunchContext(
       { EVOHIME_LAUNCH_CONTEXT: 'C:\\ctx\\session.json' },
       () => 'fixed-id',
-      () => JSON.stringify({ pipe_name: PIPE, secret: SECRET, supervisor_pid: 4242 })
+      () => JSON.stringify({
+        pipe_name: PIPE,
+        secret: SECRET,
+        supervisor_pid: 4242,
+        supervisor_liveness_event: 'Local\\EvoHime.Supervisor.Liveness.fixed'
+      })
     )
     expect(context.supervisorPid).toBe(4242)
+    expect(context.livenessEvent).toContain('EvoHime.Supervisor.Liveness')
+  })
+
+  it('rejects an untrusted supervisor liveness event name', () => {
+    const context = readLaunchContext(
+      { EVOHIME_LAUNCH_CONTEXT: 'C:\\ctx\\session.json' },
+      () => 'fixed-id',
+      () => JSON.stringify({ pipe_name: PIPE, secret: SECRET, supervisor_liveness_event: 'Global\\attacker' })
+    )
+    expect(context.developerLaunch).toBe(true)
   })
 
   it('ignores a launch context with a remote pipe or a malformed secret', () => {

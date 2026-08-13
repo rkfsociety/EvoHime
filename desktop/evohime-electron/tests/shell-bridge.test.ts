@@ -148,11 +148,13 @@ describe('renderer command surface', () => {
   it('forwards policy, diagnostics and backup commands using the canonical proto fields', () => {
     expect(invoke('core.setPermissionMode', { mode: 'read_only' })).toEqual({ ok: true, value: { accepted: true } })
     expect(invoke('core.runDoctor', { detailLevel: 1 })).toEqual({ ok: true, value: { accepted: true } })
+    expect(invoke('core.exportDoctorLogs', { destinationPath: 'C:\\diagnostics.jsonl' })).toEqual({ ok: true, value: { accepted: true } })
     expect(invoke('core.createDatabaseBackup', { destinationPath: 'C:\\backup.evohime' })).toEqual({ ok: true, value: { accepted: true } })
     expect(invoke('core.prepareDatabaseRestore', { backupPath: 'C:\\backup.evohime' })).toEqual({ ok: true, value: { accepted: true } })
     expect(invoke('core.restoreDatabase', { backupPath: 'C:\\backup.evohime', approvalId: 'approval-1' })).toEqual({ ok: true, value: { accepted: true } })
     expect(sent).toContainEqual({ permissionMode: { mode: 'read_only' } })
     expect(sent).toContainEqual({ runDoctor: { projectId: '', detailLevel: 1 } })
+    expect(sent).toContainEqual({ exportDoctorLogs: { destinationPath: 'C:\\diagnostics.jsonl' } })
     expect(sent).toContainEqual({ createDatabaseBackup: { destinationPath: 'C:\\backup.evohime' } })
     expect(sent).toContainEqual({ prepareDatabaseRestore: { backupPath: 'C:\\backup.evohime' } })
     expect(sent).toContainEqual({ restoreDatabase: { backupPath: 'C:\\backup.evohime', approvalId: 'approval-1' } })

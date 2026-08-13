@@ -27,7 +27,7 @@ function Wait-For([scriptblock]$condition, [int]$seconds, [string]$failure) {
     throw $failure
 }
 
-$dataPath = Join-Path $resolvedPackage '.fault-data'
+$dataPath = Join-Path $resolvedPackage ('.fault-data-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $dataPath | Out-Null
 $previousDataDir = $env:EVOHIME_DATA_DIR
 $env:EVOHIME_DATA_DIR = $dataPath
@@ -52,8 +52,13 @@ try {
 }
 finally {
     if ($shell -and -not $shell.HasExited) { Stop-Process -Id $shell.Id -Force -ErrorAction SilentlyContinue }
-    foreach ($process in @(Get-PackageProcesses $corePath) + @(Get-PackageProcesses $supervisorPath)) {
-        Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+    for ($attempt = 0; $attempt -lt 4; $attempt++) {
+        $remaining = @(Get-PackageProcesses $shellPath) + @(Get-PackageProcesses $corePath) + @(Get-PackageProcesses $supervisorPath)
+        foreach ($process in $remaining) {
+            Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+        if ($remaining.Count -eq 0) { break }
+        Start-Sleep -Milliseconds 250
     }
     if ($null -eq $previousDataDir) {
         Remove-Item Env:EVOHIME_DATA_DIR -ErrorAction SilentlyContinue

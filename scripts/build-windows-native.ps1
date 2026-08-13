@@ -22,7 +22,7 @@ $cargoArguments += @('-p', 'evohime-core', '-p', 'evohime-supervisor', '-p', 'ev
 $electronBuilderArguments = @('electron-builder', '--dir', '--config', 'electron-builder.yml')
 if ($Version) {
     if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "Некорректная версия Electron package: $Version" }
-    $electronBuilderArguments += "--config.extraMetadata.version=$Version"
+    $electronBuilderArguments += @('--config.extraMetadata.version', $Version)
 }
 
 if (-not $SkipBuild) {

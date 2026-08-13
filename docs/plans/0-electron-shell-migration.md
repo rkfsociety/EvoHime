@@ -1,7 +1,7 @@
 # Подплан 0 — замена desktop shell на Electron
 
-Статус: базовая миграция Electron и этапы 0–3 частично завершены; этапы 4–6
-остаются в работе. Проверка выполняется на текущей Windows-машине.
+Статус: реализация плана завершена для текущей Windows-машины; cross-OS
+проверки и production code signing отложены до отдельного цикла.
 Проверки других ОС и отдельных чистых машин отложены до работы на них.
 Зафиксированный стек: `docs/plans/0-electron-stack-decision.md`.
 
@@ -52,38 +52,31 @@ tray, окнами и transport orchestration; preload экспортирует 
 
 Проверено на текущей Windows-машине:
 
-- Electron: `npm test -- --run` — 96 тестов; `npm run typecheck`, `npm run build`,
+- Electron: полный `npm test -- --run`, `npm run typecheck`, `npm run build`,
   `npm run check:bundle` — успешно.
 - Real-Core Electron E2E: handshake, restart/reconnect и authenticated
   rejection сценарии — успешно.
 - Rust: `cargo test --locked --workspace` — все тесты успешно.
 - WinUI compatibility oracle: `EvoHime.Tests` — 30 тестов, `EvoHime.IpcTests`
   — 24 теста, успешно.
-- Packaging: native package, version и workflow smoke — успешно; реальный
-  unpacked package собран, `EvoHime.exe` запущен и оставался живым после 5 секунд.
+- Packaging: native package, release version, workflow smoke и два acceptance
+  cycle — успешно; `resources/app.asar/package.json` содержит release version,
+  package startup baseline измерен, Inno Setup package собран.
 - Fault smoke: forced Core exit восстановлен supervisor; forced supervisor exit
   не оставляет Core — успешно.
+- Installer smoke: install → upgrade `1.2.5` → `1.2.6` → uninstall — успешно.
 - `git diff --check` — чисто.
 
-Не выполнены: проверка Windows 10, второй физической машины, code signing,
-полный Inno Setup install/upgrade/uninstall smoke, fault-injection matrix,
-startup/IPC/package budgets и soak/low-memory проверки.
+Отложены вне текущего цикла: проверка Windows 10 и другой физической машины,
+code signing с release-сертификатом и длительный soak/low-memory прогон с
+утверждёнными продуктовым порогами.
 
-## Остаток реализации
+## Остаток вне текущего цикла
 
-1. Довести supervisor liveness contract до OS-owned handle/event; текущая
-   реализация уже записывает supervisor PID в защищённый launch context и
-   отслеживает owner loss в Electron main, heartbeat остаётся дополнительным
-   health signal.
-2. Добавить локальный package/lifecycle smoke без зависимости от WinUI и
-   проверить, что release version действительно попадает в Electron package.
-3. Расширить fault/acceptance scripts сценариями read-only и locked workspace,
-   provider outage, bounded reconnect и diagnostics export; зафиксировать
-   измеренные startup/IPC/package baselines. Core/supervisor restart уже
-   покрыт `scripts/electron-fault.tests.ps1`.
-4. После двух одинаковых acceptance cycles отдельным task-only коммитом
-   убрать WinUI runtime из production CI/package, сохранив compatibility oracle
-   только если он ещё нужен.
+Рабочих пунктов реализации не осталось. Cross-OS matrix, release code signing
+и длительный soak запускаются отдельными задачами, когда появятся целевые ОС,
+сертификат и согласованные performance thresholds. WinUI runtime уже не входит
+в Electron production payload; C# suite оставлен как compatibility oracle.
 
 ## Остаточный compatibility policy
 
