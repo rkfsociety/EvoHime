@@ -29,8 +29,9 @@ read-only выполнению и сделать его наблюдаемым �
 - Текущие hard limits контракта: reduced context — до 32 элементов и 16 KiB,
   один элемент — до 2 048 символов; serialized report/output — до 32 KiB,
   report sources — до 32 элементов по 512 символов. `child_task_id` и
-  `parent_task_id` должны быть уникальными в рамках родительского запуска и
-  не переиспользоваться после terminal state.
+  `parent_task_id` должны быть непустыми; `child_task_id` — глобально
+  уникальный UUIDv4, проверяемый Core и SQLite unique constraint, и не
+  переиспользуемый после terminal state.
 - Реальный execution, timeout, cancellation, tool-count budget, dispatcher и
   child event stream пока отсутствуют. Сохранение `ChildTaskRequest` или
   `ChildReport` само по себе не является execution.
@@ -44,17 +45,31 @@ read-only выполнению и сделать его наблюдаемым �
 
 - Core dispatcher только для текущего `ChildTaskKind` allow-list и только из
   non-child parent context;
-- выдача урезанного context и уникального `child_task_id` из Core, без передачи
+- выдача урезанного context и глобально уникального UUIDv4 `child_task_id` из Core, без передачи
   полного parent prompt, секретов или неразрешённых capabilities;
 - read-only execution adapters для `workspace.read`, `workspace.search`,
   `git.diff` и `git.status` с общей policy snapshot;
-- отдельные filesystem/network sandbox и запрет write, shell, commit, install,
-  network mutation, elevation и nested child на request, adapter и tool layers;
+- MVP выполняет child как logical bounded job внутри Core, а не как отдельный
+  контейнерный процесс. Sandbox обеспечивается Core capability-router-ом:
+  adapter получает только проверенный workspace root, read-only operation
+  object и cancellation/limit handles; прямой OS shell/process spawn,
+  arbitrary path access и неразрешённые IPC commands недоступны. AppContainer,
+  отдельный worker process или виртуализация не являются скрытой частью MVP;
+  если threat model потребует process isolation, это отдельное ADR и scope.
+- запрет write, shell, commit, install, network mutation, elevation и nested
+  child проверяется на request, dispatcher, adapter и tool layers;
+- filesystem boundary нормализует absolute path, запрещает traversal и
+  symlink/reparse-point escape, и проверяет принадлежность итогового пути
+  разрешённому workspace root перед каждой операцией;
 - network policy MVP — `deny all`: у текущего child runtime нет network
   capability. Read-only HTTP, если он понадобится позже, вводится отдельным
   capability/profile с host/port/redirect/private-range/credential policy и
   не считается разрешённым по умолчанию;
 - единые timeout/cancellation/output limits и composite budget;
+- передача лимитов в adapter идёт через immutable `ChildPolicySnapshot` и
+  cancellation token; output пишется в bounded counting sink, который
+  останавливает producer до записи байта сверх лимита, а timeout watchdog
+  отменяет token и дожидается фактической остановки операции;
 - проверка родителем report, confidence и sources до включения evidence в
   plan/build. Непринятый report не становится evidence и не меняет parent
   state;
@@ -63,6 +78,25 @@ read-only выполнению и сделать его наблюдаемым �
 - versioned IPC events/replay/reconnect для child timeline;
 - WinUI catalog, descriptor editor, timeline, evidence panel и
   blocked/error states.
+
+## Схемы входа и отчёта
+
+`ChildTaskInput` — versioned Core-owned envelope с обязательными полями
+`schema_version`, глобальным UUIDv4 `child_task_id`, `parent_task_id`,
+разрешённым `kind`, bounded `role`, `reduced_context[]`,
+`requested_capabilities[]`, `max_output_bytes`, policy snapshot id и
+`parent_is_child`. `started_at`/`finished_at`, event identity и provenance не
+приходят от UI как доверенные значения: Core заполняет или проверяет их сам.
+Неизвестные capability/kind, дополнительные executable payload types и
+`parent_is_child=true` отклоняются до dispatch.
+
+`ChildTaskReport` — versioned envelope с обязательными `child_task_id`,
+`kind`, `status`, `summary`, `findings[]`, `sources[]`,
+`confidence_percent`; bounded optional `limitations[]`, `output_bytes`,
+`started_at`, `finished_at`, `event_id` и provenance hash. Все collection
+элементы и serialized envelope имеют собственные limits, перечисленные в
+contract constants; отсутствие обязательного поля, неизвестный enum или
+несовпадение request hash переводят report в validation rejection.
 
 ## Policy defaults для MVP
 
@@ -122,6 +156,13 @@ Core является единственным владельцем этой sta
   дают `blocked`/`rejected` с machine-readable reason и redacted detail;
 - runtime/provider/filesystem failure даёт `failed`, без blind retry. Retry
   возможен только как новый child с новым id и новым policy snapshot;
+- adapter panic, forced producer crash или потеря worker task даёт `failed` с
+  machine-readable reason; в MVP это bounded Core task, поэтому отдельный
+  child OS process не обещается и не должен быть имитирован в UI;
+- если parent acceptance gate не может завершить проверку из-за внутренней
+  ошибки Core/storage, report не принимается и не отклоняется как содержательно
+  неверный: child получает `blocked` с redacted reason, ошибка пишется в audit,
+  а parent получает доступное действие для ручного retry новым UUID;
 - parent acceptance gate атомарно проверяет request/report pair, task id,
   status, bounds, confidence, sources и provenance до записи acceptance.
 
@@ -153,6 +194,19 @@ Confidence не заменяет source validation, acceptance review или app
 неполном, но валидном report родитель может принять его как `partial`; при
 ошибке schema/provenance/bounds acceptance отклоняется независимо от confidence.
 
+Допустимые source forms в MVP: workspace file reference
+`workspace:<normalized-relative-path>#L<start>-L<end>`, git reference
+`git:<commit-or-working-tree>:<normalized-relative-path>#L<start>-L<end>` и
+внутренний event reference `event:<event_id>`. URL не разрешены при `deny all`
+network policy. Core проверяет, что file/git/event reference существует в
+разрешённом scope и был доступен через child operation; произвольная строка
+или непроверенный внешний URL не считается provenance.
+
+Parent rejection переводит child в immutable `rejected` и не меняет parent
+task автоматически. Parent может запросить ручную проверку, создать новый
+child с новым UUID и изменённым descriptor либо завершить ветку как
+`blocked`. Автоматический retry того же request/report запрещён.
+
 ## Replay и reconnect
 
 Каждое child event содержит `event_id`, `child_task_id`, child-local
@@ -168,6 +222,13 @@ Core обнаруживает gap в child sequence и запрашивает/в
 вместо попытки тихо продолжить неполную timeline. Terminal state хранится
 durable и является конечным: поздний report/cancel не воскрешает child и не
 создаёт второй timeline item.
+
+Event journal хранится в существующем Core-owned SQLite event journal и
+связанном child lifecycle storage; UI не держит его единственную копию. В MVP
+timeline хранится по общей retention policy завершённых task, а active,
+blocked и rejected child не удаляется до завершения parent task. Если retention
+очищает старое событие, Core возвращает snapshot с `replay_floor_sequence`, а
+UI показывает `history truncated`, не придумывая пропущенные переходы.
 
 ## Workflow editor и UI MVP
 
@@ -198,21 +259,46 @@ durable и является конечным: поздний report/cancel не 
 - Для `waiting_approval`, `blocked`, `failed`, `cancelled`, `timed_out`,
   `budget_exceeded` и `output_exceeded` UI показывает понятную причину и
   доступное действие; UI не подменяет Core state локальным успехом.
+- WinUI получает Core events через существующий versioned named-pipe protobuf
+  transport. ViewModel использует reducer/state projection и
+  `ObservableCollection`/property notifications только как представление;
+  Core остаётся владельцем lifecycle, configuration persistence, policy и
+  acceptance. Отдельной шины, gRPC или прямого доступа UI к SQLite нет.
+- Для blocked/error UI использует Core enum, machine-readable reason, safe
+  detail и доступные actions. Локальные переходы допускаются только для
+  loading/reconnect decoration и не меняют child state.
+
+## Наблюдаемость и диагностика
+
+Core пишет redacted structured events для `created`, `started`,
+`cancel_requested`, `cancelled`, `timed_out`, `budget_exceeded`,
+`output_exceeded`, `failed`, `validated`, `accepted`, `rejected` и `aborted`.
+Каждая запись содержит `child_task_id`, parent id, kind, policy snapshot id,
+duration, tool-call count, output bytes, terminal reason и report/provenance
+hash без prompt, secret-like content или полного report.
+
+Публичные метрики MVP: duration, output bytes, tool calls,
+cancellation/timeout count, failure/blocked/rejection count и replay gap count.
+Метрики агрегируются по kind/terminal reason; raw findings и secret-like
+payload в metrics не попадают.
 
 ## Порядок реализации
 
 1. Зафиксировать Core-owned child policy snapshot, allow-list и lifecycle
    state machine поверх существующих contracts/storage.
-2. Ввести Core dispatcher и read-only execution adapters с единым
-   timeout/cancellation/output/tool budget.
-3. Реализовать parent acceptance gate, source validation, confidence policy и
+2. Зафиксировать `ChildTaskInput`/`ChildTaskReport` schema, UUID identity,
+   source forms, policy/error enums и IPC compatibility fixtures.
+3. Ввести Core dispatcher и read-only execution adapters с единым
+   timeout/cancellation/output/tool budget и sandbox negative tests.
+4. Реализовать parent acceptance gate, source validation, confidence metadata и
    evidence provenance.
-4. Добавить durable child events, IPC compatibility, replay/reconnect и
+5. Добавить durable child events, IPC compatibility, replay/reconnect и
    terminal-state conflict rules.
-5. Добавить native catalog/descriptor editor, timeline/evidence views,
+6. Добавить native catalog/descriptor editor, timeline/evidence views,
    blocked/error states и visual smoke.
-6. Провести focused contract, adapter, cancellation/timeout/budget,
-   replay/reconnect, acceptance-gate и WinUI smoke tests.
+7. Провести focused unit tests каждого adapter и acceptance gate, integration
+   tests с fake child/producer и forced crash, sandbox bypass tests,
+   cancellation/timeout/budget tests, replay/reconnect tests и WinUI smoke.
 
 ## Критерии готовности
 
@@ -225,14 +311,19 @@ durable и является конечным: поздний report/cancel не 
   ложный `completed`;
 - timeout, cancel, forbidden capability, invalid report, oversized output и
   любой budget limit приводят к bounded terminal state с причиной;
-- parent принимает только валидный report с policy threshold confidence,
+- parent принимает только валидный report с корректными schema/provenance,
   непустым summary, уникальными валидными sources и matching provenance;
+- confidence сохраняется в `0..100` как metadata и не может самостоятельно
+  перевести report в accepted или расширить permissions;
 - UI одинаково и truthful показывает created, queued, running, validating,
   waiting parent acceptance, accepted/rejected, blocked, failed, cancelled,
   timed out, budget exceeded, output exceeded и aborted; `waiting approval`
   отображается как parent workflow overlay;
 - replay после reconnect не дублирует child events и не воскрешает terminal
   child;
+- child crash даёт `failed` с machine-readable reason, внутренний gate failure
+  даёт `blocked` с redacted detail, а sandbox negative tests подтверждают
+  denial для write/shell/nested child/network mutation/traversal/symlink escape;
 - focused Rust tests, IPC compatibility tests, WinUI smoke и `git diff --check`
   проходят; generated artifacts очищены.
 
