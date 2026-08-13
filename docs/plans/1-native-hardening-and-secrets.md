@@ -1,10 +1,10 @@
-# Подплан 1 — native hardening, secrets и переносимые проверки
+# Подплан 1 — hardening, secrets и переносимые проверки
 
 Статус: следующий самый простой подплан
-Порядок: 1 из 5
+Порядок: 1 из 6; UI-части выполняются после подплана 0
 Источник: бывший единый мастер-план; актуальная детализация находится в этом подплане.
 
-Этот подплан идёт первым не потому, что содержит весь ближайший функционал, а потому что его проверки и security boundaries являются prerequisite для release hardening. Базовые native shell/Core/IPC этапы 0b/0c уже завершены; task runner может разрабатываться параллельно, но не должен обходить эти границы.
+Этот подплан идёт первым после миграционного контракта не потому, что содержит весь ближайший функционал, а потому что его проверки и security boundaries являются prerequisite для release hardening. Core/IPC этапы уже завершены; Electron UI должен использовать эти границы и не обходить их.
 
 ## Цель
 
@@ -12,7 +12,7 @@
 
 ## Объём
 
-- заменить POSIX-зависимые тестовые команды `true`/`false` на кроссплатформенный Rust mock binary `test-stub-exitcode` внутри workspace; зафиксировать, какие тесты его используют, и не объявлять WSL поддерживаемой native-средой;
+- заменить POSIX-зависимые тестовые команды `true`/`false` на кроссплатформенный Rust mock binary `test-stub-exitcode` внутри workspace; зафиксировать, какие тесты его используют, и не объявлять WSL поддерживаемой Windows-средой;
 - завершить хранение provider secrets через Credential Manager/DPAPI с ротацией и удалением старых значений;
 - добавить Core-first backup/restore SQLite с JSON preview, фазовым progress, approval и audit; UI ограничить одной командой создания/восстановления файла и отображением IPC progress/error;
 - добавить минимальный crash-recovery UI для состояний `RECOVERING`, `BLOCKED`, `WAITING_APPROVAL`, `FAILED`, без отдельного сложного workflow-экрана;
@@ -32,7 +32,7 @@
 
 - В workspace добавляется маленький Rust mock binary `test-stub-exitcode`, принимающий exit code аргументом и завершающийся с ним. `std::process::Command` запускает его с явным executable/path и аргументами, без shell parsing; тесты не зависят от `true`, `false`, Bash, `cmd.exe` или WSL.
 - Список мест, где использовались POSIX-команды, фиксируется в regression test или комментарии рядом с фикстурой. Linux/macOS остаются валидными средами для Rust-тестов, но эта фикстура не должна ухудшать их совместимость.
-- WSL не является reference-средой для WinUI, supervisor и native packaging. При наличии WSL в CI допускается отдельная диагностическая проверка, но её результат не смешивается с Windows acceptance criteria.
+- WSL не является reference-средой для Electron, supervisor и Windows packaging. При наличии WSL в CI допускается отдельная диагностическая проверка, но её результат не смешивается с Windows acceptance criteria.
 - IPC portability tests отдельно проверяют временные каталоги и endpoints: Unix-style `/tmp`/Unix sockets не должны быть скрытой зависимостью; Windows path и named pipe формируются штатными platform APIs.
 
 ### Секреты и миграция
@@ -101,7 +101,7 @@ Smoke-матрица на проверяемой системе: clean install �
 
 ## Порядок реализации
 
-1. Исправить переносимость тестовых фикстур и прогнать Rust/WinUI/IPC проверки.
+1. Исправить переносимость тестовых фикстур и прогнать Rust/Electron/IPC проверки.
 2. Вынести секреты из обычных настроек в Credential Manager/DPAPI; добавить тесты отсутствия секретов в logs/traces/exports.
 3. Реализовать Core backup/restore и минимальные UI-команды/состояния поверх существующего Core recovery state; не добавлять отдельный backup browser или recovery wizard.
 4. Закрыть search/interpreter/policy edge cases отдельными regression tests, включая symlink/reparse-point, Unicode и Git remote audit cases.
@@ -109,8 +109,8 @@ Smoke-матрица на проверяемой системе: clean install �
 
 ## Критерии готовности
 
-- `cargo test --workspace`, WinUI tests и IPC tests проходят без environment-only failures; environment-only означает только подтверждённую внешнюю причину вроде отсутствующего Windows SDK/эмулятора, недоступного Credential Manager контекста CI, временного network/provider outage или невозможного elevation, и не может скрывать assertion, product logic, data-integrity или security failure;
-- POSIX-команды не требуются для native-тестов, а WSL не используется как скрытая зависимость acceptance run;
+- `cargo test --workspace`, Electron tests и IPC tests проходят без environment-only failures; environment-only означает только подтверждённую внешнюю причину вроде недоступного Credential Manager контекста CI, временного network/provider outage или невозможного elevation, и не может скрывать assertion, product logic, data-integrity или security failure;
+- POSIX-команды не требуются для Windows-тестов, а WSL не используется как скрытая зависимость acceptance run;
 - provider key и распространённые encoded forms не хранятся в settings, logs, traces, telemetry, prompts/tool payload history, audit events, diagnostic bundle/Core Doctor export, backup files/metadata, crash dumps, error messages или crash dump annotations;
 - synthetic crash-dump/core-dump test не содержит provider key или encoded forms в проверяемых annotations и serialized diagnostic fields; полноценное доказательство отсутствия значения во всей памяти ОС не заявляется этим подпланом;
 - fallback для dev/CI является только ephemeral и не сохраняется после завершения процесса;

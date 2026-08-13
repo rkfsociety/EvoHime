@@ -37,4 +37,4 @@
 
 ## Проверка перед релизом
 
-Публикация установщика разрешена только после Rust tests, WinUI tests, package smoke, `git diff --check` и успешной native package compilation на Windows CI.
+Публикация установщика разрешена только после Rust tests, Electron tests, package smoke, `git diff --check` и успешной Windows package compilation на Windows CI.

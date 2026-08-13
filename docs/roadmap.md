@@ -1,4 +1,4 @@
-# EvoHime — native Windows roadmap
+# EvoHime — Windows desktop roadmap
 
 Это краткая продуктовая карта, а не список отдельных задач. Детали текущего цикла находятся в [`development-plan.md`](development-plan.md), фактическая реализация — в [`current-state.md`](current-state.md).
 
@@ -6,18 +6,19 @@
 
 ## Текущая версия
 
-`0.0.000032` — текущая версия native-клиента; первая версия продукта была `0.0.0001`.
+`0.0.000032` — текущая версия клиента; следующая оболочка — Electron; первая версия продукта была `0.0.0001`.
 
 ## Завершено
 
 | Блок | Статус | Подтверждение |
 | --- | --- | --- |
-| WinUI 3 shell и native solution | ✅ | `bb432fa` |
+| WinUI 3 shell и native foundation | ✅ legacy baseline | `bb432fa` |
+| Electron desktop shell migration | 🟡 planned prerequisite | `docs/plans/0-electron-shell-migration.md` |
 | Rust Core и SQLite event journal | ✅ | `93995bc`, `66e741e` |
 | Versioned named-pipe IPC и replay | ✅ | `e0da370`, `463e11b` |
 | Supervisor, mutex, Job Object и diagnostics | ✅ | `e0e0f75`, `a9018a8` |
 | Workspace picker, persistence, tray, notifications | ✅ | `a43aaac`–`6991a11` |
-| Native task timeline, cancellation и approval round-trip | ✅ | `0246f05`, `87c5b39` |
+| Desktop task timeline, cancellation и approval round-trip | ✅ Core/legacy UI baseline | `0246f05`, `87c5b39` |
 | Единый installer и CI build after checks | ✅ | `9b3430c` |
 | Имя агента «Ева» и версия `0.0.0001` | ✅ | `775b20b` |
 | Retention: только последний стабильный release/tag | ✅ | `dadcbf6` |
@@ -28,7 +29,7 @@
 ### 1. Developer workflow — следующий продуктовый этап
 
 - Files: дерево workspace, открытие и безопасное чтение;
-- Editor: native текстовый редактор с сохранением через Core;
+- Editor: desktop текстовый редактор с сохранением через Core;
 - Git: status, diff, commit и безопасные операции;
 - Terminal: controlled child process, поток stdout/stderr, timeout и Stop;
 - approval preview для команд и изменений.
@@ -40,18 +41,18 @@
 - crash recovery и диагностика из UI;
 - проверка upgrade path на поддерживаемых Windows 10 и Windows 11.
 
-### 3. Native quality
+### 3. Desktop quality
 
 - compatibility tests UI/Core для каждого изменения IPC;
 - smoke installer на Windows CI;
 - проверка single-instance и завершения Job Object;
 - bounded logs, event replay и retention completed tasks;
-- release только после зелёных Rust/WinUI/package checks.
+- release только после зелёных Rust/Electron/package checks.
 
 ## Release workflow
 
-1. Push или pull request запускает проверки Rust, supervisor, package smoke и WinUI.
-2. Job `build-native` стартует только после успешных проверок.
+1. Push или pull request запускает проверки Rust, supervisor, Electron, package smoke и Windows acceptance.
+2. Job `build-windows` стартует только после успешных проверок.
 3. Собирается runtime в staging-каталог.
 4. Inno Setup создаёт единственный `EvoHime-Setup.exe`.
 5. Для tag `vX.Y.Z` создаётся GitHub Release.

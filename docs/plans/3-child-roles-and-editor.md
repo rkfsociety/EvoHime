@@ -1,13 +1,13 @@
-# Подплан 3 — child roles и native workflow editor
+# Подплан 3 — child roles и desktop workflow editor
 
 Статус: высокая сложность; два связанных трека реализации
-Порядок: 3 из 5
+Порядок: 3 из 6; UI-части выполняются после подплана 0
 Источник: бывший единый мастер-план; актуальная детализация находится в этом подплане.
 
 ## Цель
 
 Подключить существующие bounded child-role/handoff contracts к реальному
-read-only выполнению и сделать его наблюдаемым в WinUI. Контрактный слой уже
+read-only выполнению и сделать его наблюдаемым в Electron. Контрактный слой уже
 умеет валидировать handoff, урезанный context, read-only capabilities и report,
 а storage/IPC уже принимают и сохраняют описатели заявок и отчёты. Этот
 подплан добавляет отсутствующий runtime dispatcher, выполнение и UI; он не
@@ -51,7 +51,7 @@ read-only выполнению и сделать его наблюдаемым �
   dispatcher, sandbox boundary, adapters, lifecycle, report gate, provenance,
   durable events и replay. Этот трек обязателен и должен быть завершён до
   запуска production child.
-- **Track B — WinUI catalog/editor/inspector:** Core-driven catalog, minimal
+- **Track B — Electron catalog/editor/inspector:** Core-driven catalog, minimal
   policy-safe descriptor form, approval surface, timeline, evidence и error
   states. UI не расширяет Track A и может быть смонтирован на MockChildAdapter
   до подключения реальных adapters.
@@ -113,7 +113,7 @@ read-only выполнению и сделать его наблюдаемым �
 - durable child lifecycle и redacted provenance: request, state transitions,
   terminal reason, report hash, sources и acceptance decision;
 - versioned IPC events/replay/reconnect для child timeline;
-- WinUI catalog, descriptor editor, timeline, evidence panel и
+- Electron catalog, descriptor editor, timeline, evidence panel и
   blocked/error states.
 
 ## Схемы входа и отчёта
@@ -170,7 +170,7 @@ payload. Lifecycle contract описан ниже; UI не является ег
 - Defaults принадлежат Core-owned policy snapshot и могут иметь только более
   строгие per-kind значения; parent/UI не могут повысить лимиты. Parent может
   уменьшить budget до запуска через descriptor, но не отменить hard maximum.
-  Cancellation инициируется parent command, WinUI operator command или Core
+  Cancellation инициируется parent command, Electron operator command или Core
   watchdog (timeout/budget/restart); все пути сходятся в один idempotent
   dispatcher cancellation token.
 - report confidence хранится как integer `0..100` и означает bounded
@@ -195,7 +195,7 @@ Core является единственным владельцем этой sta
   workflow/approval overlay. Если approval нужен до запуска, child остаётся
   `queued`; после запуска approval может приостановить parent без подмены
   child state.
-- Approval и acceptance — разные контуры: human approval в WinUI разрешает
+- Approval и acceptance — разные контуры: human approval в Electron разрешает
   сам запуск/передачу конкретного bounded descriptor или report; parent
   acceptance gate автоматически проверяет schema, request match, bounds,
   provenance и policy независимо от решения человека. Human approval не
@@ -362,7 +362,7 @@ Catalog здесь ограничен read-only справочником kinds/c
   Arbitrary dependency graph и reorder semantics переносятся в task graph
   contract подплана 4.
 - Workflow валидируется дважды: при сохранении draft и непосредственно перед
-  execution. Обе проверки выполняются Core, а не только WinUI: закрытый kind,
+  execution. Обе проверки выполняются Core, а не только Electron: закрытый kind,
   role, capabilities, path scope, budgets, report requirements и approval
   mode сверяются с policy snapshot. Невалидный workflow не сохраняется как
   runnable и не получает command id.
@@ -380,7 +380,7 @@ Catalog здесь ограничен read-only справочником kinds/c
 - Для `waiting_approval`, `blocked`, `failed`, `cancelled`, `timed_out`,
   `budget_exceeded` и `output_exceeded` UI показывает понятную причину и
   доступное действие; UI не подменяет Core state локальным успехом.
-- WinUI получает Core events через существующий versioned named-pipe protobuf
+- Electron получает Core events через существующий versioned named-pipe protobuf
   transport. ViewModel использует reducer/state projection и
   `ObservableCollection`/property notifications только как представление;
   Core остаётся владельцем lifecycle, configuration persistence, policy и
@@ -426,11 +426,11 @@ payload в metrics не попадают.
    evidence provenance.
 5. Добавить durable child events, IPC compatibility, replay/reconnect и
    terminal-state conflict rules.
-6. Добавить native catalog/descriptor editor, timeline/evidence views,
+6. Добавить Electron catalog/descriptor editor, timeline/evidence views,
    blocked/error states и visual smoke.
 7. Провести focused unit tests каждого adapter и acceptance gate, integration
    tests с fake child/producer и forced crash, sandbox bypass tests,
-   cancellation/timeout/budget tests, replay/reconnect tests и WinUI smoke.
+   cancellation/timeout/budget tests, replay/reconnect tests и Electron smoke.
    Добавить `MockChildAdapter` с быстрым, долгим, отменяемым, timeout,
    oversized-output, rejected-report и crash сценариями для UI/timeline tests;
    Mock adapter не получает production capabilities и не используется как
@@ -476,7 +476,7 @@ payload в metrics не попадают.
 - acceptance suite принимает только schema-valid report с разрешёнными
   sources и matching request/provenance, а invalid/low-confidence/injection
   report остаётся в quarantine или `needs_review`;
-- focused Rust tests, IPC compatibility tests, WinUI smoke и `git diff --check`
+- focused Rust tests, IPC compatibility tests, Electron smoke и `git diff --check`
   проходят; generated artifacts очищены.
 
 ## Зависимости

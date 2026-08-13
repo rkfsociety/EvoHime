@@ -8,8 +8,8 @@ Task Dependency Graphs живут в Core и описывают зависимо
 - batch выполняется с bounded concurrency;
 - состояние каждого шага хранится в SQLite;
 - failure strategy ограничивает суммарное число ошибок;
-- native task timeline получает status events через named pipe.
+- desktop task timeline получает status events через named pipe.
 
 ## UI
 
-WinUI отображает граф и состояния как часть task workspace. UI не вычисляет зависимости и не запускает steps самостоятельно.
+Electron отображает граф и состояния как часть task workspace. UI не вычисляет зависимости и не запускает steps самостоятельно.

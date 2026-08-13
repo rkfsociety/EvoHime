@@ -1,7 +1,7 @@
-# Подплан 2 — Memory v1: extraction и native UX
+# Подплан 2 — Memory v1: extraction и desktop UX
 
 Статус: следующий после hardening
-Порядок: 2 из 5
+Порядок: 2 из 6; UI-части выполняются после подплана 0
 Источник: бывший единый мастер-план; актуальная детализация находится в этом подплане.
 
 ## Цель
@@ -15,7 +15,7 @@
 - post-run extraction фактов и решений только из bounded run evidence;
 - policy для типов записей, TTL, privacy label, provenance и максимального размера;
 - подтверждение пользователем важных записей до сохранения;
-- native inspector UI: create, list, search, update, archive, forget, provenance;
+- Electron inspector UI: create, list, search, update, archive, forget, provenance;
 - export/delete только через approval и audit;
 - scope isolation для workspace/project/task и deterministic retrieval; Inspector и search scoped по умолчанию.
 
@@ -38,7 +38,7 @@
 1. Описать `MemoryCandidate` и deterministic extractor из run metrics/evidence; extractor работает только с перечисленными структурированными полями и не делает смысловой вывод из свободного текста. Fixtures для allowlist, secrets, stale/conflict и scope запускаются параллельно с extractor-ом.
 2. Добавить policy decision и confirmation queue без автоматического сохранения неподтверждённых важных фактов.
 3. Подключить post-run hook к Core task lifecycle после terminal outcome только после того, как policy/queue умеют атомарно `reject` и не сохранять candidate; extraction и policy запускаются асинхронно, не задерживают фиксацию terminal status и не блокируют IPC/UI.
-4. Добавить WinUI inspector поверх существующего готового IPC API.
+4. Добавить Electron inspector поверх существующего готового IPC API.
 5. Завершить integration/eval fixtures для stale, conflicting, secret-like и cross-scope записей, начатые вместе с extractor-ом.
 
 ## Модель кандидата, evidence и policy
@@ -70,7 +70,7 @@ Post-run edge cases: candidates разрешены для terminal `success`, `f
 
 Confirmation queue сохраняет только безопасный кандидат и его срок действия. Её lifecycle: `pending -> accepted | rejected | expired`; переходы атомарны и попадают в audit. Pending candidates переживают restart, повторно показывают provenance до подтверждения и истекают по TTL; после `expired` они не сохраняются и не возвращаются в normal retrieval. Inspector показывает badge с числом pending, немодальный banner после нового post-run extraction и, если разрешено системной privacy policy, локальное notification; modal dialog после run не используется. В UI пользователь видит kind, scope, content, provenance, TTL и diff с текущей записью и может подтвердить, изменить scope/content, отложить или отклонить. Бесконечной очереди нет.
 
-## Native UI, offline и миграции
+## Desktop UI, offline и миграции
 
 Inspector показывает pending queue до сохранения важных записей и после подтверждения — list/search/update/archive/forget/provenance. В списке видны `scope`, `kind`, `privacy_label`, TTL, lifecycle и причина предложения; карточка показывает «почему предложено»: provenance и безопасный snippet source evidence. Queue асинхронна: terminal outcome и Core task lifecycle не блокируются модальным диалогом; пользователь получает ненавязчивое уведомление и открывает очередь при удобном случае. Для forgotten записей доступен audited recently-forgotten список и явный restore; undo/redo общего назначения в v1 нет. Export и физическое удаление требуют отдельного approval, явного scope и audit confirmation; для массовых операций UI показывает число, scope и сводку объектов, а approval фиксирует полный список id и применяется атомарно. Export всегда направляется в выбранное пользователем локальное место и никогда не попадает в telemetry или logs.
 

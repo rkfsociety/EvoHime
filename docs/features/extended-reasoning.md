@@ -1,6 +1,6 @@
 # Extended reasoning для Евы
 
-Extended reasoning реализуется внутри Rust Core и model gateway. UI получает только безопасные task events через named pipe и отображает их в native timeline.
+Extended reasoning реализуется внутри Rust Core и model gateway. Electron UI получает только безопасные task events через named pipe и отображает их в desktop timeline.
 
 ## Правила
 

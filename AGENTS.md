@@ -1,6 +1,6 @@
 # EvoHime — Agent Guide
 
-EvoHime — локальный native Windows AI-agent. Поддерживаемый продукт — WinUI 3 desktop application с Rust Core, SQLite и Windows supervisor.
+EvoHime — локальный Windows AI-agent. Поддерживаемый продукт — Electron desktop application с Rust Core, SQLite и Windows supervisor.
 
 ## Общение
 
@@ -11,8 +11,8 @@ EvoHime — локальный native Windows AI-agent. Поддерживаем
 ## Архитектура
 
 ```text
-EvoHime.exe               WinUI 3 UI (пользовательский запуск)
-        │ named pipe, desktop-ipc-v1
+EvoHime.exe               Electron UI (пользовательский запуск)
+        │ main/preload → named pipe, desktop-ipc-v1
 evohime-core.exe           Rust agent runtime, tools, SQLite
         ▲
 evohime-supervisor.exe    mutex, Job Object, lifecycle, recovery, logs
@@ -29,13 +29,13 @@ UI не обращается к workspace, SQLite или model provider напр
 ## Команды
 
 ```powershell
-# Сборка и запуск native приложения
+# Сборка и запуск desktop-приложения
 .\start-dev.ps1
 
-# Запуск уже собранного native-пакета
+# Запуск уже собранного desktop-пакета
 .\start-dev.ps1 -SkipBuild
 
-# Сборка переносимого native-пакета
+# Сборка переносимого Windows-пакета
 .\scripts\build-windows-native.ps1
 
 # Запуск без терминала (double-click): debug-сборка пакета и старт UI
@@ -51,19 +51,19 @@ $pwsh = Join-Path $PSHOME 'pwsh.exe'
 & $pwsh -NoProfile -File scripts\native-workflow.tests.ps1
 & $pwsh -NoProfile -File scripts\github-retention.tests.ps1
 
-# WinUI tests (CI прогоняет headless-зеркало EvoHime.IpcTests)
+# Desktop UI/IPC tests (в переходный период сохраняется compatibility suite)
 & 'C:\Program Files\dotnet\dotnet.exe' test desktop\EvoHime.Tests\EvoHime.Tests.csproj -p:Platform=x64
 & 'C:\Program Files\dotnet\dotnet.exe' test desktop\EvoHime.IpcTests\EvoHime.IpcTests.csproj
 
-# Rust native foundation
+# Rust Core foundation
 cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc
 cargo check -p evohime-supervisor
 ```
 
-Для native-задач используй только Windows launcher, Rust native crates, WinUI tests и native packaging scripts.
-Веб-панель и Vite больше не являются частью продукта и не должны возвращаться в инструкции, запуск или архитектуру.
+Для desktop-задач используй Windows launcher, Rust crates, Electron tests и Windows packaging scripts.
+Electron renderer — встроенная часть desktop-приложения, а не web-панель: HTTP server, browser launcher и внешний Node.js runtime не возвращаются в продукт.
 
-Если native-сборка останавливается на `prost-build` или другом crate, сначала проверь доступ Cargo к crates.io:
+Если Rust-сборка останавливается на `prost-build` или другом crate, сначала проверь доступ Cargo к crates.io:
 
 ```powershell
 Resolve-DnsName index.crates.io
@@ -74,7 +74,7 @@ NuGet и crates.io — независимые источники: успешны
 
 ## IPC
 
-Протокол редактируется в `crates/desktop-ipc/proto/evohime.desktop.proto`. Rust transport и C# envelope должны сохранять совместимость major-версии, sequence replay и bounded frame size. Изменение протокола требует обновить обе стороны и compatibility tests.
+Протокол редактируется в `crates/desktop-ipc/proto/evohime.desktop.proto`. Rust transport и Electron main/preload adapter должны сохранять совместимость major-версии, sequence replay и bounded frame size. Изменение протокола требует обновить обе стороны и compatibility tests; C# suite сохраняется только как временный compatibility oracle.
 
 ## Данные и диагностика
 
@@ -87,8 +87,8 @@ NuGet и crates.io — независимые источники: успешны
 
 ## Правила разработки
 
-1. Не выноси runtime-состояние из native Core в UI.
-2. Не добавляй бизнес-логику в WinUI: UI отображает состояние IPC.
+1. Не выноси runtime-состояние из Rust Core в Electron UI.
+2. Не добавляй бизнес-логику в renderer: UI отображает состояние IPC.
 3. Новые Rust-функции и исправления покрывай тестами.
 4. Соблюдай sandbox, таймауты, отмену и approval для опасных инструментов.
 5. Перед заявлением о готовности запускай свежие проверки и проверяй `git diff --check`.
