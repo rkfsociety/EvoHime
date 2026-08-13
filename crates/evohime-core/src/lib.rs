@@ -1811,6 +1811,30 @@ impl EventJournal {
         let recovered = database.recover_unknown_effects()?;
         let mut reconciliations = Vec::with_capacity(recovered.len());
         for record in recovered {
+            // Durable recovery state machine: RECOVERING -> RECONCILING -> terminal.
+            // Each stage uses a distinct idempotency key so a crash between
+            // stages replays safely (transition_recovery treats a repeated
+            // (idempotency_key, state) pair as a no-op and rejects a reused
+            // key against a different state).
+            database.transition_recovery(
+                &record.run_id,
+                RecoveryState::Recovering,
+                &record.effect_id,
+                &format!("{}:{}:recovering", record.run_id, record.effect_id),
+                "startup",
+                br#"{"reason":"process_restart"}"#,
+                "recovery_started",
+            )?;
+            database.transition_recovery(
+                &record.run_id,
+                RecoveryState::Reconciling,
+                &record.effect_id,
+                &format!("{}:{}:reconciling", record.run_id, record.effect_id),
+                "bounded_build_snapshot",
+                br#"{"reason":"verifying_outcome"}"#,
+                "verifier_started",
+            )?;
+
             let snapshot = database.latest_snapshot_for_task(&record.work_item_id)?;
             let success = snapshot
                 .as_ref()
@@ -1852,6 +1876,26 @@ impl EventJournal {
                     "decision": if success { "applied" } else { "blocked" },
                 }))?,
             )?;
+
+            database.transition_recovery(
+                &record.run_id,
+                if success {
+                    RecoveryState::Resumable
+                } else {
+                    RecoveryState::Blocked
+                },
+                &record.effect_id,
+                &format!(
+                    "{}:{}:{}",
+                    record.run_id,
+                    record.effect_id,
+                    if success { "resumable" } else { "blocked" }
+                ),
+                "bounded_build_snapshot",
+                &serde_json::to_vec(&evidence)?,
+                if success { "applied" } else { "blocked" },
+            )?;
+
             reconciliations.push(reconciliation);
         }
         Ok(reconciliations)
