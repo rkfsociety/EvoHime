@@ -1,6 +1,6 @@
 # Документация EvoHime
 
-Этот каталог описывает поддерживаемый Windows desktop-продукт. Главный источник команд запуска и требований — корневой [`README.md`](../README.md). Рабочие планы находятся отдельно; план миграции Electron — [`plans/0-electron-shell-migration.md`](plans/0-electron-shell-migration.md).
+Этот каталог описывает поддерживаемый Windows desktop-продукт. Главный источник команд запуска и требований — корневой [`README.md`](../README.md). Незавершённые рабочие планы находятся отдельно в [`plans/`](plans/); закрытая Electron migration в этот каталог не копируется.
 
 ## Какой документ читать
 
@@ -24,7 +24,7 @@
 - [`security/`](security/) — расширенная модель угроз;
 - [`sample-context.md`](sample-context.md) — фикстура для демонстрации `filesystem.read`, не документация.
 
-Планы и их ревью находятся в [`plans/`](plans/). Подплан `0-electron-shell-migration.md` — обязательная миграция оболочки; numbered-подпланы `1-`…`5-` содержат последующие исполняемые работы и должны учитывать Electron UI. На текущем этапе это рабочая зона: не трактуйте её документы как замену фактическому состоянию.
+Планы и их ревью находятся в [`plans/`](plans/). Файлы `1-`…`5-` содержат незавершённые исполняемые работы и должны учитывать уже принятую Electron UI. Это рабочая зона: не трактуйте её документы как замену фактическому состоянию.
 
 ## Пользовательская модель
 
@@ -41,7 +41,7 @@
 | Что реально собрано и проверено в checkout | [`current-state.md`](current-state.md) |
 | Какой runtime является утверждённой целью | [`architecture.md`](architecture.md) |
 | В каком порядке выполнять ближайшую работу | [`development-plan.md`](development-plan.md) |
-| Подробность текущей миграции и feature-подпланов | [`plans/`](plans/) |
+| Подробность незавершённых feature-подпланов | [`plans/`](plans/) |
 | Долгосрочные направления без пошаговой реализации | [`roadmap.md`](roadmap.md) |
 | Security boundaries и release security gates | [`../SECURITY.md`](../SECURITY.md), [`security/`](security/) |
 | Provider-specific configuration | [`providers/`](providers/) |
@@ -52,8 +52,8 @@
 
 ## Рабочие правила
 
-Для текущей разработки используйте `.\start-dev.ps1`, native package tests, WinUI/IPC tests и Windows CI. Electron shell живёт в `desktop/evohime-electron`; его typecheck, unit-, contract- и real-Core E2E тесты запускаются через `npm test` и входят в Windows CI. Установщик и пользовательский запуск пока работают через WinUI `EvoHime.exe`.
+Для текущей разработки используйте `start-dev.ps1`, native package tests, Electron checks, WinUI/IPC compatibility tests и Windows CI. Electron shell живёт в `desktop/evohime-electron`; его protocol check, typecheck, unit-, contract- и real-Core E2E тесты запускаются через npm-команды и входят в Windows CI. Установщик и пользовательский запуск работают через Electron `EvoHime.exe`.
 
-Веб-панель полностью выведена из продукта. Будущий Electron renderer будет встроенным desktop UI; HTTP server и browser launcher не используются. Сейчас `start-dev.ps1` собирает native package и открывает WinUI `EvoHime.exe`; клиент сам запускает единственный скрытый supervisor, а supervisor — Core. `-SkipBuild` допустим только при наличии готового `.evohime-native\windows-x64`.
+Веб-панель полностью выведена из продукта. Electron renderer — встроенный desktop UI; HTTP server и browser launcher не используются. `start-dev.ps1` собирает native package и открывает Electron `EvoHime.exe`; клиент сам запускает единственный скрытый supervisor, а supervisor — Core. `-SkipBuild` допустим только при наличии готового `.evohime-native\windows-x64`.
 
 При изменении архитектуры, runtime-контрактов или статуса реализации обновляйте соответствующий канонический документ и дату состояния. Не дублируйте подробный план в `roadmap.md` и не добавляйте инструкции для отдельного web-продукта.

@@ -10,7 +10,7 @@ EvoHime — локальный Windows-клиент для coding-agent зада
 
 ## Runtime
 
-- `EvoHime.exe` — текущий WinUI 3 интерфейс; целевая оболочка — Electron: проект `desktop/evohime-electron` создан, Gate 0 пройден, production installer пока собирает WinUI;
+- `EvoHime.exe` — Electron main process с bundled renderer; native package и installer собирают Electron shell;
 - `evohime-core.exe` — Rust agent loop, model gateway, tools, permissions, approvals и SQLite;
 - `evohime-supervisor.exe` — single-instance mutex, Job Object, restart и диагностика;
 - `evohime-transaction.exe` — скрытый transaction worker для backup, commit и rollback обновлений;
@@ -31,24 +31,24 @@ Core и supervisor — внутренние компоненты установ�
 - автоматический rollback при ошибке установщика и recovery незавершённой транзакции перед запуском Core;
 - release retention: сохраняется только последний стабильный `vX.Y.Z` release/tag;
 - имя агента «Ева» передаётся в system context Core;
-- Core-owned build policy и её хранение; policy panel переносится в Electron;
+- Core-owned build policy и её хранение; policy panel работает в Electron shell;
 - durable recovery foundation для длительных запусков и reconciliation.
 - provider secrets хранятся в Credential Manager текущего Windows-пользователя; settings содержат только logical reference, предусмотрены миграция legacy и ручная ротация;
 - Core-first SQLite backup/restore: Online Backup API, WAL checkpoint, DPAPI payload protection, checksum, preview, approval, progress, safety backup, rollback и redacted audit;
 - filesystem.search исключает hard-default secret/auth paths, не следует symlink/reparse-обходам и не требует POSIX shell;
 - shell blocklist расширен для Windows launcher/LOLBin семейств; recovery timeline различает `RECOVERING`, `BLOCKED`, `WAITING_APPROVAL` и `FAILED`;
 - Core IPC wiring для backup preview/restore и отображения storage progress/error;
-- Electron shell: этапы 0 и 1 подплана 0 выполнены (стек зафиксирован, оболочка собирается, IPC adapter и аутентифицированный транспорт работают против настоящего Core), UI-срезы и production acceptance ещё не завершены.
+- Electron shell: migration acceptance закрыта на Windows; проверены UI-срезы, authenticated Core IPC, package startup, fault recovery, install/upgrade/rollback и acceptance matrix.
 
 ## Следующий этап
 
-1. завершить Electron shell migration: UI-срезы, packaging и acceptance (транспорт и его аутентификация готовы);
-2. перенести UI-срезы и выполнить install/upgrade/rollback acceptance на Windows 10 и Windows 11;
-3. leases/reconciliation и расширенный diff/command preview в approval UI;
+1. leases/reconciliation и расширенный diff/command preview в approval UI;
+2. продолжить hardening permission policy, credentials, recovery и diagnostics по активным планам;
+3. поддерживать Windows 10/11 CI и compatibility suite, не возвращая web runtime;
 4. informative ARM64/Insider compatibility runs.
 
 ## Граница продукта
 
 Пользовательский продукт ограничен `EvoHime-Setup.exe`, `EvoHime.exe`, локальным Core, supervisor и данными в профиле Windows. Исследовательские и экспериментальные каталоги не входят в установочный runtime.
 
-Legacy web UI, HTTP server, browser launcher и PostgreSQL migrations удалены из репозитория. Electron UI и versioned named-pipe IPC — целевая пользовательская оболочка и transport boundary; WinUI остаётся временным compatibility runtime до завершения migration acceptance.
+Legacy web UI, HTTP server, browser launcher и PostgreSQL migrations удалены из репозитория. Electron UI и authenticated versioned named-pipe IPC — текущая пользовательская оболочка и transport boundary; WinUI остаётся временным compatibility runtime для совместимости и тестов.

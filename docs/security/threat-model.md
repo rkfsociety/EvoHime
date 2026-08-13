@@ -47,7 +47,7 @@ impersonation, а не из слов клиента), неизвестную р�
 считается непредсказуемым, но не секретом: защиту дают ACL и handshake.
 
 Роли транспорта: `shell` — Electron-оболочка, `compatibility-shell` — WinUI
-fallback до конца миграции. Core без launch context (запуск разработчика без
+compatibility runtime. Core без launch context (запуск разработчика без
 supervisor) работает в неаутентифицированном режиме и явно помечает это в
 `core.started` и в логе соединения.
 
@@ -64,4 +64,8 @@ session, но не дают гарантий против вредоносног
 
 ## Проверка перед релизом
 
-Публикация текущего установщика разрешена только после Rust tests, WinUI/IPC tests, package smoke, `git diff --check` и успешной Windows package compilation на Windows CI. После Electron migration этот gate заменяется Electron acceptance из подплана 0.
+Публикация текущего установщика разрешена только после Rust tests, Electron
+typecheck/tests, protocol и bundle checks, WinUI/IPC compatibility tests,
+package smoke, `git diff --check` и успешной Windows package compilation на
+Windows CI. Release job дополнительно выполняет startup/fault acceptance,
+install/upgrade/rollback smoke и проверку retention.

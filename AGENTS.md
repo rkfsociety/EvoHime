@@ -1,6 +1,6 @@
 # EvoHime — Agent Guide
 
-EvoHime — локальный Windows AI-agent. Текущий продукт — WinUI 3 desktop application с Rust Core, SQLite и Windows supervisor; утверждённая целевая оболочка — Electron, пока не завершённая миграция.
+EvoHime — локальный Windows AI-agent. Текущий продукт — Electron desktop application с Rust Core, SQLite и Windows supervisor; WinUI 3 сохранён как compatibility runtime и oracle переходных тестов.
 
 ## Общение
 
@@ -11,7 +11,7 @@ EvoHime — локальный Windows AI-agent. Текущий продукт �
 ## Архитектура
 
 ```text
-EvoHime.exe               WinUI 3 UI сейчас / Electron UI после migration
+EvoHime.exe               Electron main + bundled renderer
         │ named pipe, desktop-ipc-v1
 evohime-core.exe           Rust agent runtime, tools, SQLite
         ▲
@@ -75,7 +75,7 @@ npm run package          # распакованный Windows package в release
 Real-Core E2E тесты требуют собранный Core: `cargo build -p evohime-core`
 (или `--release`); без бинарника они помечаются как пропущенные.
 
-Для текущих desktop-задач используй Windows launcher, Rust crates, WinUI/IPC tests и Windows packaging scripts. Для работ по миграции используй план `docs/plans/0-electron-shell-migration.md` и Electron tests в `desktop/evohime-electron`; принятые архитектурные решения и стек хранятся в памяти проекта.
+Для текущих desktop-задач используй Windows launcher, Rust crates, Electron tests в `desktop/evohime-electron` и Windows packaging scripts. WinUI/IPC tests остаются compatibility suite. Подробные решения завершённой миграции хранятся в памяти проекта; активные планы находятся в `docs/plans/`.
 Electron renderer — встроенная часть desktop-приложения, а не web-панель: HTTP server, browser launcher и внешний Node.js runtime не возвращаются в продукт.
 
 Если Rust-сборка останавливается на `prost-build` или другом crate, сначала проверь доступ Cargo к crates.io:
