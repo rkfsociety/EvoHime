@@ -158,6 +158,47 @@ describe('task timeline', () => {
     })
   })
 
+  it('shows the unfinished tool directly in the chat and turns the composer into stop', async () => {
+    const view = render(
+      <TaskTimeline
+        connection="connected"
+        events={[]}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+        onOpenGit={() => {}}
+      />
+    )
+
+    await userEvent.type(await screen.findByLabelText('Задача'), 'Проверь тесты')
+    await userEvent.click(screen.getByRole('button', { name: 'Запустить задачу' }))
+    await waitFor(() => expect(calls.some((call) => call.command === 'core.startTask')).toBe(true))
+
+    const taskId = (calls.find((call) => call.command === 'core.startTask')?.payload as { taskId: string }).taskId
+    view.rerender(
+      <TaskTimeline
+        connection="connected"
+        events={[event('tool.started', { tool_name: 'filesystem.read' }, taskId)]}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+        onOpenGit={() => {}}
+      />
+    )
+
+    expect(screen.queryByText('Модель работает')).toBeNull()
+    expect(screen.getByText('Выполняю: Читаю файл')).toBeTruthy()
+    expect(screen.queryByText('Остановить', { selector: 'button' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Остановить задачу' }))
+    await waitFor(() => expect(calls.at(-1)?.command).toBe('core.stopTask'))
+  })
+
   it('renders streamed output and terminal recovery state', async () => {
     render(
       <TaskTimeline

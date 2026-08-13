@@ -822,6 +822,16 @@ body {
   color: var(--fg-faint);
 }
 
+.composer__send--stop {
+  background: var(--danger);
+  color: white;
+  font-size: 12px;
+}
+
+.composer__send--stop:hover:not(:disabled) {
+  background: rgb(226 109 109 / 85%);
+}
+
 .composer__hint {
   display: flex;
   align-items: center;

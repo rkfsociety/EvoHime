@@ -257,26 +257,24 @@ export function TaskTimeline({
             />
             <button
               type="button"
-              className="composer__send"
-              aria-label="Запустить задачу"
-              onClick={() => void start()}
-              disabled={!canStart}
+              className={`composer__send${running ? ' composer__send--stop' : ''}`}
+              aria-label={running ? 'Остановить задачу' : 'Запустить задачу'}
+              onClick={() => {
+                if (running) void stop()
+                else if (canStart) void start()
+              }}
+              disabled={running ? busy || !connected : !canStart}
             >
-              ↑
+              {running ? '■' : '↑'}
             </button>
           </div>
 
-          <p className="composer__hint">
+          <div className="composer__hint">
             <ModelPicker connection={connection} events={events} />
             <span className="composer__keys">
               <kbd>Enter</kbd> отправить · <kbd>Shift</kbd>+<kbd>Enter</kbd> перенос строки
             </span>
-            {running ? (
-              <button type="button" onClick={() => void stop()} disabled={busy || !connected}>
-                Остановить
-              </button>
-            ) : null}
-          </p>
+          </div>
 
 
           {!connected ? (

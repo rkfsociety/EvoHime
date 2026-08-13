@@ -17,7 +17,7 @@ describe('activity line', () => {
   it('names the running tool in Russian', () => {
     render(<ActivityLine calls={[{ tool: 'filesystem.read', output: null, running: true }]} running />)
 
-    expect(screen.getByText('Читаю файл')).toBeTruthy()
+    expect(screen.getByText('Выполняю: Читаю файл')).toBeTruthy()
     expect(screen.queryByText('filesystem.read')).toBeNull()
   })
 
@@ -44,7 +44,7 @@ describe('activity line', () => {
   it('falls back to the identifier of a tool it does not know', () => {
     render(<ActivityLine calls={[{ tool: 'custom.tool', output: null, running: true }]} running />)
 
-    expect(screen.getByText('custom.tool')).toBeTruthy()
+    expect(screen.getByText('Выполняю: custom.tool')).toBeTruthy()
   })
 
   it('counts with the right Russian plural', () => {

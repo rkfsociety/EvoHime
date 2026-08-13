@@ -30,7 +30,9 @@ export function ActivityLine({ calls, running }: ActivityLineProps): React.JSX.E
       >
         <span className="activity__icon" aria-hidden="true">{running ? '◐' : '✓'}</span>
         <span className="activity__label">
-          {running ? toolLabel(current?.tool ?? '') || 'Работаю' : summarize(calls)}
+          {running
+            ? `Выполняю: ${toolLabel(current?.tool ?? '') || 'действие'}`
+            : summarize(calls)}
         </span>
         <span className="activity__chevron" aria-hidden="true">{open ? '▾' : '▸'}</span>
       </button>
