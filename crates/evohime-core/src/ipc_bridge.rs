@@ -12,6 +12,10 @@ use std::sync::Arc;
 use tokio::sync::oneshot;
 
 const PROTOCOL_MAJOR: u32 = 1;
+/// Number of tools `ToolRegistry::bootstrap()` is expected to register.
+/// Used only as a Doctor health signal (fewer than expected => Warn), never
+/// to gate functionality.
+const EXPECTED_TOOL_COUNT: u32 = 23;
 const PROTOCOL_MINOR: u32 = 0;
 
 #[derive(Debug, thiserror::Error)]
@@ -591,9 +595,20 @@ impl IpcBridge {
             }
             Some(generated::command_envelope::Command::RunDoctor(request)) => {
                 let result = self
-                    .dispatch_run_doctor(request.project_id, command.protocol.clone())
+                    .dispatch_run_doctor(
+                        request.project_id,
+                        request.detail_level,
+                        command.protocol.clone(),
+                    )
                     .await?;
                 self.write_response(writer, "doctor.report", result).await?;
+            }
+            Some(generated::command_envelope::Command::ExportDoctorLogs(request)) => {
+                let result = self
+                    .dispatch_export_doctor_logs(request.destination_path)
+                    .await?;
+                self.write_response(writer, "doctor.export.completed", result)
+                    .await?;
             }
             Some(generated::command_envelope::Command::SaveResearchEvidence(request)) => {
                 let result = self.dispatch_save_research_evidence(request).await?;
@@ -1126,6 +1141,7 @@ impl IpcBridge {
     async fn dispatch_run_doctor(
         &self,
         project_id: String,
+        detail_level: i32,
         protocol: Option<generated::ProtocolVersion>,
     ) -> Result<Vec<u8>, IpcBridgeError> {
         let coordinator = self
@@ -1139,6 +1155,18 @@ impl IpcBridge {
             ),
             None => true,
         };
+        let (registered_tools, expected_tools, unavailable_tools) = match &self.tools {
+            Some(tools) => {
+                let names = tools.list();
+                (names.len() as u32, EXPECTED_TOOL_COUNT, Vec::new())
+            }
+            None => (0, EXPECTED_TOOL_COUNT, Vec::new()),
+        };
+        let detail_level = if detail_level == 1 {
+            crate::doctor::DetailLevel::Detailed
+        } else {
+            crate::doctor::DetailLevel::Summary
+        };
         let (reply, response) = oneshot::channel();
         coordinator
             .dispatch(CoreCommand::RunDoctor {
@@ -1147,6 +1175,33 @@ impl IpcBridge {
                 expected_protocol_major: PROTOCOL_MAJOR,
                 provider: self.provider_probe(),
                 approval_required,
+                registered_tools,
+                expected_tools,
+                unavailable_tools,
+                detail_level,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_export_doctor_logs(
+        &self,
+        destination_path: String,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::ExportDoctorLogs {
+                destination_path,
                 reply,
             })
             .await
@@ -2400,6 +2455,7 @@ mod tests {
             command: Some(generated::command_envelope::Command::RunDoctor(
                 generated::RunDoctor {
                     project_id: String::new(),
+                    detail_level: 1,
                 },
             )),
         };
@@ -2419,7 +2475,7 @@ mod tests {
             serde_json::from_slice(&event.payload).expect("doctor report is valid json");
         assert_eq!(report["bounded"], serde_json::json!(true));
         let checks = report["checks"].as_array().expect("checks array");
-        assert_eq!(checks.len(), 5);
+        assert_eq!(checks.len(), 7);
         let storage_check = checks
             .iter()
             .find(|check| check["id"] == "storage")

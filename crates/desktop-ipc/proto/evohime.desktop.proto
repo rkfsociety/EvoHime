@@ -208,8 +208,18 @@ message ResolveApproval {
 
 // Bounded, read-only Core Doctor diagnostic. project_id is optional; when
 // set, the permissions check is grounded in that project's real workspace.
+// detail_level is user-configurable verbosity: 0 = SUMMARY (default),
+// 1 = DETAILED. Both levels apply identical redaction; DETAILED only adds
+// bounded, already-redacted `details` text, never secrets.
 message RunDoctor {
   string project_id = 1;
+  int32 detail_level = 2;
+}
+
+// Exports the local structured logs (core.jsonl / supervisor.jsonl) and
+// recent run_tool_metrics aggregates, redacted, to a user-chosen JSONL file.
+message ExportDoctorLogs {
+  string destination_path = 1;
 }
 
 // Saves a single piece of offline research evidence tied to a work item.
@@ -462,6 +472,7 @@ message CommandEnvelope {
     GitStatus git_status = 54;
     GitDiff git_diff = 55;
     TerminalExecute terminal_execute = 56;
+    ExportDoctorLogs export_doctor_logs = 57;
   }
 }
 

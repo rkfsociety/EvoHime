@@ -42,6 +42,18 @@ pub enum DoctorError {
     InvalidProbe(&'static str),
 }
 
+/// User-configurable verbosity. Both levels apply the same redaction; the
+/// only difference is whether the bounded, already-redacted `details` field
+/// is included. `Detailed` never exposes anything `Summary` would not have
+/// been allowed to expose too.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum DetailLevel {
+    #[default]
+    Summary,
+    Detailed,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DoctorSnapshot {
     pub storage: StorageProbe,
@@ -49,6 +61,8 @@ pub struct DoctorSnapshot {
     pub provider: ProviderProbe,
     pub recovery: RecoveryProbe,
     pub permissions: PermissionsProbe,
+    pub tools: ToolsProbe,
+    pub scheduler: SchedulerProbe,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,16 +109,54 @@ pub struct PermissionsProbe {
     pub approval_required: bool,
 }
 
+/// Tool registry health. `unavailable_tools` names tools that are expected
+/// (per the bundled catalog) but did not register — no arguments, secrets,
+/// or raw error payloads are carried here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolsProbe {
+    pub registered_tools: u32,
+    pub expected_tools: u32,
+    pub unavailable_tools: Vec<String>,
+}
+
+/// Scheduler liveness, derived from the Core heartbeat file the supervisor
+/// watches. `heartbeat_age_ms` is `None` when the heartbeat file has never
+/// been observed (e.g. Core just started or supervisor is not attached).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SchedulerProbe {
+    pub heartbeat_label: String,
+    pub heartbeat_age_ms: Option<u64>,
+    pub stale_threshold_ms: u64,
+}
+
 impl DoctorReport {
     pub fn from_snapshot(snapshot: &DoctorSnapshot) -> Result<Self, DoctorError> {
+        Self::from_snapshot_with_detail(snapshot, DetailLevel::Detailed)
+    }
+
+    /// Builds a report at the given verbosity. `Summary` strips the bounded
+    /// `details` field from every check (the field is already redacted, so
+    /// this only controls *how much non-secret detail* is shown, never
+    /// whether redaction applies).
+    pub fn from_snapshot_with_detail(
+        snapshot: &DoctorSnapshot,
+        detail_level: DetailLevel,
+    ) -> Result<Self, DoctorError> {
         validate_snapshot(snapshot)?;
-        let checks = vec![
+        let mut checks = vec![
             storage_check(&snapshot.storage),
             pipe_check(&snapshot.pipe),
             provider_check(&snapshot.provider),
             recovery_check(&snapshot.recovery),
             permissions_check(&snapshot.permissions),
+            tools_check(&snapshot.tools),
+            scheduler_check(&snapshot.scheduler),
         ];
+        if detail_level == DetailLevel::Summary {
+            for check in &mut checks {
+                check.details = None;
+            }
+        }
         Self::new(checks)
     }
 
@@ -308,6 +360,75 @@ fn permissions_check(probe: &PermissionsProbe) -> DoctorCheck {
     )
 }
 
+fn tools_check(probe: &ToolsProbe) -> DoctorCheck {
+    if probe.registered_tools == 0 {
+        return check(
+            "tools",
+            CheckStatus::Fail,
+            "Реестр инструментов пуст",
+            "Перезапусти Core: bootstrap реестра инструментов не выполнился",
+            None,
+        );
+    }
+    if !probe.unavailable_tools.is_empty() {
+        return check(
+            "tools",
+            CheckStatus::Warn,
+            "Часть инструментов недоступна",
+            "Проверь журнал Core на ошибки регистрации инструментов",
+            Some(&probe.unavailable_tools.join(", ")),
+        );
+    }
+    if probe.registered_tools < probe.expected_tools {
+        return check(
+            "tools",
+            CheckStatus::Warn,
+            "Зарегистрировано меньше инструментов, чем ожидалось",
+            "Проверь версию Core и журнал регистрации инструментов",
+            Some(&format!(
+                "registered={}, expected={}",
+                probe.registered_tools, probe.expected_tools
+            )),
+        );
+    }
+    check(
+        "tools",
+        CheckStatus::Ok,
+        "Все инструменты зарегистрированы",
+        "Действий не требуется",
+        Some(&format!("registered={}", probe.registered_tools)),
+    )
+}
+
+fn scheduler_check(probe: &SchedulerProbe) -> DoctorCheck {
+    match probe.heartbeat_age_ms {
+        None => check(
+            "scheduler",
+            CheckStatus::Warn,
+            "Heartbeat планировщика ещё не зафиксирован",
+            "Дай Core время на первый heartbeat или проверь supervisor",
+            Some(&probe.heartbeat_label),
+        ),
+        Some(age_ms) if age_ms > probe.stale_threshold_ms => check(
+            "scheduler",
+            CheckStatus::Blocked,
+            "Планировщик не отвечает (устаревший heartbeat)",
+            "Перезапусти supervisor и проверь журнал Core",
+            Some(&format!(
+                "age_ms={}, threshold_ms={}",
+                age_ms, probe.stale_threshold_ms
+            )),
+        ),
+        Some(age_ms) => check(
+            "scheduler",
+            CheckStatus::Ok,
+            "Планировщик активен",
+            "Действий не требуется",
+            Some(&format!("age_ms={age_ms}")),
+        ),
+    }
+}
+
 fn check(
     id: &str,
     status: CheckStatus,
@@ -347,6 +468,17 @@ fn validate_snapshot(snapshot: &DoctorSnapshot) -> Result<(), DoctorError> {
     }
     if snapshot.pipe.expected_protocol_major == 0 {
         return Err(DoctorError::InvalidProbe("expected protocol major"));
+    }
+    validate_text(
+        "scheduler.heartbeat_label",
+        &snapshot.scheduler.heartbeat_label,
+        MAX_TEXT_CHARS,
+    )?;
+    if snapshot.scheduler.stale_threshold_ms == 0 {
+        return Err(DoctorError::InvalidProbe("scheduler stale threshold"));
+    }
+    for name in &snapshot.tools.unavailable_tools {
+        validate_text("tools.unavailable_tools[]", name, MAX_TEXT_CHARS)?;
     }
     Ok(())
 }
@@ -401,13 +533,23 @@ mod tests {
                 protected_paths_intact: true,
                 approval_required: false,
             },
+            tools: ToolsProbe {
+                registered_tools: 23,
+                expected_tools: 23,
+                unavailable_tools: Vec::new(),
+            },
+            scheduler: SchedulerProbe {
+                heartbeat_label: "core-heartbeat".into(),
+                heartbeat_age_ms: Some(1_000),
+                stale_threshold_ms: 300_000,
+            },
         }
     }
 
     #[test]
     fn healthy_snapshot_is_serializable_and_bounded() {
         let report = DoctorReport::from_snapshot(&snapshot()).unwrap();
-        assert_eq!(report.checks.len(), 5);
+        assert_eq!(report.checks.len(), 7);
         assert!(!report.is_actionable());
         let json = report.to_bounded_json();
         assert!(json.contains("\"bounded\":true"));
@@ -450,6 +592,85 @@ mod tests {
             })
             .collect();
         assert_eq!(DoctorReport::new(checks), Err(DoctorError::TooManyChecks));
+    }
+
+    #[test]
+    fn tools_probe_reports_unavailable_tools_without_hiding_names() {
+        let mut value = snapshot();
+        value.tools.unavailable_tools = vec!["shell.execute".into()];
+        let report = DoctorReport::from_snapshot(&value).unwrap();
+        let tools_check = report
+            .checks
+            .iter()
+            .find(|check| check.id == "tools")
+            .unwrap();
+        assert_eq!(tools_check.status, CheckStatus::Warn);
+        assert!(tools_check
+            .details
+            .as_deref()
+            .unwrap()
+            .contains("shell.execute"));
+    }
+
+    #[test]
+    fn tools_probe_fails_when_registry_is_empty() {
+        let mut value = snapshot();
+        value.tools.registered_tools = 0;
+        let report = DoctorReport::from_snapshot(&value).unwrap();
+        let tools_check = report
+            .checks
+            .iter()
+            .find(|check| check.id == "tools")
+            .unwrap();
+        assert_eq!(tools_check.status, CheckStatus::Fail);
+    }
+
+    #[test]
+    fn scheduler_probe_blocks_on_stale_heartbeat() {
+        let mut value = snapshot();
+        value.scheduler.heartbeat_age_ms = Some(999_999);
+        let report = DoctorReport::from_snapshot(&value).unwrap();
+        let scheduler_check = report
+            .checks
+            .iter()
+            .find(|check| check.id == "scheduler")
+            .unwrap();
+        assert_eq!(scheduler_check.status, CheckStatus::Blocked);
+    }
+
+    #[test]
+    fn scheduler_probe_warns_when_heartbeat_never_observed() {
+        let mut value = snapshot();
+        value.scheduler.heartbeat_age_ms = None;
+        let report = DoctorReport::from_snapshot(&value).unwrap();
+        let scheduler_check = report
+            .checks
+            .iter()
+            .find(|check| check.id == "scheduler")
+            .unwrap();
+        assert_eq!(scheduler_check.status, CheckStatus::Warn);
+    }
+
+    #[test]
+    fn summary_detail_level_strips_details_but_keeps_status_and_action() {
+        let mut value = snapshot();
+        value.provider.provider_id = "provider-with-secret-looking-id".into();
+        value.recovery.unknown_effects = 1;
+        let report =
+            DoctorReport::from_snapshot_with_detail(&value, DetailLevel::Summary).unwrap();
+        assert!(report.checks.iter().all(|check| check.details.is_none()));
+        assert!(report.checks.iter().all(|check| !check.summary.is_empty()));
+        assert!(report.checks.iter().all(|check| !check.action.is_empty()));
+        assert!(report.is_actionable());
+    }
+
+    #[test]
+    fn detailed_level_never_leaks_more_than_summary_would_allow() {
+        let mut value = snapshot();
+        value.provider.provider_id = "provider-with-secret-looking-id".into();
+        let detailed =
+            DoctorReport::from_snapshot_with_detail(&value, DetailLevel::Detailed).unwrap();
+        assert!(!detailed.to_bounded_json().contains("provider-with-secret-looking-id"));
     }
 
     #[test]

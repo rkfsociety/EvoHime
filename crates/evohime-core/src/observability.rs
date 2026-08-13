@@ -224,7 +224,10 @@ fn is_sensitive_name(name: &str) -> bool {
     .any(|marker| lower.contains(marker))
 }
 
-fn redact_text(input: &str) -> String {
+/// Redacts bearer tokens, common API-key prefixes, and email-shaped tokens
+/// from free text. Shared with `export::export_logs` so exported log lines
+/// go through the exact same redaction discipline as hook payloads.
+pub fn redact_text(input: &str) -> String {
     input
         .split_inclusive(char::is_whitespace)
         .map(|token| {
