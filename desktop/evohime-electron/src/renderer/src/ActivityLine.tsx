@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import type { ToolCall } from './transcript'
+import { toolLabel } from './tool-names'
 
 /**
  * One stretch of tool work as a single line.
@@ -29,7 +30,7 @@ export function ActivityLine({ calls, running }: ActivityLineProps): React.JSX.E
       >
         <span className="activity__icon" aria-hidden="true">{running ? '◐' : '✓'}</span>
         <span className="activity__label">
-          {running ? current?.tool ?? 'работает' : summarize(calls)}
+          {running ? toolLabel(current?.tool ?? '') || 'Работаю' : summarize(calls)}
         </span>
         <span className="activity__chevron" aria-hidden="true">{open ? '▾' : '▸'}</span>
       </button>
@@ -38,7 +39,7 @@ export function ActivityLine({ calls, running }: ActivityLineProps): React.JSX.E
         <ol className="activity__calls">
           {calls.map((call, index) => (
             <li key={`${call.tool}-${index}`}>
-              <span className="activity__tool">{call.tool}</span>
+              <span className="activity__tool">{toolLabel(call.tool)}</span>
               {call.running ? (
                 <span className="activity__pending">выполняется…</span>
               ) : (
@@ -52,9 +53,9 @@ export function ActivityLine({ calls, running }: ActivityLineProps): React.JSX.E
   )
 }
 
-/** "3 действия · filesystem.list, filesystem.read" */
+/** "3 действия · читаю файл, ищу по файлам" */
 function summarize(calls: readonly ToolCall[]): string {
-  const names = [...new Set(calls.map((call) => call.tool))]
+  const names = [...new Set(calls.map((call) => toolLabel(call.tool).toLowerCase()))]
   const shown = names.slice(0, 3).join(', ')
   const rest = names.length > 3 ? ` и ещё ${names.length - 3}` : ''
   return `${plural(calls.length)} · ${shown}${rest}`
