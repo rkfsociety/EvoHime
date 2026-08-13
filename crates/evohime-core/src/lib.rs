@@ -198,6 +198,35 @@ fn attribute_value(tag: &str, attribute: &str) -> Option<String> {
     Some(xml_unescape(&tag[start..end]))
 }
 
+/// Budget for a whole task: many model calls plus tool runs, so it has to be
+/// larger than the per-request timeout in `ProviderResilienceConfig`.
+pub const DEFAULT_TASK_TIMEOUT_SECONDS: u64 = 900;
+
+/// Markers that begin a tool call a model printed as text instead of using the
+/// provider's tool-call field.
+const TOOL_CALL_MARKERS: [&str; 6] = [
+    "<function_calls>",
+    "<invoke",
+    "<tool_call>",
+    "<tool_use>",
+    "```json",
+    "```tool",
+];
+
+/// The part of a model reply a person should read.
+///
+/// Models without native tool calling print the call itself into the message,
+/// so the prose ends where the first call begins. Sending the raw content to
+/// the shell would put XML in the middle of the conversation.
+pub fn visible_agent_text(content: &str) -> String {
+    let cut = TOOL_CALL_MARKERS
+        .iter()
+        .filter_map(|marker| content.find(marker))
+        .min()
+        .unwrap_or(content.len());
+    content[..cut].trim().to_string()
+}
+
 fn parse_legacy_function_calls(content: &str, iteration: usize) -> Vec<NativeToolCall> {
     let mut calls = Vec::new();
     let supported_names = [
@@ -2732,6 +2761,19 @@ impl ToolAgent {
                     tool_calls.push(call);
                 }
             }
+            // What the model said before calling a tool is the reasoning the
+            // user watches. Without this the chat only ever showed tool lines.
+            // The final answer is not emitted here: it arrives as TaskCompleted
+            // and would otherwise appear twice.
+            if !tool_calls.is_empty() {
+                let visible = visible_agent_text(&result.content);
+                if !visible.is_empty() {
+                    let _ = events.send(CoreEvent::AssistantDelta {
+                        task_id: task_id.clone(),
+                        content: visible,
+                    });
+                }
+            }
             let mut duplicate_tool_call = None;
             tool_calls.retain(|call| {
                 let is_new = recent_tool_calls.remember(recovery::canonical_call_signature(
@@ -3382,14 +3424,16 @@ impl TaskCoordinator {
                 let executor = state_guard.executor.clone();
                 drop(state_guard);
                 tokio::spawn(async move {
+                    // A task is a loop of model calls and tool runs, so its
+                    // budget must exceed one model call (120 s by default).
+                    // The old 60 s cut off agents that were working fine.
+                    let task_timeout_secs = std::env::var("EVOHIME_TASK_TIMEOUT_SECONDS")
+                        .ok()
+                        .and_then(|value| value.parse().ok())
+                        .unwrap_or(DEFAULT_TASK_TIMEOUT_SECONDS);
                     let result = match executor {
                         Some(executor) => match timeout(
-                            Duration::from_secs(
-                                std::env::var("EVOHIME_TASK_TIMEOUT_SECONDS")
-                                    .ok()
-                                    .and_then(|value| value.parse().ok())
-                                    .unwrap_or(60),
-                            ),
+                            Duration::from_secs(task_timeout_secs),
                             executor.execute_in_workspace(
                                 task_id.clone(),
                                 prompt,
@@ -3402,7 +3446,7 @@ impl TaskCoordinator {
                         .await
                         {
                             Ok(result) => result,
-                            Err(_) => Err(AgentRunError::Timeout(60)),
+                            Err(_) => Err(AgentRunError::Timeout(task_timeout_secs)),
                         },
                         None => {
                             cancellation.cancelled().await;
@@ -5827,8 +5871,9 @@ fn unresolved_permissions_probe(approval_required: bool) -> crate::doctor::Permi
 #[cfg(test)]
 mod tests {
     use super::{
-        observability, recovery, AgentRunError, CoreCommand, CoreEvent, CoreVersion, EventJournal,
-        ModelAgent, TaskCoordinator, TaskExecutor, ToolAgent,
+        observability, recovery, visible_agent_text, AgentRunError, CoreCommand, CoreEvent,
+        CoreVersion, EventJournal, ModelAgent, TaskCoordinator, TaskExecutor, ToolAgent,
+        DEFAULT_TASK_TIMEOUT_SECONDS,
     };
     use evohime_model_gateway::{
         providers::mock::MockProvider, ChatResult, ModelGateway, NativeToolCall,
@@ -5837,6 +5882,37 @@ mod tests {
     use futures_util::future::BoxFuture;
     use std::sync::Arc;
     use tokio_util::sync::CancellationToken;
+
+    /// The chat shows what the model said before it called a tool, so the
+    /// printed call itself must not travel with it.
+    #[test]
+    fn strips_printed_tool_calls_from_the_visible_reply() {
+        let content = concat!(
+            "Прочитаю документ.\n",
+            "<function_calls>\n",
+            "<invoke name=\"filesystem.read\">\n",
+            "<parameter name=\"path\">README.md</parameter>\n",
+            "</invoke>\n",
+            "</function_calls>\n",
+            "Жду результата..."
+        );
+
+        assert_eq!(visible_agent_text(content), "Прочитаю документ.");
+    }
+
+    #[test]
+    fn keeps_a_reply_that_carries_no_tool_call() {
+        assert_eq!(visible_agent_text("  Готово.  "), "Готово.");
+        assert_eq!(visible_agent_text("<function_calls>\n<invoke/>"), "");
+    }
+
+    /// A task runs several model calls in a loop, so its budget must outlast a
+    /// single request; the old default cut working agents off at 60 seconds.
+    #[test]
+    fn task_budget_outlasts_one_model_request() {
+        let per_request = crate::provider_resilience::ProviderResilienceConfig::default();
+        assert!(DEFAULT_TASK_TIMEOUT_SECONDS > per_request.model_timeout_secs);
+    }
 
     struct NeverExecutor;
 
