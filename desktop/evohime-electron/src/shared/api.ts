@@ -77,6 +77,9 @@ export const RENDERER_COMMANDS = [
   'core.restoreDatabase',
   'core.getModelConfig',
   'core.listModelCatalog',
+  'core.createProject',
+  'core.prepareBuild',
+  'core.applyApprovedBuild',
   'core.terminalExecute'
 ] as const
 
@@ -117,6 +120,9 @@ export interface CommandPayloads {
   'core.restoreDatabase': { backupPath: string; approvalId: string }
   'core.getModelConfig': Record<string, never>
   'core.listModelCatalog': { mode: 'free' | 'paid' }
+  'core.createProject': { projectId: string; title: string; workspacePath: string; sourceRef?: string }
+  'core.prepareBuild': { projectId: string; proposalJson: string }
+  'core.applyApprovedBuild': { projectId: string; runId: string; taskId: string; approvedBuildJson: string }
   'core.terminalExecute': { taskId: string; workspacePath: string; program: string; args: readonly string[]; cwd?: string; timeoutMs?: number; approvalId?: string }
 }
 
@@ -143,6 +149,9 @@ export interface CommandResults {
   'core.restoreDatabase': { accepted: boolean }
   'core.getModelConfig': { accepted: boolean }
   'core.listModelCatalog': { accepted: boolean }
+  'core.createProject': { accepted: boolean }
+  'core.prepareBuild': { accepted: boolean }
+  'core.applyApprovedBuild': { accepted: boolean }
   'core.terminalExecute': { accepted: boolean }
 }
 

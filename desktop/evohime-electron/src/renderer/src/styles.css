@@ -206,6 +206,62 @@ body {
   opacity: 0.7;
 }
 
+.editor-panel__heading,
+.editor-panel__actions,
+.editor-panel__form {
+  display: flex;
+  gap: 12px;
+}
+
+.editor-panel__heading {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.editor-panel__form {
+  flex-wrap: wrap;
+  margin: 16px 0 12px;
+}
+
+.editor-panel__form label {
+  display: flex;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.editor-panel__form input,
+.editor-panel__form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 34px;
+  padding: 8px;
+  color: inherit;
+  font: inherit;
+  background: rgb(128 128 150 / 10%);
+  border: 1px solid rgb(128 128 150 / 30%);
+  border-radius: 6px;
+}
+
+.editor-panel__content {
+  flex-basis: 100%;
+}
+
+.editor-panel__content textarea {
+  min-height: 140px;
+  resize: vertical;
+}
+
+.editor-panel__preview {
+  max-height: 260px;
+  margin: 16px 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .shell--recovery {
   max-width: 480px;
 }

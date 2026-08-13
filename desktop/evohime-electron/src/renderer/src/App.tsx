@@ -6,6 +6,7 @@ import { useShellApi } from './shell-api'
 import { WorkspacePicker } from './WorkspacePicker'
 import { TaskTimeline } from './TaskTimeline'
 import { DeveloperTools } from './DeveloperTools'
+import { EditorPanel } from './EditorPanel'
 import { SafetyPanel } from './SafetyPanel'
 import { SettingsPanel } from './SettingsPanel'
 import { TerminalPanel } from './TerminalPanel'
@@ -97,6 +98,7 @@ export function App(): React.JSX.Element {
 
       <TaskTimeline connection={connection} events={events} />
       <DeveloperTools connection={connection} events={events} />
+      <EditorPanel connection={connection} events={events} />
       <SafetyPanel connection={connection} events={events} />
       <SettingsPanel connection={connection} events={events} />
       <TerminalPanel connection={connection} events={events} />

@@ -167,6 +167,21 @@ describe('renderer command surface', () => {
     expect(sent).toContainEqual({ modelCatalog: { mode: 'paid' } })
   })
 
+  it('forwards the Core-owned editor build flow as bounded protobuf payloads', () => {
+    const proposal = JSON.stringify({ scope: {}, changes: [] })
+    const approved = JSON.stringify({ intent_hash: 'intent-1', changes: [] })
+    expect(invoke('core.createProject', {
+      projectId: 'project-1', title: 'Editor', workspacePath: 'C:\\work'
+    })).toEqual({ ok: true, value: { accepted: true } })
+    expect(invoke('core.prepareBuild', { projectId: 'project-1', proposalJson: proposal })).toEqual({ ok: true, value: { accepted: true } })
+    expect(invoke('core.applyApprovedBuild', {
+      projectId: 'project-1', runId: 'run-1', taskId: 'task-1', approvedBuildJson: approved
+    })).toEqual({ ok: true, value: { accepted: true } })
+    expect(sent[0]).toEqual({ createProject: { projectId: 'project-1', title: 'Editor', workspacePath: 'C:\\work', sourceRef: '' } })
+    expect(Buffer.from((sent[1]!.prepareBuild as { proposalJson: Uint8Array }).proposalJson).toString('utf8')).toBe(proposal)
+    expect(Buffer.from((sent[2]!.applyApprovedBuild as { approvedBuildJson: Uint8Array }).approvedBuildJson).toString('utf8')).toBe(approved)
+  })
+
   it('bounds Terminal program, arguments and timeout before Core', () => {
     expect(invoke('core.terminalExecute', {
       taskId: 'task-1', workspacePath: 'C:\\work', program: 'git', args: ['status', '--short'], cwd: '', timeoutMs: 30_000

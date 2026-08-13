@@ -250,6 +250,40 @@ function dispatch(
       return accepted(client.send({ modelCatalog: { mode } }))
     }
 
+    case 'core.createProject': {
+      const value = asRecord(payload)
+      const projectId = asBoundedString(value['projectId'])
+      const title = asBoundedString(value['title'])
+      const workspacePath = asBoundedString(value['workspacePath'])
+      const sourceRef = value['sourceRef'] === undefined ? '' : asBoundedString(value['sourceRef'])
+      if (projectId === null || title === null || workspacePath === null || sourceRef === null) {
+        return failure('invalid-payload', 'Некорректные параметры проекта.')
+      }
+      return accepted(client.send({ createProject: { projectId, title, workspacePath, sourceRef } }))
+    }
+
+    case 'core.prepareBuild': {
+      const value = asRecord(payload)
+      const projectId = asBoundedString(value['projectId'])
+      const proposalJson = asBoundedPayload(value['proposalJson'])
+      if (projectId === null || proposalJson === null) {
+        return failure('invalid-payload', 'Некорректное Build-предложение.')
+      }
+      return accepted(client.send({ prepareBuild: { projectId, proposalJson: Buffer.from(proposalJson, 'utf8') } }))
+    }
+
+    case 'core.applyApprovedBuild': {
+      const value = asRecord(payload)
+      const projectId = asBoundedString(value['projectId'])
+      const runId = asBoundedString(value['runId'])
+      const taskId = asBoundedString(value['taskId'])
+      const approvedBuildJson = asBoundedPayload(value['approvedBuildJson'])
+      if (projectId === null || runId === null || taskId === null || approvedBuildJson === null) {
+        return failure('invalid-payload', 'Некорректные параметры применения Build.')
+      }
+      return accepted(client.send({ applyApprovedBuild: { projectId, runId, taskId, approvedBuildJson: Buffer.from(approvedBuildJson, 'utf8') } }))
+    }
+
     case 'core.terminalExecute': {
       const value = asRecord(payload)
       const taskId = asBoundedString(value['taskId'])
@@ -321,4 +355,8 @@ function asArguments(value: unknown): string[] | null {
   if (!Array.isArray(value) || value.length > 64) return null
   const args = value.map((item) => asBoundedString(item))
   return args.every((item): item is string => item !== null) ? args : null
+}
+
+function asBoundedPayload(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 && value.length <= 256 * 1024 ? value : null
 }

@@ -15,19 +15,26 @@ $electronRoot = Join-Path $repoRoot 'desktop\evohime-electron'
 $outputCandidate = if ([System.IO.Path]::IsPathRooted($OutputPath)) { $OutputPath } else { Join-Path $repoRoot $OutputPath }
 $resolvedOutput = [System.IO.Path]::GetFullPath($outputCandidate)
 $manifest = New-NativePackageManifest -Architecture 'x64' -OsMinimum 'Windows 10 2004 / Windows 11'
+$cargoProfile = if ($Configuration -eq 'Debug') { 'debug' } else { 'release' }
+$cargoArguments = @('build', '--locked')
+if ($Configuration -eq 'Release') { $cargoArguments += '--release' }
+$cargoArguments += @('-p', 'evohime-core', '-p', 'evohime-supervisor', '-p', 'evohime-updater')
+$electronBuilderArguments = @('electron-builder', '--dir', '--config', 'electron-builder.yml')
+if ($Version) {
+    if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "Некорректная версия Electron package: $Version" }
+    $electronBuilderArguments += "--config.extraMetadata.version=$Version"
+}
 
 if (-not $SkipBuild) {
     Push-Location $repoRoot
     try {
-        Invoke-NativeCommand -Executable 'cargo' -Arguments @(
-            'build', '--locked', '--release', '-p', 'evohime-core', '-p', 'evohime-supervisor', '-p', 'evohime-updater'
-        )
+        Invoke-NativeCommand -Executable 'cargo' -Arguments $cargoArguments
         Push-Location $electronRoot
         try {
             Invoke-NativeCommand -Executable 'npm' -Arguments @('ci', '--ignore-scripts')
             Invoke-NativeCommand -Executable 'node' -Arguments @('scripts/postinstall-allowlist.mjs')
             Invoke-NativeCommand -Executable 'npm' -Arguments @('run', 'build')
-            Invoke-NativeCommand -Executable 'npx' -Arguments @('electron-builder', '--dir', '--config', 'electron-builder.yml')
+            Invoke-NativeCommand -Executable 'npx' -Arguments $electronBuilderArguments
         }
         finally { Pop-Location }
     }
@@ -35,7 +42,7 @@ if (-not $SkipBuild) {
 }
 
 New-Item -ItemType Directory -Force -Path $resolvedOutput | Out-Null
-$cargoTarget = Join-Path $repoRoot 'target\release'
+$cargoTarget = Join-Path $repoRoot "target\$cargoProfile"
 $requiredNative = @('evohime-core.exe', 'evohime-supervisor.exe', 'evohime-transaction.exe')
 foreach ($component in $requiredNative) {
     $destination = Join-Path $resolvedOutput $component
