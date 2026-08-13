@@ -245,8 +245,14 @@ pub fn validate_build_scope(scope: &BuildScope, changes: &[ProposedChange]) -> V
         }
         if change.deletes && !scope.allow_delete {
             violations.push(ScopeViolation {
-                path: normalized,
+                path: normalized.clone(),
                 reason: "file deletion is disabled".into(),
+            });
+        }
+        if change.operation == "rename" && !scope.allow_rename {
+            violations.push(ScopeViolation {
+                path: normalized,
+                reason: "file rename is disabled".into(),
             });
         }
     }
