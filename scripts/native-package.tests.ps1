@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 . "$PSScriptRoot\native-package.ps1"
 
-$manifest = New-NativePackageManifest -Architecture 'x64' -OsMinimum 'Windows 11 22H2'
+$manifest = New-NativePackageManifest -Architecture 'x64' -OsMinimum 'Windows 10 2004 / Windows 11'
 
 if ($manifest.product -ne 'EvoHime') { throw 'manifest product is not EvoHime' }
 if ($manifest.client -ne 'native-winui') { throw 'manifest client must be native-winui' }

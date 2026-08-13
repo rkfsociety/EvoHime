@@ -22,7 +22,7 @@ UI не обращается к workspace, SQLite или model provider напр
 
 ## Требования
 
-- Windows 11 22H2+, x64;
+- Windows 10 2004+ или Windows 11, x64;
 - .NET SDK 10;
 - Rust MSVC toolchain.
 

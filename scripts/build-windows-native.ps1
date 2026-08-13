@@ -32,7 +32,7 @@ $outputCandidate = if ([System.IO.Path]::IsPathRooted($OutputPath)) {
     Join-Path $repoRoot $OutputPath
 }
 $resolvedOutput = [System.IO.Path]::GetFullPath($outputCandidate)
-$manifest = New-NativePackageManifest -Architecture 'x64' -OsMinimum 'Windows 11 22H2'
+$manifest = New-NativePackageManifest -Architecture 'x64' -OsMinimum 'Windows 10 2004 / Windows 11'
 $assemblyVersion = "$Version.0"
 
 if (-not $SkipBuild) {

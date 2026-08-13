@@ -38,7 +38,7 @@
 - Windows Credential Manager/DPAPI для provider keys;
 - backup/restore SQLite и migration recovery;
 - crash recovery и диагностика из UI;
-- проверка upgrade path на чистой Windows 11 22H2+.
+- проверка upgrade path на поддерживаемых Windows 10 и Windows 11.
 
 ### 3. Native quality
 

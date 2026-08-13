@@ -6,7 +6,7 @@
 
 ## Требования
 
-- Windows 11 22H2 или новее;
+- Windows 10 2004 или Windows 11, x64;
 - .NET SDK 10;
 - Rust toolchain с поддержкой `x86_64-pc-windows-msvc`.
 

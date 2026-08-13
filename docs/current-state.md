@@ -42,7 +42,7 @@ Core и supervisor — внутренние компоненты установ�
 ## Следующий этап
 
 1. leases/reconciliation и расширенный diff/command preview в approval UI;
-2. повторная проверка installer/recovery UX на чистой Windows 11 22H2 reference VM;
+2. повторная проверка installer/recovery UX на поддерживаемых Windows 10 и Windows 11;
 3. informative ARM64/Insider compatibility runs.
 
 ## Граница продукта

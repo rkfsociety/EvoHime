@@ -39,6 +39,6 @@ SQLite находится в `%LOCALAPPDATA%\EvoHime` либо в `EVOHIME_DATA_
 
 Для разработки используется `start-dev.ps1`. Для пользователя GitHub Actions собирает единственный `EvoHime-Setup.exe`. Установщик размещает внутренние `EvoHime.exe`, `evohime-core.exe`, `evohime-supervisor.exe`, `evohime-transaction.exe` и manifest в каталоге приложения и создаёт ровно один ярлык `EvoHime` на рабочем столе.
 
-Пакет x64 предназначен для Windows 11 22H2+ и содержит только native runtime и его локальные компоненты.
+Пакет x64 предназначен для Windows 10 2004+ и Windows 11 и содержит только native runtime и его локальные компоненты.
 
 Безопасностные ограничения вынесены в [`../SECURITY.md`](../SECURITY.md). Рабочие планы находятся в [`plans/`](plans/) и не являются источником фактического статуса.

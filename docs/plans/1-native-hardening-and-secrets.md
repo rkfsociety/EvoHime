@@ -8,7 +8,7 @@
 
 ## Цель
 
-Закрыть оставшиеся небольшие product-hardening задачи и сделать проверки воспроизводимыми на Windows 11. Backup/restore и crash recovery выполняются как Core-first MVP: UI получает минимальные действия и состояние через IPC, без отдельного полноформатного backup-продукта или нового агентного orchestration loop.
+Закрыть оставшиеся небольшие product-hardening задачи и сделать проверки воспроизводимыми на Windows 10 и Windows 11. Backup/restore и crash recovery выполняются как Core-first MVP: UI получает минимальные действия и состояние через IPC, без отдельного полноформатного backup-продукта или нового агентного orchestration loop.
 
 ## Объём
 
@@ -17,7 +17,7 @@
 - добавить Core-first backup/restore SQLite с JSON preview, фазовым progress, approval и audit; UI ограничить одной командой создания/восстановления файла и отображением IPC progress/error;
 - добавить минимальный crash-recovery UI для состояний `RECOVERING`, `BLOCKED`, `WAITING_APPROVAL`, `FAILED`, без отдельного сложного workflow-экрана;
 - закрыть security gaps: фильтрация результатов `filesystem.search`, расширенный blocklist интерпретаторов, проверка policy subject и ограничений Git remote;
-- выполнить upgrade/install smoke на чистой Windows 11 22H2+ с проверкой rollback при нехватке диска.
+- выполнить upgrade/install smoke на поддерживаемых Windows 10 и Windows 11 с проверкой rollback при нехватке диска.
 
 ## Зафиксированные решения по границам
 
@@ -93,11 +93,11 @@
 
 ### Windows reference и rollback
 
-- Гейт — чистая x64 Windows 11 22H2 с последними доступными cumulative updates на момент прогона; informative matrix дополнительно покрывает 23H2 и 24H2+. ARM64 — informative compatibility run, не release gate, пока продукт официально поддерживает x64. Версия, build, архитектура, свободное место и результат фиксируются в артефакте smoke-теста.
+- Гейт — поддерживаемая x64 Windows 10 или Windows 11 с актуальными cumulative updates на момент прогона. ARM64 — informative compatibility run, не release gate, пока продукт официально поддерживает x64. Версия, build, архитектура, свободное место и результат фиксируются в артефакте smoke-теста.
 - Insider Preview не является обязательным гейтом этого подплана, но может использоваться как informative compatibility run с отдельным результатом.
 - Upgrade/install проверяет нехватку диска, locked DB, активное вмешательство антивируса и сбой на каждом этапе, сохранение текущей рабочей версии, очистку staging и повторный запуск после освобождения места. Rollback должен быть идемпотентным и не удалять пользовательские данные.
 
-Smoke-матрица на reference-системе: clean install → launch → configure provider secret → создать проверяемое DB state → upgrade `N` → `N+1` → симулировать failed migration/startup → rollback → проверить DB и доступность secret reference → проверить отсутствие orphan credentials/files/registry state → uninstall/reinstall согласно зафиксированной policy сохранения пользовательских данных. Upgrade test отдельно подтверждает сохранение существующих secret references и recovery state. Для каждого сценария записываются версия/build, exit result, логи без секретов и итоговое состояние данных. Автоматизированный GitHub Actions `windows-latest` smoke выполняет доступную install/upgrade/recovery часть как regression gate; чистая 22H2 VM остаётся release acceptance reference.
+Smoke-матрица на проверяемой системе: clean install → launch → configure provider secret → создать проверяемое DB state → upgrade `N` → `N+1` → симулировать failed migration/startup → rollback → проверить DB и доступность secret reference → проверить отсутствие orphan credentials/files/registry state → uninstall/reinstall согласно зафиксированной policy сохранения пользовательских данных. Upgrade test отдельно подтверждает сохранение существующих secret references и recovery state. Для каждого сценария записываются версия/build, exit result, логи без секретов и итоговое состояние данных. Автоматизированный GitHub Actions `windows-latest` smoke выполняет доступную install/upgrade/recovery часть как regression gate; результат трактуется одинаково для Windows 10 и Windows 11.
 
 ## Порядок реализации
 
@@ -105,7 +105,7 @@ Smoke-матрица на reference-системе: clean install → launch →
 2. Вынести секреты из обычных настроек в Credential Manager/DPAPI; добавить тесты отсутствия секретов в logs/traces/exports.
 3. Реализовать Core backup/restore и минимальные UI-команды/состояния поверх существующего Core recovery state; не добавлять отдельный backup browser или recovery wizard.
 4. Закрыть search/interpreter/policy edge cases отдельными regression tests, включая symlink/reparse-point, Unicode и Git remote audit cases.
-5. Проверить установку, обновление, rollback и recovery на чистой Windows 11 reference-системе; отдельно записать informative результат Insider/WSL, если такой прогон доступен.
+5. Проверить установку, обновление, rollback и recovery на поддерживаемых Windows 10 и Windows 11; отдельно записать informative результат Insider/WSL, если такой прогон доступен.
 
 ## Критерии готовности
 
@@ -124,7 +124,7 @@ Smoke-матрица на reference-системе: clean install → launch →
 - smoke-матрица покрывает install, launch, secret setup, DB state, upgrade, failed migration/startup, rollback и uninstall/reinstall policy;
 - изменения secret reference/API сохраняют versioned IPC compatibility с task runner; Core остаётся единственным владельцем получения секрета, а UI и task runner не получают новый plaintext boundary;
 - отсутствие provider secret и его encoded forms проверяется unit- и integration-тестами, включая prompt/tool history, JSONL export, diagnostics/Core Doctor и backup metadata;
-- установщик, rollback и повторное восстановление после нехватки диска проходят на чистой reference Windows 11 22H2+.
+- установщик, rollback и повторное восстановление после нехватки диска проходят на поддерживаемых Windows 10 и Windows 11.
 
 ## Зависимости
 
