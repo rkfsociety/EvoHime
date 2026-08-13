@@ -688,19 +688,100 @@ body {
   gap: 4px;
 }
 
-.model-picker select {
-  max-width: 220px;
-  padding: 3px 6px;
-  border-color: transparent;
-  background: var(--bg-hover);
-  color: var(--fg-muted);
-  font-size: 12px;
-  font-family: var(--mono);
-  cursor: pointer;
+.model-picker {
+  position: relative;
 }
 
-.model-picker select:hover:not(:disabled) {
+.model-picker__button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--fg-muted);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.model-picker__button:hover:not(:disabled) {
+  border-color: var(--border-strong);
   color: var(--fg);
+}
+
+.model-picker__value {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.model-picker__chevron {
+  color: var(--fg-faint);
+  font-size: 9px;
+}
+
+/* Список открывается вверх: композер прижат к нижней кромке окна. */
+.model-picker__menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  max-height: 320px;
+  padding: 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 45%);
+}
+
+.model-picker__search {
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.model-picker__menu ul {
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.model-picker__menu li button {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: left;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.model-picker__menu li button:hover {
+  background: var(--bg-hover);
+}
+
+.model-picker__menu li button[aria-selected='true'] {
+  background: var(--bg-active);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.model-picker__none {
+  padding: 8px;
+  color: var(--fg-faint);
+  font-size: 12px;
 }
 
 .model-picker--error {

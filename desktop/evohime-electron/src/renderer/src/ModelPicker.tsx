@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { ConnectionState, CoreEvent, ModelTier } from '@shared/api'
 
@@ -98,19 +98,106 @@ export function ModelPicker({ connection, events }: ModelPickerProps): React.JSX
   const known = models.includes(current)
 
   return (
-    <label className="model-picker">
-      <span className="visually-hidden">Модель</span>
-      <select
-        value={known ? current : ''}
-        onChange={(event) => void select(event.target.value)}
+    <ModelDropdown
+      models={models}
+      current={known ? current : ''}
+      onSelect={(model) => void select(model)}
+    />
+  )
+}
+
+interface ModelDropdownProps {
+  readonly models: readonly string[]
+  readonly current: string
+  readonly onSelect: (model: string) => void
+}
+
+/**
+ * Own dropdown instead of a native `select`.
+ *
+ * Windows draws a native option list with its own colours, which came out as
+ * grey text on white inside the dark composer. This one is styled by the app,
+ * and a catalogue of dozens of models needs a filter anyway.
+ */
+function ModelDropdown({ models, current, onSelect }: ModelDropdownProps): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const root = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: MouseEvent): void => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  const visible = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    return needle.length === 0
+      ? models
+      : models.filter((model) => model.toLowerCase().includes(needle))
+  }, [models, query])
+
+  return (
+    <div className="model-picker" ref={root}>
+      <button
+        type="button"
+        className="model-picker__button"
+        aria-label="Модель"
+        aria-expanded={open}
         disabled={models.length === 0}
+        onClick={() => {
+          setQuery('')
+          setOpen((value) => !value)
+        }}
       >
-        {known ? null : <option value="">загрузка моделей…</option>}
-        {models.map((model) => (
-          <option key={model} value={model}>{model}</option>
-        ))}
-      </select>
-    </label>
+        <span className="model-picker__value">{current || 'загрузка моделей…'}</span>
+        <span className="model-picker__chevron" aria-hidden="true">▾</span>
+      </button>
+
+      {open ? (
+        <div className="model-picker__menu" role="listbox" aria-label="Список моделей">
+          <input
+            className="model-picker__search"
+            value={query}
+            autoFocus
+            placeholder="Поиск модели…"
+            aria-label="Поиск модели"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <ul>
+            {visible.length === 0 ? (
+              <li className="model-picker__none">Ничего не найдено</li>
+            ) : (
+              visible.map((model) => (
+                <li key={model}>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={model === current}
+                    onClick={() => {
+                      onSelect(model)
+                      setOpen(false)
+                    }}
+                  >
+                    {model}
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      ) : null}
+    </div>
   )
 }
 

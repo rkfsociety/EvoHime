@@ -51,6 +51,27 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe('model picker', () => {
+  it('filters a long catalogue instead of making the user scroll it', async () => {
+    render(
+      <ModelPicker
+        connection="connected"
+        events={[
+          event('model.catalog', {
+            mode: 'free',
+            models: ['gemini-2.5-flash:free', 'gpt-5-nano:free', 'grok-4.1:free']
+          })
+        ]}
+      />
+    )
+
+    await userEvent.click(await screen.findByRole('button', { name: /Модель/ }))
+    await userEvent.type(screen.getByLabelText('Поиск модели'), 'gpt')
+
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'gpt-5-nano:free'
+    ])
+  })
+
   it('requests the configured tier and offers what the provider returned', async () => {
     tier = 'paid'
     const view = render(<ModelPicker connection="connected" events={[]} />)
@@ -66,8 +87,11 @@ describe('model picker', () => {
       />
     )
 
-    const select = (await screen.findByLabelText('Модель')) as HTMLSelectElement
-    expect([...select.options].map((option) => option.value)).toEqual(['gpt-4o-mini', 'claude'])
+    await userEvent.click(await screen.findByRole('button', { name: /Модель/ }))
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'gpt-4o-mini',
+      'claude'
+    ])
   })
 
   it('tells Core about a selection without restarting anything', async () => {
@@ -78,7 +102,8 @@ describe('model picker', () => {
       />
     )
 
-    await userEvent.selectOptions(await screen.findByLabelText('Модель'), 'b:free')
+    await userEvent.click(await screen.findByRole('button', { name: /Модель/ }))
+    await userEvent.click(screen.getByRole('option', { name: 'b:free' }))
 
     expect(calls).toContainEqual({ command: 'core.selectModel', payload: { model: 'b:free' } })
   })
@@ -110,7 +135,7 @@ describe('model picker', () => {
     )
 
     expect(await screen.findByText(/проверь ключ в настройках/i)).toBeTruthy()
-    expect(screen.queryByLabelText('Модель')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Модель/ })).toBeNull()
   })
 
   it('stays out of the composer while Core is unreachable', () => {
