@@ -256,11 +256,27 @@ pub fn assemble_context(input: ContextInput<'_>, max_chars: usize) -> String {
     output
 }
 
+/// Walks the workspace tree for manifest purposes.
+///
+/// Symlinks and Windows reparse points are never followed: their manifest
+/// entries would silently alias content outside the intended workspace
+/// scope. `fs::symlink_metadata` (unlike `fs::metadata`/`Path::is_dir`) does
+/// not dereference the link, so a symlinked directory is detected here and
+/// skipped rather than traversed, and a symlinked file is skipped rather
+/// than hashed. Untracked files (extensions outside `TEXT_EXTENSIONS`) and
+/// binaries are excluded from the manifest by default, matching the same
+/// "don't silently include what wasn't asked for" policy.
 fn collect_paths(root: &Path, paths: &mut Vec<PathBuf>) -> std::io::Result<()> {
     for entry in fs::read_dir(root)? {
         let entry = entry?;
         let path = entry.path();
-        if path.is_dir() {
+        let symlink_metadata = fs::symlink_metadata(&path)?;
+        if symlink_metadata.file_type().is_symlink() {
+            // Never follow: a symlink/reparse point could point outside the
+            // workspace root. Explicitly excluded, not silently resolved.
+            continue;
+        }
+        if symlink_metadata.is_dir() {
             if path
                 .file_name()
                 .and_then(|name| name.to_str())
