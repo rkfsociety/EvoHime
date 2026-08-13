@@ -1,7 +1,7 @@
 # Подплан 0 — замена desktop shell на Electron
 
-Статус: этапы 0, 1 и 2 закрыты; срезы 1–4 этапа 3 завершены.
-Следующий срез — tray, notifications, settings/provider references.
+Статус: этапы 0, 1 и 2 закрыты; срезы 1–5 этапа 3 завершены.
+Следующий срез — bounded Terminal, последний shell-like UI-срез.
 Порядок: 0 из 6; prerequisite для UI-частей планов 1–5
 Зафиксированный стек и результаты spike: `docs/plans/0-electron-stack-decision.md`
 

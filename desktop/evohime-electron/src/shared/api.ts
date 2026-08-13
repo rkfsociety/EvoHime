@@ -74,7 +74,9 @@ export const RENDERER_COMMANDS = [
   'core.exportDoctorLogs',
   'core.createDatabaseBackup',
   'core.prepareDatabaseRestore',
-  'core.restoreDatabase'
+  'core.restoreDatabase',
+  'core.getModelConfig',
+  'core.listModelCatalog'
 ] as const
 
 export type RendererCommand = (typeof RENDERER_COMMANDS)[number]
@@ -112,6 +114,8 @@ export interface CommandPayloads {
   'core.createDatabaseBackup': { destinationPath: string }
   'core.prepareDatabaseRestore': { backupPath: string }
   'core.restoreDatabase': { backupPath: string; approvalId: string }
+  'core.getModelConfig': Record<string, never>
+  'core.listModelCatalog': { mode: 'free' | 'paid' }
 }
 
 export interface CommandResults {
@@ -135,6 +139,8 @@ export interface CommandResults {
   'core.createDatabaseBackup': { accepted: boolean }
   'core.prepareDatabaseRestore': { accepted: boolean }
   'core.restoreDatabase': { accepted: boolean }
+  'core.getModelConfig': { accepted: boolean }
+  'core.listModelCatalog': { accepted: boolean }
 }
 
 export type CommandFailureCode =

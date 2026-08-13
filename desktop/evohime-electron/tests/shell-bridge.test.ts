@@ -158,6 +158,15 @@ describe('renderer command surface', () => {
     expect(sent).toContainEqual({ restoreDatabase: { backupPath: 'C:\\backup.evohime', approvalId: 'approval-1' } })
   })
 
+  it('forwards provider reference requests without accepting secret fields', () => {
+    expect(invoke('core.getModelConfig', {})).toEqual({ ok: true, value: { accepted: true } })
+    expect(invoke('core.listModelCatalog', { mode: 'free' })).toEqual({ ok: true, value: { accepted: true } })
+    expect(invoke('core.listModelCatalog', { mode: 'paid', apiKey: 'secret' })).toEqual({ ok: true, value: { accepted: true } })
+    expect(sent).toContainEqual({ modelConfig: {} })
+    expect(sent).toContainEqual({ modelCatalog: { mode: 'free' } })
+    expect(sent).toContainEqual({ modelCatalog: { mode: 'paid' } })
+  })
+
   it('rejects a command outside the allow-list', () => {
     for (const command of ['core.deleteEverything', 'shell.exec', '__proto__', '']) {
       const outcome = invoke(command, {}) as CommandFailure

@@ -240,6 +240,15 @@ function dispatch(
       }
       return accepted(client.send({ restoreDatabase: { backupPath, approvalId } }))
     }
+
+    case 'core.getModelConfig':
+      return accepted(client.send({ modelConfig: {} }))
+
+    case 'core.listModelCatalog': {
+      const mode = asModelCatalogMode(asRecord(payload)['mode'])
+      if (mode === null) return failure('invalid-payload', 'Некорректный режим каталога моделей.')
+      return accepted(client.send({ modelCatalog: { mode } }))
+    }
   }
 }
 
@@ -282,4 +291,8 @@ function asRelativePath(value: unknown): string | null {
 
 function asPermissionMode(value: unknown): 'ask' | 'read_only' | 'full' | null {
   return value === 'ask' || value === 'read_only' || value === 'full' ? value : null
+}
+
+function asModelCatalogMode(value: unknown): 'free' | 'paid' | null {
+  return value === 'free' || value === 'paid' ? value : null
 }

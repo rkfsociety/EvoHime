@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, Notification } from 'electron'
 
 import type { ShellState } from '@shared/api'
 
@@ -59,7 +59,10 @@ if (!app.requestSingleInstanceLock()) {
     client = new CorePipeClient({ launch, refreshLaunch: () => readLaunchContext(), log })
 
     client.on('state', (state: ShellState) => broadcast({ kind: 'state', state }))
-    client.on('core-event', (event) => broadcast({ kind: 'core-event', event }))
+    client.on('core-event', (event) => {
+      broadcast({ kind: 'core-event', event })
+      notifyWhenHidden(event.eventType)
+    })
 
     mainWindow = createMainWindow({ ...hardening, onRendererFailure: handleRendererFailure })
     tray = createTray({ window: mainWindow, log })
@@ -93,6 +96,20 @@ if (!app.requestSingleInstanceLock()) {
     tray?.destroy()
     log('info', 'shell.stopping', {})
   })
+}
+
+function notifyWhenHidden(eventType: string): void {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isVisible() || !Notification.isSupported()) {
+    return
+  }
+  const message = eventType === 'task.completed'
+    ? 'Задача завершена'
+    : eventType === 'task.failed'
+      ? 'Задача завершилась с ошибкой'
+      : eventType === 'approval.required'
+        ? 'Задаче требуется разрешение'
+        : null
+  if (message) new Notification({ title: 'EvoHime', body: message }).show()
 }
 
 function handleRendererFailure(reason: string): void {
