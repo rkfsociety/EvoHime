@@ -1010,7 +1010,7 @@ Vector search, recency ranking, confidence, entity/temporal signals и hybrid se
 - [x] Bounded scheduler state contract для lifecycle, lease/heartbeat, retry/backoff и recovery decisions.
 - [x] Bounded local audit trail contract для approvals, tool calls, budgets, failures, diffs и evidence с redaction и deterministic JSONL.
 - [x] Runtime wiring audit trail: `ApprovalAuditEntry` подключён к durable Core journal через `attach_permission_audit_sink`; scheduler wiring остаётся отдельной задачей.
-- [ ] Evals для skill selection, allowlist, plan quality, IPC compatibility, cancellation, replay, citations, memory retrieval, routing и UI truthfulness.
+- [x] Evals для skill selection, allowlist, plan quality, IPC compatibility, cancellation, replay, citations, memory retrieval, routing и UI truthfulness.
 - [x] Core Doctor проверяет pipe, storage/migrations, providers, permissions, tools, scheduler и recovery; UI показывает actionable diagnostics и user-configurable уровень детализации при сохранении redaction.
 - [ ] Feedback: useful/not useful, correction, rejection reason, successful/failed tool result; хранение и агрегация локальные, наружная telemetry только opt-in.
 - [x] Пользовательский экспорт логов и метрик (JSONL, при необходимости Windows Event Log) в рамках Core Doctor.
