@@ -27,15 +27,18 @@
 
 ### Секреты и миграция
 
+- Provider secrets хранятся как Generic Credentials в Windows Credential Manager. Если для локального формата нужен дополнительный encrypted blob, он защищается DPAPI под текущим пользователем; в SQLite/settings хранится только logical credential ID/reference, а не plaintext или самодостаточный API key.
 - В production fallback в plaintext settings, логах или SQLite не допускается. Credential Manager/DPAPI привязаны к профилю Windows и машине; восстановление на другой машине выполняется повторной авторизацией или явным импортом секрета пользователем.
 - Для dev/CI разрешается только ephemeral fallback через переменную окружения или секрет CI, действующий на время процесса и не попадающий в snapshots, traces, exports и логи. Он не должен автоматически становиться постоянным хранилищем.
-- Ротация выполняется по схеме `write new -> verify access -> delete old`; при ошибке проверки старое значение сохраняется. Документация должна описывать повторную авторизацию, восстановление после повреждения профиля и удаление отозванного секрета.
+- Ротация выполняется по схеме `write new credential -> verify access -> atomically switch reference -> delete old credential`; при ошибке проверки или переключения старое значение и reference сохраняются. Документация должна описывать повторную авторизацию, восстановление после повреждения профиля и удаление отозванного секрета.
 
 ### SQLite backup/restore
 
+- Backup выполняется через SQLite Online Backup API, а не копированием открытого `.db`. В backup входит SQLite database и минимальный несекретный app metadata manifest (schema/app version, timestamps, format version); provider secrets и их значения туда не входят.
+- Restore запускается только после остановки или контролируемой блокировки всех DB writers. Перед ним автоматически создаётся safety/pre-restore backup текущего состояния тем же безопасным механизмом.
 - `preview` — версионируемый JSON-план: источник, время, schema/app version, размер, список затрагиваемых объектов, ожидаемые миграции и потенциальные конфликты; preview не содержит секретов.
 - `progress` сообщает фазу (`prepare`, `backup`, `validate`, `restore`, `reopen`, `cleanup`), completed/total для определимых операций и человекочитаемую ошибку. Процент показывается только там, где total достоверен.
-- Restore выполняется во временную копию с integrity/schema validation и атомарной заменой. До замены создаётся pre-restore backup. Сбой миграции, валидации, записи или переполнения диска оставляет рабочую БД нетронутой и предлагает rollback к pre-restore backup; частично записанная временная копия удаляется после audit.
+- Restore выполняется во временную копию с integrity/schema validation, затем проходит reopen, migrations/reconciliation и только после успешной проверки — атомарную замену. Сбой миграции, валидации, записи, reopen/reconciliation или переполнения диска оставляет рабочую БД нетронутой и предлагает rollback к pre-restore backup; если ошибка произошла после замены, исходное состояние восстанавливается из safety backup. Частично записанная временная копия удаляется после audit.
 
 ### Crash-recovery UI
 
@@ -43,17 +46,30 @@
 - `BLOCKED` и `WAITING_APPROVAL` являются блокирующими для конкретной операции: UI явно показывает причину, затронутый ресурс, требуемое действие и кнопки `reconcile`/`approve`/`cancel` только когда они разрешены Core. Неизвестный effect нельзя подтвердить вслепую.
 - `FAILED` показывает безопасное описание, request/correlation id и доступные действия (`retry`, `restore`, `open diagnostics`); повтор не должен выполняться автоматически без политики retry.
 
+| State | UI показывает | Допустимые действия |
+| --- | --- | --- |
+| `RECOVERING` | recovery/reconciliation progress и текущую фазу | `wait`; `cancel` только если Core подтвердил безопасную отмену |
+| `WAITING_APPROVAL` | неизвестный или неподтверждённый effect, ресурс и последствия | `approve`, `reject` |
+| `BLOCKED` | причину блокировки и условие разблокировки | `retry`, `resolve`, `open details` |
+| `FAILED` | последнюю безопасно отредактированную ошибку и correlation id | `retry`, `abort`, `open details` |
+
+Эта матрица является контрактом UI/Core: неизвестный effect может перейти к `approve` только после reconciliation и явного approval, а недоступное действие не отображается.
+
 ### Search и security edge cases
 
-- `filesystem.search` фильтрует результаты по canonical path после разрешения symlink/reparse-point, проверяет containment относительно разрешённых roots и повторно применяет redaction/blocklist перед выдачей. Проверка относится к пути и содержимому результата, а не к любому совпадению имени легитимного файла.
+- `filesystem.search` фильтрует результаты по canonical path после разрешения symlink/reparse-point, проверяет containment относительно разрешённых roots и повторно применяет ту же path/policy validation, что и прямой filesystem access, перед выдачей. Проверка относится к пути и содержимому результата, а не к любому совпадению имени легитимного файла.
 - Regression tests покрывают symlink/reparse escape, `..`, alternate path forms, Unicode normalization и похожие символы. Unicode-омографы проверяются как обход сопоставления запрещённых имён/команд, а не объявляются запрещёнными сами по себе.
-- Расширенный blocklist интерпретаторов, policy subject и Git remote restrictions должны иметь позитивные и негативные тесты: разрешённые имена не блокируются, а обход через alias/path/регистронезависимое и Unicode-представление не проходит.
+- Blocklist интерпретаторов запрещает прямые `cmd`/`powershell`/`python` и indirect launcher aliases или переименованные executable paths, если это предусмотрено policy model; позитивные тесты подтверждают, что разрешённые инструменты не блокируются.
+- Policy subject проверяется после canonical resolution против canonical resolved subject, а не против пользовательского display name или неподтверждённой строки input.
+- Git remote разрешает только ожидаемые scheme, host и repository scope; tests покрывают `file://`, UNC, arbitrary SSH hosts, credential-bearing URLs, смену origin и redirect/canonicalization cases. Запрещённые remote не должны обходить policy через alias, redirect или альтернативную форму URL.
 
 ### Windows reference и rollback
 
 - Гейт — чистая x64 Windows 11 22H2 с последними доступными cumulative updates на момент прогона; версия, build, архитектура, свободное место и результат фиксируются в артефакте smoke-теста.
 - Insider Preview не является обязательным гейтом этого подплана, но может использоваться как informative compatibility run с отдельным результатом.
 - Upgrade/install проверяет нехватку диска и сбой на каждом этапе, сохранение текущей рабочей версии, очистку staging и повторный запуск после освобождения места. Rollback должен быть идемпотентным и не удалять пользовательские данные.
+
+Smoke-матрица на reference-системе: clean install → launch → configure provider secret → создать проверяемое DB state → upgrade `N` → `N+1` → симулировать failed migration/startup → rollback → проверить DB и доступность secret reference → uninstall/reinstall согласно зафиксированной policy сохранения пользовательских данных. Для каждого сценария записываются версия/build, exit result, логи без секретов и итоговое состояние данных.
 
 ## Порядок реализации
 
@@ -67,12 +83,14 @@
 
 - `cargo test --workspace`, WinUI tests и IPC tests проходят без environment-only failures;
 - POSIX-команды не требуются для native-тестов, а WSL не используется как скрытая зависимость acceptance run;
-- provider key не хранится в plaintext settings, prompt, trace или JSONL;
+- provider key и распространённые encoded forms не хранятся в settings, logs, traces, prompts/tool payload history, audit events, diagnostic bundle/Core Doctor export, backup metadata или crash dump annotations;
 - fallback для dev/CI является только ephemeral и не сохраняется после завершения процесса;
 - preview backup имеет проверяемый JSON-контракт, progress содержит фазу и достоверный прогресс, а ошибка restore не повреждает рабочую БД;
 - backup восстанавливается после ошибки миграции и явно показывает область восстановления, pre-restore backup и доступный rollback;
 - UI не предлагает продолжить неизвестный effect без reconciliation/approval и явно различает `RECOVERING`, `BLOCKED`, `WAITING_APPROVAL` и `FAILED`;
 - `.env`, запрещённые результаты поиска, symlink/reparse escapes и обходы blocklist не выдаются через `filesystem.search`;
+- Git remote policy отклоняет запрещённые scheme/host/scope, credential-bearing URLs, UNC/file URLs и redirect/canonicalization обходы;
+- smoke-матрица покрывает install, launch, secret setup, DB state, upgrade, failed migration/startup, rollback и uninstall/reinstall policy;
 - установщик, rollback и повторное восстановление после нехватки диска проходят на чистой reference Windows 11 22H2+.
 
 ## Зависимости
