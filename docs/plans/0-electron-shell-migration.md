@@ -61,6 +61,8 @@ tray, окнами и transport orchestration; preload экспортирует 
   — 24 теста, успешно.
 - Packaging: native package, version и workflow smoke — успешно; реальный
   unpacked package собран, `EvoHime.exe` запущен и оставался живым после 5 секунд.
+- Fault smoke: forced Core exit восстановлен supervisor; forced supervisor exit
+  не оставляет Core — успешно.
 - `git diff --check` — чисто.
 
 Не выполнены: проверка Windows 10, второй физической машины, code signing,
@@ -74,9 +76,10 @@ startup/IPC/package budgets и soak/low-memory проверки.
    только дополнительным health signal.
 2. Добавить локальный package/lifecycle smoke без зависимости от WinUI и
    проверить, что release version действительно попадает в Electron package.
-3. Добавить fault/acceptance scripts для Core/supervisor restart, read-only и
-   locked workspace, provider outage, bounded reconnect и diagnostics export;
-   зафиксировать измеренные startup/IPC/package baselines.
+3. Расширить fault/acceptance scripts сценариями read-only и locked workspace,
+   provider outage, bounded reconnect и diagnostics export; зафиксировать
+   измеренные startup/IPC/package baselines. Core/supervisor restart уже
+   покрыт `scripts/electron-fault.tests.ps1`.
 4. После двух одинаковых acceptance cycles отдельным task-only коммитом
    убрать WinUI runtime из production CI/package, сохранив compatibility oracle
    только если он ещё нужен.
