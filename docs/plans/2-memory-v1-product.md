@@ -8,7 +8,7 @@
 
 Превратить готовые Memory domain, SQLite persistence, API и IPC-контракты в ограниченный пользовательский workflow без скрытой записи фактов.
 
-В v1 «важной» считается запись, которая может влиять на будущие решения или поведение агента: решение, предпочтение, ограничение, правило, исправление или подтверждённый результат. Важность определяется детерминированной policy по `kind`, `privacy_label`, `confidence` и влиянию длительного сохранения, а не пользовательским флагом. Auto-save разрешён только для явно перечисленных низкорисковых kind; важные, secret-like, конфликтующие и записи с недостаточной provenance требуют подтверждения до сохранения.
+В v1 «важной» считается запись, которая может влиять на будущие решения или поведение агента: решение, предпочтение, ограничение, правило, исправление или подтверждённый результат. Важность определяется детерминированным `SensitivityLevel`: `routine` — безопасные метрики и статусы, `decision` — решения/предпочтения/ограничения, `sensitive` — данные с повышенным privacy impact, `secret_like` — секреты и credential material. `routine` может пройти auto-save только при allowlisted kind; `decision` и `sensitive` требуют подтверждения, `secret_like` отклоняется. Пользовательский флаг не может понизить уровень чувствительности или обойти policy.
 
 ## Объём
 
@@ -31,17 +31,17 @@
 
 ## Порядок реализации
 
-1. Описать `MemoryCandidate` и deterministic extractor из run metrics/evidence.
+1. Описать `MemoryCandidate` и deterministic extractor из run metrics/evidence; extractor работает только с перечисленными структурированными полями и не делает смысловой вывод из свободного текста.
 2. Добавить policy decision и confirmation queue без автоматического сохранения неподтверждённых важных фактов.
-3. Подключить post-run hook к Core task lifecycle после terminal outcome.
+3. Подключить post-run hook к Core task lifecycle после terminal outcome; extraction и policy запускаются асинхронно, не задерживают фиксацию terminal status и не блокируют IPC/UI.
 4. Добавить WinUI inspector поверх существующего IPC API.
 5. Добавить integration/eval fixtures для stale, conflicting, secret-like и cross-scope записей.
 
 ## Модель кандидата, evidence и policy
 
-Минимальный `MemoryCandidate` содержит `candidate_id`, `kind`, безопасное `content`, `scope`, `provenance`, `privacy_label`, `ttl`, `confidence`, `source_run_id`, `created_at` и `requires_confirmation`. Для детерминированного сопоставления policy также вычисляются `canonical_key`, `risk` и `policy_decision`; это производные поля контракта, а не альтернативные названия базовых полей. В provenance допускаются тип evidence и стабильный digest/идентификатор артефакта, но не полный stdout/stderr, argv, секреты или абсолютные пути вне workspace.
+Минимальный `MemoryCandidate` содержит `candidate_id`, `kind`, безопасное `content`, `scope`, `provenance`, `privacy_label`, `ttl`, `confidence`, `source_run_id`, `created_at` и `requires_confirmation`. Для детерминированного сопоставления policy также вычисляются `sensitivity_level`, `canonical_key`, `risk` и `policy_decision`; это производные поля контракта, а не альтернативные названия базовых полей. В provenance допускаются тип evidence и стабильный digest/идентификатор артефакта, но не полный stdout/stderr, argv, секреты или пути в исходном абсолютном виде.
 
-Allowlist bounded evidence: structured task outcome, structured tool results, explicit user/agent decisions, selected task metrics и manifest безопасных артефактов/временных файлов внутри workspace. Denylist: сырые `stdout`/`stderr`, полный `argv`, secrets, credential material, абсолютные пути вне workspace и неограниченные логи/файлы. Источник, не попавший в allowlist, не читается extractor-ом.
+Allowlist bounded evidence: structured task outcome, structured tool results, explicit user/agent decisions, selected task metrics и manifest безопасных артефактов/временных файлов внутри workspace. Denylist: сырые `stdout`/`stderr`, полный `argv`, secrets, credential material и неограниченные логи/файлы. Источник, не попавший в allowlist, не читается extractor-ом. Любые пути, включая пути внутри workspace, до формирования candidate нормализуются относительно корня workspace (`./...`); исходные абсолютные пути не попадают в content, provenance, audit или telemetry.
 
 Правила extractor-а версионируются и задаются только конфигурацией Core из allowlisted `kind`, полей и безопасных шаблонов/регулярных выражений. Пользовательские правила могут расширять разрешённые kind и pattern-ы в пределах текущего scope, но не могут открыть denylist-источник, повысить privacy label или обойти policy. Конфигурация имеет bounded размер и проходит ту же валидацию, что и входной evidence.
 
@@ -56,9 +56,9 @@ Policy вычисляется детерминированно по `kind + priv
 
 Решение policy сохраняется вместе с версией policy. Примеры TTL: решение и пользовательское предпочтение — 1 год; техническая диагностика с безопасной provenance — 30 дней. Точные TTL и лимиты — константы policy, покрытые тестами, а не UI. Ограничиваются и общий размер `content`, и число полей/элементов структурированного content; превышение любого лимита даёт `reject`.
 
-Post-run extractor не обязан угадывать факты за пределами bounded evidence. Контракт evidence обязан включать структурированные метрики, безопасные tool-result summaries и manifest ссылок на допустимые артефакты/временные файлы; сырые логи остаются диагностикой и не становятся памятью. Если контекста недостаточно, создаётся кандидат с низкой confidence или запись не создаётся — скрытого расширения области чтения нет.
+Post-run extractor не обязан угадывать факты за пределами bounded evidence. В v1 «решение» извлекается только из явного структурированного поля decision/decision marker или explicit user/agent decision; semantic inference из свободного текста и LLM-extraction не входят в scope. Контракт evidence обязан включать структурированные метрики, безопасные tool-result summaries и manifest ссылок на допустимые артефакты/временные файлы; сырые логи остаются диагностикой и не становятся памятью. Если контекста недостаточно, candidate не создаётся — скрытого расширения области чтения нет.
 
-Confirmation queue сохраняет только безопасный кандидат и его срок действия. Её lifecycle: `pending -> accepted | rejected | expired`; переходы атомарны и попадают в audit. Pending candidates переживают restart, повторно показывают provenance до подтверждения и истекают по TTL; после `expired` они не сохраняются и не возвращаются в normal retrieval. В UI пользователь видит kind, scope, content, provenance, TTL и diff с текущей записью и может подтвердить, изменить scope/content, отложить или отклонить. Бесконечной очереди нет.
+Confirmation queue сохраняет только безопасный кандидат и его срок действия. Её lifecycle: `pending -> accepted | rejected | expired`; переходы атомарны и попадают в audit. Pending candidates переживают restart, повторно показывают provenance до подтверждения и истекают по TTL; после `expired` они не сохраняются и не возвращаются в normal retrieval. Inspector показывает badge с числом pending, немодальный banner после нового post-run extraction и, если разрешено системной privacy policy, локальное notification; modal dialog после run не используется. В UI пользователь видит kind, scope, content, provenance, TTL и diff с текущей записью и может подтвердить, изменить scope/content, отложить или отклонить. Бесконечной очереди нет.
 
 ## Native UI, offline и миграции
 
@@ -73,7 +73,7 @@ Offline все эти операции выполняются локально �
 ## Критерии готовности
 
 - успешный и неуспешный run могут создавать bounded candidates, но важные записи требуют подтверждения;
-- в памяти нет stdout/stderr, полного argv, секретов и абсолютных путей вне workspace;
+- в памяти нет stdout/stderr, полного argv, секретов и абсолютных путей; пути представлены только относительно корня workspace;
 - запись доступна только в своём scope и имеет provenance/TTL/privacy;
 - archive/forget/export/delete корректно отображаются в UI и попадают в audit;
 - schema migration rollback восстанавливает схему и данные из pre-migration backup; rollback приложения на предыдущую версию отдельно проверяет совместимость чтения и не считается заменой rollback миграции;
@@ -95,6 +95,9 @@ Offline все эти операции выполняются локально �
 - отказ миграции восстанавливает схему и данные из pre-migration backup, а намеренный `forget/delete` не восстанавливает удалённое содержимое;
 - проверяется rollback приложения на предыдущую версию: старый binary читает сохранённую схему либо корректно блокируется с диагностикой, не повреждая данные;
 - policy отклоняет secret-like значения, абсолютные пути вне workspace, полный argv и сырые stdout/stderr;
+- `SensitivityLevel` детерминированно маршрутизирует routine/decision/sensitive/secret_like в auto-save/confirm/reject без возможности понижения пользователем;
+- post-run extraction и policy не задерживают terminal status, а новый pending candidate сообщает о себе через badge/banner без modal блокировки;
+- абсолютный путь внутри и вне workspace нормализуется в `./...` либо отклоняется, если безопасная нормализация невозможна;
 - негативные cases отклоняют превышение размера content, превышение числа полей, запрещённый privacy label, недопустимое пользовательское правило extractor-а и массовую операцию с чужим scope;
 - cleanup переводит истёкшие записи в `expired` без физического удаления и безопасно возобновляется после restart;
 - extractor metrics не содержат content, provenance secrets или абсолютные пути;
