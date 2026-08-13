@@ -90,11 +90,19 @@ Renderer не получает `ipcRenderer`, EventEmitter, MessagePort, `fs`, `
 | Enforced handshake E2E | настоящий Core: корректный secret подключается, подделанный secret и неизвестная роль дают `fatal` без retry-цикла |
 | Полная цепочка | supervisor → protected context → Core (`authenticated: true`) → Electron: `ipc.client_authenticated role=shell` без reconnect-предупреждений |
 | WinUI fallback | компилируется, C# suite (24 теста) зелёная, роль `compatibility-shell` принимается настоящим Core |
+| Запуск подписанного package | supervisor → Core → packaged `EvoHime.exe`: окно «EvoHime» открыто, `packaged: true`, `developerLaunch: false`, `ipc.client_authenticated role=shell`, ошибок и reconnect-предупреждений нет |
 
-Не проверено на этом этапе: Windows 10 (в наличии только Windows 11 x64),
-UAC/elevation, session change, memory pressure, DPI/scaling, dark theme и
-запуск WinUI-оболочки под supervisor вручную (покрыто только тестами и
-общим вектором proof).
+## Область проверки
+
+Проверка выполняется на текущей машине разработки (Windows 11 x64) —
+собранный package запускается и проходит полную цепочку supervisor → Core →
+оболочка. Отдельный прогон на Windows 10 в рамках этих gate не выполняется;
+поддержка Windows 10 остаётся требованием продукта и проверяется на
+release acceptance, а не на каждом этапе.
+
+Также не проверялись на этом этапе: UAC/elevation, смена пользовательской
+сессии, memory pressure, DPI/scaling, dark theme и ручной запуск
+WinUI-оболочки под supervisor (покрыт тестами и общим вектором proof).
 
 ## Решение по риску bridge
 

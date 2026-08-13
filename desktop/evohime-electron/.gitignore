@@ -3,3 +3,5 @@ out/
 dist/
 release/
 *.tsbuildinfo
+# Electron runtime zip downloaded by electron-builder.
+.electron-cache/
