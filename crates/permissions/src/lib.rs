@@ -282,6 +282,21 @@ impl PermissionEngine {
             .await
     }
 
+    /// Resolve a scoped decision against a canonical policy subject.
+    ///
+    /// Callers that accepted a display name or user-facing path must provide
+    /// the canonical, resolved subject here so policy rules cannot be bypassed
+    /// by presenting a different label to the permission engine.
+    pub async fn check_scoped_with_subject(
+        &self,
+        permission: Permission,
+        check: &PermissionCheck<'_>,
+        canonical_subject: &str,
+    ) -> PermissionDecision {
+        self.check_scoped_inner(permission, check, Some(canonical_subject))
+            .await
+    }
+
     /// Resolve decision with path/session overrides.
     ///
     /// Priority (most specific first):
@@ -295,12 +310,25 @@ impl PermissionEngine {
         permission: Permission,
         check: &PermissionCheck<'_>,
     ) -> PermissionDecision {
+        self.check_scoped_inner(permission, check, None).await
+    }
+
+    async fn check_scoped_inner(
+        &self,
+        permission: Permission,
+        check: &PermissionCheck<'_>,
+        canonical_subject: Option<&str>,
+    ) -> PermissionDecision {
         self.purge_expired_grants().await;
 
-        let subject = check
-            .command
-            .map(str::to_owned)
-            .or_else(|| check.path.map(normalize_scope_path))
+        let subject = canonical_subject
+            .map(normalize_scope_path)
+            .or_else(|| {
+                check
+                    .command
+                    .map(str::to_owned)
+                    .or_else(|| check.path.map(normalize_scope_path))
+            })
             .unwrap_or_else(|| "workspace".to_string());
         let policy_mode = self.policy_rules.read().await.resolve(permission, &subject);
         if policy_mode == Some(PermissionMode::Deny) {
