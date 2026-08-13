@@ -8,6 +8,7 @@ import { HomeScreen } from './HomeScreen'
 import { RepositoryBar } from './RepositoryBar'
 import { ActivityLine } from './ActivityLine'
 import { buildTranscript } from './transcript'
+import { MarkdownMessage } from './MarkdownMessage'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 const MAX_RENDERED_ITEMS = 80
@@ -205,13 +206,13 @@ export function TaskTimeline({
                     key={`${entry.kind}-${entry.id}-${index}`}
                     className={`message message--agent${entry.failed ? ' message--error' : ''}`}
                   >
-                    <div className="message__bubble">{entry.text}</div>
+                    <div className="message__bubble"><MarkdownMessage text={entry.text} /></div>
                   </li>
                 )
               }
               return (
                 <li key={`${entry.kind}-${entry.id}-${index}`} className="message message--agent">
-                  <div className="message__bubble">{entry.text}</div>
+                  <div className="message__bubble"><MarkdownMessage text={entry.text} /></div>
                 </li>
               )
             })}
