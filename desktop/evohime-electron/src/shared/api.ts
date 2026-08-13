@@ -58,6 +58,10 @@ export type ShellEvent =
 export const RENDERER_COMMANDS = [
   'shell.getState',
   'shell.requestResync',
+  'workspace.list',
+  'workspace.pick',
+  'workspace.select',
+  'workspace.forget',
   'core.startTask',
   'core.stopTask',
   'core.resolveApproval'
@@ -65,9 +69,26 @@ export const RENDERER_COMMANDS = [
 
 export type RendererCommand = (typeof RENDERER_COMMANDS)[number]
 
+/** One remembered workspace and whether it is still usable on this machine. */
+export interface WorkspaceOption {
+  readonly path: string
+  /** False when the directory is gone or unreadable; the UI says so. */
+  readonly available: boolean
+  readonly lastUsedMs: number
+}
+
+export interface WorkspaceSelection {
+  readonly selected: string | null
+  readonly options: readonly WorkspaceOption[]
+}
+
 export interface CommandPayloads {
   'shell.getState': Record<string, never>
   'shell.requestResync': Record<string, never>
+  'workspace.list': Record<string, never>
+  'workspace.pick': Record<string, never>
+  'workspace.select': { path: string }
+  'workspace.forget': { path: string }
   'core.startTask': { taskId: string; prompt: string; workspacePath: string }
   'core.stopTask': { taskId: string }
   'core.resolveApproval': { approvalId: string; granted: boolean }
@@ -76,6 +97,11 @@ export interface CommandPayloads {
 export interface CommandResults {
   'shell.getState': ShellState
   'shell.requestResync': { accepted: boolean }
+  'workspace.list': WorkspaceSelection
+  /** `cancelled` when the user closed the native folder dialog. */
+  'workspace.pick': { cancelled: boolean; selection: WorkspaceSelection }
+  'workspace.select': WorkspaceSelection
+  'workspace.forget': WorkspaceSelection
   'core.startTask': { accepted: boolean }
   'core.stopTask': { accepted: boolean }
   'core.resolveApproval': { accepted: boolean }
@@ -84,6 +110,7 @@ export interface CommandResults {
 export type CommandFailureCode =
   | 'unknown-command'
   | 'invalid-payload'
+  | 'workspace-unavailable'
   | 'not-connected'
   | 'queue-full'
   | 'timeout'

@@ -114,3 +114,61 @@ body {
 .shell--recovery {
   max-width: 480px;
 }
+
+.shell__selected {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 12px;
+}
+
+.shell__path {
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  word-break: break-all;
+}
+
+.shell__workspaces {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shell__workspace {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shell__workspace button:first-child {
+  flex: 1;
+  text-align: left;
+  word-break: break-all;
+}
+
+.shell__workspace--missing button:first-child {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+.shell__badge {
+  font-size: 12px;
+  color: #e0b341;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: rgb(128 128 150 / 15%);
+  border: 1px solid rgb(128 128 150 / 30%);
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

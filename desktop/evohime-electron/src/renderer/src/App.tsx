@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 
 import type { ConnectionState, CoreEvent, ShellState } from '@shared/api'
 
+import { useShellApi } from './shell-api'
+import { WorkspacePicker } from './WorkspacePicker'
+
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
  * process. No business logic lives here, and the renderer never touches the
@@ -28,8 +31,9 @@ export function App(): React.JSX.Element {
   const [events, setEvents] = useState<readonly CoreEvent[]>([])
   const [apiMissing, setApiMissing] = useState(false)
 
+  const api = useShellApi()
+
   useEffect(() => {
-    const api = window.evohime?.v1
     if (!api) {
       setApiMissing(true)
       return
@@ -50,7 +54,7 @@ export function App(): React.JSX.Element {
     })
 
     return unsubscribe
-  }, [])
+  }, [api])
 
   if (apiMissing) {
     return (
@@ -83,6 +87,8 @@ export function App(): React.JSX.Element {
         </dl>
         {state?.reason ? <p className="shell__reason">Причина: {state.reason}</p> : null}
       </section>
+
+      <WorkspacePicker connection={connection} />
 
       <section className="shell__panel">
         <h2>События Core</h2>

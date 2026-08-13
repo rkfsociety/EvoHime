@@ -5,12 +5,14 @@ import type { ShellState } from '@shared/api'
 import { JsonlLogger } from './diagnostics/logger'
 import { readLaunchContext } from './ipc/launch-context'
 import { CorePipeClient } from './ipc/pipe-client'
-import { logDirectory } from './paths'
+import { dataDirectory, logDirectory } from './paths'
 import { ReloadLimiter } from './recovery'
 import { hardenProcess, hardenSession, isProduction, type HardeningOptions } from './security'
 import { broadcast, registerShellBridge } from './shell-bridge'
 import { createTray, type TrayController } from './tray'
 import { createMainWindow, focusWindow, loadRenderer } from './window'
+import { WorkspaceService, windowChooser } from './workspace-service'
+import { WorkspaceStore } from './workspace-store'
 
 /**
  * Electron main process.
@@ -55,13 +57,23 @@ if (!app.requestSingleInstanceLock()) {
     hardenSession(hardening)
 
     client = new CorePipeClient({ launch, refreshLaunch: () => readLaunchContext(), log })
-    registerShellBridge({ client, log })
 
     client.on('state', (state: ShellState) => broadcast({ kind: 'state', state }))
     client.on('core-event', (event) => broadcast({ kind: 'core-event', event }))
 
     mainWindow = createMainWindow({ ...hardening, onRendererFailure: handleRendererFailure })
     tray = createTray({ window: mainWindow, log })
+
+    // The picker dialog is owned by the main process and opens modal to the
+    // shell window; the renderer only ever receives the chosen path.
+    registerShellBridge({
+      client,
+      workspaces: new WorkspaceService({
+        store: new WorkspaceStore(WorkspaceStore.defaultPath(dataDirectory())),
+        chooseDirectory: windowChooser(mainWindow)
+      }),
+      log
+    })
 
     log('info', 'shell.started', {
       developerLaunch: launch.developerLaunch,

@@ -16,6 +16,7 @@ import {
 import type { ShellLog } from './diagnostics/logger'
 import type { CorePipeClient } from './ipc/pipe-client'
 import { isAllowedExternalUrl } from './security-policy'
+import type { WorkspaceService } from './workspace-service'
 
 /**
  * Translates the narrow renderer API into `desktop-ipc-v1` commands.
@@ -30,18 +31,19 @@ const MAX_CLIPBOARD_CHARS = 64 * 1024
 
 export interface ShellBridgeOptions {
   readonly client: CorePipeClient
+  readonly workspaces: WorkspaceService
   readonly log: ShellLog
 }
 
 export function registerShellBridge(options: ShellBridgeOptions): void {
-  const { client, log } = options
+  const { log } = options
 
   ipcMain.handle(INVOKE_CHANNEL, (_event, command: unknown, payload: unknown) => {
     if (typeof command !== 'string' || !isRendererCommand(command)) {
       log('warn', 'shell.unknown_command', {})
       return failure('unknown-command', 'Команда не поддерживается оболочкой.')
     }
-    return dispatch(client, command, payload, log)
+    return dispatch(options, command, payload)
   })
 
   ipcMain.handle(CLIPBOARD_CHANNEL, (_event, text: unknown) => {
@@ -71,17 +73,48 @@ export function broadcast(event: ShellEvent): void {
 }
 
 function dispatch(
-  client: CorePipeClient,
+  options: ShellBridgeOptions,
   command: RendererCommand,
-  payload: unknown,
-  log: ShellBridgeOptions['log']
+  payload: unknown
 ): unknown {
+  const { client, workspaces, log } = options
   switch (command) {
     case 'shell.getState':
       return { ok: true, value: client.state }
 
     case 'shell.requestResync':
       return accepted(client.requestResync(true))
+
+    case 'workspace.list':
+      return { ok: true, value: workspaces.list() }
+
+    case 'workspace.pick':
+      // The native folder dialog lives in the main process; the renderer only
+      // ever receives the resulting path.
+      return workspaces.pick().then((value) => ({ ok: true, value }))
+
+    case 'workspace.select': {
+      const path = asBoundedString(asRecord(payload)['path'])
+      if (path === null) {
+        return failure('invalid-payload', 'Некорректный путь рабочей папки.')
+      }
+      const selection = workspaces.select(path)
+      if (selection === 'unknown-workspace') {
+        log('warn', 'shell.workspace_select_rejected', {})
+        return failure('workspace-unavailable', 'Эта папка не выбрана ранее — выбери её заново.')
+      }
+      log('info', 'shell.workspace_selected', {})
+      return { ok: true, value: selection }
+    }
+
+    case 'workspace.forget': {
+      const path = asBoundedString(asRecord(payload)['path'])
+      if (path === null) {
+        return failure('invalid-payload', 'Некорректный путь рабочей папки.')
+      }
+      log('info', 'shell.workspace_forgotten', {})
+      return { ok: true, value: workspaces.forget(path) }
+    }
 
     case 'core.startTask': {
       const value = asRecord(payload)

@@ -71,6 +71,14 @@ const client = {
   }
 }
 
+/** Stands in for the workspace service; its own behaviour is tested separately. */
+const workspaces = {
+  list: () => ({ selected: null, options: [] }),
+  pick: async () => ({ cancelled: true, selection: { selected: null, options: [] } }),
+  select: () => 'unknown-workspace' as const,
+  forget: () => ({ selected: null, options: [] })
+}
+
 function invoke(command: string, payload?: unknown): unknown {
   const handler = handlers.get(INVOKE_CHANNEL)
   if (!handler) {
@@ -87,6 +95,7 @@ beforeEach(() => {
   enqueueResult = 'queued'
   registerShellBridge({
     client: client as never,
+    workspaces: workspaces as never,
     log: () => {}
   })
 })

@@ -1,7 +1,7 @@
 # Подплан 0 — замена desktop shell на Electron
 
-Статус: этапы 0, 1 и 2 выполнены (Gate 0, 1 и 2 пройдены); следующий — этап 3,
-вертикальные UI-срезы, начиная с workspace picker
+Статус: этапы 0, 1 и 2 выполнены (Gate 0, 1 и 2 пройдены); этап 3 начат —
+срез 1 (workspace picker) готов, следующий срез 2 (task timeline)
 Порядок: 0 из 6; prerequisite для UI-частей планов 1–5
 Зафиксированный стек и результаты spike: `docs/plans/0-electron-stack-decision.md`
 
@@ -247,6 +247,15 @@ Export Diagnostics/Restart; бесконечный crash loop запрещён. 
 policy/approval. Вывод имеет зафиксированный после baseline scrollback limit,
 фильтрует ANSI/OSC, включая OSC 8, а file/exec links запускаются только после
 explicit approval через Core, не после одного UI-confirm.
+
+Срез 1 выполнен: рабочая папка выбирается через нативный диалог, которым
+владеет main process, выбор и bounded-список последних папок хранятся в
+`%LOCALAPPDATA%\EvoHime\shell\workspaces.json` (атомарная запись, устойчивость
+к повреждённому файлу, регистронезависимая дедупликация). UI показывает
+восстановленный после перезапуска выбор, отсутствие выбора, исчезнувшую папку,
+недоступность Core, отказ выбора и отсутствие preload-моста. Renderer не имеет
+доступа к файловой системе: путь приходит только из main, а Core повторно
+проверяет workspace scope на каждой команде.
 
 **Gate каждого среза:** focused UI tests, real-Core IPC scenario, reconnect/
 failure-state check и проверка отсутствия прямых filesystem/shell calls.
