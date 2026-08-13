@@ -4,6 +4,7 @@ import type { ChatRecord, ConnectionState, CoreEvent } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { ModelPicker } from './ModelPicker'
+import { HomeScreen } from './HomeScreen'
 import { ActivityLine } from './ActivityLine'
 import { buildTranscript } from './transcript'
 
@@ -23,6 +24,10 @@ export interface TaskTimelineProps {
   readonly chatId: string | null
   /** Told when a prompt changed a chat, so the sidebar reloads its list. */
   readonly onChatTouched: () => void
+  /** A chat created from the composer becomes the open one. */
+  readonly onChatOpened: (chatId: string) => void
+  readonly identityName: string | null
+  readonly chatRevision: number
 }
 
 export function TaskTimeline({
@@ -30,7 +35,10 @@ export function TaskTimeline({
   events,
   workspace,
   chatId,
-  onChatTouched
+  onChatTouched,
+  onChatOpened,
+  identityName,
+  chatRevision
 }: TaskTimelineProps): React.JSX.Element {
   const api = useShellApi()
   const [chat, setChat] = useState<ChatRecord | null>(null)
@@ -75,11 +83,27 @@ export function TaskTimeline({
   }, [entries.length, approval])
 
   const start = useCallback(async () => {
-    if (!api || !workspace || chatId === null || prompt.trim().length === 0) return
+    if (!api || !workspace || prompt.trim().length === 0) return
     const nextTaskId = makeTaskId()
     const text = prompt.trim()
     setBusy(true)
     setCommandError(null)
+
+    // Typing is the intent to start a conversation, so the first prompt of a
+    // session creates the chat instead of demanding it be made first.
+    let targetChatId = chatId
+    if (targetChatId === null) {
+      const created = await api.invoke('chat.create', { workspacePath: workspace })
+      if (!created.ok) {
+        setBusy(false)
+        setCommandError(created.message)
+        return
+      }
+      targetChatId = created.value.id
+      setChat(created.value)
+      onChatOpened(targetChatId)
+    }
+
     const outcome = await api.invoke('core.startTask', {
       taskId: nextTaskId,
       prompt: text,
@@ -94,13 +118,13 @@ export function TaskTimeline({
     setSentPrompt(text)
     setPrompt('')
     const stored = await api.invoke('chat.appendPrompt', {
-      chatId,
+      chatId: targetChatId,
       taskId: nextTaskId,
       prompt: text
     })
     if (stored.ok && stored.value) setChat(stored.value)
     onChatTouched()
-  }, [api, chatId, onChatTouched, prompt, workspace])
+  }, [api, chatId, onChatOpened, onChatTouched, prompt, workspace])
 
   const stop = useCallback(async () => {
     if (!api || !taskId) return
@@ -125,8 +149,7 @@ export function TaskTimeline({
   )
 
   const connected = CONNECTED_STATES.includes(connection)
-  const canStart =
-    connected && workspace !== null && chatId !== null && prompt.trim().length > 0 && !busy
+  const canStart = connected && workspace !== null && prompt.trim().length > 0 && !busy
   const running = taskId !== null && !finished
   const history = chat?.messages ?? []
   // Запрос разрешения может прийти раньше любой другой записи ленты.
@@ -137,17 +160,13 @@ export function TaskTimeline({
     <section className="chat" aria-label="Ход задачи">
       <div className="chat__scroll">
         {empty ? (
-          <div className="chat__empty">
-            <span className="chat__empty-logo" aria-hidden="true">E</span>
-            <h2>Чем займёмся?</h2>
-            <p>
-              {workspace === null
-                ? 'Сначала выбери проект в левой панели, затем создай чат.'
-                : chatId === null
-                  ? 'Создай чат в левой панели, чтобы поставить задачу агенту.'
-                  : 'Опиши задачу — агент выполнит её в выбранной рабочей папке и покажет каждый шаг здесь.'}
-            </p>
-          </div>
+          <HomeScreen
+            workspace={workspace}
+            identityName={identityName}
+            onOpenChat={onChatOpened}
+            onPickSuggestion={setPrompt}
+            revision={chatRevision}
+          />
         ) : (
           <ol className="chat__stream">
             {history.map((message) => (
@@ -208,6 +227,7 @@ export function TaskTimeline({
         <div ref={bottomRef} />
       </div>
 
+      {workspace === null ? null : (
       <div className="composer">
         <div className="composer__inner">
           <div className="composer__box">
@@ -222,14 +242,8 @@ export function TaskTimeline({
                   if (canStart) void start()
                 }
               }}
-              placeholder={
-                workspace === null
-                  ? 'Сначала выбери проект'
-                  : chatId === null
-                    ? 'Создай чат, чтобы начать'
-                    : 'Опиши задачу для агента…'
-              }
-              disabled={!connected || workspace === null || chatId === null || busy}
+              placeholder="Опиши задачу для агента…"
+              disabled={!connected || busy}
               rows={1}
             />
             <button
@@ -259,14 +273,11 @@ export function TaskTimeline({
           {!connected ? (
             <p className="shell__reason">Core недоступен: запуск и управление задачей приостановлены.</p>
           ) : null}
-          {workspace === null ? (
-            <p className="shell__reason">Выбери рабочую папку перед запуском задачи.</p>
-          ) : chatId === null ? (
-            <p className="shell__reason">Создай чат, чтобы поставить задачу.</p>
-          ) : null}
+
           {commandError ? <p role="alert" className="shell__reason">{commandError}</p> : null}
         </div>
       </div>
+      )}
     </section>
   )
 }

@@ -404,41 +404,108 @@ body {
   list-style: none;
 }
 
-.chat__empty {
+/* ── главный экран ── */
+
+.home {
   display: flex;
   flex-direction: column;
-  gap: 8px;
   align-items: center;
-  justify-content: center;
-  height: 100%;
-  padding: 24px;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 8vh 24px 24px;
   text-align: center;
 }
 
-.chat__empty-logo {
+.home__logo {
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
-  margin-bottom: 4px;
-  border-radius: 14px;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 16px;
+  border-radius: 16px;
   background: linear-gradient(135deg, var(--accent), #5e8de8);
   color: var(--accent-fg);
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
 }
 
-.chat__empty h2 {
-  margin: 0;
-  font-size: 18px;
+.home__greeting {
+  margin: 0 0 6px;
+  font-size: 22px;
   font-weight: 600;
 }
 
-.chat__empty p {
-  max-width: 420px;
+.home__subtitle {
   margin: 0;
   color: var(--fg-muted);
   line-height: 1.5;
+}
+
+.home__section {
+  width: 100%;
+  margin-top: 28px;
+  text-align: left;
+}
+
+.home__section h3 {
+  margin: 0 0 8px;
+  color: var(--fg-faint);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.home__chats,
+.home__suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.home__chats button,
+.home__suggestions button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font-size: 13.5px;
+  text-align: left;
+}
+
+.home__chats button:hover,
+.home__suggestions button:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.home__chat-title {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.home__chat-meta {
+  color: var(--fg-faint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.home__suggestions button {
+  color: var(--fg-muted);
+}
+
+.home__suggestions button:hover {
+  color: var(--fg);
 }
 
 .message {

@@ -35,37 +35,115 @@ beforeEach(() => {
   calls.length = 0
   // The transcript only shows tasks of the open chat, so the store must
   // report this chat as owning them.
-  respond = (command) =>
-    command === 'chat.open' || command === 'chat.appendPrompt'
-      ? ok({
-          id: 'chat-1',
-          workspacePath: 'C:\\work\\repo',
-          title: 'Чат',
-          createdMs: 0,
-          updatedMs: 0,
-          taskIds: ['task-1'],
-          messages: []
-        })
-      : ok({ selected: 'C:\\work\\repo', options: [] })
+  const chat = {
+    id: 'chat-1',
+    workspacePath: 'C:\\work\\repo',
+    title: 'Чат',
+    createdMs: 0,
+    updatedMs: 0,
+    taskIds: ['task-1'],
+    messages: []
+  }
+  respond = (command) => {
+    if (command === 'chat.open' || command === 'chat.appendPrompt' || command === 'chat.create') {
+      return ok(chat)
+    }
+    if (command === 'chat.list') return ok([])
+    return ok({ selected: 'C:\\work\\repo', options: [] })
+  }
   installApi()
 })
 
 afterEach(() => cleanup())
 
 describe('task timeline', () => {
-  it('unlocks the composer as soon as a workspace is picked', async () => {
+  it('hides the composer until a project is picked, then makes it usable', async () => {
     // Regression: the composer used to read the workspace once on mount, so a
     // folder picked afterwards in the sidebar left it permanently disabled.
-    const view = render(<TaskTimeline connection="connected" events={[]} workspace={null} chatId="chat-1" onChatTouched={() => {}} />)
-    expect((await screen.findByLabelText('Задача')).hasAttribute('disabled')).toBe(true)
+    // With no project there is nothing it could do, so it is not shown at all.
+    const view = render(
+      <TaskTimeline
+        connection="connected"
+        events={[]}
+        workspace={null}
+        chatId={null}
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+    expect(screen.queryByLabelText('Задача')).toBeNull()
 
-    view.rerender(<TaskTimeline connection="connected" events={[]} workspace="C:\work\repo" chatId="chat-1" onChatTouched={() => {}} />)
+    view.rerender(
+      <TaskTimeline
+        connection="connected"
+        events={[]}
+        workspace="C:\work\repo"
+        chatId={null}
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
 
     expect(screen.getByLabelText('Задача').hasAttribute('disabled')).toBe(false)
   })
 
+  it('creates the chat from the first prompt instead of demanding one', async () => {
+    const opened: string[] = []
+    render(
+      <TaskTimeline
+        connection="connected"
+        events={[]}
+        workspace="C:\work\repo"
+        chatId={null}
+        onChatTouched={() => {}}
+        onChatOpened={(id) => opened.push(id)}
+        identityName="rkfsociety"
+        chatRevision={0}
+      />
+    )
+
+    await userEvent.type(await screen.findByLabelText('Задача'), 'Изучи проект')
+    await userEvent.click(screen.getByRole('button', { name: 'Запустить задачу' }))
+
+    await waitFor(() => expect(opened).toEqual(['chat-1']))
+    expect(calls.find((call) => call.command === 'chat.create')?.payload).toEqual({
+      workspacePath: 'C:\\work\\repo'
+    })
+    // The task still goes to Core, now bound to the chat that was just made.
+    expect(calls.find((call) => call.command === 'core.startTask')).toBeTruthy()
+    expect(calls.find((call) => call.command === 'chat.appendPrompt')?.payload).toMatchObject({
+      chatId: 'chat-1',
+      prompt: 'Изучи проект'
+    })
+  })
+
+  it('greets by name on the home screen and offers a first task', async () => {
+    render(
+      <TaskTimeline
+        connection="connected"
+        events={[]}
+        workspace="C:\work\repo"
+        chatId={null}
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName="rkfsociety"
+        chatRevision={0}
+      />
+    )
+
+    expect(await screen.findByText('Чем займёмся, rkfsociety?')).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: /Изучи проект и расскажи/ }))
+
+    expect((screen.getByLabelText('Задача') as HTMLTextAreaElement).value).toMatch(/Изучи проект/)
+  })
+
   it('starts a task only through the typed bridge', async () => {
-    render(<TaskTimeline connection="connected" events={[]} workspace="C:\work\repo" chatId="chat-1" onChatTouched={() => {}} />)
+    render(<TaskTimeline connection="connected" events={[]} workspace="C:\work\repo" chatId="chat-1" onChatTouched={() => {}} onChatOpened={() => {}} identityName={null} chatRevision={0} />)
     await userEvent.type(await screen.findByLabelText('Задача'), 'Проверь тесты')
     await userEvent.click(screen.getByRole('button', { name: 'Запустить задачу' }))
 

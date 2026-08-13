@@ -195,6 +195,12 @@ export function App(): React.JSX.Element {
               workspace={workspace}
               chatId={chatId}
               onChatTouched={() => setChatRevision((value) => value + 1)}
+              onChatOpened={(id) => {
+                setChatId(id)
+                setChatRevision((value) => value + 1)
+              }}
+              identityName={identity?.name ?? null}
+              chatRevision={chatRevision}
             />
           ) : (
             <div className="main__scroll">
