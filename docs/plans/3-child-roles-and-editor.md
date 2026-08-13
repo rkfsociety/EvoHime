@@ -34,6 +34,11 @@ read-only выполнению и сделать его наблюдаемым �
 - Реальный execution, timeout, cancellation, tool-count budget, dispatcher и
   child event stream пока отсутствуют. Сохранение `ChildTaskRequest` или
   `ChildReport` само по себе не является execution.
+- После перезапуска `evohime-core.exe` child execution в MVP не
+  восстанавливается: незавершённый child получает immutable terminal state
+  `aborted` с причиной `core_restart`. Durable request/report/event journal
+  сохраняются для диагностики и replay, но продолжение требует нового child с
+  новым id.
 
 ## Объём
 
@@ -45,6 +50,10 @@ read-only выполнению и сделать его наблюдаемым �
   `git.diff` и `git.status` с общей policy snapshot;
 - отдельные filesystem/network sandbox и запрет write, shell, commit, install,
   network mutation, elevation и nested child на request, adapter и tool layers;
+- network policy MVP — `deny all`: у текущего child runtime нет network
+  capability. Read-only HTTP, если он понадобится позже, вводится отдельным
+  capability/profile с host/port/redirect/private-range/credential policy и
+  не считается разрешённым по умолчанию;
 - единые timeout/cancellation/output limits и composite budget;
 - проверка родителем report, confidence и sources до включения evidence в
   plan/build. Непринятый report не становится evidence и не меняет parent
@@ -70,18 +79,39 @@ read-only выполнению и сделать его наблюдаемым �
   `budget_exceeded`. Model-token budget учитывается только если provider
   возвращает измерение; его отсутствие не снимает wall-clock/tool/output
   limits;
-- report confidence хранится как integer `0..100`. Автоматическое принятие
-  evidence разрешено только при `confidence_percent >= 70`, непустом summary,
-  валидных уникальных sources и статусе `complete` или `partial`. Диапазон
-  `0..69`, `rejected`, отсутствующие/невалидные sources или secret-like content
-  дают `blocked`/`rejected`, но не acceptance. Порог должен быть policy
-  snapshot и виден в evidence UI.
+- report confidence хранится как integer `0..100` и означает bounded
+  self-assessment child, а не доказанную достоверность и не security signal.
+  Он показывается родителю и может использоваться для сортировки/запроса
+  дополнительной проверки, но сам по себе не разрешает и не запрещает
+  acceptance. Порог `70` может быть policy hint для `needs_review`, но не
+  автоматическим gate.
+
+## Child lifecycle и state machine
+
+Core является единственным владельцем этой state machine. Нормальный путь:
+
+`created → queued → running → validating → waiting_parent_acceptance → accepted`
+
+Из `waiting_parent_acceptance` report переходит в `accepted` или `rejected`.
+Отдельные terminal states: `cancelled`, `timed_out`, `blocked`, `failed`,
+`budget_exceeded`, `output_exceeded`, `aborted`. `accepted`, `rejected` и все
+эти terminal states immutable.
+
+- `waiting_approval` не является child lifecycle state: это состояние parent
+  workflow/approval overlay. Если approval нужен до запуска, child остаётся
+  `queued`; после запуска approval может приостановить parent без подмены
+  child state.
+- `completed` — это значение `ChildReport.status`, а не финальное состояние
+  child до parent acceptance. После валидного report child находится в
+  `waiting_parent_acceptance`; только gate переводит его в `accepted` или
+  `rejected`.
+- Cancel и terminal completion используют атомарный compare-and-set по
+  текущему state. Побеждает первая зафиксированная terminal transition;
+  поздний report/cancel получает idempotent result и не изменяет состояние.
+- `validating` охватывает schema, provenance, bounds и policy validation; до
+  его завершения report не виден как evidence.
 
 ## Lifecycle и ошибки
-
-Состояния child: `queued` → `running` → `waiting_approval` либо `cancelling` →
-один terminal state из `completed`, `partial`, `blocked`, `failed`,
-`cancelled`, `timed_out`, `budget_exceeded`, `output_exceeded`.
 
 - превышение output останавливает adapter, не обрезает молча report и не
   публикует частичный evidence;
@@ -95,29 +125,70 @@ read-only выполнению и сделать его наблюдаемым �
 - parent acceptance gate атомарно проверяет request/report pair, task id,
   status, bounds, confidence, sources и provenance до записи acceptance.
 
+## ChildReport и parent acceptance contract
+
+Базовые поля существующего `ChildReport` сохраняются: `child_task_id`,
+`status`, `summary`, `findings[]`, `sources[]` и `confidence_percent`. Runtime
+envelope дополняет их полями `schema_version`, разрешённым `kind`,
+`limitations[]`, `output_bytes`, `started_at`, `finished_at`, provenance hash и
+`event_id`. Если эти поля ещё не входят в IPC message, добавление выполняется
+совместимо с major/minor правилами IPC и покрывается compatibility tests.
+
+До acceptance Core проверяет:
+
+- schema version и закрытые enum для `kind`/`status`, без неизвестных опасных
+  payload types;
+- совпадение `child_task_id`, parent task, kind и immutable request hash;
+- все collection/item/serialized size limits, включая отдельные bounds для
+  findings, sources и limitations;
+- `confidence_percent` строго в `0..100`;
+- непустой summary, уникальные bounded sources, допустимый source format и
+  provenance, который указывает на реально прочитанные Core операции;
+- отсутствие secret-like content, mutation result или неразрешённого
+  capability claim;
+- `output_bytes` в пределах фактического output budget и корректный порядок
+  `started_at <= finished_at`.
+
+Confidence не заменяет source validation, acceptance review или approval. При
+неполном, но валидном report родитель может принять его как `partial`; при
+ошибке schema/provenance/bounds acceptance отклоняется независимо от confidence.
+
 ## Replay и reconnect
 
-Каждое child event получает обычный монотонный Core `sequence_id`, durable
-`child_task_id` и детерминированный event kind. При reconnect UI запрашивает
-replay после последнего sequence; Core возвращает журнал в порядке sequence,
-а UI дедуплицирует по `(child_task_id, sequence_id)` и восстанавливает snapshot
-состояния. Terminal state хранится durable и является конечным: отменённый,
-timed-out или failed child не может быть переведён поздним report обратно в
-running/completed. Если событие уже было в журнале до reconnect, повторная
-доставка не создаёт второй timeline item.
+Каждое child event содержит `event_id`, `child_task_id`, child-local
+monotonic `child_sequence`, глобальный Core `sequence_id`, `event_type`,
+timestamp и bounded redacted payload. При reconnect UI передаёт последний
+полученный Core `sequence_id`; Core возвращает snapshot child lifecycle и
+последующий journal replay. Snapshot закрывает старую историю, а replay
+достраивает её после snapshot sequence.
+
+Transport может доставить event повторно. Consumer обязан быть idempotent по
+`event_id` (и проверять child sequence); exactly-once delivery не обещается.
+Core обнаруживает gap в child sequence и запрашивает/возвращает snapshot
+вместо попытки тихо продолжить неполную timeline. Terminal state хранится
+durable и является конечным: поздний report/cancel не воскрешает child и не
+создаёт второй timeline item.
 
 ## Workflow editor и UI MVP
 
 - Catalog показывает только разрешённые kinds, их read-only capabilities,
   limits, expected report shape и доступные роли.
-- Descriptor editor — форма, а не произвольный script runner: parent task,
-  kind, role, reduced-context items, read-only capability preview и budget
-  preview. Write/shell/network mutation/nested child нельзя выбрать или
-  скрыть в JSON.
-- Editor показывает локальную схему `parent → child`, но drag-and-drop и
-  свободный граф не являются обязательными для MVP. Child запускается явной
-  командой с immutable preview; дополнительные зависимости появятся только
-  вместе с task graph contract.
+- Descriptor editor — форма, а не произвольный script runner: пользователь
+  может добавить child из catalog, удалить ещё не запущенный descriptor,
+  изменить kind, built-in role, reduced-context items и порядок отображения,
+  затем сохранить/загрузить workflow configuration и запустить child через
+  immutable preview. Уже запущенные descriptors и runtime events только для
+  чтения.
+- Editor показывает локальную схему `parent → child`; drag-and-drop и
+  свободный граф не обязательны для MVP. Валидация до запуска проверяет kind,
+  role, context bounds, duplicate ids, dependencies и policy compatibility.
+  Arbitrary dependency graph и reorder semantics переносятся в task graph
+  contract подплана 4.
+- Workflow configuration и runtime state — разные модели и persistence:
+  configuration содержит descriptors и пользовательский порядок, runtime
+  state содержит Core-owned lifecycle/events/reports. Конфигурация UI/IPC не
+  может добавить capability вне Core child policy и не может изменить policy
+  snapshot уже запущенного child.
 - Timeline — линейный список переходов с timestamp, sequence, duration,
   terminal reason и reconnect-safe status; graph view не требуется для
   первого vertical slice.
@@ -147,6 +218,8 @@ running/completed. Если событие уже было в журнале д�
 
 - child не может получить elevated permissions, создать child или выполнить
   mutation tool; запрет проверяется на Core boundary и повторно перед adapter;
+- UI, IPC и workflow configuration не могут выдать capability, отсутствующую
+  в Core child runtime policy;
 - все текущие пять `ChildTaskKind` либо реально исполняются read-only
   adapter-ом, либо явно показываются как `not_implemented`, но не создают
   ложный `completed`;
@@ -154,8 +227,10 @@ running/completed. Если событие уже было в журнале д�
   любой budget limit приводят к bounded terminal state с причиной;
 - parent принимает только валидный report с policy threshold confidence,
   непустым summary, уникальными валидными sources и matching provenance;
-- UI одинаково и truthful показывает queued, running, waiting approval,
-  blocked, failed, cancelled, timed out, budget exceeded и completed/partial;
+- UI одинаково и truthful показывает created, queued, running, validating,
+  waiting parent acceptance, accepted/rejected, blocked, failed, cancelled,
+  timed out, budget exceeded, output exceeded и aborted; `waiting approval`
+  отображается как parent workflow overlay;
 - replay после reconnect не дублирует child events и не воскрешает terminal
   child;
 - focused Rust tests, IPC compatibility tests, WinUI smoke и `git diff --check`
