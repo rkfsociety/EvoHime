@@ -1,6 +1,6 @@
 # Единый мастер-план EvoHime
 
-Дата сводки: 2026-08-12
+Дата сводки: 2026-08-13
 Статус: единственный действующий план развития
 Область: `evohime-core`, `evohime-permissions`, `evohime-tool-runtime`, `evohime-model-gateway`, `evohime-local-storage`, `evohime-desktop-ipc`, `evohime-supervisor`, WinUI 3 client
 
@@ -14,6 +14,12 @@
 | `2026-08-12T1428-permission-policy-rules.md` | Декларативные permission-правила, привязка approval к вызову, окно дедупликации |
 
 Отдельных планов больше нет: все правки вносятся сюда.
+
+### Текущее состояние на 2026-08-13
+
+Завершены и подтверждены кодом и тестами: этапы 0a, 0b, 0c, 1, 2, 3, 4 и 7; approval-to-call binding и декларативные permission rules трека A; типизация результатов инструментов, recovery/deduplication, restart-budget reset, observability, memory storage wiring и provider resilience. Также завершены capability selection с WinUI/IPC wiring, run-policy/routing contracts, search/research pipeline, side-effectful workflow execution, Core Doctor, evals и локальный feedback contract.
+
+Незавершёнными остаются именно продуктовые runtime/UI-интеграции этапов 5, 6, 8 и 9, а не их bounded domain contracts. Чекбокс означает готовность соответствующего пользовательского или runtime-сценария; наличие контракта, API или тестовой фикстуры само по себе чекбокс не закрывает.
 
 ---
 
@@ -894,7 +900,7 @@ Research сохраняет source kind, URL/path, title, fetched-at, hash, reda
 
 Exit criteria (выполнены): повторный запуск миграций идемпотентен; rollback возвращает backup при искусственном сбое; CRUD и reconnect проходят на чистой и существующей БД; повторный `request_id` возвращает прежний результат, другой payload даёт protocol error.
 
-### 13.5. Этап 0b — минимальный durable recovery (P0, MVP-2) — в работе
+### 13.5. Этап 0b — минимальный durable recovery (P0, MVP-2) — завершён
 
 - [x] Durable `run_checkpoints` и `run_effects` с idempotency key, immutable intent hash и переходами `prepared → executing → completed_*` для bounded Build.
 - [x] При старте Core незавершённый `executing` effect переводится в `unknown`, run — в `blocked`, пишется replayable `run.recovery.blocked`, blind retry не выполняется.
@@ -904,7 +910,7 @@ Exit criteria (выполнены): повторный запуск миграц
 
 Exit criteria: kill-9 не создаёт второй effect; checkpoint восстанавливается ≤ 5 s на reference workstation; unknown effect не возобновляется автоматически; UI показывает `RECOVERING`, затем `BLOCKED`/`WAITING_APPROVAL`.
 
-### 13.6. Этап 0c — расширенный replay, protocol и effect recovery (P0/P1) — в работе
+### 13.6. Этап 0c — расширенный replay, protocol и effect recovery (P0/P1) — завершён
 
 - [x] Durable `run_leases` с owner, generation, heartbeat и expiry; второй владелец не может claim активный run.
 - [x] Reconciliation verifier по durable snapshot: подтверждённый outcome даёт `run.reconciliation.completed`, неподтверждённый остаётся blocked.
@@ -981,11 +987,13 @@ approval: none
 - [x] Bounded deterministic routing policy contract с capability/cost/latency/privacy/fallback decisions без секретов.
 - [x] Bounded routing runtime contract с local-first/balanced/cloud-research/offline modes, visible fallback, lifecycle/budget controls и redacted telemetry.
 - [ ] Runner: выбрать `next_ready`, собрать task/research/skill context, выполнить bounded run, записать checkpoint и предложить следующий шаг.
-- [ ] `run_policy`: max iterations, wall-clock timeout, tool-call/token budget, network policy, approval mode и stop conditions; defaults и override — в `settings.toml`-подобной конфигурации, видимой в UI.
+- [ ] `run_policy`: max iterations, wall-clock timeout, tool-call/token budget, network policy, approval mode и stop conditions; defaults и override — в `settings.toml`-подобной конфигурации, видимой в UI. Базовый конфигурационный контракт и миграция порогов уже есть; runtime enforcement и UI остаются.
 - [ ] Автоматическая остановка на approval, failure, unexpected diff, budget, scope drift или неясном критерии.
 - [ ] Wiring routing в provider gateway и UI; логирование redacted provider/model, latency, tokens, retries, estimated cost и причины маршрутизации.
 
 Стык с треком A: пороги эскалации волны III — предшественник `run_policy`. Когда `run_policy` появится, константы 8.2 переезжают в него, а не дублируются.
+
+Статус: routing и policy decisions существуют как bounded offline/runtime contracts, но полноценный агентный runner ещё не подключён к ним end-to-end.
 
 Проверки: offline execution, provider unavailable, fallback policy, token/tool budgets, stop/resume/pause, supervisor Job Object cleanup, отсутствие silent cloud route.
 
@@ -997,6 +1005,8 @@ approval: none
 - [x] Storage/migration wiring (пересекается с волной VI — см. раздел 14).
 - [ ] Extraction фактов и решений после run только по policy; пользователь подтверждает важные записи.
 - [ ] Memory UX: create, list, search, update, archive, forget, provenance inspection; export/delete требуют approval и audit.
+
+Статус: Memory domain, SQLite persistence, CRUD/search API, IPC round-trip и approval gates готовы; автоматическое post-run extraction и native inspector UI ещё не реализованы.
 
 Vector search, recency ranking, confidence, entity/temporal signals и hybrid search — memory v2. Compression и расширенная retention automation — после измерения роста данных.
 
@@ -1038,6 +1048,8 @@ Vector search, recency ranking, confidence, entity/temporal signals и hybrid se
 - [ ] Локальные источники: GitHub notifications, workspace changes, CI status, local files, task deadlines.
 - [ ] Pulse: digest, новые события, пропущенные запуски, degradation; failure не скрывается уведомлением.
 - [ ] OAuth/browser authorization protocol для внешних каналов без токенов в traces; ACP/external-agent gateway — после стабилизации локального контура.
+
+Статус: этапы 8 и 9 пока представлены безопасными bounded-контрактами и тестами. Production child-runner, supervisor monitor, Pulse и внешние источники/каналы ещё не подключены.
 
 Проверки: missed run, duplicate trigger, dead letter, backoff, restart, cancellation, permission denial, отсутствие внешней мутации без approval.
 
