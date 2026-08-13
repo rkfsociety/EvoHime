@@ -707,11 +707,14 @@ pub mod recovery;
 pub use recovery::{classify_tool_outcome, DenialSource, ToolFailureKind, ToolOutcome};
 pub mod research;
 pub mod research_fetch;
+pub mod research_gate;
 pub mod research_pipeline;
+pub mod research_search;
 pub mod scope;
 pub mod task_memory;
 pub use task_memory::project_scope_id;
 pub mod workflow;
+pub mod workflow_execution;
 pub mod workflow_runner;
 pub mod workspace;
 

@@ -6,7 +6,7 @@
 
 #[cfg(test)]
 #[path = "workflow.rs"]
-mod workflow;
+pub(crate) mod workflow;
 
 #[cfg(not(test))]
 use crate::workflow::*;
@@ -14,6 +14,16 @@ use crate::workflow::*;
 use workflow::*;
 
 use std::collections::{BTreeMap, BTreeSet};
+
+/// Re-exports the exact `WorkflowGraph` type this module's `plan_workflow`
+/// accepts. Under `cfg(test)` this crate compiles a second, path-included
+/// copy of `workflow.rs` for isolation, which produces a distinct (if
+/// structurally identical) type from `crate::workflow::WorkflowGraph`.
+/// Callers that need to pass the same type in both test and non-test
+/// builds (e.g. `workflow_execution`) should use this alias instead of
+/// importing `crate::workflow::WorkflowGraph` directly.
+pub type PlanGraph = WorkflowGraph;
+pub type PlanNode = WorkflowNode;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApprovalDecision {

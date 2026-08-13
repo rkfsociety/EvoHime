@@ -950,9 +950,9 @@ MVP-1 milestone: пользователь видит пустой task workspace
 - [x] Bounded research pipeline policy с network/domain allowlist, budgets, cancellation и citation/source integrity.
 - [x] Общий bounded network capability policy layer в tool-runtime: HTTPS/SSRF, domain allowlist, response/latency/cost budgets, cancellation, refresh decisions.
 - [x] Bounded direct-URL research pipeline: запрос → SSRF/domain policy → HTTP → извлечение → bounded deterministic excerpt → citations → сохранение.
-- [ ] Search API и LLM summary.
-- [ ] Side-effectful runner поверх deterministic contract.
-- [ ] Policy, требующая research перед запуском для security, dependency и API-вопросов.
+- [x] Search API и LLM summary (`research_search.rs`: policy-gated `SearchProvider` trait + offline stub, per-result reuse of the direct-URL pipeline, bounded/redacted `Summarizer`-produced `SummaryEvidence`; a real LLM-backed `Summarizer` is left as a trait implementation for the caller to supply, see scope note).
+- [x] Side-effectful runner поверх deterministic contract (`workflow_execution.rs`: real `tokio::time::timeout`/`sleep`-based retry, live `ApprovalGate`/`CancellationSource`, wired over `workflow_runner::plan_workflow`).
+- [x] Policy, требующая research перед запуском для security, dependency и API-вопросов (`research_gate.rs`: keyword-heuristic classifier + freshness-checked evidence gate).
 
 ```yaml
 id: inspect-build
