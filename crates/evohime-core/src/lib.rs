@@ -692,6 +692,7 @@ use tokio_util::sync::CancellationToken;
 pub mod audit;
 pub mod build;
 pub mod capability_registry;
+pub mod capability_selection;
 pub mod child_roles;
 pub mod child_runtime;
 pub mod doctor;
@@ -3473,6 +3474,7 @@ impl TaskCoordinator {
                             acceptance_criteria: &task.acceptance_criteria,
                             non_goals: &task.non_goals,
                             references: &references,
+                            skill_context: &[],
                         },
                         max_chars.min(32 * 1024),
                     );
