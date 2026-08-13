@@ -34,9 +34,8 @@ tray, окнами и transport orchestration; preload экспортирует 
   bounded frames, reconnect, replay/resync и real-Core E2E.
 - Перенесены workspace picker, task timeline, read-only Files/Git,
   policy/diagnostics, tray/notifications/settings и bounded Terminal.
-- Editor-срез пока не реализован: Core уже предоставляет bounded build
-  proposal/apply commands, но Electron не имеет descriptor/editor UI и typed
-  bridge для них.
+- Editor-срез реализован через Core-owned `PrepareBuild`/`ApplyApprovedBuild`:
+  descriptor form, bounded diff preview, explicit apply и failure states.
 - Terminal работает только через Core approval/policy, ограничивает command,
   argv, cwd, timeout и output; renderer не запускает shell или PTY.
 - Electron main умеет поднять supervisor из packaged payload, дождаться launch
@@ -70,17 +69,15 @@ startup/IPC/package budgets и soak/low-memory проверки.
 
 ## Остаток реализации
 
-1. Добавить Editor-срез через Core-owned `PrepareBuild`/`ApplyApprovedBuild`,
-   typed preload bridge, approval/diff preview, progress и failure states.
-2. Завершить supervisor liveness contract: записывать liveness identity в
+1. Завершить supervisor liveness contract: записывать liveness identity в
    launch context и отслеживать owner loss в Electron main; heartbeat остаётся
    только дополнительным health signal.
-3. Сделать packaging parameters `Version` и `Configuration` рабочими и
-   добавить локальный package/lifecycle smoke без зависимости от WinUI.
-4. Добавить fault/acceptance scripts для Core/supervisor restart, read-only и
+2. Добавить локальный package/lifecycle smoke без зависимости от WinUI и
+   проверить, что release version действительно попадает в Electron package.
+3. Добавить fault/acceptance scripts для Core/supervisor restart, read-only и
    locked workspace, provider outage, bounded reconnect и diagnostics export;
    зафиксировать измеренные startup/IPC/package baselines.
-5. После двух одинаковых acceptance cycles отдельным task-only коммитом
+4. После двух одинаковых acceptance cycles отдельным task-only коммитом
    убрать WinUI runtime из production CI/package, сохранив compatibility oracle
    только если он ещё нужен.
 

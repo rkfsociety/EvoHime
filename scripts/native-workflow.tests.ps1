@@ -11,6 +11,7 @@ foreach ($required in @(
     'EvoHime-Setup.exe',
     '-Version $env:RELEASE_VERSION',
     'npm run package',
+    'scripts/electron-acceptance.tests.ps1',
     'Rollback smoke after failed installer start',
     '--blame-hang',
     '--blame-hang-timeout 5m',

@@ -166,6 +166,9 @@ jobs:
         shell: pwsh
         run: |
           ./scripts/build-windows-native.ps1 -OutputPath "$env:GITHUB_WORKSPACE\native-package" -Version $env:RELEASE_VERSION
+      - name: Run Electron package startup smoke
+        shell: pwsh
+        run: ./scripts/electron-acceptance.tests.ps1 -PackagePath "$env:GITHUB_WORKSPACE\native-package"
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress --yes
