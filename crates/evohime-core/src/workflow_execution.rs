@@ -243,7 +243,7 @@ pub async fn run_workflow(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workflow_runner::workflow::{
+    use crate::workflow::{
         ApprovalPolicy, CancellationPolicy, ExecutionPolicy, NodeType, Port, PortType,
         RetryPolicy, WorkflowEdge,
     };

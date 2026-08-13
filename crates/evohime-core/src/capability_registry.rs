@@ -499,10 +499,11 @@ fn union_sorted(left: &[String], right: &[String]) -> Vec<String> {
 }
 
 /// Test-only signer for the embedded "evohime-dev-1" trust-root key, shared
-/// across this crate's test modules (e.g. `ipc_bridge` fixtures) so every
-/// fixture manifest can be self-signed with a real, verifiable signature
-/// instead of a placeholder string.
-#[cfg(test)]
+/// across this crate's test/eval fixtures (e.g. `ipc_bridge` and `evals`)
+/// so every fixture manifest can be self-signed with a real, verifiable
+/// signature instead of a placeholder string. Not gated to `cfg(test)`
+/// because `evals` fixtures compile in normal builds too; production code
+/// never calls this.
 pub(crate) fn test_sign_with_trusted_key(name: &str, version: &str, content_hash: &str) -> String {
     use ring::signature::Ed25519KeyPair;
     // pkcs8 for the "evohime-dev-1" public key embedded in

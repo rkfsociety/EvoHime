@@ -1,27 +1,15 @@
 //! Детерминированный планировщик статического workflow.
 //!
-//! Runner намеренно не подключён к crate до отдельного этапа интеграции. Он
-//! строит только план: никаких вызовов инструментов, файловых изменений,
-//! сетевых запросов или иных side effects здесь нет.
+//! Runner строит только план: никаких вызовов инструментов, файловых
+//! изменений, сетевых запросов или иных side effects здесь нет.
 
-#[cfg(test)]
-#[path = "workflow.rs"]
-pub(crate) mod workflow;
-
-#[cfg(not(test))]
 use crate::workflow::*;
-#[cfg(test)]
-use workflow::*;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Re-exports the exact `WorkflowGraph` type this module's `plan_workflow`
-/// accepts. Under `cfg(test)` this crate compiles a second, path-included
-/// copy of `workflow.rs` for isolation, which produces a distinct (if
-/// structurally identical) type from `crate::workflow::WorkflowGraph`.
-/// Callers that need to pass the same type in both test and non-test
-/// builds (e.g. `workflow_execution`) should use this alias instead of
-/// importing `crate::workflow::WorkflowGraph` directly.
+/// Alias for `crate::workflow::WorkflowGraph`/`WorkflowNode`, kept for
+/// callers (e.g. `workflow_execution`) that historically imported the
+/// planner's own names instead of `crate::workflow` directly.
 pub type PlanGraph = WorkflowGraph;
 pub type PlanNode = WorkflowNode;
 

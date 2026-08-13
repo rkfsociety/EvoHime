@@ -696,6 +696,7 @@ pub mod capability_selection;
 pub mod child_roles;
 pub mod child_runtime;
 pub mod doctor;
+pub mod evals;
 pub mod export;
 pub mod memory_api;
 pub mod memory_domain;
