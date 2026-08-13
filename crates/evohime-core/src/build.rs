@@ -657,4 +657,128 @@ mod tests {
         assert!(!root.join("src/new_name.rs").exists());
         fs::remove_dir_all(root).unwrap();
     }
+
+    #[test]
+    fn stale_expected_content_hash_is_a_workspace_conflict_not_an_overwrite() {
+        let root = root("content-conflict");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src/lib.rs"), "old").unwrap();
+        let baseline = build_manifest(&root, 500, 2 * 1024 * 1024).unwrap();
+        // Someone else edits the file after the baseline/expected hash was
+        // captured but before this build is applied.
+        fs::write(root.join("src/lib.rs"), "concurrently-edited").unwrap();
+        let change = BuildChange {
+            relative_path: "src/lib.rs".into(),
+            content: Some("new".into()),
+            expected_content_hash: Some(crate::workspace::content_hash(b"old")),
+            delete: false,
+            rename_from: None,
+        };
+        let mut build = ApprovedBuild {
+            intent_hash: String::new(),
+            effective_permissions_hash: String::new(),
+            expected_workspace_hash: baseline.workspace_hash,
+            scope: scope(),
+            changes: vec![change],
+            preview_diff: Vec::new(),
+        };
+        build.effective_permissions_hash = calculate_effective_permissions_hash(&build.scope);
+        build.intent_hash = calculate_intent_hash(&build.scope, &build.changes);
+        // Baseline workspace_hash already diverged from expected_workspace_hash
+        // because of the write above, so the outer WorkspaceConflict fires
+        // first. Rebuild the baseline hash to isolate the per-file
+        // ContentConflict path.
+        let refreshed = build_manifest(&root, 500, 2 * 1024 * 1024).unwrap();
+        build.expected_workspace_hash = refreshed.workspace_hash;
+        let error = apply_approved_build(&root, "run-content-conflict", &build).unwrap_err();
+        assert!(matches!(error, super::BuildError::ContentConflict { .. }));
+        assert_eq!(
+            fs::read_to_string(root.join("src/lib.rs")).unwrap(),
+            "concurrently-edited",
+            "a hash mismatch must never overwrite the file"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn prepare_build_returns_a_diff_preview_without_writing() {
+        let root = root("preview");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src/lib.rs"), "old").unwrap();
+        let proposal = BuildProposal {
+            scope: scope(),
+            changes: vec![BuildChange {
+                relative_path: "src/lib.rs".into(),
+                content: Some("new".into()),
+                expected_content_hash: None,
+                delete: false,
+                rename_from: None,
+            }],
+        };
+        let approved = prepare_build(&root, &proposal).unwrap();
+        assert_eq!(approved.preview_diff.len(), 1);
+        assert_eq!(approved.preview_diff[0].operation, "write");
+        assert_eq!(
+            approved.preview_diff[0].before_hash.as_deref(),
+            Some(crate::workspace::content_hash(b"old").as_str())
+        );
+        assert_eq!(
+            approved.preview_diff[0].after_hash.as_deref(),
+            Some(crate::workspace::content_hash(b"new").as_str())
+        );
+        // Still read-only: prepare_build never writes.
+        assert_eq!(fs::read_to_string(root.join("src/lib.rs")).unwrap(), "old");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn symlinked_path_is_rejected_not_followed() {
+        let root = root("symlink");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(root.join("outside")).unwrap();
+        fs::write(root.join("outside/secret.rs"), "secret").unwrap();
+
+        #[cfg(windows)]
+        let created = std::os::windows::fs::symlink_file(
+            root.join("outside/secret.rs"),
+            root.join("src/linked.rs"),
+        );
+        #[cfg(not(windows))]
+        let created = std::os::unix::fs::symlink(
+            root.join("outside/secret.rs"),
+            root.join("src/linked.rs"),
+        );
+
+        if created.is_err() {
+            // Creating a symlink requires elevated privilege / Developer Mode
+            // on Windows; skip rather than fail the suite when unavailable.
+            fs::remove_dir_all(root).unwrap();
+            return;
+        }
+
+        let change = BuildChange {
+            relative_path: "src/linked.rs".into(),
+            content: Some("overwritten".into()),
+            expected_content_hash: None,
+            delete: false,
+            rename_from: None,
+        };
+        let mut allow_scope = scope();
+        allow_scope.allowed_operations = vec!["write".into(), "create".into()];
+        let proposal = BuildProposal {
+            scope: allow_scope,
+            changes: vec![change],
+        };
+        let result = prepare_build(&root, &proposal);
+        assert!(matches!(result, Err(super::BuildError::InvalidPath(_))));
+        assert_eq!(
+            fs::read_to_string(root.join("outside/secret.rs")).unwrap(),
+            "secret",
+            "a symlink must never be followed to write outside the workspace"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
 }
