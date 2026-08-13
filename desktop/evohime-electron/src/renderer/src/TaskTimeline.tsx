@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { ConnectionState, CoreEvent, WorkspaceSelection } from '@shared/api'
+import type { ConnectionState, CoreEvent } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { ModelPicker } from './ModelPicker'
@@ -24,24 +24,26 @@ type PendingApproval = {
 export interface TaskTimelineProps {
   readonly connection: ConnectionState
   readonly events: readonly CoreEvent[]
+  /**
+   * Workspace owned by the shell. It arrives as a prop rather than being read
+   * once on mount, so picking a folder in the sidebar unlocks the composer
+   * immediately.
+   */
+  readonly workspace: string | null
 }
 
-export function TaskTimeline({ connection, events }: TaskTimelineProps): React.JSX.Element {
+export function TaskTimeline({
+  connection,
+  events,
+  workspace
+}: TaskTimelineProps): React.JSX.Element {
   const api = useShellApi()
-  const [workspace, setWorkspace] = useState<WorkspaceSelection | null>(null)
   const [prompt, setPrompt] = useState('')
   const [taskId, setTaskId] = useState<string | null>(null)
   const [sentPrompt, setSentPrompt] = useState<string | null>(null)
   const [commandError, setCommandError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const bottomRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    if (!api) return
-    void api.invoke('workspace.list', {}).then((outcome) => {
-      if (outcome.ok) setWorkspace(outcome.value)
-    })
-  }, [api])
 
   const taskEvents = useMemo(
     () =>
@@ -77,8 +79,7 @@ export function TaskTimeline({ connection, events }: TaskTimelineProps): React.J
   }, [stream.length, approval])
 
   const start = useCallback(async () => {
-    const selected = workspace?.selected
-    if (!api || !selected || prompt.trim().length === 0) return
+    if (!api || !workspace || prompt.trim().length === 0) return
     const nextTaskId = makeTaskId()
     const text = prompt.trim()
     setBusy(true)
@@ -86,7 +87,7 @@ export function TaskTimeline({ connection, events }: TaskTimelineProps): React.J
     const outcome = await api.invoke('core.startTask', {
       taskId: nextTaskId,
       prompt: text,
-      workspacePath: selected
+      workspacePath: workspace
     })
     setBusy(false)
     if (!outcome.ok) {
@@ -96,7 +97,7 @@ export function TaskTimeline({ connection, events }: TaskTimelineProps): React.J
     setTaskId(nextTaskId)
     setSentPrompt(text)
     setPrompt('')
-  }, [api, prompt, workspace?.selected])
+  }, [api, prompt, workspace])
 
   const stop = useCallback(async () => {
     if (!api || !taskId) return
@@ -121,7 +122,7 @@ export function TaskTimeline({ connection, events }: TaskTimelineProps): React.J
   )
 
   const connected = CONNECTED_STATES.includes(connection)
-  const canStart = connected && workspace?.selected != null && prompt.trim().length > 0 && !busy
+  const canStart = connected && workspace !== null && prompt.trim().length > 0 && !busy
   const running = taskId !== null && !hasTerminalEvent(taskEvents)
   const empty = stream.length === 0 && sentPrompt === null
 
@@ -133,7 +134,7 @@ export function TaskTimeline({ connection, events }: TaskTimelineProps): React.J
             <span className="chat__empty-logo" aria-hidden="true">E</span>
             <h2>Чем займёмся?</h2>
             <p>
-              {workspace?.selected
+              {workspace
                 ? 'Опиши задачу — агент выполнит её в выбранной рабочей папке и покажет каждый шаг здесь.'
                 : 'Сначала выбери рабочую папку в левой панели, затем поставь задачу агенту.'}
             </p>
@@ -189,10 +190,8 @@ export function TaskTimeline({ connection, events }: TaskTimelineProps): React.J
                   if (canStart) void start()
                 }
               }}
-              placeholder={
-                workspace?.selected ? 'Опиши задачу для агента…' : 'Сначала выбери рабочую папку'
-              }
-              disabled={!connected || workspace?.selected === null || busy}
+              placeholder={workspace ? 'Опиши задачу для агента…' : 'Сначала выбери рабочую папку'}
+              disabled={!connected || workspace === null || busy}
               rows={1}
             />
             <button
@@ -222,7 +221,7 @@ export function TaskTimeline({ connection, events }: TaskTimelineProps): React.J
           {!connected ? (
             <p className="shell__reason">Core недоступен: запуск и управление задачей приостановлены.</p>
           ) : null}
-          {workspace?.selected === null ? (
+          {workspace === null ? (
             <p className="shell__reason">Выбери рабочую папку перед запуском задачи.</p>
           ) : null}
           {commandError ? <p role="alert" className="shell__reason">{commandError}</p> : null}

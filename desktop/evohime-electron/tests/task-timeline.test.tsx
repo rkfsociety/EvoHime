@@ -40,8 +40,19 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe('task timeline', () => {
+  it('unlocks the composer as soon as a workspace is picked', async () => {
+    // Regression: the composer used to read the workspace once on mount, so a
+    // folder picked afterwards in the sidebar left it permanently disabled.
+    const view = render(<TaskTimeline connection="connected" events={[]} workspace={null} />)
+    expect((await screen.findByLabelText('Задача')).hasAttribute('disabled')).toBe(true)
+
+    view.rerender(<TaskTimeline connection="connected" events={[]} workspace="C:\work\repo" />)
+
+    expect(screen.getByLabelText('Задача').hasAttribute('disabled')).toBe(false)
+  })
+
   it('starts a task only through the typed bridge', async () => {
-    render(<TaskTimeline connection="connected" events={[]} />)
+    render(<TaskTimeline connection="connected" events={[]} workspace="C:\work\repo" />)
     await userEvent.type(await screen.findByLabelText('Задача'), 'Проверь тесты')
     await userEvent.click(screen.getByRole('button', { name: 'Запустить задачу' }))
 
@@ -55,6 +66,7 @@ describe('task timeline', () => {
   it('renders streamed output and terminal recovery state', async () => {
     render(
       <TaskTimeline
+        workspace="C:\work\repo"
         connection="connected"
         events={[
           event('task.started', { prompt: 'Проверь' }),
@@ -73,6 +85,7 @@ describe('task timeline', () => {
   it('shows approval details and forwards the decision', async () => {
     render(
       <TaskTimeline
+        workspace="C:\work\repo"
         connection="connected"
         events={[event('approval.required', {
           approval_id: 'approval-1',

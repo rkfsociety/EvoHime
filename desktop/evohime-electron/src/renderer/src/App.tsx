@@ -148,7 +148,7 @@ export function App(): React.JSX.Element {
 
         <div className="main__body">
           {view === 'chat' ? (
-            <TaskTimeline connection={connection} events={events} />
+            <TaskTimeline connection={connection} events={events} workspace={workspace} />
           ) : (
             <div className="main__scroll">
               {view === 'files' ? <DeveloperTools connection={connection} events={events} /> : null}
