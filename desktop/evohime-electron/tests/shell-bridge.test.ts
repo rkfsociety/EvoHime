@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { CommandFailure, RendererCommand, ShellState } from '../src/shared/api'
+import type {
+  CommandFailure,
+  ProviderSummary,
+  RendererCommand,
+  ShellState
+} from '../src/shared/api'
+import type { ProviderUpdate } from '../src/main/provider-store'
 import {
   CLIPBOARD_CHANNEL,
   INVOKE_CHANNEL,
@@ -71,6 +77,34 @@ const client = {
   }
 }
 
+let providerSummary: ProviderSummary = {
+  provider: 'literouter',
+  model: '',
+  baseUrl: '',
+  configured: false
+}
+const providerWrites: ProviderUpdate[] = []
+const restarts: boolean[] = []
+
+/** Stands in for the credential store; encryption is covered by its own tests. */
+const providers = {
+  summary: () => providerSummary,
+  save: (update: ProviderUpdate) => {
+    providerWrites.push(update)
+    providerSummary = {
+      provider: update.provider,
+      model: update.model,
+      baseUrl: update.baseUrl,
+      configured: update.apiKey.length > 0 || providerSummary.configured
+    }
+    return providerSummary
+  },
+  clearKey: () => {
+    providerSummary = { ...providerSummary, configured: false }
+    return providerSummary
+  }
+}
+
 /** Stands in for the workspace service; its own behaviour is tested separately. */
 const workspaces = {
   list: () => ({ selected: null, options: [] }),
@@ -93,9 +127,17 @@ beforeEach(() => {
   clipboardWrites.length = 0
   openedUrls.length = 0
   enqueueResult = 'queued'
+  providerSummary = { provider: 'literouter', model: '', baseUrl: '', configured: false }
+  providerWrites.length = 0
+  restarts.length = 0
   registerShellBridge({
     client: client as never,
     workspaces: workspaces as never,
+    providers: providers as never,
+    restartCore: async () => {
+      restarts.push(true)
+      return true
+    },
     log: () => {}
   })
 })
@@ -167,6 +209,39 @@ describe('renderer command surface', () => {
     expect(sent).toContainEqual({ modelConfig: {} })
     expect(sent).toContainEqual({ modelCatalog: { mode: 'free' } })
     expect(sent).toContainEqual({ modelCatalog: { mode: 'paid' } })
+  })
+
+  it('stores a provider key locally and never forwards it to Core', async () => {
+    const outcome = (await invoke('provider.save', {
+      provider: 'literouter',
+      apiKey: 'sk-secret-value',
+      model: 'deepseek:free',
+      baseUrl: 'https://api.literouter.com/v1'
+    })) as { ok: true; value: { summary: ProviderSummary; restarted: boolean } }
+
+    expect(outcome.value.summary.configured).toBe(true)
+    expect(outcome.value.restarted).toBe(true)
+    expect(restarts).toHaveLength(1)
+    // The key belongs to the main process; no Core command may carry it.
+    expect(JSON.stringify(sent)).not.toContain('sk-secret-value')
+    expect(invoke('provider.get', {})).toEqual({
+      ok: true,
+      value: { provider: 'literouter', model: 'deepseek:free', baseUrl: 'https://api.literouter.com/v1', configured: true }
+    })
+  })
+
+  it('rejects a provider endpoint that would leak the key over plain http', async () => {
+    const outcome = (await invoke('provider.save', {
+      provider: 'literouter',
+      apiKey: 'sk-secret-value',
+      model: '',
+      baseUrl: 'http://example.com/v1'
+    })) as CommandFailure
+
+    expect(outcome.ok).toBe(false)
+    expect(outcome.code).toBe('invalid-payload')
+    expect(providerWrites).toHaveLength(0)
+    expect(restarts).toHaveLength(0)
   })
 
   it('forwards the Core-owned editor build flow as bounded protobuf payloads', () => {

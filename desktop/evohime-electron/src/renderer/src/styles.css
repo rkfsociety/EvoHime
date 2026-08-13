@@ -992,6 +992,32 @@ select:focus {
   font-size: 12px;
 }
 
+.provider-form__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin: 18px 0 14px;
+}
+
+.provider-form__grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.provider-form__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.provider-form__ok {
+  margin: 12px 0 0;
+  color: var(--success);
+  font-size: 13px;
+}
+
 .settings-panel__state--ready { color: var(--success); }
 .settings-panel__state--offline { color: var(--warning); }
 

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Notification } from 'electron'
+import { app, BrowserWindow, Notification, safeStorage } from 'electron'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { spawn, type ChildProcess } from 'node:child_process'
@@ -9,6 +9,7 @@ import { JsonlLogger } from './diagnostics/logger'
 import { readLaunchContext } from './ipc/launch-context'
 import { CorePipeClient } from './ipc/pipe-client'
 import { dataDirectory, logDirectory } from './paths'
+import { ProviderStore } from './provider-store'
 import { ReloadLimiter } from './recovery'
 import { hardenProcess, hardenSession, isProduction, type HardeningOptions } from './security'
 import { broadcast, registerShellBridge } from './shell-bridge'
@@ -37,6 +38,10 @@ let supervisorProcess: ChildProcess | null = null
 let supervisorLivenessTimer: NodeJS.Timeout | null = null
 let recoveryMode = false
 
+// safeStorage is only usable after the app is ready, so the store is created
+// lazily inside whenReady rather than at module scope.
+let providers: ProviderStore | null = null
+
 const rendererOrigin = isProduction()
   ? 'file://'
   : (process.env['ELECTRON_RENDERER_URL'] ?? 'file://')
@@ -60,6 +65,12 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     hardenSession(hardening)
 
+    providers = new ProviderStore(ProviderStore.defaultPath(dataDirectory()), {
+      isAvailable: () => safeStorage.isEncryptionAvailable(),
+      encrypt: (value) => safeStorage.encryptString(value),
+      decrypt: (value) => safeStorage.decryptString(value)
+    })
+
     const launch = await ensureSupervisorSession()
     client = new CorePipeClient({ launch, refreshLaunch: () => readLaunchContext(), log })
     supervisorLivenessTimer = monitorSupervisorLiveness()
@@ -81,6 +92,8 @@ if (!app.requestSingleInstanceLock()) {
         store: new WorkspaceStore(WorkspaceStore.defaultPath(dataDirectory())),
         chooseDirectory: windowChooser(mainWindow)
       }),
+      providers,
+      restartCore,
       log
     })
 
@@ -112,9 +125,50 @@ if (!app.requestSingleInstanceLock()) {
   })
 }
 
-async function ensureSupervisorSession(): Promise<ReturnType<typeof readLaunchContext>> {
+/**
+ * Applies newly stored credentials. Core builds its model gateway from the
+ * environment at startup, so the supervisor that owns it is restarted and the
+ * pipe client reconnects to the fresh session.
+ */
+async function restartCore(): Promise<boolean> {
+  log('info', 'shell.core_restart_requested', {})
+  client?.stop()
+  stopSupervisor()
+  const launch = await ensureSupervisorSession(true)
+  client?.start()
+  if (launch.developerLaunch) {
+    log('warn', 'shell.core_restart_no_supervisor', {})
+    return false
+  }
+  return true
+}
+
+/** Kills the supervisor we own; its Job Object takes Core down with it. */
+function stopSupervisor(): void {
+  const child = supervisorProcess
+  supervisorProcess = null
+  if (child && !child.killed) {
+    child.kill()
+  }
+  const pid = readLaunchContext().supervisorPid
+  if (pid && processIsAlive(pid)) {
+    try {
+      process.kill(pid)
+    } catch (error) {
+      log('warn', 'shell.supervisor_kill_failed', { error })
+    }
+  }
+}
+
+async function ensureSupervisorSession(
+  force = false
+): Promise<ReturnType<typeof readLaunchContext>> {
   const current = readLaunchContext()
-  if (!current.developerLaunch && (!current.supervisorPid || processIsAlive(current.supervisorPid))) {
+  if (
+    !force &&
+    !current.developerLaunch &&
+    (!current.supervisorPid || processIsAlive(current.supervisorPid))
+  ) {
     return current
   }
   if (!current.developerLaunch) {
@@ -133,6 +187,9 @@ async function ensureSupervisorSession(): Promise<ReturnType<typeof readLaunchCo
     stdio: 'ignore',
     env: {
       ...process.env,
+      // Credentials stored through the settings surface win over anything the
+      // ambient environment carries, so the UI is the single source of truth.
+      ...(providers?.environment() ?? {}),
       EVOHIME_CORE_EXE: coreExecutablePath() ?? process.env['EVOHIME_CORE_EXE'],
       EVOHIME_DATA_DIR: dataDirectory()
     }

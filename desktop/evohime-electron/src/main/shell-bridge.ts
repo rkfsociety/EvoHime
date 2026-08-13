@@ -1,8 +1,10 @@
 import { BrowserWindow, clipboard, ipcMain, shell } from 'electron'
 
 import {
+  PROVIDER_KINDS,
   RENDERER_COMMANDS,
   type CommandFailure,
+  type ProviderKind,
   type RendererCommand,
   type ShellEvent
 } from '@shared/api'
@@ -15,6 +17,12 @@ import {
 
 import type { ShellLog } from './diagnostics/logger'
 import type { CorePipeClient } from './ipc/pipe-client'
+import {
+  normalizeApiKey,
+  normalizeBaseUrl,
+  normalizeModel,
+  type ProviderStore
+} from './provider-store'
 import { isAllowedExternalUrl } from './security-policy'
 import type { WorkspaceService } from './workspace-service'
 
@@ -32,6 +40,12 @@ const MAX_CLIPBOARD_CHARS = 64 * 1024
 export interface ShellBridgeOptions {
   readonly client: CorePipeClient
   readonly workspaces: WorkspaceService
+  readonly providers: ProviderStore
+  /**
+   * Relaunches Core so it picks up the stored credentials: the model gateway
+   * is built from the environment at Core startup and has no live setter.
+   */
+  readonly restartCore: () => Promise<boolean>
   readonly log: ShellLog
 }
 
@@ -77,7 +91,7 @@ function dispatch(
   command: RendererCommand,
   payload: unknown
 ): unknown {
-  const { client, workspaces, log } = options
+  const { client, workspaces, providers, restartCore, log } = options
   switch (command) {
     case 'shell.getState':
       return { ok: true, value: client.state }
@@ -250,6 +264,34 @@ function dispatch(
       return accepted(client.send({ modelCatalog: { mode } }))
     }
 
+    case 'provider.get':
+      return { ok: true, value: providers.summary() }
+
+    case 'provider.save': {
+      const value = asRecord(payload)
+      const provider = asProviderKind(value['provider'])
+      const apiKey = normalizeApiKey(value['apiKey'])
+      const model = normalizeModel(value['model'])
+      const baseUrl = normalizeBaseUrl(value['baseUrl'])
+      if (provider === null || apiKey === null || model === null || baseUrl === null) {
+        return failure('invalid-payload', 'Проверь ключ, модель и адрес: адрес должен быть https.')
+      }
+      const summary = providers.save({ provider, apiKey, model, baseUrl })
+      if (summary === null) {
+        log('error', 'shell.provider_encryption_unavailable', {})
+        return failure('protocol-error', 'Windows не даёт зашифровать ключ — он не сохранён.')
+      }
+      // Never log the value, only that a write happened.
+      log('info', 'shell.provider_saved', { provider, configured: summary.configured })
+      return restartCore().then((restarted) => ({ ok: true, value: { summary, restarted } }))
+    }
+
+    case 'provider.clearKey': {
+      const summary = providers.clearKey()
+      log('info', 'shell.provider_key_cleared', {})
+      return restartCore().then((restarted) => ({ ok: true, value: { summary, restarted } }))
+    }
+
     case 'core.createProject': {
       const value = asRecord(payload)
       const projectId = asBoundedString(value['projectId'])
@@ -349,6 +391,12 @@ function asPermissionMode(value: unknown): 'ask' | 'read_only' | 'full' | null {
 
 function asModelCatalogMode(value: unknown): 'free' | 'paid' | null {
   return value === 'free' || value === 'paid' ? value : null
+}
+
+function asProviderKind(value: unknown): ProviderKind | null {
+  return typeof value === 'string' && (PROVIDER_KINDS as readonly string[]).includes(value)
+    ? (value as ProviderKind)
+    : null
 }
 
 function asArguments(value: unknown): string[] | null {

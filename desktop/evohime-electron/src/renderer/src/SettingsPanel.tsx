@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ConnectionState, CoreEvent } from '@shared/api'
 
 import { useShellApi } from './shell-api'
+import { ProviderForm } from './ProviderForm'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 
@@ -44,6 +45,9 @@ export function SettingsPanel({ connection, events }: SettingsPanelProps): React
   }, [])
 
   return (
+    <>
+    <ProviderForm />
+
     <section className="shell__panel settings-panel" aria-label="Настройки и provider references">
       <div className="settings-panel__heading">
         <div>
@@ -74,6 +78,7 @@ export function SettingsPanel({ connection, events }: SettingsPanelProps): React
         {models.length > 0 ? <ul>{models.map((model) => <li key={model}>{model}</li>)}</ul> : <p className="shell__empty">Модели не получены.</p>}
       </div>
     </section>
+    </>
   )
 }
 

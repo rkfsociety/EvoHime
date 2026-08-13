@@ -22,6 +22,9 @@ beforeEach(() => {
     apiVersion: 1,
     invoke: (async (command: RendererCommand) => {
       calls.push(command)
+      if (command === 'provider.get') {
+        return ok({ provider: 'literouter', model: '', baseUrl: '', configured: false })
+      }
       return ok({ accepted: true })
     }) as EvoHimeApiV1['invoke'],
     subscribe: () => () => {},
@@ -36,7 +39,7 @@ afterEach(() => cleanup())
 describe('settings panel', () => {
   it('requests provider references and renders config without secrets', async () => {
     const view = render(<SettingsPanel connection="connected" events={[]} />)
-    expect(calls).toEqual(['core.getModelConfig', 'core.listModelCatalog'])
+    expect(calls).toEqual(['provider.get', 'core.getModelConfig', 'core.listModelCatalog'])
     view.rerender(<SettingsPanel connection="connected" events={[
       event('model.config', { provider: 'openai-compatible', route: 'local', model: 'gpt', configured: true }),
       event('model.catalog', { mode: 'free', models: ['model:free'] })

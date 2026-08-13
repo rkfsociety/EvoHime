@@ -50,6 +50,22 @@ export type ShellEvent =
   | { readonly kind: 'state'; readonly state: ShellState }
   | { readonly kind: 'core-event'; readonly event: CoreEvent }
 
+/** Model providers the shell can configure. */
+export const PROVIDER_KINDS = ['literouter', 'openai_compatible', 'mock'] as const
+
+export type ProviderKind = (typeof PROVIDER_KINDS)[number]
+
+/**
+ * Secret-free view of the stored provider settings. The key itself never
+ * crosses into the renderer — only whether one is stored.
+ */
+export interface ProviderSummary {
+  readonly provider: ProviderKind
+  readonly model: string
+  readonly baseUrl: string
+  readonly configured: boolean
+}
+
 /**
  * Commands the renderer may ask the main process to forward to Core. The main
  * process only forwards; Core re-validates capability, policy and approval for
@@ -77,6 +93,9 @@ export const RENDERER_COMMANDS = [
   'core.restoreDatabase',
   'core.getModelConfig',
   'core.listModelCatalog',
+  'provider.get',
+  'provider.save',
+  'provider.clearKey',
   'core.createProject',
   'core.prepareBuild',
   'core.applyApprovedBuild',
@@ -120,6 +139,9 @@ export interface CommandPayloads {
   'core.restoreDatabase': { backupPath: string; approvalId: string }
   'core.getModelConfig': Record<string, never>
   'core.listModelCatalog': { mode: 'free' | 'paid' }
+  'provider.get': Record<string, never>
+  'provider.save': { provider: ProviderKind; apiKey: string; model: string; baseUrl: string }
+  'provider.clearKey': Record<string, never>
   'core.createProject': { projectId: string; title: string; workspacePath: string; sourceRef?: string }
   'core.prepareBuild': { projectId: string; proposalJson: string }
   'core.applyApprovedBuild': { projectId: string; runId: string; taskId: string; approvedBuildJson: string }
@@ -149,6 +171,10 @@ export interface CommandResults {
   'core.restoreDatabase': { accepted: boolean }
   'core.getModelConfig': { accepted: boolean }
   'core.listModelCatalog': { accepted: boolean }
+  'provider.get': ProviderSummary
+  /** `restarted` is false when Core could not be relaunched with the new key. */
+  'provider.save': { summary: ProviderSummary; restarted: boolean }
+  'provider.clearKey': { summary: ProviderSummary; restarted: boolean }
   'core.createProject': { accepted: boolean }
   'core.prepareBuild': { accepted: boolean }
   'core.applyApprovedBuild': { accepted: boolean }
