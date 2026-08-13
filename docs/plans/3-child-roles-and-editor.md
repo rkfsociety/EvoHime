@@ -56,11 +56,25 @@ read-only выполнению и сделать его наблюдаемым �
   arbitrary path access и неразрешённые IPC commands недоступны. AppContainer,
   отдельный worker process или виртуализация не являются скрытой частью MVP;
   если threat model потребует process isolation, это отдельное ADR и scope.
+- ограничение действует на двух runtime-уровнях: schema filtering вырезает из
+  child system context/tool schema все mutation tools и передаёт только
+  allow-list read-only capabilities; затем Core/adapter runtime повторно
+  проверяет capability перед каждой операцией. UI, prompt и model output не
+  считаются security boundary;
 - запрет write, shell, commit, install, network mutation, elevation и nested
-  child проверяется на request, dispatcher, adapter и tool layers;
+  child проверяется на request, dispatcher, adapter и tool layers. OS-level
+  syscall/process sandbox не является частью текущего logical-child MVP;
+  добавление AppContainer/worker process требует отдельного ADR, threat-model
+  review и compatibility decision;
 - filesystem boundary нормализует absolute path, запрещает traversal и
   symlink/reparse-point escape, и проверяет принадлежность итогового пути
   разрешённому workspace root перед каждой операцией;
+- reduced context строится Core из явного scope descriptor: для
+  `code_search` — только найденные совпадения и запрошенные диапазоны строк,
+  для `workspace.read` — только перечисленные normalized paths/ranges, для
+  `git.diff/status` — только выбранный diff/status scope. Полный prompt,
+  соседние файлы, secrets и неуказанные project data не передаются; secret
+  redaction выполняется до сериализации context.
 - network policy MVP — `deny all`: у текущего child runtime нет network
   capability. Read-only HTTP, если он понадобится позже, вводится отдельным
   capability/profile с host/port/redirect/private-range/credential policy и
@@ -135,6 +149,12 @@ Core является единственным владельцем этой sta
   workflow/approval overlay. Если approval нужен до запуска, child остаётся
   `queued`; после запуска approval может приостановить parent без подмены
   child state.
+- Approval и acceptance — разные контуры: human approval в WinUI разрешает
+  сам запуск/передачу конкретного bounded descriptor или report; parent
+  acceptance gate автоматически проверяет schema, request match, bounds,
+  provenance и policy независимо от решения человека. Human approval не
+  превращает невалидный report в accepted, а acceptance не обходит требуемое
+  human approval.
 - `completed` — это значение `ChildReport.status`, а не финальное состояние
   child до parent acceptance. После валидного report child находится в
   `waiting_parent_acceptance`; только gate переводит его в `accepted` или
@@ -165,6 +185,16 @@ Core является единственным владельцем этой sta
   а parent получает доступное действие для ручного retry новым UUID;
 - parent acceptance gate атомарно проверяет request/report pair, task id,
   status, bounds, confidence, sources и provenance до записи acceptance.
+
+Child failure не является автоматически фатальным для parent pipeline. Core
+классифицирует child kind как `required` или `advisory` в immutable workflow
+configuration: failure required-child блокирует зависимую ветку и требует
+нового child либо human decision; failure advisory-child переводит parent в
+`degraded`, помечает отсутствующий результат как `unverified`, сохраняет
+terminal reason и позволяет продолжить только операции, не требующие этого
+evidence. Parent может запросить ручной ввод/approval или завершить задачу с
+явным degraded outcome; silent fallback и выдача unverified report за
+accepted запрещены.
 
 ## ChildReport и parent acceptance contract
 
@@ -234,6 +264,12 @@ UI показывает `history truncated`, не придумывая проп�
 
 - Catalog показывает только разрешённые kinds, их read-only capabilities,
   limits, expected report shape и доступные роли.
+- Editor имеет явные режимы `Draft`, `Locked` и `Executing`: в `Draft`
+  разрешены добавление/удаление/reorder ещё не запущенных descriptors и
+  сохранение configuration; после immutable preview и запуска configuration
+  переходит в `Locked`; `Executing` отображает runtime state и timeline только
+  для чтения. Изменение требует создать новую draft revision и не меняет уже
+  запущенный policy snapshot.
 - Descriptor editor — форма, а не произвольный script runner: пользователь
   может добавить child из catalog, удалить ещё не запущенный descriptor,
   изменить kind, built-in role, reduced-context items и порядок отображения,
@@ -267,6 +303,10 @@ UI показывает `history truncated`, не придумывая проп�
 - Для blocked/error UI использует Core enum, machine-readable reason, safe
   detail и доступные actions. Локальные переходы допускаются только для
   loading/reconnect decoration и не меняют child state.
+- `degraded` и `unverified` являются parent workflow/evidence states, а не
+  child terminal states: UI показывает, какой advisory child отсутствует и
+  какое действие доступно. `waiting human approval` и
+  `waiting_parent_acceptance` показываются раздельно.
 
 ## Наблюдаемость и диагностика
 
@@ -299,6 +339,10 @@ payload в metrics не попадают.
 7. Провести focused unit tests каждого adapter и acceptance gate, integration
    tests с fake child/producer и forced crash, sandbox bypass tests,
    cancellation/timeout/budget tests, replay/reconnect tests и WinUI smoke.
+   Добавить `MockChildAdapter` с быстрым, долгим, отменяемым, timeout,
+   oversized-output, rejected-report и crash сценариями для UI/timeline tests;
+   Mock adapter не получает production capabilities и не используется как
+   security proof.
 
 ## Критерии готовности
 
@@ -319,6 +363,9 @@ payload в metrics не попадают.
   waiting parent acceptance, accepted/rejected, blocked, failed, cancelled,
   timed out, budget exceeded, output exceeded и aborted; `waiting approval`
   отображается как parent workflow overlay;
+- editor корректно проводит `Draft → Locked → Executing`, не позволяет
+  менять permissions policy после запуска и отдельно показывает human
+  approval, parent acceptance, `degraded` и `unverified`;
 - replay после reconnect не дублирует child events и не воскрешает terminal
   child;
 - child crash даёт `failed` с machine-readable reason, внутренний gate failure
