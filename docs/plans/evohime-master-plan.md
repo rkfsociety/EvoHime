@@ -13,7 +13,17 @@
 | `evohime-self-healing-self-improvement.md` | Фазы 1–5 самовосстановления агентного цикла (v3.1 после четырёх раундов саморевью) |
 | `2026-08-12T1428-permission-policy-rules.md` | Декларативные permission-правила, привязка approval к вызову, окно дедупликации |
 
-Отдельных планов больше нет: все правки вносятся сюда.
+Этот файл остаётся архитектурным master index и источником общей доменной модели. Исполняемые незавершённые работы разделены по сложности на подпланы:
+
+| Порядок | Подплан | Фокус |
+| --- | --- | --- |
+| 1 | [native hardening, secrets и переносимые проверки](1-native-hardening-and-secrets.md) | самый простой: проверки, secrets, backup/recovery UI и security edge cases |
+| 2 | [Memory v1: extraction и native UX](2-memory-v1-product.md) | post-run memory и inspector |
+| 3 | [child roles и native workflow editor](3-child-roles-and-editor.md) | read-only child execution и workflow UI |
+| 4 | [bounded task runner и model routing](4-task-runner-and-routing.md) | главный end-to-end runtime |
+| 5 | [schedules, Pulse и внешние каналы](5-schedules-pulse-and-channels.md) | самый сложный proactive/external контур |
+
+Номер отражает сложность реализации, а не отменяет технические зависимости: подплан 4 является зависимостью для части подпланов 2 и 3, поэтому фактический порядок запуска может идти параллельными волнами. Завершённые этапы и аудит остаются в этом master index.
 
 ### Текущее состояние на 2026-08-13
 
@@ -986,33 +996,15 @@ approval: none
 
 ### 13.11. Этап 5 — безопасный task loop и model routing (P1)
 
-- [x] Bounded deterministic routing policy contract с capability/cost/latency/privacy/fallback decisions без секретов.
-- [x] Bounded routing runtime contract с local-first/balanced/cloud-research/offline modes, visible fallback, lifecycle/budget controls и redacted telemetry.
-- [ ] Runner: выбрать `next_ready`, собрать task/research/skill context, выполнить bounded run, записать checkpoint и предложить следующий шаг.
-- [ ] `run_policy`: max iterations, wall-clock timeout, tool-call/token budget, network policy, approval mode и stop conditions; defaults и override — в `settings.toml`-подобной конфигурации, видимой в UI. Базовый конфигурационный контракт и миграция порогов уже есть; runtime enforcement и UI остаются.
-- [ ] Автоматическая остановка на approval, failure, unexpected diff, budget, scope drift или неясном критерии.
-- [ ] Wiring routing в provider gateway и UI; логирование redacted provider/model, latency, tokens, retries, estimated cost и причины маршрутизации.
+Детальный исполняемый план: [4-task-runner-and-routing.md](4-task-runner-and-routing.md).
 
-Стык с треком A: пороги эскалации волны III — предшественник `run_policy`. Когда `run_policy` появится, константы 8.2 переезжают в него, а не дублируются.
-
-Статус: routing и policy decisions существуют как bounded offline/runtime contracts, но полноценный агентный runner ещё не подключён к ним end-to-end.
-
-Проверки: offline execution, provider unavailable, fallback policy, token/tool budgets, stop/resume/pause, supervisor Job Object cleanup, отсутствие silent cloud route.
+Завершено: bounded deterministic routing policy/runtime contracts. Не завершено: end-to-end runner, run-policy enforcement, provider gateway/UI wiring и stop conditions.
 
 ### 13.12. Этап 6 — Memory v1 и RAG для локального workspace (P1)
 
-- [x] Bounded Memory v1 domain contract со scoped retrieval, lexical search, TTL, privacy labels, provenance и forget/archive.
-- [x] Bounded memory persistence contract со scoped search, provenance, TTL, redaction, archive/forget и параметризованным SQL.
-- [x] Bounded Memory API contract с CRUD/search/provenance, scoped retrieval, TTL/privacy, deterministic export и approval gates для archive/forget/delete.
-- [x] Storage/migration wiring (пересекается с волной VI — см. раздел 14).
-- [ ] Extraction фактов и решений после run только по policy; пользователь подтверждает важные записи.
-- [ ] Memory UX: create, list, search, update, archive, forget, provenance inspection; export/delete требуют approval и audit.
+Детальный исполняемый план: [2-memory-v1-product.md](2-memory-v1-product.md).
 
-Статус: Memory domain, SQLite persistence, CRUD/search API, IPC round-trip и approval gates готовы; автоматическое post-run extraction и native inspector UI ещё не реализованы.
-
-Vector search, recency ranking, confidence, entity/temporal signals и hybrid search — memory v2. Compression и расширенная retention automation — после измерения роста данных.
-
-Проверки: scope isolation, stale/conflicting facts, delete/forget, migration rollback, no secret leakage, retrieval relevance fixtures, offline operation.
+Завершено: Memory domain, SQLite persistence, CRUD/search API, IPC round-trip и approval gates. Не завершено: post-run extraction, confirmation workflow и native inspector UI. Vector/hybrid search остаются Memory v2.
 
 ### 13.13. Этап 7 — Evals, hooks, observability и Core Doctor (P1)
 
@@ -1033,27 +1025,15 @@ Vector search, recency ranking, confidence, entity/temporal signals и hybrid se
 
 ### 13.14. Этап 8 — child roles, handoff и native workflow editor (P1/P2)
 
-- [x] Bounded child-role и handoff contract с урезанным payload, redaction, лимитами и deterministic JSON.
-- [x] Bounded child delegation runtime policy с read-only capabilities, reduced context, report validation и запретом nested/elevated mutation.
-- [ ] Дочерние read-only задачи для onboarding, code search, threat-model review, test-plan review и документации.
-- [ ] Child получает урезанный context и `child_task_id`, не имеет write, shell, commit, install и network mutation tools, отдельный filesystem/network sandbox, не может создать нового child, передать elevated permissions или превысить `max_output_bytes`.
-- [ ] Родитель проверяет структурированный report, confidence и sources перед включением в plan/build.
-- [ ] WinUI: catalog, workflow editor, timeline child tasks/evals/hooks/evidence, approval state, понятные blocked/error states.
+Детальный исполняемый план: [3-child-roles-and-editor.md](3-child-roles-and-editor.md).
 
-Проверки: child write/shell/commit denial, timeout/cancel, bounded output, parent-child visibility, editor round-trip, visual smoke.
+Завершено: bounded child-role/handoff contract и read-only delegation policy. Не завершено: production child execution, parent acceptance end-to-end и native workflow editor.
 
 ### 13.15. Этап 9 — schedules, proactive Pulse и внешние каналы (P2)
 
-- [x] Bounded schedule/trigger/monitor contract с checkpoint/next-run, retry/backoff, missed/duplicate decisions, dead-letter/requeue и budget/approval/cancellation references.
-- [ ] Supervisor runtime wiring: monitor запускается с теми же budgets, permissions, approvals и cancellation, что и обычный run.
-- [ ] Dead-letter policy: число попыток, backoff, причина перемещения, ручное requeue.
-- [ ] Локальные источники: GitHub notifications, workspace changes, CI status, local files, task deadlines.
-- [ ] Pulse: digest, новые события, пропущенные запуски, degradation; failure не скрывается уведомлением.
-- [ ] OAuth/browser authorization protocol для внешних каналов без токенов в traces; ACP/external-agent gateway — после стабилизации локального контура.
+Детальный исполняемый план: [5-schedules-pulse-and-channels.md](5-schedules-pulse-and-channels.md).
 
-Статус: этапы 8 и 9 пока представлены безопасными bounded-контрактами и тестами. Production child-runner, supervisor monitor, Pulse и внешние источники/каналы ещё не подключены.
-
-Проверки: missed run, duplicate trigger, dead letter, backoff, restart, cancellation, permission denial, отсутствие внешней мутации без approval.
+Завершено: bounded schedule/trigger/monitor contract. Не завершено: supervisor runtime wiring, durable monitor/dead-letter execution, local sources, Pulse и OAuth/external channels.
 
 ### 13.16. Native UI-поставка
 
