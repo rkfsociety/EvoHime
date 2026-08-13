@@ -16,6 +16,8 @@ const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 
 
 export interface WorkspacePickerProps {
   readonly connection: ConnectionState
+  /** Сообщает оболочке выбранную папку, чтобы показать её в шапке. */
+  readonly onSelectionChange?: (selection: WorkspaceSelection) => void
 }
 
 type Status =
@@ -23,10 +25,19 @@ type Status =
   | { readonly kind: 'ready'; readonly selection: WorkspaceSelection }
   | { readonly kind: 'failed'; readonly message: string }
 
-export function WorkspacePicker({ connection }: WorkspacePickerProps): React.JSX.Element {
+export function WorkspacePicker({
+  connection,
+  onSelectionChange
+}: WorkspacePickerProps): React.JSX.Element {
   const api = useShellApi()
   const [status, setStatus] = useState<Status>({ kind: 'loading' })
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (status.kind === 'ready') {
+      onSelectionChange?.(status.selection)
+    }
+  }, [status, onSelectionChange])
 
   const load = useCallback(async () => {
     if (!api) {
@@ -101,7 +112,7 @@ export function WorkspacePicker({ connection }: WorkspacePickerProps): React.JSX
 
   if (status.kind === 'loading') {
     return (
-      <section className="shell__panel" aria-busy="true">
+      <section className="workspace-picker" aria-busy="true">
         <h2>Рабочая папка</h2>
         <p className="shell__empty">Загружаю список…</p>
       </section>
@@ -110,7 +121,7 @@ export function WorkspacePicker({ connection }: WorkspacePickerProps): React.JSX
 
   if (status.kind === 'failed') {
     return (
-      <section className="shell__panel">
+      <section className="workspace-picker">
         <h2>Рабочая папка</h2>
         <p role="alert" className="shell__reason">
           {status.message}
@@ -127,8 +138,13 @@ export function WorkspacePicker({ connection }: WorkspacePickerProps): React.JSX
   const connected = CONNECTED_STATES.includes(connection)
 
   return (
-    <section className="shell__panel">
-      <h2>Рабочая папка</h2>
+    <section className="workspace-picker">
+      <div className="workspace-picker__heading">
+        <h2>Рабочая папка</h2>
+        <button type="button" onClick={() => void pick()} disabled={busy}>
+          Выбрать папку…
+        </button>
+      </div>
 
       {selected === null ? (
         <p className="shell__empty">Папка не выбрана — выбери её, чтобы начать работу.</p>
@@ -149,10 +165,6 @@ export function WorkspacePicker({ connection }: WorkspacePickerProps): React.JSX
           восстановления связи.
         </p>
       ) : null}
-
-      <button type="button" onClick={() => void pick()} disabled={busy}>
-        Выбрать папку…
-      </button>
 
       {options.length > 0 ? (
         <ul className="shell__workspaces">

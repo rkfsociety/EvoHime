@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { ConnectionState, CoreEvent, WorkspaceSelection } from '@shared/api'
 
@@ -30,8 +30,10 @@ export function TaskTimeline({ connection, events }: TaskTimelineProps): React.J
   const [workspace, setWorkspace] = useState<WorkspaceSelection | null>(null)
   const [prompt, setPrompt] = useState('')
   const [taskId, setTaskId] = useState<string | null>(null)
+  const [sentPrompt, setSentPrompt] = useState<string | null>(null)
   const [commandError, setCommandError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const bottomRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!api) return
@@ -49,6 +51,9 @@ export function TaskTimeline({ connection, events }: TaskTimelineProps): React.J
     [events, taskId]
   )
 
+  // Поток событий приходит от новых к старым, а читается сверху вниз.
+  const stream = useMemo(() => [...taskEvents].reverse(), [taskEvents])
+
   const approval = useMemo(() => {
     const required = taskEvents.find((item) => item.event.eventType === 'approval.required')
     if (!required) return null
@@ -62,15 +67,24 @@ export function TaskTimeline({ connection, events }: TaskTimelineProps): React.J
     } satisfies PendingApproval
   }, [taskEvents])
 
+  useEffect(() => {
+    // scrollIntoView отсутствует в jsdom, поэтому вызов защищён проверкой.
+    const anchor = bottomRef.current
+    if (typeof anchor?.scrollIntoView === 'function') {
+      anchor.scrollIntoView({ block: 'end' })
+    }
+  }, [stream.length, approval])
+
   const start = useCallback(async () => {
     const selected = workspace?.selected
     if (!api || !selected || prompt.trim().length === 0) return
     const nextTaskId = makeTaskId()
+    const text = prompt.trim()
     setBusy(true)
     setCommandError(null)
     const outcome = await api.invoke('core.startTask', {
       taskId: nextTaskId,
-      prompt: prompt.trim(),
+      prompt: text,
       workspacePath: selected
     })
     setBusy(false)
@@ -79,6 +93,7 @@ export function TaskTimeline({ connection, events }: TaskTimelineProps): React.J
       return
     }
     setTaskId(nextTaskId)
+    setSentPrompt(text)
     setPrompt('')
   }, [api, prompt, workspace?.selected])
 
@@ -106,67 +121,108 @@ export function TaskTimeline({ connection, events }: TaskTimelineProps): React.J
 
   const connected = CONNECTED_STATES.includes(connection)
   const canStart = connected && workspace?.selected != null && prompt.trim().length > 0 && !busy
+  const running = taskId !== null && !hasTerminalEvent(taskEvents)
+  const empty = stream.length === 0 && sentPrompt === null
 
   return (
-    <section className="shell__panel task-timeline" aria-label="Ход задачи">
-      <div className="task-timeline__heading">
-        <div>
-          <h2>Ход задачи</h2>
-          <p className="shell__empty">События приходят из Core и восстанавливаются после переподключения.</p>
-        </div>
-        {taskId && !hasTerminalEvent(taskEvents) ? (
-          <button type="button" onClick={() => void stop()} disabled={busy || !connected}>
-            Остановить
-          </button>
-        ) : null}
-      </div>
-
-      <div className="task-timeline__composer">
-        <label htmlFor="task-prompt">Задача</label>
-        <textarea
-          id="task-prompt"
-          value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
-          placeholder={workspace?.selected ? 'Например: проверь тесты проекта' : 'Сначала выбери рабочую папку'}
-          disabled={!connected || workspace?.selected === null || busy}
-          rows={3}
-        />
-        <button type="button" onClick={() => void start()} disabled={!canStart}>
-          Запустить задачу
-        </button>
-      </div>
-
-      {!connected ? <p className="shell__reason">Core недоступен: запуск и управление задачей приостановлены.</p> : null}
-      {workspace?.selected === null ? <p className="shell__reason">Выбери рабочую папку перед запуском задачи.</p> : null}
-      {commandError ? <p role="alert" className="shell__reason">{commandError}</p> : null}
-
-      {approval ? (
-        <div className="task-timeline__approval" role="alert">
-          <strong>Нужно разрешение: {approval.toolName}</strong>
-          <span>{approval.permission} · {approval.scope}</span>
-          <div>
-            <button type="button" onClick={() => void resolveApproval(true)} disabled={busy}>Разрешить</button>
-            <button type="button" onClick={() => void resolveApproval(false)} disabled={busy}>Отклонить</button>
+    <section className="chat" aria-label="Ход задачи">
+      <div className="chat__scroll">
+        {empty ? (
+          <div className="chat__empty">
+            <span className="chat__empty-logo" aria-hidden="true">E</span>
+            <h2>Чем займёмся?</h2>
+            <p>
+              {workspace?.selected
+                ? 'Опиши задачу — агент выполнит её в выбранной рабочей папке и покажет каждый шаг здесь.'
+                : 'Сначала выбери рабочую папку в левой панели, затем поставь задачу агенту.'}
+            </p>
           </div>
-        </div>
-      ) : null}
+        ) : (
+          <ol className="chat__stream">
+            {sentPrompt ? (
+              <li className="message message--user">
+                <div className="message__bubble">{sentPrompt}</div>
+              </li>
+            ) : null}
 
-      {taskEvents.length === 0 ? (
-        <p className="shell__empty">Запусти задачу — здесь появится её последовательность.</p>
-      ) : (
-        <ol className="task-timeline__items">
-          {taskEvents.map(({ event, payload }) => (
-            <li key={`${event.sequenceId}-${event.eventType}`} className={`task-timeline__item task-timeline__item--${tone(event.eventType)}`}>
-              <span className="task-timeline__marker" aria-hidden="true" />
-              <div>
-                <strong>{labelFor(event.eventType)}</strong>
-                <span className="task-timeline__sequence">#{event.sequenceId}</span>
-                <p>{summaryFor(event, payload)}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
-      )}
+            {stream.map(({ event, payload }) => (
+              <li
+                key={`${event.sequenceId}-${event.eventType}`}
+                className={`message message--${role(event.eventType)} message--${tone(event.eventType)}`}
+              >
+                <div className="message__meta">
+                  <span className="message__dot" aria-hidden="true" />
+                  <span className="message__author">{labelFor(event.eventType)}</span>
+                  <span className="message__sequence">#{event.sequenceId}</span>
+                </div>
+                <div className="message__bubble">{summaryFor(event, payload)}</div>
+              </li>
+            ))}
+
+            {approval ? (
+              <li className="approval" role="alert">
+                <strong>Нужно разрешение: {approval.toolName}</strong>
+                <span>{approval.permission} · {approval.scope}</span>
+                <div>
+                  <button type="button" onClick={() => void resolveApproval(true)} disabled={busy}>Разрешить</button>
+                  <button type="button" onClick={() => void resolveApproval(false)} disabled={busy}>Отклонить</button>
+                </div>
+              </li>
+            ) : null}
+          </ol>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      <div className="composer">
+        <div className="composer__inner">
+          <div className="composer__box">
+            <label htmlFor="task-prompt" className="visually-hidden">Задача</label>
+            <textarea
+              id="task-prompt"
+              value={prompt}
+              onChange={(event) => setPrompt(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  if (canStart) void start()
+                }
+              }}
+              placeholder={
+                workspace?.selected ? 'Опиши задачу для агента…' : 'Сначала выбери рабочую папку'
+              }
+              disabled={!connected || workspace?.selected === null || busy}
+              rows={1}
+            />
+            <button
+              type="button"
+              className="composer__send"
+              aria-label="Запустить задачу"
+              onClick={() => void start()}
+              disabled={!canStart}
+            >
+              ↑
+            </button>
+          </div>
+
+          <p className="composer__hint">
+            <kbd>Enter</kbd> отправить · <kbd>Shift</kbd>+<kbd>Enter</kbd> перенос строки
+            {running ? (
+              <button type="button" onClick={() => void stop()} disabled={busy || !connected}>
+                Остановить
+              </button>
+            ) : null}
+          </p>
+
+          {!connected ? (
+            <p className="shell__reason">Core недоступен: запуск и управление задачей приостановлены.</p>
+          ) : null}
+          {workspace?.selected === null ? (
+            <p className="shell__reason">Выбери рабочую папку перед запуском задачи.</p>
+          ) : null}
+          {commandError ? <p role="alert" className="shell__reason">{commandError}</p> : null}
+        </div>
+      </div>
     </section>
   )
 }
@@ -202,6 +258,13 @@ function labelFor(eventType: string): string {
     'task.failed': 'Задача завершилась ошибкой',
     'task.stopped': 'Задача остановлена'
   } satisfies Record<string, string>)[eventType] ?? eventType
+}
+
+/** Реплика агента читается как текст, всё остальное — как служебная запись. */
+function role(eventType: string): string {
+  if (eventType === 'agent.message.delta') return 'agent'
+  if (eventType.startsWith('tool.')) return 'tool'
+  return 'event'
 }
 
 function tone(eventType: string): string {
