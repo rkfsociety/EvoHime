@@ -778,31 +778,58 @@ mod cancellation {
     }
 
     /// A branch that does NOT depend on the cancelled node must be
-    /// unaffected -- cancellation must not over-halt siblings.
+    /// unaffected -- cancellation must not over-halt siblings. `start`
+    /// fans out into two independent children; only the branch reachable
+    /// from the cancelled child is halted.
     pub fn sibling_branch_still_executes() -> Result<(), String> {
         let graph = WorkflowGraph {
             graph_id: "eval-cancellation-sibling".into(),
             version: 1,
-            entry_node: "left".into(),
+            entry_node: "start".into(),
             nodes: vec![
-                node("left", vec![], vec![text_port("out", false)]),
+                node("start", vec![], vec![text_port("left", false), text_port("right", false)]),
                 node("left-child", vec![text_port("in", true)], vec![]),
-                node("right", vec![], vec![]),
+                node("right-child", vec![text_port("in", true)], vec![]),
             ],
-            edges: vec![edge("left", "left-child")],
+            edges: vec![
+                WorkflowEdge {
+                    from_node: "start".into(),
+                    from_port: "left".into(),
+                    to_node: "left-child".into(),
+                    to_port: "in".into(),
+                },
+                WorkflowEdge {
+                    from_node: "start".into(),
+                    from_port: "right".into(),
+                    to_node: "right-child".into(),
+                    to_port: "in".into(),
+                },
+            ],
         };
-        let decisions = cascade_cancellation(&graph, "left");
+        let decisions = cascade_cancellation(&graph, "left-child");
         let plan = plan_workflow(&graph, &decisions)
             .map_err(|error| format!("expected a valid plan, got {error:?}"))?;
 
-        let right = plan
+        let right_child = plan
             .steps
             .iter()
-            .find(|step| step.node_id == "right")
-            .ok_or("expected the unrelated 'right' node in the plan")?;
+            .find(|step| step.node_id == "right-child")
+            .ok_or("expected the unrelated 'right-child' node in the plan")?;
         require(
-            right.decision == StepDecision::Execute,
-            format!("unrelated sibling must still execute, was {:?}", right.decision),
+            right_child.decision == StepDecision::Execute,
+            format!(
+                "unrelated sibling must still execute, was {:?}",
+                right_child.decision
+            ),
+        )?;
+        let start = plan
+            .steps
+            .iter()
+            .find(|step| step.node_id == "start")
+            .ok_or("expected 'start' in the plan")?;
+        require(
+            start.decision == StepDecision::Execute,
+            "the entry node itself was not cancelled and must still execute",
         )
     }
 
@@ -881,12 +908,12 @@ mod replay {
         }
     }
 
-    fn edge(from: &str, to: &str) -> WorkflowEdge {
+    fn edge(from: &str, from_port: &str, to: &str, to_port: &str) -> WorkflowEdge {
         WorkflowEdge {
             from_node: from.into(),
-            from_port: "out".into(),
+            from_port: from_port.into(),
             to_node: to.into(),
-            to_port: "in".into(),
+            to_port: to_port.into(),
         }
     }
 
@@ -899,13 +926,17 @@ mod replay {
                 node("a", vec![], vec![text_port("out", false)]),
                 node("b", vec![text_port("in", true)], vec![text_port("out", false)]),
                 node("c", vec![text_port("in", true)], vec![text_port("out", false)]),
-                node("d", vec![text_port("in", true)], vec![]),
+                node(
+                    "d",
+                    vec![text_port("in_b", true), text_port("in_c", true)],
+                    vec![],
+                ),
             ],
             edges: vec![
-                edge("a", "b"),
-                edge("a", "c"),
-                edge("b", "d"),
-                edge("c", "d"),
+                edge("a", "out", "b", "in"),
+                edge("a", "out", "c", "in"),
+                edge("b", "out", "d", "in_b"),
+                edge("c", "out", "d", "in_c"),
             ],
         }
     }
@@ -1248,7 +1279,7 @@ mod ui_truthfulness {
                 workspace_readable: true,
                 workspace_writable: true,
                 protected_paths_intact: true,
-                approval_required: true,
+                approval_required: false,
             },
         }
     }
