@@ -45,7 +45,16 @@ pub struct CapabilityManifest {
     pub name: String,
     pub version: String,
     pub content_hash: String,
+    /// Hex-encoded (128 char) Ed25519 signature over
+    /// `signed_message(name, version, content_hash)`, produced by the
+    /// private key matching `signing_key_id`. This proves *provenance*
+    /// (came from a trusted publisher); `content_hash` separately proves
+    /// *integrity* of the downloaded bytes. Both checks are required.
     pub signature: String,
+    /// Identifier of the trusted public key (see `TRUSTED_SIGNING_KEYS`)
+    /// that produced `signature`. An id not present in the embedded trust
+    /// root causes `validate()` to fail closed.
+    pub signing_key_id: String,
     pub roles: Vec<RoleRef>,
     pub skills: Vec<SkillRef>,
     pub allowed_tools: Vec<String>,
@@ -54,6 +63,27 @@ pub struct CapabilityManifest {
     pub risk_class: RiskClass,
     pub install: InstallPolicy,
 }
+
+/// One trusted publisher key. There is deliberately no certificate chain or
+/// CA hierarchy: capability packages are low-volume and this bounded list is
+/// meant to be reviewed and rotated out-of-band by whoever ships EvoHime, not
+/// discovered dynamically.
+#[derive(Debug, Clone, Copy)]
+pub struct TrustedSigningKey {
+    pub key_id: &'static str,
+    /// Hex-encoded (64 char) raw Ed25519 public key.
+    pub public_key_hex: &'static str,
+}
+
+/// Embedded public-key trust root. Only manifests signed by one of these
+/// keys can pass `CapabilityManifest::validate`. Replacing/rotating a key
+/// here is the entire key-rotation story for now: it is a source change,
+/// reviewed like any other, not a runtime-configurable list -- that keeps
+/// the trust root itself out of reach of anything an installer downloads.
+pub const TRUSTED_SIGNING_KEYS: &[TrustedSigningKey] = &[TrustedSigningKey {
+    key_id: "evohime-dev-1",
+    public_key_hex: "6cafe3cad26efdee80e7dc617a9d5fdf74407c0ceaae88ec759833b573a821df",
+}];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstallPolicy {
@@ -102,6 +132,8 @@ pub enum RegistryError {
     DuplicateItem(&'static str),
     InvalidHash,
     InvalidSignature,
+    UntrustedSigningKey,
+    InstallScriptsForbidden,
     InvalidPath,
     InvalidDomain,
     PromptInjection,
@@ -119,6 +151,12 @@ impl fmt::Display for RegistryError {
             Self::DuplicateItem(field) => write!(f, "{field} contains a duplicate"),
             Self::InvalidHash => write!(f, "content_hash must be a bounded hexadecimal digest"),
             Self::InvalidSignature => write!(f, "signature metadata is invalid"),
+            Self::UntrustedSigningKey => {
+                write!(f, "signature does not verify against a trusted signing key")
+            }
+            Self::InstallScriptsForbidden => {
+                write!(f, "install scripts are forbidden by default and were declared")
+            }
             Self::InvalidPath => write!(f, "path escapes the protected workspace"),
             Self::InvalidDomain => write!(f, "domain is not a normalized host name"),
             Self::PromptInjection => write!(f, "prompt-injection text is not allowed in metadata"),
@@ -136,7 +174,9 @@ impl CapabilityManifest {
         validate_text("name", &self.name, MAX_NAME_CHARS, true)?;
         validate_text("version", &self.version, MAX_VERSION_CHARS, true)?;
         validate_hash(&self.content_hash)?;
-        validate_signature(&self.signature)?;
+        validate_signature_format(&self.signature)?;
+        validate_text("signing_key_id", &self.signing_key_id, MAX_NAME_CHARS, true)?;
+        self.verify_trusted_signature()?;
         validate_unique_names(
             "roles",
             &self.roles.iter().map(|v| &v.name).collect::<Vec<_>>(),
@@ -157,13 +197,41 @@ impl CapabilityManifest {
             validate_domain(domain)?;
         }
         validate_paths(&self.protected_paths)?;
+        // Install scripts are forbidden by default and there is currently no
+        // opt-in path at all: the manifest format has no narrower "run this
+        // specific, reviewed script" affordance, so any manifest that
+        // declares wanting one is rejected outright rather than silently
+        // ignored (fail closed instead of leaving a field an attacker could
+        // later find a way to make meaningful).
         if self.install.allow_install_scripts {
-            return Err(RegistryError::InvalidUpdate);
+            return Err(RegistryError::InstallScriptsForbidden);
         }
         if self.install.allow_update && !self.install.rollback_on_failure {
             return Err(RegistryError::InvalidUpdate);
         }
         Ok(())
+    }
+
+    /// Verifies `signature` against the embedded trust root. Signature
+    /// verification is additional to, not a replacement for, the SHA-256
+    /// `content_hash` check performed by the installer: the hash proves the
+    /// downloaded bytes are what was verified, the signature proves a
+    /// trusted publisher produced them.
+    fn verify_trusted_signature(&self) -> Result<(), RegistryError> {
+        let key = TRUSTED_SIGNING_KEYS
+            .iter()
+            .find(|candidate| candidate.key_id == self.signing_key_id)
+            .ok_or(RegistryError::UntrustedSigningKey)?;
+        let public_key_bytes =
+            hex_decode(key.public_key_hex).map_err(|_| RegistryError::UntrustedSigningKey)?;
+        let signature_bytes =
+            hex_decode(&self.signature).map_err(|_| RegistryError::InvalidSignature)?;
+        let message = signed_message(&self.name, &self.version, &self.content_hash);
+        let public_key =
+            ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &public_key_bytes);
+        public_key
+            .verify(message.as_bytes(), &signature_bytes)
+            .map_err(|_| RegistryError::UntrustedSigningKey)
     }
 
     pub fn effective_permissions(
@@ -286,14 +354,38 @@ fn validate_hash(value: &str) -> Result<(), RegistryError> {
     Ok(())
 }
 
-fn validate_signature(value: &str) -> Result<(), RegistryError> {
+/// Deterministic bytes an Ed25519 signature is produced over: binds the
+/// signature to this exact manifest identity so a valid signature for one
+/// manifest cannot be replayed onto another that happens to share a hash.
+pub fn signed_message(name: &str, version: &str, content_hash: &str) -> String {
+    format!("{name}:{version}:{content_hash}")
+}
+
+fn validate_signature_format(value: &str) -> Result<(), RegistryError> {
     validate_text("signature", value, MAX_SIGNATURE_CHARS, true)?;
     if value.to_ascii_lowercase().contains("private")
         || value.to_ascii_lowercase().contains("secret")
     {
         return Err(RegistryError::InvalidSignature);
     }
+    // A raw Ed25519 signature is exactly 64 bytes (128 hex chars).
+    if value.len() != 128 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(RegistryError::InvalidSignature);
+    }
     Ok(())
+}
+
+fn hex_decode(value: &str) -> Result<Vec<u8>, ()> {
+    if value.len() % 2 != 0 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(());
+    }
+    let mut bytes = Vec::with_capacity(value.len() / 2);
+    let raw = value.as_bytes();
+    for chunk in raw.chunks_exact(2) {
+        let pair = std::str::from_utf8(chunk).map_err(|_| ())?;
+        bytes.push(u8::from_str_radix(pair, 16).map_err(|_| ())?);
+    }
+    Ok(bytes)
 }
 
 fn validate_items(field: &'static str, values: &[String]) -> Result<(), RegistryError> {
@@ -406,16 +498,76 @@ fn union_sorted(left: &[String], right: &[String]) -> Vec<String> {
     values
 }
 
+/// Test-only signer for the embedded "evohime-dev-1" trust-root key, shared
+/// across this crate's test modules (e.g. `ipc_bridge` fixtures) so every
+/// fixture manifest can be self-signed with a real, verifiable signature
+/// instead of a placeholder string.
+#[cfg(test)]
+pub(crate) fn test_sign_with_trusted_key(name: &str, version: &str, content_hash: &str) -> String {
+    use ring::signature::Ed25519KeyPair;
+    // pkcs8 for the "evohime-dev-1" public key embedded in
+    // `TRUSTED_SIGNING_KEYS`. Test-only private key, not a production
+    // secret -- see `tests::TRUSTED_TEST_PKCS8_HEX` for the twin copy used
+    // by this module's own fixtures.
+    const PKCS8_HEX: &str = "3051020101300506032b657004220420e641ad038b0899bb389b1ef891c8e0b00970798f13b7ba13e02e7aedc74e818c8121006cafe3cad26efdee80e7dc617a9d5fdf74407c0ceaae88ec759833b573a821df";
+    let pkcs8 = hex_decode(PKCS8_HEX).expect("test pkcs8 decodes");
+    let key_pair = Ed25519KeyPair::from_pkcs8(&pkcs8).expect("test pkcs8 parses");
+    let message = signed_message(name, version, content_hash);
+    let signature = key_pair.sign(message.as_bytes());
+    signature
+        .as_ref()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// pkcs8 for the "evohime-dev-1" trust-root key embedded above. Fine to
+    /// hardcode here: this is a throwaway test signing key, not a real
+    /// production secret -- the whole point of the trust root is that it is
+    /// a small set of *public* keys checked into source, so the matching
+    /// private key must live somewhere to make the fixtures self-signing.
+    const TRUSTED_TEST_PKCS8_HEX: &str = "3051020101300506032b657004220420e641ad038b0899bb389b1ef891c8e0b00970798f13b7ba13e02e7aedc74e818c8121006cafe3cad26efdee80e7dc617a9d5fdf74407c0ceaae88ec759833b573a821df";
+    /// pkcs8 for a key that is intentionally *not* in `TRUSTED_SIGNING_KEYS`,
+    /// used to prove an otherwise well-formed signature from an untrusted
+    /// publisher is rejected.
+    const UNTRUSTED_TEST_PKCS8_HEX: &str = "3051020101300506032b65700422042046aa3a4018eb78c4ce20db1faa0d77a5d78bc56f199804ae9981d51dd297e3e6812100986006ceeabb514105783b47c6f02c1d0a36a6fdb0e003e5a53923861779b90d";
+
+    fn sign_hex(pkcs8_hex: &str, name: &str, version: &str, content_hash: &str) -> String {
+        use ring::signature::Ed25519KeyPair;
+        let pkcs8 = hex_decode(pkcs8_hex).expect("test pkcs8 decodes");
+        let key_pair = Ed25519KeyPair::from_pkcs8(&pkcs8).expect("test pkcs8 parses");
+        let message = signed_message(name, version, content_hash);
+        let signature = key_pair.sign(message.as_bytes());
+        signature
+            .as_ref()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    }
+
+    fn sign_with_trusted_test_key(name: &str, version: &str, content_hash: &str) -> String {
+        sign_hex(TRUSTED_TEST_PKCS8_HEX, name, version, content_hash)
+    }
+
+    fn sign_with_untrusted_test_key(name: &str, version: &str, content_hash: &str) -> String {
+        sign_hex(UNTRUSTED_TEST_PKCS8_HEX, name, version, content_hash)
+    }
 
     fn manifest(name: &str) -> CapabilityManifest {
         CapabilityManifest {
             name: name.into(),
             version: "1.0.0".into(),
             content_hash: "0123456789abcdef0123456789abcdef".into(),
-            signature: "sig:v1:trusted".into(),
+            signature: sign_with_trusted_test_key(
+                name,
+                "1.0.0",
+                "0123456789abcdef0123456789abcdef",
+            ),
+            signing_key_id: "evohime-dev-1".into(),
             roles: vec![RoleRef {
                 name: "reviewer".into(),
                 version: "1".into(),
@@ -491,8 +643,12 @@ mod tests {
         let current = manifest("reviewer");
         let mut candidate = current.clone();
         candidate.version = "2.0.0".into();
+        candidate.signature =
+            sign_with_trusted_test_key(&candidate.name, &candidate.version, &candidate.content_hash);
         assert!(validate_update(&current, &candidate).is_ok());
         candidate.name = "other".into();
+        candidate.signature =
+            sign_with_trusted_test_key(&candidate.name, &candidate.version, &candidate.content_hash);
         assert_eq!(
             validate_update(&current, &candidate),
             Err(RegistryError::InvalidUpdate)
@@ -507,5 +663,54 @@ mod tests {
         value = manifest("reviewer");
         value.signature = "private-secret-key".into();
         assert_eq!(value.validate(), Err(RegistryError::InvalidSignature));
+    }
+
+    #[test]
+    fn unsigned_package_is_rejected() {
+        let mut value = manifest("reviewer");
+        value.signature = String::new();
+        assert_eq!(value.validate(), Err(RegistryError::EmptyField("signature")));
+    }
+
+    #[test]
+    fn signature_from_untrusted_key_is_rejected() {
+        let mut value = manifest("reviewer");
+        value.signature =
+            sign_with_untrusted_test_key(&value.name, &value.version, &value.content_hash);
+        assert_eq!(value.validate(), Err(RegistryError::UntrustedSigningKey));
+    }
+
+    #[test]
+    fn unknown_signing_key_id_is_rejected() {
+        let mut value = manifest("reviewer");
+        value.signing_key_id = "not-a-real-key".into();
+        assert_eq!(value.validate(), Err(RegistryError::UntrustedSigningKey));
+    }
+
+    #[test]
+    fn valid_signature_from_trusted_key_is_accepted() {
+        let value = manifest("reviewer");
+        assert!(value.validate().is_ok());
+    }
+
+    #[test]
+    fn tampered_field_after_signing_breaks_the_signature() {
+        let mut value = manifest("reviewer");
+        // Same bytes, different name than what was actually signed: the
+        // signature must not verify against a manifest it was not issued
+        // for, proving the signature is bound to manifest identity and not
+        // just to the raw content hash.
+        value.name = "planner".into();
+        assert_eq!(value.validate(), Err(RegistryError::UntrustedSigningKey));
+    }
+
+    #[test]
+    fn manifest_declaring_install_script_is_rejected_outright() {
+        let mut value = manifest("reviewer");
+        value.install.allow_install_scripts = true;
+        assert_eq!(
+            value.validate(),
+            Err(RegistryError::InstallScriptsForbidden)
+        );
     }
 }

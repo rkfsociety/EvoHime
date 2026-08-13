@@ -312,6 +312,36 @@ mod tests {
         assert_eq!(CapabilityStoreSql::list(&connection, 10).unwrap().len(), 1);
     }
 
+    /// A rejected update must never touch the previously installed row: the
+    /// caller (`evohime_core`) fully validates -- including the Ed25519
+    /// signature-trust-root check and the hash check -- before this store
+    /// is ever called, and this store itself validates the record before
+    /// issuing the SQL write. Either gate failing must leave the prior
+    /// version installed and functional, which this test proves at the
+    /// storage layer: a record that fails `CapabilityManifestRecord::validate`
+    /// never reaches SQL, so the previously installed row survives untouched.
+    #[test]
+    fn failed_staged_update_leaves_prior_version_installed_and_functional() {
+        let connection = Connection::open_in_memory().expect("sqlite opens");
+        schema(&connection);
+        let installed = record("reviewer", "1.0.0");
+        CapabilityStoreSql::insert(&connection, &installed).expect("insert v1");
+
+        let mut rejected_candidate = record("reviewer", "2.0.0");
+        rejected_candidate.manifest_json = String::new();
+        assert_eq!(
+            CapabilityStoreSql::insert(&connection, &rejected_candidate),
+            Err(CapabilityStoreError::Empty {
+                field: "manifest_json"
+            })
+        );
+
+        assert_eq!(
+            CapabilityStoreSql::get_by_id(&connection, "reviewer").expect("manifest reads"),
+            Some(installed)
+        );
+    }
+
     #[test]
     fn rejects_unbounded_or_empty_contract_fields_before_sql() {
         let mut invalid = record("reviewer", "1.0.0");

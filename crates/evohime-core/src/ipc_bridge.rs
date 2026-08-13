@@ -3026,11 +3026,15 @@ mod tests {
     }
 
     fn capability_manifest_json(name: &str, version: &str, risk_class: &str) -> String {
+        let content_hash = "0123456789abcdef0123456789abcdef";
+        let signature =
+            crate::capability_registry::test_sign_with_trusted_key(name, version, content_hash);
         serde_json::json!({
             "name": name,
             "version": version,
-            "content_hash": "0123456789abcdef0123456789abcdef",
-            "signature": "sig:v1:trusted",
+            "content_hash": content_hash,
+            "signature": signature,
+            "signing_key_id": "evohime-dev-1",
             "roles": [{
                 "name": "reviewer",
                 "version": "1",

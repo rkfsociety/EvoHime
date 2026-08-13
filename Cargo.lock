@@ -424,6 +424,7 @@ dependencies = [
  "futures-util",
  "prost",
  "reqwest",
+ "ring",
  "serde",
  "serde_json",
  "tempfile",

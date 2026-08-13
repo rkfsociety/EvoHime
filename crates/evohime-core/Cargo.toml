@@ -30,6 +30,7 @@ tokio-util = { version = "0.7", features = ["rt"] }
 thiserror = "2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "brotli", "deflate", "stream"] }
 tracing = "0.1"
+ring = "0.17"
 
 [dev-dependencies]
 wiremock = "0.6"
