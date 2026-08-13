@@ -1012,7 +1012,7 @@ Vector search, recency ranking, confidence, entity/temporal signals и hybrid se
 - [x] Runtime wiring audit trail: `ApprovalAuditEntry` подключён к durable Core journal через `attach_permission_audit_sink`; scheduler wiring остаётся отдельной задачей.
 - [x] Evals для skill selection, allowlist, plan quality, IPC compatibility, cancellation, replay, citations, memory retrieval, routing и UI truthfulness.
 - [x] Core Doctor проверяет pipe, storage/migrations, providers, permissions, tools, scheduler и recovery; UI показывает actionable diagnostics и user-configurable уровень детализации при сохранении redaction.
-- [ ] Feedback: useful/not useful, correction, rejection reason, successful/failed tool result; хранение и агрегация локальные, наружная telemetry только opt-in.
+- [x] Feedback: useful/not useful, correction, rejection reason, successful/failed tool result; хранение и агрегация локальные, наружная telemetry только opt-in.
 - [x] Пользовательский экспорт логов и метрик (JSONL, при необходимости Windows Event Log) в рамках Core Doctor.
 
 Хуки `before_context`, `before_tool`, `after_tool`, `before_commit`, `after_task` только наблюдают или отклоняют по policy, не получают секреты и не могут менять порядок context.

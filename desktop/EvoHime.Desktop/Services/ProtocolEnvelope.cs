@@ -383,6 +383,37 @@ public static class ProtocolEnvelope
         WriteString(output, 6, requestedRisk);
     });
 
+    // Submits one bounded, local-only feedback record (useful/not-useful,
+    // optional correction, optional rejection reason) about an existing
+    // run's tool result or approval decision. signal is one of
+    // "useful" | "not_useful" | "neutral". Mirrors the field numbers in
+    // evohime.desktop.proto's SubmitFeedback message.
+    public static byte[] SubmitFeedback(
+        string runId,
+        string taskId,
+        string subjectRef,
+        string signal,
+        string correction = "",
+        string rejectionReason = "",
+        string outcome = "") => TaskCommand(61, output =>
+    {
+        WriteString(output, 1, runId);
+        WriteString(output, 2, taskId);
+        WriteString(output, 3, subjectRef);
+        WriteString(output, 4, signal);
+        WriteString(output, 5, correction);
+        WriteString(output, 6, rejectionReason);
+        WriteString(output, 7, outcome);
+    });
+
+    // Lists feedback for one run (newest first) plus bounded local aggregation.
+    public static byte[] ListFeedback(string runId, uint limit = 50) => TaskCommand(62, output =>
+    {
+        WriteString(output, 1, runId);
+        output.WriteTag(2, WireFormat.WireType.Varint);
+        output.WriteUInt32(limit);
+    });
+
     public static byte[] SaveBuildPolicy(string projectId, byte[] policyJson, long expectedVersion) => TaskCommand(33, output =>
     {
         WriteString(output, 1, projectId);

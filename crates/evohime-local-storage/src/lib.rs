@@ -10,11 +10,12 @@ use serde::{Deserialize, Serialize};
 pub mod capability_selection_store;
 pub mod capability_store;
 pub mod child_store;
+pub mod feedback_store;
 pub mod memory_store;
 pub mod reconciliation_verifier;
 pub mod research_store;
 
-pub const SCHEMA_VERSION: u32 = 13;
+pub const SCHEMA_VERSION: u32 = 14;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -1890,6 +1891,25 @@ impl LocalDatabase {
                 PRAGMA user_version = 13;",
             )?;
         }
+        if current < 14 {
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS feedback_entries (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    run_id TEXT NOT NULL,
+                    task_id TEXT,
+                    subject_ref TEXT,
+                    signal TEXT NOT NULL,
+                    correction TEXT,
+                    rejection_reason TEXT,
+                    outcome TEXT,
+                    provenance TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                );
+                CREATE INDEX IF NOT EXISTS idx_feedback_entries_run ON feedback_entries(run_id, created_at);
+                CREATE INDEX IF NOT EXISTS idx_feedback_entries_signal ON feedback_entries(signal);
+                PRAGMA user_version = 14;",
+            )?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -1953,6 +1973,81 @@ mod tests {
         }
         let _database = LocalDatabase::open(&path).expect("database migrates");
         assert!(path.with_extension("db.bak").exists());
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db.bak"));
+    }
+
+    #[test]
+    fn migration_12_to_14_is_idempotent_and_preserves_existing_rows() {
+        let path = temp_database_path("feedback-migration");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db.bak"));
+        {
+            // Seed a pre-wave (user_version 12) database with an existing
+            // memory_entries row, so we can confirm migrations 13 and 14 do not
+            // touch unrelated data.
+            let connection = rusqlite::Connection::open(&path).expect("legacy database opens");
+            connection
+                .execute_batch(
+                    "CREATE TABLE memory_entries (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        scope_kind TEXT NOT NULL,
+                        scope_id TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        provenance TEXT NOT NULL,
+                        privacy TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        expires_at TEXT,
+                        archived INTEGER NOT NULL,
+                        forgotten INTEGER NOT NULL,
+                        confirmations INTEGER NOT NULL DEFAULT 1,
+                        lesson_key TEXT
+                    );
+                    INSERT INTO memory_entries
+                        (id, scope_kind, scope_id, title, content, provenance, privacy,
+                         created_at, expires_at, archived, forgotten)
+                        VALUES ('m-1', 'project', 'p-1', 'Decision', 'keep this', 'run:1',
+                                'internal', '2026-08-01T00:00:00Z', NULL, 0, 0);
+                    PRAGMA user_version = 12;",
+                )
+                .expect("legacy schema and data write");
+        }
+
+        let database = LocalDatabase::open(&path).expect("database migrates to 14");
+        assert_eq!(database.schema_version().expect("version reads"), 14);
+        let feedback_table_exists: i64 = database
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='feedback_entries'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("feedback table check");
+        assert_eq!(feedback_table_exists, 1);
+        let preserved: String = database
+            .connection()
+            .query_row(
+                "SELECT content FROM memory_entries WHERE id = 'm-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("existing memory row survives migration");
+        assert_eq!(preserved, "keep this");
+        drop(database);
+
+        // Re-opening an already-migrated database must not error and must
+        // not duplicate the feedback_entries table or existing rows
+        // (guarded CREATE TABLE IF NOT EXISTS / PRAGMA user_version checks).
+        let reopened = LocalDatabase::open(&path).expect("reopen is idempotent");
+        assert_eq!(reopened.schema_version().expect("version still 14"), 14);
+        let row_count: i64 = reopened
+            .connection()
+            .query_row("SELECT COUNT(*) FROM memory_entries", [], |row| row.get(0))
+            .expect("row count reads");
+        assert_eq!(row_count, 1);
+        drop(reopened);
+
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("db.bak"));
     }

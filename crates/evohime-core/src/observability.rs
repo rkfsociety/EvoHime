@@ -226,7 +226,9 @@ fn is_sensitive_name(name: &str) -> bool {
 
 /// Redacts bearer tokens, common API-key prefixes, and email-shaped tokens
 /// from free text. Shared with `export::export_logs` so exported log lines
-/// go through the exact same redaction discipline as hook payloads.
+/// go through the exact same redaction discipline as hook payloads, and
+/// with other bounded contracts (e.g. `feedback_store`) that need the same
+/// redaction behavior at the domain layer.
 pub fn redact_text(input: &str) -> String {
     input
         .split_inclusive(char::is_whitespace)
