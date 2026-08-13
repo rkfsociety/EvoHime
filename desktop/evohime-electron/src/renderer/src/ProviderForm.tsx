@@ -112,19 +112,48 @@ export function ProviderForm(): React.JSX.Element {
         </span>
       </div>
 
-      <label className="provider-form__key" htmlFor="provider-key">
-        Ключ API
-        <input
-          id="provider-key"
-          type="password"
-          value={apiKey}
-          autoComplete="off"
-          spellCheck={false}
-          onChange={(event) => setApiKey(event.target.value)}
-          placeholder={summary?.configured ? 'сохранён — введи новый, чтобы заменить' : 'sk-…'}
-          disabled={busy || !needsKey}
-        />
-      </label>
+      <div className="provider-form__grid">
+        <label htmlFor="provider-kind">
+          Провайдер
+          <select
+            id="provider-kind"
+            value={provider}
+            onChange={(event) => setProvider(event.target.value as ProviderKind)}
+            disabled={busy}
+          >
+            {PROVIDER_KINDS.map((kind) => (
+              <option key={kind} value={kind}>{PROVIDER_LABELS[kind]}</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="provider-form__key" htmlFor="provider-key">
+          Ключ API
+          <input
+            id="provider-key"
+            type="password"
+            value={apiKey}
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(event) => setApiKey(event.target.value)}
+            placeholder={summary?.configured ? 'сохранён — введи новый, чтобы заменить' : 'sk-…'}
+            disabled={busy || !needsKey}
+          />
+        </label>
+
+        <label htmlFor="provider-url">
+          Адрес API
+          <input
+            id="provider-url"
+            value={baseUrl}
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(event) => setBaseUrl(event.target.value)}
+            placeholder="по умолчанию провайдера"
+            disabled={busy}
+          />
+        </label>
+      </div>
 
       <fieldset className="provider-form__tier">
         <legend>Какие модели показывать</legend>
@@ -165,38 +194,6 @@ export function ProviderForm(): React.JSX.Element {
       {status.kind === 'failed' ? (
         <p role="alert" className="shell__reason">{status.message}</p>
       ) : null}
-
-      <details className="provider-form__advanced">
-        <summary>Другой провайдер или адрес</summary>
-        <div className="provider-form__grid">
-          <label htmlFor="provider-kind">
-            Провайдер
-            <select
-              id="provider-kind"
-              value={provider}
-              onChange={(event) => setProvider(event.target.value as ProviderKind)}
-              disabled={busy}
-            >
-              {PROVIDER_KINDS.map((kind) => (
-                <option key={kind} value={kind}>{PROVIDER_LABELS[kind]}</option>
-              ))}
-            </select>
-          </label>
-
-          <label htmlFor="provider-url">
-            Адрес API
-            <input
-              id="provider-url"
-              value={baseUrl}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(event) => setBaseUrl(event.target.value)}
-              placeholder="по умолчанию провайдера"
-              disabled={busy}
-            />
-          </label>
-        </div>
-      </details>
     </section>
   )
 }

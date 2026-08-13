@@ -1017,17 +1017,13 @@ select:focus {
   font-size: 12px;
 }
 
-.provider-form__key {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 18px 0 16px;
-  color: var(--fg-muted);
-  font-size: 13px;
-}
-
 .provider-form__key input {
   font-family: var(--mono);
+}
+
+/* Ключ — главное поле блока, поэтому он шире провайдера и адреса. */
+.provider-form__grid .provider-form__key {
+  grid-column: span 2;
 }
 
 .provider-form__tier {
@@ -1062,23 +1058,11 @@ select:focus {
   font-size: 12px;
 }
 
-.provider-form__advanced {
-  margin-top: 20px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
-}
-
-.provider-form__advanced summary {
-  color: var(--fg-muted);
-  font-size: 13px;
-  cursor: pointer;
-}
-
 .provider-form__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 12px;
-  margin: 14px 0 0;
+  margin: 18px 0 16px;
 }
 
 .provider-form__grid label {
