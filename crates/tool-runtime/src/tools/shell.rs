@@ -421,20 +421,20 @@ mod tests {
             progress_tx: None,
         };
 
-        // Use a command that will fail (false always exits with code 1)
+        // Use git's deterministic invalid-option exit instead of POSIX `false`.
         let result = execute(
             &ctx,
             json!({
-                "program": "false",
-                "args": []
+                "program": "git",
+                "args": ["--evohime-test-invalid-option"]
             }),
             CancellationToken::new(),
         )
         .await
-        .expect("false command succeeds structurally");
+        .expect("git invalid option succeeds structurally");
 
-        // Check that ok flag is false when exit_code is 1
-        assert_eq!(result.structured.get("exit_code").and_then(|v| v.as_i64()), Some(1));
+        // Check that ok flag is false for a non-zero exit code.
+        assert_ne!(result.structured.get("exit_code").and_then(|v| v.as_i64()), Some(0));
         assert_eq!(result.structured.get("ok").and_then(|v| v.as_bool()), Some(false));
     }
 
@@ -452,17 +452,17 @@ mod tests {
             progress_tx: None,
         };
 
-        // Use a command that will succeed (true always exits with code 0)
+        // Use git's portable version query instead of POSIX `true`.
         let result = execute(
             &ctx,
             json!({
-                "program": "true",
-                "args": []
+                "program": "git",
+                "args": ["--version"]
             }),
             CancellationToken::new(),
         )
         .await
-        .expect("true command succeeds");
+        .expect("git command succeeds");
 
         // Check that ok flag is true when exit_code is 0
         assert_eq!(result.structured.get("exit_code").and_then(|v| v.as_i64()), Some(0));
