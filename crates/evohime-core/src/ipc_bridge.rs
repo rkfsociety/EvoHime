@@ -2620,29 +2620,76 @@ impl IpcBridge {
         let results = Arc::clone(&self.review_results);
         let journal = self.journal.clone();
         let task_review_id = review_id.clone();
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
+        let progress = Arc::new(move |progress: crate::plan_review::ReviewProgress| {
+            let _ = progress_tx.send(progress);
+        });
         tokio::spawn(async move {
-            let event =
-                match crate::plan_review::run_review(Arc::new(gateway), review, cancellation).await
-                {
-                    Ok(result) => {
-                        let payload = serde_json::to_string(&result).unwrap_or_default();
-                        results
-                            .lock()
-                            .await
-                            .insert(result.review_id.clone(), result.clone());
-                        CoreEvent::TaskCompleted {
-                            task_id: result.review_id,
-                            final_message: payload,
-                        }
+            let progress_journal = journal.clone();
+            let progress_writer = tokio::spawn(async move {
+                while let Some(progress) = progress_rx.recv().await {
+                    let _ = progress_journal
+                        .record(&CoreEvent::ReviewProgress {
+                            review_id: progress.review_id,
+                            stage: progress.stage,
+                            status: progress.status,
+                            model: progress.model,
+                            completed: progress.completed,
+                            total: progress.total,
+                        })
+                        .await;
+                }
+            });
+            let event = match crate::plan_review::run_review_with_progress(
+                Arc::new(gateway),
+                review,
+                cancellation,
+                progress,
+            )
+            .await
+            {
+                Ok(result) => {
+                    let payload = serde_json::to_string(&result).unwrap_or_default();
+                    results
+                        .lock()
+                        .await
+                        .insert(result.review_id.clone(), result.clone());
+                    CoreEvent::TaskCompleted {
+                        task_id: result.review_id,
+                        final_message: payload,
                     }
-                    Err(crate::plan_review::ReviewError::Cancelled) => CoreEvent::TaskStopped {
-                        task_id: task_review_id.clone(),
-                    },
-                    Err(error) => CoreEvent::TaskFailed {
-                        task_id: task_review_id.clone(),
-                        error: error.to_string(),
-                    },
-                };
+                }
+                Err(crate::plan_review::ReviewError::Cancelled) => CoreEvent::TaskStopped {
+                    task_id: task_review_id.clone(),
+                },
+                Err(error) => CoreEvent::TaskFailed {
+                    task_id: task_review_id.clone(),
+                    error: error.to_string(),
+                },
+            };
+            let _ = progress_writer.await;
+            let terminal_progress = match &event {
+                CoreEvent::TaskCompleted { .. } => Some(CoreEvent::ReviewProgress {
+                    review_id: task_review_id.clone(),
+                    stage: "completed".into(),
+                    status: "completed".into(),
+                    model: None,
+                    completed: 1,
+                    total: 1,
+                }),
+                CoreEvent::TaskFailed { .. } => Some(CoreEvent::ReviewProgress {
+                    review_id: task_review_id.clone(),
+                    stage: "failed".into(),
+                    status: "failed".into(),
+                    model: None,
+                    completed: 0,
+                    total: 1,
+                }),
+                _ => None,
+            };
+            if let Some(progress) = terminal_progress {
+                let _ = journal.record(&progress).await;
+            }
             let _ = journal.record(&event).await;
             tasks.lock().await.remove(&task_review_id);
         });

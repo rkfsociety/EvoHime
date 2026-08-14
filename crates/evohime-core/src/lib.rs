@@ -1291,6 +1291,14 @@ pub enum CoreEvent {
     TaskStopped {
         task_id: String,
     },
+    ReviewProgress {
+        review_id: String,
+        stage: String,
+        status: String,
+        model: Option<String>,
+        completed: usize,
+        total: usize,
+    },
     StorageProgress {
         operation_id: String,
         progress: BackupProgress,
@@ -1392,6 +1400,7 @@ impl EventJournal {
             | CoreEvent::TaskCompleted { task_id, .. }
             | CoreEvent::TaskFailed { task_id, .. }
             | CoreEvent::TaskStopped { task_id } => task_id,
+            CoreEvent::ReviewProgress { review_id, .. } => review_id,
             CoreEvent::StorageProgress { operation_id, .. } => operation_id,
         };
         let event_type = match event {
@@ -1404,6 +1413,7 @@ impl EventJournal {
             CoreEvent::TaskCompleted { .. } => "task.completed",
             CoreEvent::TaskFailed { .. } => "task.failed",
             CoreEvent::TaskStopped { .. } => "task.stopped",
+            CoreEvent::ReviewProgress { .. } => "review.progress",
             CoreEvent::StorageProgress { .. } => "storage.progress",
         };
         let payload = match event {

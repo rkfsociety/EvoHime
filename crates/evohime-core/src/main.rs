@@ -250,6 +250,19 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
         }
         evohime_core::CoreEvent::TaskFailed { error, .. } => println!("\n\n✕ Задача завершена с ошибкой\n{error}"),
         evohime_core::CoreEvent::TaskStopped { .. } => println!("\n\n■ Задача остановлена"),
+        evohime_core::CoreEvent::ReviewProgress {
+            review_id,
+            stage,
+            status,
+            model,
+            completed,
+            total,
+        } => println!(
+            "review.progress {review_id}: {stage} {status} {}/{} {}",
+            completed,
+            total,
+            model.as_deref().unwrap_or("")
+        ),
         evohime_core::CoreEvent::StorageProgress { operation_id, progress } => println!(
             "storage.progress {operation_id}: {:?} {}/{}",
             progress.phase,

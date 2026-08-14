@@ -6,6 +6,7 @@
 
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -41,6 +42,16 @@ pub struct ReviewResult {
     pub synthesis_model: String,
     pub reviewers: Vec<ReviewerResult>,
     pub final_markdown: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReviewProgress {
+    pub review_id: String,
+    pub stage: String,
+    pub status: String,
+    pub model: Option<String>,
+    pub completed: usize,
+    pub total: usize,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -93,26 +104,58 @@ pub async fn run_review(
     request: ReviewRequest,
     cancellation: CancellationToken,
 ) -> Result<ReviewResult, ReviewError> {
+    run_review_with_progress(gateway, request, cancellation, Arc::new(|_| {})).await
+}
+
+pub async fn run_review_with_progress(
+    gateway: Arc<ModelGateway>,
+    request: ReviewRequest,
+    cancellation: CancellationToken,
+    progress: Arc<dyn Fn(ReviewProgress) + Send + Sync>,
+) -> Result<ReviewResult, ReviewError> {
     request.validate()?;
     let source = Arc::new(request.source_markdown.clone());
+    let total = request.reviewer_models.len();
+    let completed_reviewers = Arc::new(AtomicUsize::new(0));
+    for model in &request.reviewer_models {
+        progress(ReviewProgress {
+            review_id: request.review_id.clone(),
+            stage: "reviewers".into(),
+            status: "waiting".into(),
+            model: Some(model.clone()),
+            completed: 0,
+            total,
+        });
+    }
     let mut jobs = Vec::with_capacity(request.reviewer_models.len());
     for model in request.reviewer_models.iter().cloned() {
         let gateway = Arc::clone(&gateway);
         let source = Arc::clone(&source);
         let cancellation = cancellation.clone();
+        let progress = Arc::clone(&progress);
+        let completed_reviewers = Arc::clone(&completed_reviewers);
+        let review_id = request.review_id.clone();
         jobs.push(tokio::spawn(async move {
+            progress(ReviewProgress {
+                review_id: review_id.clone(),
+                stage: "reviewers".into(),
+                status: "working".into(),
+                model: Some(model.clone()),
+                completed: 0,
+                total,
+            });
             let result =
                 collect_model_response(gateway, &model, reviewer_messages(&source), cancellation)
                     .await;
-            match result {
+            let reviewer = match result {
                 Ok(content) => ReviewerResult {
-                    model,
+                    model: model.clone(),
                     status: "completed".into(),
                     content,
                     error: None,
                 },
                 Err(error) => ReviewerResult {
-                    model,
+                    model: model.clone(),
                     status: if matches!(error, ReviewError::Cancelled) {
                         "cancelled".into()
                     } else {
@@ -121,7 +164,17 @@ pub async fn run_review(
                     content: String::new(),
                     error: Some(error.to_string()),
                 },
-            }
+            };
+            let completed = completed_reviewers.fetch_add(1, Ordering::Relaxed) + 1;
+            progress(ReviewProgress {
+                review_id,
+                stage: "reviewers".into(),
+                status: reviewer.status.clone(),
+                model: Some(reviewer.model.clone()),
+                completed,
+                total,
+            });
+            reviewer
         }));
     }
 
@@ -148,6 +201,14 @@ pub async fn run_review(
             )
         })
         .collect::<String>();
+    progress(ReviewProgress {
+        review_id: request.review_id.clone(),
+        stage: "synthesis".into(),
+        status: "working".into(),
+        model: Some(request.synthesis_model.clone()),
+        completed: total,
+        total,
+    });
     let final_markdown = collect_model_response(
         gateway,
         &request.synthesis_model,
@@ -271,5 +332,31 @@ mod tests {
             .iter()
             .all(|review| review.status == "completed"));
         assert_eq!(result.final_markdown, "mock response");
+    }
+
+    #[tokio::test]
+    async fn reports_parallel_reviewer_and_synthesis_progress() {
+        let gateway = Arc::new(mock_gateway(vec!["mock response".into()]));
+        let progress_events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let collected = Arc::clone(&progress_events);
+        run_review_with_progress(
+            gateway,
+            request(),
+            CancellationToken::new(),
+            Arc::new(move |progress| collected.lock().unwrap().push(progress)),
+        )
+        .await
+        .expect("review completes");
+
+        let events = progress_events.lock().unwrap();
+        assert!(events
+            .iter()
+            .any(|event| event.stage == "reviewers" && event.status == "working"));
+        assert!(events
+            .iter()
+            .any(|event| event.stage == "reviewers" && event.status == "completed"));
+        assert!(events
+            .iter()
+            .any(|event| event.stage == "synthesis" && event.status == "working"));
     }
 }
