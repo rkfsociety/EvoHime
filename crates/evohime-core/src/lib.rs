@@ -349,10 +349,15 @@ fn parse_natural_tool_intent(content: &str, iteration: usize) -> Option<NativeTo
         .and_then(|body| body.split("```").next())
         .and_then(|body| serde_json::from_str::<serde_json::Value>(body.trim()).ok())
     {
+        let arguments = json_body
+            .get("arguments")
+            .filter(|value| value.is_object())
+            .cloned()
+            .unwrap_or(json_body);
         let arguments = if name == "filesystem.search" {
-            json_body
-        } else if json_body.get("path").is_some() {
-            json_body
+            arguments
+        } else if arguments.get("path").is_some() {
+            arguments
         } else {
             serde_json::json!({ "path": "." })
         };
@@ -685,7 +690,7 @@ impl CoreVersion {
 }
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::{self, OpenOptions},
     io::Write,
     path::PathBuf,
@@ -1627,6 +1632,26 @@ impl EventJournal {
             limit,
         )
         .map_err(|error| error.to_string())
+    }
+
+    /// Searches project-scoped memories for the current workspace so the
+    /// agent can use user-created facts and decisions, not only automatic
+    /// failure lessons.
+    pub async fn search_workspace_memory(
+        &self,
+        scope_id: &str,
+        query: &str,
+        now: &str,
+        limit: u32,
+    ) -> Result<Vec<evohime_local_storage::memory_store::MemoryRecord>, String> {
+        self.search_memory(
+            evohime_local_storage::memory_store::MemoryScope::Project,
+            scope_id,
+            query,
+            now,
+            limit,
+        )
+        .await
     }
 
     /// Archives a memory record. Returns `false` if no matching, non-forgotten
@@ -2637,9 +2662,17 @@ impl ToolAgent {
         ];
 
         let user_prompt = messages[1].content.clone();
-        let context_text = format!("{system_prompt}\n{user_prompt}\n{}", tool_names.join("\n"));
         if let Some(journal) = &self.journal {
             let scope_id = task_memory::workspace_scope_id(&context.workspace_root);
+            let mut memories = journal
+                .search_workspace_memory(
+                    &scope_id,
+                    &user_prompt,
+                    &task_memory::now_millis().to_string(),
+                    8,
+                )
+                .await
+                .unwrap_or_default();
             if let Ok(lessons) = journal
                 .search_lessons(
                     &scope_id,
@@ -2649,10 +2682,21 @@ impl ToolAgent {
                 )
                 .await
             {
-                if !lessons.is_empty() {
-                    let lesson_context = lessons
+                let known_ids = memories
+                    .iter()
+                    .map(|memory| memory.id.clone())
+                    .collect::<HashSet<_>>();
+                memories.extend(
+                    lessons
+                        .into_iter()
+                        .filter(|lesson| !known_ids.contains(&lesson.id))
+                        .take(8),
+                );
+            }
+            if !memories.is_empty() {
+                    let memory_context = memories
                         .iter()
-                        .map(|lesson| format!("- {}: {}", lesson.title, lesson.content))
+                        .map(|memory| format!("- {}: {}", memory.title, memory.content))
                         .collect::<Vec<_>>()
                         .join("\n");
                     messages.insert(
@@ -2660,7 +2704,7 @@ impl ToolAgent {
                         ChatMessage::text(
                             ChatRole::System,
                             format!(
-                                "Прошлый опыт для проверки, не факт о текущем workspace:\n{lesson_context}"
+                                "Сохранённая память проекта для проверки, не безусловный факт о текущем workspace:\n{memory_context}"
                             ),
                         ),
                     );
@@ -2669,13 +2713,18 @@ impl ToolAgent {
                         serde_json::json!({
                             "task_id": task_id,
                             "scope_id": scope_id,
-                            "lesson_count": lessons.len(),
-                            "lesson_ids": lessons.iter().map(|lesson| &lesson.id).collect::<Vec<_>>()
+                            "memory_count": memories.len(),
+                            "memory_ids": memories.iter().map(|memory| &memory.id).collect::<Vec<_>>()
                         }),
                     );
-                }
             }
         }
+        let context_text = messages
+            .iter()
+            .map(|message| message.content.as_str())
+            .chain(tool_names.iter().map(String::as_str))
+            .collect::<Vec<_>>()
+            .join("\n");
         let delivery_requirements = DeliveryRequirements::from_prompt(&user_prompt);
         let _ = events.send(CoreEvent::ModelContext {
             task_id: task_id.clone(),
@@ -2905,13 +2954,6 @@ impl ToolAgent {
             for call in tool_calls {
                 let hook_sequence = observability_sequence;
                 observability_sequence = observability_sequence.saturating_add(1);
-                if delivery_requirements.research {
-                    research_observations += 1;
-                    research_has_overview |= call.name == "filesystem.list";
-                    research_has_content |=
-                        matches!(call.name.as_str(), "filesystem.read" | "filesystem.search");
-                    research_has_search |= call.name == "filesystem.search";
-                }
                 let _ = events.send(CoreEvent::ToolStarted {
                     task_id: task_id.clone(),
                     tool_name: call.name.clone(),
@@ -2967,9 +3009,46 @@ impl ToolAgent {
                             ],
                         );
                     }
-                    match tokio::select! {
-                        _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
-                        result = self.tools.execute_with_cancellation(&context, &call.name, input, cancellation.clone()) => result,
+                    match if call.name == "memory.search" {
+                        let result = async {
+                            let journal = self.journal.as_ref().ok_or_else(|| {
+                                evohime_tool_runtime::ToolError::Execution(
+                                    "memory.search requires the Core journal".into(),
+                                )
+                            })?;
+                            let (query, limit) = evohime_tool_runtime::memory::parse_input(&input)?;
+                            let scope_id = task_memory::workspace_scope_id(&context.workspace_root);
+                            let memories = journal
+                                .search_workspace_memory(
+                                    &scope_id,
+                                    &query,
+                                    &task_memory::now_millis().to_string(),
+                                    limit as u32,
+                                )
+                                .await
+                                .map_err(evohime_tool_runtime::ToolError::Execution)?;
+                            let entries = memories
+                                .iter()
+                                .map(|memory| {
+                                    (
+                                        "project".to_owned(),
+                                        memory.provenance.clone(),
+                                        format!("{}: {}", memory.title, memory.content),
+                                        1.0,
+                                    )
+                                })
+                                .collect::<Vec<_>>();
+                            Ok(evohime_tool_runtime::memory::format_results(&query, &entries))
+                        };
+                        tokio::select! {
+                            _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
+                            result = result => result,
+                        }
+                    } else {
+                        tokio::select! {
+                            _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
+                            result = self.tools.execute_with_cancellation(&context, &call.name, input, cancellation.clone()) => result,
+                        }
                     } {
                         Ok(result) => recovery::ToolOutcome::success(result),
                         Err(evohime_tool_runtime::ToolError::NeedsApproval {
@@ -3023,6 +3102,13 @@ impl ToolAgent {
                     tool_name: call.name.clone(),
                     output: outcome.output.clone(),
                 });
+                if delivery_requirements.research && outcome.ok {
+                    research_observations += 1;
+                    research_has_overview |= call.name == "filesystem.list";
+                    research_has_content |=
+                        matches!(call.name.as_str(), "filesystem.read" | "filesystem.search");
+                    research_has_search |= call.name == "filesystem.search";
+                }
                 write_model_trace(
                     "tool.output",
                     serde_json::json!({
@@ -6155,6 +6241,20 @@ mod tests {
         assert!(
             super::parse_natural_tool_intent("Инструмент filesystem.list доступен.", 3).is_none()
         );
+    }
+
+    #[test]
+    fn parses_nested_json_arguments_from_natural_tool_intent() {
+        let call = super::parse_natural_tool_intent(
+            r#"Продолжу изучение.
+```json
+{"tool":"filesystem.read","arguments":{"path":"Cargo.toml"}}
+```"#,
+            4,
+        )
+        .expect("filesystem intent");
+        assert_eq!(call.name, "filesystem.read");
+        assert_eq!(call.arguments, r#"{"path":"Cargo.toml"}"#);
     }
 
     impl TaskExecutor for NeverExecutor {
