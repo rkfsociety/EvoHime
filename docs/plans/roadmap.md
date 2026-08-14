@@ -6,29 +6,11 @@
 
 ## Текущая версия
 
-`0.0.000033` — текущая версия клиента; оболочка — Electron; первая версия продукта была `0.0.0001`.
-
-## Завершено
-
-| Блок | Статус | Подтверждение |
-| --- | --- | --- |
-| WinUI 3 shell и native foundation | ✅ legacy baseline | `bb432fa` |
-| Electron desktop shell migration | ✅ Windows acceptance закрыта | `b3187e9`, `0afc33d` |
-| Rust Core и SQLite event journal | ✅ | `93995bc`, `66e741e` |
-| Versioned named-pipe IPC и replay | ✅ | `e0da370`, `463e11b` |
-| Supervisor, mutex, Job Object и diagnostics | ✅ | `e0e0f75`, `a9018a8` |
-| Workspace picker, persistence, tray, notifications | ✅ | `a43aaac`–`6991a11` |
-| Desktop task timeline, cancellation и approval round-trip | ✅ Core/legacy UI baseline | `0246f05`, `87c5b39` |
-| Единый installer и CI build after checks | ✅ | `9b3430c` |
-| Имя агента «Ева» и версия `0.0.0001` | ✅ | `775b20b` |
-| Retention: только последний стабильный release/tag | ✅ | `dadcbf6` |
-| Автообнаружение обновления, SHA-256 проверка, upgrade smoke и автоматический rollback | ✅ | `edaa8ec` |
-| Hardening секретов, backup/restore и recovery UI | ✅ | `5033356` |
-| Продуктовая оболочка: проекты и чаты, главный экран, читаемая лента задачи, выбор модели | ✅ | `a403dec` |
+`0.0.000033` — текущая версия клиента; оболочка — Electron.
 
 ## Ближайшая работа
 
-### 1. Reliability and approval UX — следующий продуктовый этап
+### 1. Reliability and approval UX
 
 - leases/reconciliation для длительных запусков;
 - расширенный diff/command preview в approval UI;
@@ -53,8 +35,7 @@
 1. Push или pull request запускает проверки Rust, supervisor, Electron, package smoke и Windows acceptance.
 2. Job `build-native` стартует только после успешных проверок.
 3. Собирается runtime в staging-каталог.
-4. Inno Setup создаёт единственный `EvoHime-Setup.exe`.
-5. Для tag `vX.Y.Z` создаётся GitHub Release.
-6. Еженедельная retention-задача удаляет все versioned Releases/tags, кроме последнего.
+4. Inno Setup обновляет единственный постоянный release `installer` и его `EvoHime-Setup.exe`.
+5. Новые versioned releases и tags для этого цикла не создаются.
 
-Миграция Electron закрыта на Windows и не считается активным планом. Пошаговые работы текущего цикла ведутся в [`development-plan.md`](development-plan.md) и намеренно не повторяются в roadmap.
+Закрытые этапы не дублируются здесь; фактическое состояние хранится в [`current-state.md`](../current-state.md), а пошаговые работы — в [`development-plan.md`](development-plan.md).
