@@ -8,9 +8,9 @@
 //! - `EVOHIME_PROVIDER_RETRY_MAX` (default 3) — maximum retry attempts
 //! - `EVOHIME_PROVIDER_BACKOFF_BASE_MS` (default 500) — base backoff in ms
 
-use std::time::Duration;
 use evohime_model_gateway::providers::ProviderError;
 use serde::Serialize;
+use std::time::Duration;
 
 /// Configuration for provider error handling.
 #[derive(Clone, Debug)]
@@ -41,11 +41,13 @@ pub fn is_retriable_error(error: &ProviderError) -> bool {
         }
         ProviderError::Api(msg) => {
             // Rate limit (429), overload (503), etc.
-            msg.contains("429") || msg.contains("503") || msg.contains("rate limit")
+            msg.contains("429")
+                || msg.contains("503")
+                || msg.contains("rate limit")
                 || msg.contains("overload")
         }
         ProviderError::Config(_) => false, // Config errors are not retriable
-        ProviderError::Stream(_) => true,   // Transient streaming error
+        ProviderError::Stream(_) => true,  // Transient streaming error
     }
 }
 
@@ -71,7 +73,10 @@ pub enum TaskResult {
 
 /// Handles a provider error and produces a task result.
 /// Returns TaskFailed if error is terminal, or Ok(TaskResult::Failed) for logging retriable errors.
-pub fn handle_provider_error(error: &ProviderError, _config: &ProviderResilienceConfig) -> TaskResult {
+pub fn handle_provider_error(
+    error: &ProviderError,
+    _config: &ProviderResilienceConfig,
+) -> TaskResult {
     if is_retriable_error(error) {
         TaskResult::Failed(format!("provider error (retriable): {}", error))
     } else {
@@ -115,13 +120,13 @@ pub fn default_tool_specs() -> Vec<evohime_model_gateway::ToolSpec> {
 }
 
 /// Readonly mode tool filter: allows only read-only tools.
-pub fn filter_readonly_tools(tools: &[evohime_model_gateway::ToolSpec]) -> Vec<evohime_model_gateway::ToolSpec> {
+pub fn filter_readonly_tools(
+    tools: &[evohime_model_gateway::ToolSpec],
+) -> Vec<evohime_model_gateway::ToolSpec> {
     let readonly_names = ["filesystem.list", "filesystem.read", "filesystem.search"];
     tools
         .iter()
-        .filter(|tool| {
-            readonly_names.contains(&tool.function.name.as_str())
-        })
+        .filter(|tool| readonly_names.contains(&tool.function.name.as_str()))
         .cloned()
         .collect()
 }

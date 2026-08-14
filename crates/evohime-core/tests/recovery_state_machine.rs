@@ -1,7 +1,6 @@
 use evohime_core::EventJournal;
 use evohime_local_storage::{
-    LocalDatabase, RecoveryState, RunCheckpointRecord, RunEffectRecord, RunRecord,
-    WorkItemRecord,
+    LocalDatabase, RecoveryState, RunCheckpointRecord, RunEffectRecord, RunRecord, WorkItemRecord,
 };
 use std::{
     env,
@@ -14,7 +13,9 @@ fn temp_path(suffix: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .expect("clock is valid")
         .as_nanos();
-    env::temp_dir().join(format!("evohime-recovery-state-machine-{suffix}-{stamp}.db"))
+    env::temp_dir().join(format!(
+        "evohime-recovery-state-machine-{suffix}-{stamp}.db"
+    ))
 }
 
 fn seed_executing_effect(

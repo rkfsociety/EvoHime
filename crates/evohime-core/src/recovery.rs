@@ -244,10 +244,7 @@ fn semantic_failure(structured: &Value) -> Option<ToolFailureKind> {
 /// 5. exit_code != 0 → ok=false, kind=NonZeroExit
 /// 6. structured["ok"] exists → ok = structured["ok"]
 /// 7. Иначе → ok=true
-pub fn classify_tool_outcome(
-    result: Result<ToolResult, ToolError>,
-    output: String,
-) -> ToolOutcome {
+pub fn classify_tool_outcome(result: Result<ToolResult, ToolError>, output: String) -> ToolOutcome {
     match result {
         Ok(tool_result) => {
             // Начинаем с успешного результата, затем проверяем семантические ошибки

@@ -6,7 +6,10 @@
 //! mutation are expressible as an accepted request.
 
 use serde::{Deserialize, Serialize};
-use std::{collections::{BTreeSet, VecDeque}, fmt};
+use std::{
+    collections::{BTreeSet, VecDeque},
+    fmt,
+};
 
 pub const MAX_ID_CHARS: usize = 128;
 pub const MAX_ROLE_CHARS: usize = 64;
@@ -67,14 +70,19 @@ pub struct ChildLifecycleEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChildTransitionError {
-    InvalidTransition { from: ChildLifecycleState, to: ChildLifecycleState },
+    InvalidTransition {
+        from: ChildLifecycleState,
+        to: ChildLifecycleState,
+    },
     TerminalState,
 }
 
 impl fmt::Display for ChildTransitionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidTransition { from, to } => write!(f, "invalid child transition: {from:?} -> {to:?}"),
+            Self::InvalidTransition { from, to } => {
+                write!(f, "invalid child transition: {from:?} -> {to:?}")
+            }
             Self::TerminalState => write!(f, "child is already terminal"),
         }
     }
@@ -96,20 +104,44 @@ pub struct ChildLifecycle {
 impl ChildLifecycle {
     pub fn create(request: ChildTaskRequest) -> Result<Self, ChildRuntimeError> {
         request.validate()?;
-        let mut lifecycle = Self { request, state: ChildLifecycleState::Created, sequence: 0, events: VecDeque::new() };
+        let mut lifecycle = Self {
+            request,
+            state: ChildLifecycleState::Created,
+            sequence: 0,
+            events: VecDeque::new(),
+        };
         lifecycle.record(ChildLifecycleState::Created, None);
         Ok(lifecycle)
     }
 
-    pub fn request(&self) -> &ChildTaskRequest { &self.request }
-    pub fn state(&self) -> ChildLifecycleState { self.state }
+    pub fn request(&self) -> &ChildTaskRequest {
+        &self.request
+    }
+    pub fn state(&self) -> ChildLifecycleState {
+        self.state
+    }
     pub fn events_after(&self, sequence: u64) -> Vec<ChildLifecycleEvent> {
-        self.events.iter().filter(|event| event.sequence > sequence).cloned().collect()
+        self.events
+            .iter()
+            .filter(|event| event.sequence > sequence)
+            .cloned()
+            .collect()
     }
 
-    pub fn transition(&mut self, next: ChildLifecycleState, reason: Option<String>) -> Result<(), ChildTransitionError> {
-        if is_terminal(self.state) { return Err(ChildTransitionError::TerminalState); }
-        if !allowed_transition(self.state, next) { return Err(ChildTransitionError::InvalidTransition { from: self.state, to: next }); }
+    pub fn transition(
+        &mut self,
+        next: ChildLifecycleState,
+        reason: Option<String>,
+    ) -> Result<(), ChildTransitionError> {
+        if is_terminal(self.state) {
+            return Err(ChildTransitionError::TerminalState);
+        }
+        if !allowed_transition(self.state, next) {
+            return Err(ChildTransitionError::InvalidTransition {
+                from: self.state,
+                to: next,
+            });
+        }
         self.state = next;
         self.record(next, reason);
         Ok(())
@@ -126,27 +158,54 @@ impl ChildLifecycle {
             reason: reason.map(|value| value.chars().take(512).collect()),
         };
         self.events.push_back(event);
-        while self.events.len() > MAX_CHILD_EVENTS { self.events.pop_front(); }
+        while self.events.len() > MAX_CHILD_EVENTS {
+            self.events.pop_front();
+        }
     }
 }
 
 fn is_terminal(state: ChildLifecycleState) -> bool {
-    matches!(state, ChildLifecycleState::Accepted | ChildLifecycleState::Rejected | ChildLifecycleState::Failed | ChildLifecycleState::Cancelled | ChildLifecycleState::TimedOut | ChildLifecycleState::Aborted)
+    matches!(
+        state,
+        ChildLifecycleState::Accepted
+            | ChildLifecycleState::Rejected
+            | ChildLifecycleState::Failed
+            | ChildLifecycleState::Cancelled
+            | ChildLifecycleState::TimedOut
+            | ChildLifecycleState::Aborted
+    )
 }
 
 fn allowed_transition(from: ChildLifecycleState, to: ChildLifecycleState) -> bool {
-    matches!((from, to),
-        (ChildLifecycleState::Created, ChildLifecycleState::Queued) |
-        (ChildLifecycleState::Queued, ChildLifecycleState::Running) |
-        (ChildLifecycleState::Running, ChildLifecycleState::Validating) |
-        (ChildLifecycleState::Running, ChildLifecycleState::Cancelled) |
-        (ChildLifecycleState::Running, ChildLifecycleState::TimedOut) |
-        (ChildLifecycleState::Running, ChildLifecycleState::Failed) |
-        (ChildLifecycleState::Validating, ChildLifecycleState::WaitingParentAcceptance) |
-        (ChildLifecycleState::Validating, ChildLifecycleState::Rejected) |
-        (ChildLifecycleState::Validating, ChildLifecycleState::Failed) |
-        (ChildLifecycleState::WaitingParentAcceptance, ChildLifecycleState::Accepted) |
-        (ChildLifecycleState::WaitingParentAcceptance, ChildLifecycleState::Rejected))
+    matches!(
+        (from, to),
+        (ChildLifecycleState::Created, ChildLifecycleState::Queued)
+            | (ChildLifecycleState::Queued, ChildLifecycleState::Running)
+            | (
+                ChildLifecycleState::Running,
+                ChildLifecycleState::Validating
+            )
+            | (ChildLifecycleState::Running, ChildLifecycleState::Cancelled)
+            | (ChildLifecycleState::Running, ChildLifecycleState::TimedOut)
+            | (ChildLifecycleState::Running, ChildLifecycleState::Failed)
+            | (
+                ChildLifecycleState::Validating,
+                ChildLifecycleState::WaitingParentAcceptance
+            )
+            | (
+                ChildLifecycleState::Validating,
+                ChildLifecycleState::Rejected
+            )
+            | (ChildLifecycleState::Validating, ChildLifecycleState::Failed)
+            | (
+                ChildLifecycleState::WaitingParentAcceptance,
+                ChildLifecycleState::Accepted
+            )
+            | (
+                ChildLifecycleState::WaitingParentAcceptance,
+                ChildLifecycleState::Rejected
+            )
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -453,15 +512,28 @@ mod tests {
     #[test]
     fn lifecycle_is_core_owned_replay_safe_and_terminal() {
         let mut lifecycle = ChildLifecycle::create(request()).unwrap();
-        lifecycle.transition(ChildLifecycleState::Queued, None).unwrap();
-        lifecycle.transition(ChildLifecycleState::Running, None).unwrap();
-        lifecycle.transition(ChildLifecycleState::Validating, None).unwrap();
-        lifecycle.transition(ChildLifecycleState::WaitingParentAcceptance, None).unwrap();
-        lifecycle.transition(ChildLifecycleState::Accepted, Some("parent_gate".into())).unwrap();
+        lifecycle
+            .transition(ChildLifecycleState::Queued, None)
+            .unwrap();
+        lifecycle
+            .transition(ChildLifecycleState::Running, None)
+            .unwrap();
+        lifecycle
+            .transition(ChildLifecycleState::Validating, None)
+            .unwrap();
+        lifecycle
+            .transition(ChildLifecycleState::WaitingParentAcceptance, None)
+            .unwrap();
+        lifecycle
+            .transition(ChildLifecycleState::Accepted, Some("parent_gate".into()))
+            .unwrap();
         assert_eq!(lifecycle.state(), ChildLifecycleState::Accepted);
         assert_eq!(lifecycle.events_after(0).len(), 6);
         assert_eq!(lifecycle.events_after(3)[0].event_id, "child-1:4");
-        assert_eq!(lifecycle.transition(ChildLifecycleState::Running, None), Err(ChildTransitionError::TerminalState));
+        assert_eq!(
+            lifecycle.transition(ChildLifecycleState::Running, None),
+            Err(ChildTransitionError::TerminalState)
+        );
     }
 
     #[test]

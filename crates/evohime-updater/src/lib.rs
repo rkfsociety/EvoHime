@@ -589,7 +589,10 @@ mod tests {
             fs::read_to_string(install.join("resources").join("icon.ico")).unwrap(),
             "icon"
         );
-        assert_eq!(fs::read_to_string(install.join("user-note.txt")).unwrap(), "keep me");
+        assert_eq!(
+            fs::read_to_string(install.join("user-note.txt")).unwrap(),
+            "keep me"
+        );
         assert!(!state.join("transaction.json").exists());
         fs::remove_dir_all(root).unwrap();
     }
@@ -689,8 +692,7 @@ mod tests {
             .unwrap();
 
         let started = Instant::now();
-        let error =
-            super::wait_until_writable(&install, Duration::from_millis(600)).unwrap_err();
+        let error = super::wait_until_writable(&install, Duration::from_millis(600)).unwrap_err();
 
         assert!(started.elapsed() >= Duration::from_millis(500));
         assert!(error.to_string().contains("still in use"), "{error}");

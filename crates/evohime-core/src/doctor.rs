@@ -656,8 +656,7 @@ mod tests {
         let mut value = snapshot();
         value.provider.provider_id = "provider-with-secret-looking-id".into();
         value.recovery.unknown_effects = 1;
-        let report =
-            DoctorReport::from_snapshot_with_detail(&value, DetailLevel::Summary).unwrap();
+        let report = DoctorReport::from_snapshot_with_detail(&value, DetailLevel::Summary).unwrap();
         assert!(report.checks.iter().all(|check| check.details.is_none()));
         assert!(report.checks.iter().all(|check| !check.summary.is_empty()));
         assert!(report.checks.iter().all(|check| !check.action.is_empty()));
@@ -670,7 +669,9 @@ mod tests {
         value.provider.provider_id = "provider-with-secret-looking-id".into();
         let detailed =
             DoctorReport::from_snapshot_with_detail(&value, DetailLevel::Detailed).unwrap();
-        assert!(!detailed.to_bounded_json().contains("provider-with-secret-looking-id"));
+        assert!(!detailed
+            .to_bounded_json()
+            .contains("provider-with-secret-looking-id"));
     }
 
     #[test]

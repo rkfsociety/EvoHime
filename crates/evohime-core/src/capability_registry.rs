@@ -155,7 +155,10 @@ impl fmt::Display for RegistryError {
                 write!(f, "signature does not verify against a trusted signing key")
             }
             Self::InstallScriptsForbidden => {
-                write!(f, "install scripts are forbidden by default and were declared")
+                write!(
+                    f,
+                    "install scripts are forbidden by default and were declared"
+                )
             }
             Self::InvalidPath => write!(f, "path escapes the protected workspace"),
             Self::InvalidDomain => write!(f, "domain is not a normalized host name"),
@@ -644,12 +647,18 @@ mod tests {
         let current = manifest("reviewer");
         let mut candidate = current.clone();
         candidate.version = "2.0.0".into();
-        candidate.signature =
-            sign_with_trusted_test_key(&candidate.name, &candidate.version, &candidate.content_hash);
+        candidate.signature = sign_with_trusted_test_key(
+            &candidate.name,
+            &candidate.version,
+            &candidate.content_hash,
+        );
         assert!(validate_update(&current, &candidate).is_ok());
         candidate.name = "other".into();
-        candidate.signature =
-            sign_with_trusted_test_key(&candidate.name, &candidate.version, &candidate.content_hash);
+        candidate.signature = sign_with_trusted_test_key(
+            &candidate.name,
+            &candidate.version,
+            &candidate.content_hash,
+        );
         assert_eq!(
             validate_update(&current, &candidate),
             Err(RegistryError::InvalidUpdate)
@@ -670,7 +679,10 @@ mod tests {
     fn unsigned_package_is_rejected() {
         let mut value = manifest("reviewer");
         value.signature = String::new();
-        assert_eq!(value.validate(), Err(RegistryError::EmptyField("signature")));
+        assert_eq!(
+            value.validate(),
+            Err(RegistryError::EmptyField("signature"))
+        );
     }
 
     #[test]

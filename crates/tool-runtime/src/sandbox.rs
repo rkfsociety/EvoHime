@@ -29,11 +29,7 @@ impl WorkspaceSandbox {
         self.resolve_existing_for_tool(path, "workspace")
     }
 
-    pub fn resolve_existing_for_tool(
-        &self,
-        path: &str,
-        tool: &str,
-    ) -> Result<PathBuf, ToolError> {
+    pub fn resolve_existing_for_tool(&self, path: &str, tool: &str) -> Result<PathBuf, ToolError> {
         let candidate = self.root.join(path);
         let resolved = match candidate.canonicalize() {
             Ok(resolved) => resolved,
@@ -195,7 +191,9 @@ mod tests {
         fs::create_dir(dir.path().join("docs")).unwrap();
         fs::write(dir.path().join("docs/plan.md"), "plan").unwrap();
         let sandbox = WorkspaceSandbox::new(dir.path()).unwrap();
-        let error = sandbox.resolve_existing("docs/missing/plan.md").unwrap_err();
+        let error = sandbox
+            .resolve_existing("docs/missing/plan.md")
+            .unwrap_err();
         let message = error.to_string();
         assert!(message.contains("filesystem.list"));
         assert!(message.contains("docs"));

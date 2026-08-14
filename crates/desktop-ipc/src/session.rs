@@ -212,10 +212,9 @@ impl LaunchContext {
         }
         if !self.supervisor_liveness_event.is_empty()
             && (self.supervisor_liveness_event.chars().count() > MAX_IDENTIFIER_CHARS
-                || !self
-                    .supervisor_liveness_event
-                    .chars()
-                    .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_' | '\\')))
+                || !self.supervisor_liveness_event.chars().all(|character| {
+                    character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_' | '\\')
+                }))
         {
             return Err(SessionError::InvalidIdentifier);
         }
@@ -232,10 +231,7 @@ impl LaunchContext {
 /// `\\.\pipe\evohime-core-<hex>`; the name is unpredictable, but Core never
 /// relies on its secrecy — the DACL and this handshake do the work.
 pub fn generate_pipe_name() -> Result<String, SessionError> {
-    Ok(format!(
-        "{PIPE_PREFIX}{PIPE_NAME_STEM}{}",
-        random_hex(16)?
-    ))
+    Ok(format!("{PIPE_PREFIX}{PIPE_NAME_STEM}{}", random_hex(16)?))
 }
 
 pub fn validate_pipe_name(value: &str) -> Result<(), SessionError> {
@@ -349,14 +345,20 @@ impl HandshakeVerifier {
         request: &HandshakeRequest,
         now_ms: u64,
     ) -> Result<VerifiedHandshake, HandshakeRejection> {
-        let issued = self.issued.take().ok_or(HandshakeRejection::NonceUnavailable)?;
+        let issued = self
+            .issued
+            .take()
+            .ok_or(HandshakeRejection::NonceUnavailable)?;
 
         if request.protocol_major != crate::ProtocolVersion::new(1, 0).major {
             return Err(HandshakeRejection::MajorMismatch);
         }
         if request.client_id.is_empty()
             || request.client_id.chars().count() > MAX_IDENTIFIER_CHARS
-            || request.client_id.chars().any(|character| character.is_control())
+            || request
+                .client_id
+                .chars()
+                .any(|character| character.is_control())
         {
             return Err(HandshakeRejection::MalformedIdentity);
         }
@@ -389,10 +391,10 @@ impl HandshakeVerifier {
             }
         }
 
-        let expected = self
-            .context
-            .secret
-            .proof(&request.client_role, &request.client_id, &issued.value);
+        let expected =
+            self.context
+                .secret
+                .proof(&request.client_role, &request.client_id, &issued.value);
         if !constant_time_eq(&request.proof, &expected) {
             return Err(HandshakeRejection::ProofMismatch);
         }
@@ -438,11 +440,14 @@ mod tests {
 
     #[test]
     fn accepts_a_correct_proof_once() {
-        let mut verifier = HandshakeVerifier::new(context(), DEFAULT_NONCE_TTL_MS).expect("verifier");
+        let mut verifier =
+            HandshakeVerifier::new(context(), DEFAULT_NONCE_TTL_MS).expect("verifier");
         let nonce = verifier.issue_nonce(1_000).expect("nonce");
         let request = request(&verifier, &nonce.value);
 
-        let verified = verifier.verify(&request, 1_100).expect("handshake accepted");
+        let verified = verifier
+            .verify(&request, 1_100)
+            .expect("handshake accepted");
         assert_eq!(verified.client_role, "shell");
         // The same nonce cannot be replayed by a second connection.
         assert_eq!(
@@ -471,7 +476,8 @@ mod tests {
 
     #[test]
     fn rejects_a_wrong_secret() {
-        let mut verifier = HandshakeVerifier::new(context(), DEFAULT_NONCE_TTL_MS).expect("verifier");
+        let mut verifier =
+            HandshakeVerifier::new(context(), DEFAULT_NONCE_TTL_MS).expect("verifier");
         let nonce = verifier.issue_nonce(1_000).expect("nonce");
         let mut forged = request(&verifier, &nonce.value);
         forged.proof = SessionSecret::parse(&"cd".repeat(SECRET_BYTES))
@@ -485,7 +491,8 @@ mod tests {
 
     #[test]
     fn proof_is_bound_to_role_and_client_id() {
-        let mut verifier = HandshakeVerifier::new(context(), DEFAULT_NONCE_TTL_MS).expect("verifier");
+        let mut verifier =
+            HandshakeVerifier::new(context(), DEFAULT_NONCE_TTL_MS).expect("verifier");
         let nonce = verifier.issue_nonce(1_000).expect("nonce");
         let mut swapped = request(&verifier, &nonce.value);
         swapped.client_role = "compatibility-shell".into();
@@ -497,7 +504,8 @@ mod tests {
 
     #[test]
     fn rejects_foreign_identity_and_unknown_role() {
-        let mut verifier = HandshakeVerifier::new(context(), DEFAULT_NONCE_TTL_MS).expect("verifier");
+        let mut verifier =
+            HandshakeVerifier::new(context(), DEFAULT_NONCE_TTL_MS).expect("verifier");
         let nonce = verifier.issue_nonce(1_000).expect("nonce");
         let mut foreign = request(&verifier, &nonce.value);
         foreign.peer.user_sid = "S-1-5-21-9-9-9-500".into();
@@ -517,7 +525,8 @@ mod tests {
 
     #[test]
     fn rejects_major_mismatch_and_malformed_identity() {
-        let mut verifier = HandshakeVerifier::new(context(), DEFAULT_NONCE_TTL_MS).expect("verifier");
+        let mut verifier =
+            HandshakeVerifier::new(context(), DEFAULT_NONCE_TTL_MS).expect("verifier");
         let nonce = verifier.issue_nonce(1_000).expect("nonce");
         let mut wrong_major = request(&verifier, &nonce.value);
         wrong_major.protocol_major = 2;
@@ -542,7 +551,8 @@ mod tests {
         developer.expected_logon_session = String::new();
         assert!(!developer.is_authenticated());
 
-        let mut verifier = HandshakeVerifier::new(developer, DEFAULT_NONCE_TTL_MS).expect("verifier");
+        let mut verifier =
+            HandshakeVerifier::new(developer, DEFAULT_NONCE_TTL_MS).expect("verifier");
         let nonce = verifier.issue_nonce(1_000).expect("nonce");
         let mut anonymous = request(&verifier, &nonce.value);
         anonymous.peer = PeerIdentity::default();
@@ -585,7 +595,10 @@ mod tests {
             validate_pipe_name(&format!("{PIPE_PREFIX}evohime core")),
             Err(SessionError::InvalidIdentifier)
         );
-        assert_eq!(SessionSecret::parse("abc"), Err(SessionError::MalformedValue));
+        assert_eq!(
+            SessionSecret::parse("abc"),
+            Err(SessionError::MalformedValue)
+        );
     }
 
     /// Pins the proof derivation across the three implementations: this crate,
@@ -596,7 +609,11 @@ mod tests {
     fn proof_matches_the_shared_cross_implementation_vector() {
         let secret = SessionSecret::parse(&"ab".repeat(SECRET_BYTES)).expect("secret");
         assert_eq!(
-            secret.proof("compatibility-shell", "EvoHime.Desktop", &"cd".repeat(NONCE_BYTES)),
+            secret.proof(
+                "compatibility-shell",
+                "EvoHime.Desktop",
+                &"cd".repeat(NONCE_BYTES)
+            ),
             "e7c7b06966269a86caf38e32d01ceccf5f1e9c52ab1e6646ac486c6e074941f3"
         );
     }

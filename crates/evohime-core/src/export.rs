@@ -76,7 +76,9 @@ pub fn local_data_dir() -> PathBuf {
 fn data_dir() -> PathBuf {
     std::env::var_os("EVOHIME_DATA_DIR")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("LOCALAPPDATA").map(|path| PathBuf::from(path).join("EvoHime")))
+        .or_else(|| {
+            std::env::var_os("LOCALAPPDATA").map(|path| PathBuf::from(path).join("EvoHime"))
+        })
         .unwrap_or_else(|| PathBuf::from(".evohime"))
 }
 
@@ -244,10 +246,8 @@ mod tests {
     static ENV_GUARD: Mutex<()> = Mutex::new(());
 
     fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "evohime-export-test-{name}-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("evohime-export-test-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir

@@ -129,7 +129,7 @@ pub async fn execute(ctx: &ToolContext, value: Value) -> Result<ToolResult, Tool
         let end = usize::try_from(old_index)
             .map_err(|_| ToolError::Execution("patch end is outside file".into()))?;
         if begin > lines.len() || end > lines.len() || begin > end {
-             return Err(ToolError::Execution("patch range is out of bounds".into()));
+            return Err(ToolError::Execution("patch range is out of bounds".into()));
         }
         lines.splice(begin..end, replacements.clone());
         offset += replacements.len() as isize - (end - begin) as isize;
@@ -188,5 +188,4 @@ mod tests {
 
         assert!(validate_input(&value).is_err());
     }
-
 }

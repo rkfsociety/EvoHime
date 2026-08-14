@@ -13,8 +13,7 @@ use std::{
     fs::{self, File},
     io::{self, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
-    ptr,
-    thread,
+    ptr, thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -143,12 +142,16 @@ impl LocalDatabase {
         let destination = destination.as_ref();
         reject_existing_destination(destination)?;
         ensure_parent(destination)?;
-        report_progress(&mut progress, &mut cancelled, progress_event(
-            BackupProgressPhase::Prepare,
-            0,
-            Some(5),
-            "preparing SQLite backup",
-        ))?;
+        report_progress(
+            &mut progress,
+            &mut cancelled,
+            progress_event(
+                BackupProgressPhase::Prepare,
+                0,
+                Some(5),
+                "preparing SQLite backup",
+            ),
+        )?;
 
         checkpoint(&self.connection)?;
         let sqlite_path = temporary_sibling(destination, "sqlite");
@@ -156,13 +159,22 @@ impl LocalDatabase {
         let container_path = temporary_sibling(destination, "container");
         let result = (|| {
             let objects = object_summary(&self.connection)?;
-            let _sqlite_size = online_backup(&self.connection, &sqlite_path, &mut progress, &mut cancelled)?;
-            report_progress(&mut progress, &mut cancelled, progress_event(
-                BackupProgressPhase::Validate,
-                2,
-                Some(5),
-                "validating SQLite backup",
-            ))?;
+            let _sqlite_size = online_backup(
+                &self.connection,
+                &sqlite_path,
+                &mut progress,
+                &mut cancelled,
+            )?;
+            report_progress(
+                &mut progress,
+                &mut cancelled,
+                progress_event(
+                    BackupProgressPhase::Validate,
+                    2,
+                    Some(5),
+                    "validating SQLite backup",
+                ),
+            )?;
             validate_sqlite(&sqlite_path, self.schema_version()?)?;
             if cancelled() {
                 return Err(StorageError::BackupCancelled);
@@ -179,27 +191,34 @@ impl LocalDatabase {
                 objects,
                 source_name: file_name(self.path()),
             };
-            report_progress(&mut progress, &mut cancelled, progress_event(
-                BackupProgressPhase::Backup,
-                3,
-                Some(5),
-                "writing backup container",
-            ))?;
+            report_progress(
+                &mut progress,
+                &mut cancelled,
+                progress_event(
+                    BackupProgressPhase::Backup,
+                    3,
+                    Some(5),
+                    "writing backup container",
+                ),
+            )?;
             write_container(&container_path, &protected_path, &manifest)?;
-            report_progress(&mut progress, &mut cancelled, progress_event(
-                BackupProgressPhase::Cleanup,
-                4,
-                Some(5),
-                "committing backup container",
-            ))?;
+            report_progress(
+                &mut progress,
+                &mut cancelled,
+                progress_event(
+                    BackupProgressPhase::Cleanup,
+                    4,
+                    Some(5),
+                    "committing backup container",
+                ),
+            )?;
             fs::rename(&container_path, destination)?;
             let container_size = fs::metadata(destination)?.len();
-            report_progress(&mut progress, &mut cancelled, progress_event(
-                BackupProgressPhase::Cleanup,
-                5,
-                Some(5),
-                "backup completed",
-            ))?;
+            report_progress(
+                &mut progress,
+                &mut cancelled,
+                progress_event(BackupProgressPhase::Cleanup, 5, Some(5), "backup completed"),
+            )?;
             Ok(BackupResult {
                 preview: manifest.preview(container_size),
                 destination_name: file_name(destination),
@@ -263,7 +282,13 @@ impl LocalDatabase {
         app_version: &str,
         progress: impl FnMut(BackupProgress),
     ) -> Result<RestoreResult, StorageError> {
-        self.restore_backup_with_cancel(backup_path, safety_backup_path, app_version, progress, || false)
+        self.restore_backup_with_cancel(
+            backup_path,
+            safety_backup_path,
+            app_version,
+            progress,
+            || false,
+        )
     }
 
     pub fn restore_backup_with_cancel(
@@ -278,51 +303,72 @@ impl LocalDatabase {
         let safety_backup_path = safety_backup_path.as_ref();
         reject_existing_destination(safety_backup_path)?;
         ensure_parent(safety_backup_path)?;
-        report_progress(&mut progress, &mut cancelled, progress_event(
-            BackupProgressPhase::Prepare,
-            0,
-            Some(6),
-            "preparing restore",
-        ))?;
+        report_progress(
+            &mut progress,
+            &mut cancelled,
+            progress_event(
+                BackupProgressPhase::Prepare,
+                0,
+                Some(6),
+                "preparing restore",
+            ),
+        )?;
         let expected_schema = self.schema_version()?;
-        let extracted = extract_database(backup_path, expected_schema, &mut progress, &mut cancelled)?;
+        let extracted =
+            extract_database(backup_path, expected_schema, &mut progress, &mut cancelled)?;
         if extracted.preview.app_version.is_empty() || app_version.trim().is_empty() {
             return Err(StorageError::BackupFormat(
                 "backup and application versions must be present".into(),
             ));
         }
-        report_progress(&mut progress, &mut cancelled, progress_event(
-            BackupProgressPhase::Backup,
-            2,
-            Some(6),
-            "creating pre-restore safety backup",
-        ))?;
+        report_progress(
+            &mut progress,
+            &mut cancelled,
+            progress_event(
+                BackupProgressPhase::Backup,
+                2,
+                Some(6),
+                "creating pre-restore safety backup",
+            ),
+        )?;
         self.create_backup_with_cancel(safety_backup_path, app_version, |_| {}, &mut cancelled)?;
 
         let restore_result = (|| {
-            report_progress(&mut progress, &mut cancelled, progress_event(
-                BackupProgressPhase::Restore,
-                3,
-                Some(6),
-                "restoring validated SQLite image",
-            ))?;
+            report_progress(
+                &mut progress,
+                &mut cancelled,
+                progress_event(
+                    BackupProgressPhase::Restore,
+                    3,
+                    Some(6),
+                    "restoring validated SQLite image",
+                ),
+            )?;
             if cancelled() {
                 return Err(StorageError::BackupCancelled);
             }
             atomic_swap_database(self, &extracted.path, expected_schema)?;
-            report_progress(&mut progress, &mut cancelled, progress_event(
-                BackupProgressPhase::Reopen,
-                4,
-                Some(6),
-                "reopening restored SQLite state",
-            ))?;
+            report_progress(
+                &mut progress,
+                &mut cancelled,
+                progress_event(
+                    BackupProgressPhase::Reopen,
+                    4,
+                    Some(6),
+                    "reopening restored SQLite state",
+                ),
+            )?;
             validate_sqlite_connection(&self.connection, expected_schema)?;
-            report_progress(&mut progress, &mut cancelled, progress_event(
-                BackupProgressPhase::Cleanup,
-                5,
-                Some(6),
-                "restore completed",
-            ))?;
+            report_progress(
+                &mut progress,
+                &mut cancelled,
+                progress_event(
+                    BackupProgressPhase::Cleanup,
+                    5,
+                    Some(6),
+                    "restore completed",
+                ),
+            )?;
             Ok(RestoreResult {
                 preview: extracted.preview.clone(),
                 safety_backup_name: file_name(safety_backup_path),
@@ -409,12 +455,16 @@ fn online_backup(
         let current = backup.progress();
         let completed = current.pagecount.saturating_sub(current.remaining).max(0) as u64;
         let total = (current.pagecount > 0).then_some(current.pagecount as u64);
-        report_progress(progress, cancelled, progress_event(
-            BackupProgressPhase::Backup,
-            completed,
-            total,
-            "copying SQLite pages",
-        ))?;
+        report_progress(
+            progress,
+            cancelled,
+            progress_event(
+                BackupProgressPhase::Backup,
+                completed,
+                total,
+                "copying SQLite pages",
+            ),
+        )?;
         match step {
             StepResult::Done => break,
             StepResult::More | StepResult::Busy | StepResult::Locked => {
@@ -443,12 +493,16 @@ fn extract_database(
             actual: manifest.schema_version,
         });
     }
-    report_progress(progress, cancelled, progress_event(
-        BackupProgressPhase::Validate,
-        1,
-        Some(6),
-        "validating backup checksum",
-    ))?;
+    report_progress(
+        progress,
+        cancelled,
+        progress_event(
+            BackupProgressPhase::Validate,
+            1,
+            Some(6),
+            "validating backup checksum",
+        ),
+    )?;
     let extracted_path = temporary_sibling(backup_path, "restore");
     let encrypted_path = temporary_sibling(backup_path, "encrypted");
     let result = (|| {
@@ -611,7 +665,9 @@ fn crypt_bytes(input: &[u8], protect: bool) -> Result<Vec<u8>, StorageError> {
             "Windows DPAPI rejected the backup payload".into(),
         ));
     }
-    let result = unsafe { std::slice::from_raw_parts(output_blob.pb_data, output_blob.cb_data as usize).to_vec() };
+    let result = unsafe {
+        std::slice::from_raw_parts(output_blob.pb_data, output_blob.cb_data as usize).to_vec()
+    };
     unsafe { LocalFree(output_blob.pb_data.cast()) };
     Ok(result)
 }

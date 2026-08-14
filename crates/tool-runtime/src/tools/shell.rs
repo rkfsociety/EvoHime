@@ -331,7 +331,11 @@ mod tests {
         }));
         assert_eq!(
             result,
-            Some(("rm".to_string(), vec!["-rf".to_string(), "target".to_string()], None))
+            Some((
+                "rm".to_string(),
+                vec!["-rf".to_string(), "target".to_string()],
+                None
+            ))
         );
     }
 
@@ -382,7 +386,11 @@ mod tests {
         }));
         assert_eq!(
             result,
-            Some(("rm".to_string(), vec!["-rf".to_string(), "target".to_string()], None))
+            Some((
+                "rm".to_string(),
+                vec!["-rf".to_string(), "target".to_string()],
+                None
+            ))
         );
     }
 
@@ -442,8 +450,14 @@ mod tests {
         .expect("git invalid option succeeds structurally");
 
         // Check that ok flag is false for a non-zero exit code.
-        assert_ne!(result.structured.get("exit_code").and_then(|v| v.as_i64()), Some(0));
-        assert_eq!(result.structured.get("ok").and_then(|v| v.as_bool()), Some(false));
+        assert_ne!(
+            result.structured.get("exit_code").and_then(|v| v.as_i64()),
+            Some(0)
+        );
+        assert_eq!(
+            result.structured.get("ok").and_then(|v| v.as_bool()),
+            Some(false)
+        );
     }
 
     #[tokio::test]
@@ -473,7 +487,13 @@ mod tests {
         .expect("git command succeeds");
 
         // Check that ok flag is true when exit_code is 0
-        assert_eq!(result.structured.get("exit_code").and_then(|v| v.as_i64()), Some(0));
-        assert_eq!(result.structured.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(
+            result.structured.get("exit_code").and_then(|v| v.as_i64()),
+            Some(0)
+        );
+        assert_eq!(
+            result.structured.get("ok").and_then(|v| v.as_bool()),
+            Some(true)
+        );
     }
 }

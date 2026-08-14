@@ -127,7 +127,11 @@ impl FeedbackRecord {
             validate_bounded("correction", correction, MAX_CORRECTION_BYTES)?;
         }
         if let Some(rejection_reason) = &self.rejection_reason {
-            validate_bounded("rejection_reason", rejection_reason, MAX_REJECTION_REASON_BYTES)?;
+            validate_bounded(
+                "rejection_reason",
+                rejection_reason,
+                MAX_REJECTION_REASON_BYTES,
+            )?;
         }
         if let Some(outcome) = &self.outcome {
             validate_bounded("outcome", outcome, MAX_OUTCOME_BYTES)?;
@@ -150,14 +154,22 @@ pub enum FeedbackStoreError {
     Sqlite(#[from] rusqlite::Error),
 }
 
-fn validate_required(field: &'static str, value: &str, max: usize) -> Result<(), FeedbackStoreError> {
+fn validate_required(
+    field: &'static str,
+    value: &str,
+    max: usize,
+) -> Result<(), FeedbackStoreError> {
     if value.trim().is_empty() {
         return Err(FeedbackStoreError::Empty { field });
     }
     validate_bounded(field, value, max)
 }
 
-fn validate_bounded(field: &'static str, value: &str, max: usize) -> Result<(), FeedbackStoreError> {
+fn validate_bounded(
+    field: &'static str,
+    value: &str,
+    max: usize,
+) -> Result<(), FeedbackStoreError> {
     if value.len() > max {
         return Err(FeedbackStoreError::Limit { field, max });
     }
@@ -229,7 +241,10 @@ impl FeedbackStoreSql {
         correction, rejection_reason, outcome, provenance, created_at
         FROM feedback_entries WHERE run_id = ?1 ORDER BY created_at DESC, id ASC LIMIT ?2";
 
-    pub fn insert(connection: &Connection, record: &FeedbackRecord) -> Result<(), FeedbackStoreError> {
+    pub fn insert(
+        connection: &Connection,
+        record: &FeedbackRecord,
+    ) -> Result<(), FeedbackStoreError> {
         record.validate()?;
         connection.execute(
             Self::INSERT,
@@ -390,7 +405,11 @@ mod tests {
             .expect("insert f-1");
         FeedbackStoreSql::insert(
             &connection,
-            &record("f-2", FeedbackSignal::NotUseful, Some("should retry differently")),
+            &record(
+                "f-2",
+                FeedbackSignal::NotUseful,
+                Some("should retry differently"),
+            ),
         )
         .expect("insert f-2");
 
@@ -409,8 +428,10 @@ mod tests {
     fn aggregate_counts_signals_and_rejection_reasons() {
         let connection = Connection::open_in_memory().expect("sqlite opens");
         schema(&connection);
-        FeedbackStoreSql::insert(&connection, &record("f-1", FeedbackSignal::Useful, None)).unwrap();
-        FeedbackStoreSql::insert(&connection, &record("f-2", FeedbackSignal::Useful, None)).unwrap();
+        FeedbackStoreSql::insert(&connection, &record("f-1", FeedbackSignal::Useful, None))
+            .unwrap();
+        FeedbackStoreSql::insert(&connection, &record("f-2", FeedbackSignal::Useful, None))
+            .unwrap();
         let mut rejected = record("f-3", FeedbackSignal::NotUseful, None);
         rejected.rejection_reason = Some("wrong tool chosen".to_owned());
         FeedbackStoreSql::insert(&connection, &rejected).unwrap();

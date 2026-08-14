@@ -216,7 +216,6 @@ impl Drop for JobObject {
     }
 }
 
-
 /// Protected launch context for one supervisor session.
 ///
 /// The context file lives in a directory whose DACL grants only the owning
@@ -265,7 +264,10 @@ impl SupervisorSession {
             unsafe { CloseHandle(liveness) };
             return Err(error.into());
         }
-        Ok(Self { context_path, _liveness: SupervisorLiveness(liveness) })
+        Ok(Self {
+            context_path,
+            _liveness: SupervisorLiveness(liveness),
+        })
     }
 }
 
@@ -436,12 +438,7 @@ fn restart_backoff_cap() -> StdDuration {
     StdDuration::from_millis(millis)
 }
 
-fn restart_backoff(
-    restart: u32,
-    base: StdDuration,
-    cap: StdDuration,
-    entropy: u64,
-) -> Duration {
+fn restart_backoff(restart: u32, base: StdDuration, cap: StdDuration, entropy: u64) -> Duration {
     let exponent = restart.saturating_sub(1).min(20);
     let exponential_ms = base
         .as_millis()
@@ -727,7 +724,10 @@ mod tests {
             let path = session.context_path.clone();
             let context = evohime_desktop_ipc::session::read_launch_context(&path)
                 .expect("context is readable and valid");
-            assert!(context.is_authenticated(), "context binds a Windows identity");
+            assert!(
+                context.is_authenticated(),
+                "context binds a Windows identity"
+            );
             assert!(context
                 .pipe_name
                 .starts_with(evohime_desktop_ipc::session::PIPE_PREFIX));

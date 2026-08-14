@@ -24,7 +24,9 @@ use crate::capability_registry::{
     RoleRef, SkillRef,
 };
 use crate::doctor::{DoctorReport, ProviderProbe};
-use crate::memory_domain::{CreateMemory, ListMemory, MemoryDomain, MemoryScope, PrivacyLabel, ProvenanceRef};
+use crate::memory_domain::{
+    CreateMemory, ListMemory, MemoryDomain, MemoryScope, PrivacyLabel, ProvenanceRef,
+};
 use crate::research::{ResearchEvidence, SourceMetadata};
 use crate::workflow::{
     ApprovalPolicy, CancellationPolicy, ExecutionPolicy, NodeType, Port, PortType, RetryPolicy,
@@ -154,12 +156,7 @@ pub fn run_all() -> EvalSummary {
     let mut results = Vec::new();
     for case in all_cases() {
         let outcome = (case.run)();
-        results.push((
-            case.category,
-            case.name,
-            outcome.is_ok(),
-            outcome.err(),
-        ));
+        results.push((case.category, case.name, outcome.is_ok(), outcome.err()));
     }
     EvalSummary { results }
 }
@@ -315,13 +312,15 @@ fn require(condition: bool, message: impl Into<String>) -> Result<(), String> {
 mod skill_selection {
     use super::*;
 
-    fn manifest(name: &str, tools: &[&str], domains: &[&str], risk: RiskClass) -> CapabilityManifest {
+    fn manifest(
+        name: &str,
+        tools: &[&str],
+        domains: &[&str],
+        risk: RiskClass,
+    ) -> CapabilityManifest {
         let content_hash = "0123456789abcdef0123456789abcdef".to_string();
-        let signature = crate::capability_registry::test_sign_with_trusted_key(
-            name,
-            "1.0.0",
-            &content_hash,
-        );
+        let signature =
+            crate::capability_registry::test_sign_with_trusted_key(name, "1.0.0", &content_hash);
         CapabilityManifest {
             name: name.into(),
             version: "1.0.0".into(),
@@ -377,10 +376,16 @@ mod skill_selection {
         };
         let matches = match_capabilities(&[code_reviewer, release_notes], &query)
             .map_err(|error| format!("match_capabilities failed: {error}"))?;
-        require(matches.len() == 2, "expected both candidates to be eligible")?;
+        require(
+            matches.len() == 2,
+            "expected both candidates to be eligible",
+        )?;
         require(
             matches[0].manifest_name == "code-reviewer",
-            format!("expected code-reviewer to win, got {}", matches[0].manifest_name),
+            format!(
+                "expected code-reviewer to win, got {}",
+                matches[0].manifest_name
+            ),
         )?;
         require(
             matches[0].score > matches[1].score,
@@ -550,12 +555,7 @@ mod plan_quality {
                     vec![text_port("in", true)],
                     vec![text_port("summary", false)],
                 ),
-                node(
-                    "apply",
-                    NodeType::Tool,
-                    vec![text_port("in", true)],
-                    vec![],
-                ),
+                node("apply", NodeType::Tool, vec![text_port("in", true)], vec![]),
             ],
             edges: vec![
                 edge("research", "findings", "transform", "in"),
@@ -574,14 +574,29 @@ mod plan_quality {
             version: 1,
             entry_node: "a".into(),
             nodes: vec![
-                node("a", NodeType::Transform, vec![text_port("in", true)], vec![text_port("out", false)]),
-                node("b", NodeType::Transform, vec![text_port("in", true)], vec![text_port("out", false)]),
+                node(
+                    "a",
+                    NodeType::Transform,
+                    vec![text_port("in", true)],
+                    vec![text_port("out", false)],
+                ),
+                node(
+                    "b",
+                    NodeType::Transform,
+                    vec![text_port("in", true)],
+                    vec![text_port("out", false)],
+                ),
             ],
             edges: vec![edge("a", "out", "b", "in"), edge("b", "out", "a", "in")],
         };
-        let errors = graph.validate().err().ok_or("expected the cyclic plan to be rejected")?;
+        let errors = graph
+            .validate()
+            .err()
+            .ok_or("expected the cyclic plan to be rejected")?;
         require(
-            errors.iter().any(|error| matches!(error, ValidationError::Cycle(_))),
+            errors
+                .iter()
+                .any(|error| matches!(error, ValidationError::Cycle(_))),
             format!("expected a Cycle error, got {errors:?}"),
         )
     }
@@ -606,9 +621,9 @@ mod plan_quality {
             .err()
             .ok_or("expected the dangling dependency to be rejected")?;
         require(
-            errors
-                .iter()
-                .any(|error| matches!(error, ValidationError::UnknownNode(id) if id == "not-declared")),
+            errors.iter().any(
+                |error| matches!(error, ValidationError::UnknownNode(id) if id == "not-declared"),
+            ),
             format!("expected UnknownNode(\"not-declared\"), got {errors:?}"),
         )
     }
@@ -616,9 +631,19 @@ mod plan_quality {
     /// An edge connecting a `Text` output to an `Integer` input is a type
     /// mismatch and must be rejected, not silently coerced.
     pub fn type_mismatch_is_rejected() -> Result<(), String> {
-        let mut source = node("a", NodeType::Transform, vec![], vec![text_port("out", false)]);
+        let mut source = node(
+            "a",
+            NodeType::Transform,
+            vec![],
+            vec![text_port("out", false)],
+        );
         source.outputs[0].value_type = PortType::Text;
-        let mut sink = node("b", NodeType::Transform, vec![text_port("in", true)], vec![]);
+        let mut sink = node(
+            "b",
+            NodeType::Transform,
+            vec![text_port("in", true)],
+            vec![],
+        );
         sink.inputs[0].value_type = PortType::Integer;
         let graph = WorkflowGraph {
             graph_id: "eval-plan-quality-type-mismatch".into(),
@@ -632,7 +657,9 @@ mod plan_quality {
             .err()
             .ok_or("expected the type mismatch to be rejected")?;
         require(
-            errors.iter().any(|error| matches!(error, ValidationError::TypeMismatch { .. })),
+            errors
+                .iter()
+                .any(|error| matches!(error, ValidationError::TypeMismatch { .. })),
             format!("expected TypeMismatch, got {errors:?}"),
         )
     }
@@ -697,7 +724,10 @@ mod ipc_compatibility {
         .map_err(|error| format!("expected negotiation to succeed, got {error}"))?;
         require(
             negotiated.capabilities == vec!["b".to_string()],
-            format!("expected only the peer-advertised capability, got {:?}", negotiated.capabilities),
+            format!(
+                "expected only the peer-advertised capability, got {:?}",
+                negotiated.capabilities
+            ),
         )
     }
 }
@@ -762,7 +792,11 @@ mod cancellation {
             entry_node: "research".into(),
             nodes: vec![
                 node("research", vec![], vec![text_port("out", false)]),
-                node("summarize", vec![text_port("in", true)], vec![text_port("out", false)]),
+                node(
+                    "summarize",
+                    vec![text_port("in", true)],
+                    vec![text_port("out", false)],
+                ),
                 node("publish", vec![text_port("in", true)], vec![]),
             ],
             edges: vec![edge("research", "summarize"), edge("summarize", "publish")],
@@ -794,7 +828,11 @@ mod cancellation {
             version: 1,
             entry_node: "start".into(),
             nodes: vec![
-                node("start", vec![], vec![text_port("left", false), text_port("right", false)]),
+                node(
+                    "start",
+                    vec![],
+                    vec![text_port("left", false), text_port("right", false)],
+                ),
                 node("left-child", vec![text_port("in", true)], vec![]),
                 node("right-child", vec![text_port("in", true)], vec![]),
             ],
@@ -931,8 +969,16 @@ mod replay {
             entry_node: "a".into(),
             nodes: vec![
                 node("a", vec![], vec![text_port("out", false)]),
-                node("b", vec![text_port("in", true)], vec![text_port("out", false)]),
-                node("c", vec![text_port("in", true)], vec![text_port("out", false)]),
+                node(
+                    "b",
+                    vec![text_port("in", true)],
+                    vec![text_port("out", false)],
+                ),
+                node(
+                    "c",
+                    vec![text_port("in", true)],
+                    vec![text_port("out", false)],
+                ),
                 node(
                     "d",
                     vec![text_port("in_b", true), text_port("in_c", true)],
@@ -963,7 +1009,10 @@ mod replay {
         )]);
         let first = plan_workflow(&graph, &decisions).map_err(|error| format!("{error:?}"))?;
         let second = plan_workflow(&graph, &decisions).map_err(|error| format!("{error:?}"))?;
-        require(first == second, "expected two plans over identical inputs to be equal")
+        require(
+            first == second,
+            "expected two plans over identical inputs to be equal",
+        )
     }
 
     /// Node input order must not leak into the replayed plan: an operator
@@ -981,8 +1030,16 @@ mod replay {
         let shuffled_plan =
             plan_workflow(&shuffled, &decisions).map_err(|error| format!("{error:?}"))?;
 
-        let canonical_order: Vec<_> = canonical_plan.steps.iter().map(|s| s.node_id.clone()).collect();
-        let shuffled_order: Vec<_> = shuffled_plan.steps.iter().map(|s| s.node_id.clone()).collect();
+        let canonical_order: Vec<_> = canonical_plan
+            .steps
+            .iter()
+            .map(|s| s.node_id.clone())
+            .collect();
+        let shuffled_order: Vec<_> = shuffled_plan
+            .steps
+            .iter()
+            .map(|s| s.node_id.clone())
+            .collect();
         require(
             canonical_order == shuffled_order,
             format!("node order leaked into the plan: {canonical_order:?} vs {shuffled_order:?}"),
@@ -1058,7 +1115,10 @@ mod citations {
     pub fn oversized_content_is_rejected() -> Result<(), String> {
         let oversized = "x".repeat(crate::research::MAX_EXCERPT_CHARS + 1);
         let result = ResearchEvidence::capture(source(), oversized, 2_000_000, 60_000);
-        require(result.is_err(), "oversized content must be rejected, not truncated")
+        require(
+            result.is_err(),
+            "oversized content must be rejected, not truncated",
+        )
     }
 }
 
@@ -1200,7 +1260,10 @@ mod routing {
     /// privacy class (`Public`) does not satisfy the requirement, so the
     /// only eligible candidate is the local one.
     pub fn restricted_privacy_never_selects_cloud() -> Result<(), String> {
-        let candidates = vec![cloud_route(PrivacyClass::Public), local_route(PrivacyClass::Restricted)];
+        let candidates = vec![
+            cloud_route(PrivacyClass::Public),
+            local_route(PrivacyClass::Restricted),
+        ];
         let request = RoutingRequest {
             required_capabilities: vec!["chat".into()],
             max_cost_micros_per_1k_tokens: None,
@@ -1212,14 +1275,23 @@ mod routing {
             .map_err(|error| format!("select_route failed: {error:?}"))?;
         require(
             decision.kind == DecisionKind::Selected,
-            format!("expected a clean Selected decision, got {:?}", decision.kind),
+            format!(
+                "expected a clean Selected decision, got {:?}",
+                decision.kind
+            ),
         )?;
         require(
             decision.selected_route.as_deref() == Some("local-only"),
-            format!("expected the local route, got {:?}", decision.selected_route),
+            format!(
+                "expected the local route, got {:?}",
+                decision.selected_route
+            ),
         )?;
         require(
-            decision.fallback_chain.iter().all(|route| route != "cloud-fast"),
+            decision
+                .fallback_chain
+                .iter()
+                .all(|route| route != "cloud-fast"),
             "the cloud route must not even appear in the fallback chain for a Restricted request",
         )
     }
@@ -1345,7 +1417,8 @@ mod ui_truthfulness {
         )?;
 
         snapshot.storage.schema_version = Some(1);
-        let degraded = DoctorReport::from_snapshot(&snapshot).map_err(|error| format!("{error:?}"))?;
+        let degraded =
+            DoctorReport::from_snapshot(&snapshot).map_err(|error| format!("{error:?}"))?;
         let storage_check = degraded
             .checks
             .iter()

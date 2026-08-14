@@ -206,11 +206,8 @@ mod tests {
 
     fn manifest(name: &str) -> CapabilityManifest {
         let content_hash = "0123456789abcdef0123456789abcdef".to_string();
-        let signature = crate::capability_registry::test_sign_with_trusted_key(
-            name,
-            "1.0.0",
-            &content_hash,
-        );
+        let signature =
+            crate::capability_registry::test_sign_with_trusted_key(name, "1.0.0", &content_hash);
         CapabilityManifest {
             name: name.into(),
             version: "1.0.0".into(),

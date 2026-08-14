@@ -296,10 +296,11 @@ impl ToolRegistry {
                 command: command.as_deref(),
             };
             let decision = match canonical_subject.as_deref() {
-                Some(subject) => self
-                    .permissions
-                    .check_scoped_with_subject(*permission, &check, subject)
-                    .await,
+                Some(subject) => {
+                    self.permissions
+                        .check_scoped_with_subject(*permission, &check, subject)
+                        .await
+                }
                 None => self.permissions.check_scoped(*permission, &check).await,
             };
             match decision {
@@ -407,10 +408,11 @@ impl ToolRegistry {
                 command: command.as_deref(),
             };
             let decision = match canonical_subject.as_deref() {
-                Some(subject) => self
-                    .permissions
-                    .check_scoped_with_subject(*permission, &check, subject)
-                    .await,
+                Some(subject) => {
+                    self.permissions
+                        .check_scoped_with_subject(*permission, &check, subject)
+                        .await
+                }
                 None => self.permissions.check_scoped(*permission, &check).await,
             };
             if matches!(decision, evohime_permissions::PermissionDecision::Denied) {
@@ -555,10 +557,7 @@ fn canonical_policy_subject(
     }
 
     let sandbox = ctx.sandbox()?;
-    let path = input
-        .get("path")
-        .and_then(Value::as_str)
-        .unwrap_or(".");
+    let path = input.get("path").and_then(Value::as_str).unwrap_or(".");
     let resolved = if tool_name == tools::write::NAME {
         sandbox.resolve_for_write(path)?
     } else {
@@ -566,10 +565,7 @@ fn canonical_policy_subject(
     };
     let subject = resolved.display().to_string().replace('\\', "/");
     Ok(Some(
-        subject
-            .strip_prefix("//?/")
-            .unwrap_or(&subject)
-            .to_string(),
+        subject.strip_prefix("//?/").unwrap_or(&subject).to_string(),
     ))
 }
 
@@ -655,7 +651,10 @@ fn approval_preview(
             truncated: false,
         },
         tools::write::NAME => {
-            let content = input.get("content").and_then(Value::as_str).unwrap_or_default();
+            let content = input
+                .get("content")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
             let bytes = content.len();
             let (details, truncated) = bounded_preview(content);
             ApprovalPreview {
@@ -1104,7 +1103,8 @@ mod tests {
         std::fs::create_dir(dir.path().join("secrets")).expect("secrets directory");
         std::fs::write(dir.path().join("secrets/token.txt"), "secret").expect("secret file");
         let canonical_root = dir.path().canonicalize().expect("canonical workspace");
-        let canonical_pattern = format!("{}/secrets/*", canonical_root.display()).replace('\\', "/");
+        let canonical_pattern =
+            format!("{}/secrets/*", canonical_root.display()).replace('\\', "/");
         let canonical_pattern = canonical_pattern
             .strip_prefix("//?/")
             .unwrap_or(&canonical_pattern)
@@ -1377,10 +1377,7 @@ mod tests {
         );
         let results = [first, second];
         assert_eq!(
-            results
-                .iter()
-                .filter(|result| result.is_ok())
-                .count(),
+            results.iter().filter(|result| result.is_ok()).count(),
             1,
             "one-shot approval must allow exactly one concurrent execution"
         );

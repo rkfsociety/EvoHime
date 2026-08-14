@@ -49,9 +49,8 @@ pub fn build_lesson(
         .collect::<Vec<_>>();
     tools.sort_unstable();
     tools.dedup();
-    let lesson_key = sha256_hex(
-        format!("{}|{}", tools.join(","), failure_names.join(",")).as_bytes(),
-    );
+    let lesson_key =
+        sha256_hex(format!("{}|{}", tools.join(","), failure_names.join(",")).as_bytes());
     let now = now_millis();
     let content = format!(
         "Инструменты: {}. Классы провалов: {}. Повторяй только после проверки аргументов и фактического состояния workspace.",

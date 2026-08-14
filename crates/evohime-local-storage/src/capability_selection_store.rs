@@ -202,7 +202,11 @@ mod tests {
             .expect("contract fixture creates");
     }
 
-    fn record(task_id: &str, origin: SelectionOrigin, manifest_name: &str) -> CapabilitySelectionRecord {
+    fn record(
+        task_id: &str,
+        origin: SelectionOrigin,
+        manifest_name: &str,
+    ) -> CapabilitySelectionRecord {
         CapabilitySelectionRecord {
             task_id: task_id.into(),
             origin,
@@ -272,9 +276,11 @@ mod tests {
         )
         .unwrap();
         assert!(CapabilitySelectionStoreSql::delete_by_task_id(&connection, "task-1").unwrap());
-        assert!(CapabilitySelectionStoreSql::get_by_task_id(&connection, "task-1")
-            .unwrap()
-            .is_none());
+        assert!(
+            CapabilitySelectionStoreSql::get_by_task_id(&connection, "task-1")
+                .unwrap()
+                .is_none()
+        );
 
         let mut invalid = record("task-1", SelectionOrigin::Auto, "reviewer");
         invalid.task_id.clear();

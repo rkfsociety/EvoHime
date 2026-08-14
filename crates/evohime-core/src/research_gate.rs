@@ -164,8 +164,10 @@ mod tests {
     fn classifies_security_dependency_and_api_scopes_by_keyword() {
         assert!(classify("Investigate a possible SSRF vulnerability")
             .contains(&SensitiveCategory::Security));
-        assert!(classify("Bump the cargo.toml dependency to the latest patch")
-            .contains(&SensitiveCategory::Dependency));
+        assert!(
+            classify("Bump the cargo.toml dependency to the latest patch")
+                .contains(&SensitiveCategory::Dependency)
+        );
         assert!(classify("Integrate with the third-party REST API")
             .contains(&SensitiveCategory::ExternalApi));
         assert!(classify("Rename a local variable for readability").is_empty());

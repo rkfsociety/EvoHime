@@ -282,7 +282,8 @@ fn launch_context() -> Result<evohime_desktop_ipc::session::LaunchContext, std::
         return read_launch_context(std::path::Path::new(&path));
     }
 
-    let pipe_name = std::env::var("EVOHIME_CORE_PIPE").unwrap_or_else(|_| r"\\.\pipe\evohime-core-v1".into());
+    let pipe_name =
+        std::env::var("EVOHIME_CORE_PIPE").unwrap_or_else(|_| r"\\.\pipe\evohime-core-v1".into());
     validate_pipe_name(&pipe_name).map_err(|error| std::io::Error::other(error.to_string()))?;
     Ok(LaunchContext {
         pipe_name,

@@ -24,16 +24,27 @@ impl ToolRiskLevel {
 /// execution begins.
 pub fn classify_call_risk(tool_name: &str, _input: &Value) -> ToolRiskLevel {
     match tool_name {
-        "filesystem.read" | "filesystem.search" | "filesystem.list" | "git.status"
-        | "git.diff" | "browser.open" | "browser.extract" | "browser.session.read"
-        | "browser.session.screenshot" | "memory.search" | "http.fetch" => ToolRiskLevel::None,
+        "filesystem.read"
+        | "filesystem.search"
+        | "filesystem.list"
+        | "git.status"
+        | "git.diff"
+        | "browser.open"
+        | "browser.extract"
+        | "browser.session.read"
+        | "browser.session.screenshot"
+        | "memory.search"
+        | "http.fetch" => ToolRiskLevel::None,
 
         "git.pull" | "browser.session.navigate" => ToolRiskLevel::Low,
 
-        "filesystem.write" | "filesystem.patch" | "git.commit" | "mcp.call"
-        | "browser.session.click" | "browser.session.type" | "agent.run" => {
-            ToolRiskLevel::Medium
-        }
+        "filesystem.write"
+        | "filesystem.patch"
+        | "git.commit"
+        | "mcp.call"
+        | "browser.session.click"
+        | "browser.session.type"
+        | "agent.run" => ToolRiskLevel::Medium,
 
         "shell.execute" | "git.push" => ToolRiskLevel::High,
 

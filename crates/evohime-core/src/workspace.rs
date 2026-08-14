@@ -410,16 +410,25 @@ mod tests {
         ];
         let first = base(&forward);
         let second = base(&reversed);
-        assert_eq!(first, second, "skill context order must not depend on caller-supplied insertion order");
+        assert_eq!(
+            first, second,
+            "skill context order must not depend on caller-supplied insertion order"
+        );
         assert!(first.contains("## Skill context"));
         let alpha_pos = first.find("### alpha").unwrap();
         let zeta_pos = first.find("### zeta").unwrap();
         let skill_pos = first.find("## Skill context").unwrap();
         let refs_pos = first.find("## Workspace references");
         assert!(alpha_pos < zeta_pos, "entries must be sorted by skill name");
-        assert!(skill_pos > first.find("## Non-goals").unwrap(), "skill context is fixed after non-goals");
+        assert!(
+            skill_pos > first.find("## Non-goals").unwrap(),
+            "skill context is fixed after non-goals"
+        );
         if let Some(refs_pos) = refs_pos {
-            assert!(skill_pos < refs_pos, "skill context is fixed before workspace references");
+            assert!(
+                skill_pos < refs_pos,
+                "skill context is fixed before workspace references"
+            );
         }
     }
 

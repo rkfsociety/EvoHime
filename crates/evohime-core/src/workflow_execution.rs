@@ -59,14 +59,24 @@ impl CancellationSource for NeverCancelled {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum NodeOutcome {
-    Succeeded { attempts: u32, output: Value },
-    Failed { attempts: u32, message: String },
-    TimedOut { attempts: u32 },
+    Succeeded {
+        attempts: u32,
+        output: Value,
+    },
+    Failed {
+        attempts: u32,
+        message: String,
+    },
+    TimedOut {
+        attempts: u32,
+    },
     Cancelled,
     Denied,
     AwaitApproval,
     /// Skipped because a dependency did not succeed.
-    Blocked { blocking_dependency: String },
+    Blocked {
+        blocking_dependency: String,
+    },
 }
 
 impl NodeOutcome {
@@ -112,8 +122,7 @@ pub async fn run_workflow(
     // below, so a neutral snapshot (attempt 1, no approval yet, not
     // cancelled) is enough to obtain the deterministic topological plan.
     let snapshot: BTreeMap<String, NodeDecision> = BTreeMap::new();
-    let plan: ExecutionPlan =
-        plan_workflow(graph, &snapshot).map_err(RunError::Planning)?;
+    let plan: ExecutionPlan = plan_workflow(graph, &snapshot).map_err(RunError::Planning)?;
 
     let nodes: BTreeMap<&str, &WorkflowNode> = graph
         .nodes
@@ -135,11 +144,9 @@ pub async fn run_workflow(
             continue;
         }
 
-        if let Some(blocking) = step
-            .dependencies
-            .iter()
-            .find(|dependency| !matches!(results.get(*dependency), Some(outcome) if outcome.is_success()))
-        {
+        if let Some(blocking) = step.dependencies.iter().find(
+            |dependency| !matches!(results.get(*dependency), Some(outcome) if outcome.is_success()),
+        ) {
             results.insert(
                 step.node_id.clone(),
                 NodeOutcome::Blocked {
@@ -196,7 +203,10 @@ pub async fn run_workflow(
                     }
                     let elapsed = started.elapsed();
                     let backoff = Duration::from_millis(
-                        node.execution.retry.backoff_ms.saturating_mul(attempt as u64),
+                        node.execution
+                            .retry
+                            .backoff_ms
+                            .saturating_mul(attempt as u64),
                     );
                     if backoff > elapsed {
                         tokio::time::sleep(backoff - elapsed).await;
@@ -244,13 +254,18 @@ pub async fn run_workflow(
 mod tests {
     use super::*;
     use crate::workflow::{
-        ApprovalPolicy, CancellationPolicy, ExecutionPolicy, NodeType, Port, PortType,
-        RetryPolicy, WorkflowEdge,
+        ApprovalPolicy, CancellationPolicy, ExecutionPolicy, NodeType, Port, PortType, RetryPolicy,
+        WorkflowEdge,
     };
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Mutex;
 
-    fn policy(max_attempts: u32, retryable: Vec<&str>, timeout_ms: u64, approval: bool) -> ExecutionPolicy {
+    fn policy(
+        max_attempts: u32,
+        retryable: Vec<&str>,
+        timeout_ms: u64,
+        approval: bool,
+    ) -> ExecutionPolicy {
         ExecutionPolicy {
             retry: RetryPolicy {
                 max_attempts,

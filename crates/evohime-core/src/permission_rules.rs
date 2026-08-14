@@ -82,10 +82,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn create_temp_dir() -> PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "evohime-test-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let path = std::env::temp_dir().join(format!("evohime-test-{}", uuid::Uuid::new_v4()));
         let _ = fs::create_dir_all(&path);
         path
     }

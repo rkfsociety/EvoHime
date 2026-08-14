@@ -543,7 +543,10 @@ mod tests {
         build.intent_hash = calculate_intent_hash(&build.scope, &build.changes);
         let snapshot = apply_approved_build(&root, "run-apply", &build).unwrap();
         assert_eq!(snapshot.run_id, "run-apply");
-        assert_eq!(snapshot.rollback_scope, super::RollbackScope::WorkspaceFilesOnly);
+        assert_eq!(
+            snapshot.rollback_scope,
+            super::RollbackScope::WorkspaceFilesOnly
+        );
         assert_eq!(fs::read_to_string(root.join("src/lib.rs")).unwrap(), "new");
         assert_eq!(snapshot.diff.len(), 1);
         assert_eq!(snapshot.diff[0].operation, "write");
@@ -747,10 +750,8 @@ mod tests {
             root.join("src/linked.rs"),
         );
         #[cfg(not(windows))]
-        let created = std::os::unix::fs::symlink(
-            root.join("outside/secret.rs"),
-            root.join("src/linked.rs"),
-        );
+        let created =
+            std::os::unix::fs::symlink(root.join("outside/secret.rs"), root.join("src/linked.rs"));
 
         if created.is_err() {
             // Creating a symlink requires elevated privilege / Developer Mode

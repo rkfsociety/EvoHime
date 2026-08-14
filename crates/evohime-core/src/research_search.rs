@@ -236,7 +236,10 @@ pub async fn run_search_pipeline(
     })?;
     let summary_sha256 = sha256_hex(redacted.as_bytes());
 
-    let citations: Vec<Citation> = fetched.iter().map(|outcome| outcome.citation.clone()).collect();
+    let citations: Vec<Citation> = fetched
+        .iter()
+        .map(|outcome| outcome.citation.clone())
+        .collect();
 
     Ok(SearchPipelineOutcome {
         fetched,
@@ -261,8 +264,7 @@ mod tests {
     };
 
     fn net_policy(domains: Vec<String>) -> NetworkCapabilityPolicy {
-        NetworkCapabilityPolicy::new(domains, 4096, 5000, 100, false, RefreshPolicy::Never)
-            .unwrap()
+        NetworkCapabilityPolicy::new(domains, 4096, 5000, 100, false, RefreshPolicy::Never).unwrap()
     }
 
     fn fetch_policy(domains: Vec<String>) -> ResearchPolicy {
@@ -325,7 +327,7 @@ mod tests {
             &net_policy(vec!["search.example".into()]),
             &fetch_policy(vec![domain]),
             3_600_000,
-            )
+        )
         .await
         .expect("search pipeline succeeds");
 

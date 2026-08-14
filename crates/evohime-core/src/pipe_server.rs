@@ -46,9 +46,9 @@ impl tokio::io::AsyncWrite for ChannelWriter {
     ) -> std::task::Poll<std::io::Result<usize>> {
         match self.0.send(buffer.to_vec()) {
             Ok(()) => std::task::Poll::Ready(Ok(buffer.len())),
-            Err(_) => std::task::Poll::Ready(Err(std::io::Error::from(
-                std::io::ErrorKind::BrokenPipe,
-            ))),
+            Err(_) => {
+                std::task::Poll::Ready(Err(std::io::Error::from(std::io::ErrorKind::BrokenPipe)))
+            }
         }
     }
 

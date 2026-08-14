@@ -19,15 +19,14 @@ use std::os::windows::io::RawHandle;
 use windows_sys::Win32::Foundation::{
     CloseHandle, LocalFree, ERROR_ALREADY_EXISTS, HANDLE, HLOCAL, INVALID_HANDLE_VALUE,
 };
-use windows_sys::Win32::Storage::FileSystem::CreateDirectoryW;
 use windows_sys::Win32::Security::Authorization::{
-    ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
-    SDDL_REVISION_1,
+    ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
 };
 use windows_sys::Win32::Security::{
     GetTokenInformation, RevertToSelf, TokenStatistics, TokenUser, PSECURITY_DESCRIPTOR,
     SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_STATISTICS, TOKEN_USER,
 };
+use windows_sys::Win32::Storage::FileSystem::CreateDirectoryW;
 use windows_sys::Win32::System::Pipes::ImpersonateNamedPipeClient;
 use windows_sys::Win32::System::Threading::{
     GetCurrentProcess, GetCurrentThread, OpenProcessToken, OpenThreadToken,
@@ -156,8 +155,7 @@ pub fn peer_identity(pipe: RawHandle) -> io::Result<PeerIdentity> {
 
     let identity = (|| {
         let mut token: HANDLE = std::ptr::null_mut();
-        let opened =
-            unsafe { OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, 1, &mut token) };
+        let opened = unsafe { OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, 1, &mut token) };
         if opened == 0 {
             return Err(io::Error::last_os_error());
         }

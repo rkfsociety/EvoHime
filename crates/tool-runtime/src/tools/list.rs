@@ -79,12 +79,9 @@ mod tests {
             progress_tx: None,
         };
 
-        let result = execute(&ctx, json!({}))
-            .await
-            .expect("list succeeds");
+        let result = execute(&ctx, json!({})).await.expect("list succeeds");
 
         assert!(result.output.contains("file1.txt"));
         assert!(result.output.contains("file2.txt"));
     }
-
 }
