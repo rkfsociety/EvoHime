@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory)]
     [string]$PackagePath,
-    [int]$TimeoutSeconds = 15
+    [int]$TimeoutSeconds = 30
 )
 
 $ErrorActionPreference = 'Stop'
