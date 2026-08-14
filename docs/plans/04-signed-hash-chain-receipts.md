@@ -29,21 +29,21 @@ receipt. Receipt доказывает авторство ключа, целос�
 
 ## Этапы
 
-### 1. Canonical contract
+### 04.1 Canonical contract
 
 - Зафиксировать canonical JSON encoding и versioned field rules.
 - Ограничить payload/receipt size и запретить свободные raw strings.
 - Добавить shared known-answer vectors для Rust, Electron verifier и будущего
   offline CLI.
 
-### 2. Key lifecycle
+### 04.2 Key lifecycle
 
 - Генерировать key pair при первом запуске через supervisor.
 - Защитить private key DPAPI/ACL, поддержать key id и rotation.
 - Не менять ключ молча: rotation создаёт chain metadata и audit event.
 - Public verification command не требует Core или сети.
 
-### 3. Runtime integration
+### 04.3 Runtime integration
 
 - Создавать pre-action receipt после policy/approval decision, но до mutation.
 - Создавать post-action receipt с result hash и status после выполнения.
@@ -52,7 +52,7 @@ receipt. Receipt доказывает авторство ключа, целос�
 - Для read-only действий применять configurable sampling, для mutations —
   полный audit.
 
-### 4. Chain storage и export
+### 04.4 Chain storage и export
 
 - Хранить bounded receipt metadata в SQLite и append-only JSONL export.
 - Данные arguments/results хранить отдельно только по существующим privacy и
@@ -93,10 +93,10 @@ receipt. Receipt доказывает авторство ключа, целос�
 
 ## Зависимости
 
-Блокирующие: Context Budget Manager (план 01) — payload содержит
-`context_ledger_hash`, а ledger владеет им; существующие approval,
-exact-call hash, diagnostics и Core-owned storage.
+Блокирующие: этап 01.1 — payload содержит `context_ledger_hash`, а ledger
+определён именно там; существующие approval, exact-call hash, diagnostics и
+Core-owned storage. Остальные этапы плана 01 этому плану не нужны.
 
-Опциональных интеграций нет. Что этот план обязан предоставить: receipts для
-child workflows (план 06), которые связывают действия ребёнка с approval
-родителя.
+Опциональных интеграций нет. Что этот план обязан предоставить: этап 04.3
+даёт child workflows (этап 06.1) связь действий ребёнка с approval родителя,
+а 04.4 — verify-chain для их аудита.

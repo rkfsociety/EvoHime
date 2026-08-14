@@ -72,7 +72,7 @@ run не публикует неполный индекс как актуаль�
 
 ## Этапы
 
-### 1. Bounded incremental indexing
+### 03.1 Bounded incremental indexing
 
 Поддержать README, Markdown, Rust, TypeScript, JSON, TOML, YAML и текстовые
 документы. Бинарные файлы по умолчанию исключаются; допустимые парсеры для PDF,
@@ -108,7 +108,7 @@ Incremental indexing использует file hash для быстрого пр
 до границ последующих chunks может потребовать перестроить их offsets; citation
 не должна полагаться на сохранённые номера строк.
 
-### 2. Retrieval v1: SQLite FTS5
+### 03.2 Retrieval v1: SQLite FTS5
 
 - Начать с SQLite FTS5 и встроенного `bm25()`; внешний search service не нужен.
 - Использовать стабильный tie-break: score, canonical path, document id,
@@ -126,7 +126,7 @@ Incremental indexing использует file hash для быстрого пр
   redaction status и stale status.
 - Не помещать целый файл в prompt только потому, что найден один chunk.
 
-### 3. Deterministic query planner и agentic loop
+### 03.3 Deterministic query planner и agentic loop
 
 Planner сначала выполняет локальный pre-check без LLM:
 
@@ -177,7 +177,7 @@ diagnostic log без секретного содержимого.
 streaming status: текущая стратегия, число найденных chunks, coverage,
 rewrite и причина завершения; частота обновлений ограничена.
 
-### 4. Embeddings как опциональный слой (phase 2)
+### 03.4 Embeddings как опциональный слой (phase 2)
 
 Embeddings добавляются только после acceptance FTS5 по заранее записанному
 evaluation catalog: precision/recall fixtures, latency, bounded context и
@@ -194,7 +194,7 @@ evaluation catalog: precision/recall fixtures, latency, bounded context и
 скоров. В результате показывать вклад lexical/vector. Embeddings можно включать
 только для выбранных языков или paths; FTS5 остаётся fallback.
 
-### 5. Citations и context integration
+### 03.5 Citations и context integration
 
 Context Budget Manager получает только selected evidence blocks. Отбор:
 
@@ -271,14 +271,16 @@ incremental run, текущий статус, stale/dirty state и source links.
 
 ## Зависимости и ограничения scope
 
-Блокирующие: Context Budget Manager (план 01) — он принимает selected evidence
-blocks и владеет context ledger; существующие filesystem sandbox, Memory v1 и
-SQLite FTS5.
+Блокирующие: этап 01.1 — он принимает selected evidence blocks и владеет
+context ledger, в который этап 03.5 пишет причину выбора; существующие
+filesystem sandbox, Memory v1 и SQLite FTS5. Остальные этапы плана 01 этому
+плану не нужны, а этапы 03.1–03.3 можно делать параллельно с 01.1: индекс,
+retrieval и planner не касаются контекста.
 
 Опциональные интеграции, не блокирующие этот план:
 
-- Memory Extraction (план 02) принимает извлечённые факты. Он уже реализован,
-  и его контракт готов: факт приходит с provenance и попадает в
+- Memory Extraction (этап 02.4) принимает извлечённые факты. Он уже
+  реализован, и его контракт готов: факт приходит с provenance и попадает в
   `pending_confirmation`, автоматический commit в долговременную память
   запрещён. Этот план обязан пользоваться тем же контрактом, а не заводить
   собственный путь записи в память.

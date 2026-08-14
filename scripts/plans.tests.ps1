@@ -49,11 +49,38 @@ foreach ($plan in $plans) {
     $blockingEnd = [regex]::Match($section, 'Опциональн|Что этот план обязан|Это последний план')
     $blocking = if ($blockingEnd.Success) { $section.Substring(0, $blockingEnd.Index) } else { $section }
 
-    foreach ($reference in [regex]::Matches($blocking, 'план[а-я]*\s+(\d{2})')) {
-        $referenced = [int]$reference.Groups[1].Value
-        if ($referenced -ge $number) {
-            throw "$($plan.Name) blocks on plan $('{0:d2}' -f $referenced), which is not lower than its own number. Renumber the plans or make the dependency optional with described degradation."
+    # Зависимость объявляется либо на весь план ("план 01"), либо на его этап
+    # ("этап 01.1"). Оба вида проверяются одинаково: номер плана обязан быть
+    # меньше собственного.
+    foreach ($reference in [regex]::Matches($blocking, 'план[а-я]*\s+(\d{2})(?!\.)')) {
+        if ([int]$reference.Groups[1].Value -ge $number) {
+            throw "$($plan.Name) blocks on plan $($reference.Groups[1].Value), which is not lower than its own number. Renumber the plans or make the dependency optional with described degradation."
         }
+    }
+
+    # Ссылка на собственный этап описывает внутренний порядок работ, а не
+    # зависимость от другого плана, поэтому проверяется только чужой номер.
+    foreach ($reference in [regex]::Matches($blocking, '(?<!\d)(\d{2})\.\d(?!\d)')) {
+        if ([int]$reference.Groups[1].Value -gt $number) {
+            throw "$($plan.Name) blocks on stage $($reference.Value), which belongs to a later plan. Renumber the plans or make the dependency optional with described degradation."
+        }
+    }
+
+    # Этапы обязаны быть пронумерованы как под-планы NN.M: именно они дают
+    # зависящим планам возможность не ждать план целиком.
+    $stages = [regex]::Matches($text, '(?m)^### (\d{2})\.(\d) ')
+    if ($stages.Count -eq 0) {
+        throw "$($plan.Name) must number its stages as NN.M so other plans can depend on a stage."
+    }
+    $stageIndex = 1
+    foreach ($stage in $stages) {
+        if ([int]$stage.Groups[1].Value -ne $number) {
+            throw "$($plan.Name) has a stage numbered for a different plan: $($stage.Value.Trim())."
+        }
+        if ([int]$stage.Groups[2].Value -ne $stageIndex) {
+            throw "$($plan.Name) stage numbers must be consecutive from 1; found $($stage.Value.Trim())."
+        }
+        $stageIndex++
     }
 
     # Опциональная зависимость обязана описывать поведение до её появления:

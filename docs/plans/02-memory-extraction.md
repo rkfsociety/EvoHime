@@ -62,7 +62,7 @@ TTL, длины и квоты являются конфигурируемыми 
 
 ## Этапы
 
-### 1. Схема и доменный контракт
+### 02.1 Схема и доменный контракт
 
 - Добавить `kind`, `scope`, `canonical_subject`, `statement`,
   `model_confidence`, `verification_confidence`, `confirmation_state`,
@@ -89,7 +89,7 @@ TTL, длины и квоты являются конфигурируемыми 
   persistence; `sensitive` не попадает в обычный audit/body response и
   маскируется в renderer.
 
-### 2. Canonical subject, scope и provenance
+### 02.2 Canonical subject, scope и provenance
 
 - Canonical subject строится детерминированным нормализатором с версией:
   Unicode NFKC, case-folding, пробелы/пунктуация, локальные aliases и
@@ -104,7 +104,7 @@ TTL, длины и квоты являются конфигурируемыми 
   `tool_call_id`, а для файлов — логический path, content hash и line range.
   В provenance не копируются секреты или полный body без policy.
 
-### 3. Извлекатель
+### 02.3 Извлекатель
 
 - Core запускает bounded model call после explicit trigger в strict mode или
   после завершения turn в open mode. В open mode результат всегда проходит
@@ -122,7 +122,7 @@ TTL, длины и квоты являются конфигурируемыми 
 - Extraction асинхронен и не блокирует основной ответ; target — не более +200 мс
   p95 к основному turn. При недоступной модели задача продолжается без памяти.
 
-### 4. Подтверждение, validation и асинхронность
+### 02.4 Подтверждение, validation и асинхронность
 
 - `constraint` и `decision`, влияющие на действия, всегда требуют approval;
   если признак влияния не доказан policy — считать его влияющим.
@@ -150,7 +150,7 @@ TTL, длины и квоты являются конфигурируемыми 
   который повышает verification confidence. Approval пользователя фиксируется
   отдельным audit event.
 
-### 5. Конфликты и забывание
+### 02.5 Конфликты и забывание
 
 - Conflict определяется по `kind + canonical_subject + scope` и несовместимым
   statements. Chain `A -> B -> C` хранится через supersedes/superseded_by и

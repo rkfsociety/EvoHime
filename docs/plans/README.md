@@ -3,6 +3,19 @@
 Каталог содержит планы отдельных направлений. Номер файла — это **порядок
 реализации**, выведенный из зависимостей, а не порядок появления идеи.
 
+## С чего начинать
+
+Следующий шаг — **[план 01, этап 01.1 «Контракт и измерение»](01-context-budget-manager.md)**.
+
+Это единственная работа, которая ничего не ждёт и разблокирует сразу три плана
+(03, 04 и 05 зависят только от 01.1, а не от всего плана 01). План 02 уже
+реализован. Пока 01.1 не сделан, начинать 03, 04, 05 или 06 нельзя: они
+упрутся в отсутствующий budget/ledger.
+
+Внутри каждого плана этапы пронумерованы `NN.M` и являются под-планами: этап
+доводится до рабочего состояния и выпускается отдельно. Зависимости объявлены
+на уровне этапов, поэтому ждать целиком реализованный план обычно не нужно.
+
 ## Правило нумерации
 
 **План может блокирующе зависеть только от планов с меньшим номером.**
@@ -26,18 +39,19 @@
 | --- | --- | --- |
 | 01 | [Context Budget Manager](01-context-budget-manager.md) | — (фундамент) |
 | 02 | [Memory Extraction](02-memory-extraction.md) | — (Memory v1 уже есть) |
-| 03 | [Local Agentic RAG](03-local-agentic-rag.md) | 01 |
-| 04 | [Signed hash-chain receipts](04-signed-hash-chain-receipts.md) | 01 |
-| 05 | [Local SLM fallback и routing](05-local-slm-fallback-routing.md) | 01 |
-| 06 | [Специализированные child workflows](06-specialized-child-workflows.md) | 01, 03, 04 |
+| 03 | [Local Agentic RAG](03-local-agentic-rag.md) | 01.1 |
+| 04 | [Signed hash-chain receipts](04-signed-hash-chain-receipts.md) | 01.1 |
+| 05 | [Local SLM fallback и routing](05-local-slm-fallback-routing.md) | 01.1 |
+| 06 | [Специализированные child workflows](06-specialized-child-workflows.md) | 01.1, 01.2, 03.2, 03.3, 04.3 |
 
 ```text
-01 Context Budget Manager
+01.1 Контракт и измерение   <- начинать здесь
    ├── 03 Local Agentic RAG ──┐
    ├── 04 Signed receipts ────┤
    ├── 05 Local SLM routing   │
-   └───────────────────────── 06 Child workflows
+   └── 01.2 artifact store ── 06 Child workflows
 
+01.3 compression, 01.4 tool loadout  (никто не зависит)
 02 Memory Extraction  (независим; опционально обменивается с 01 и 03)
 ```
 

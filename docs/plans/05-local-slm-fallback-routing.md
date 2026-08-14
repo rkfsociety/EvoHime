@@ -35,7 +35,7 @@ policy. Provider secrets не передаются local route.
 
 ## Этапы
 
-### 1. Provider contract
+### 05.1 Provider contract
 
 - Ввести capability metadata: tool calling, structured output, context limit,
   streaming, vision, local/cloud, privacy boundary.
@@ -43,7 +43,7 @@ policy. Provider secrets не передаются local route.
 - Health state должен иметь TTL, circuit breaker и last failure category.
 - Fallback policy должна быть Core-owned immutable snapshot на запуск задачи.
 
-### 2. Local provider
+### 05.2 Local provider
 
 - Добавить OpenAI-compatible local endpoint adapter с loopback-only policy.
 - Проверять model capabilities при startup; malformed tool calls не считать
@@ -52,7 +52,7 @@ policy. Provider secrets не передаются local route.
   `unavailable`, не маскировать это как provider success.
 - Ограничить local process/resource lifetime supervisor policy.
 
-### 3. Routing и budget
+### 05.3 Routing и budget
 
 - Добавить trace decision: candidates, selected route, reason, privacy label,
   fallback count и budget snapshot.
@@ -61,7 +61,7 @@ policy. Provider secrets не передаются local route.
   не прошли redaction.
 - При повторных fallback остановиться по run budget и запросить пользователя.
 
-### 4. UI
+### 05.4 UI
 
 - Показывать фактическую модель/route, а не только желаемую.
 - Отдельно отображать `cloud unavailable`, `local unavailable` и `route denied`.
@@ -89,9 +89,11 @@ policy. Provider secrets не передаются local route.
 
 ## Зависимости
 
-Блокирующие: Context Budget Manager (план 01) — route decision опирается на
-budget/profile snapshot; существующие evaluation catalog (`tests/evals/`) и
-provider health model.
+Блокирующие: этап 01.1 — route decision опирается на budget/profile snapshot,
+который определён именно там; существующие evaluation catalog (`tests/evals/`)
+и provider health model. Остальные этапы плана 01 этому плану не нужны, а
+этапы 05.1–05.2 можно делать параллельно с 01.1: provider contract и локальный
+адаптер не касаются бюджета.
 
 Опциональных интеграций нет. Поддержка конкретной SLM/launcher выбирается
 отдельным ADR после проверки Windows resource requirements; этот план не

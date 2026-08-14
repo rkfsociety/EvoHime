@@ -58,14 +58,14 @@ implementer.
 
 ## Этапы
 
-### 1. Typed contracts
+### 06.1 Typed contracts
 
 - Расширить existing child IPC/storage additive-полями role, grants, budget,
   input/output schema и parent sequence.
 - Валидировать report schema до persistence и fan-in.
 - Добавить correlation ids для task, child, tool call и receipt.
 
-### 2. Coordinator state machine
+### 06.2 Coordinator state machine
 
 - Зафиксировать Created → Queued → Running → Validating →
   WaitingParentAcceptance → Accepted/Rejected/Failed/Cancelled.
@@ -74,14 +74,14 @@ implementer.
 - После restart coordinator восстанавливает только durable checkpoint и
   повторно валидирует report/evidence.
 
-### 3. Context isolation
+### 06.3 Context isolation
 
 - Child получает только selected context и свой scratchpad.
 - Большие результаты offload в artifact store; parent получает summary + ids.
 - Не передавать секреты соседнему child или role без policy grant.
 - Reviewer видит diff/evidence, но не получает право менять код.
 
-### 4. UI и observability
+### 06.4 UI и observability
 
 - Task timeline показывает role, status, budget, evidence, approval и reason
   отказа.
@@ -111,13 +111,16 @@ implementer.
 
 Блокирующие:
 
-- Context Budget Manager (план 01) — context isolation, budget ребёнка и
-  offload больших результатов в artifact store;
-- Local Agentic RAG (план 03) — роль `researcher` определена как read-only
-  доступ к workspace/RAG и без него не имеет своего инструмента;
-- Signed receipts (план 04) — связь действий ребёнка с approval родителя;
+- этапы 01.1 и 01.2 — budget ребёнка, context isolation и offload больших
+  результатов в artifact store;
+- этапы 03.2 и 03.3 — роль `researcher` определена как read-only доступ к
+  workspace/RAG и без retrieval с planner не имеет своего инструмента;
+- этап 04.3 — связь действий ребёнка с approval родителя;
 - существующие child runtime, permission policy, task graph, leases и
   evaluation catalog (`tests/evals/`).
+
+Этап 06.1 (typed contracts) зависит только из этого списка от 04.3, поэтому
+его можно начать раньше остальных этапов плана.
 
 Это последний план цепочки: от него никто не зависит. A2A/network protocol
 не нужен — достаточно локальных Core-owned children.

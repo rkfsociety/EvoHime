@@ -38,9 +38,26 @@ user prompt
    -> update scratchpad and context ledger
 ```
 
+## Что этапы отдают наружу
+
+Этапы — самостоятельные под-планы: каждый доводится до рабочего состояния и
+может быть выпущен отдельно. Зависящие планы ссылаются на этап, а не на весь
+план, поэтому им не нужно ждать целиком реализованного Context Budget Manager.
+
+| Этап | Внешний интерфейс | Кто потребляет |
+| --- | --- | --- |
+| 01.1 | `ContextBudget`, `ModelContextProfile`, tokenizer/estimator, `ContextItem`, `context_ledger` и его hash | 02 (опционально), 03.5, 04.1, 05.3, 06.3 |
+| 01.2 | task artifact store и bounded scratchpad | 06.3 |
+| 01.3 | compression/pruning контекста | никто: внутренний этап |
+| 01.4 | tool loadout | никто: внутренний этап |
+| 01.5 | additive-поля `ModelContext` и Core-команды scratchpad/forget | UI |
+
+Порядок внутри плана: 01.1 первым, остальные — в любом порядке после него.
+01.3 и 01.4 ничего не отдают наружу и не блокируют другие планы.
+
 ## Этапы
 
-### 1. Контракт и измерение
+### 01.1 Контракт и измерение
 
 - Ввести Core-owned `ContextBudget` с уровнями `target`, `soft_limit` и
   `hard_limit` для system, user, memory, tools, history, scratchpad и output.
@@ -77,7 +94,7 @@ user prompt
   сохранять только ids, counts, hashes, policy labels, bounded reasons,
   `compression_ratio`, `offloaded_bytes` и budget counters.
 
-### 2. Scratchpad и offload
+### 01.2 Scratchpad и offload
 
 - Добавить task-scoped scratchpad в SQLite или в bounded task state.
 - Разделить заметки на facts, open_questions, decisions, tool_findings и
@@ -102,7 +119,7 @@ user prompt
   scratchpad. Содержимое tool output не может менять policy, permissions,
   approval или system instructions.
 
-### 3. Compression и pruning
+### 01.3 Compression и pruning
 
 - Перед моделью удалять дубликаты, старые tool outputs и записи с меньшим
   приоритетом.
@@ -126,7 +143,7 @@ user prompt
   Для facts применять conflict detection и label `conflicting`, а не silent
   override; при существенном конфликте нужен пользовательский confirmation.
 
-### 4. Tool loadout
+### 01.4 Tool loadout
 
 - Разделить инструменты на обязательные, read-only и mutation groups.
 - Сначала использовать детерминированный intent router; semantic selection
@@ -142,7 +159,7 @@ user prompt
   `loadout_miss`; автоматический fallback разрешён только для явно разрешённой
   read-only замены.
 
-### 5. IPC и UI
+### 01.5 IPC и UI
 
 - Расширить read-only `ModelContext` additive-полями: `schema_version`, budget,
   selected item ids, bounded dropped item ids/reasons, compression summary и
@@ -206,14 +223,7 @@ user prompt
 - semantic tool selection разрешается только после evaluation catalog,
   deterministic intent router работает без него.
 
-Что этот план обязан предоставить другим:
-
-- `context_ledger` и его hash через versioned Core event/API — их требуют
-  Signed receipts (план 04);
-- bounded интерфейс отбора evidence — его требует Local Agentic RAG (план 03);
-- budget/profile snapshot — его требуют SLM routing (план 05) и child
-  workflows (план 06).
-
-Порядок внутри плана: сначала deterministic MVP (budget/profile/token
-estimator, scratchpad, recovery, deterministic pruning, tool loadout), затем
-внешние интеграции через явные bounded интерфейсы.
+Что этот план обязан предоставить другим — см. таблицу «Что этапы отдают
+наружу». Ключевое следствие: весь внешний контракт, кроме artifact store,
+сосредоточен в этапе 01.1, поэтому планы 03, 04 и 05 разблокируются после
+одного этапа, а не после всего плана.
