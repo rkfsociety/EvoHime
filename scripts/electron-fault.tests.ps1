@@ -30,7 +30,12 @@ function Wait-For([scriptblock]$condition, [int]$seconds, [string]$failure) {
 $dataPath = Join-Path $resolvedPackage ('.fault-data-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $dataPath | Out-Null
 $previousDataDir = $env:EVOHIME_DATA_DIR
+$previousUpdateEnabled = $env:EVOHIME_UPDATE_ENABLED
 $env:EVOHIME_DATA_DIR = $dataPath
+# This smoke test exercises Core/supervisor recovery, not the source updater.
+# Keep the lifecycle assertion independent from network latency and update-gate
+# work that runs before the supervisor is started.
+$env:EVOHIME_UPDATE_ENABLED = '0'
 $shell = $null
 try {
     $shell = Start-Process -FilePath $shellPath -WorkingDirectory $resolvedPackage -PassThru
@@ -64,6 +69,11 @@ finally {
         Remove-Item Env:EVOHIME_DATA_DIR -ErrorAction SilentlyContinue
     } else {
         $env:EVOHIME_DATA_DIR = $previousDataDir
+    }
+    if ($null -eq $previousUpdateEnabled) {
+        Remove-Item Env:EVOHIME_UPDATE_ENABLED -ErrorAction SilentlyContinue
+    } else {
+        $env:EVOHIME_UPDATE_ENABLED = $previousUpdateEnabled
     }
 }
 
