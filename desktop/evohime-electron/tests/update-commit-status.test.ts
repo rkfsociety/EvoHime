@@ -4,7 +4,9 @@ import {
   githubApiBase,
   listRecentCommits,
   readCommitState,
-  selectGreenCommit
+  selectGreenCommit,
+  touchesProductCode,
+  isProductPath
 } from '../src/main/update/commit-status'
 
 /**
@@ -146,5 +148,76 @@ describe('choosing a commit to install', () => {
     const fetch = respond({})
 
     await expect(selectGreenCommit(API, 'main', 10, { fetch })).rejects.toThrow('GitHub API')
+  })
+})
+
+describe('what counts as product code', () => {
+  it('treats documentation, plans and CI config as harmless', () => {
+    for (const path of [
+      'docs/architecture.md',
+      'docs/plans/development-plan.md',
+      'README.md',
+      'AGENTS.md',
+      'installer/release-notes.md',
+      '.github/workflows/windows.yml',
+      '.gitignore'
+    ]) {
+      expect(isProductPath(path), path).toBe(false)
+    }
+  })
+
+  it('treats everything else as product code, including unfamiliar paths', () => {
+    for (const path of [
+      'crates/evohime-core/src/main.rs',
+      'desktop/evohime-electron/src/main/index.ts',
+      'installer/EvoHime.iss',
+      'scripts/build-windows-native.ps1',
+      'Cargo.lock',
+      'something/new/we/have/not/seen'
+    ]) {
+      expect(isProductPath(path), path).toBe(true)
+    }
+  })
+
+  it('skips a rebuild when the range only touched documentation', async () => {
+    const fetch = respond({
+      '/compare/': { files: [{ filename: 'docs/architecture.md' }, { filename: 'README.md' }] }
+    })
+
+    await expect(touchesProductCode(API, TIP, PREVIOUS, { fetch })).resolves.toBe(false)
+  })
+
+  it('rebuilds as soon as one file of the range is product code', async () => {
+    const fetch = respond({
+      '/compare/': {
+        files: [{ filename: 'docs/architecture.md' }, { filename: 'crates/evohime-core/src/lib.rs' }]
+      }
+    })
+
+    await expect(touchesProductCode(API, TIP, PREVIOUS, { fetch })).resolves.toBe(true)
+  })
+
+  it('rebuilds rather than guess when the diff proves nothing', async () => {
+    // Пустой, обрезанный или нечитаемый ответ — не доказательство.
+    const empty = respond({ '/compare/': { files: [] } })
+    await expect(touchesProductCode(API, TIP, PREVIOUS, { fetch: empty })).resolves.toBe(true)
+
+    const truncated = respond({
+      '/compare/': { files: Array.from({ length: 100 }, () => ({ filename: 'docs/x.md' })) }
+    })
+    await expect(touchesProductCode(API, TIP, PREVIOUS, { fetch: truncated })).resolves.toBe(true)
+
+    const malformed = respond({ '/compare/': { files: [{}] } })
+    await expect(touchesProductCode(API, TIP, PREVIOUS, { fetch: malformed })).resolves.toBe(true)
+
+    await expect(touchesProductCode(API, 'HEAD', PREVIOUS, { fetch: empty })).resolves.toBe(true)
+  })
+
+  it('says nothing changed when both commits are the same', async () => {
+    const fetch = vi.fn()
+    await expect(
+      touchesProductCode(API, TIP, TIP, { fetch: fetch as unknown as typeof globalThis.fetch })
+    ).resolves.toBe(false)
+    expect(fetch).not.toHaveBeenCalled()
   })
 })

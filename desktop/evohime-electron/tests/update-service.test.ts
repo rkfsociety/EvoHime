@@ -91,8 +91,10 @@ function harness(overrides: Partial<UpdateServiceDeps> = {}, installedCommit: st
       error: null
     }),
     remoteHead: async () => REMOTE,
-    // The default branch tip is green; tests that care override this.
+    // The default branch tip is green and touches product code; tests that care
+    // override these.
     selectGreen: async () => ({ commit: REMOTE, tipState: 'success' as const }),
+    productChanges: async () => true,
     sync: async () => REMOTE,
     // Timers never fire on their own in tests.
     setTimer: () => ({ cancel: () => {} }),
@@ -228,6 +230,8 @@ describe('launch gate', () => {
       spawnWorker: test.spawnWorker,
       detect: async () => ({ complete: true, pathEntries: [], tools: [{ id: 'git', label: 'Git', available: true, path: 'git' }] }),
       remoteHead: async () => REMOTE,
+      selectGreen: async () => ({ commit: REMOTE, tipState: 'success' }),
+      productChanges: async () => true,
       setTimer: () => ({ cancel: () => {} })
     })
 
@@ -492,6 +496,7 @@ describe('green commits only', () => {
       selectGreen: async () => {
         throw new Error('checks must not be consulted')
       },
+      productChanges: async () => true,
       setTimer: () => ({ cancel: () => {} })
     })
 
@@ -513,5 +518,43 @@ describe('inconclusive checks', () => {
     expect(status.phase).toBe('up-to-date')
     expect(status.message).toContain('не завершились')
     expect(status.message).not.toContain('не прошли')
+  })
+})
+
+describe('documentation-only commits', () => {
+  it('does not rebuild when the new commits touch no product code', async () => {
+    const test = harness({ productChanges: async () => false })
+
+    const status = await test.service.check()
+
+    expect(status.phase).toBe('up-to-date')
+    expect(status.remoteCommit).toBe(REMOTE)
+    expect(status.message).toContain('не трогают код')
+
+    await test.service.runLaunchGate()
+    expect(test.build).not.toHaveBeenCalled()
+  })
+
+  it('rebuilds when the range cannot be compared', async () => {
+    const test = harness({
+      productChanges: async () => {
+        throw new Error('GitHub API ответил 502')
+      }
+    })
+
+    const status = await test.service.check()
+
+    // Не смогли доказать, что менялись только доки — значит собираем.
+    expect(status.phase).toBe('available')
+  })
+
+  it('always rebuilds when the installed commit is unknown', async () => {
+    const compare = vi.fn(async () => false)
+    const test = harness({ productChanges: compare }, null)
+
+    const status = await test.service.check()
+
+    expect(status.phase).toBe('available')
+    expect(compare).not.toHaveBeenCalled()
   })
 })

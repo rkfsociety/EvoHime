@@ -14,7 +14,12 @@ import {
 import { redactError } from '../diagnostics/redact'
 import type { BuildLogWriter } from './build-log'
 import { buildStagedPackage, clearDerivedState } from './builder'
-import { githubApiBase, selectGreenCommit, type CommitCheckState } from './commit-status'
+import {
+  githubApiBase,
+  selectGreenCommit,
+  touchesProductCode,
+  type CommitCheckState
+} from './commit-status'
 import { readBuildMarker, type UpdateConfig } from './config'
 import { readRemoteHead, syncCheckout } from './source-checkout'
 import { detectToolchain, ensureToolchain, toolPath, type ToolchainReport } from './toolchain'
@@ -47,6 +52,7 @@ export interface UpdateServiceDeps {
   readonly ensure?: typeof ensureToolchain
   readonly remoteHead?: typeof readRemoteHead
   readonly selectGreen?: typeof selectGreenCommit
+  readonly productChanges?: typeof touchesProductCode
   readonly sync?: typeof syncCheckout
   readonly build?: typeof buildStagedPackage
   readonly reset?: typeof clearDerivedState
@@ -153,11 +159,32 @@ export class UpdateService {
         })
       }
 
-      const upToDate = installedCommit !== null && installedCommit === candidate.commit
-      this.deps.log('info', 'update.checked', { upToDate, green: true })
+      if (installedCommit !== null && installedCommit === candidate.commit) {
+        this.deps.log('info', 'update.checked', { upToDate: true, green: true })
+        return this.patch({
+          phase: 'up-to-date',
+          message: 'Установлена последняя версия.',
+          remoteCommit: candidate.commit,
+          checkedAtMs: this.time()
+        })
+      }
+
+      if (installedCommit !== null && !(await this.changesProduct(installedCommit, candidate.commit))) {
+        // Документация и планы не меняют собранный клиент: тратить на них
+        // минуты пересборки незачем.
+        this.deps.log('info', 'update.checked', { upToDate: true, documentationOnly: true })
+        return this.patch({
+          phase: 'up-to-date',
+          message: 'Новые коммиты не трогают код клиента — пересборка не нужна.',
+          remoteCommit: candidate.commit,
+          checkedAtMs: this.time()
+        })
+      }
+
+      this.deps.log('info', 'update.checked', { upToDate: false, green: true })
       return this.patch({
-        phase: upToDate ? 'up-to-date' : 'available',
-        message: upToDate ? 'Установлена последняя версия.' : candidate.message,
+        phase: 'available',
+        message: candidate.message,
         remoteCommit: candidate.commit,
         checkedAtMs: this.time()
       })
@@ -207,6 +234,23 @@ export class UpdateService {
         selected.commit === tip
           ? 'Доступно обновление.'
           : 'Доступно обновление до последнего зелёного коммита.'
+    }
+  }
+
+  /**
+   * Whether the range between two commits can change the built client.
+   *
+   * Any doubt — an unreadable range, an unfamiliar host — answers "yes": an
+   * extra rebuild costs minutes, a skipped one leaves the user on stale code.
+   */
+  private async changesProduct(installed: string, target: string): Promise<boolean> {
+    const apiBase = githubApiBase(this.deps.config.repositoryUrl)
+    if (!apiBase) return true
+    try {
+      return await (this.deps.productChanges ?? touchesProductCode)(apiBase, installed, target)
+    } catch (error) {
+      this.deps.log('warn', 'update.compare_failed', { reason: redactError(error) })
+      return true
     }
   }
 

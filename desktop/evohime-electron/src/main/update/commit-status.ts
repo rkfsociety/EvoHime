@@ -142,6 +142,61 @@ export async function listRecentCommits(
     .filter((sha): sha is string => sha !== null)
 }
 
+/**
+ * Paths that cannot change the built product.
+ *
+ * Everything else counts as product code, so an unrecognised path always leads
+ * to a rebuild: being wrong here means shipping a stale client, and that is the
+ * costlier mistake.
+ */
+const NON_PRODUCT_PATTERNS = [
+  /^docs\//,
+  /^\.github\//,
+  /\.md$/,
+  /^\.gitignore$/,
+  /^\.gitattributes$/,
+  /^LICENSE$/
+]
+
+export function isProductPath(path: string): boolean {
+  return !NON_PRODUCT_PATTERNS.some((pattern) => pattern.test(path))
+}
+
+/**
+ * Whether anything between two commits can change the built client.
+ *
+ * A rebuild takes minutes of the user's machine, so a commit that only touched
+ * documentation or plans is not worth one. The answer is `true` whenever it
+ * cannot be established — a truncated diff, an unreadable range or an
+ * unfamiliar path — because skipping a real change is worse than an extra
+ * rebuild.
+ */
+export async function touchesProductCode(
+  apiBase: string,
+  base: string,
+  head: string,
+  deps: CommitStatusDeps = {}
+): Promise<boolean> {
+  const from = normalizeCommit(base)
+  const to = normalizeCommit(head)
+  if (!from || !to) return true
+  if (from === to) return false
+
+  const payload = asRecord(await getJson(`${apiBase}/compare/${from}...${to}`, deps))
+  const files = payload['files']
+  if (!Array.isArray(files) || files.length === 0) {
+    return true
+  }
+  // The API caps the file list; a truncated diff cannot prove anything.
+  if (files.length >= MAX_RESPONSE_ITEMS) {
+    return true
+  }
+  return files.some((entry) => {
+    const filename = asRecord(entry)['filename']
+    return typeof filename !== 'string' || isProductPath(filename)
+  })
+}
+
 async function getJson(url: string, deps: CommitStatusDeps): Promise<unknown> {
   const request = deps.fetch ?? globalThis.fetch
   const response = await request(url, {
