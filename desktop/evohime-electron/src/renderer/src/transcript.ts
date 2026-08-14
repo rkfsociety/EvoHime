@@ -38,6 +38,17 @@ export interface Approval {
   readonly toolName: string
   readonly permission: string
   readonly scope: string
+  readonly preview: ApprovalPreview
+}
+
+export interface ApprovalPreview {
+  readonly kind: string
+  readonly summary: string
+  readonly command: string | null
+  readonly cwd: string | null
+  readonly path: string | null
+  readonly details: string | null
+  readonly truncated: boolean
 }
 
 export interface Transcript {
@@ -117,7 +128,8 @@ export function buildTranscript(events: readonly CoreEvent[]): Transcript {
             approvalId,
             toolName: text_(payload, 'tool_name') || 'операция Core',
             permission: text_(payload, 'permission') || 'требуется разрешение',
-            scope: text_(payload, 'scope') || 'область не указана'
+            scope: text_(payload, 'scope') || 'область не указана',
+            preview: preview_(payload)
           }
         }
         break
@@ -182,6 +194,20 @@ function unwrap(payload: string): Record<string, unknown> {
 function text_(payload: Record<string, unknown>, key: string): string {
   const value = payload[key]
   return typeof value === 'string' ? value : ''
+}
+
+function preview_(payload: Record<string, unknown>): ApprovalPreview {
+  const raw = payload.preview
+  const preview = typeof raw === 'object' && raw !== null ? raw as Record<string, unknown> : {}
+  return {
+    kind: text_(preview, 'kind') || 'operation',
+    summary: text_(preview, 'summary') || 'Операция требует разрешения',
+    command: text_(preview, 'command') || null,
+    cwd: text_(preview, 'cwd') || null,
+    path: text_(preview, 'path') || null,
+    details: text_(preview, 'details') || null,
+    truncated: preview.truncated === true
+  }
 }
 
 function clamp(value: string): string {

@@ -1186,6 +1186,7 @@ pub enum CoreEvent {
         permission: String,
         scope: String,
         input: serde_json::Value,
+        preview: evohime_permissions::ApprovalPreview,
     },
     TaskCompleted {
         task_id: String,
@@ -1473,7 +1474,13 @@ impl EventJournal {
         cancelled: impl FnMut() -> bool,
     ) -> Result<RestoreResult, StorageError> {
         let mut database = self.database.lock().await;
-        database.restore_backup_with_cancel(backup_path, safety_path, app_version, progress, cancelled)
+        database.restore_backup_with_cancel(
+            backup_path,
+            safety_path,
+            app_version,
+            progress,
+            cancelled,
+        )
     }
 
     /// Bounded, read-only storage facts for diagnostics (Core Doctor).
@@ -2963,6 +2970,7 @@ impl ToolAgent {
                             scope,
                             approval_id,
                             input,
+                            preview,
                         }) => {
                             let receiver = self.approvals.register(approval_id).await;
                             let _ = events.send(CoreEvent::ApprovalRequired {
@@ -2972,6 +2980,7 @@ impl ToolAgent {
                                 permission: format!("{permission:?}"),
                                 scope,
                                 input: input.clone(),
+                                preview,
                             });
                             let granted = tokio::select! {
                                 _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
@@ -4413,7 +4422,11 @@ impl TaskCoordinator {
                     })
                     }
                     .await;
-                    state.lock().await.backup_cancellations.remove(&operation_id);
+                    state
+                        .lock()
+                        .await
+                        .backup_cancellations
+                        .remove(&operation_id);
                     let _ = reply.send(result);
                 });
             }
@@ -4547,7 +4560,11 @@ impl TaskCoordinator {
                         .map_err(|error| error.to_string())?
                     }
                     .await;
-                    state.lock().await.backup_cancellations.remove(&operation_id);
+                    state
+                        .lock()
+                        .await
+                        .backup_cancellations
+                        .remove(&operation_id);
                     let _ = reply.send(result);
                 });
             }
@@ -6524,12 +6541,11 @@ mod tests {
     /// the one saying it finished — was never sent.
     #[tokio::test]
     async fn journal_signal_arrives_after_the_event_is_readable() {
-        let path = std::env::temp_dir()
-            .join(format!("evohime-core-signal-{}.db", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("evohime-core-signal-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let journal = EventJournal::open(&path).expect("journal opens");
-        let (coordinator, _events) =
-            TaskCoordinator::new_with_journal(64, None, journal.clone());
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(64, None, journal.clone());
         let mut journalled = coordinator.journalled();
 
         coordinator
@@ -6549,7 +6565,10 @@ mod tests {
             .await
             .expect("tail reads");
         assert!(
-            batch.events.iter().any(|record| record.task_id == "task-signal"),
+            batch
+                .events
+                .iter()
+                .any(|record| record.task_id == "task-signal"),
             "event must be readable when its sequence is announced"
         );
         let _ = std::fs::remove_file(&path);

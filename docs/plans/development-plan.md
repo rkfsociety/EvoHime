@@ -30,7 +30,7 @@ Windows acceptance не являются задачами текущего пл�
 native smoke checks прошли без ошибок; source-update E2E остаётся штатно пропущенным
 без включённого флага.
 
-Текущий цикл — надёжность длительных запусков и безопасный approval UX.
+Текущий цикл — надёжность длительных запусков и закрытие обходов permission policy.
 
 ## Текущий статус
 
@@ -41,7 +41,6 @@ Core + SQLite + authenticated named-pipe IPC сохраняются. Польз�
 | Блок | Статус |
 | --- | --- |
 | Leases/reconciliation для длительных запусков | 🟡 В работе |
-| Расширенный diff/command preview в approval UI | 🟡 В работе |
 | Permission policy rules и закрытие обходов approval | 🟡 В работе |
 
 ## Acceptance criteria

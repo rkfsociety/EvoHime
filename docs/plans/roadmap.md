@@ -13,7 +13,6 @@
 ### 1. Reliability and approval UX
 
 - leases/reconciliation для длительных запусков;
-- расширенный diff/command preview в approval UI;
 - дальнейшее закрытие обходов permission policy и безопасных child contracts.
 
 ### 2. Reliability and security hardening

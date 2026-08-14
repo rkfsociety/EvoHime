@@ -48,6 +48,77 @@ pub enum PermissionDecision {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApprovalPreview {
+    pub kind: String,
+    pub summary: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub details: Option<String>,
+    #[serde(default)]
+    pub truncated: bool,
+}
+
+const MAX_APPROVAL_PREVIEW_TEXT_BYTES: usize = 8 * 1024;
+
+impl ApprovalPreview {
+    pub fn bounded(mut self) -> Self {
+        let (kind, kind_truncated) = bound_preview_text(self.kind);
+        let (summary, summary_truncated) = bound_preview_text(self.summary);
+        let (command, command_truncated) = bound_preview_option(self.command);
+        let (cwd, cwd_truncated) = bound_preview_option(self.cwd);
+        let (path, path_truncated) = bound_preview_option(self.path);
+        let (details, details_truncated) = bound_preview_option(self.details);
+        self.kind = kind;
+        self.summary = summary;
+        self.command = command;
+        self.cwd = cwd;
+        self.path = path;
+        self.details = details;
+        self.truncated |= kind_truncated
+            || summary_truncated
+            || command_truncated
+            || cwd_truncated
+            || path_truncated
+            || details_truncated;
+        self
+    }
+}
+
+fn bound_preview_option(value: Option<String>) -> (Option<String>, bool) {
+    value.map_or((None, false), |value| {
+        let (value, truncated) = bound_preview_text(value);
+        (Some(value), truncated)
+    })
+}
+
+fn bound_preview_text(value: String) -> (String, bool) {
+    let mut end = value.len().min(MAX_APPROVAL_PREVIEW_TEXT_BYTES);
+    while end > 0 && !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    (value[..end].to_string(), end < value.len())
+}
+
+impl Default for ApprovalPreview {
+    fn default() -> Self {
+        Self {
+            kind: "operation".to_string(),
+            summary: "Операция требует разрешения".to_string(),
+            command: None,
+            cwd: None,
+            path: None,
+            details: None,
+            truncated: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApprovalRequest {
     pub id: Uuid,
     pub task_id: Uuid,
@@ -62,6 +133,7 @@ pub struct ApprovalRequest {
     /// Hash of the tool name, normalized scope, and exact canonical input.
     #[serde(default)]
     pub call_hash: String,
+    pub preview: ApprovalPreview,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -463,6 +535,30 @@ impl PermissionEngine {
         command: Option<String>,
         input: &serde_json::Value,
     ) -> ApprovalRequest {
+        self.create_approval_scoped_for_call_with_command_and_preview(
+            task_id,
+            session_id,
+            tool_name,
+            permission,
+            scope,
+            command,
+            input,
+            ApprovalPreview::default(),
+        )
+        .await
+    }
+
+    pub async fn create_approval_scoped_for_call_with_command_and_preview(
+        &self,
+        task_id: Uuid,
+        session_id: Option<Uuid>,
+        tool_name: impl Into<String>,
+        permission: Permission,
+        scope: impl Into<String>,
+        command: Option<String>,
+        input: &serde_json::Value,
+        preview: ApprovalPreview,
+    ) -> ApprovalRequest {
         let tool_name = tool_name.into();
         let scope = normalize_scope_path(scope.into());
         let call_hash = canonical_call_hash(&tool_name, &scope, input);
@@ -475,6 +571,7 @@ impl PermissionEngine {
             scope,
             command,
             call_hash,
+            preview: preview.bounded(),
         };
         self.approvals.write().await.insert(
             request.id,

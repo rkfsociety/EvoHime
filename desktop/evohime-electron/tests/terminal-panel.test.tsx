@@ -45,9 +45,11 @@ describe('terminal panel', () => {
 
   it('shows Core approval and resubmits the same task with approval id', async () => {
     const view = render(<TerminalPanel connection="connected" events={[event('approval.required', {
-      task_id: 'task-1', approval_id: 'approval-1', tool_name: 'shell.execute', scope: 'workspace'
+      task_id: 'task-1', approval_id: 'approval-1', tool_name: 'shell.execute', scope: 'workspace',
+      preview: { kind: 'command', summary: 'Запустить команду', command: 'git status --short', cwd: 'workspace' }
     })]} />)
     expect(await screen.findByText(/Terminal требует approval/)).toBeTruthy()
+    expect(screen.getByText('Команда: git status --short')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: 'Разрешить выполнение' }))
     expect(calls.at(-1)).toMatchObject({
       command: 'core.terminalExecute',

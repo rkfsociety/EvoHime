@@ -266,12 +266,14 @@ describe('task timeline', () => {
           approval_id: 'approval-1',
           tool_name: 'filesystem.write',
           permission: 'FilesystemWrite',
-          scope: 'src/app.ts'
+          scope: 'src/app.ts',
+          preview: { kind: 'file_write', summary: 'Записать файл (42 байт)', path: 'src/app.ts' }
         })]}
       />
     )
 
     expect(await screen.findByText('Нужно разрешение: filesystem.write')).toBeTruthy()
+    expect(screen.getByText('Записать файл (42 байт)')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: 'Разрешить' }))
     await waitFor(() => expect(calls.at(-1)).toEqual({
       command: 'core.resolveApproval',

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ConnectionState, CoreEvent } from '@shared/api'
 
 import { useShellApi } from './shell-api'
+import type { ApprovalPreview } from './transcript'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 
@@ -16,6 +17,7 @@ interface TerminalApproval {
   readonly taskId: string
   readonly toolName: string
   readonly scope: string
+  readonly preview: ApprovalPreview
 }
 
 export function TerminalPanel({ connection, events }: TerminalPanelProps): React.JSX.Element {
@@ -47,7 +49,8 @@ export function TerminalPanel({ connection, events }: TerminalPanelProps): React
           approvalId,
           taskId,
           toolName: stringValue(payload, 'tool_name') ?? 'shell.execute',
-          scope: stringValue(payload, 'scope') ?? 'workspace'
+          scope: stringValue(payload, 'scope') ?? 'workspace',
+          preview: previewValue(payload)
         })
       }
     }
@@ -99,6 +102,11 @@ export function TerminalPanel({ connection, events }: TerminalPanelProps): React
         <div className="terminal-panel__approval" role="alert">
           <strong>Terminal требует approval: {approval.toolName}</strong>
           <span>{approval.scope}</span>
+          <strong>{approval.preview.summary}</strong>
+          {approval.preview.command ? <code>Команда: {approval.preview.command}</code> : null}
+          {approval.preview.cwd ? <code>cwd: {approval.preview.cwd}</code> : null}
+          {approval.preview.details ? <pre className="approval__details">{approval.preview.details}</pre> : null}
+          {approval.preview.truncated ? <small>Preview ограничен по размеру.</small> : null}
           <div>
             <button type="button" onClick={() => void execute(approval.approvalId)} disabled={!connected}>Разрешить выполнение</button>
             <button type="button" onClick={() => setApproval(null)}>Отклонить</button>
@@ -125,6 +133,22 @@ function parseJson(payload: string): Record<string, unknown> {
 
 function stringValue(payload: Record<string, unknown>, key: string): string | null {
   return typeof payload[key] === 'string' && payload[key] ? String(payload[key]) : null
+}
+
+function previewValue(payload: Record<string, unknown>): ApprovalPreview {
+  const raw = payload.preview
+  const preview = typeof raw === 'object' && raw !== null ? raw as Record<string, unknown> : {}
+  const text = (key: string): string | null =>
+    typeof preview[key] === 'string' && preview[key] ? String(preview[key]) : null
+  return {
+    kind: text('kind') ?? 'command',
+    summary: text('summary') ?? 'Операция требует разрешения',
+    command: text('command'),
+    cwd: text('cwd'),
+    path: text('path'),
+    details: text('details'),
+    truncated: preview.truncated === true
+  }
 }
 
 function splitArgs(value: string): string[] {

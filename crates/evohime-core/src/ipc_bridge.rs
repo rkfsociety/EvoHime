@@ -162,7 +162,9 @@ impl IpcBridge {
     /// pushes the journal tail on this instead of on the broadcast itself,
     /// which used to overtake the writer and strand the last event of a task.
     pub fn journalled(&self) -> Option<tokio::sync::watch::Receiver<u64>> {
-        self.coordinator.as_ref().map(|coordinator| coordinator.journalled())
+        self.coordinator
+            .as_ref()
+            .map(|coordinator| coordinator.journalled())
     }
 
     pub async fn process_once<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
@@ -1357,7 +1359,8 @@ impl IpcBridge {
             .await
             .map_err(|error| FrameError::Io(error.to_string()))?;
         let payload = serde_json::to_vec(&serde_json::json!({"accepted": true}))?;
-        self.write_response(writer, "storage.backup.started", payload).await?;
+        self.write_response(writer, "storage.backup.started", payload)
+            .await?;
         Ok(())
     }
 
@@ -1410,7 +1413,8 @@ impl IpcBridge {
             .await
             .map_err(|error| FrameError::Io(error.to_string()))?;
         let payload = serde_json::to_vec(&serde_json::json!({"accepted": true}))?;
-        self.write_response(writer, "storage.restore.started", payload).await?;
+        self.write_response(writer, "storage.restore.started", payload)
+            .await?;
         Ok(())
     }
 
@@ -2128,6 +2132,7 @@ impl IpcBridge {
                     scope,
                     approval_id,
                     input,
+                    preview,
                 }) => {
                     self.write_response(
                         writer,
@@ -2139,6 +2144,7 @@ impl IpcBridge {
                             "permission": format!("{permission:?}"),
                             "scope": scope,
                             "input": input,
+                            "preview": preview,
                         }))?,
                     )
                     .await?;
@@ -2467,8 +2473,11 @@ mod tests {
         )
         .expect("approval decodes");
         assert_eq!(approval.event_type, "approval.required");
-        let approval_id = serde_json::from_slice::<serde_json::Value>(&approval.payload)
-            .expect("approval json")["approval_id"]
+        let approval_json = serde_json::from_slice::<serde_json::Value>(&approval.payload)
+            .expect("approval json");
+        assert_eq!(approval_json["preview"]["kind"], "command");
+        assert_eq!(approval_json["preview"]["command"], "git status");
+        let approval_id = approval_json["approval_id"]
             .as_str()
             .expect("approval id")
             .to_string();

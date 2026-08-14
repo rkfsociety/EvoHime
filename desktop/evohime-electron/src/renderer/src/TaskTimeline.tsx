@@ -230,9 +230,15 @@ export function TaskTimeline({
             ) : null}
 
             {approval ? (
-              <li className="approval" role="alert">
+              <li className="approval task-timeline__approval" role="alert">
                 <strong>Нужно разрешение: {approval.toolName}</strong>
                 <span>{approval.permission} · {approval.scope}</span>
+                <strong>{approval.preview.summary}</strong>
+                {approval.preview.command ? <code>Команда: {approval.preview.command}</code> : null}
+                {approval.preview.cwd ? <code>cwd: {approval.preview.cwd}</code> : null}
+                {approval.preview.path ? <code>Файл: {approval.preview.path}</code> : null}
+                {approval.preview.details ? <pre className="approval__details">{approval.preview.details}</pre> : null}
+                {approval.preview.truncated ? <small>Preview ограничен по размеру.</small> : null}
                 <div>
                   <button type="button" onClick={() => void resolveApproval(true)} disabled={busy}>Разрешить</button>
                   <button type="button" onClick={() => void resolveApproval(false)} disabled={busy}>Отклонить</button>

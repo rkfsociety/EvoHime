@@ -156,4 +156,29 @@ describe('transcript', () => {
     )
     expect(done.approval).toBeNull()
   })
+
+  it('keeps the structured approval preview for the safety UI', () => {
+    const { approval } = buildTranscript(stream(event('ApprovalRequired', {
+      approval_id: 'approval-2',
+      tool_name: 'shell.execute',
+      permission: 'ShellExecute',
+      scope: 'crates',
+      preview: {
+        kind: 'command',
+        summary: 'Запустить команду',
+        command: 'cargo test -p evohime-core',
+        cwd: 'crates',
+        truncated: false
+      }
+    })))
+
+    expect(approval).toMatchObject({
+      approvalId: 'approval-2',
+      preview: {
+        kind: 'command',
+        command: 'cargo test -p evohime-core',
+        cwd: 'crates'
+      }
+    })
+  })
 })

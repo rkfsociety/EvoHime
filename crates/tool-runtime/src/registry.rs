@@ -1,4 +1,4 @@
-use evohime_permissions::{Permission, PermissionDecision, PermissionEngine};
+use evohime_permissions::{ApprovalPreview, Permission, PermissionDecision, PermissionEngine};
 use serde_json::Value;
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 use thiserror::Error;
@@ -28,6 +28,7 @@ pub enum ToolError {
         scope: String,
         approval_id: uuid::Uuid,
         input: Value,
+        preview: ApprovalPreview,
     },
     #[error("approval does not match this call")]
     ApprovalMismatch,
@@ -286,6 +287,7 @@ impl ToolRegistry {
 
         let scope = scope_from_input(name, &input);
         let command = command_from_input(name, &input);
+        let preview = approval_preview(name, &scope, command.as_deref(), &input);
         for permission in definition.permissions {
             match self
                 .permissions
@@ -304,7 +306,7 @@ impl ToolRegistry {
                 PermissionDecision::NeedsApproval => {
                     let approval = self
                         .permissions
-                        .create_approval_scoped_for_call_with_command(
+                        .create_approval_scoped_for_call_with_command_and_preview(
                             ctx.task_id,
                             ctx.session_id,
                             name,
@@ -312,6 +314,7 @@ impl ToolRegistry {
                             scope,
                             command.clone(),
                             &input,
+                            preview.clone(),
                         )
                         .await;
                     return Err(ToolError::NeedsApproval {
@@ -320,6 +323,7 @@ impl ToolRegistry {
                         scope: approval.scope,
                         approval_id: approval.id,
                         input: input.clone(),
+                        preview: approval.preview,
                     });
                 }
             }
@@ -557,6 +561,143 @@ fn command_from_input(tool_name: &str, input: &Value) -> Option<String> {
         _ => return None,
     };
     Some(command.to_string())
+}
+
+const MAX_APPROVAL_PREVIEW_DETAILS: usize = 8 * 1024;
+
+/// Build the user-facing part of an approval without forwarding an unbounded
+/// copy of the model's complete tool input to the shell. The exact input is
+/// still bound by the approval call hash and is rechecked by Core on execute.
+fn approval_preview(
+    tool_name: &str,
+    scope: &str,
+    command: Option<&str>,
+    input: &Value,
+) -> ApprovalPreview {
+    let path = input
+        .get("path")
+        .and_then(Value::as_str)
+        .map(|value| value.replace('\\', "/"));
+    let cwd = input
+        .get("cwd")
+        .and_then(Value::as_str)
+        .map(|value| value.replace('\\', "/"))
+        .or_else(|| (tool_name == tools::shell::NAME).then(|| scope.to_string()));
+
+    match tool_name {
+        tools::shell::NAME => ApprovalPreview {
+            kind: "command".into(),
+            summary: format!(
+                "Запустить команду{}",
+                cwd.as_deref()
+                    .map(|value| format!(" в {value}"))
+                    .unwrap_or_default()
+            ),
+            command: command.map(str::to_string),
+            cwd,
+            path: None,
+            details: None,
+            truncated: false,
+        },
+        tools::write::NAME => {
+            let content = input.get("content").and_then(Value::as_str).unwrap_or_default();
+            let bytes = content.len();
+            let (details, truncated) = bounded_preview(content);
+            ApprovalPreview {
+                kind: "file_write".into(),
+                summary: format!("Записать файл ({bytes} байт)"),
+                command: None,
+                cwd: None,
+                path,
+                details: (!details.is_empty()).then_some(details),
+                truncated,
+            }
+        }
+        tools::patch::NAME => {
+            let (details, truncated) = bounded_preview(
+                input
+                    .get("patch")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default(),
+            );
+            ApprovalPreview {
+                kind: "diff".into(),
+                summary: "Применить unified diff".into(),
+                command: None,
+                cwd: None,
+                path,
+                details: (!details.is_empty()).then_some(details),
+                truncated,
+            }
+        }
+        tools::git::COMMIT_NAME => {
+            let (details, truncated) = bounded_preview(
+                input
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default(),
+            );
+            ApprovalPreview {
+                kind: "git_commit".into(),
+                summary: "Создать git-коммит".into(),
+                command: command.map(str::to_string),
+                cwd: None,
+                path: None,
+                details: (!details.is_empty()).then_some(details),
+                truncated,
+            }
+        }
+        _ => {
+            let (details, truncated) = bounded_preview(&preview_summary(input));
+            ApprovalPreview {
+                kind: "operation".into(),
+                summary: format!("Выполнить {tool_name}"),
+                command: command.map(str::to_string),
+                cwd,
+                path,
+                details: (!details.is_empty()).then_some(details),
+                truncated,
+            }
+        }
+    }
+}
+
+fn preview_summary(input: &Value) -> String {
+    let Some(object) = input.as_object() else {
+        return String::new();
+    };
+    let mut fields = Vec::new();
+    for (key, value) in object {
+        if matches!(key.as_str(), "content" | "patch") || is_sensitive_key(key) {
+            continue;
+        }
+        let rendered = match value {
+            Value::String(text) => text.clone(),
+            _ => value.to_string(),
+        };
+        fields.push(format!("{key}={rendered}"));
+    }
+    fields.join("\n")
+}
+
+fn is_sensitive_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    ["secret", "token", "password", "api_key", "private_key"]
+        .iter()
+        .any(|needle| key.contains(needle))
+}
+
+fn bounded_preview(value: &str) -> (String, bool) {
+    let mut end = value.len().min(MAX_APPROVAL_PREVIEW_DETAILS);
+    while end > 0 && !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    let truncated = end < value.len();
+    let mut result = value[..end].to_string();
+    if truncated {
+        result.push_str("\n… preview truncated");
+    }
+    (result, truncated)
 }
 
 #[cfg(test)]
@@ -825,6 +966,46 @@ mod tests {
             scope_from_input("git.status", &serde_json::json!({})),
             "workspace"
         );
+    }
+
+    #[test]
+    fn approval_preview_describes_shell_command_without_full_input_dump() {
+        let input = serde_json::json!({
+            "program": "cargo",
+            "args": ["test", "-p", "evohime-core"],
+            "cwd": "crates/evohime-core",
+            "token": "must-not-be-previewed"
+        });
+        let preview = approval_preview(
+            tools::shell::NAME,
+            "crates/evohime-core",
+            Some("cargo test -p evohime-core"),
+            &input,
+        );
+
+        assert_eq!(preview.kind, "command");
+        assert_eq!(preview.cwd.as_deref(), Some("crates/evohime-core"));
+        assert_eq!(
+            preview.command.as_deref(),
+            Some("cargo test -p evohime-core")
+        );
+        assert!(preview.details.is_none());
+    }
+
+    #[test]
+    fn approval_preview_bounds_patch_details() {
+        let input = serde_json::json!({
+            "path": "src/lib.rs",
+            "patch": "x".repeat(MAX_APPROVAL_PREVIEW_DETAILS + 32)
+        });
+        let preview = approval_preview(tools::patch::NAME, "src/lib.rs", None, &input);
+
+        assert_eq!(preview.kind, "diff");
+        assert!(preview.truncated);
+        assert!(preview
+            .details
+            .as_deref()
+            .is_some_and(|details| { details.len() <= MAX_APPROVAL_PREVIEW_DETAILS + 32 }));
     }
 
     #[tokio::test]

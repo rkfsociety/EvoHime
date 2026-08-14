@@ -1708,6 +1708,18 @@ select:focus {
   display: flex;
   gap: 8px;
 }
+
+.approval__details {
+  max-height: 240px;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  color: var(--text, #e7edf7);
+  background: rgb(8 12 18 / 55%);
+  border: 1px solid rgb(224 179 65 / 25%);
+  border-radius: 8px;
+  white-space: pre-wrap;
+}
 .operations-panel {
   display: grid;
   gap: 18px;
