@@ -32,6 +32,8 @@ export const REQUIRED_NATIVE_COMPONENTS = [
 
 const CARGO_TIMEOUT_MS = 90 * 60_000
 const NPM_TIMEOUT_MS = 60 * 60_000
+const CLEANUP_MAX_RETRIES = 60
+const CLEANUP_RETRY_DELAY_MS = 500
 
 export class BuildError extends Error {}
 
@@ -138,7 +140,7 @@ export async function assembleStaging(
     throw new BuildError('Electron package не собрался — каталог win-unpacked отсутствует.')
   }
 
-  await rm(inputs.stagingDirectory, { recursive: true, force: true })
+  await removeTreeResilient(inputs.stagingDirectory)
   await mkdir(inputs.stagingDirectory, { recursive: true })
   await cp(unpacked, inputs.stagingDirectory, { recursive: true })
 
@@ -184,8 +186,24 @@ export async function assembleStaging(
 export async function clearDerivedState(sourceDirectory: string): Promise<void> {
   const electronRoot = join(sourceDirectory, ELECTRON_SUBPATH)
   for (const path of ['release', '.electron-cache', 'out']) {
-    await rm(join(electronRoot, path), { recursive: true, force: true })
+    await removeTreeResilient(join(electronRoot, path))
   }
+}
+
+/**
+ * Windows signing and antivirus processes can keep a build directory open for
+ * a short time after electron-builder has exited. Node's recursive removal
+ * supports bounded retries for exactly this class of transient failure; keep
+ * the retry here so both normal staging and the clean rebuild use the same
+ * behavior.
+ */
+async function removeTreeResilient(path: string): Promise<void> {
+  await rm(path, {
+    recursive: true,
+    force: true,
+    maxRetries: CLEANUP_MAX_RETRIES,
+    retryDelay: CLEANUP_RETRY_DELAY_MS
+  })
 }
 
 /** Same shape as `New-NativePackageManifest` in `scripts/native-package.ps1`. */
