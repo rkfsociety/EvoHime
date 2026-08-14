@@ -122,3 +122,38 @@ describe('update banner', () => {
     expect(container.firstChild).toBeNull()
   })
 })
+
+describe('commit tracking', () => {
+  it('names the installed and target commits instead of a version number', () => {
+    installApi()
+    render(
+      <UpdateBanner
+        status={status({
+          phase: 'available',
+          message: 'Доступно обновление.',
+          installedCommit: 'a'.repeat(40),
+          remoteCommit: 'b'.repeat(40)
+        })}
+      />
+    )
+
+    expect(screen.getByText('aaaaaaa → bbbbbbb')).toBeTruthy()
+  })
+
+  it('names the commit pair and the branch in the launch gate', () => {
+    installApi()
+    const commit = 'a'.repeat(40)
+    render(
+      <UpdateGate
+        status={status({
+          phase: 'preparing',
+          blocking: true,
+          installedCommit: commit,
+          remoteCommit: commit
+        })}
+      />
+    )
+
+    expect(screen.getByText('aaaaaaa → aaaaaaa · main')).toBeTruthy()
+  })
+})

@@ -98,6 +98,14 @@ export function disabledUpdateStatus(branch = 'main'): UpdateStatus {
   }
 }
 
+/**
+ * Short form of a commit for the UI. Versions are only a label for the
+ * installer — what an installation actually is, is the commit it was built from.
+ */
+export function shortCommit(commit: string | null): string {
+  return commit ? commit.slice(0, 7) : '—'
+}
+
 /** Fraction of the run that is done, or `null` while nothing started. */
 export function updateProgress(status: UpdateStatus): number | null {
   const done = status.steps.filter((step) => step.state === 'done' || step.state === 'skipped').length

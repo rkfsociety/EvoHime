@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import type { ConnectionState, CoreEvent, ShellState, UserIdentity } from '@shared/api'
 import type { UpdateStatus } from '@shared/update'
+import { shortCommit } from '@shared/update'
 
 import { useShellApi } from './shell-api'
 import { UpdateBanner } from './UpdateBanner'
@@ -240,6 +241,10 @@ export function App(): React.JSX.Element {
       <footer className="statusbar">
         <span>Протокол {state?.protocol ? `v${state.protocol.major}.${state.protocol.minor}` : '—'}</span>
         <span>Core {state?.coreVersion ?? '—'}</span>
+        {/* Сборка опознаётся коммитом: релизный номер — только ярлык установщика. */}
+        {update && update.phase !== 'disabled' ? (
+          <span title={`Ветка ${update.branch}`}>сборка {shortCommit(update.installedCommit)}</span>
+        ) : null}
         <span>seq {state?.lastSequence ?? 0}</span>
         {(state?.reconnectAttempts ?? 0) > 0 ? <span>переподключений: {state?.reconnectAttempts}</span> : null}
         <span className="statusbar__spacer" />

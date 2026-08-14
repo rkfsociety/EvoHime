@@ -1,5 +1,5 @@
 import type { UpdateStatus } from '@shared/update'
-import { updateProgress } from '@shared/update'
+import { shortCommit, updateProgress } from '@shared/update'
 
 import { useShellApi } from './shell-api'
 import './UpdateSurface.css'
@@ -33,7 +33,15 @@ export function UpdateBanner({ status }: UpdateBannerProps): React.JSX.Element |
     >
       <span aria-hidden="true">{status.phase === 'failed' ? '⚠' : '⟳'}</span>
       <span className="update-banner__text">
-        <span className="update-banner__message">{status.error ?? status.message}</span>
+        <span className="update-banner__message">
+          {status.error ?? status.message}
+          {status.remoteCommit && status.remoteCommit !== status.installedCommit ? (
+            <span className="update-banner__commits">
+              {' '}
+              {shortCommit(status.installedCommit)} → {shortCommit(status.remoteCommit)}
+            </span>
+          ) : null}
+        </span>
         {status.detail ? <span className="update-banner__detail">{status.detail}</span> : null}
         {showProgress ? (
           <span

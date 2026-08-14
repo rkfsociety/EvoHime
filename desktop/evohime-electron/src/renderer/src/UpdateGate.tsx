@@ -1,5 +1,5 @@
 import type { UpdateStatus } from '@shared/update'
-import { updateProgress } from '@shared/update'
+import { shortCommit, updateProgress } from '@shared/update'
 
 import { useShellApi } from './shell-api'
 import './UpdateSurface.css'
@@ -34,7 +34,12 @@ export function UpdateGate({ status }: UpdateGateProps): React.JSX.Element | nul
     <div className="update-gate" role="dialog" aria-modal="true" aria-label="Обновление EvoHime">
       <div className="update-gate__panel">
         <h2 className="update-gate__title">Обновляю Еву</h2>
-        <p className="update-gate__message">{status.message}</p>
+        <p className="update-gate__message">
+          {status.message}{' '}
+          <span className="update-banner__commits">
+            {shortCommit(status.installedCommit)} → {shortCommit(status.remoteCommit)} · {status.branch}
+          </span>
+        </p>
 
         <div
           className={`update-progress${progress === null ? ' update-progress--indeterminate' : ''}`}
