@@ -147,6 +147,9 @@ jobs:
           "version=$version" >> $env:GITHUB_OUTPUT
           "tag=$tag" >> $env:GITHUB_OUTPUT
           Write-Host "Project version: $version; latest release: $latestTag; release required: $shouldRelease"
+          # «Релизов ещё нет» — нормальный ответ, а не отказ шага: без сброса
+          # кода выхода неудачный gh api роняет весь prepare-release.
+          exit 0
 
   build-native:
     needs: [rust-native, windows-check, prepare-release]
