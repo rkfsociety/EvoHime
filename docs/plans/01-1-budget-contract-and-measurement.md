@@ -45,13 +45,30 @@ hash через versioned Core event/API.
   versioned, кэшируется для неизменных item. При расхождении с фактическим
   usage Core применяет консервативный over-estimate, помечает событие и
   корректирует профиль, но не расширяет уже начатый запуск.
+- Отказ провайдера по длине контекста считать ошибкой оценки, а не поводом
+  расширить бюджет: Core выполняет ровно один deterministic re-plan с
+  ужесточённым профилем и той же обязательной частью контекста. Повторный отказ
+  завершает вызов через `BudgetUnavailable`; каскад re-plan запрещён.
 - Ввести `ContextItem` с `id`, `task_id`, `session_id`, `parent_id`, `kind`,
   `source`, `priority`, `trust`, `privacy`, `created_at`, `last_used_at`,
-  `ttl`, `retention`, `version`, `tokenizer_version`, `bytes`,
-  `estimated_tokens`, `selected` и `drop_reason`.
+  `ttl`, `retention`, `pinned`, `version`, `tokenizer_version`, `content_hash`,
+  `bytes`, `estimated_tokens`, `selected` и `drop_reason`.
+- `content_hash` считается по нормализованному содержимому item и служит
+  единым основанием для дедупликации, `drop_reason=duplicate`, conflict
+  detection и дедупликации artifact store.
+- `pinned` выставляется только пользовательской командой, поднимает эффективный
+  priority и выводит item из обычного pruning. Pin не может нарушить
+  `hard_limit`, вытеснить минимально обязательный контекст или удержать item с
+  истёкшим retention: при нехватке бюджета pinned item отбрасывается последним
+  и с явным `drop_reason`.
 - Зафиксировать справочник `drop_reason`: `over_budget`, `low_priority`,
   `duplicate`, `superseded`, `expired`, `unverified`, `offloaded`,
   `privacy_restricted`, `invalid_tool_state` и `policy_denied`.
+- Зафиксировать покрытие `context_ledger_hash`: он считается по ids выбранных
+  item, их порядку в собранном контексте, версиям profile и tokenizer и по
+  применённым compression/pruning-решениям. Одинаковый hash обязан означать
+  одинаковый фактический вход модели; изменение порядка или решения о сжатии
+  меняет hash.
 - Не сохранять в diagnostics сырой prompt, тело памяти или raw tool output;
   сохранять только ids, counts, hashes, policy labels, bounded reasons,
   `compression_ratio`, `offloaded_bytes` и budget counters.
@@ -65,6 +82,12 @@ hash через versioned Core event/API.
   estimator;
 - профиль неизвестной модели не может обойти обязательный минимум: несовместимые
   значения дают `BudgetUnavailable`, а не молчаливое превышение;
+- ledger hash меняется при изменении порядка item, версии profile/tokenizer или
+  применённого compression-решения и совпадает при идентичном входе модели;
+- context-length error провайдера даёт ровно один re-plan, затем
+  `BudgetUnavailable`; каскад re-plan не возникает;
+- pinned item не вытесняет минимально обязательный контекст и не приводит к
+  превышению `hard_limit`;
 - security tests: diagnostics не содержат prompt, memory body, secret или raw
   tool result.
 

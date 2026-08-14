@@ -29,10 +29,21 @@ Task artifact store и bounded task-scoped scratchpad.
   не использовать как instructions и автоматически удалять по TTL либо после
   N шагов. Перезапись подтверждённой записи допускается только новой ревизией
   с conflict entry, а не silent override.
+- Scratchpad имеет жёсткий лимит размера в пределах своей категории бюджета.
+  При превышении Core автоматически выгружает самые старые `confirmed` записи
+  в artifact store, оставляя в контексте bounded summary с hash и locator;
+  минимально обязательный контекст и `open_questions` текущего шага при этом не
+  вытесняются. Молчаливое усечение записи запрещено.
 - Большие результаты filesystem/search хранить в локальном Core-owned task
   artifact store, не во внешнем сервисе. В контекст помещать bounded summary,
   hash, locator, размер, TTL и privacy label; полный результат позже читать
   отдельным Core API с повторной policy/approval-проверкой.
+- Artifact store дедуплицирует содержимое по `content_hash` из 01.1: повторный
+  offload того же содержимого переиспользует существующий артефакт и добавляет
+  ссылку, а не копию. Store имеет bounded квоту на задачу и на диск; вытеснение
+  идёт по TTL и последнему обращению, при этом артефакт, на который ссылается
+  живой ledger entry или confirmed запись scratchpad, не удаляется молча —
+  ссылка помечается как `expired` с сохранением hash и размера.
 - Внешние tool outputs считать недоверенными данными, явно маркировать их как
   `data_not_instructions` и проверять на prompt-injection перед извлечением
   scratchpad. Содержимое tool output не может менять policy, permissions,
@@ -44,6 +55,11 @@ Task artifact store и bounded task-scoped scratchpad.
   concurrent ledger updates;
 - большой tool output попадает в artifact store, а в контекст — только summary
   с hash и locator;
+- повторный offload одинакового содержимого не создаёт второй артефакт, а
+  переполнение квоты вытесняет по TTL/последнему обращению без молчаливой
+  потери ссылок из ledger;
+- переполненный scratchpad выгружает старые `confirmed` записи в artifact store
+  и не усекает записи молча;
 - после restart в рабочий контекст возвращаются только `confirmed` записи, а
   `recovered/unverified` остаются изолированными;
 - security test: внешние данные не становятся instructions и не меняют policy,

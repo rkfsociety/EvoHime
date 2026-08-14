@@ -13,7 +13,7 @@
 ## Что этап отдаёт наружу
 
 Additive-поля read-only `ModelContext` и Core-команды просмотра scratchpad,
-`summarize now`, `clear task scratchpad` и `forget memory`.
+`summarize now`, `clear task scratchpad`, `forget memory` и `pin/unpin item`.
 
 ## Содержание
 
@@ -22,11 +22,20 @@ Additive-поля read-only `ModelContext` и Core-команды просмот
   tool loadout. Старые Electron/WinUI clients игнорируют неизвестные поля;
   добавить compatibility tests для старой и новой схемы без major bump.
 - Добавить команду просмотра scratchpad только через Core и с bounded output.
-- Дать UI действия `summarize now`, `clear task scratchpad` и `forget memory`
-  только через Core, существующие approval/privacy rules, rate limit и audit.
-  Каждая команда является mutation и получает ledger entry. `forget memory`
-  каскадно удаляет производные summaries, scratchpad links и task artifacts,
-  сохраняя redacted audit факт удаления.
+- Дать UI действия `summarize now`, `clear task scratchpad`, `forget memory` и
+  `pin/unpin item` только через Core, существующие approval/privacy rules, rate
+  limit и audit. Каждая команда является mutation и получает ledger entry.
+  `forget memory` каскадно удаляет производные summaries, scratchpad links и
+  task artifacts, сохраняя redacted audit факт удаления.
+- `pin/unpin item` выставляет флаг `pinned` из 01.1. UI показывает, что pin
+  повышает приоритет, но не гарантирует включение в контекст: при нехватке
+  бюджета pinned item отбрасывается последним и с явной причиной.
+- До реализации Memory Extraction каскад `forget memory` ограничен записями
+  Memory v1 и их производными; UI не обещает удаление того, что Core ещё не
+  умеет отслеживать.
+- Отказ сборки контекста показывать явно: `BudgetUnavailable` доходит до UI как
+  bounded человекочитаемая причина с указанием, какой минимум не поместился, а
+  не как молчаливый обрыв ответа или generic error.
 - UI показывает человекочитаемые bounded причины и влияние операции, но не
   получает тела памяти, raw tool outputs или неограниченный список ids.
 
@@ -37,6 +46,10 @@ Additive-поля read-only `ModelContext` и Core-команды просмот
 - `forget memory` каскадно удаляет производные summaries, scratchpad links и
   task artifacts, оставляя redacted audit факт удаления;
 - каждая mutation-команда получает ledger entry и подчиняется rate limit;
+- `BudgetUnavailable` доходит до UI bounded причиной, а не молчаливым обрывом
+  или generic error;
+- pinned item не отменяет hard limit: при нехватке бюджета UI получает явную
+  причину его отбрасывания;
 - security test: UI не получает prompt, memory body, secret, raw tool result и
   неограниченный список ids.
 
