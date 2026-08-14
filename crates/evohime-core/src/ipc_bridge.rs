@@ -769,6 +769,11 @@ impl IpcBridge {
                 self.write_response(writer, "memory.rejected", result)
                     .await?;
             }
+            Some(generated::command_envelope::Command::ReviseMemoryCandidate(request)) => {
+                let result = self.dispatch_revise_memory_candidate(request).await?;
+                self.write_response(writer, "memory.revised", result)
+                    .await?;
+            }
             Some(generated::command_envelope::Command::SupersedeMemory(request)) => {
                 let result = self.dispatch_supersede_memory(request).await?;
                 self.write_response(writer, "memory.superseded", result)
@@ -1802,6 +1807,34 @@ impl IpcBridge {
         coordinator
             .dispatch(CoreCommand::RejectMemory {
                 ids: request.ids,
+                approval_id: request.approval_id,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_revise_memory_candidate(
+        &self,
+        request: generated::ReviseMemoryCandidate,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::ReviseMemoryCandidate {
+                id: request.id,
+                statement: request.statement,
+                session_only: request.session_only,
+                session_id: request.session_id,
                 approval_id: request.approval_id,
                 idempotency_key: request.idempotency_key,
                 reply,
@@ -3915,6 +3948,110 @@ mod tests {
         assert_eq!(
             conflict_list[0]["active"]["id"],
             serde_json::json!("active-1")
+        );
+
+        // "Изменить": the user rewrites the statement before deciding. The
+        // record becomes a user assertion but stays pending.
+        let revised = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "memory-revise-1",
+            generated::command_envelope::Command::ReviseMemoryCandidate(
+                generated::ReviseMemoryCandidate {
+                    id: "pending-1".into(),
+                    statement: "UI строго на английском языке".into(),
+                    session_only: false,
+                    session_id: String::new(),
+                    approval_id: "approval-revise".into(),
+                    idempotency_key: "key-revise".into(),
+                },
+            ),
+        )
+        .await;
+        assert_eq!(revised.event_type, "memory.revised");
+        let revised_json: serde_json::Value =
+            serde_json::from_slice(&revised.payload).expect("payload is valid json");
+        assert_eq!(
+            revised_json["record"]["confirmation_state"],
+            serde_json::json!("pending_confirmation")
+        );
+        assert_eq!(
+            revised_json["record"]["source_trust"],
+            serde_json::json!("user")
+        );
+        assert_eq!(
+            revised_json["record"]["extractor_version"],
+            serde_json::json!("user_edited")
+        );
+        // Even the revision response stays metadata-only.
+        assert!(revised_json["record"].get("statement").is_none());
+
+        // "Только на эту сессию": no persistent memory survives.
+        journal
+            .save_memory(&seed(
+                "pending-3",
+                "pending_confirmation",
+                "временное правило",
+            ))
+            .await
+            .expect("third pending saves");
+        let session_only = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "memory-session-only-1",
+            generated::command_envelope::Command::ReviseMemoryCandidate(
+                generated::ReviseMemoryCandidate {
+                    id: "pending-3".into(),
+                    statement: String::new(),
+                    session_only: true,
+                    session_id: "session-1".into(),
+                    approval_id: "approval-session".into(),
+                    idempotency_key: "key-session".into(),
+                },
+            ),
+        )
+        .await;
+        let session_json: serde_json::Value =
+            serde_json::from_slice(&session_only.payload).expect("payload is valid json");
+        assert_eq!(session_json["session_only"], serde_json::json!(true));
+        assert_eq!(session_json["state"], serde_json::json!("rejected"));
+        let notes = journal
+            .list_memory_session_notes("session-1", &0.to_string())
+            .await
+            .expect("session notes read");
+        assert_eq!(notes.len(), 1, "the statement lives only as a session note");
+
+        // A session-only note without a session id is refused.
+        let no_session = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "memory-session-only-bad".into(),
+            client_id: "memory-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::ReviseMemoryCandidate(
+                generated::ReviseMemoryCandidate {
+                    id: "pending-2".into(),
+                    statement: String::new(),
+                    session_only: true,
+                    session_id: String::new(),
+                    approval_id: "approval-session-2".into(),
+                    idempotency_key: "key-session-2".into(),
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &no_session.encode_to_vec())
+            .await
+            .expect("request writes");
+        assert!(
+            bridge
+                .process_once(&mut server_reader, &mut server_writer)
+                .await
+                .is_err(),
+            "a session-only note needs a session id"
         );
 
         // Confirm without approval is rejected.

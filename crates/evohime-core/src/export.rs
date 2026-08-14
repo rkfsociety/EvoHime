@@ -66,6 +66,13 @@ impl ExportSummary {
     }
 }
 
+/// Local data directory (`EVOHIME_DATA_DIR`, else `%LOCALAPPDATA%\EvoHime`).
+/// Exposed so memory `forget` can rotate the backup containers that still
+/// hold an already-erased statement.
+pub fn local_data_dir() -> PathBuf {
+    data_dir()
+}
+
 fn data_dir() -> PathBuf {
     std::env::var_os("EVOHIME_DATA_DIR")
         .map(PathBuf::from)

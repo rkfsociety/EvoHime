@@ -1793,7 +1793,8 @@ impl LocalDatabase {
                     [&record.effect_id],
                 )?;
             } else {
-                transaction.execute("DELETE FROM run_leases WHERE run_id = ?1", [&record.run_id])?;
+                transaction
+                    .execute("DELETE FROM run_leases WHERE run_id = ?1", [&record.run_id])?;
                 transaction.execute(
                     "UPDATE run_effects SET state = 'unknown', completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                      WHERE effect_id = ?1 AND state = 'executing'",

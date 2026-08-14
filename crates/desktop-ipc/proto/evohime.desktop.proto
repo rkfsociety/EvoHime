@@ -410,6 +410,24 @@ message RejectMemory {
   string idempotency_key = 3;
 }
 
+// Edits a pending candidate before it is confirmed ("изменить"), or keeps it
+// only for the current session ("только на эту сессию").
+//
+// When session_only is true the persistent row is rejected and the statement
+// is stored as a session-scoped note with automatic expiry, so nothing enters
+// long-term memory. Otherwise the edited statement replaces the candidate's
+// own, which resets its confidence: a statement the user rewrote is no longer
+// what the extractor proposed. Editing never confirms by itself -- the record
+// stays pending until ConfirmMemory.
+message ReviseMemoryCandidate {
+  string id = 1;
+  string statement = 2;
+  bool session_only = 3;
+  string session_id = 4;
+  string approval_id = 5;
+  string idempotency_key = 6;
+}
+
 // Resolves a conflict by an explicit user choice: old_id is superseded by
 // new_id. reason is one of "user_choice" | "revalidated" | "expired" |
 // "corrected". Supersede never happens automatically.
@@ -662,6 +680,7 @@ message CommandEnvelope {
     ConfirmMemory confirm_memory = 71;
     RejectMemory reject_memory = 72;
     SupersedeMemory supersede_memory = 73;
+    ReviseMemoryCandidate revise_memory_candidate = 74;
   }
 }
 

@@ -212,6 +212,48 @@ impl LocalDatabase {
     }
 
     /// Validates a backup and restores it through SQLite's Online Backup API.
+    /// Deletes EvoHime backup containers in `directory` older than
+    /// `retention_ms`, returning the names removed.
+    ///
+    /// This is the rotation a memory `forget` relies on: a logically deleted
+    /// statement still lives inside every backup taken before it was erased,
+    /// so those containers must age out on a bounded schedule.
+    ///
+    /// Only files carrying the EvoHime backup magic and a readable manifest
+    /// are considered, and the age comes from that manifest rather than from
+    /// filesystem timestamps, which a copy or a restore would reset. Anything
+    /// else in the directory is left untouched.
+    pub fn purge_expired_backups(
+        directory: impl AsRef<Path>,
+        retention_ms: u64,
+        now_unix_ms: u64,
+    ) -> Result<Vec<String>, StorageError> {
+        let directory = directory.as_ref();
+        if !directory.is_dir() {
+            return Ok(Vec::new());
+        }
+        let cutoff = now_unix_ms.saturating_sub(retention_ms);
+        let mut removed = Vec::new();
+        for entry in fs::read_dir(directory)? {
+            let path = entry?.path();
+            if !path.is_file() {
+                continue;
+            }
+            // An unreadable or foreign file is not ours to delete.
+            let Ok((manifest, _)) = read_manifest(&path) else {
+                continue;
+            };
+            if validate_manifest(&manifest).is_err() || manifest.created_at_unix_ms > cutoff {
+                continue;
+            }
+            if fs::remove_file(&path).is_ok() {
+                removed.push(file_name(&path));
+            }
+        }
+        removed.sort();
+        Ok(removed)
+    }
+
     /// The caller holds the EventJournal lock, which is the Core connection
     /// drain boundary. A safety backup is created before touching the target.
     pub fn restore_backup(
@@ -838,6 +880,54 @@ mod tests {
         if let Some(root) = paths.0.parent() {
             let _ = fs::remove_dir_all(root);
         }
+    }
+
+    #[test]
+    fn backup_rotation_drops_only_expired_evohime_containers() {
+        let paths = paths("retention");
+        let database = LocalDatabase::open(&paths.0).expect("database opens");
+        database
+            .create_backup(&paths.1, "1.0.0", |_| {})
+            .expect("backup writes");
+        let directory = paths.1.parent().expect("backup directory").to_path_buf();
+
+        // A foreign file in the same directory is never ours to delete.
+        let foreign = directory.join("notes.txt");
+        fs::write(&foreign, b"user data").expect("foreign file writes");
+
+        let created = LocalDatabase::preview_backup(&paths.1)
+            .expect("preview reads")
+            .created_at_unix_ms;
+        let retention_ms = 7 * 24 * 60 * 60 * 1000;
+
+        // Inside the retention window nothing is removed.
+        assert!(LocalDatabase::purge_expired_backups(
+            &directory,
+            retention_ms,
+            created + retention_ms - 1
+        )
+        .expect("sweep runs")
+        .is_empty());
+        assert!(paths.1.exists());
+
+        // Once the container ages past the window it is rotated out.
+        let removed = LocalDatabase::purge_expired_backups(
+            &directory,
+            retention_ms,
+            created + retention_ms + 1,
+        )
+        .expect("sweep runs");
+        assert_eq!(removed, vec!["backup.evohime".to_owned()]);
+        assert!(!paths.1.exists());
+        assert!(foreign.exists(), "unrelated files must survive rotation");
+
+        // A missing directory is not an error: there is nothing to rotate.
+        assert!(
+            LocalDatabase::purge_expired_backups(directory.join("absent"), retention_ms, 0)
+                .expect("missing directory is fine")
+                .is_empty()
+        );
+        cleanup(&paths);
     }
 
     #[test]

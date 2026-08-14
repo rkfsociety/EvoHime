@@ -109,6 +109,45 @@ describe('operations panel', () => {
     expect(screen.queryByText(/statement/i)).toBeNull()
   })
 
+  it('edits a candidate without confirming it', async () => {
+    render(
+      <OperationsPanel
+        connection="connected"
+        events={[
+          event('memory.pending', { records: [metadata('cand-3')], counts: { pending_confirmation: 1 } })
+        ]}
+      />
+    )
+    await userEvent.click(await screen.findByRole('button', { name: 'Изменить' }))
+    await userEvent.type(screen.getByLabelText('Новая формулировка'), 'уточнённая формулировка')
+    await userEvent.click(screen.getByRole('button', { name: 'Сохранить правку' }))
+
+    const revise = calls.find((call) => call.command === 'core.reviseMemoryCandidate')
+    expect(revise?.payload).toMatchObject({
+      id: 'cand-3',
+      statement: 'уточнённая формулировка',
+      sessionOnly: false
+    })
+    // Editing must not smuggle in a confirmation.
+    expect(calls.some((call) => call.command === 'core.confirmMemory')).toBe(false)
+  })
+
+  it('keeps a candidate for this session only, with a session id', async () => {
+    render(
+      <OperationsPanel
+        connection="connected"
+        events={[
+          event('memory.pending', { records: [metadata('cand-4')], counts: { pending_confirmation: 1 } })
+        ]}
+      />
+    )
+    await userEvent.click(await screen.findByRole('button', { name: 'Только на эту сессию' }))
+    const revise = calls.find((call) => call.command === 'core.reviseMemoryCandidate')
+    const payload = revise?.payload as { sessionOnly: boolean; sessionId: string }
+    expect(payload.sessionOnly).toBe(true)
+    expect(payload.sessionId.length).toBeGreaterThan(0)
+  })
+
   it('resolves a conflict only through an explicit supersede', async () => {
     render(
       <OperationsPanel

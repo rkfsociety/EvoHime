@@ -73,6 +73,8 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
   const [workspacePath, setWorkspacePath] = useState<string | null>(null)
   const [selected, setSelected] = useState<readonly string[]>([])
   const [message, setMessage] = useState<string | null>(null)
+  const [editing, setEditing] = useState<string | null>(null)
+  const [draft, setDraft] = useState('')
 
   const connected = CONNECTED_STATES.includes(connection)
   const count = (name: string) => events.filter((event) => event.eventType === name).length
@@ -131,6 +133,35 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
       refresh()
     },
     [api, refresh, selected]
+  )
+
+  // "Изменить" and "только на эту сессию" share one Core command: neither
+  // confirms the record, so both leave it in the queue (or, for a
+  // session-only note, out of persistent memory entirely).
+  const revise = useCallback(
+    async (id: string, statement: string, sessionOnly: boolean) => {
+      if (!api) return
+      const stamp = `${Date.now()}-${id}`
+      const outcome = await api.invoke('core.reviseMemoryCandidate', {
+        id,
+        statement,
+        sessionOnly,
+        sessionId: sessionOnly ? `shell-${stamp}` : '',
+        approvalId: `memory-${stamp}`,
+        idempotencyKey: `memory-${stamp}`
+      })
+      setMessage(
+        outcome.ok
+          ? sessionOnly
+            ? 'Запись оставлена только на эту сессию и не попадёт в постоянную память.'
+            : 'Правка отправлена в Core; запись всё ещё ждёт подтверждения.'
+          : outcome.message
+      )
+      setEditing(null)
+      setDraft('')
+      refresh()
+    },
+    [api, refresh]
   )
 
   const resolveConflict = useCallback(
@@ -215,6 +246,43 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
                   {record.model_confidence.toFixed(2)} · проверка {record.validation_status}
                   {record.privacy_class === 'normal' ? '' : ' · содержимое скрыто'}
                 </span>
+                <div className="operations-actions">
+                  {editing === record.id ? (
+                    <>
+                      <input
+                        type="text"
+                        aria-label="Новая формулировка"
+                        value={draft}
+                        onChange={(input) => setDraft(input.target.value)}
+                      />
+                      <button
+                        type="button"
+                        disabled={draft.trim().length === 0}
+                        onClick={() => void revise(record.id, draft, false)}
+                      >
+                        Сохранить правку
+                      </button>
+                      <button type="button" onClick={() => setEditing(null)}>
+                        Отмена
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditing(record.id)
+                          setDraft('')
+                        }}
+                      >
+                        Изменить
+                      </button>
+                      <button type="button" onClick={() => void revise(record.id, '', true)}>
+                        Только на эту сессию
+                      </button>
+                    </>
+                  )}
+                </div>
               </li>
             ))}
           </ol>

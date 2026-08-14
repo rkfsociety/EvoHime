@@ -152,6 +152,7 @@ export const RENDERER_COMMANDS = [
   'core.confirmMemory',
   'core.rejectMemory',
   'core.supersedeMemory',
+  'core.reviseMemoryCandidate',
   'identity.get',
   'repository.get',
   'chat.list',
@@ -226,6 +227,18 @@ export interface CommandPayloads {
     approvalId: string
     idempotencyKey: string
   }
+  /**
+   * Edits a pending candidate ("изменить") or keeps it only for the current
+   * session ("только на эту сессию"). Neither confirms the record.
+   */
+  'core.reviseMemoryCandidate': {
+    id: string
+    statement: string
+    sessionOnly: boolean
+    sessionId?: string
+    approvalId: string
+    idempotencyKey: string
+  }
   'identity.get': Record<string, never>
   'repository.get': { workspacePath: string }
   'chat.list': { workspacePath: string }
@@ -278,6 +291,7 @@ export interface CommandResults {
   'core.confirmMemory': { accepted: boolean }
   'core.rejectMemory': { accepted: boolean }
   'core.supersedeMemory': { accepted: boolean }
+  'core.reviseMemoryCandidate': { accepted: boolean }
   'identity.get': UserIdentity
   'repository.get': RepositorySummary | null
   'chat.list': readonly ChatSummary[]

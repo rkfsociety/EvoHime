@@ -690,6 +690,46 @@ impl MemoryStoreSql {
         Ok(target.to_owned())
     }
 
+    /// Правка statement'а у записи, ожидающей подтверждения.
+    ///
+    /// После правки запись перестаёт быть model-generated: её текст написал
+    /// пользователь, поэтому source trust становится `user`, версия
+    /// извлекателя — `user_edited`, а прошлая проверка сбрасывается, ведь
+    /// evidence относилась к прежней формулировке. Правка ничего не
+    /// подтверждает: запись остаётся pending до явного confirm.
+    pub fn revise_pending_statement(
+        connection: &Connection,
+        id: &str,
+        statement: &str,
+    ) -> Result<(), MemoryStoreError> {
+        validate_required("statement", statement, MAX_CONTENT_BYTES)?;
+        let transaction = connection.unchecked_transaction()?;
+        let state: Option<String> = transaction
+            .query_row(
+                "SELECT confirmation_state FROM memory_entries WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let state = state.ok_or(MemoryStoreError::NotFound)?;
+        if !matches!(state.as_str(), "pending_confirmation" | "candidate") {
+            return Err(MemoryStoreError::InvalidTransition {
+                from: state,
+                to: "revised".to_owned(),
+            });
+        }
+        transaction.execute(
+            "UPDATE memory_entries
+             SET content = ?2, source_trust = 'user', extractor_version = 'user_edited',
+                 model_confidence = 1.0, verification_confidence = 0.0,
+                 validation_status = 'not_required', validated_at = NULL
+             WHERE id = ?1",
+            params![id, redact_sensitive(statement)],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     /// Явный выбор пользователя: `old_id` уступает место `new_id`. Цепочка
     /// `A -> B -> C` хранится через supersedes/superseded_by и обязательную
     /// причину. Операция транзакционная: параллельные confirm сериализуются.
@@ -1518,6 +1558,49 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM memory_entries", [], |row| row.get(0))
             .unwrap();
         assert_eq!(persistent, 0);
+    }
+
+    #[test]
+    fn revising_a_pending_statement_makes_it_a_user_assertion_without_confirming_it() {
+        let connection = Connection::open_in_memory().expect("sqlite opens");
+        schema(&connection);
+        let mut record = pending("p-1", "тема", "модель предложила так");
+        record.extraction.source_trust = "model_inference".to_owned();
+        record.extraction.validation_status = "valid".to_owned();
+        record.extraction.verification_confidence = 0.9;
+        MemoryStoreSql::insert(&connection, &record).expect("insert pending");
+
+        MemoryStoreSql::revise_pending_statement(&connection, "p-1", "пользователь написал так")
+            .expect("revision applies");
+        let revised = MemoryStoreSql::get_by_id(&connection, "p-1")
+            .unwrap()
+            .unwrap();
+        assert_eq!(revised.content, "пользователь написал так");
+        assert_eq!(revised.extraction.source_trust, "user");
+        assert_eq!(revised.extraction.extractor_version, "user_edited");
+        // Прошлая проверка относилась к прежней формулировке.
+        assert_eq!(revised.extraction.verification_confidence, 0.0);
+        assert_eq!(revised.extraction.validation_status, "not_required");
+        // Правка не подтверждает запись.
+        assert_eq!(
+            revised.extraction.confirmation_state,
+            "pending_confirmation"
+        );
+
+        // Секреты не проникают в память через поле правки.
+        MemoryStoreSql::revise_pending_statement(&connection, "p-1", "ключ sk-live-42")
+            .expect("revision applies");
+        let redacted = MemoryStoreSql::get_by_id(&connection, "p-1")
+            .unwrap()
+            .unwrap();
+        assert!(!redacted.content.contains("sk-live-42"));
+
+        // Уже решённую запись править нельзя.
+        MemoryStoreSql::transition_state(&connection, "p-1", "confirmed").unwrap();
+        assert!(matches!(
+            MemoryStoreSql::revise_pending_statement(&connection, "p-1", "поздно"),
+            Err(MemoryStoreError::InvalidTransition { .. })
+        ));
     }
 
     #[test]

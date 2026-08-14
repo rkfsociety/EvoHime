@@ -1068,6 +1068,17 @@ pub enum CoreCommand {
         idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    /// Edits a pending candidate before confirmation, or keeps it only for the
+    /// current session. Neither action confirms anything by itself.
+    ReviseMemoryCandidate {
+        id: String,
+        statement: String,
+        session_only: bool,
+        session_id: String,
+        approval_id: String,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
     /// Resolves a conflict by an explicit user choice: `old_id` is superseded
     /// by `new_id` with a mandatory reason. Supersede happens only here, never
     /// automatically.
@@ -1823,6 +1834,17 @@ impl EventJournal {
         .map_err(|error| error.to_string())
     }
 
+    /// Replaces a pending candidate's statement with one the user wrote.
+    pub async fn revise_pending_memory(&self, id: &str, statement: &str) -> Result<(), String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::revise_pending_statement(
+            database.connection(),
+            id,
+            statement,
+        )
+        .map_err(|error| error.to_string())
+    }
+
     /// Applies an explicit user choice: `old_id` is superseded by `new_id`.
     pub async fn supersede_memory(
         &self,
@@ -1923,6 +1945,20 @@ impl EventJournal {
             statement,
             created_at,
             expires_at,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    pub async fn list_memory_session_notes(
+        &self,
+        session_id: &str,
+        now: &str,
+    ) -> Result<Vec<(String, String)>, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::list_session_notes(
+            database.connection(),
+            session_id,
+            now,
         )
         .map_err(|error| error.to_string())
     }
@@ -6046,6 +6082,16 @@ impl TaskCoordinator {
                             "memory record was not found or is already forgotten".to_string()
                         );
                     }
+                    // The erased statement still exists inside every backup
+                    // taken before this point, so forget also rotates the
+                    // containers that have aged past the retention window.
+                    let rotated = evohime_local_storage::LocalDatabase::purge_expired_backups(
+                        crate::export::local_data_dir(),
+                        crate::memory_extraction::FORGET_BACKUP_RETENTION_MS,
+                        memory_now_ms(),
+                    )
+                    .map(|removed| removed.len())
+                    .unwrap_or(0);
                     Self::record_audit(
                         &state,
                         crate::audit::AuditKind::Approval,
@@ -6056,6 +6102,7 @@ impl TaskCoordinator {
                             ("approval_id".to_owned(), approval_id),
                             ("tombstone_id".to_owned(), tombstone_id.clone()),
                             ("reason_class".to_owned(), "user_request".to_owned()),
+                            ("rotated_backups".to_owned(), rotated.to_string()),
                         ],
                     )
                     .await;
@@ -6063,6 +6110,7 @@ impl TaskCoordinator {
                         "id": id,
                         "forgotten": true,
                         "tombstone_id": tombstone_id,
+                        "rotated_backups": rotated,
                     }))
                     .map_err(|error| error.to_string())
                 }
@@ -6224,6 +6272,114 @@ impl TaskCoordinator {
                     crate::memory_extraction::ConfirmationState::Rejected,
                     "memory.rejected",
                 )
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::ReviseMemoryCandidate {
+                id,
+                statement,
+                session_only,
+                session_id,
+                approval_id,
+                idempotency_key,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    crate::memory_api::Approval::new(
+                        approval_id.clone(),
+                        crate::memory_api::MemoryOperation::Update,
+                    )
+                    .map_err(|error| error.to_string())?;
+                    validate_memory_idempotency_key(&idempotency_key)?;
+                    let record = journal
+                        .get_memory(&id)
+                        .await?
+                        .ok_or_else(|| "memory record was not found".to_string())?;
+                    let statement = if statement.trim().is_empty() {
+                        record.content.clone()
+                    } else {
+                        statement
+                    };
+
+                    if session_only {
+                        // "Только на эту сессию": no persistent row survives.
+                        // The candidate is rejected outright and the statement
+                        // lives on solely as a session note that expires by
+                        // itself, so it can never reach long-term retrieval.
+                        if session_id.trim().is_empty() {
+                            return Err(
+                                "session_id is required for a session-only note".to_string()
+                            );
+                        }
+                        let now_ms = memory_now_ms();
+                        let expires_at = now_ms
+                            .saturating_add(crate::memory_extraction::SESSION_SUMMARY_GRACE_MS);
+                        journal
+                            .save_memory_session_note(
+                                &uuid::Uuid::new_v4().to_string(),
+                                &session_id,
+                                record.scope,
+                                &record.scope_id,
+                                &record.extraction.kind,
+                                &statement,
+                                &now_ms.to_string(),
+                                &expires_at.to_string(),
+                            )
+                            .await?;
+                        let actual = journal
+                            .transition_memory_state(
+                                &id,
+                                crate::memory_extraction::ConfirmationState::Rejected.as_str(),
+                            )
+                            .await?;
+                        Self::record_audit(
+                            &state,
+                            crate::audit::AuditKind::Approval,
+                            id.clone(),
+                            "memory.session_only",
+                            [
+                                ("memory_id".to_owned(), id.clone()),
+                                ("session_id".to_owned(), session_id.clone()),
+                                ("approval_id".to_owned(), approval_id),
+                                ("idempotency_key".to_owned(), idempotency_key),
+                            ],
+                        )
+                        .await;
+                        return serde_json::to_vec(&serde_json::json!({
+                            "id": id,
+                            "state": actual,
+                            "session_only": true,
+                            "expires_at_ms": expires_at,
+                        }))
+                        .map_err(|error| error.to_string());
+                    }
+
+                    journal.revise_pending_memory(&id, &statement).await?;
+                    Self::record_audit(
+                        &state,
+                        crate::audit::AuditKind::Approval,
+                        id.clone(),
+                        "memory.revised",
+                        [
+                            ("memory_id".to_owned(), id.clone()),
+                            ("approval_id".to_owned(), approval_id),
+                            ("idempotency_key".to_owned(), idempotency_key),
+                        ],
+                    )
+                    .await;
+                    let revised = journal
+                        .get_memory(&id)
+                        .await?
+                        .ok_or_else(|| "memory record was not found".to_string())?;
+                    serde_json::to_vec(&serde_json::json!({
+                        "record": memory_record_to_json(&revised)?,
+                        "session_only": false,
+                    }))
+                    .map_err(|error| error.to_string())
+                }
                 .await;
                 let _ = reply.send(result);
             }

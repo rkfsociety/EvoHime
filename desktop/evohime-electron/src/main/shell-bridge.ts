@@ -352,6 +352,34 @@ function dispatch(
       return accepted(client.send({ supersedeMemory: { oldId, newId, reason, approvalId, idempotencyKey } }))
     }
 
+    case 'core.reviseMemoryCandidate': {
+      const value = asRecord(payload)
+      const id = asBoundedString(value['id'])
+      // An empty statement is allowed: a session-only note keeps the text Core
+      // already holds instead of asking the user to retype it.
+      const statement = asOptionalBoundedString(value['statement'])
+      const sessionOnly = value['sessionOnly']
+      const sessionId = asOptionalBoundedString(value['sessionId'])
+      const approvalId = asBoundedString(value['approvalId'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (
+        id === null ||
+        statement === null ||
+        typeof sessionOnly !== 'boolean' ||
+        sessionId === null ||
+        approvalId === null ||
+        idempotencyKey === null
+      ) {
+        return failure('invalid-payload', 'Некорректная правка кандидата в память.')
+      }
+      log('info', 'shell.command_forwarded', { command })
+      return accepted(
+        client.send({
+          reviseMemoryCandidate: { id, statement, sessionOnly, sessionId, approvalId, idempotencyKey }
+        })
+      )
+    }
+
     case 'identity.get':
       return resolveIdentity().then((value) => ({ ok: true, value }))
 
