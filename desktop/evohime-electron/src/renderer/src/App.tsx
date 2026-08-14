@@ -5,7 +5,7 @@ import type { UpdateStatus } from '@shared/update'
 import { shortCommit } from '@shared/update'
 
 import { useShellApi } from './shell-api'
-import { UpdateBanner } from './UpdateBanner'
+import { UpdateIndicator } from './UpdateIndicator'
 import { UpdateGate } from './UpdateGate'
 import { ProjectSidebar } from './ProjectSidebar'
 import { TaskTimeline } from './TaskTimeline'
@@ -174,6 +174,7 @@ export function App(): React.JSX.Element {
           <span className="account__name" title={identityTitle(identity)}>
             {identity?.name ?? '…'}
           </span>
+          <UpdateIndicator status={update} />
           <button
             type="button"
             className="account__settings"
@@ -204,7 +205,6 @@ export function App(): React.JSX.Element {
         </header>
 
         <div className="main__body">
-          {update ? <UpdateBanner status={update} /> : null}
           <RecoveryBanner
             connection={connection}
             events={events}

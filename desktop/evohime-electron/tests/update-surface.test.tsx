@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { disabledUpdateStatus, initialUpdateSteps, updateProgress, type UpdateStatus } from '@shared/update'
 import { UpdateBanner } from '../src/renderer/src/UpdateBanner'
 import { UpdateGate } from '../src/renderer/src/UpdateGate'
+import { UpdateIndicator } from '../src/renderer/src/UpdateIndicator'
 
 function status(overrides: Partial<UpdateStatus> = {}): UpdateStatus {
   return { ...disabledUpdateStatus('main'), phase: 'idle', ...overrides }
@@ -119,6 +120,37 @@ describe('update banner', () => {
     installApi()
     const { container } = render(<UpdateBanner status={status({ phase: 'preparing', blocking: true })} />)
 
+    expect(container.firstChild).toBeNull()
+  })
+})
+
+describe('sidebar update indicator', () => {
+  it('opens a detailed, closable status popover for a running rebuild', () => {
+    installApi()
+    render(
+      <UpdateIndicator
+        status={status({
+          phase: 'preparing',
+          message: 'Пересобираю Еву…',
+          detail: 'Compiling evohime-core',
+          steps: initialUpdateSteps().map((step) =>
+            step.id === 'core' ? { ...step, state: 'active' as const } : step
+          )
+        })}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Показать статус фонового обновления' }))
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(screen.getByText('Compiling evohime-core')).toBeTruthy()
+    expect(screen.getByText('Сборка Core').getAttribute('data-state')).toBe('active')
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('keeps the compact control out of the sidebar when there is no update to show', () => {
+    const { container } = render(<UpdateIndicator status={status({ phase: 'up-to-date' })} />)
     expect(container.firstChild).toBeNull()
   })
 })
