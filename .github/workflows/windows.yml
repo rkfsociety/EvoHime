@@ -228,11 +228,49 @@ jobs:
           }
 
       # Установщик нужен только для первой установки, дальше клиент обновляет
-      # себя из исходников. Поэтому он остаётся артефактом прогона и не
-      # публикуется релизом: версия установки определяется коммитом.
+      # себя из исходников. Каждый прогон оставляет его артефактом; в релиз он
+      # попадает только по ручному запуску workflow.
       - name: Upload single installer
         uses: actions/upload-artifact@v7
         with:
           name: evohime-windows-installer
           path: installer-output\EvoHime-Setup.exe
           if-no-files-found: error
+
+  # Один постоянный релиз с фиксированным тегом: файл в нём перезаписывается,
+  # новых релизов и версионных тегов не появляется. Права на запись есть только
+  # у этого job и только при ручном запуске.
+  publish-installer:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build-native
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: installer
+      RELEASE_TITLE: EvoHime — установщик
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
+        with:
+          name: evohime-windows-installer
+          path: installer-output
+      - name: Refresh the single installer release
+        shell: pwsh
+        run: |
+          $notes = 'installer/release-notes.md'
+          gh release view $env:RELEASE_TAG 2>$null | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            # Релиз создаётся один раз — только если его вообще нет.
+            gh release create $env:RELEASE_TAG --title $env:RELEASE_TITLE --notes-file $notes
+            if ($LASTEXITCODE -ne 0) { throw 'Не удалось создать релиз установщика.' }
+          }
+          else {
+            gh release edit $env:RELEASE_TAG --title $env:RELEASE_TITLE --notes-file $notes
+            if ($LASTEXITCODE -ne 0) { throw 'Не удалось обновить описание релиза.' }
+          }
+          gh release upload $env:RELEASE_TAG installer-output\EvoHime-Setup.exe --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Не удалось загрузить установщик.' }
+          Write-Host "Установщик обновлён в релизе $env:RELEASE_TAG"
+          exit 0

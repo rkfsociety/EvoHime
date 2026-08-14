@@ -29,7 +29,7 @@ Core и supervisor — внутренние компоненты установ�
 - единый Inno Setup installer с одним desktop shortcut; установленный клиент сам поднимает supervisor, а supervisor — Core;
 - обновление из исходников без релизов: клиент сверяет `evohime.build.json` с вершиной ветки, ставит недостающие инструменты сборки через winget, обновляет свой git checkout, пересобирает продукт локально и отдаёт готовый пакет `evohime-transaction.exe --apply-staging`. При запуске идёт блокирующий gate с шагами пересборки и кнопкой «Пропустить», у запущенного клиента — фоновая сборка и баннер с перезапуском;
 - upgrade smoke в CI, автоматический rollback и recovery незавершённой транзакции перед запуском Core;
-- CI ничего не публикует: `EvoHime-Setup.exe` остаётся артефактом прогона и нужен только для первой установки, дальше клиент обновляет себя сам. `scripts/cleanup-github-releases.ps1` сохранён как ручной инструмент;
+- один постоянный релиз `installer` с описанием из `installer/release-notes.md`: `EvoHime-Setup.exe` в нём перезаписывается по ручному запуску workflow, новых релизов и версионных тегов не создаётся. Постоянная ссылка — `releases/latest/download/EvoHime-Setup.exe`. Установщик нужен только для первой установки, дальше клиент обновляет себя сам;
 - имя агента «Ева» передаётся в system context Core;
 - Core-owned build policy и её хранение;
 - durable recovery foundation для длительных запусков и reconciliation;

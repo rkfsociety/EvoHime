@@ -25,11 +25,27 @@ foreach ($required in @(
     'dotnet test desktop/EvoHime.IpcTests/EvoHime.IpcTests.csproj',
     'winui-test-diagnostics',
     'iscc',
-    'evohime-windows-installer'
+    'evohime-windows-installer',
+    'publish-installer',
+    'RELEASE_TAG: installer',
+    'installer/release-notes.md',
+    '--clobber'
 )) {
     if ($workflow -notmatch [regex]::Escape($required)) {
         throw "GitHub workflow is missing required entry: $required"
     }
+}
+
+# Установщик живёт в одном постоянном релизе: файл перезаписывается, а тег
+# фиксирован. Публикация возможна только по ручному запуску.
+if ($workflow -notmatch [regex]::Escape("if: github.event_name == 'workflow_dispatch'")) {
+    throw 'Installer publication must stay manual.'
+}
+if ($workflow -match 'gh release create "\$env:RELEASE_TAG"?\s+"?installer-output') {
+    throw 'The installer must be uploaded to the existing release, not published as a new one.'
+}
+if ($workflow -match [regex]::Escape('gh release delete')) {
+    throw 'The workflow must not delete releases.'
 }
 
 if ($workflow -match "tags: \['v\*'\]") {
@@ -39,15 +55,14 @@ if ($workflow -match "tags: \['v\*'\]") {
 # Клиент обновляется из исходников по коммитам: workflow проверяет установщик,
 # но не публикует релизы и не решает, «пора ли выпускать версию».
 foreach ($forbidden in @(
-    'gh release create',
     'prepare-release',
     'should_release',
     'RELEASE_VERSION',
     'cleanup-github-releases.ps1',
-    'contents: write'
+    '--generate-notes'
 )) {
     if ($workflow -match [regex]::Escape($forbidden)) {
-        throw "GitHub workflow must not publish releases: $forbidden"
+        throw "GitHub workflow must not publish per-version releases: $forbidden"
     }
 }
 
