@@ -11,7 +11,7 @@
 }
 
 .update-gate__panel {
-  width: min(560px, calc(100% - 48px));
+  width: min(600px, calc(100% - 48px));
   padding: 28px 32px 24px;
   border-radius: 16px;
   background: var(--surface-raised, #171a24);
@@ -20,14 +20,37 @@
 }
 
 .update-gate__title {
-  margin: 0 0 4px;
-  font-size: 18px;
+  margin: 0 0 5px;
+  font-size: 20px;
+}
+
+.update-gate__eyebrow {
+  margin: 0 0 8px;
+  color: var(--accent, #9a8cff);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
 }
 
 .update-gate__message {
-  margin: 0 0 16px;
+  margin: 0;
   color: var(--text-secondary, #a8b0c2);
 }
+
+.update-gate__meta,
+.update-gate__progress-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-muted, #7c8496);
+  font-size: 11px;
+}
+
+.update-gate__meta { margin: 14px 0 12px; }
+.update-gate__meta strong,
+.update-gate__progress-label strong { color: var(--text-primary, #eef1f8); font-weight: 600; }
+.update-gate__commits { font-family: var(--font-mono, ui-monospace, monospace); }
 
 .update-progress {
   height: 6px;
@@ -43,6 +66,25 @@
   transition: width 240ms ease;
 }
 
+.update-gate__progress-label { margin-top: 8px; }
+
+.update-gate__current {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 18px;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent, #8d82e8) 45%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent, #8d82e8) 10%, transparent);
+}
+
+.update-gate__current-marker { color: var(--accent, #9a8cff); font-size: 14px; line-height: 18px; }
+.update-gate__current strong,
+.update-gate__current span { display: block; }
+.update-gate__current strong { font-size: 13px; }
+.update-gate__current div span { margin-top: 2px; color: var(--text-secondary, #a8b0c2); font-size: 11px; }
+
 .update-progress--indeterminate .update-progress__value {
   width: 35%;
   animation: update-progress-slide 1.4s ease-in-out infinite;
@@ -54,7 +96,7 @@
 }
 
 .update-steps {
-  margin: 18px 0 0;
+  margin: 16px 0 0;
   padding: 0;
   list-style: none;
   display: grid;
@@ -69,6 +111,13 @@
   font-size: 13px;
 }
 
+.update-steps__copy { min-width: 0; }
+.update-steps__copy strong,
+.update-steps__copy small { display: block; }
+.update-steps__copy strong { font-weight: 500; }
+.update-steps__copy small { margin-top: 1px; color: var(--text-muted, #7c8496); font-size: 10px; }
+.update-steps__item[data-state='active'] .update-steps__copy strong { font-weight: 650; }
+
 .update-steps__item[data-state='active'] { color: var(--text-primary, #eef1f8); }
 .update-steps__item[data-state='done'] { color: var(--success, #6fd08c); }
 .update-steps__item[data-state='failed'] { color: var(--danger, #ff7a7a); }
@@ -79,14 +128,28 @@
 }
 
 .update-gate__detail {
+  display: grid;
+  gap: 5px;
   margin: 16px 0 0;
-  min-height: 18px;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 12px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-backdrop, #0c0e16) 65%, transparent);
   color: var(--text-muted, #7c8496);
+  font-size: 10px;
+}
+
+.update-gate__detail code {
+  overflow: hidden;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .update-gate__panel { width: calc(100% - 24px); padding: 22px 20px 18px; }
+  .update-steps__copy small { display: none; }
 }
 
 .update-gate__actions {

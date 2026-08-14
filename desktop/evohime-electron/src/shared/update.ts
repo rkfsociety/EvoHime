@@ -78,6 +78,15 @@ export const UPDATE_STEP_LABELS: Record<UpdateStepId, string> = {
   apply: 'Применение'
 }
 
+export const UPDATE_STEP_DESCRIPTIONS: Record<UpdateStepId, string> = {
+  toolchain: 'Проверяю и подготавливаю Git, Rust и Node.js.',
+  source: 'Синхронизирую локальную копию с выбранным commit.',
+  core: 'Компилирую Rust Core и supervisor.',
+  shell: 'Собираю Electron-оболочку приложения.',
+  package: 'Формирую переносимый Windows-пакет.',
+  apply: 'Передаю пакет установщику и перезапускаю приложение.'
+}
+
 export function initialUpdateSteps(): readonly UpdateStep[] {
   return UPDATE_STEPS.map((id) => ({ id, label: UPDATE_STEP_LABELS[id], state: 'pending' as const }))
 }
@@ -112,4 +121,12 @@ export function updateProgress(status: UpdateStatus): number | null {
   const active = status.steps.some((step) => step.state === 'active')
   if (done === 0 && !active) return null
   return Math.min(1, (done + (active ? 0.5 : 0)) / status.steps.length)
+}
+
+export function completedUpdateSteps(status: UpdateStatus): number {
+  return status.steps.filter((step) => step.state === 'done' || step.state === 'skipped').length
+}
+
+export function activeUpdateStep(status: UpdateStatus): UpdateStep | null {
+  return status.steps.find((step) => step.state === 'active') ?? null
 }
