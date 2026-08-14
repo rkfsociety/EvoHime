@@ -3,10 +3,10 @@
     <TargetFramework>net10.0</TargetFramework>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <Version>0.0.000032</Version>
-    <AssemblyVersion>0.0.0.32</AssemblyVersion>
-    <FileVersion>0.0.0.32</FileVersion>
-    <InformationalVersion>0.0.000032</InformationalVersion>
+    <Version>0.0.000033</Version>
+    <AssemblyVersion>0.0.0.33</AssemblyVersion>
+    <FileVersion>0.0.0.33</FileVersion>
+    <InformationalVersion>0.0.000033</InformationalVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
