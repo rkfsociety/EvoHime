@@ -12,13 +12,37 @@ interface Props {
   readonly events: readonly CoreEvent[]
 }
 
+interface ReviewPreferences {
+  readonly reviewerModels: readonly string[]
+  readonly synthesisModel: string
+}
+
+const REVIEW_PREFERENCES_KEY = 'evohime.review-preferences.v1'
+
+function loadReviewPreferences(): ReviewPreferences {
+  try {
+    const raw = window.localStorage.getItem(REVIEW_PREFERENCES_KEY)
+    if (!raw) return { reviewerModels: [], synthesisModel: '' }
+    const value = JSON.parse(raw) as { reviewerModels?: unknown; synthesisModel?: unknown }
+    return {
+      reviewerModels: Array.isArray(value.reviewerModels)
+        ? value.reviewerModels.filter((model): model is string => typeof model === 'string').slice(0, 8)
+        : [],
+      synthesisModel: typeof value.synthesisModel === 'string' ? value.synthesisModel : ''
+    }
+  } catch {
+    return { reviewerModels: [], synthesisModel: '' }
+  }
+}
+
 export function PlanReviewPanel({ connection, events }: Props): React.JSX.Element {
   const api = useShellApi()
+  const [preferences] = useState(loadReviewPreferences)
   const [fileName, setFileName] = useState('')
   const [sourceMarkdown, setSourceMarkdown] = useState('')
   const [models, setModels] = useState<readonly string[]>([])
-  const [reviewers, setReviewers] = useState<readonly string[]>([])
-  const [synthesisModel, setSynthesisModel] = useState('')
+  const [reviewers, setReviewers] = useState<readonly string[]>(preferences.reviewerModels)
+  const [synthesisModel, setSynthesisModel] = useState(preferences.synthesisModel)
   const [reviewId, setReviewId] = useState<string | null>(null)
   const [selectedResult, setSelectedResult] = useState<PlanReviewResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -51,7 +75,21 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   useEffect(() => {
     setModels(catalogModels)
     setSynthesisModel((current) => current || catalogModels[0] || '')
+    if (catalogModels.length > 0) {
+      setReviewers((current) => current.filter((model) => catalogModels.includes(model)))
+    }
   }, [catalogModels])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(REVIEW_PREFERENCES_KEY, JSON.stringify({
+        reviewerModels: reviewers,
+        synthesisModel
+      }))
+    } catch {
+      // Persistence is best-effort and must not block review execution.
+    }
+  }, [reviewers, synthesisModel])
 
   useEffect(() => {
     if (reviewResult?.reviewId === reviewId) setSelectedResult(reviewResult)
