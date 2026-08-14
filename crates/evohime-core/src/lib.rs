@@ -659,9 +659,23 @@ fn delivery_next_step(
     mutation_done: bool,
     verification_done: bool,
     commit_done: bool,
+    research_observations: usize,
+    research_has_overview: bool,
+    research_has_content: bool,
+    research_has_search: bool,
 ) -> &'static str {
     if requirements.research && !research_done {
-        "НЕМЕДЛЕННО вызови следующий нужный read-only инструмент с полным JSON и продолжи исследование. Не пиши отчёт."
+        if !research_has_overview {
+            "НЕМЕДЛЕННО вызови read-only filesystem.list с полным JSON {\"path\":\".\"}. Не пиши отчёт."
+        } else if !research_has_content {
+            "НЕМЕДЛЕННО прочитай один из ключевых файлов: filesystem.read с JSON {\"path\":\"Cargo.toml\"} или {\"path\":\"README.md\"}. Не повторяй filesystem.list и не пиши отчёт."
+        } else if !research_has_search {
+            "НЕМЕДЛЕННО вызови filesystem.search с JSON {\"query\":\"TODO\",\"path\":\"crates\"} или найди по коду ключевой компонент. Не повторяй уже выполненное чтение и не пиши отчёт."
+        } else if research_observations < 5 {
+            "НЕМЕДЛЕННО прочитай ещё один конкретный архитектурный файл через filesystem.read, например docs/architecture.md или docs/current-state.md. Не пиши отчёт."
+        } else {
+            "НЕМЕДЛЕННО подготовь итоговый отчёт по уже собранным данным. Не вызывай инструменты."
+        }
     } else if !mutation_done && requirements.mutation {
         "НЕМЕДЛЕННО вызови filesystem.patch или filesystem.write и внеси требуемое изменение. Не вызывай read/search и не пиши отчёт."
     } else if !verification_done && requirements.verification {
@@ -3042,6 +3056,10 @@ impl ToolAgent {
                         mutation_done,
                         verification_done,
                         commit_done,
+                        research_observations,
+                        research_has_overview,
+                        research_has_content,
+                        research_has_search,
                     );
                     let continuation = format!(
                         "Задача ещё не завершена. Не выполнены: {}. {next_step}",
@@ -6722,12 +6740,49 @@ mod tests {
             commit: true,
         };
         assert!(
-            super::delivery_next_step(requirements, false, false, false, false)
+            super::delivery_next_step(
+                requirements,
+                false,
+                false,
+                false,
+                false,
+                0,
+                false,
+                false,
+                false,
+            )
                 .contains("read-only")
         );
         assert!(
-            super::delivery_next_step(requirements, true, false, false, false)
+            super::delivery_next_step(
+                requirements,
+                true,
+                false,
+                false,
+                false,
+                5,
+                true,
+                true,
+                true,
+            )
                 .contains("filesystem.patch")
+        );
+        assert!(
+            super::delivery_next_step(
+                super::DeliveryRequirements {
+                    research: true,
+                    ..requirements
+                },
+                false,
+                false,
+                false,
+                false,
+                1,
+                true,
+                false,
+                false,
+            )
+            .contains("Cargo.toml")
         );
     }
 
