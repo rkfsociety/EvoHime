@@ -109,6 +109,15 @@ implementer.
 
 ## Зависимости
 
-Использует existing child runtime, permission policy, task graph, leases,
-Context Budget Manager, receipts и Evaluation catalog. A2A/network protocol
-не нужен: сначала достаточно локальных Core-owned children.
+Блокирующие:
+
+- Context Budget Manager (план 01) — context isolation, budget ребёнка и
+  offload больших результатов в artifact store;
+- Local Agentic RAG (план 03) — роль `researcher` определена как read-only
+  доступ к workspace/RAG и без него не имеет своего инструмента;
+- Signed receipts (план 04) — связь действий ребёнка с approval родителя;
+- существующие child runtime, permission policy, task graph, leases и
+  evaluation catalog (`tests/evals/`).
+
+Это последний план цепочки: от него никто не зависит. A2A/network protocol
+не нужен — достаточно локальных Core-owned children.

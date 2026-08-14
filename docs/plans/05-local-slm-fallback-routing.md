@@ -89,6 +89,10 @@ policy. Provider secrets не передаются local route.
 
 ## Зависимости
 
-Нужны Evaluation catalog, Context Budget Manager и provider health model.
-Поддержка конкретной SLM/launcher выбирается отдельным ADR после проверки
-Windows resource requirements; этот план не фиксирует бренд модели.
+Блокирующие: Context Budget Manager (план 01) — route decision опирается на
+budget/profile snapshot; существующие evaluation catalog (`tests/evals/`) и
+provider health model.
+
+Опциональных интеграций нет. Поддержка конкретной SLM/launcher выбирается
+отдельным ADR после проверки Windows resource requirements; этот план не
+фиксирует бренд модели.

@@ -163,6 +163,7 @@ jobs:
           ./scripts/version.tests.ps1
           ./scripts/native-workflow.tests.ps1
           ./scripts/github-retention.tests.ps1
+          ./scripts/plans.tests.ps1
       - name: Restore WinUI shell
         shell: pwsh
         run: dotnet restore desktop/EvoHime.Tests/EvoHime.Tests.csproj --nologo

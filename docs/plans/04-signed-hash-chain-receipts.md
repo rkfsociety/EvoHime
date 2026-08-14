@@ -93,5 +93,10 @@ receipt. Receipt доказывает авторство ключа, целос�
 
 ## Зависимости
 
-Использует существующие approval, exact-call hash, diagnostics и Core-owned
-storage. Context Budget Manager должен публиковать `context_ledger_hash`.
+Блокирующие: Context Budget Manager (план 01) — payload содержит
+`context_ledger_hash`, а ledger владеет им; существующие approval,
+exact-call hash, diagnostics и Core-owned storage.
+
+Опциональных интеграций нет. Что этот план обязан предоставить: receipts для
+child workflows (план 06), которые связывают действия ребёнка с approval
+родителя.

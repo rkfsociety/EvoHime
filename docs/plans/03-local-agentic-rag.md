@@ -213,9 +213,10 @@ Context Budget Manager получает только selected evidence blocks. �
 
 В ledger сохраняются ids, ranks/scores, hashes, snippet hash и selected
 metadata, но не полный текст. Извлечённые факты направляются в Memory
-Extraction только с provenance и validation. Новые факты сначала получают
-`proposed/pending` и confidence; автоматический commit в долговременную память
-запрещён без явного подтверждения или отдельной политики.
+Extraction (план 02) только с provenance и validation, через его
+существующий policy gate: кандидат получает `pending_confirmation`, а
+автоматический commit в долговременную память запрещён без явного
+подтверждения. Отдельного пути записи в память этот план не создаёт.
 
 ## IPC и UI
 
@@ -270,9 +271,24 @@ incremental run, текущий статус, stale/dirty state и source links.
 
 ## Зависимости и ограничения scope
 
-Нужны Context Budget Manager, существующие filesystem sandbox, Memory v1 и
-SQLite FTS5. AST parsing для Rust/TypeScript должен быть добавлен только с
-проверенной доступностью нужных parser crates; при недоступности действует
+Блокирующие: Context Budget Manager (план 01) — он принимает selected evidence
+blocks и владеет context ledger; существующие filesystem sandbox, Memory v1 и
+SQLite FTS5.
+
+Опциональные интеграции, не блокирующие этот план:
+
+- Memory Extraction (план 02) принимает извлечённые факты. Он уже реализован,
+  и его контракт готов: факт приходит с provenance и попадает в
+  `pending_confirmation`, автоматический commit в долговременную память
+  запрещён. Этот план обязан пользоваться тем же контрактом, а не заводить
+  собственный путь записи в память.
+- Обратная сторона той же связи: этот план поставляет Memory Extraction
+  validation для document и tool evidence, из-за которой такие кандидаты
+  сейчас остаются pending. Пока плана нет, Memory Extraction работает — он
+  просто не подтверждает непроверяемые факты.
+
+AST parsing для Rust/TypeScript должен быть добавлен только с проверенной
+доступностью нужных parser crates; при недоступности действует
 детерминированный fallback.
 
 Cross-encoder reranking, Tantivy/Meilisearch, PDF/DOCX/HTML parsers, plugin API

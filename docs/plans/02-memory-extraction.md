@@ -141,6 +141,11 @@ TTL, длины и квоты являются конфигурируемыми 
   `invalid` исключает запись из retrieval и требует новой проверки/решения.
   Изменение file hash, git revision или tool version инвалидирует прошлую
   проверку.
+- Отсутствующий валидатор — это `unknown`, а не отказ и не подтверждение.
+  Файловую evidence проверяет сверка content hash, доступная сразу; tool/API
+  и document evidence проверяет Local Agentic RAG (план 03), поэтому до него
+  такие записи остаются pending. Ни один класс проверки не имеет права
+  подтвердить запись, которую он фактически не проверил.
 - Verification policy версионируется и является единственным механизмом,
   который повышает verification confidence. Approval пользователя фиксируется
   отдельным audit event.
@@ -217,7 +222,21 @@ TTL, длины и квоты являются конфигурируемыми 
 
 ## Зависимости
 
-Использует существующий Memory v1, approval, SQLite migrations, context ledger и
-authenticated named-pipe IPC. Для document facts нужен Local Agentic RAG
-validation. Extraction model — отдельная bounded лёгкая модель, не основная
-модель агента. HTTP server, browser launcher и внешний Node.js runtime не нужны.
+Блокирующие: существующие Memory v1, approval, SQLite migrations и
+authenticated named-pipe IPC. Все они уже есть, поэтому план выполним
+целиком и не ждёт других планов.
+
+Опциональные интеграции, не блокирующие этот план:
+
+- Local Agentic RAG (план 03) даёт validation для document facts. **До его
+  появления кандидаты с `source_trust = document` или `tool_output` получают
+  `validation_status = unknown` и остаются в `pending_confirmation`.** Это
+  штатное поведение, а не незавершённая работа: непроверяемый факт не
+  подтверждается вслепую и не попадает в retrieval. Никакой другой части
+  плана RAG не требуется.
+- Context Budget Manager (план 01) даёт context ledger. До его появления
+  происхождение записи объясняют provenance locator и audit event; ledger
+  добавляет ту же связь на уровне выбора контекста.
+
+Extraction model — отдельная bounded лёгкая модель, не основная модель агента.
+HTTP server, browser launcher и внешний Node.js runtime не нужны.

@@ -5,7 +5,8 @@
 //! ему соответствует. Единственный владелец extraction/validation/policy —
 //! Core; всё, что приходит от модели, — это `candidate`, а не память.
 //!
-//! Ключевые инварианты (см. `docs/plans/02-memory-extraction.md`):
+//! Ключевые инварианты (см. `docs/plans/02-memory-extraction.md`, порядок
+//! планов — `docs/plans/README.md`):
 //!
 //! * ни один model-generated candidate не становится активной памятью без
 //!   strict trigger + policy или явного approval;

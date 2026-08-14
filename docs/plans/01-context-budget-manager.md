@@ -191,11 +191,29 @@ user prompt
 - criteria включают crash/restart, concurrent writes, privacy, approval и
   каскадное forget memory.
 
-## Зависимости и порядок
+## Зависимости
 
-Сначала реализовать deterministic MVP: budget/profile/token estimator,
-scratchpad, recovery, deterministic pruning и tool loadout. Memory
-extraction/conflicts и Local Agentic RAG подключать через явные bounded
-интерфейсы после MVP; semantic tool selection разрешать только после
-evaluation catalog. Signed receipts не блокируют этот план, но должны получать
-ledger hash через versioned Core event/API для аудита.
+Блокирующих зависимостей от других планов нет: это фундамент, от которого
+зависят остальные. Нужны только существующие Core, SQLite и model gateway.
+
+Опциональные интеграции, не блокирующие этот план:
+
+- Memory Extraction (план 02) — источник записей памяти для selection и
+  каскадного `forget memory`; до его появления память в контексте
+  ограничивается Memory v1;
+- Local Agentic RAG (план 03) — поставщик evidence blocks; до его появления
+  контекст собирается без документных цитат;
+- semantic tool selection разрешается только после evaluation catalog,
+  deterministic intent router работает без него.
+
+Что этот план обязан предоставить другим:
+
+- `context_ledger` и его hash через versioned Core event/API — их требуют
+  Signed receipts (план 04);
+- bounded интерфейс отбора evidence — его требует Local Agentic RAG (план 03);
+- budget/profile snapshot — его требуют SLM routing (план 05) и child
+  workflows (план 06).
+
+Порядок внутри плана: сначала deterministic MVP (budget/profile/token
+estimator, scratchpad, recovery, deterministic pruning, tool loadout), затем
+внешние интеграции через явные bounded интерфейсы.
