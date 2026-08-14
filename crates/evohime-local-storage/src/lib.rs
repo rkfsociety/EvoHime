@@ -21,7 +21,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 14;
+pub const SCHEMA_VERSION: u32 = 15;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -239,6 +239,7 @@ pub struct RecoveredRunRecord {
     pub run_id: String,
     pub work_item_id: String,
     pub effect_id: String,
+    pub kind: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1155,6 +1156,236 @@ impl LocalDatabase {
         Ok(())
     }
 
+    pub fn prepare_agent_run_effect(
+        &self,
+        effect: &RunEffectRecord,
+        task_id: &str,
+    ) -> Result<RunEffectRecord, StorageError> {
+        let transaction = self.connection.unchecked_transaction()?;
+        transaction.execute(
+            "INSERT OR IGNORE INTO agent_run_effects(
+                effect_id, run_id, task_id, node_id, kind, idempotency_key,
+                immutable_intent_hash, state
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![
+                effect.effect_id,
+                effect.run_id,
+                task_id,
+                effect.node_id,
+                effect.kind,
+                effect.idempotency_key,
+                effect.immutable_intent_hash,
+                effect.state,
+            ],
+        )?;
+        transaction.commit()?;
+        self.get_agent_run_effect(&effect.effect_id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+    }
+
+    pub fn get_agent_run_effect(
+        &self,
+        effect_id: &str,
+    ) -> Result<Option<RunEffectRecord>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT effect_id, run_id, node_id, kind, idempotency_key,
+             immutable_intent_hash, state, started_at, completed_at, result_hash
+             FROM agent_run_effects WHERE effect_id = ?1",
+        )?;
+        Ok(statement
+            .query_row([effect_id], |row| {
+                Ok(RunEffectRecord {
+                    effect_id: row.get(0)?,
+                    run_id: row.get(1)?,
+                    node_id: row.get(2)?,
+                    kind: row.get(3)?,
+                    idempotency_key: row.get(4)?,
+                    immutable_intent_hash: row.get(5)?,
+                    state: row.get(6)?,
+                    started_at: row.get(7)?,
+                    completed_at: row.get(8)?,
+                    result_hash: row.get(9)?,
+                })
+            })
+            .optional()?)
+    }
+
+    pub fn mark_agent_effect_executing(
+        &self,
+        effect_id: &str,
+    ) -> Result<RunEffectRecord, StorageError> {
+        self.connection.execute(
+            "UPDATE agent_run_effects SET state = 'executing',
+             started_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE effect_id = ?1 AND state = 'prepared'",
+            [effect_id],
+        )?;
+        self.get_agent_run_effect(effect_id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+    }
+
+    pub fn complete_agent_run_effect(
+        &self,
+        effect_id: &str,
+        success: bool,
+        result_hash: Option<&str>,
+    ) -> Result<RunEffectRecord, StorageError> {
+        let state = if success {
+            "completed_success"
+        } else {
+            "completed_failure"
+        };
+        self.connection.execute(
+            "UPDATE agent_run_effects SET state = ?1,
+             completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), result_hash = ?2
+             WHERE effect_id = ?3 AND state = 'executing'",
+            rusqlite::params![state, result_hash, effect_id],
+        )?;
+        self.get_agent_run_effect(effect_id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+    }
+
+    pub fn acquire_agent_run_lease(
+        &self,
+        run_id: &str,
+        lease_id: &str,
+        owner_id: &str,
+        generation: u64,
+        ttl_seconds: u64,
+    ) -> Result<RunLeaseRecord, StorageError> {
+        let transaction = self.connection.unchecked_transaction()?;
+        transaction.execute(
+            "INSERT OR IGNORE INTO agent_run_leases(
+                run_id, lease_id, owner_id, generation, lease_expires_at, heartbeat_at
+             ) VALUES (?1, ?2, ?3, ?4, datetime('now', '+' || ?5 || ' seconds'),
+                       strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+            rusqlite::params![run_id, lease_id, owner_id, generation, ttl_seconds as i64],
+        )?;
+        let updated = transaction.execute(
+            "UPDATE agent_run_leases SET lease_id = ?1, owner_id = ?2, generation = ?3,
+             lease_expires_at = datetime('now', '+' || ?4 || ' seconds'),
+             heartbeat_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE run_id = ?5 AND (lease_id = ?1 OR lease_expires_at <= datetime('now'))",
+            rusqlite::params![lease_id, owner_id, generation, ttl_seconds as i64, run_id],
+        )?;
+        if updated == 0 {
+            return Err(StorageError::InvalidRunEffect(
+                "agent run lease is held by another owner".into(),
+            ));
+        }
+        transaction.commit()?;
+        self.get_agent_run_lease(run_id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+    }
+
+    pub fn get_agent_run_lease(
+        &self,
+        run_id: &str,
+    ) -> Result<Option<RunLeaseRecord>, StorageError> {
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT run_id, lease_id, owner_id, generation, lease_expires_at, heartbeat_at
+                 FROM agent_run_leases WHERE run_id = ?1",
+                [run_id],
+                |row| {
+                    Ok(RunLeaseRecord {
+                        run_id: row.get(0)?,
+                        lease_id: row.get(1)?,
+                        owner_id: row.get(2)?,
+                        generation: row.get(3)?,
+                        lease_expires_at: row.get(4)?,
+                        heartbeat_at: row.get(5)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    pub fn heartbeat_agent_run_lease(
+        &self,
+        run_id: &str,
+        lease_id: &str,
+        owner_id: &str,
+        generation: u64,
+        ttl_seconds: u64,
+    ) -> Result<RunLeaseRecord, StorageError> {
+        let changed = self.connection.execute(
+            "UPDATE agent_run_leases SET lease_expires_at = datetime('now', '+' || ?1 || ' seconds'),
+             heartbeat_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             WHERE run_id = ?2 AND lease_id = ?3 AND owner_id = ?4 AND generation = ?5
+             AND lease_expires_at > datetime('now')",
+            rusqlite::params![ttl_seconds as i64, run_id, lease_id, owner_id, generation],
+        )?;
+        if changed == 0 {
+            return Err(StorageError::InvalidRunEffect(
+                "agent run lease heartbeat rejected".into(),
+            ));
+        }
+        self.get_agent_run_lease(run_id)?
+            .ok_or_else(|| rusqlite::Error::QueryReturnedNoRows.into())
+    }
+
+    pub fn release_agent_run_lease(
+        &self,
+        run_id: &str,
+        lease_id: &str,
+        owner_id: &str,
+        generation: u64,
+    ) -> Result<(), StorageError> {
+        self.connection.execute(
+            "DELETE FROM agent_run_leases
+             WHERE run_id = ?1 AND lease_id = ?2 AND owner_id = ?3 AND generation = ?4",
+            rusqlite::params![run_id, lease_id, owner_id, generation],
+        )?;
+        Ok(())
+    }
+
+    pub fn reconcile_agent_run_effect(
+        &self,
+        effect_id: &str,
+        success: bool,
+        verifier: &str,
+        evidence_json: &[u8],
+    ) -> Result<RunReconciliationRecord, StorageError> {
+        let state = if success {
+            "reconciled_success"
+        } else {
+            "reconciled_blocked"
+        };
+        let transaction = self.connection.unchecked_transaction()?;
+        transaction.execute(
+            "INSERT OR REPLACE INTO agent_run_reconciliations(
+                effect_id, state, verifier, evidence_json
+             ) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![effect_id, state, verifier, evidence_json],
+        )?;
+        if success {
+            transaction.execute(
+                "UPDATE agent_run_effects SET state = 'completed_success',
+                 result_hash = ?1 WHERE effect_id = ?2 AND state = 'unknown'",
+                rusqlite::params![verifier, effect_id],
+            )?;
+        }
+        transaction.commit()?;
+        self.connection
+            .query_row(
+                "SELECT effect_id, state, verifier, evidence_json, reconciled_at
+                 FROM agent_run_reconciliations WHERE effect_id = ?1",
+                [effect_id],
+                |row| {
+                    Ok(RunReconciliationRecord {
+                        effect_id: row.get(0)?,
+                        state: row.get(1)?,
+                        verifier: row.get(2)?,
+                        evidence_json: row.get(3)?,
+                        reconciled_at: row.get(4)?,
+                    })
+                },
+            )
+            .map_err(Into::into)
+    }
+
     pub fn reconcile_run_effect(
         &self,
         effect_id: &str,
@@ -1316,6 +1547,173 @@ impl LocalDatabase {
         Ok(record)
     }
 
+    pub fn transition_agent_recovery(
+        &self,
+        run_id: &str,
+        next: RecoveryState,
+        effect_id: &str,
+        idempotency_key: &str,
+        verifier: &str,
+        evidence_json: &[u8],
+        decision: &str,
+    ) -> Result<RunRecoveryRecord, StorageError> {
+        const MAX_TEXT: usize = 256;
+        const MAX_EVIDENCE_BYTES: usize = 64 * 1024;
+        for (field, value) in [
+            ("run_id", run_id),
+            ("effect_id", effect_id),
+            ("idempotency_key", idempotency_key),
+            ("verifier", verifier),
+            ("decision", decision),
+        ] {
+            if value.trim().is_empty() || value.chars().count() > MAX_TEXT {
+                return Err(StorageError::InvalidRecovery(format!(
+                    "{field} is empty or exceeds {MAX_TEXT} characters"
+                )));
+            }
+        }
+        if evidence_json.len() > MAX_EVIDENCE_BYTES {
+            return Err(StorageError::InvalidRecovery(format!(
+                "evidence exceeds {MAX_EVIDENCE_BYTES} bytes"
+            )));
+        }
+
+        let transaction = self.connection.unchecked_transaction()?;
+        let current = transaction
+            .query_row(
+                "SELECT id, run_id, state, effect_id, idempotency_key, verifier,
+                 evidence_json, decision, created_at
+                 FROM agent_run_recovery WHERE run_id = ?1 ORDER BY id DESC LIMIT 1",
+                [run_id],
+                |row| {
+                    Ok(RunRecoveryRecord {
+                        id: row.get(0)?,
+                        run_id: row.get(1)?,
+                        state: RecoveryState::parse(&row.get::<_, String>(2)?)
+                            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        effect_id: row.get(3)?,
+                        idempotency_key: row.get(4)?,
+                        verifier: row.get(5)?,
+                        evidence_json: row.get(6)?,
+                        decision: row.get(7)?,
+                        created_at: row.get(8)?,
+                    })
+                },
+            )
+            .optional()?;
+        if let Some(record) = &current {
+            if record.idempotency_key == idempotency_key {
+                if record.state == next {
+                    transaction.commit()?;
+                    return Ok(record.clone());
+                }
+                return Err(StorageError::InvalidRecovery(format!(
+                    "idempotency key {} was already used for {:?}",
+                    idempotency_key, record.state
+                )));
+            }
+        }
+        let current_state = current.as_ref().map(|record| record.state);
+        let valid = match (current_state, next) {
+            (None, RecoveryState::Recovering) => true,
+            (Some(RecoveryState::Recovering), RecoveryState::Reconciling) => true,
+            (Some(RecoveryState::Reconciling), state) if state.is_terminal() => true,
+            (Some(state), next) if state == next && state.is_terminal() => true,
+            _ => false,
+        };
+        if !valid {
+            return Err(StorageError::InvalidRecovery(format!(
+                "cannot transition agent run from {:?} to {:?}",
+                current_state, next
+            )));
+        }
+
+        transaction.execute(
+            "INSERT INTO agent_run_recovery(
+                run_id, state, effect_id, idempotency_key, verifier, evidence_json, decision
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                run_id,
+                next.as_str(),
+                effect_id,
+                idempotency_key,
+                verifier,
+                evidence_json,
+                decision,
+            ],
+        )?;
+        let task_id: String = transaction.query_row(
+            "SELECT task_id FROM agent_run_effects WHERE run_id = ?1",
+            [run_id],
+            |row| row.get(0),
+        )?;
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "run_id": run_id,
+            "effect_id": effect_id,
+            "idempotency_key": idempotency_key,
+            "verifier": verifier,
+            "evidence": serde_json::from_slice::<serde_json::Value>(evidence_json)
+                .unwrap_or_else(|_| serde_json::json!({"raw_bytes": evidence_json})),
+            "decision": decision,
+            "state": next.as_str(),
+        }))?;
+        transaction.execute(
+            "INSERT INTO events(task_id, event_type, payload) VALUES (?1, 'run.recovery.decision', ?2)",
+            rusqlite::params![task_id, payload],
+        )?;
+        let record = transaction.query_row(
+            "SELECT id, run_id, state, effect_id, idempotency_key, verifier,
+             evidence_json, decision, created_at
+             FROM agent_run_recovery WHERE run_id = ?1 ORDER BY id DESC LIMIT 1",
+            [run_id],
+            |row| {
+                Ok(RunRecoveryRecord {
+                    id: row.get(0)?,
+                    run_id: row.get(1)?,
+                    state: RecoveryState::parse(&row.get::<_, String>(2)?)
+                        .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                    effect_id: row.get(3)?,
+                    idempotency_key: row.get(4)?,
+                    verifier: row.get(5)?,
+                    evidence_json: row.get(6)?,
+                    decision: row.get(7)?,
+                    created_at: row.get(8)?,
+                })
+            },
+        )?;
+        transaction.commit()?;
+        Ok(record)
+    }
+
+    pub fn latest_agent_recovery(
+        &self,
+        run_id: &str,
+    ) -> Result<Option<RunRecoveryRecord>, StorageError> {
+        self.connection
+            .query_row(
+                "SELECT id, run_id, state, effect_id, idempotency_key, verifier,
+                 evidence_json, decision, created_at
+                 FROM agent_run_recovery WHERE run_id = ?1 ORDER BY id DESC LIMIT 1",
+                [run_id],
+                |row| {
+                    Ok(RunRecoveryRecord {
+                        id: row.get(0)?,
+                        run_id: row.get(1)?,
+                        state: RecoveryState::parse(&row.get::<_, String>(2)?)
+                            .map_err(|_| rusqlite::Error::InvalidQuery)?,
+                        effect_id: row.get(3)?,
+                        idempotency_key: row.get(4)?,
+                        verifier: row.get(5)?,
+                        evidence_json: row.get(6)?,
+                        decision: row.get(7)?,
+                        created_at: row.get(8)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
     pub fn latest_recovery(&self, run_id: &str) -> Result<Option<RunRecoveryRecord>, StorageError> {
         self.connection
             .query_row(
@@ -1351,30 +1749,61 @@ impl LocalDatabase {
     pub fn recover_unknown_effects(&self) -> Result<Vec<RecoveredRunRecord>, StorageError> {
         let transaction = self.connection.unchecked_transaction()?;
         let mut statement = transaction.prepare(
-            "SELECT e.run_id, r.work_item_id, e.effect_id FROM run_effects e
+            "SELECT e.run_id, r.work_item_id, e.effect_id, e.kind FROM run_effects e
              JOIN runs r ON r.id = e.run_id WHERE e.state = 'executing'",
         )?;
-        let records = statement
+        let mut records = statement
             .query_map([], |row| {
                 Ok(RecoveredRunRecord {
                     run_id: row.get(0)?,
                     work_item_id: row.get(1)?,
                     effect_id: row.get(2)?,
+                    kind: row.get(3)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
         drop(statement);
+        let mut agent_statement = transaction.prepare(
+            "SELECT run_id, task_id, effect_id, kind FROM agent_run_effects
+             WHERE state = 'executing'",
+        )?;
+        records.extend(
+            agent_statement
+                .query_map([], |row| {
+                    Ok(RecoveredRunRecord {
+                        run_id: row.get(0)?,
+                        work_item_id: row.get(1)?,
+                        effect_id: row.get(2)?,
+                        kind: row.get(3)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+        drop(agent_statement);
         for record in &records {
-            transaction.execute("DELETE FROM run_leases WHERE run_id = ?1", [&record.run_id])?;
-            transaction.execute(
-                "UPDATE run_effects SET state = 'unknown', completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                 WHERE effect_id = ?1 AND state = 'executing'",
-                [&record.effect_id],
-            )?;
-            transaction.execute(
-                "UPDATE runs SET status = 'blocked' WHERE id = ?1 AND status = 'running'",
-                [&record.run_id],
-            )?;
+            if record.kind == "agent_task" {
+                transaction.execute(
+                    "DELETE FROM agent_run_leases WHERE run_id = ?1",
+                    [&record.run_id],
+                )?;
+                transaction.execute(
+                    "UPDATE agent_run_effects SET state = 'unknown',
+                     completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                     WHERE effect_id = ?1 AND state = 'executing'",
+                    [&record.effect_id],
+                )?;
+            } else {
+                transaction.execute("DELETE FROM run_leases WHERE run_id = ?1", [&record.run_id])?;
+                transaction.execute(
+                    "UPDATE run_effects SET state = 'unknown', completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                     WHERE effect_id = ?1 AND state = 'executing'",
+                    [&record.effect_id],
+                )?;
+                transaction.execute(
+                    "UPDATE runs SET status = 'blocked' WHERE id = ?1 AND status = 'running'",
+                    [&record.run_id],
+                )?;
+            }
             let payload = serde_json::to_vec(&serde_json::json!({
                 "run_id": record.run_id, "effect_id": record.effect_id,
                 "reason": "recovery_unknown_effect"
@@ -1568,7 +1997,7 @@ impl LocalDatabase {
         &self,
         max_event_types: usize,
     ) -> Result<DiagnosticsSummary, StorageError> {
-        const TABLES: [&str; 14] = [
+        const TABLES: [&str; 18] = [
             "events",
             "projects",
             "work_items",
@@ -1583,6 +2012,10 @@ impl LocalDatabase {
             "run_leases",
             "run_reconciliations",
             "run_recovery",
+            "agent_run_effects",
+            "agent_run_leases",
+            "agent_run_reconciliations",
+            "agent_run_recovery",
         ];
 
         let mut table_counts = Vec::with_capacity(TABLES.len());
@@ -1629,7 +2062,9 @@ impl LocalDatabase {
     /// Use `recover_unknown_effects` for the mutating recovery flow.
     pub fn read_recovery_health(&self) -> Result<RecoveryHealthSnapshot, StorageError> {
         let unknown_effects: i64 = self.connection.query_row(
-            "SELECT COUNT(*) FROM run_effects WHERE state = 'unknown'",
+            "SELECT
+                 (SELECT COUNT(*) FROM run_effects WHERE state = 'unknown') +
+                 (SELECT COUNT(*) FROM agent_run_effects WHERE state = 'unknown')",
             [],
             |row| row.get(0),
         )?;
@@ -1637,12 +2072,20 @@ impl LocalDatabase {
             "SELECT EXISTS(
                  SELECT 1 FROM run_leases
                  WHERE lease_expires_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             ) OR EXISTS(
+                 SELECT 1 FROM agent_run_leases
+                 WHERE lease_expires_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
              )",
             [],
             |row| row.get(0),
         )?;
         let resumable_runs: i64 = self.connection.query_row(
-            "SELECT COUNT(*) FROM runs WHERE status = 'blocked'",
+            "SELECT
+                 (SELECT COUNT(*) FROM runs WHERE status = 'blocked') +
+                 (SELECT COUNT(*) FROM agent_run_recovery
+                  WHERE state IN ('RESUMABLE', 'BLOCKED') AND id IN (
+                      SELECT MAX(id) FROM agent_run_recovery GROUP BY run_id
+                  ))",
             [],
             |row| row.get(0),
         )?;
@@ -1936,6 +2379,54 @@ impl LocalDatabase {
                 CREATE INDEX IF NOT EXISTS idx_feedback_entries_run ON feedback_entries(run_id, created_at);
                 CREATE INDEX IF NOT EXISTS idx_feedback_entries_signal ON feedback_entries(signal);
                 PRAGMA user_version = 14;",
+                )?;
+        }
+        if current < 15 {
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS agent_run_effects (
+                    effect_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL UNIQUE,
+                    task_id TEXT NOT NULL,
+                    node_id TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL UNIQUE,
+                    immutable_intent_hash TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    started_at TEXT,
+                    completed_at TEXT,
+                    result_hash TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_run_effects_task
+                    ON agent_run_effects(task_id, started_at);
+                CREATE TABLE IF NOT EXISTS agent_run_leases (
+                    run_id TEXT PRIMARY KEY REFERENCES agent_run_effects(run_id) ON DELETE CASCADE,
+                    lease_id TEXT NOT NULL UNIQUE,
+                    owner_id TEXT NOT NULL,
+                    generation INTEGER NOT NULL,
+                    lease_expires_at TEXT NOT NULL,
+                    heartbeat_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS agent_run_reconciliations (
+                    effect_id TEXT PRIMARY KEY REFERENCES agent_run_effects(effect_id) ON DELETE CASCADE,
+                    state TEXT NOT NULL,
+                    verifier TEXT NOT NULL,
+                    evidence_json BLOB NOT NULL,
+                    reconciled_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                );
+                CREATE TABLE IF NOT EXISTS agent_run_recovery (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    effect_id TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL,
+                    verifier TEXT NOT NULL,
+                    evidence_json BLOB NOT NULL,
+                    decision TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_run_recovery_run
+                    ON agent_run_recovery(run_id, id);
+                PRAGMA user_version = 15;",
             )?;
         }
         transaction.commit()?;
@@ -2006,13 +2497,13 @@ mod tests {
     }
 
     #[test]
-    fn migration_12_to_14_is_idempotent_and_preserves_existing_rows() {
+    fn migration_12_to_15_is_idempotent_and_preserves_existing_rows() {
         let path = temp_database_path("feedback-migration");
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("db.bak"));
         {
             // Seed a pre-wave (user_version 12) database with an existing
-            // memory_entries row, so we can confirm migrations 13 and 14 do not
+            // memory_entries row, so we can confirm migrations 13 through 15 do not
             // touch unrelated data.
             let connection = rusqlite::Connection::open(&path).expect("legacy database opens");
             connection
@@ -2042,8 +2533,8 @@ mod tests {
                 .expect("legacy schema and data write");
         }
 
-        let database = LocalDatabase::open(&path).expect("database migrates to 14");
-        assert_eq!(database.schema_version().expect("version reads"), 14);
+        let database = LocalDatabase::open(&path).expect("database migrates to 15");
+        assert_eq!(database.schema_version().expect("version reads"), 15);
         let feedback_table_exists: i64 = database
             .connection()
             .query_row(
@@ -2068,7 +2559,7 @@ mod tests {
         // not duplicate the feedback_entries table or existing rows
         // (guarded CREATE TABLE IF NOT EXISTS / PRAGMA user_version checks).
         let reopened = LocalDatabase::open(&path).expect("reopen is idempotent");
-        assert_eq!(reopened.schema_version().expect("version still 14"), 14);
+        assert_eq!(reopened.schema_version().expect("version still 15"), 15);
         let row_count: i64 = reopened
             .connection()
             .query_row("SELECT COUNT(*) FROM memory_entries", [], |row| row.get(0))
@@ -2177,7 +2668,7 @@ mod tests {
         assert_eq!(summary.event_counts[0].event_type, "task.started");
         assert_eq!(summary.event_counts[0].rows, 2);
         assert!(summary.event_types_truncated);
-        assert_eq!(summary.table_counts.len(), 14);
+        assert_eq!(summary.table_counts.len(), 18);
         assert_eq!(
             summary
                 .table_counts
@@ -2575,6 +3066,46 @@ mod tests {
                 .state,
             "completed_success"
         );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn agent_run_effect_has_an_independent_lease_and_completes() {
+        let path = temp_database_path("agent-run-lease");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        let effect = RunEffectRecord {
+            effect_id: "agent-effect-1".into(),
+            run_id: "agent-run-1".into(),
+            node_id: "agent-task".into(),
+            kind: "agent_task".into(),
+            idempotency_key: "agent-run-1:agent-task".into(),
+            immutable_intent_hash: "intent-agent".into(),
+            state: "prepared".into(),
+            started_at: None,
+            completed_at: None,
+            result_hash: None,
+        };
+        database
+            .prepare_agent_run_effect(&effect, "shell-task-1")
+            .expect("agent effect prepares");
+        database
+            .acquire_agent_run_lease("agent-run-1", "agent-lease-1", "core", 1, 30)
+            .expect("agent lease claims");
+        database
+            .heartbeat_agent_run_lease("agent-run-1", "agent-lease-1", "core", 1, 30)
+            .expect("agent lease heartbeats");
+        database
+            .mark_agent_effect_executing("agent-effect-1")
+            .expect("agent effect executes");
+        let completed = database
+            .complete_agent_run_effect("agent-effect-1", true, Some("result"))
+            .expect("agent effect completes");
+        assert_eq!(completed.state, "completed_success");
+        database
+            .release_agent_run_lease("agent-run-1", "agent-lease-1", "core", 1)
+            .expect("agent lease releases");
+        assert!(database.get_agent_run_lease("agent-run-1").unwrap().is_none());
         let _ = std::fs::remove_file(path);
     }
 

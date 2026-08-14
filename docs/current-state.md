@@ -55,7 +55,7 @@ Core и supervisor — внутренние компоненты установ�
 - выбор модели в чате (`ModelPicker`) с разделением каталога на free/paid; выбор применяется без перезапуска Core через IPC `SelectModelRequest`;
 - настройки провайдера собраны в один блок (`ProviderForm`) вместо прежнего `SettingsPanel`; отдельный `WorkspacePicker` убран — папка выбирается из панели проектов;
 - `RecoveryBanner` показывает подтверждённое Core состояние восстановления;
-- после перезапуска Core durable build-effect проходит lease heartbeat; подтверждённый результат восстановления приходит в UI как `RESUMABLE`, а неподтверждённый остаётся `BLOCKED`;
+- после перезапуска Core durable build-effect и обычные agent-run проходят lease heartbeat; подтверждённый terminal event приходит в UI как `RESUMABLE`, а неподтверждённый результат остаётся `BLOCKED`; storage schema — v15;
 - `OperationsPanel` («Память и Pulse») — read-only проекция memory-, child- и schedule-событий;
 - чаты shell хранятся в `%LOCALAPPDATA%\EvoHime\shell\chats.json` с ограничениями (100 чатов на workspace, 500 сообщений на чат). Это UI-группировка, а не состояние агента: Core остаётся владельцем задач и заново проверяет каждую команду.
 
@@ -65,10 +65,9 @@ Core и supervisor — внутренние компоненты установ�
 
 ## Следующий этап
 
-1. leases/reconciliation для остальных длительных запусков;
-2. продолжить hardening permission policy, credentials, recovery и diagnostics;
-3. поддерживать Windows 10/11 CI и compatibility suite, не возвращая web runtime;
-4. informative ARM64/Insider compatibility runs.
+1. продолжить hardening permission policy, credentials, recovery и diagnostics;
+2. поддерживать Windows 10/11 CI и compatibility suite, не возвращая web runtime;
+3. informative ARM64/Insider compatibility runs.
 
 ## Граница продукта
 

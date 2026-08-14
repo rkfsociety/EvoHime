@@ -2120,6 +2120,76 @@ impl EventJournal {
         database.heartbeat_run_lease(run_id, &format!("lease-{run_id}"), "core", 1, 30)
     }
 
+    pub async fn begin_agent_run(
+        &self,
+        run_id: &str,
+        task_id: &str,
+        intent_hash: &str,
+    ) -> Result<RunEffectRecord, StorageError> {
+        let database = self.database.lock().await;
+        let effect_id = format!("effect-{run_id}");
+        let effect = RunEffectRecord {
+            effect_id: effect_id.clone(),
+            run_id: run_id.into(),
+            node_id: "agent-task".into(),
+            kind: "agent_task".into(),
+            idempotency_key: format!("{run_id}:agent-task"),
+            immutable_intent_hash: intent_hash.into(),
+            state: "prepared".into(),
+            started_at: None,
+            completed_at: None,
+            result_hash: None,
+        };
+        let stored = database.prepare_agent_run_effect(&effect, task_id)?;
+        if stored.immutable_intent_hash != intent_hash {
+            return Err(StorageError::InvalidRunEffect(
+                "intent hash conflict".into(),
+            ));
+        }
+        match stored.state.as_str() {
+            "prepared" => {
+                database.acquire_agent_run_lease(
+                    run_id,
+                    &format!("lease-{run_id}"),
+                    "core",
+                    1,
+                    30,
+                )?;
+                database.mark_agent_effect_executing(&effect_id)
+            }
+            "executing" => Err(StorageError::InvalidRunEffect(
+                "effect is already executing".into(),
+            )),
+            "completed_success" | "completed_failure" | "unknown" => Err(
+                StorageError::InvalidRunEffect(format!("effect is already {}", stored.state)),
+            ),
+            _ => Err(StorageError::InvalidRunEffect(format!(
+                "unsupported state {}",
+                stored.state
+            ))),
+        }
+    }
+
+    pub async fn heartbeat_agent_run(
+        &self,
+        run_id: &str,
+    ) -> Result<evohime_local_storage::RunLeaseRecord, StorageError> {
+        let database = self.database.lock().await;
+        database.heartbeat_agent_run_lease(run_id, &format!("lease-{run_id}"), "core", 1, 30)
+    }
+
+    pub async fn complete_agent_run(
+        &self,
+        run_id: &str,
+        success: bool,
+    ) -> Result<RunEffectRecord, StorageError> {
+        let database = self.database.lock().await;
+        let effect =
+            database.complete_agent_run_effect(&format!("effect-{run_id}"), success, None)?;
+        database.release_agent_run_lease(run_id, &format!("lease-{run_id}"), "core", 1)?;
+        Ok(effect)
+    }
+
     pub async fn reconcile_build_effect(
         &self,
         run_id: &str,
@@ -2158,43 +2228,108 @@ impl EventJournal {
             // stages replays safely (transition_recovery treats a repeated
             // (idempotency_key, state) pair as a no-op and rejects a reused
             // key against a different state).
-            database.transition_recovery(
-                &record.run_id,
+            let recovery_transition = |state, idempotency_key: &str, verifier: &str, evidence: &[u8], decision: &str| {
+                if record.kind == "agent_task" {
+                    database.transition_agent_recovery(
+                        &record.run_id,
+                        state,
+                        &record.effect_id,
+                        idempotency_key,
+                        verifier,
+                        evidence,
+                        decision,
+                    )
+                } else {
+                    database.transition_recovery(
+                        &record.run_id,
+                        state,
+                        &record.effect_id,
+                        idempotency_key,
+                        verifier,
+                        evidence,
+                        decision,
+                    )
+                }
+            };
+            recovery_transition(
                 RecoveryState::Recovering,
-                &record.effect_id,
                 &format!("{}:{}:recovering", record.run_id, record.effect_id),
                 "startup",
                 br#"{"reason":"process_restart"}"#,
                 "recovery_started",
             )?;
-            database.transition_recovery(
-                &record.run_id,
+            recovery_transition(
                 RecoveryState::Reconciling,
-                &record.effect_id,
                 &format!("{}:{}:reconciling", record.run_id, record.effect_id),
-                "bounded_build_snapshot",
+                if record.kind == "agent_task" {
+                    "task_event_journal"
+                } else {
+                    "bounded_build_snapshot"
+                },
                 br#"{"reason":"verifying_outcome"}"#,
                 "verifier_started",
             )?;
 
-            let snapshot = database.latest_snapshot_for_task(&record.work_item_id)?;
-            let success = snapshot
-                .as_ref()
-                .is_some_and(|snapshot| snapshot.run_id == record.run_id);
-            let evidence = serde_json::json!({
-                "run_id": record.run_id,
-                "effect_id": record.effect_id,
-                "idempotency_key": format!("{}:bounded-build", record.run_id),
-                "verifier": "bounded_build_snapshot",
-                "snapshot_id": success.then(|| snapshot.as_ref().expect("successful reconciliation has snapshot").id.clone()),
-                "decision": if success { "applied" } else { "blocked" },
-            });
-            let reconciliation = database.reconcile_run_effect(
-                &record.effect_id,
-                success,
-                "bounded_build_snapshot",
-                &serde_json::to_vec(&evidence)?,
-            )?;
+            let (success, verifier, idempotency_key, evidence) = if record.kind == "agent_task" {
+                let terminal_event = database
+                    .read_task_events(&record.work_item_id, 256)?
+                    .into_iter()
+                    .rev()
+                    .find(|event| {
+                        matches!(
+                            event.event_type.as_str(),
+                            "task.completed" | "task.failed" | "task.stopped"
+                        )
+                    });
+                let success = terminal_event
+                    .as_ref()
+                    .is_some_and(|event| event.event_type == "task.completed");
+                let verifier = "task_event_journal";
+                let idempotency_key = format!("{}:agent-task", record.run_id);
+                let evidence = serde_json::json!({
+                    "run_id": record.run_id,
+                    "effect_id": record.effect_id,
+                    "idempotency_key": idempotency_key,
+                    "verifier": verifier,
+                    "terminal_event": terminal_event.as_ref().map(|event| serde_json::json!({
+                        "event_type": event.event_type,
+                        "sequence_id": event.sequence_id,
+                    })),
+                    "decision": if success { "completed" } else { "blocked" },
+                });
+                (success, verifier, idempotency_key, evidence)
+            } else {
+                let snapshot = database.latest_snapshot_for_task(&record.work_item_id)?;
+                let success = snapshot
+                    .as_ref()
+                    .is_some_and(|snapshot| snapshot.run_id == record.run_id);
+                let verifier = "bounded_build_snapshot";
+                let idempotency_key = format!("{}:bounded-build", record.run_id);
+                let evidence = serde_json::json!({
+                    "run_id": record.run_id,
+                    "effect_id": record.effect_id,
+                    "idempotency_key": idempotency_key,
+                    "verifier": verifier,
+                    "snapshot_id": success.then(|| snapshot.as_ref().expect("successful reconciliation has snapshot").id.clone()),
+                    "decision": if success { "applied" } else { "blocked" },
+                });
+                (success, verifier, idempotency_key, evidence)
+            };
+            let reconciliation = if record.kind == "agent_task" {
+                database.reconcile_agent_run_effect(
+                    &record.effect_id,
+                    success,
+                    verifier,
+                    &serde_json::to_vec(&evidence)?,
+                )?
+            } else {
+                database.reconcile_run_effect(
+                    &record.effect_id,
+                    success,
+                    verifier,
+                    &serde_json::to_vec(&evidence)?,
+                )?
+            };
             if success {
                 database.update_run_status(&record.run_id, "completed")?;
             }
@@ -2212,28 +2347,26 @@ impl EventJournal {
                 "run.reconciliation.audit",
                 &serde_json::to_vec(&serde_json::json!({
                     "effect_id": record.effect_id,
-                    "idempotency_key": format!("{}:bounded-build", record.run_id),
-                    "verifier": "bounded_build_snapshot",
+                    "idempotency_key": idempotency_key,
+                    "verifier": verifier,
                     "evidence": evidence,
                     "decision": if success { "applied" } else { "blocked" },
                 }))?,
             )?;
 
-            database.transition_recovery(
-                &record.run_id,
+            recovery_transition(
                 if success {
                     RecoveryState::Resumable
                 } else {
                     RecoveryState::Blocked
                 },
-                &record.effect_id,
                 &format!(
                     "{}:{}:{}",
                     record.run_id,
                     record.effect_id,
                     if success { "resumable" } else { "blocked" }
                 ),
-                "bounded_build_snapshot",
+                verifier,
                 &serde_json::to_vec(&evidence)?,
                 if success { "applied" } else { "blocked" },
             )?;
@@ -3371,13 +3504,17 @@ pub struct TaskCoordinator {
 }
 
 struct CoordinatorState {
-    tasks: HashMap<String, CancellationToken>,
+    tasks: HashMap<String, ActiveTask>,
     backup_cancellations: HashMap<String, CancellationToken>,
     backup_approvals: HashMap<String, String>,
     events: broadcast::Sender<CoreEvent>,
     executor: Option<Arc<dyn TaskExecutor>>,
     journal: Option<EventJournal>,
     audit: crate::audit::AuditTrail,
+}
+
+struct ActiveTask {
+    cancellation: CancellationToken,
 }
 
 impl TaskCoordinator {
@@ -3567,10 +3704,16 @@ impl TaskCoordinator {
                 workspace_root,
             } => {
                 let cancellation = CancellationToken::new();
+                let run_id = format!("agent-{}", uuid::Uuid::new_v4());
                 let mut state_guard = state.lock().await;
                 if state_guard
                     .tasks
-                    .insert(task_id.clone(), cancellation.clone())
+                    .insert(
+                        task_id.clone(),
+                        ActiveTask {
+                            cancellation: cancellation.clone(),
+                        },
+                    )
                     .is_some()
                 {
                     return;
@@ -3581,8 +3724,47 @@ impl TaskCoordinator {
                 });
                 let events = state_guard.events.clone();
                 let executor = state_guard.executor.clone();
+                let journal = state_guard.journal.clone();
                 drop(state_guard);
                 tokio::spawn(async move {
+                    let intent_hash = crate::research::sha256_hex(prompt.as_bytes());
+                    if let Some(journal) = &journal {
+                        if let Err(error) = journal
+                            .begin_agent_run(&run_id, &task_id, &intent_hash)
+                            .await
+                        {
+                            let mut state_guard = state.lock().await;
+                            state_guard.tasks.remove(&task_id);
+                            let _ = state_guard.events.send(CoreEvent::TaskFailed {
+                                task_id,
+                                error: format!("agent run could not acquire durable lease: {error}"),
+                            });
+                            return;
+                        }
+                    }
+
+                    let heartbeat_cancel = CancellationToken::new();
+                    let heartbeat_failure = Arc::new(StdMutex::new(None::<String>));
+                    let heartbeat_task = journal.as_ref().map(|journal| {
+                        let journal = journal.clone();
+                        let run_id = run_id.clone();
+                        let failure = heartbeat_failure.clone();
+                        let cancel = heartbeat_cancel.clone();
+                        tokio::spawn(async move {
+                            let mut interval = tokio::time::interval(Duration::from_secs(10));
+                            loop {
+                                tokio::select! {
+                                    _ = cancel.cancelled() => break,
+                                    _ = interval.tick() => {
+                                        if let Err(error) = journal.heartbeat_agent_run(&run_id).await {
+                                            *failure.lock().expect("heartbeat failure lock") = Some(error.to_string());
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        })
+                    });
                     // A task is a loop of model calls and tool runs, so its
                     // budget must exceed one model call (120 s by default).
                     // The old 60 s cut off agents that were working fine.
@@ -3612,26 +3794,49 @@ impl TaskCoordinator {
                             Err(AgentRunError::Cancelled)
                         }
                     };
+                    heartbeat_cancel.cancel();
+                    if let Some(heartbeat_task) = heartbeat_task {
+                        let _ = heartbeat_task.await;
+                    }
+                    let heartbeat_error = heartbeat_failure
+                        .lock()
+                        .expect("heartbeat failure lock")
+                        .clone();
+                    if let Some(journal) = &journal {
+                        if heartbeat_error.is_none() || result.is_err() {
+                            let _ = journal.complete_agent_run(&run_id, result.is_ok()).await;
+                        }
+                    }
                     let mut state_guard = state.lock().await;
                     state_guard.tasks.remove(&task_id);
-                    match result {
-                        Err(AgentRunError::Cancelled) => {
-                            let _ = state_guard.events.send(CoreEvent::TaskStopped { task_id });
-                        }
-                        Err(error) => {
+                    match (result, heartbeat_error) {
+                        (Ok(_), Some(error)) => {
                             let _ = state_guard.events.send(CoreEvent::TaskFailed {
                                 task_id,
-                                error: error.to_string(),
+                                error: format!(
+                                    "agent run lease was lost; outcome requires reconciliation: {error}"
+                                ),
                             });
                         }
-                        Ok(_) => {}
+                        (Ok(_), None) => {}
+                        (Err(error), _) => {
+                            let task_id = task_id;
+                            if matches!(error, AgentRunError::Cancelled) {
+                                let _ = state_guard.events.send(CoreEvent::TaskStopped { task_id });
+                            } else {
+                                let _ = state_guard.events.send(CoreEvent::TaskFailed {
+                                    task_id,
+                                    error: error.to_string(),
+                                });
+                            }
+                        }
                     }
                 });
             }
             CoreCommand::StopTask { task_id } => {
                 let mut state_guard = state.lock().await;
-                if let Some(cancellation) = state_guard.tasks.remove(&task_id) {
-                    cancellation.cancel();
+                if let Some(active) = state_guard.tasks.remove(&task_id) {
+                    active.cancellation.cancel();
                 }
             }
             CoreCommand::CreateProject {

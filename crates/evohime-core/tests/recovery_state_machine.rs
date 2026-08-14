@@ -17,7 +17,13 @@ fn temp_path(suffix: &str) -> PathBuf {
     env::temp_dir().join(format!("evohime-recovery-state-machine-{suffix}-{stamp}.db"))
 }
 
-fn seed_executing_effect(database: &LocalDatabase, run_id: &str, effect_id: &str, task_id: &str) {
+fn seed_executing_effect(
+    database: &LocalDatabase,
+    run_id: &str,
+    effect_id: &str,
+    task_id: &str,
+    kind: &str,
+) {
     database
         .create_project("project-state-machine", "State machine wiring", ".", None)
         .expect("project creates");
@@ -40,7 +46,7 @@ fn seed_executing_effect(database: &LocalDatabase, run_id: &str, effect_id: &str
     database.create_work_item(&task).expect("task creates");
     let run = RunRecord {
         id: run_id.into(),
-        work_item_id: task.id,
+        work_item_id: task.id.clone(),
         status: "running".into(),
         policy_snapshot: Vec::new(),
         role_snapshot: Vec::new(),
@@ -62,7 +68,7 @@ fn seed_executing_effect(database: &LocalDatabase, run_id: &str, effect_id: &str
         effect_id: effect_id.into(),
         run_id: run.id.clone(),
         node_id: "bounded-build".into(),
-        kind: "bounded_build".into(),
+        kind: kind.into(),
         idempotency_key: format!("{run_id}:bounded-build"),
         immutable_intent_hash: "state-machine-intent".into(),
         state: "prepared".into(),
@@ -70,12 +76,21 @@ fn seed_executing_effect(database: &LocalDatabase, run_id: &str, effect_id: &str
         completed_at: None,
         result_hash: None,
     };
-    database
-        .prepare_run_effect(&run, &checkpoint, &effect)
-        .expect("effect prepares");
-    database
-        .mark_effect_executing(&effect.effect_id)
-        .expect("effect starts");
+    if kind == "agent_task" {
+        database
+            .prepare_agent_run_effect(&effect, &task.id)
+            .expect("agent effect prepares");
+        database
+            .mark_agent_effect_executing(&effect.effect_id)
+            .expect("agent effect starts");
+    } else {
+        database
+            .prepare_run_effect(&run, &checkpoint, &effect)
+            .expect("effect prepares");
+        database
+            .mark_effect_executing(&effect.effect_id)
+            .expect("effect starts");
+    }
 }
 
 /// Core startup recovery (`recover_and_reconcile_after_restart`, invoked from
@@ -90,7 +105,13 @@ async fn startup_recovery_drives_the_durable_recovery_state_machine_to_blocked()
     let path = temp_path("blocked");
     {
         let database = LocalDatabase::open(&path).expect("database opens");
-        seed_executing_effect(&database, "run-blocked", "effect-blocked", "task-blocked");
+        seed_executing_effect(
+            &database,
+            "run-blocked",
+            "effect-blocked",
+            "task-blocked",
+            "bounded_build",
+        );
     }
 
     let journal = EventJournal::open(&path).expect("journal reopens");
@@ -117,6 +138,59 @@ async fn startup_recovery_drives_the_durable_recovery_state_machine_to_blocked()
         .await
         .expect("second recovery pass runs");
     assert!(empty.is_empty());
+
+    let _ = std::fs::remove_file(&path);
+    let _ = std::fs::remove_file(path.with_extension("db-wal"));
+    let _ = std::fs::remove_file(path.with_extension("db-shm"));
+}
+
+#[tokio::test]
+async fn agent_run_reconciles_only_from_a_durable_terminal_event() {
+    let path = temp_path("agent-completed");
+    {
+        let database = LocalDatabase::open(&path).expect("database opens");
+        seed_executing_effect(
+            &database,
+            "run-agent-completed",
+            "effect-agent-completed",
+            "task-agent-completed",
+            "agent_task",
+        );
+        database
+            .append_event(
+                "task-agent-completed",
+                "task.completed",
+                br#"{"final_message":"done"}"#,
+            )
+            .expect("terminal event persists");
+    }
+
+    let journal = EventJournal::open(&path).expect("journal reopens");
+    let reconciliations = journal
+        .recover_and_reconcile_after_restart()
+        .await
+        .expect("agent recovery runs");
+    assert_eq!(reconciliations.len(), 1);
+    assert_eq!(reconciliations[0].verifier, "task_event_journal");
+    assert_eq!(reconciliations[0].state, "reconciled_success");
+
+    let database = LocalDatabase::open(&path).expect("database reopens for assertions");
+    assert_eq!(
+        database
+            .get_agent_run_effect("effect-agent-completed")
+            .unwrap()
+            .unwrap()
+            .state,
+        "completed_success"
+    );
+    assert_eq!(
+        database
+            .latest_agent_recovery("run-agent-completed")
+            .unwrap()
+            .unwrap()
+            .state,
+        RecoveryState::Resumable
+    );
 
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_file(path.with_extension("db-wal"));
