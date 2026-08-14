@@ -69,6 +69,9 @@ describe.skipIf(!enabled)('source update end to end', () => {
 
     const checkout = join(temporaryRoot('source'), 'source')
     const staging = join(temporaryRoot('staging'), 'staging')
+    const root = temporaryRoot('install')
+    const install = join(root, 'install')
+    const state = join(root, 'state')
     const options = { directory: checkout, repositoryUrl: REPOSITORY, branch: 'main' }
 
     const commit = await readRemoteHead(options, { git })
@@ -76,7 +79,14 @@ describe.skipIf(!enabled)('source update end to end', () => {
 
     const lines: string[] = []
     const marker = await buildStagedPackage(
-      { sourceDirectory: checkout, stagingDirectory: staging, commit, branch: 'main', toolchain },
+      {
+        sourceDirectory: checkout,
+        stagingDirectory: staging,
+        installDirectory: install,
+        commit,
+        branch: 'main',
+        toolchain
+      },
       { onLine: (line) => lines.push(line) }
     )
 
@@ -95,9 +105,6 @@ describe.skipIf(!enabled)('source update end to end', () => {
     expect(readBuildMarker(staging)?.commit).toBe(commit)
 
     // The swap runs against a throwaway installation, never the real one.
-    const root = temporaryRoot('install')
-    const install = join(root, 'install')
-    const state = join(root, 'state')
     mkdirSync(install, { recursive: true })
     for (const component of [
       'EvoHime.exe',

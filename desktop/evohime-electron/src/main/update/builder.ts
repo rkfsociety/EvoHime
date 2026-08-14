@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
-import { cp, mkdir, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { join, resolve, sep } from 'node:path'
+import { tmpdir } from 'node:os'
 
 import { BUILD_MARKER_FILE, type BuildMarker } from './config'
 import { describeFailure, runCommand, type CommandRunner } from './run-command'
@@ -40,6 +41,8 @@ export class BuildError extends Error {}
 export interface BuildInputs {
   readonly sourceDirectory: string
   readonly stagingDirectory: string
+  /** Installed application directory; build output must never overlap it. */
+  readonly installDirectory: string
   readonly commit: string
   readonly branch: string
   readonly toolchain: ToolchainReport
@@ -65,6 +68,7 @@ export async function buildStagedPackage(
   const exists = deps.exists ?? existsSync
   const env = toolchainEnvironment(inputs.toolchain, deps.env ?? process.env)
   const electronRoot = join(inputs.sourceDirectory, ELECTRON_SUBPATH)
+  assertBuildIsolation(inputs.sourceDirectory, inputs.installDirectory)
 
   const cargo = toolPath(inputs.toolchain, 'rust')
   const npm = npmInvocation(inputs.toolchain, exists)
@@ -112,16 +116,31 @@ export async function buildStagedPackage(
   )
   await exec('npm run build', npm.file, [...npm.args, 'run', 'build'], electronRoot, NPM_TIMEOUT_MS)
 
-  deps.onStep?.('package')
-  await exec(
-    'electron-builder',
-    npm.file,
-    [...npm.args, 'exec', '--', 'electron-builder', '--dir', '--config', 'electron-builder.yml'],
-    electronRoot,
-    NPM_TIMEOUT_MS
-  )
+  const outputRoot = await mkdtemp(join(tmpdir(), 'evohime-electron-build-'))
+  try {
+    deps.onStep?.('package')
+    await exec(
+      'electron-builder',
+      npm.file,
+      [
+        ...npm.args,
+        'exec',
+        '--',
+        'electron-builder',
+        '--dir',
+        '--config',
+        'electron-builder.yml',
+        '--config.directories.output',
+        outputRoot
+      ],
+      electronRoot,
+      NPM_TIMEOUT_MS
+    )
 
-  return assembleStaging(inputs, electronRoot, { ...deps, exists })
+    return await assembleStaging(inputs, electronRoot, { ...deps, exists }, join(outputRoot, 'win-unpacked'))
+  } finally {
+    await removeTreeResilient(outputRoot).catch(() => undefined)
+  }
 }
 
 /**
@@ -132,10 +151,11 @@ export async function buildStagedPackage(
 export async function assembleStaging(
   inputs: BuildInputs,
   electronRoot: string,
-  deps: BuildDeps & { readonly exists: (path: string) => boolean }
+  deps: BuildDeps & { readonly exists: (path: string) => boolean },
+  unpackedDirectory = join(electronRoot, 'release', 'win-unpacked')
 ): Promise<BuildMarker> {
   const cargoTarget = join(inputs.sourceDirectory, 'target', 'release')
-  const unpacked = join(electronRoot, 'release', 'win-unpacked')
+  const unpacked = unpackedDirectory
   if (!deps.exists(unpacked)) {
     throw new BuildError('Electron package не собрался — каталог win-unpacked отсутствует.')
   }
@@ -204,6 +224,21 @@ async function removeTreeResilient(path: string): Promise<void> {
     maxRetries: CLEANUP_MAX_RETRIES,
     retryDelay: CLEANUP_RETRY_DELAY_MS
   })
+}
+
+/** Refuse a configuration that would make the rebuild overwrite the running app. */
+function assertBuildIsolation(sourceDirectory: string, installDirectory: string): void {
+  const source = normalizePath(sourceDirectory)
+  const install = normalizePath(installDirectory)
+  if (source === install || source.startsWith(`${install}${sep}`) || install.startsWith(`${source}${sep}`)) {
+    throw new BuildError(
+      `Каталог исходников пересекается с установленным приложением: ${installDirectory}`
+    )
+  }
+}
+
+function normalizePath(path: string): string {
+  return resolve(path).replace(/[\\/]+$/, '').toLowerCase()
 }
 
 /** Same shape as `New-NativePackageManifest` in `scripts/native-package.ps1`. */

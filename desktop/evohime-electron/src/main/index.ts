@@ -16,6 +16,7 @@ import { hardenProcess, hardenSession, isProduction, type HardeningOptions } fro
 import { broadcast, registerShellBridge } from './shell-bridge'
 import { createTray, type TrayController } from './tray'
 import { BuildLog } from './update/build-log'
+import { BUILD_WORKER_FLAG, runBuildWorkerProcess } from './update/build-worker'
 import { loadUpdateConfig } from './update/config'
 import { UpdateService } from './update/update-service'
 import { createMainWindow, focusWindow, loadRenderer } from './window'
@@ -53,7 +54,14 @@ const rendererOrigin = isProduction()
 
 const hardening: HardeningOptions = { rendererOrigin, log }
 
-if (!app.requestSingleInstanceLock()) {
+if (process.argv.includes(BUILD_WORKER_FLAG)) {
+  void runBuildWorkerProcess(process.argv.slice(2))
+    .then(() => app.exit(0))
+    .catch((error: unknown) => {
+      console.error(error instanceof Error ? error.message : String(error))
+      app.exit(1)
+    })
+} else if (!app.requestSingleInstanceLock()) {
   // The supervisor owns single-instance for Core; this lock only prevents a
   // second shell. The first instance focuses its window instead.
   log('info', 'shell.second_instance_exit', {})

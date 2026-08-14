@@ -14,6 +14,7 @@ import {
 import { redactError } from '../diagnostics/redact'
 import type { BuildLogWriter } from './build-log'
 import { buildStagedPackage, clearDerivedState } from './builder'
+import { runBuildWorker } from './build-worker'
 import {
   githubApiBase,
   selectGreenCommit,
@@ -380,10 +381,11 @@ export class UpdateService {
   ): Promise<void> {
     const { config } = this.deps
     const run = (): Promise<unknown> =>
-      (this.deps.build ?? buildStagedPackage)(
+      (this.deps.build ?? runBuildWorker)(
         {
           sourceDirectory: config.sourceDirectory,
           stagingDirectory: config.stagingDirectory,
+          installDirectory: config.installDirectory,
           commit,
           branch: config.branch,
           toolchain
