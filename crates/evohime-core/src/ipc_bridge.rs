@@ -745,6 +745,35 @@ impl IpcBridge {
                 self.write_response(writer, "memory.archived", result)
                     .await?;
             }
+            Some(generated::command_envelope::Command::GetMemory(request)) => {
+                let result = self.dispatch_get_memory(request).await?;
+                self.write_response(writer, "memory.record", result).await?;
+            }
+            Some(generated::command_envelope::Command::ListMemoryPending(request)) => {
+                let result = self.dispatch_list_memory_pending(request).await?;
+                self.write_response(writer, "memory.pending", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::GetMemoryConflicts(request)) => {
+                let result = self.dispatch_get_memory_conflicts(request).await?;
+                self.write_response(writer, "memory.conflicts", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::ConfirmMemory(request)) => {
+                let result = self.dispatch_confirm_memory(request).await?;
+                self.write_response(writer, "memory.confirmed", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::RejectMemory(request)) => {
+                let result = self.dispatch_reject_memory(request).await?;
+                self.write_response(writer, "memory.rejected", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::SupersedeMemory(request)) => {
+                let result = self.dispatch_supersede_memory(request).await?;
+                self.write_response(writer, "memory.superseded", result)
+                    .await?;
+            }
             Some(generated::command_envelope::Command::ForgetMemory(request)) => {
                 let result = self.dispatch_forget_memory(request).await?;
                 self.write_response(writer, "memory.forgotten", result)
@@ -1659,6 +1688,160 @@ impl IpcBridge {
             .map_err(IpcBridgeError::from)
     }
 
+    async fn dispatch_get_memory(
+        &self,
+        request: generated::GetMemory,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::GetMemory {
+                id: request.id,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_list_memory_pending(
+        &self,
+        request: generated::ListMemoryPending,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::ListMemoryPending {
+                scope_kind: request.scope_kind,
+                project_id: request.project_id,
+                secondary_id: request.secondary_id,
+                limit: request.limit,
+                workspace_path: request.workspace_path,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_get_memory_conflicts(
+        &self,
+        request: generated::GetMemoryConflicts,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::GetMemoryConflicts {
+                scope_kind: request.scope_kind,
+                project_id: request.project_id,
+                secondary_id: request.secondary_id,
+                limit: request.limit,
+                workspace_path: request.workspace_path,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_confirm_memory(
+        &self,
+        request: generated::ConfirmMemory,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::ConfirmMemory {
+                ids: request.ids,
+                approval_id: request.approval_id,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_reject_memory(
+        &self,
+        request: generated::RejectMemory,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::RejectMemory {
+                ids: request.ids,
+                approval_id: request.approval_id,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    async fn dispatch_supersede_memory(
+        &self,
+        request: generated::SupersedeMemory,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(CoreCommand::SupersedeMemory {
+                old_id: request.old_id,
+                new_id: request.new_id,
+                reason: request.reason,
+                approval_id: request.approval_id,
+                idempotency_key: request.idempotency_key,
+                reply,
+            })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
     async fn dispatch_install_capability(
         &self,
         request: generated::InstallCapability,
@@ -2473,8 +2656,8 @@ mod tests {
         )
         .expect("approval decodes");
         assert_eq!(approval.event_type, "approval.required");
-        let approval_json = serde_json::from_slice::<serde_json::Value>(&approval.payload)
-            .expect("approval json");
+        let approval_json =
+            serde_json::from_slice::<serde_json::Value>(&approval.payload).expect("approval json");
         assert_eq!(approval_json["preview"]["kind"], "command");
         assert_eq!(approval_json["preview"]["command"], "git status");
         let approval_id = approval_json["approval_id"]
@@ -3388,6 +3571,44 @@ mod tests {
         assert_eq!(records[1]["id"], serde_json::json!(memory_one_id));
         assert_eq!(records[0]["project_id"], serde_json::json!("proj-1"));
         assert_eq!(records[0]["secondary_id"], serde_json::json!("task-1"));
+        // ListMemory is metadata-only: no statement, no provenance body.
+        for record in records {
+            assert!(
+                record.get("statement").is_none(),
+                "list must not carry body"
+            );
+            assert!(
+                record.get("provenance").is_none(),
+                "list must not carry provenance body"
+            );
+            assert_eq!(record["confirmation_state"], serde_json::json!("confirmed"));
+            assert_eq!(record["kind"], serde_json::json!("entity"));
+        }
+
+        // The body is reachable only through an explicit GetMemory.
+        let fetched = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "memory-get-1",
+            generated::command_envelope::Command::GetMemory(generated::GetMemory {
+                id: memory_one_id.clone(),
+            }),
+        )
+        .await;
+        assert_eq!(fetched.event_type, "memory.record");
+        let body: serde_json::Value =
+            serde_json::from_slice(&fetched.payload).expect("get payload is valid json");
+        assert_eq!(body["record"]["body_redacted"], serde_json::json!(false));
+        assert_eq!(
+            body["record"]["statement"],
+            serde_json::json!("Rust build cache lives in target/")
+        );
+        assert_eq!(
+            body["supersession_chain"],
+            serde_json::json!([memory_one_id])
+        );
 
         // Search only matches the record with "rust" in it.
         let search = send(
@@ -3514,6 +3735,384 @@ mod tests {
         assert!(records_final
             .iter()
             .all(|record| record["id"] != serde_json::json!(memory_two_id)));
+        assert_eq!(forgotten["forgotten"], serde_json::json!(true));
+        assert!(
+            forgotten["tombstone_id"]
+                .as_str()
+                .is_some_and(|id| !id.is_empty()),
+            "forget must produce a tombstone id"
+        );
+
+        // A forgotten record still answers GetMemory, but only with metadata.
+        let forgotten_body = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "memory-get-forgotten",
+            generated::command_envelope::Command::GetMemory(generated::GetMemory {
+                id: memory_two_id.clone(),
+            }),
+        )
+        .await;
+        let forgotten_json: serde_json::Value =
+            serde_json::from_slice(&forgotten_body.payload).expect("payload is valid json");
+        assert_eq!(
+            forgotten_json["record"]["body_redacted"],
+            serde_json::json!(true)
+        );
+        assert!(forgotten_json["record"].get("statement").is_none());
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn memory_pending_conflict_confirm_reject_supersede_round_trip() {
+        let path = std::env::temp_dir().join(format!(
+            "evohime-ipc-memory-pending-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal.clone(), coordinator);
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+
+        async fn send(
+            bridge: &IpcBridge,
+            client: &mut tokio::io::DuplexStream,
+            server_reader: &mut (impl tokio::io::AsyncRead + Unpin),
+            server_writer: &mut (impl tokio::io::AsyncWrite + Unpin),
+            request_id: &str,
+            command: generated::command_envelope::Command,
+        ) -> generated::EventEnvelope {
+            let envelope = generated::CommandEnvelope {
+                protocol: Some(protocol()),
+                request_id: request_id.into(),
+                client_id: "memory-client".into(),
+                core_instance_id: String::new(),
+                session_epoch: 1,
+                command: Some(command),
+            };
+            transport::write_frame(client, &envelope.encode_to_vec())
+                .await
+                .expect("request writes");
+            bridge
+                .process_once(server_reader, server_writer)
+                .await
+                .expect("request serves");
+            let response = transport::read_frame(client).await.expect("response reads");
+            generated::EventEnvelope::decode(response.as_slice()).expect("event decodes")
+        }
+
+        // Seed the store directly: extraction candidates are produced by
+        // Core's policy gate, not by an IPC caller, so the IPC surface only
+        // has to prove that pending records can be reviewed and resolved.
+        let seed = |id: &str, state: &str, statement: &str| {
+            let mut record = evohime_local_storage::memory_store::MemoryRecord::new(
+                id,
+                evohime_local_storage::memory_store::MemoryScope::Project,
+                "proj-1",
+                "Язык интерфейса",
+                statement,
+                "{\"message_id\":\"msg-1\"}",
+                evohime_local_storage::memory_store::MemoryPrivacy::Internal,
+                "1000",
+                Some("99999999999999".to_owned()),
+            )
+            .expect("record builds");
+            record.extraction = evohime_local_storage::memory_store::MemoryExtractionFields {
+                kind: "preference".to_owned(),
+                canonical_subject: Some("язык интерфейса".to_owned()),
+                confirmation_state: state.to_owned(),
+                model_confidence: 0.9,
+                verification_confidence: 0.0,
+                extractor_version: "extractor-v1".to_owned(),
+                policy_version: "extraction-policy-v1".to_owned(),
+                ..Default::default()
+            };
+            record
+        };
+        journal
+            .save_memory(&seed("active-1", "confirmed", "UI на русском языке"))
+            .await
+            .expect("active memory saves");
+        journal
+            .save_memory(&seed(
+                "pending-1",
+                "pending_confirmation",
+                "UI на английском языке",
+            ))
+            .await
+            .expect("pending memory saves");
+        journal
+            .save_memory(&seed(
+                "pending-2",
+                "pending_confirmation",
+                "UI на русском языке",
+            ))
+            .await
+            .expect("duplicate pending saves");
+
+        let pending = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "memory-pending-1",
+            generated::command_envelope::Command::ListMemoryPending(generated::ListMemoryPending {
+                scope_kind: "project".into(),
+                project_id: "proj-1".into(),
+                secondary_id: String::new(),
+                limit: 10,
+                workspace_path: String::new(),
+            }),
+        )
+        .await;
+        assert_eq!(pending.event_type, "memory.pending");
+        let pending_json: serde_json::Value =
+            serde_json::from_slice(&pending.payload).expect("pending payload is valid json");
+        assert_eq!(
+            pending_json["counts"]["pending_confirmation"],
+            serde_json::json!(2)
+        );
+        assert_eq!(pending_json["counts"]["confirmed"], serde_json::json!(1));
+        for record in pending_json["records"].as_array().expect("records array") {
+            assert!(
+                record.get("statement").is_none(),
+                "queue must stay metadata-only"
+            );
+        }
+
+        // Only the incompatible statement is a conflict; the duplicate is not.
+        let conflicts = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "memory-conflicts-1",
+            generated::command_envelope::Command::GetMemoryConflicts(
+                generated::GetMemoryConflicts {
+                    scope_kind: "project".into(),
+                    project_id: "proj-1".into(),
+                    secondary_id: String::new(),
+                    limit: 10,
+                    workspace_path: String::new(),
+                },
+            ),
+        )
+        .await;
+        assert_eq!(conflicts.event_type, "memory.conflicts");
+        let conflicts_json: serde_json::Value =
+            serde_json::from_slice(&conflicts.payload).expect("conflicts payload is valid json");
+        let conflict_list = conflicts_json["conflicts"].as_array().expect("conflicts");
+        assert_eq!(conflict_list.len(), 1);
+        assert_eq!(
+            conflict_list[0]["pending"]["id"],
+            serde_json::json!("pending-1")
+        );
+        assert_eq!(
+            conflict_list[0]["active"]["id"],
+            serde_json::json!("active-1")
+        );
+
+        // Confirm without approval is rejected.
+        let denied_envelope = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "memory-confirm-denied".into(),
+            client_id: "memory-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::ConfirmMemory(
+                generated::ConfirmMemory {
+                    ids: vec!["pending-1".into()],
+                    approval_id: String::new(),
+                    idempotency_key: "key-1".into(),
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &denied_envelope.encode_to_vec())
+            .await
+            .expect("denied request writes");
+        assert!(
+            bridge
+                .process_once(&mut server_reader, &mut server_writer)
+                .await
+                .is_err(),
+            "confirm without approval must fail"
+        );
+
+        // Confirm without an idempotency key is rejected too.
+        let no_key = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "memory-confirm-no-key".into(),
+            client_id: "memory-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::ConfirmMemory(
+                generated::ConfirmMemory {
+                    ids: vec!["pending-1".into()],
+                    approval_id: "approval-1".into(),
+                    idempotency_key: String::new(),
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &no_key.encode_to_vec())
+            .await
+            .expect("request writes");
+        assert!(
+            bridge
+                .process_once(&mut server_reader, &mut server_writer)
+                .await
+                .is_err(),
+            "confirm without an idempotency key must fail"
+        );
+
+        // Approved confirm applies, and repeating it is safe.
+        for request_id in ["memory-confirm-1", "memory-confirm-1-replay"] {
+            let confirmed = send(
+                &bridge,
+                &mut client,
+                &mut server_reader,
+                &mut server_writer,
+                request_id,
+                generated::command_envelope::Command::ConfirmMemory(generated::ConfirmMemory {
+                    ids: vec!["pending-1".into()],
+                    approval_id: "approval-1".into(),
+                    idempotency_key: "key-1".into(),
+                }),
+            )
+            .await;
+            assert_eq!(confirmed.event_type, "memory.confirmed");
+            let json: serde_json::Value =
+                serde_json::from_slice(&confirmed.payload).expect("payload is valid json");
+            assert_eq!(json["results"][0]["state"], serde_json::json!("confirmed"));
+        }
+
+        // Batch reject is terminal: a later confirm reports the real state.
+        let rejected = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "memory-reject-1",
+            generated::command_envelope::Command::RejectMemory(generated::RejectMemory {
+                ids: vec!["pending-2".into()],
+                approval_id: "approval-2".into(),
+                idempotency_key: "key-2".into(),
+            }),
+        )
+        .await;
+        assert_eq!(rejected.event_type, "memory.rejected");
+        let rejected_json: serde_json::Value =
+            serde_json::from_slice(&rejected.payload).expect("payload is valid json");
+        assert_eq!(
+            rejected_json["results"][0]["state"],
+            serde_json::json!("rejected")
+        );
+
+        let reopen = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "memory-confirm-2",
+            generated::command_envelope::Command::ConfirmMemory(generated::ConfirmMemory {
+                ids: vec!["pending-2".into()],
+                approval_id: "approval-3".into(),
+                idempotency_key: "key-3".into(),
+            }),
+        )
+        .await;
+        let reopen_json: serde_json::Value =
+            serde_json::from_slice(&reopen.payload).expect("payload is valid json");
+        assert_eq!(
+            reopen_json["results"][0]["state"],
+            serde_json::json!("rejected")
+        );
+        assert_eq!(
+            reopen_json["results"][0]["applied"],
+            serde_json::json!(false)
+        );
+
+        // The conflict is resolved only by an explicit supersede.
+        let superseded = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "memory-supersede-1",
+            generated::command_envelope::Command::SupersedeMemory(generated::SupersedeMemory {
+                old_id: "active-1".into(),
+                new_id: "pending-1".into(),
+                reason: "user_choice".into(),
+                approval_id: "approval-4".into(),
+                idempotency_key: "key-4".into(),
+            }),
+        )
+        .await;
+        assert_eq!(superseded.event_type, "memory.superseded");
+        let superseded_json: serde_json::Value =
+            serde_json::from_slice(&superseded.payload).expect("payload is valid json");
+        assert_eq!(
+            superseded_json["supersession_chain"],
+            serde_json::json!(["active-1", "pending-1"])
+        );
+
+        // An unsupported reason is refused rather than stored as free text.
+        let bad_reason = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "memory-supersede-bad".into(),
+            client_id: "memory-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::SupersedeMemory(
+                generated::SupersedeMemory {
+                    old_id: "pending-1".into(),
+                    new_id: "pending-2".into(),
+                    reason: "because".into(),
+                    approval_id: "approval-5".into(),
+                    idempotency_key: "key-5".into(),
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &bad_reason.encode_to_vec())
+            .await
+            .expect("request writes");
+        assert!(
+            bridge
+                .process_once(&mut server_reader, &mut server_writer)
+                .await
+                .is_err(),
+            "an unsupported supersession reason must fail"
+        );
+
+        // After resolution only the winning record is retrievable.
+        let search = send(
+            &bridge,
+            &mut client,
+            &mut server_reader,
+            &mut server_writer,
+            "memory-search-final",
+            generated::command_envelope::Command::SearchMemory(generated::SearchMemory {
+                scope_kind: "project".into(),
+                project_id: "proj-1".into(),
+                secondary_id: String::new(),
+                query: "ui".into(),
+                limit: 10,
+            }),
+        )
+        .await;
+        let search_json: serde_json::Value =
+            serde_json::from_slice(&search.payload).expect("payload is valid json");
+        let hits = search_json["records"].as_array().expect("records array");
+        assert_eq!(
+            hits.iter()
+                .map(|hit| hit["id"].as_str().unwrap_or_default())
+                .collect::<Vec<_>>(),
+            ["pending-1"]
+        );
 
         let _ = std::fs::remove_file(path);
     }

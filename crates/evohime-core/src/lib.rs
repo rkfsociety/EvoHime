@@ -740,6 +740,7 @@ pub mod evals;
 pub mod export;
 pub mod memory_api;
 pub mod memory_domain;
+pub mod memory_extraction;
 pub mod observability;
 pub mod permission_rules;
 pub mod plan;
@@ -1012,10 +1013,70 @@ pub enum CoreCommand {
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
     /// Permanently erases a memory record's title/content. Also requires an
-    /// out-of-band approval token; see `ArchiveMemory`.
+    /// out-of-band approval token; see `ArchiveMemory`. Writes a tombstone
+    /// carrying only metadata and a digest.
     ForgetMemory {
         id: String,
         approval_id: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Reads one memory record including its body. `sensitive`, forgotten and
+    /// empty records come back redacted: `ListMemory` never carries a body,
+    /// and this is the only path that can.
+    GetMemory {
+        id: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Lists the pending-confirmation queue plus per-state counters for one
+    /// exact scope. Metadata only.
+    ListMemoryPending {
+        scope_kind: String,
+        project_id: String,
+        secondary_id: String,
+        limit: u32,
+        /// When non-empty, Core derives the workspace scope id itself, which
+        /// is the scope memory extraction writes under.
+        workspace_path: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Deterministic conflicts between pending records and the currently
+    /// active memory of the same `kind + canonical_subject + scope`. Reading
+    /// conflicts never changes any record: an unresolved conflict leaves the
+    /// old entry active and the new one pending.
+    GetMemoryConflicts {
+        scope_kind: String,
+        project_id: String,
+        secondary_id: String,
+        limit: u32,
+        workspace_path: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Confirms one or more pending records. Requires an out-of-band approval
+    /// token (`approval_id`) and an `idempotency_key`; repeating the same
+    /// request is safe and reports the actual current state of each id.
+    ConfirmMemory {
+        ids: Vec<String>,
+        approval_id: String,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Rejects one or more pending records. Same trust model as
+    /// `ConfirmMemory`; a rejected record is terminal and never reopens.
+    RejectMemory {
+        ids: Vec<String>,
+        approval_id: String,
+        idempotency_key: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Resolves a conflict by an explicit user choice: `old_id` is superseded
+    /// by `new_id` with a mandatory reason. Supersede happens only here, never
+    /// automatically.
+    SupersedeMemory {
+        old_id: String,
+        new_id: String,
+        reason: String,
+        approval_id: String,
+        idempotency_key: String,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
     /// Installs (or, when a manifest of the same name already exists,
@@ -1684,6 +1745,197 @@ impl EventJournal {
             .map_err(|error| error.to_string())
     }
 
+    /// Reads one memory record by id, including body. Privacy redaction is
+    /// applied by the caller, not here.
+    pub async fn get_memory(
+        &self,
+        id: &str,
+    ) -> Result<Option<evohime_local_storage::memory_store::MemoryRecord>, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::get_by_id(database.connection(), id)
+            .map_err(|error| error.to_string())
+    }
+
+    /// Records in one `confirmation_state` for one exact scope: the pending
+    /// queue and the rejected/superseded history use the same path.
+    pub async fn list_memory_by_state(
+        &self,
+        scope: evohime_local_storage::memory_store::MemoryScope,
+        scope_id: &str,
+        state: &str,
+        limit: u32,
+    ) -> Result<Vec<evohime_local_storage::memory_store::MemoryRecord>, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::list_by_state(
+            database.connection(),
+            scope,
+            scope_id,
+            state,
+            limit,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Per-state counters for OperationsPanel; never exposes any body.
+    pub async fn count_memory_by_state(
+        &self,
+        scope: evohime_local_storage::memory_store::MemoryScope,
+        scope_id: &str,
+    ) -> Result<Vec<(String, i64)>, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::count_by_state(
+            database.connection(),
+            scope,
+            scope_id,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Active records of one kind in one scope: the input for deterministic
+    /// conflict detection in `memory_extraction::detect_conflict`.
+    pub async fn memory_conflict_candidates(
+        &self,
+        scope: evohime_local_storage::memory_store::MemoryScope,
+        scope_id: &str,
+        kind: &str,
+        limit: u32,
+    ) -> Result<Vec<evohime_local_storage::memory_store::MemoryRecord>, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::conflict_candidates(
+            database.connection(),
+            scope,
+            scope_id,
+            kind,
+            limit,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Idempotent state transition. Repeated confirm/reject is safe and
+    /// returns the actual current state.
+    pub async fn transition_memory_state(&self, id: &str, target: &str) -> Result<String, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::transition_state(
+            database.connection(),
+            id,
+            target,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Applies an explicit user choice: `old_id` is superseded by `new_id`.
+    pub async fn supersede_memory(
+        &self,
+        old_id: &str,
+        new_id: &str,
+        reason: &str,
+    ) -> Result<(), String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::supersede(
+            database.connection(),
+            old_id,
+            new_id,
+            reason,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    pub async fn memory_supersession_chain(
+        &self,
+        id: &str,
+        limit: usize,
+    ) -> Result<Vec<String>, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::supersession_chain(
+            database.connection(),
+            id,
+            limit,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Marks due records `expired` so they leave retrieval without any
+    /// hidden action on stale content.
+    pub async fn expire_due_memory(&self, now: &str) -> Result<usize, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::expire_due(database.connection(), now)
+            .map_err(|error| error.to_string())
+    }
+
+    /// Logical deletion plus a tombstone that carries only metadata and a
+    /// digest — never the original text.
+    pub async fn forget_memory_with_tombstone(
+        &self,
+        id: &str,
+        tombstone_id: &str,
+        reason_class: &str,
+        forgotten_at: &str,
+    ) -> Result<bool, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::forget_with_tombstone(
+            database.connection(),
+            id,
+            tombstone_id,
+            reason_class,
+            forgotten_at,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// Registered aliases for the scope, feeding
+    /// `memory_extraction::AliasTable`. Model inference can never add one.
+    pub async fn list_memory_aliases(
+        &self,
+        scope: evohime_local_storage::memory_store::MemoryScope,
+        scope_id: &str,
+    ) -> Result<Vec<(String, String)>, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::list_aliases(
+            database.connection(),
+            scope,
+            scope_id,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    /// "Only for this session": a session-scoped row with automatic expiry
+    /// that never becomes persistent memory.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn save_memory_session_note(
+        &self,
+        id: &str,
+        session_id: &str,
+        scope: evohime_local_storage::memory_store::MemoryScope,
+        scope_id: &str,
+        kind: &str,
+        statement: &str,
+        created_at: &str,
+        expires_at: &str,
+    ) -> Result<(), String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::insert_session_note(
+            database.connection(),
+            id,
+            session_id,
+            scope,
+            scope_id,
+            kind,
+            statement,
+            created_at,
+            expires_at,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    pub async fn purge_expired_memory_session_notes(&self, now: &str) -> Result<usize, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::memory_store::MemoryStoreSql::purge_expired_session_notes(
+            database.connection(),
+            now,
+        )
+        .map_err(|error| error.to_string())
+    }
+
     /// Persists one bounded, redacted feedback record against the real
     /// `feedback_entries` table (SCHEMA_VERSION 14). Feedback never leaves
     /// this local table; see `evohime_local_storage::feedback_store::external_telemetry_allowed`.
@@ -2242,29 +2494,30 @@ impl EventJournal {
             // stages replays safely (transition_recovery treats a repeated
             // (idempotency_key, state) pair as a no-op and rejects a reused
             // key against a different state).
-            let recovery_transition = |state, idempotency_key: &str, verifier: &str, evidence: &[u8], decision: &str| {
-                if record.kind == "agent_task" {
-                    database.transition_agent_recovery(
-                        &record.run_id,
-                        state,
-                        &record.effect_id,
-                        idempotency_key,
-                        verifier,
-                        evidence,
-                        decision,
-                    )
-                } else {
-                    database.transition_recovery(
-                        &record.run_id,
-                        state,
-                        &record.effect_id,
-                        idempotency_key,
-                        verifier,
-                        evidence,
-                        decision,
-                    )
-                }
-            };
+            let recovery_transition =
+                |state, idempotency_key: &str, verifier: &str, evidence: &[u8], decision: &str| {
+                    if record.kind == "agent_task" {
+                        database.transition_agent_recovery(
+                            &record.run_id,
+                            state,
+                            &record.effect_id,
+                            idempotency_key,
+                            verifier,
+                            evidence,
+                            decision,
+                        )
+                    } else {
+                        database.transition_recovery(
+                            &record.run_id,
+                            state,
+                            &record.effect_id,
+                            idempotency_key,
+                            verifier,
+                            evidence,
+                            decision,
+                        )
+                    }
+                };
             recovery_transition(
                 RecoveryState::Recovering,
                 &format!("{}:{}:recovering", record.run_id, record.effect_id),
@@ -2604,6 +2857,9 @@ pub struct ToolAgent {
     approvals: ApprovalCoordinator,
     journal: Option<EventJournal>,
     selected_model: SelectedModel,
+    /// Per-workspace rate limit, token budget and circuit breaker for memory
+    /// extraction. Shared across turns because the limits are hourly.
+    extraction_guard: Arc<Mutex<crate::memory_extraction::ExtractionGuard>>,
 }
 
 impl ToolAgent {
@@ -2623,6 +2879,9 @@ impl ToolAgent {
             approvals,
             journal: None,
             selected_model: SelectedModel::default(),
+            extraction_guard: Arc::new(
+                Mutex::new(crate::memory_extraction::ExtractionGuard::new()),
+            ),
         }
     }
 
@@ -2648,6 +2907,378 @@ impl ToolAgent {
             return;
         };
         let _ = journal.record_lesson(&lesson).await;
+    }
+
+    /// Runs bounded memory extraction for one finished turn.
+    ///
+    /// Nothing here can make the task fail: every error path writes a trace
+    /// and returns. Nothing here can create active memory on its own either —
+    /// the state of every produced record comes from
+    /// `memory_extraction::evaluate`, and a conflict with existing active
+    /// memory always downgrades the result to `pending_confirmation`.
+    async fn run_memory_extraction(
+        &self,
+        task_id: &str,
+        workspace_root: &std::path::Path,
+        user_prompt: &str,
+        assistant_reply: &str,
+    ) {
+        use crate::memory_extraction as extraction;
+
+        let Some(journal) = &self.journal else {
+            return;
+        };
+        let mode = memory_extraction_mode();
+        let trigger = extraction::detect_explicit_trigger(user_prompt);
+        let policy = extraction::ExtractionPolicy::default();
+        let now_ms = task_memory::now_millis();
+        {
+            let mut guard = self.extraction_guard.lock().await;
+            guard.begin_turn();
+            if let Err(error) = guard.check_can_extract(mode, trigger.as_ref(), now_ms, &policy) {
+                write_model_trace(
+                    "memory.extraction.skipped",
+                    serde_json::json!({
+                        "task_id": task_id,
+                        "mode": mode.as_str(),
+                        "reason": error.to_string(),
+                    }),
+                );
+                return;
+            }
+        }
+
+        let scope_id = task_memory::workspace_scope_id(workspace_root);
+        let mut aliases = extraction::AliasTable::new();
+        if let Ok(registered) = journal
+            .list_memory_aliases(
+                evohime_local_storage::memory_store::MemoryScope::Project,
+                &scope_id,
+            )
+            .await
+        {
+            for (alias, entity_id) in registered {
+                let _ = aliases.register(&alias, &entity_id);
+            }
+        }
+
+        let Some(raw_output) = self
+            .call_memory_extractor(task_id, user_prompt, assistant_reply)
+            .await
+        else {
+            return;
+        };
+        let candidates = match extraction::parse_extraction(&raw_output, &policy) {
+            Ok(candidates) => candidates,
+            Err(error) => {
+                // Only the failure class is logged, never the output itself.
+                self.extraction_guard
+                    .lock()
+                    .await
+                    .register_malformed(now_ms);
+                write_model_trace(
+                    "memory.extraction.rejected",
+                    serde_json::json!({
+                        "task_id": task_id,
+                        "reason": error.to_string(),
+                    }),
+                );
+                return;
+            }
+        };
+
+        for raw in &candidates {
+            let (candidate, subject) = match extraction::validate_candidate(raw, &aliases, &policy)
+            {
+                Ok(validated) => validated,
+                Err(error) => {
+                    write_model_trace(
+                        "memory.extraction.rejected",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "reason": error.to_string(),
+                        }),
+                    );
+                    continue;
+                }
+            };
+            if self
+                .extraction_guard
+                .lock()
+                .await
+                .register_candidate(now_ms, &policy)
+                .is_err()
+            {
+                break;
+            }
+            // A model cannot vouch for itself: source trust is only `user`
+            // when this turn actually carried an explicit user assertion.
+            let context = extraction::TurnContext {
+                mode,
+                trigger: trigger.clone(),
+                user_asserted: trigger.is_some(),
+            };
+            let mut decision = extraction::evaluate(&candidate, &context, &subject, &policy);
+            if decision.outcome == extraction::PolicyOutcome::Reject {
+                write_model_trace(
+                    "memory.extraction.rejected",
+                    serde_json::json!({
+                        "task_id": task_id,
+                        "kind": candidate.kind.as_str(),
+                        "reason": decision.reason.as_str(),
+                    }),
+                );
+                continue;
+            }
+
+            let store_scope = match candidate.scope {
+                extraction::MemoryScopeLevel::Task => {
+                    evohime_local_storage::memory_store::MemoryScope::Task
+                }
+                extraction::MemoryScopeLevel::Workspace => {
+                    evohime_local_storage::memory_store::MemoryScope::Workspace
+                }
+                extraction::MemoryScopeLevel::Session => {
+                    evohime_local_storage::memory_store::MemoryScope::Session
+                }
+                extraction::MemoryScopeLevel::Project => {
+                    evohime_local_storage::memory_store::MemoryScope::Project
+                }
+            };
+
+            // Session-only results never create a persistent row.
+            if decision.session_only {
+                let expires_at = now_ms.saturating_add(extraction::SESSION_SUMMARY_GRACE_MS);
+                let _ = journal
+                    .save_memory_session_note(
+                        &uuid::Uuid::new_v4().to_string(),
+                        task_id,
+                        store_scope,
+                        &scope_id,
+                        candidate.kind.as_str(),
+                        &candidate.statement,
+                        &now_ms.to_string(),
+                        &expires_at.to_string(),
+                    )
+                    .await;
+                continue;
+            }
+
+            // An unresolved conflict never overwrites the active record: the
+            // candidate waits for an explicit user choice instead.
+            let active = journal
+                .memory_conflict_candidates(store_scope, &scope_id, candidate.kind.as_str(), 100)
+                .await
+                .unwrap_or_default();
+            let summaries = active
+                .iter()
+                .filter_map(|record| memory_active_summary(record))
+                .collect::<Vec<_>>();
+            let conflict = extraction::detect_conflict(&candidate, &summaries);
+            match conflict {
+                extraction::ConflictVerdict::Duplicate { .. } => {
+                    write_model_trace(
+                        "memory.extraction.duplicate",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "subject": candidate.canonical_subject,
+                        }),
+                    );
+                    continue;
+                }
+                extraction::ConflictVerdict::Conflict { .. } => {
+                    decision.outcome = extraction::PolicyOutcome::Pending;
+                    decision.state = extraction::ConfirmationState::PendingConfirmation;
+                }
+                extraction::ConflictVerdict::None => {}
+            }
+
+            let Ok(provenance) = candidate.evidence.to_provenance_json() else {
+                continue;
+            };
+            let Ok(mut record) = evohime_local_storage::memory_store::MemoryRecord::new(
+                uuid::Uuid::new_v4().to_string(),
+                store_scope,
+                &scope_id,
+                candidate.raw_subject.clone(),
+                candidate.statement.clone(),
+                provenance,
+                evohime_local_storage::memory_store::MemoryPrivacy::Private,
+                now_ms.to_string(),
+                Some(now_ms.saturating_add(decision.ttl_ms).to_string()),
+            ) else {
+                continue;
+            };
+            // Verification runs before persistence so the stored record
+            // already carries an honest validation status; `invalid` and
+            // `unknown` both keep it out of retrieval.
+            let verdict = self.verify_candidate(workspace_root, &candidate).await;
+            record.extraction = evohime_local_storage::memory_store::MemoryExtractionFields {
+                kind: candidate.kind.as_str().to_owned(),
+                canonical_subject: Some(candidate.canonical_subject.clone()),
+                confirmation_state: decision.state.as_str().to_owned(),
+                model_confidence: candidate.model_confidence,
+                // Raised only by the versioned verification policy.
+                verification_confidence: verdict
+                    .as_ref()
+                    .map(|verdict| verdict.verification_confidence)
+                    .unwrap_or(0.0),
+                privacy_class: candidate.privacy.as_str().to_owned(),
+                source_trust: candidate.source_trust.as_str().to_owned(),
+                supersedes: None,
+                superseded_by: None,
+                supersession_reason: None,
+                extractor_version: decision.extractor_version.to_owned(),
+                policy_version: decision.policy_version.to_owned(),
+                validation_status: verdict
+                    .as_ref()
+                    .map(|verdict| verdict.status.as_str().to_owned())
+                    .unwrap_or_else(|| decision.validation_status.as_str().to_owned()),
+                validated_at: verdict
+                    .as_ref()
+                    .map(|verdict| verdict.validated_at_ms.to_string()),
+                provenance_source_id: memory_provenance_source_id(&candidate.evidence),
+            };
+            if let Err(error) = journal.save_memory(&record).await {
+                write_model_trace(
+                    "memory.extraction.rejected",
+                    serde_json::json!({ "task_id": task_id, "reason": error }),
+                );
+                continue;
+            }
+            write_model_trace(
+                "memory.extraction.candidate",
+                serde_json::json!({
+                    "task_id": task_id,
+                    "memory_id": record.id,
+                    "kind": candidate.kind.as_str(),
+                    "state": decision.state.as_str(),
+                    "risk": decision.risk.as_str(),
+                    "reason": decision.reason.as_str(),
+                    "policy_version": decision.policy_version,
+                    "extractor_version": decision.extractor_version,
+                }),
+            );
+        }
+    }
+
+    /// Runs the verification hook for one candidate and returns the verdict
+    /// the versioned verification policy produced. A timeout, an unreadable
+    /// file or a missing validator yields `unknown`, which keeps the record
+    /// pending rather than confirming or rejecting it. One retry, as the plan
+    /// specifies; a failing validator never fails the task.
+    async fn verify_candidate(
+        &self,
+        workspace_root: &std::path::Path,
+        candidate: &crate::memory_extraction::Candidate,
+    ) -> Option<crate::memory_extraction::VerificationVerdict> {
+        use crate::memory_extraction as extraction;
+
+        let target = extraction::validation_target(candidate)?;
+        let policy = extraction::ExtractionPolicy::default();
+        let expected = candidate.evidence.content_hash.clone();
+        let mut outcome = None;
+        for _ in 0..2 {
+            let actual = match target {
+                extraction::ValidationTarget::Filesystem => {
+                    let path = workspace_root.join(&candidate.evidence.file_path);
+                    match timeout(
+                        Duration::from_millis(target.timeout_ms()),
+                        tokio::fs::read(path),
+                    )
+                    .await
+                    {
+                        Ok(Ok(bytes)) => Some(crate::research::sha256_hex(&bytes)),
+                        _ => None,
+                    }
+                }
+                // Tool/API validation belongs to Local Agentic RAG, which is
+                // a separate dependency: until it exists the honest answer is
+                // `unknown`, not a fabricated pass.
+                extraction::ValidationTarget::Tool => None,
+            };
+            let candidate_outcome = extraction::file_evidence_outcome(
+                &expected,
+                actual.as_deref(),
+                task_memory::now_millis(),
+            );
+            let resolved = candidate_outcome.valid.is_some();
+            outcome = Some(candidate_outcome);
+            if resolved {
+                break;
+            }
+        }
+        outcome.map(|outcome| extraction::apply_verification(&outcome, &policy))
+    }
+
+    /// One bounded extraction call: no tools, no provider secrets, context
+    /// limited to the current exchange, and at most two retries. Returns
+    /// `None` when the model is unavailable — the task continues without
+    /// memory.
+    async fn call_memory_extractor(
+        &self,
+        task_id: &str,
+        user_prompt: &str,
+        assistant_reply: &str,
+    ) -> Option<String> {
+        use crate::memory_extraction as extraction;
+
+        let budget_chars = extraction::MAX_CONTEXT_TOKENS * 4;
+        let context = truncate_chars(
+            &format!("Пользователь: {user_prompt}\nАгент: {assistant_reply}"),
+            budget_chars,
+        );
+        let messages = vec![
+            ChatMessage::text(ChatRole::System, MEMORY_EXTRACTION_PROMPT.to_string()),
+            ChatMessage::text(ChatRole::User, context),
+        ];
+        let model = std::env::var("EVOHIME_MEMORY_EXTRACTION_MODEL")
+            .ok()
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty());
+        for attempt in 0..=extraction::RETRY_DELAYS_MS.len() {
+            if attempt > 0 {
+                if let Some(delay) = extraction::ExtractionGuard::retry_delay_ms(attempt - 1) {
+                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                }
+            }
+            let call =
+                self.gateway
+                    .chat_with_tools_for_route("default", model.as_deref(), &messages, &[]);
+            match timeout(Duration::from_secs(20), call).await {
+                Ok(Ok(result)) => {
+                    let tokens = (context_token_estimate(&messages)
+                        + result.content.chars().count().div_ceil(4))
+                        as u64;
+                    self.extraction_guard
+                        .lock()
+                        .await
+                        .register_tokens(task_memory::now_millis(), tokens);
+                    return Some(result.content);
+                }
+                Ok(Err(error)) => {
+                    write_model_trace(
+                        "memory.extraction.provider_error",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "attempt": attempt + 1,
+                            "error": error.to_string(),
+                        }),
+                    );
+                }
+                Err(_) => {
+                    write_model_trace(
+                        "memory.extraction.provider_error",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "attempt": attempt + 1,
+                            "error": "timeout",
+                        }),
+                    );
+                }
+            }
+        }
+        None
     }
 
     /// Calls model with retry logic and timeout for resilience (Wave VII).
@@ -2841,12 +3472,12 @@ impl ToolAgent {
                 );
             }
             if !memories.is_empty() {
-                    let memory_context = memories
-                        .iter()
-                        .map(|memory| format!("- {}: {}", memory.title, memory.content))
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    messages.insert(
+                let memory_context = memories
+                    .iter()
+                    .map(|memory| format!("- {}: {}", memory.title, memory.content))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                messages.insert(
                         1,
                         ChatMessage::text(
                             ChatRole::System,
@@ -2855,15 +3486,15 @@ impl ToolAgent {
                             ),
                         ),
                     );
-                    write_model_trace(
-                        "task.memory.retrieved",
-                        serde_json::json!({
-                            "task_id": task_id,
-                            "scope_id": scope_id,
-                            "memory_count": memories.len(),
-                            "memory_ids": memories.iter().map(|memory| &memory.id).collect::<Vec<_>>()
-                        }),
-                    );
+                write_model_trace(
+                    "task.memory.retrieved",
+                    serde_json::json!({
+                        "task_id": task_id,
+                        "scope_id": scope_id,
+                        "memory_count": memories.len(),
+                        "memory_ids": memories.iter().map(|memory| &memory.id).collect::<Vec<_>>()
+                    }),
+                );
             }
         }
         let context_text = messages
@@ -2872,6 +3503,9 @@ impl ToolAgent {
             .chain(tool_names.iter().map(String::as_str))
             .collect::<Vec<_>>()
             .join("\n");
+        // Kept for post-turn memory extraction, which needs the original user
+        // message to detect an explicit "запомни"-style trigger.
+        let extraction_user_prompt = user_prompt.clone();
         let delivery_requirements = DeliveryRequirements::from_prompt(&user_prompt);
         let _ = events.send(CoreEvent::ModelContext {
             task_id: task_id.clone(),
@@ -3092,9 +3726,18 @@ impl ToolAgent {
                 let final_message = strip_legacy_function_blocks(&result.content);
                 self.persist_lesson(&task_id, &context.workspace_root).await;
                 let _ = events.send(CoreEvent::TaskCompleted {
-                    task_id,
+                    task_id: task_id.clone(),
                     final_message: final_message.clone(),
                 });
+                // Extraction runs after the answer has already been sent, so
+                // it adds nothing to the turn's latency and cannot fail it.
+                self.run_memory_extraction(
+                    &task_id,
+                    &context.workspace_root,
+                    &extraction_user_prompt,
+                    &final_message,
+                )
+                .await;
                 return Ok(final_message);
             }
 
@@ -3189,7 +3832,9 @@ impl ToolAgent {
                                     )
                                 })
                                 .collect::<Vec<_>>();
-                            Ok(evohime_tool_runtime::memory::format_results(&query, &entries))
+                            Ok(evohime_tool_runtime::memory::format_results(
+                                &query, &entries,
+                            ))
                         };
                         tokio::select! {
                             _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
@@ -3505,6 +4150,9 @@ impl TaskExecutor for ToolAgent {
             approvals: self.approvals.clone(),
             journal: self.journal.clone(),
             selected_model: self.selected_model.clone(),
+            // Shared, not cloned: the hourly candidate/token limits and the
+            // circuit breaker have to hold across concurrent tasks.
+            extraction_guard: Arc::clone(&self.extraction_guard),
         };
         Box::pin(async move {
             agent
@@ -3653,6 +4301,75 @@ impl TaskCoordinator {
         }
     }
 
+    /// Shared confirm/reject path. Both are approval-gated, batched and
+    /// idempotent: each id reports the state the store actually holds after
+    /// the call, so a replayed request produces the same answer instead of a
+    /// second transition. Concurrent actions on one id are serialized by the
+    /// storage transaction inside `transition_memory_state`.
+    async fn apply_memory_decision(
+        state: &Arc<Mutex<CoordinatorState>>,
+        ids: Vec<String>,
+        approval_id: String,
+        idempotency_key: String,
+        operation: crate::memory_api::MemoryOperation,
+        target: crate::memory_extraction::ConfirmationState,
+        audit_event: &str,
+    ) -> Result<Vec<u8>, String> {
+        let journal = state.lock().await.journal.clone();
+        let journal = journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+        crate::memory_api::Approval::new(approval_id.clone(), operation)
+            .map_err(|error| error.to_string())?;
+        validate_memory_idempotency_key(&idempotency_key)?;
+        if ids.is_empty() {
+            return Err("at least one memory id is required".to_string());
+        }
+        if ids.len() > MAX_MEMORY_BATCH {
+            return Err(format!("batch is limited to {MAX_MEMORY_BATCH} memory ids"));
+        }
+        let mut results = Vec::with_capacity(ids.len());
+        for id in &ids {
+            // A contradictory decision on one id (rejecting an already
+            // confirmed record, say) reports that id's real state instead of
+            // aborting the rest of the batch.
+            let actual = match journal.transition_memory_state(id, target.as_str()).await {
+                Ok(state) => state,
+                Err(error) => {
+                    let current = journal
+                        .get_memory(id)
+                        .await
+                        .ok()
+                        .flatten()
+                        .map(|record| record.extraction.confirmation_state);
+                    match current {
+                        Some(state) => state,
+                        // No such record at all: that is a real failure.
+                        None => return Err(error),
+                    }
+                }
+            };
+            results.push(serde_json::json!({
+                "id": id,
+                "state": actual,
+                "applied": actual == target.as_str(),
+            }));
+            Self::record_audit(
+                state,
+                crate::audit::AuditKind::Approval,
+                id.clone(),
+                audit_event,
+                [
+                    ("memory_id".to_owned(), id.clone()),
+                    ("state".to_owned(), actual),
+                    ("approval_id".to_owned(), approval_id.clone()),
+                    ("idempotency_key".to_owned(), idempotency_key.clone()),
+                ],
+            )
+            .await;
+        }
+        serde_json::to_vec(&serde_json::json!({ "results": results }))
+            .map_err(|error| error.to_string())
+    }
+
     async fn record_audit_for_event(state: &Arc<Mutex<CoordinatorState>>, event: &CoreEvent) {
         match event {
             CoreEvent::ApprovalRequired {
@@ -3755,7 +4472,9 @@ impl TaskCoordinator {
                             state_guard.tasks.remove(&task_id);
                             let _ = state_guard.events.send(CoreEvent::TaskFailed {
                                 task_id,
-                                error: format!("agent run could not acquire durable lease: {error}"),
+                                error: format!(
+                                    "agent run could not acquire durable lease: {error}"
+                                ),
                             });
                             return;
                         }
@@ -5309,9 +6028,23 @@ impl TaskCoordinator {
                         crate::memory_api::MemoryOperation::Forget,
                     )
                     .map_err(|error| error.to_string())?;
-                    let changed = journal.forget_memory(&id).await?;
+                    // The tombstone id is random and unlinkable to the erased
+                    // body: audit keeps only kind, scope, timestamps, a reason
+                    // class and a digest.
+                    let tombstone_id = uuid::Uuid::new_v4().to_string();
+                    let forgotten_at = memory_now_ms().to_string();
+                    let changed = journal
+                        .forget_memory_with_tombstone(
+                            &id,
+                            &tombstone_id,
+                            "user_request",
+                            &forgotten_at,
+                        )
+                        .await?;
                     if !changed {
-                        return Err("memory record was not found".to_string());
+                        return Err(
+                            "memory record was not found or is already forgotten".to_string()
+                        );
                     }
                     Self::record_audit(
                         &state,
@@ -5321,11 +6054,226 @@ impl TaskCoordinator {
                         [
                             ("memory_id".to_owned(), id.clone()),
                             ("approval_id".to_owned(), approval_id),
+                            ("tombstone_id".to_owned(), tombstone_id.clone()),
+                            ("reason_class".to_owned(), "user_request".to_owned()),
                         ],
                     )
                     .await;
-                    serde_json::to_vec(&serde_json::json!({ "id": id, "forgotten": true }))
+                    serde_json::to_vec(&serde_json::json!({
+                        "id": id,
+                        "forgotten": true,
+                        "tombstone_id": tombstone_id,
+                    }))
+                    .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::GetMemory { id, reply } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let record = journal
+                        .get_memory(&id)
+                        .await?
+                        .ok_or_else(|| "memory record was not found".to_string())?;
+                    let chain = journal.memory_supersession_chain(&id, 32).await?;
+                    let body = memory_record_body_json(&record)?;
+                    serde_json::to_vec(&serde_json::json!({
+                        "record": body,
+                        "supersession_chain": chain,
+                    }))
+                    .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::ListMemoryPending {
+                scope_kind,
+                project_id,
+                secondary_id,
+                limit,
+                workspace_path,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let store_scope = memory_store_scope(&scope_kind)?;
+                    let scope_id = memory_scope_id(&workspace_path, &project_id, &secondary_id);
+                    // Expiry is applied before reading so an expired record is
+                    // never reported as still awaiting a decision.
+                    journal
+                        .expire_due_memory(&memory_now_ms().to_string())
+                        .await?;
+                    let pending = journal
+                        .list_memory_by_state(
+                            store_scope,
+                            &scope_id,
+                            crate::memory_extraction::ConfirmationState::PendingConfirmation
+                                .as_str(),
+                            limit,
+                        )
+                        .await?;
+                    let counts = journal
+                        .count_memory_by_state(store_scope, &scope_id)
+                        .await?
+                        .into_iter()
+                        .map(|(state, count)| (state, serde_json::json!(count)))
+                        .collect::<serde_json::Map<_, _>>();
+                    let records = pending
+                        .iter()
+                        .map(memory_record_to_json)
+                        .collect::<Result<Vec<_>, _>>()?;
+                    serde_json::to_vec(&serde_json::json!({
+                        "records": records,
+                        "counts": counts,
+                    }))
+                    .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::GetMemoryConflicts {
+                scope_kind,
+                project_id,
+                secondary_id,
+                limit,
+                workspace_path,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let store_scope = memory_store_scope(&scope_kind)?;
+                    let scope_id = memory_scope_id(&workspace_path, &project_id, &secondary_id);
+                    let pending = journal
+                        .list_memory_by_state(
+                            store_scope,
+                            &scope_id,
+                            crate::memory_extraction::ConfirmationState::PendingConfirmation
+                                .as_str(),
+                            limit,
+                        )
+                        .await?;
+                    let mut conflicts = Vec::new();
+                    for candidate in &pending {
+                        let active = journal
+                            .memory_conflict_candidates(
+                                store_scope,
+                                &scope_id,
+                                &candidate.extraction.kind,
+                                100,
+                            )
+                            .await?;
+                        let Some(existing) = memory_conflicting_record(candidate, &active) else {
+                            continue;
+                        };
+                        let chain = journal.memory_supersession_chain(&existing.id, 32).await?;
+                        conflicts.push(serde_json::json!({
+                            "pending": memory_record_to_json(candidate)?,
+                            "active": memory_record_to_json(existing)?,
+                            "conflict_key": format!(
+                                "{}|{}|{}",
+                                candidate.extraction.kind,
+                                memory_conflict_subject(candidate),
+                                candidate.scope.as_str()
+                            ),
+                            "supersession_chain": chain,
+                        }));
+                    }
+                    serde_json::to_vec(&serde_json::json!({ "conflicts": conflicts }))
                         .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::ConfirmMemory {
+                ids,
+                approval_id,
+                idempotency_key,
+                reply,
+            } => {
+                let result = Self::apply_memory_decision(
+                    &state,
+                    ids,
+                    approval_id,
+                    idempotency_key,
+                    crate::memory_api::MemoryOperation::Confirm,
+                    crate::memory_extraction::ConfirmationState::Confirmed,
+                    "memory.confirmed",
+                )
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::RejectMemory {
+                ids,
+                approval_id,
+                idempotency_key,
+                reply,
+            } => {
+                let result = Self::apply_memory_decision(
+                    &state,
+                    ids,
+                    approval_id,
+                    idempotency_key,
+                    crate::memory_api::MemoryOperation::Reject,
+                    crate::memory_extraction::ConfirmationState::Rejected,
+                    "memory.rejected",
+                )
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::SupersedeMemory {
+                old_id,
+                new_id,
+                reason,
+                approval_id,
+                idempotency_key,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    crate::memory_api::Approval::new(
+                        approval_id.clone(),
+                        crate::memory_api::MemoryOperation::Supersede,
+                    )
+                    .map_err(|error| error.to_string())?;
+                    validate_memory_idempotency_key(&idempotency_key)?;
+                    // The reason is a bounded enum, not free text: the chain
+                    // has to explain itself without carrying user content.
+                    let reason = crate::memory_extraction::SupersessionReason::parse(&reason)
+                        .ok_or_else(|| format!("unsupported supersession reason: {reason}"))?;
+                    journal
+                        .supersede_memory(&old_id, &new_id, reason.as_str())
+                        .await?;
+                    let chain = journal.memory_supersession_chain(&new_id, 32).await?;
+                    Self::record_audit(
+                        &state,
+                        crate::audit::AuditKind::Approval,
+                        new_id.clone(),
+                        "memory.superseded",
+                        [
+                            ("old_memory_id".to_owned(), old_id.clone()),
+                            ("new_memory_id".to_owned(), new_id.clone()),
+                            ("reason".to_owned(), reason.as_str().to_owned()),
+                            ("approval_id".to_owned(), approval_id),
+                            ("idempotency_key".to_owned(), idempotency_key),
+                        ],
+                    )
+                    .await;
+                    serde_json::to_vec(&serde_json::json!({
+                        "old_id": old_id,
+                        "new_id": new_id,
+                        "reason": reason.as_str(),
+                        "supersession_chain": chain,
+                    }))
+                    .map_err(|error| error.to_string())
                 }
                 .await;
                 let _ = reply.send(result);
@@ -5988,6 +6936,10 @@ fn memory_store_scope(
         "project" => Ok(evohime_local_storage::memory_store::MemoryScope::Project),
         "task" => Ok(evohime_local_storage::memory_store::MemoryScope::Task),
         "workspace" => Ok(evohime_local_storage::memory_store::MemoryScope::Workspace),
+        // Session-scoped memory exists only as a `memory_session_notes` row
+        // with automatic expiry; it is addressable here so pending/conflict
+        // listings can report it, but it never enters long-term retrieval.
+        "session" => Ok(evohime_local_storage::memory_store::MemoryScope::Session),
         other => Err(format!("unsupported memory scope kind: {other}")),
     }
 }
@@ -6029,6 +6981,150 @@ fn memory_store_privacy(
 /// `memory_entries` table stores. Project scope uses the project id alone;
 /// task/workspace scope appends the secondary id after a `:` separator so
 /// list/search can still target one exact scope.
+/// System prompt of the bounded extractor. It describes the structured
+/// contract only: the model proposes candidates, it never decides whether
+/// something becomes memory — that is `memory_extraction::evaluate`'s job.
+const MEMORY_EXTRACTION_PROMPT: &str = "\
+Ты — извлекатель кандидатов в память. Ты НЕ решаешь, что запомнить: решение \
+принимает policy на стороне Core. Верни ТОЛЬКО JSON вида \
+{\"candidates\":[...]} без markdown и пояснений. Каждый кандидат: \
+{\"kind\":\"preference|constraint|decision|entity|lesson|session_summary\", \
+\"statement\":\"...\",\"scope\":\"task|project|workspace|session\", \
+\"canonical_subject\":\"...\",\"model_confidence\":0.0..1.0, \
+\"verification_confidence\":0.0,\"reason\":\"...\", \
+\"evidence_locator\":{\"message_id\":\"...\",\"task_id\":\"...\", \
+\"tool_call_id\":\"...\",\"file_path\":\"...\",\"content_hash\":\"...\", \
+\"line_start\":0,\"line_end\":0},\"privacy\":\"normal|sensitive\", \
+\"source_trust\":\"user|tool_output|document|model_inference\", \
+\"suggested_ttl_ms\":0}. Не более 5 кандидатов. Никогда не включай пароли, \
+токены, ключи и другие секреты. Неизвестные поля запрещены. Если запоминать \
+нечего — верни {\"candidates\":[]}.";
+
+/// Extraction mode for this process. The user can switch automatic
+/// extraction off entirely; explicit "запомни" triggers keep working because
+/// `check_can_extract` allows a manual trigger even when disabled.
+fn memory_extraction_mode() -> crate::memory_extraction::ExtractionMode {
+    std::env::var("EVOHIME_MEMORY_EXTRACTION")
+        .ok()
+        .and_then(|value| {
+            crate::memory_extraction::ExtractionMode::parse(value.trim().to_lowercase().as_str())
+        })
+        .unwrap_or(crate::memory_extraction::ExtractionMode::Strict)
+}
+
+fn truncate_chars(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_owned();
+    }
+    value.chars().take(max_chars).collect()
+}
+
+fn context_token_estimate(messages: &[ChatMessage]) -> usize {
+    messages
+        .iter()
+        .map(|message| message.content.chars().count().div_ceil(4))
+        .sum()
+}
+
+/// The durable half of the evidence locator, indexed so provenance can be
+/// traced back without storing any body.
+fn memory_provenance_source_id(
+    evidence: &crate::memory_extraction::RawEvidenceLocator,
+) -> Option<String> {
+    for value in [
+        &evidence.message_id,
+        &evidence.tool_call_id,
+        &evidence.task_id,
+        &evidence.file_path,
+    ] {
+        if !value.trim().is_empty() {
+            return Some(value.trim().to_owned());
+        }
+    }
+    None
+}
+
+/// Projects a stored record into the comparison shape used by
+/// `memory_extraction::detect_conflict`. Records whose enums no longer parse
+/// are skipped rather than silently treated as a different kind.
+fn memory_active_summary(
+    record: &evohime_local_storage::memory_store::MemoryRecord,
+) -> Option<crate::memory_extraction::ActiveMemorySummary> {
+    Some(crate::memory_extraction::ActiveMemorySummary {
+        id: record.id.clone(),
+        kind: crate::memory_extraction::MemoryKind::parse(&record.extraction.kind)?,
+        canonical_subject: memory_conflict_subject(record),
+        scope: crate::memory_extraction::MemoryScopeLevel::parse(record.scope.as_str())?,
+        statement: record.content.clone(),
+        state: crate::memory_extraction::ConfirmationState::parse(
+            &record.extraction.confirmation_state,
+        )?,
+    })
+}
+
+/// Bounded batch size for `ConfirmMemory`/`RejectMemory`, so one IPC call
+/// cannot walk the whole pending queue in a single transaction.
+const MAX_MEMORY_BATCH: usize = 64;
+const MAX_MEMORY_IDEMPOTENCY_KEY_CHARS: usize = 128;
+
+fn memory_now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+/// The idempotency key is caller-supplied proof that a repeat is a repeat.
+/// It is bounded and audited; the actual replay safety comes from the
+/// storage-level state transition, which never applies a second time.
+fn validate_memory_idempotency_key(key: &str) -> Result<(), String> {
+    if key.trim().is_empty() {
+        return Err("idempotency_key is required".to_string());
+    }
+    if key.chars().count() > MAX_MEMORY_IDEMPOTENCY_KEY_CHARS {
+        return Err(format!(
+            "idempotency_key exceeds {MAX_MEMORY_IDEMPOTENCY_KEY_CHARS} characters"
+        ));
+    }
+    Ok(())
+}
+
+/// Canonical subject of a stored record. Legacy rows have none, so the title
+/// stands in and gets normalized by the same versioned normalizer.
+fn memory_conflict_subject(record: &evohime_local_storage::memory_store::MemoryRecord) -> String {
+    crate::memory_extraction::normalize_subject(record.subject_for_conflict())
+        .unwrap_or_else(|_| record.subject_for_conflict().to_owned())
+}
+
+/// Finds the active record a pending candidate conflicts with:
+/// same `kind + canonical_subject + scope`, incompatible statements.
+/// Equivalent statements are duplicates, not conflicts.
+fn memory_conflicting_record<'a>(
+    candidate: &evohime_local_storage::memory_store::MemoryRecord,
+    active: &'a [evohime_local_storage::memory_store::MemoryRecord],
+) -> Option<&'a evohime_local_storage::memory_store::MemoryRecord> {
+    let subject = memory_conflict_subject(candidate);
+    let statement = crate::memory_extraction::normalize_subject(&candidate.content).ok();
+    active.iter().find(|existing| {
+        existing.id != candidate.id
+            && existing.extraction.kind == candidate.extraction.kind
+            && existing.scope == candidate.scope
+            && memory_conflict_subject(existing) == subject
+            && crate::memory_extraction::normalize_subject(&existing.content).ok() != statement
+    })
+}
+
+/// Scope id for memory reads. A workspace path takes precedence because
+/// memory extraction stores records under `task_memory::workspace_scope_id`,
+/// which the shell cannot reproduce on its own.
+fn memory_scope_id(workspace_path: &str, project_id: &str, secondary_id: &str) -> String {
+    if workspace_path.trim().is_empty() {
+        encode_memory_scope_id(project_id, secondary_id)
+    } else {
+        task_memory::workspace_scope_id(std::path::Path::new(workspace_path))
+    }
+}
+
 fn encode_memory_scope_id(project_id: &str, secondary_id: &str) -> String {
     if secondary_id.trim().is_empty() {
         project_id.to_string()
@@ -6056,30 +7152,76 @@ fn memory_record_to_json(
     } else {
         serde_json::from_str(&record.provenance).unwrap_or(serde_json::Value::Null)
     };
-    let scope_kind = match record.scope {
-        evohime_local_storage::memory_store::MemoryScope::Project => "project",
-        evohime_local_storage::memory_store::MemoryScope::Task => "task",
-        evohime_local_storage::memory_store::MemoryScope::Workspace => "workspace",
-    };
+    let scope_kind = record.scope.as_str();
     let privacy = match record.privacy {
         evohime_local_storage::memory_store::MemoryPrivacy::Public => "public",
         evohime_local_storage::memory_store::MemoryPrivacy::Internal => "internal",
         evohime_local_storage::memory_store::MemoryPrivacy::Private => "private",
     };
+    // Metadata-only projection. `ListMemory`/`SearchMemory` never carry the
+    // statement or the provenance body: those are reachable only through an
+    // explicit `GetMemory`, and even there `sensitive` records are redacted.
+    let extraction = &record.extraction;
     Ok(serde_json::json!({
         "id": record.id,
         "scope_kind": scope_kind,
         "project_id": project_id,
         "secondary_id": secondary_id,
         "title": record.title,
-        "content": record.content,
-        "provenance": provenance,
         "privacy": privacy,
         "created_at_ms": record.created_at,
         "expires_at_ms": record.expires_at,
         "archived": record.archived,
         "forgotten": record.forgotten,
+        "kind": extraction.kind,
+        "canonical_subject": extraction.canonical_subject,
+        "confirmation_state": extraction.confirmation_state,
+        "model_confidence": extraction.model_confidence,
+        "verification_confidence": extraction.verification_confidence,
+        "privacy_class": extraction.privacy_class,
+        "source_trust": extraction.source_trust,
+        "supersedes": extraction.supersedes,
+        "superseded_by": extraction.superseded_by,
+        "supersession_reason": extraction.supersession_reason,
+        "extractor_version": extraction.extractor_version,
+        "policy_version": extraction.policy_version,
+        "validation_status": extraction.validation_status,
+        "validated_at": extraction.validated_at,
+        "provenance_source_id": extraction.provenance_source_id,
+        "statement_chars": record.content.chars().count(),
+        "has_provenance": !provenance.is_null(),
     }))
+}
+
+/// Full projection including the statement and provenance body, used only by
+/// the explicit `GetMemory` path. `sensitive` and forgotten records never
+/// return their body: the metadata still explains what exists and why.
+fn memory_record_body_json(
+    record: &evohime_local_storage::memory_store::MemoryRecord,
+) -> Result<serde_json::Value, String> {
+    let mut value = memory_record_to_json(record)?;
+    let object = value
+        .as_object_mut()
+        .ok_or_else(|| "memory metadata must be an object".to_string())?;
+    let redacted = record.extraction.privacy_class != "normal"
+        || record.forgotten
+        || record.content.is_empty();
+    if redacted {
+        object.insert("body_redacted".to_owned(), serde_json::Value::Bool(true));
+        return Ok(value);
+    }
+    let provenance: serde_json::Value = if record.provenance.trim().is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::from_str(&record.provenance).unwrap_or(serde_json::Value::Null)
+    };
+    object.insert("body_redacted".to_owned(), serde_json::Value::Bool(false));
+    object.insert(
+        "statement".to_owned(),
+        serde_json::Value::String(record.content.clone()),
+    );
+    object.insert("provenance".to_owned(), provenance);
+    Ok(value)
 }
 
 /// Cheap listing classification derived from which of a manifest's
@@ -6739,51 +7881,45 @@ mod tests {
             diff_check: true,
             commit: true,
         };
-        assert!(
-            super::delivery_next_step(
-                requirements,
-                false,
-                false,
-                false,
-                false,
-                0,
-                false,
-                false,
-                false,
-            )
-                .contains("read-only")
-        );
-        assert!(
-            super::delivery_next_step(
-                requirements,
-                true,
-                false,
-                false,
-                false,
-                5,
-                true,
-                true,
-                true,
-            )
-                .contains("filesystem.patch")
-        );
-        assert!(
-            super::delivery_next_step(
-                super::DeliveryRequirements {
-                    research: true,
-                    ..requirements
-                },
-                false,
-                false,
-                false,
-                false,
-                1,
-                true,
-                false,
-                false,
-            )
-            .contains("Cargo.toml")
-        );
+        assert!(super::delivery_next_step(
+            requirements,
+            false,
+            false,
+            false,
+            false,
+            0,
+            false,
+            false,
+            false,
+        )
+        .contains("read-only"));
+        assert!(super::delivery_next_step(
+            requirements,
+            true,
+            false,
+            false,
+            false,
+            5,
+            true,
+            true,
+            true,
+        )
+        .contains("filesystem.patch"));
+        assert!(super::delivery_next_step(
+            super::DeliveryRequirements {
+                research: true,
+                ..requirements
+            },
+            false,
+            false,
+            false,
+            false,
+            1,
+            true,
+            false,
+            false,
+        )
+        .contains("Cargo.toml"));
     }
 
     #[test]

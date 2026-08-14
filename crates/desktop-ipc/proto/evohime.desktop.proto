@@ -352,10 +352,73 @@ message ArchiveMemory {
 }
 
 // Permanently erases a memory record's title/content (forget). Also requires
-// an out-of-band approval token; see ArchiveMemory.
+// an out-of-band approval token; see ArchiveMemory. Writes a tombstone that
+// carries only kind, scope, timestamps, a reason class and a digest.
 message ForgetMemory {
   string id = 1;
   string approval_id = 2;
+}
+
+// Reads one memory record including its body. ListMemory/SearchMemory return
+// metadata only; this is the single path that can carry a statement, and even
+// here sensitive, forgotten and empty records come back redacted
+// (body_redacted = true).
+message GetMemory {
+  string id = 1;
+}
+
+// Lists the pending-confirmation queue and per-state counters for one exact
+// scope. Metadata only: no statement and no provenance body.
+// workspace_path, when non-empty, wins over project_id/secondary_id: Core
+// derives the same workspace scope id that memory extraction writes under, so
+// the shell never has to reproduce that hash itself.
+message ListMemoryPending {
+  string scope_kind = 1;
+  string project_id = 2;
+  string secondary_id = 3;
+  uint32 limit = 4;
+  string workspace_path = 5;
+}
+
+// Deterministic conflicts between pending records and the active memory of
+// the same kind + canonical_subject + scope. Reading conflicts changes
+// nothing: the old entry stays active and the new one stays pending until the
+// user chooses.
+message GetMemoryConflicts {
+  string scope_kind = 1;
+  string project_id = 2;
+  string secondary_id = 3;
+  uint32 limit = 4;
+  string workspace_path = 5;
+}
+
+// Confirms pending memory records (single or batch). approval_id proves the
+// user already approved the operation, mirroring ArchiveMemory;
+// idempotency_key makes a replayed request safe -- each id reports the state
+// the store actually holds afterwards.
+message ConfirmMemory {
+  repeated string ids = 1;
+  string approval_id = 2;
+  string idempotency_key = 3;
+}
+
+// Rejects pending memory records (single or batch). A rejected record is
+// terminal and never reopens. Same trust model as ConfirmMemory.
+message RejectMemory {
+  repeated string ids = 1;
+  string approval_id = 2;
+  string idempotency_key = 3;
+}
+
+// Resolves a conflict by an explicit user choice: old_id is superseded by
+// new_id. reason is one of "user_choice" | "revalidated" | "expired" |
+// "corrected". Supersede never happens automatically.
+message SupersedeMemory {
+  string old_id = 1;
+  string new_id = 2;
+  string reason = 3;
+  string approval_id = 4;
+  string idempotency_key = 5;
 }
 
 // Installs (or updates, when a manifest with the same name already exists)
@@ -593,6 +656,12 @@ message CommandEnvelope {
     RestoreDatabase restore_database = 65;
     SelectModelRequest select_model = 66;
     CancelDatabaseOperation cancel_database_operation = 67;
+    GetMemory get_memory = 68;
+    ListMemoryPending list_memory_pending = 69;
+    GetMemoryConflicts get_memory_conflicts = 70;
+    ConfirmMemory confirm_memory = 71;
+    RejectMemory reject_memory = 72;
+    SupersedeMemory supersede_memory = 73;
   }
 }
 

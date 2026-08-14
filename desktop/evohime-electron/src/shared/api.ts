@@ -146,6 +146,12 @@ export const RENDERER_COMMANDS = [
   'core.getModelConfig',
   'core.listModelCatalog',
   'core.selectModel',
+  'core.listMemoryPending',
+  'core.getMemoryConflicts',
+  'core.getMemory',
+  'core.confirmMemory',
+  'core.rejectMemory',
+  'core.supersedeMemory',
   'identity.get',
   'repository.get',
   'chat.list',
@@ -206,6 +212,20 @@ export interface CommandPayloads {
   'core.getModelConfig': Record<string, never>
   'core.listModelCatalog': { mode: ModelTier }
   'core.selectModel': { model: string }
+  /** Pending-confirmation queue and per-state counters; metadata only. */
+  'core.listMemoryPending': { scopeKind: string; projectId: string; secondaryId?: string; limit?: number; workspacePath?: string }
+  'core.getMemoryConflicts': { scopeKind: string; projectId: string; secondaryId?: string; limit?: number; workspacePath?: string }
+  /** The only path that can return a statement, and only when not sensitive. */
+  'core.getMemory': { id: string }
+  'core.confirmMemory': { ids: readonly string[]; approvalId: string; idempotencyKey: string }
+  'core.rejectMemory': { ids: readonly string[]; approvalId: string; idempotencyKey: string }
+  'core.supersedeMemory': {
+    oldId: string
+    newId: string
+    reason: 'user_choice' | 'revalidated' | 'expired' | 'corrected'
+    approvalId: string
+    idempotencyKey: string
+  }
   'identity.get': Record<string, never>
   'repository.get': { workspacePath: string }
   'chat.list': { workspacePath: string }
@@ -252,6 +272,12 @@ export interface CommandResults {
   'core.getModelConfig': { accepted: boolean }
   'core.listModelCatalog': { accepted: boolean }
   'core.selectModel': { accepted: boolean }
+  'core.listMemoryPending': { accepted: boolean }
+  'core.getMemoryConflicts': { accepted: boolean }
+  'core.getMemory': { accepted: boolean }
+  'core.confirmMemory': { accepted: boolean }
+  'core.rejectMemory': { accepted: boolean }
+  'core.supersedeMemory': { accepted: boolean }
   'identity.get': UserIdentity
   'repository.get': RepositorySummary | null
   'chat.list': readonly ChatSummary[]

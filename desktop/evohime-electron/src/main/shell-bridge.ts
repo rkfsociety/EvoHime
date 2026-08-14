@@ -287,6 +287,71 @@ function dispatch(
       return accepted(client.send({ selectModel: { model } }))
     }
 
+    case 'core.listMemoryPending':
+    case 'core.getMemoryConflicts': {
+      const value = asRecord(payload)
+      const scopeKind = asMemoryScopeKind(value['scopeKind'])
+      const projectId = asBoundedString(value['projectId'])
+      const secondaryId = asOptionalBoundedString(value['secondaryId'])
+      const limit = asBoundedNumber(value['limit'], 100)
+      const workspacePath = asOptionalBoundedString(value['workspacePath'])
+      if (
+        scopeKind === null ||
+        projectId === null ||
+        secondaryId === null ||
+        limit === null ||
+        workspacePath === null
+      ) {
+        return failure('invalid-payload', 'Некорректные параметры очереди памяти.')
+      }
+      const request = { scopeKind, projectId, secondaryId, limit, workspacePath }
+      return accepted(
+        client.send(
+          command === 'core.listMemoryPending'
+            ? { listMemoryPending: request }
+            : { getMemoryConflicts: request }
+        )
+      )
+    }
+
+    case 'core.getMemory': {
+      const id = asBoundedString(asRecord(payload)['id'])
+      if (id === null) return failure('invalid-payload', 'Некорректный идентификатор памяти.')
+      return accepted(client.send({ getMemory: { id } }))
+    }
+
+    case 'core.confirmMemory':
+    case 'core.rejectMemory': {
+      const value = asRecord(payload)
+      const ids = asMemoryIds(value['ids'])
+      const approvalId = asBoundedString(value['approvalId'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (ids === null || approvalId === null || idempotencyKey === null) {
+        return failure('invalid-payload', 'Некорректное решение по памяти.')
+      }
+      log('info', 'shell.command_forwarded', { command })
+      const request = { ids: [...ids], approvalId, idempotencyKey }
+      return accepted(
+        client.send(
+          command === 'core.confirmMemory' ? { confirmMemory: request } : { rejectMemory: request }
+        )
+      )
+    }
+
+    case 'core.supersedeMemory': {
+      const value = asRecord(payload)
+      const oldId = asBoundedString(value['oldId'])
+      const newId = asBoundedString(value['newId'])
+      const reason = asSupersessionReason(value['reason'])
+      const approvalId = asBoundedString(value['approvalId'])
+      const idempotencyKey = asBoundedString(value['idempotencyKey'])
+      if (oldId === null || newId === null || reason === null || approvalId === null || idempotencyKey === null) {
+        return failure('invalid-payload', 'Некорректное разрешение конфликта памяти.')
+      }
+      log('info', 'shell.command_forwarded', { command })
+      return accepted(client.send({ supersedeMemory: { oldId, newId, reason, approvalId, idempotencyKey } }))
+    }
+
     case 'identity.get':
       return resolveIdentity().then((value) => ({ ok: true, value }))
 
@@ -464,6 +529,30 @@ function asBoundedString(value: unknown): string | null {
 function asOptionalBoundedString(value: unknown): string | null {
   if (value === undefined || value === '') return ''
   return asBoundedString(value)
+}
+
+/** Scope kinds Core accepts for memory commands; anything else is refused here. */
+function asMemoryScopeKind(value: unknown): string | null {
+  return value === 'project' || value === 'task' || value === 'workspace' || value === 'session'
+    ? value
+    : null
+}
+
+/**
+ * Bounded batch of memory ids. The main process only forwards; Core still
+ * re-checks the approval token, the idempotency key and every id.
+ */
+function asMemoryIds(value: unknown): readonly string[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 64) return null
+  const ids = value.map((entry) => asBoundedString(entry))
+  return ids.every((id): id is string => id !== null) ? ids : null
+}
+
+/** The supersession reason is a closed enum, never free text. */
+function asSupersessionReason(value: unknown): string | null {
+  return value === 'user_choice' || value === 'revalidated' || value === 'expired' || value === 'corrected'
+    ? value
+    : null
 }
 
 function asBoundedNumber(value: unknown, maximum: number): number | null {

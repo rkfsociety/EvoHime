@@ -21,7 +21,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 15;
+pub const SCHEMA_VERSION: u32 = 16;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -2429,6 +2429,77 @@ impl LocalDatabase {
                 PRAGMA user_version = 15;",
             )?;
         }
+        if current < 16 {
+            // Memory Extraction: kind/state/confidence/provenance-контракт
+            // поверх Memory v1. Все legacy rows остаются активной памятью
+            // (`state = confirmed`) и помечаются legacy-версиями извлекателя и
+            // policy, чтобы их нельзя было спутать с model-generated
+            // кандидатами. `canonical_subject` намеренно остаётся NULL: точный
+            // нормализатор версионируется в Core и применяется к `title` при
+            // чтении, а не приблизительной SQL-нормализацией во время
+            // миграции.
+            transaction.execute_batch(
+                "ALTER TABLE memory_entries ADD COLUMN kind TEXT NOT NULL DEFAULT 'entity';
+                 ALTER TABLE memory_entries ADD COLUMN canonical_subject TEXT;
+                 ALTER TABLE memory_entries ADD COLUMN confirmation_state TEXT NOT NULL DEFAULT 'confirmed';
+                 ALTER TABLE memory_entries ADD COLUMN model_confidence REAL NOT NULL DEFAULT 1.0;
+                 ALTER TABLE memory_entries ADD COLUMN verification_confidence REAL NOT NULL DEFAULT 1.0;
+                 ALTER TABLE memory_entries ADD COLUMN privacy_class TEXT NOT NULL DEFAULT 'normal';
+                 ALTER TABLE memory_entries ADD COLUMN source_trust TEXT NOT NULL DEFAULT 'user';
+                 ALTER TABLE memory_entries ADD COLUMN supersedes TEXT;
+                 ALTER TABLE memory_entries ADD COLUMN superseded_by TEXT;
+                 ALTER TABLE memory_entries ADD COLUMN supersession_reason TEXT;
+                 ALTER TABLE memory_entries ADD COLUMN extractor_version TEXT NOT NULL DEFAULT 'v1_legacy';
+                 ALTER TABLE memory_entries ADD COLUMN policy_version TEXT NOT NULL DEFAULT 'legacy-v1';
+                 ALTER TABLE memory_entries ADD COLUMN validation_status TEXT NOT NULL DEFAULT 'not_required';
+                 ALTER TABLE memory_entries ADD COLUMN validated_at TEXT;
+                 ALTER TABLE memory_entries ADD COLUMN provenance_source_id TEXT;
+                 UPDATE memory_entries SET kind = 'lesson' WHERE lesson_key IS NOT NULL;
+                 UPDATE memory_entries SET confirmation_state = 'forgotten' WHERE forgotten = 1;
+                 CREATE INDEX IF NOT EXISTS idx_memory_entries_kind
+                    ON memory_entries(scope_kind, scope_id, kind);
+                 CREATE INDEX IF NOT EXISTS idx_memory_entries_state
+                    ON memory_entries(confirmation_state);
+                 CREATE INDEX IF NOT EXISTS idx_memory_entries_subject
+                    ON memory_entries(canonical_subject, scope_kind, scope_id);
+                 CREATE INDEX IF NOT EXISTS idx_memory_entries_expires
+                    ON memory_entries(expires_at);
+                 CREATE INDEX IF NOT EXISTS idx_memory_entries_provenance_source
+                    ON memory_entries(provenance_source_id);
+                 CREATE TABLE IF NOT EXISTS memory_aliases (
+                    scope_kind TEXT NOT NULL,
+                    scope_id TEXT NOT NULL,
+                    alias TEXT NOT NULL,
+                    entity_id TEXT NOT NULL,
+                    registered_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (scope_kind, scope_id, alias)
+                 );
+                 CREATE TABLE IF NOT EXISTS memory_tombstones (
+                    tombstone_id TEXT PRIMARY KEY NOT NULL,
+                    kind TEXT NOT NULL,
+                    scope_kind TEXT NOT NULL,
+                    scope_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    forgotten_at TEXT NOT NULL,
+                    reason_class TEXT NOT NULL,
+                    digest TEXT NOT NULL
+                 );
+                 CREATE TABLE IF NOT EXISTS memory_session_notes (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    session_id TEXT NOT NULL,
+                    scope_kind TEXT NOT NULL,
+                    scope_id TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    statement TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
+                 );
+                 CREATE INDEX IF NOT EXISTS idx_memory_session_notes_session
+                    ON memory_session_notes(session_id, expires_at);
+                 PRAGMA user_version = 16;",
+            )?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -2497,13 +2568,13 @@ mod tests {
     }
 
     #[test]
-    fn migration_12_to_15_is_idempotent_and_preserves_existing_rows() {
+    fn migration_12_to_16_is_idempotent_and_preserves_existing_rows() {
         let path = temp_database_path("feedback-migration");
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(path.with_extension("db.bak"));
         {
             // Seed a pre-wave (user_version 12) database with an existing
-            // memory_entries row, so we can confirm migrations 13 through 15 do not
+            // memory_entries row, so we can confirm migrations 13 through 16 do not
             // touch unrelated data.
             let connection = rusqlite::Connection::open(&path).expect("legacy database opens");
             connection
@@ -2533,8 +2604,8 @@ mod tests {
                 .expect("legacy schema and data write");
         }
 
-        let database = LocalDatabase::open(&path).expect("database migrates to 15");
-        assert_eq!(database.schema_version().expect("version reads"), 15);
+        let database = LocalDatabase::open(&path).expect("database migrates to 16");
+        assert_eq!(database.schema_version().expect("version reads"), 16);
         let feedback_table_exists: i64 = database
             .connection()
             .query_row(
@@ -2559,12 +2630,161 @@ mod tests {
         // not duplicate the feedback_entries table or existing rows
         // (guarded CREATE TABLE IF NOT EXISTS / PRAGMA user_version checks).
         let reopened = LocalDatabase::open(&path).expect("reopen is idempotent");
-        assert_eq!(reopened.schema_version().expect("version still 15"), 15);
+        assert_eq!(reopened.schema_version().expect("version still 16"), 16);
         let row_count: i64 = reopened
             .connection()
             .query_row("SELECT COUNT(*) FROM memory_entries", [], |row| row.get(0))
             .expect("row count reads");
         assert_eq!(row_count, 1);
+        drop(reopened);
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db.bak"));
+    }
+
+    #[test]
+    fn migration_16_maps_memory_v1_rows_onto_the_extraction_contract() {
+        // Memory v1 -> Memory Extraction: явные failure lessons получают
+        // kind=lesson, прочие старые факты -- kind=entity; все legacy rows
+        // остаются активной памятью с legacy-версиями extractor/policy и
+        // пустой цепочкой supersede.
+        let path = temp_database_path("memory-extraction-migration");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db.bak"));
+        {
+            let connection = rusqlite::Connection::open(&path).expect("legacy database opens");
+            connection
+                .execute_batch(
+                    "CREATE TABLE memory_entries (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        scope_kind TEXT NOT NULL,
+                        scope_id TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        provenance TEXT NOT NULL,
+                        privacy TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        expires_at TEXT,
+                        archived INTEGER NOT NULL,
+                        forgotten INTEGER NOT NULL,
+                        confirmations INTEGER NOT NULL DEFAULT 1,
+                        lesson_key TEXT
+                    );
+                    INSERT INTO memory_entries
+                        (id, scope_kind, scope_id, title, content, provenance, privacy,
+                         created_at, expires_at, archived, forgotten, confirmations, lesson_key)
+                        VALUES
+                        ('fact-1', 'project', 'p-1', 'Решение', 'сборка через cargo', 'run:1',
+                         'internal', '2026-08-01T00:00:00Z', NULL, 0, 0, 1, NULL),
+                        ('lesson-1', 'project', 'p-1', 'Урок', 'проверяй аргументы', 'task:t-1',
+                         'private', '2026-08-02T00:00:00Z', NULL, 0, 0, 3, 'lesson-key-1'),
+                        ('gone-1', 'project', 'p-1', '', '', '', 'internal',
+                         '2026-08-03T00:00:00Z', NULL, 0, 1, 1, NULL);
+                    PRAGMA user_version = 12;",
+                )
+                .expect("legacy schema and data write");
+        }
+
+        let database = LocalDatabase::open(&path).expect("database migrates to 16");
+        assert_eq!(database.schema_version().expect("version reads"), 16);
+        // Транзакционность миграции подтверждается наличием backup рядом.
+        assert!(path.with_extension("db.bak").exists());
+
+        let mapped = |id: &str| -> (String, String, String, String, f64, f64) {
+            database
+                .connection()
+                .query_row(
+                    "SELECT kind, confirmation_state, extractor_version, policy_version,
+                            model_confidence, verification_confidence
+                     FROM memory_entries WHERE id = ?1",
+                    rusqlite::params![id],
+                    |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                            row.get(5)?,
+                        ))
+                    },
+                )
+                .expect("mapped row reads")
+        };
+        assert_eq!(
+            mapped("fact-1"),
+            (
+                "entity".to_owned(),
+                "confirmed".to_owned(),
+                "v1_legacy".to_owned(),
+                "legacy-v1".to_owned(),
+                1.0,
+                1.0
+            )
+        );
+        assert_eq!(mapped("lesson-1").0, "lesson");
+        assert_eq!(mapped("lesson-1").1, "confirmed");
+        // Уже забытая запись не воскресает в состоянии confirmed.
+        assert_eq!(mapped("gone-1").1, "forgotten");
+
+        let (supersedes, superseded_by): (Option<String>, Option<String>) = database
+            .connection()
+            .query_row(
+                "SELECT supersedes, superseded_by FROM memory_entries WHERE id = 'fact-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("supersede columns read");
+        assert_eq!(supersedes, None);
+        assert_eq!(superseded_by, None);
+
+        // Исходные statement и provenance сохранены дословно.
+        let (content, provenance): (String, String) = database
+            .connection()
+            .query_row(
+                "SELECT content, provenance FROM memory_entries WHERE id = 'fact-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("statement survives");
+        assert_eq!(content, "сборка через cargo");
+        assert_eq!(provenance, "run:1");
+
+        // canonical_subject остаётся NULL: нормализатор версионируется в Core.
+        let subject: Option<String> = database
+            .connection()
+            .query_row(
+                "SELECT canonical_subject FROM memory_entries WHERE id = 'fact-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("subject reads");
+        assert_eq!(subject, None);
+
+        for table in [
+            "memory_aliases",
+            "memory_tombstones",
+            "memory_session_notes",
+        ] {
+            let exists: i64 = database
+                .connection()
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                    rusqlite::params![table],
+                    |row| row.get(0),
+                )
+                .expect("table check");
+            assert_eq!(exists, 1, "{table} must exist after migration 16");
+        }
+        drop(database);
+
+        // Повторное открытие не дублирует колонки и не меняет данные.
+        let reopened = LocalDatabase::open(&path).expect("reopen is idempotent");
+        let rows: i64 = reopened
+            .connection()
+            .query_row("SELECT COUNT(*) FROM memory_entries", [], |row| row.get(0))
+            .expect("row count reads");
+        assert_eq!(rows, 3);
         drop(reopened);
 
         let _ = std::fs::remove_file(&path);
@@ -3105,7 +3325,10 @@ mod tests {
         database
             .release_agent_run_lease("agent-run-1", "agent-lease-1", "core", 1)
             .expect("agent lease releases");
-        assert!(database.get_agent_run_lease("agent-run-1").unwrap().is_none());
+        assert!(database
+            .get_agent_run_lease("agent-run-1")
+            .unwrap()
+            .is_none());
         let _ = std::fs::remove_file(path);
     }
 

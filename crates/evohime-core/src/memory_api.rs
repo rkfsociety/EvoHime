@@ -63,6 +63,12 @@ pub enum MemoryOperation {
     Forget,
     Export,
     Delete,
+    /// Approval of a pending extraction candidate.
+    Confirm,
+    /// Explicit rejection of a pending extraction candidate.
+    Reject,
+    /// Explicit conflict resolution: one record supersedes another.
+    Supersede,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

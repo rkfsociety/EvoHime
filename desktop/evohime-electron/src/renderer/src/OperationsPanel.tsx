@@ -1,15 +1,159 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+
 import type { ConnectionState, CoreEvent } from '@shared/api'
+
+import { useShellApi } from './shell-api'
 
 interface Props {
   readonly connection: ConnectionState
   readonly events: readonly CoreEvent[]
 }
 
-/** Read-only projection of Core-owned memory/child/schedule events. */
+const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
+
+/**
+ * Metadata of one memory record as Core reports it. There is deliberately no
+ * `statement` field: `memory.pending` and `memory.conflicts` never carry a
+ * body, so the panel cannot leak one even by accident.
+ */
+interface MemoryMetadata {
+  readonly id: string
+  readonly kind: string
+  readonly canonical_subject: string | null
+  readonly confirmation_state: string
+  readonly privacy_class: string
+  readonly source_trust: string
+  readonly model_confidence: number
+  readonly verification_confidence: number
+  readonly validation_status: string
+  readonly policy_version: string
+  readonly expires_at_ms: string | null
+}
+
+interface MemoryConflict {
+  readonly pending: MemoryMetadata
+  readonly active: MemoryMetadata
+  readonly conflict_key: string
+  readonly supersession_chain: readonly string[]
+}
+
+const KIND_LABELS: Record<string, string> = {
+  preference: 'предпочтение',
+  constraint: 'ограничение',
+  decision: 'решение',
+  entity: 'факт',
+  lesson: 'урок',
+  session_summary: 'сводка сессии'
+}
+
+const TRUST_LABELS: Record<string, string> = {
+  user: 'сказал пользователь',
+  tool_output: 'вывод инструмента',
+  document: 'документ',
+  model_inference: 'вывод модели'
+}
+
+function parsePayload<T>(event: CoreEvent | undefined, key: string): T | null {
+  if (!event) return null
+  try {
+    const parsed = JSON.parse(event.payload) as Record<string, unknown>
+    return (parsed[key] as T) ?? null
+  } catch {
+    return null
+  }
+}
+
+function latest(events: readonly CoreEvent[], eventType: string): CoreEvent | undefined {
+  return events.filter((event) => event.eventType === eventType).at(-1)
+}
+
+/** Read-only projection of Core-owned memory/child/schedule state. */
 export function OperationsPanel({ connection, events }: Props): React.JSX.Element {
+  const api = useShellApi()
+  const [workspacePath, setWorkspacePath] = useState<string | null>(null)
+  const [selected, setSelected] = useState<readonly string[]>([])
+  const [message, setMessage] = useState<string | null>(null)
+
+  const connected = CONNECTED_STATES.includes(connection)
   const count = (name: string) => events.filter((event) => event.eventType === name).length
   const childEvents = events.filter((event) => event.eventType.startsWith('child.'))
   const pulseFailed = count('runtime.schedule_failed') + count('runtime.schedule_dead_letter')
+
+  const pendingEvent = latest(events, 'memory.pending')
+  const pending = useMemo(
+    () => parsePayload<readonly MemoryMetadata[]>(pendingEvent, 'records') ?? [],
+    [pendingEvent]
+  )
+  const counts = useMemo(
+    () => parsePayload<Record<string, number>>(pendingEvent, 'counts') ?? {},
+    [pendingEvent]
+  )
+  const conflicts = useMemo(
+    () => parsePayload<readonly MemoryConflict[]>(latest(events, 'memory.conflicts'), 'conflicts') ?? [],
+    [events]
+  )
+
+  useEffect(() => {
+    if (!api) return
+    void api.invoke('workspace.list', {}).then((outcome) => {
+      if (outcome.ok) setWorkspacePath(outcome.value.selected)
+    })
+  }, [api])
+
+  const refresh = useCallback(() => {
+    if (!api || !connected || !workspacePath) return
+    const request = { scopeKind: 'project', projectId: 'workspace', workspacePath, limit: 50 }
+    void api.invoke('core.listMemoryPending', request)
+    void api.invoke('core.getMemoryConflicts', request)
+  }, [api, connected, workspacePath])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  // Confirm and reject are approval-gated on the Core side; the shell only
+  // forwards the decision the user just made in this panel.
+  const decide = useCallback(
+    async (command: 'core.confirmMemory' | 'core.rejectMemory') => {
+      if (!api || selected.length === 0) return
+      const stamp = `${Date.now()}-${selected.join(',')}`
+      const outcome = await api.invoke(command, {
+        ids: selected,
+        approvalId: `memory-${stamp}`,
+        idempotencyKey: `memory-${stamp}`
+      })
+      setMessage(
+        outcome.ok
+          ? `Решение отправлено в Core для ${selected.length} записей.`
+          : outcome.message
+      )
+      setSelected([])
+      refresh()
+    },
+    [api, refresh, selected]
+  )
+
+  const resolveConflict = useCallback(
+    async (conflict: MemoryConflict) => {
+      if (!api) return
+      const stamp = `${Date.now()}-${conflict.pending.id}`
+      const outcome = await api.invoke('core.supersedeMemory', {
+        oldId: conflict.active.id,
+        newId: conflict.pending.id,
+        reason: 'user_choice',
+        approvalId: `memory-${stamp}`,
+        idempotencyKey: `memory-${stamp}`
+      })
+      setMessage(outcome.ok ? 'Замена записи отправлена в Core.' : outcome.message)
+      refresh()
+    },
+    [api, refresh]
+  )
+
+  const toggle = (id: string) =>
+    setSelected((current) =>
+      current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]
+    )
 
   return (
     <section className="panel operations-panel" aria-label="Память и автоматизация">
@@ -21,11 +165,20 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
         <span className={`status-pill status-pill--${connection}`}>{connection}</span>
       </div>
       <div className="operations-grid">
-        <article className="operations-card">
-          <h3>Memory v1</h3>
-          <strong>{count('memory.candidate.created')}</strong>
-          <span>новых кандидатов</span>
-          <small>Подтверждение нужно до сохранения важной записи</small>
+        <article className={`operations-card ${pending.length ? 'operations-card--warning' : ''}`}>
+          <h3>Память: подтверждение</h3>
+          <strong>{counts['pending_confirmation'] ?? 0}</strong>
+          <span>ждут решения</span>
+          <small>
+            {counts['confirmed'] ?? 0} активных · {counts['expired'] ?? 0} истекло ·{' '}
+            {counts['rejected'] ?? 0} отклонено
+          </small>
+        </article>
+        <article className={`operations-card ${conflicts.length ? 'operations-card--warning' : ''}`}>
+          <h3>Конфликты памяти</h3>
+          <strong>{conflicts.length}</strong>
+          <span>неразрешённых</span>
+          <small>Старая запись остаётся активной, пока выбор не сделан</small>
         </article>
         <article className="operations-card">
           <h3>Child jobs</h3>
@@ -40,6 +193,60 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
           <small>{count('runtime.schedule_completed')} completed · {count('runtime.schedule_requeued')} requeued · {count('runtime.schedule_dead_letter')} dead-letter</small>
         </article>
       </div>
+
+      {message ? <p className="empty-state">{message}</p> : null}
+
+      {pending.length > 0 ? (
+        <>
+          <ol className="operations-timeline" aria-label="Кандидаты в память">
+            {pending.map((record) => (
+              <li key={record.id}>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(record.id)}
+                    onChange={() => toggle(record.id)}
+                  />
+                  <code>{KIND_LABELS[record.kind] ?? record.kind}</code>
+                </label>
+                <span>
+                  {record.canonical_subject ?? 'без темы'} ·{' '}
+                  {TRUST_LABELS[record.source_trust] ?? record.source_trust} · уверенность{' '}
+                  {record.model_confidence.toFixed(2)} · проверка {record.validation_status}
+                  {record.privacy_class === 'normal' ? '' : ' · содержимое скрыто'}
+                </span>
+              </li>
+            ))}
+          </ol>
+          <div className="operations-actions">
+            <button type="button" disabled={selected.length === 0} onClick={() => void decide('core.confirmMemory')}>
+              Сохранить выбранные
+            </button>
+            <button type="button" disabled={selected.length === 0} onClick={() => void decide('core.rejectMemory')}>
+              Отклонить выбранные
+            </button>
+          </div>
+        </>
+      ) : (
+        <p className="empty-state">Кандидатов в память нет: Core ничего не ждёт от вас.</p>
+      )}
+
+      {conflicts.length > 0 ? (
+        <ol className="operations-timeline" aria-label="Конфликты памяти">
+          {conflicts.map((conflict) => (
+            <li key={conflict.pending.id}>
+              <code>{conflict.conflict_key}</code>
+              <span>
+                активная {conflict.active.id} · цепочка {conflict.supersession_chain.join(' → ')}
+              </span>
+              <button type="button" onClick={() => void resolveConflict(conflict)}>
+                Заменить новой записью
+              </button>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+
       {childEvents.length > 0 ? (
         <ol className="operations-timeline" aria-label="Последние child события">
           {childEvents.slice(0, 8).map((event) => (

@@ -35,7 +35,7 @@ Renderer состоит из панели проектов и чатов, лен
 | `ModelPicker` | выбор модели в чате; каталог разделён на free и paid |
 | `ProviderForm` | единственная поверхность настроек провайдера (ключ, модель, base URL) |
 | `RecoveryBanner` + `recovery-state.ts` | состояние восстановления, выведенное только из подтверждённых Core событий |
-| `OperationsPanel` | read-only проекция memory-, child- и schedule-событий |
+| `OperationsPanel` | очередь подтверждения памяти и конфликты (только metadata), плюс read-only проекция child- и schedule-событий |
 | `DeveloperTools`, `EditorPanel`, `TerminalPanel`, `SafetyPanel` | файлы и Git, редактор, ограниченный терминал, permission policy |
 
 Бизнес-логики в renderer нет: он отображает состояние, полученное через IPC, и отправляет команды.
@@ -50,7 +50,20 @@ Renderer состоит из панели проектов и чатов, лен
 - UI может запросить replay после последнего sequence ID;
 - cancellation передаётся отдельной командой `StopTask`;
 - `SelectModelRequest` меняет модель следующего запроса без перезапуска Core: gateway разрешает модель на каждый вызов, пустое значение возвращает модель маршрута;
-- `CancelDatabaseOperation` кооперативно отменяет выполняющийся backup или restore.
+- `CancelDatabaseOperation` кооперативно отменяет выполняющийся backup или restore;
+- команды памяти `GetMemory`, `ListMemoryPending`, `GetMemoryConflicts`, `ConfirmMemory`, `RejectMemory`, `SupersedeMemory` аддитивны. `ListMemory`, `SearchMemory` и `ListMemoryPending` возвращают только metadata; тело записи доступно исключительно через явный `GetMemory` и маскируется для `sensitive` и забытых записей. Confirm/reject/supersede требуют approval-токен и idempotency key: повтор безопасен и возвращает фактическое состояние записи.
+
+## Memory Extraction
+
+Извлечение фактов из диалога описано в `docs/plans/02-memory-extraction.md` и реализовано в `crates/evohime-core/src/memory_extraction.rs`.
+
+- Единственный владелец extraction, policy, validation и storage — Core. Всё, что вернула модель, — это candidate, а не память.
+- По умолчанию работает `strict`-режим: извлечение запускается только после явного триггера пользователя («запомни», «важно», «ограничение» и эквиваленты). Режим переключается переменной `EVOHIME_MEMORY_EXTRACTION` (`disabled` | `strict` | `open`); в `open` результат всегда получает `pending_confirmation`. Даже при `disabled` ручной триггер продолжает работать.
+- `constraint`, `decision`, любой high-risk, `sensitive` privacy, неоднозначный subject, недостаточный confidence и незавершённая проверка дают `pending_confirmation`. Автосохранение возможно только для low-risk предпочтения, подтверждённого явным утверждением пользователя. Секреты не сохраняются вообще.
+- `model_confidence` — уверенность извлекателя; `verification_confidence` поднимает только версионируемая verification policy. Повтор факта моделью уверенность не повышает.
+- Конфликт определяется по `kind + canonical_subject + scope`. Неразрешённый конфликт оставляет старую запись активной, а новую — pending; supersede происходит только по явному выбору пользователя и хранит причину из закрытого набора.
+- Extraction выполняется после отправки ответа, поэтому не добавляет задержки к ходу задачи, а недоступность модели или валидатора не ломает задачу.
+- Модель извлекателя задаётся `EVOHIME_MEMORY_EXTRACTION_MODEL`; при отсутствии используется модель маршрута.
 
 Часть команд renderer не доходит до Core и обслуживается main-процессом: `workspace.*`, `chat.*`, `provider.*`, `identity.get`, `repository.get`. Это локальное состояние оболочки, а не права: Core заново проверяет capability, policy и approval для каждой команды, которая до него доходит.
 
