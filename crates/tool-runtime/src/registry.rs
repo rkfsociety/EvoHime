@@ -287,20 +287,22 @@ impl ToolRegistry {
 
         let scope = scope_from_input(name, &input);
         let command = command_from_input(name, &input);
+        let canonical_subject = canonical_policy_subject(ctx, name, &input, command.as_deref())?;
         let preview = approval_preview(name, &scope, command.as_deref(), &input);
         for permission in definition.permissions {
-            match self
-                .permissions
-                .check_scoped(
-                    *permission,
-                    &evohime_permissions::PermissionCheck {
-                        session_id: ctx.session_id,
-                        path: Some(scope.as_str()),
-                        command: command.as_deref(),
-                    },
-                )
-                .await
-            {
+            let check = evohime_permissions::PermissionCheck {
+                session_id: ctx.session_id,
+                path: Some(scope.as_str()),
+                command: command.as_deref(),
+            };
+            let decision = match canonical_subject.as_deref() {
+                Some(subject) => self
+                    .permissions
+                    .check_scoped_with_subject(*permission, &check, subject)
+                    .await,
+                None => self.permissions.check_scoped(*permission, &check).await,
+            };
+            match decision {
                 PermissionDecision::Allowed => {}
                 PermissionDecision::Denied => return Err(ToolError::PermissionDenied(*permission)),
                 PermissionDecision::NeedsApproval => {
@@ -397,6 +399,7 @@ impl ToolRegistry {
         }
         let scope = scope_from_input(name, &input);
         let command = command_from_input(name, &input);
+        let canonical_subject = canonical_policy_subject(ctx, name, &input, command.as_deref())?;
         for permission in definition.permissions {
             match self
                 .permissions
@@ -419,19 +422,19 @@ impl ToolRegistry {
                     return Err(ToolError::ApprovalMismatch);
                 }
             }
-            if matches!(
-                self.permissions
-                    .check_scoped(
-                        *permission,
-                        &evohime_permissions::PermissionCheck {
-                            session_id: ctx.session_id,
-                            path: Some(scope.as_str()),
-                            command: command.as_deref(),
-                        },
-                    )
+            let check = evohime_permissions::PermissionCheck {
+                session_id: ctx.session_id,
+                path: Some(scope.as_str()),
+                command: command.as_deref(),
+            };
+            let decision = match canonical_subject.as_deref() {
+                Some(subject) => self
+                    .permissions
+                    .check_scoped_with_subject(*permission, &check, subject)
                     .await,
-                evohime_permissions::PermissionDecision::Denied
-            ) {
+                None => self.permissions.check_scoped(*permission, &check).await,
+            };
+            if matches!(decision, evohime_permissions::PermissionDecision::Denied) {
                 return Err(ToolError::PermissionDenied(*permission));
             }
         }
@@ -523,7 +526,51 @@ impl Default for ToolRegistry {
     }
 }
 
-/// Derive a stable scope key from tool input (path, cwd, url, or `"workspace"`).
+/// Build the canonical subject used by hard policy rules.
+///
+/// Path aliases must be resolved before policy evaluation so a relative or
+/// traversed spelling cannot evade an absolute deny rule.
+fn canonical_policy_subject(
+    ctx: &ToolContext,
+    tool_name: &str,
+    input: &Value,
+    command: Option<&str>,
+) -> Result<Option<String>, ToolError> {
+    if let Some(command) = command {
+        return Ok(Some(command.to_string()));
+    }
+
+    let is_path_tool = matches!(
+        tool_name,
+        tools::filesystem::NAME
+            | tools::write::NAME
+            | tools::patch::NAME
+            | tools::search::NAME
+            | tools::list::NAME
+    );
+    if !is_path_tool {
+        return Ok(None);
+    }
+
+    let sandbox = ctx.sandbox()?;
+    let path = input
+        .get("path")
+        .and_then(Value::as_str)
+        .unwrap_or(".");
+    let resolved = if tool_name == tools::write::NAME {
+        sandbox.resolve_for_write(path)?
+    } else {
+        sandbox.resolve_existing_for_tool(path, tool_name)?
+    };
+    let subject = resolved.display().to_string().replace('\\', "/");
+    Ok(Some(
+        subject
+            .strip_prefix("//?/")
+            .unwrap_or(&subject)
+            .to_string(),
+    ))
+}
+
 fn scope_from_input(tool_name: &str, input: &Value) -> String {
     if tool_name == tools::shell::NAME {
         if let Some((_, _, cwd)) = tools::shell::resolve_invocation(input) {
@@ -1045,6 +1092,44 @@ mod tests {
         assert!(matches!(
             error,
             ToolError::PermissionDenied(Permission::ShellExecute)
+        ));
+    }
+
+    #[tokio::test]
+    async fn policy_denies_canonical_path_despite_relative_alias() {
+        let permissions = evohime_permissions::PermissionEngine::new();
+        let dir = tempfile::tempdir().expect("workspace");
+        std::fs::create_dir(dir.path().join("secrets")).expect("secrets directory");
+        std::fs::write(dir.path().join("secrets/token.txt"), "secret").expect("secret file");
+        let canonical_pattern = format!("{}/secrets/*", dir.path().display()).replace('\\', "/");
+        permissions
+            .set_policy_rules(evohime_permissions::PolicyRuleSet::new(vec![
+                evohime_permissions::PolicyRule {
+                    permission: evohime_permissions::Permission::FilesystemRead,
+                    pattern: canonical_pattern,
+                    mode: evohime_permissions::PermissionMode::Deny,
+                },
+            ]))
+            .await;
+        let registry = ToolRegistry::bootstrap_with_permissions(permissions);
+        let context = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::nil(),
+            session_id: None,
+            progress_tx: None,
+        };
+
+        let error = registry
+            .execute(
+                &context,
+                "filesystem.read",
+                serde_json::json!({ "path": "secrets/../secrets/token.txt" }),
+            )
+            .await
+            .expect_err("canonical hard deny must happen before read");
+        assert!(matches!(
+            error,
+            ToolError::PermissionDenied(Permission::FilesystemRead)
         ));
     }
 
