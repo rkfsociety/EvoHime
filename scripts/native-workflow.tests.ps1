@@ -9,7 +9,6 @@ foreach ($required in @(
     'cargo test --locked -p evohime-permissions -p evohime-tool-runtime -p evohime-model-gateway',
     'installer/EvoHime.iss',
     'EvoHime-Setup.exe',
-    '-Version $env:RELEASE_VERSION',
     'npm run package',
     'scripts/electron-acceptance.tests.ps1',
     'scripts/electron-fault.tests.ps1',
@@ -26,13 +25,7 @@ foreach ($required in @(
     'dotnet test desktop/EvoHime.IpcTests/EvoHime.IpcTests.csproj',
     'winui-test-diagnostics',
     'iscc',
-    'gh release create',
-    'Remove old releases after publication',
-    'cleanup-github-releases.ps1 -KeepCount 1',
-    'Determine release from project version',
-    'RELEASE_VERSION',
-    'should_release',
-    'contents: write'
+    'evohime-windows-installer'
 )) {
     if ($workflow -notmatch [regex]::Escape($required)) {
         throw "GitHub workflow is missing required entry: $required"
@@ -43,8 +36,23 @@ if ($workflow -match "tags: \['v\*'\]") {
     throw 'GitHub workflow must not require manually pushed version tags.'
 }
 
-if ($workflow -notmatch 'needs: \[rust-native, windows-check, prepare-release\]') {
-    throw 'Native package build must depend on all CI checks and release decision.'
+# Клиент обновляется из исходников по коммитам: workflow проверяет установщик,
+# но не публикует релизы и не решает, «пора ли выпускать версию».
+foreach ($forbidden in @(
+    'gh release create',
+    'prepare-release',
+    'should_release',
+    'RELEASE_VERSION',
+    'cleanup-github-releases.ps1',
+    'contents: write'
+)) {
+    if ($workflow -match [regex]::Escape($forbidden)) {
+        throw "GitHub workflow must not publish releases: $forbidden"
+    }
+}
+
+if ($workflow -notmatch 'needs: \[rust-native, windows-check\]') {
+    throw 'Native package build must depend on all CI checks.'
 }
 
 $buildIndex = $workflow.IndexOf('Build native package after CI checks')
