@@ -30,7 +30,7 @@ Windows acceptance не являются задачами текущего пл�
 native smoke checks прошли без ошибок; source-update E2E остаётся штатно пропущенным
 без включённого флага.
 
-Текущий цикл — закрытие обходов permission policy.
+Текущий цикл завершён: обходы permission policy и approval закрыты и проверены.
 
 ## Текущий статус
 
@@ -40,7 +40,8 @@ Core + SQLite + authenticated named-pipe IPC сохраняются. Польз�
 
 | Блок | Статус |
 | --- | --- |
-| Permission policy rules и закрытие обходов approval | 🟡 В работе |
+Активных задач текущего implementation-цикла нет. Следующие задачи выбираются из
+долгосрочного [`roadmap.md`](roadmap.md) после отдельного подтверждения приоритета.
 
 ## Acceptance criteria
 

@@ -12,7 +12,7 @@
 
 ### 1. Reliability and approval UX
 
-- дальнейшее закрытие обходов permission policy и безопасных child contracts.
+- улучшение отображения approval и recovery-состояний в desktop UI;
 
 ### 2. Reliability and security hardening
 

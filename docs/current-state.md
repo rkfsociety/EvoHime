@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-14 (`e6340bf`).
+Обновлено: 2026-08-14.
 
 ## Продукт
 
@@ -44,6 +44,7 @@ Core и supervisor — внутренние компоненты установ�
 - ключ провайдера хранится main-процессом Electron: значение шифруется OS (`safeStorage`, DPAPI на Windows) и лежит в `%LOCALAPPDATA%\EvoHime\shell\provider.json` с режимом `600`. Renderer получает только summary «ключ задан/не задан», а Core — переменные окружения выбранного провайдера через supervisor. Смена ключа перезапускает supervisor и Core;
 - base URL провайдера принимается только по `https`, либо `http` на loopback, чтобы ключ не ушёл на произвольный хост.
 - approval.required передаёт bounded structured preview для команд, записи файлов и unified diff; Electron показывает его в TaskTimeline и Terminal, а Core сохраняет exact-call hash и повторную policy-проверку перед выполнением;
+- approval-токены для tool runtime одноразовые и атомарно погашаются перед выполнением; hard-deny policy проверяет канонический путь, включая вызовы через относительные алиасы;
 
 ### Desktop shell (Electron)
 
@@ -63,9 +64,9 @@ Core и supervisor — внутренние компоненты установ�
 
 - `.env.example` описывает переменные провайдера для локального запуска; `start-dev.ps1` читает `.env` по allow-list и передаёт значения только дочерним native-процессам.
 
-## Следующий этап
+## Следующие направления
 
-1. продолжить hardening permission policy, credentials, recovery и diagnostics;
+1. hardening credentials, recovery и diagnostics;
 2. поддерживать Windows 10/11 CI и compatibility suite, не возвращая web runtime;
 3. informative ARM64/Insider compatibility runs.
 
