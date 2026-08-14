@@ -101,6 +101,7 @@ NuGet и crates.io — независимые источники: успешны
 - core log: `%LOCALAPPDATA%\EvoHime\logs\core.jsonl`;
 - supervisor log: `%LOCALAPPDATA%\EvoHime\logs\supervisor.jsonl`;
 - локальное состояние оболочки: `%LOCALAPPDATA%\EvoHime\shell\` — `workspaces.json`, `chats.json`, `provider.json`;
+- обновление: `%LOCALAPPDATA%\EvoHime\update.json` (пишет установщик), `source\` — git checkout, `update-staging\` — собранный пакет, `update-state\` — журнал транзакции. В dev-запуске обновление выключено; для отладки есть `EVOHIME_UPDATE_ENABLED`, `EVOHIME_UPDATE_BRANCH`, `EVOHIME_UPDATE_SOURCE_DIR`, `EVOHIME_UPDATE_INSTALL_DIR`;
 - экспорт событий — JSONL через `LocalDatabase::export_events_jsonl`.
 
 Миграции SQLite выполняются транзакционно; перед изменением схемы создаётся backup. Секреты не попадают в исходники и логи: ключ провайдера шифруется через Electron `safeStorage` (DPAPI) в `shell\provider.json` и доходит до Core только окружением supervisor; сохранение ключа перезапускает Core. Для локальной разработки используется `.env` рядом с `start-dev.ps1` по allow-list из `.env.example`.

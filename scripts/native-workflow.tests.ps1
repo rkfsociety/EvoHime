@@ -15,6 +15,10 @@ foreach ($required in @(
     'scripts/electron-fault.tests.ps1',
     'scripts/electron-matrix.tests.ps1',
     'Rollback smoke after failed installer start',
+    'Staged rebuild apply smoke',
+    '--apply-staging',
+    '-Commit $env:GITHUB_SHA',
+    'evohime.build.json',
     '--blame-hang',
     '--blame-hang-timeout 5m',
     'dotnet restore desktop/EvoHime.IpcTests/EvoHime.IpcTests.csproj',
@@ -66,6 +70,24 @@ if (($installer | Select-String -Pattern '\{autodesktop\}' -AllMatches).Matches.
 }
 if ($installer -match '\{autoprograms\}') {
     throw 'The installer must not create an additional Start Menu shortcut.'
+}
+
+# Обновление идёт из исходников: установщик обязан оставить конфигурацию,
+# по которой клиент знает репозиторий, ветку и режим запуска.
+foreach ($required in @('update.json', 'repositoryUrl', 'launchPolicy', 'autoupdate')) {
+    if ($installer -notmatch [regex]::Escape($required)) {
+        throw "The installer must configure source updates: $required"
+    }
+}
+if ($installer -notmatch 'https://github\.com/') {
+    throw 'The update repository must be an https remote.'
+}
+# Исходники и staging принадлежат обновлению, но данные пользователя удалять нельзя.
+if ($installer -notmatch '\[UninstallDelete\]') {
+    throw 'Uninstall must clean the update working directories.'
+}
+if ($installer -match 'Name: "\{localappdata\}\\EvoHime"\s*$') {
+    throw 'Uninstall must not delete the user data directory.'
 }
 
 Write-Output 'native-workflow smoke: PASS'

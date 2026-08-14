@@ -132,6 +132,32 @@ const workspaces = {
   forget: () => ({ selected: null, options: [] })
 }
 
+/** The updater is owned by the main process; the bridge only relays to it. */
+const updateStatus = { phase: 'idle', blocking: false, message: '', steps: [] }
+const updateCalls: string[] = []
+const updates = {
+  get status() {
+    updateCalls.push('status')
+    return updateStatus
+  },
+  check: async () => {
+    updateCalls.push('check')
+    return updateStatus
+  },
+  prepare: async () => {
+    updateCalls.push('prepare')
+    return updateStatus
+  },
+  restart: () => {
+    updateCalls.push('restart')
+    return true
+  },
+  skip: () => {
+    updateCalls.push('skip')
+    return updateStatus
+  }
+}
+
 function invoke(command: string, payload?: unknown): unknown {
   const handler = handlers.get(INVOKE_CHANNEL)
   if (!handler) {
@@ -158,6 +184,7 @@ beforeEach(() => {
       restarts.push(true)
       return true
     },
+    updates: updates as never,
     log: () => {}
   })
 })
@@ -374,5 +401,21 @@ describe('clipboard and external links', () => {
     expect(await handler({}, 'file:///C:/Windows/System32/cmd.exe')).toBe(false)
     expect(await handler({}, 'javascript:alert(1)')).toBe(false)
     expect(openedUrls).toEqual(['https://github.com/evohime'])
+  })
+})
+
+describe('source update commands', () => {
+  it('relays every update command to the service that owns the run', async () => {
+    updateCalls.length = 0
+
+    expect((invoke('update.getStatus', {}) as { ok: boolean }).ok).toBe(true)
+    await invoke('update.check', {})
+    await invoke('update.prepare', {})
+    expect(invoke('update.restart', {})).toEqual({ ok: true, value: { accepted: true } })
+    expect((invoke('update.skip', {}) as { ok: boolean }).ok).toBe(true)
+
+    expect(updateCalls).toEqual(['status', 'check', 'prepare', 'restart', 'skip'])
+    // Nothing about an update goes to Core: it is a shell-owned operation.
+    expect(sent).toHaveLength(0)
   })
 })

@@ -15,6 +15,8 @@ import { ReloadLimiter } from './recovery'
 import { hardenProcess, hardenSession, isProduction, type HardeningOptions } from './security'
 import { broadcast, registerShellBridge } from './shell-bridge'
 import { createTray, type TrayController } from './tray'
+import { loadUpdateConfig } from './update/config'
+import { UpdateService } from './update/update-service'
 import { createMainWindow, focusWindow, loadRenderer } from './window'
 import { WorkspaceService, windowChooser } from './workspace-service'
 import { WorkspaceStore } from './workspace-store'
@@ -38,6 +40,7 @@ let client: CorePipeClient | null = null
 let supervisorProcess: ChildProcess | null = null
 let supervisorLivenessTimer: NodeJS.Timeout | null = null
 let recoveryMode = false
+let updates: UpdateService | null = null
 
 // safeStorage is only usable after the app is ready, so the store is created
 // lazily inside whenReady rather than at module scope.
@@ -72,9 +75,14 @@ if (!app.requestSingleInstanceLock()) {
       decrypt: (value) => safeStorage.decryptString(value)
     })
 
-    const launch = await ensureSupervisorSession()
-    client = new CorePipeClient({ launch, refreshLaunch: () => readLaunchContext(), log })
-    supervisorLivenessTimer = monitorSupervisorLiveness()
+    // The client is created before the supervisor exists: it re-reads the launch
+    // context on every connection attempt, so nothing is lost by connecting
+    // after the update gate has finished with the installed files.
+    client = new CorePipeClient({
+      launch: readLaunchContext(),
+      refreshLaunch: () => readLaunchContext(),
+      log
+    })
 
     client.on('state', (state: ShellState) => broadcast({ kind: 'state', state }))
     client.on('core-event', (event) => {
@@ -84,6 +92,7 @@ if (!app.requestSingleInstanceLock()) {
 
     mainWindow = createMainWindow({ ...hardening, onRendererFailure: handleRendererFailure })
     tray = createTray({ window: mainWindow, log })
+    updates = createUpdateService()
 
     // The picker dialog is owned by the main process and opens modal to the
     // shell window; the renderer only ever receives the chosen path.
@@ -96,8 +105,19 @@ if (!app.requestSingleInstanceLock()) {
       providers,
       chats: new ChatStore(ChatStore.defaultPath(dataDirectory())),
       restartCore,
+      updates,
       log
     })
+
+    // Nothing may hold the installed binaries open while a staged rebuild is
+    // swapped in, so the gate runs before the supervisor is started.
+    if ((await updates.runLaunchGate()) === 'applying') {
+      log('info', 'shell.update_applying', {})
+      return
+    }
+
+    const launch = await ensureSupervisorSession()
+    supervisorLivenessTimer = monitorSupervisorLiveness()
 
     log('info', 'shell.started', {
       developerLaunch: launch.developerLaunch,
@@ -114,6 +134,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('before-quit', () => {
     client?.stop()
+    updates?.stop()
     if (supervisorLivenessTimer) {
       clearInterval(supervisorLivenessTimer)
       supervisorLivenessTimer = null
@@ -124,6 +145,27 @@ if (!app.requestSingleInstanceLock()) {
     }
     tray?.destroy()
     log('info', 'shell.stopping', {})
+  })
+}
+
+/**
+ * Source updater.
+ *
+ * A development run is never updated: it already builds from the developer's own
+ * checkout, and `app.getPath('exe')` there points at the Electron binary in
+ * `node_modules` rather than at an installation.
+ */
+function createUpdateService(): UpdateService {
+  const config = loadUpdateConfig({
+    dataDirectory: dataDirectory(),
+    executablePath: app.getPath('exe')
+  })
+  const enabled = config.enabled && app.isPackaged
+  return new UpdateService({
+    config: { ...config, enabled, launchPolicy: enabled ? config.launchPolicy : 'off' },
+    emit: (status) => broadcast({ kind: 'update', status }),
+    log,
+    quit: () => app.quit()
   })
 }
 

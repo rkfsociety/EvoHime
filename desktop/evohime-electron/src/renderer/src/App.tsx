@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import type { ConnectionState, CoreEvent, ShellState, UserIdentity } from '@shared/api'
+import type { UpdateStatus } from '@shared/update'
 
 import { useShellApi } from './shell-api'
+import { UpdateBanner } from './UpdateBanner'
+import { UpdateGate } from './UpdateGate'
 import { ProjectSidebar } from './ProjectSidebar'
 import { TaskTimeline } from './TaskTimeline'
 import { DeveloperTools } from './DeveloperTools'
@@ -67,6 +70,7 @@ export function App(): React.JSX.Element {
   // Bumped when a chat is renamed or reordered so the sidebar reloads its list.
   const [chatRevision, setChatRevision] = useState(0)
   const [identity, setIdentity] = useState<UserIdentity | null>(null)
+  const [update, setUpdate] = useState<UpdateStatus | null>(null)
 
   const api = useShellApi()
 
@@ -81,6 +85,10 @@ export function App(): React.JSX.Element {
         setState(event.state)
         return
       }
+      if (event.kind === 'update') {
+        setUpdate(event.status)
+        return
+      }
       setEvents((current) => [event.event, ...current].slice(0, MAX_VISIBLE_EVENTS))
     })
 
@@ -88,6 +96,10 @@ export function App(): React.JSX.Element {
       if (outcome.ok) {
         setState(outcome.value)
       }
+    })
+
+    void api.invoke('update.getStatus', {}).then((outcome) => {
+      if (outcome.ok) setUpdate(outcome.value)
     })
 
     return unsubscribe
@@ -191,6 +203,7 @@ export function App(): React.JSX.Element {
         </header>
 
         <div className="main__body">
+          {update ? <UpdateBanner status={update} /> : null}
           <RecoveryBanner
             connection={connection}
             events={events}
@@ -232,6 +245,8 @@ export function App(): React.JSX.Element {
         <span className="statusbar__spacer" />
         {state?.reason ? <span className="statusbar__reason">{state.reason}</span> : null}
       </footer>
+
+      {update ? <UpdateGate status={update} /> : null}
     </div>
   )
 }

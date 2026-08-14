@@ -26,6 +26,7 @@ import {
   type ProviderStore
 } from './provider-store'
 import { isAllowedExternalUrl } from './security-policy'
+import type { UpdateService } from './update/update-service'
 import type { WorkspaceService } from './workspace-service'
 
 /**
@@ -49,6 +50,8 @@ export interface ShellBridgeOptions {
    * is built from the environment at Core startup and has no live setter.
    */
   readonly restartCore: () => Promise<boolean>
+  /** Owns the source update; the renderer may only observe and trigger it. */
+  readonly updates: UpdateService
   readonly log: ShellLog
 }
 
@@ -94,7 +97,7 @@ function dispatch(
   command: RendererCommand,
   payload: unknown
 ): unknown {
-  const { client, workspaces, providers, chats, restartCore, log } = options
+  const { client, workspaces, providers, chats, restartCore, updates, log } = options
   switch (command) {
     case 'shell.getState':
       return { ok: true, value: client.state }
@@ -415,6 +418,21 @@ function dispatch(
       }
       return accepted(client.send({ terminalExecute: { taskId, workspacePath, program, args, cwd, timeoutMs, approvalId } }))
     }
+
+    case 'update.getStatus':
+      return { ok: true, value: updates.status }
+
+    case 'update.check':
+      return updates.check().then((value) => ({ ok: true, value }))
+
+    case 'update.prepare':
+      return updates.prepare().then((value) => ({ ok: true, value }))
+
+    case 'update.restart':
+      return { ok: true, value: { accepted: updates.restart() } }
+
+    case 'update.skip':
+      return { ok: true, value: updates.skip() }
   }
 }
 

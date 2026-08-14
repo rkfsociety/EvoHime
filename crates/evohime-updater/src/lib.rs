@@ -3,13 +3,26 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct TransactionState {
     install_dir: PathBuf,
     backup_dir: PathBuf,
     phase: TransactionPhase,
+    #[serde(default)]
+    scope: TransactionScope,
+}
+
+/// What the transaction backed up, and therefore what a rollback restores.
+///
+/// An installer run only replaces the known components, while a locally rebuilt
+/// package replaces the whole installation directory.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+enum TransactionScope {
+    #[default]
+    Components,
+    Tree,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -29,6 +42,7 @@ pub struct UpdateTransaction {
     install_dir: PathBuf,
     backup_dir: PathBuf,
     state_path: PathBuf,
+    scope: TransactionScope,
 }
 
 pub fn verify_installation(install_dir: &Path) -> io::Result<()> {
@@ -84,6 +98,52 @@ pub fn run_update(installer: &Path, install_dir: &Path, state_dir: &Path) -> io:
     }
 }
 
+/// Options of a staged apply, produced by a local rebuild of the sources.
+pub struct StagedApply<'a> {
+    pub staging: &'a Path,
+    pub install_dir: &'a Path,
+    pub state_dir: &'a Path,
+    /// Shell process that must exit before its files can be replaced.
+    pub wait_pid: Option<u32>,
+    /// Executable started once the new package is in place.
+    pub relaunch: Option<&'a Path>,
+}
+
+/// Replaces the installation with a locally rebuilt package.
+///
+/// The staged tree is verified before anything is touched, the previous
+/// installation is backed up in full, and any failure restores it. Only after a
+/// successful commit is the shell started again.
+pub fn apply_staged(options: StagedApply<'_>) -> io::Result<()> {
+    validate_absolute(options.staging, "staging directory")?;
+    validate_absolute(options.install_dir, "install directory")?;
+    verify_installation(options.staging)?;
+
+    if let Some(pid) = options.wait_pid {
+        wait_for_process_exit(pid, WAIT_FOR_SHELL);
+    }
+
+    let _ = UpdateTransaction::recover(options.state_dir)?;
+    let transaction = UpdateTransaction::prepare_tree(options.install_dir, options.state_dir)?;
+
+    let outcome = copy_tree(options.staging, options.install_dir)
+        .and_then(|()| verify_installation(options.install_dir));
+    match outcome {
+        Ok(()) => {
+            transaction.commit()?;
+            if let Some(executable) = options.relaunch {
+                Command::new(executable)
+                    .current_dir(options.install_dir)
+                    .spawn()?;
+            }
+            Ok(())
+        }
+        Err(error) => rollback_after_failure(transaction, error),
+    }
+}
+
+const WAIT_FOR_SHELL: Duration = Duration::from_secs(60);
+
 fn rollback_after_failure(transaction: UpdateTransaction, failure: io::Error) -> io::Result<()> {
     match transaction.rollback() {
         Ok(()) => Err(failure),
@@ -102,6 +162,20 @@ impl UpdateTransaction {
     ];
 
     pub fn prepare(install_dir: &Path, state_dir: &Path) -> io::Result<Self> {
+        Self::prepare_with(install_dir, state_dir, TransactionScope::Components)
+    }
+
+    /// Backs up the whole installation directory, for updates that replace more
+    /// than the known components — a locally rebuilt package does.
+    pub fn prepare_tree(install_dir: &Path, state_dir: &Path) -> io::Result<Self> {
+        Self::prepare_with(install_dir, state_dir, TransactionScope::Tree)
+    }
+
+    fn prepare_with(
+        install_dir: &Path,
+        state_dir: &Path,
+        scope: TransactionScope,
+    ) -> io::Result<Self> {
         validate_absolute(install_dir, "install directory")?;
         validate_absolute(state_dir, "state directory")?;
         if !install_dir.is_dir() {
@@ -132,8 +206,13 @@ impl UpdateTransaction {
             install_dir: install_dir.to_path_buf(),
             backup_dir,
             state_path,
+            scope,
         };
-        if let Err(error) = transaction.copy_current_components() {
+        let backup = match scope {
+            TransactionScope::Components => transaction.copy_current_components(),
+            TransactionScope::Tree => copy_tree(&transaction.install_dir, &transaction.backup_dir),
+        };
+        if let Err(error) = backup {
             let _ = fs::remove_dir_all(&transaction.backup_dir);
             return Err(error);
         }
@@ -157,10 +236,18 @@ impl UpdateTransaction {
 
     pub fn rollback(&self) -> io::Result<()> {
         self.write_state(TransactionPhase::RollbackRequired)?;
-        for component in Self::COMPONENTS {
-            let source = self.backup_dir.join(component);
-            let destination = self.install_dir.join(component);
-            restore_file(&source, &destination)?;
+        match self.scope {
+            TransactionScope::Components => {
+                for component in Self::COMPONENTS {
+                    let source = self.backup_dir.join(component);
+                    let destination = self.install_dir.join(component);
+                    restore_file(&source, &destination)?;
+                }
+            }
+            // Files the failed package added are left behind: overwriting the
+            // previous tree is what makes the installation work again, and
+            // deleting unknown files is the riskier half of the operation.
+            TransactionScope::Tree => copy_tree(&self.backup_dir, &self.install_dir)?,
         }
         self.write_state(TransactionPhase::Restored)?;
         fs::remove_dir_all(&self.backup_dir)?;
@@ -179,6 +266,7 @@ impl UpdateTransaction {
             install_dir: state.install_dir,
             backup_dir: state.backup_dir,
             state_path,
+            scope: state.scope,
         };
         match state.phase {
             TransactionPhase::Committed => {
@@ -222,6 +310,7 @@ impl UpdateTransaction {
             install_dir: self.install_dir.clone(),
             backup_dir: self.backup_dir.clone(),
             phase,
+            scope: self.scope,
         })
         .map_err(io::Error::other)?;
         let temporary = self.state_path.with_extension("json.tmp");
@@ -229,6 +318,51 @@ impl UpdateTransaction {
         fs::rename(temporary, &self.state_path)
     }
 }
+
+/// Recursive copy that overwrites the destination and keeps extra files there.
+fn copy_tree(source: &Path, destination: &Path) -> io::Result<()> {
+    fs::create_dir_all(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let target = destination.join(entry.file_name());
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            copy_tree(&entry.path(), &target)?;
+        } else if kind.is_file() {
+            if target.exists() {
+                fs::remove_file(&target)?;
+            }
+            fs::copy(entry.path(), &target)?;
+        }
+        // Symlinks and reparse points are skipped: an update payload has no
+        // reason to carry one, and following it would write outside the tree.
+    }
+    Ok(())
+}
+
+/// Waits for the shell to release its files, giving up after `limit`.
+#[cfg(windows)]
+fn wait_for_process_exit(pid: u32, limit: Duration) {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{OpenProcess, WaitForSingleObject};
+
+    /// `SYNCHRONIZE` — the only right needed to wait on a process handle.
+    const SYNCHRONIZE: u32 = 0x0010_0000;
+
+    // SAFETY: the handle is closed on every path, and a failed open simply
+    // means the process is already gone.
+    unsafe {
+        let handle = OpenProcess(SYNCHRONIZE, 0, pid);
+        if handle.is_null() {
+            return;
+        }
+        WaitForSingleObject(handle, limit.as_millis().min(u128::from(u32::MAX)) as u32);
+        CloseHandle(handle);
+    }
+}
+
+#[cfg(not(windows))]
+fn wait_for_process_exit(_pid: u32, _limit: Duration) {}
 
 fn restore_file(source: &Path, destination: &Path) -> io::Result<()> {
     if !source.is_file() {
@@ -336,6 +470,115 @@ mod tests {
         let result = UpdateTransaction::recover(&state).unwrap();
 
         assert!(result.recovered);
+        assert_eq!(
+            fs::read_to_string(install.join("EvoHime.exe")).unwrap(),
+            "old:EvoHime.exe"
+        );
+        assert!(!transaction.state_path().exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn apply_staged_replaces_installation_and_keeps_extra_files() {
+        let root = temp_dir("staged");
+        let install = root.join("install");
+        let staging = root.join("staging");
+        let state = root.join("state");
+        write_components(&install, "old");
+        fs::write(install.join("user-note.txt"), "keep me").unwrap();
+        write_components(&staging, "new");
+        fs::create_dir_all(staging.join("resources")).unwrap();
+        fs::write(staging.join("resources").join("icon.ico"), "icon").unwrap();
+
+        super::apply_staged(super::StagedApply {
+            staging: &staging,
+            install_dir: &install,
+            state_dir: &state,
+            wait_pid: None,
+            relaunch: None,
+        })
+        .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(install.join("EvoHime.exe")).unwrap(),
+            "new:EvoHime.exe"
+        );
+        assert_eq!(
+            fs::read_to_string(install.join("resources").join("icon.ico")).unwrap(),
+            "icon"
+        );
+        assert_eq!(fs::read_to_string(install.join("user-note.txt")).unwrap(), "keep me");
+        assert!(!state.join("transaction.json").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn apply_staged_refuses_an_incomplete_package() {
+        let root = temp_dir("staged-incomplete");
+        let install = root.join("install");
+        let staging = root.join("staging");
+        let state = root.join("state");
+        write_components(&install, "old");
+        write_components(&staging, "new");
+        fs::remove_file(staging.join("evohime-core.exe")).unwrap();
+
+        let error = super::apply_staged(super::StagedApply {
+            staging: &staging,
+            install_dir: &install,
+            state_dir: &state,
+            wait_pid: None,
+            relaunch: None,
+        })
+        .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        // The installation was never touched, so no transaction is left behind.
+        assert_eq!(
+            fs::read_to_string(install.join("EvoHime.exe")).unwrap(),
+            "old:EvoHime.exe"
+        );
+        assert!(!state.join("transaction.json").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn tree_rollback_restores_a_partially_replaced_installation() {
+        let root = temp_dir("tree-rollback");
+        let install = root.join("install");
+        let state = root.join("state");
+        write_components(&install, "old");
+        fs::create_dir_all(install.join("resources")).unwrap();
+        fs::write(install.join("resources").join("app.asar"), "old-asar").unwrap();
+
+        let transaction = UpdateTransaction::prepare_tree(&install, &state).unwrap();
+        fs::write(install.join("resources").join("app.asar"), "broken").unwrap();
+        fs::remove_file(install.join("evohime-core.exe")).unwrap();
+
+        transaction.rollback().unwrap();
+
+        assert_eq!(
+            fs::read_to_string(install.join("resources").join("app.asar")).unwrap(),
+            "old-asar"
+        );
+        assert_eq!(
+            fs::read_to_string(install.join("evohime-core.exe")).unwrap(),
+            "old:evohime-core.exe"
+        );
+        assert!(!transaction.state_path().exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn recover_rolls_back_a_leftover_tree_transaction() {
+        let root = temp_dir("tree-recover");
+        let install = root.join("install");
+        let state = root.join("state");
+        write_components(&install, "old");
+        let transaction = UpdateTransaction::prepare_tree(&install, &state).unwrap();
+        fs::write(install.join("EvoHime.exe"), "interrupted").unwrap();
+
+        assert!(UpdateTransaction::recover(&state).unwrap().recovered);
+
         assert_eq!(
             fs::read_to_string(install.join("EvoHime.exe")).unwrap(),
             "old:EvoHime.exe"

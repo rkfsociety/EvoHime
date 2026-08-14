@@ -7,6 +7,12 @@
 #ifndef SourceDir
   #define SourceDir "native-package"
 #endif
+#ifndef UpdateRepository
+  #define UpdateRepository "https://github.com/rkfsociety/EvoHime.git"
+#endif
+#ifndef UpdateBranch
+  #define UpdateBranch "main"
+#endif
 
 [Setup]
 AppId={{B4EA9A84-7F33-4D1A-9C74-1C1B6D8A8A4B}
@@ -28,6 +34,11 @@ CloseApplications=yes
 RestartApplications=no
 CloseApplicationsFilter=EvoHime.exe
 
+[Tasks]
+; EvoHime обновляется из исходников и пересобирается на машине пользователя,
+; поэтому автообновление — выбор пользователя, а не молчаливая настройка.
+Name: "autoupdate"; Description: "Обновлять автоматически при запуске (пересборка из исходников)"; GroupDescription: "Обновления"
+
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
@@ -36,3 +47,48 @@ Name: "{autodesktop}\EvoHime"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{ap
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Запустить EvoHime"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+; Рабочая копия исходников и собранный пакет принадлежат обновлению, а не
+; пользователю: данные, база и логи в %LOCALAPPDATA%\EvoHime остаются.
+Type: filesandordirs; Name: "{localappdata}\EvoHime\source"
+Type: filesandordirs; Name: "{localappdata}\EvoHime\update-staging"
+Type: filesandordirs; Name: "{localappdata}\EvoHime\update-state"
+Type: files; Name: "{localappdata}\EvoHime\update.json"
+
+[Code]
+{ Конфигурация обновления читается клиентом при запуске.                    }
+{ Значения пишутся установщиком, чтобы репозиторий и ветка не были зашиты в }
+{ бинарник и переустановка могла их изменить.                               }
+procedure WriteUpdateConfig();
+var
+  Directory: String;
+  Lines: TArrayOfString;
+  Enabled: String;
+begin
+  Directory := ExpandConstant('{localappdata}\EvoHime');
+  if not ForceDirectories(Directory) then
+    exit;
+
+  if IsTaskSelected('autoupdate') then
+    Enabled := 'true'
+  else
+    Enabled := 'false';
+
+  SetArrayLength(Lines, 8);
+  Lines[0] := '{';
+  Lines[1] := '  "version": 1,';
+  Lines[2] := '  "enabled": ' + Enabled + ',';
+  Lines[3] := '  "repositoryUrl": "{#UpdateRepository}",';
+  Lines[4] := '  "branch": "{#UpdateBranch}",';
+  Lines[5] := '  "launchPolicy": "build",';
+  Lines[6] := '  "checkIntervalMinutes": 30';
+  Lines[7] := '}';
+  SaveStringsToUTF8File(Directory + '\update.json', Lines, False);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+    WriteUpdateConfig();
+end;

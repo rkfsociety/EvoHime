@@ -51,6 +51,45 @@ function Invoke-NativeCommand {
     }
 }
 
+function Write-NativeBuildMarker {
+    <#
+        .SYNOPSIS
+        Пишет evohime.build.json — коммит и ветку, из которых собран пакет.
+
+        .DESCRIPTION
+        Клиент сравнивает этот коммит с вершиной отслеживаемой ветки и решает,
+        нужна ли локальная пересборка. Коммит берётся из параметра (CI передаёт
+        его явно) либо из git текущего checkout.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$OutputPath,
+        [Parameter(Mandatory)]
+        [string]$RepositoryRoot,
+        [string]$Commit,
+        [string]$Branch = 'main'
+    )
+
+    $resolvedCommit = $Commit
+    if ([string]::IsNullOrWhiteSpace($resolvedCommit)) {
+        $git = Get-Command git -ErrorAction SilentlyContinue
+        if ($null -ne $git) {
+            $resolvedCommit = (& $git.Source -C $RepositoryRoot rev-parse HEAD 2>$null)
+        }
+    }
+    $resolvedCommit = "$resolvedCommit".Trim()
+    if ($resolvedCommit -notmatch '^[0-9a-f]{40}$') {
+        Write-Warning 'Коммит сборки неизвестен: клиент пересоберёт себя при первом запуске.'
+        return
+    }
+
+    [pscustomobject]@{
+        commit    = $resolvedCommit
+        branch    = $Branch
+        builtAtMs = [long][Math]::Floor((Get-Date).ToUniversalTime().Subtract([datetime]'1970-01-01').TotalMilliseconds)
+    } | ConvertTo-Json -Depth 3 | Set-Content -LiteralPath $OutputPath -Encoding utf8NoBOM
+}
+
 function Write-NativePackageManifest {
     param(
         [Parameter(Mandatory)]

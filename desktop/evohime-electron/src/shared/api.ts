@@ -5,6 +5,8 @@
  * the sandboxed renderer bundle, where neither is available.
  */
 
+import type { UpdateStatus } from './update'
+
 export const API_NAMESPACE = 'evohime'
 export const API_VERSION = 1 as const
 
@@ -49,6 +51,7 @@ export interface CoreEvent {
 export type ShellEvent =
   | { readonly kind: 'state'; readonly state: ShellState }
   | { readonly kind: 'core-event'; readonly event: CoreEvent }
+  | { readonly kind: 'update'; readonly status: UpdateStatus }
 
 /** Model providers the shell can configure. */
 export const PROVIDER_KINDS = ['literouter', 'openai_compatible', 'mock'] as const
@@ -156,7 +159,12 @@ export const RENDERER_COMMANDS = [
   'core.createProject',
   'core.prepareBuild',
   'core.applyApprovedBuild',
-  'core.terminalExecute'
+  'core.terminalExecute',
+  'update.getStatus',
+  'update.check',
+  'update.prepare',
+  'update.restart',
+  'update.skip'
 ] as const
 
 export type RendererCommand = (typeof RENDERER_COMMANDS)[number]
@@ -212,6 +220,11 @@ export interface CommandPayloads {
   'core.prepareBuild': { projectId: string; proposalJson: string }
   'core.applyApprovedBuild': { projectId: string; runId: string; taskId: string; approvedBuildJson: string }
   'core.terminalExecute': { taskId: string; workspacePath: string; program: string; args: readonly string[]; cwd?: string; timeoutMs?: number; approvalId?: string }
+  'update.getStatus': Record<string, never>
+  'update.check': Record<string, never>
+  'update.prepare': Record<string, never>
+  'update.restart': Record<string, never>
+  'update.skip': Record<string, never>
 }
 
 export interface CommandResults {
@@ -254,6 +267,13 @@ export interface CommandResults {
   'core.prepareBuild': { accepted: boolean }
   'core.applyApprovedBuild': { accepted: boolean }
   'core.terminalExecute': { accepted: boolean }
+  'update.getStatus': UpdateStatus
+  'update.check': UpdateStatus
+  'update.prepare': UpdateStatus
+  /** `false` when nothing is staged, so the shell keeps running. */
+  'update.restart': { accepted: boolean }
+  /** Releases the launch gate without applying anything. */
+  'update.skip': UpdateStatus
 }
 
 export type CommandFailureCode =

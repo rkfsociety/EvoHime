@@ -165,7 +165,7 @@ jobs:
       - name: Build native package after CI checks
         shell: pwsh
         run: |
-          ./scripts/build-windows-native.ps1 -OutputPath "$env:GITHUB_WORKSPACE\native-package" -Version $env:RELEASE_VERSION
+          ./scripts/build-windows-native.ps1 -OutputPath "$env:GITHUB_WORKSPACE\native-package" -Version $env:RELEASE_VERSION -Commit $env:GITHUB_SHA -Branch 'main'
       - name: Run Electron package startup smoke
         shell: pwsh
         run: ./scripts/electron-acceptance.tests.ps1 -PackagePath "$env:GITHUB_WORKSPACE\native-package"
@@ -192,9 +192,17 @@ jobs:
           $setup = Join-Path $env:GITHUB_WORKSPACE 'installer-output\EvoHime-Setup.exe'
           & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installPath"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($component in @('EvoHime.exe', 'resources\app.asar', 'resources\evohime-agent.ico', 'evohime-core.exe', 'evohime-supervisor.exe', 'evohime-transaction.exe', 'evohime.manifest.json')) {
+          foreach ($component in @('EvoHime.exe', 'resources\app.asar', 'resources\evohime-agent.ico', 'evohime-core.exe', 'evohime-supervisor.exe', 'evohime-transaction.exe', 'evohime.manifest.json', 'evohime.build.json')) {
             if (-not (Test-Path -LiteralPath (Join-Path $installPath $component))) { throw "Installed component missing: $component" }
           }
+          # Маркер сборки — то, по чему установленный клиент понимает, отстал ли он от ветки.
+          $marker = Get-Content -LiteralPath (Join-Path $installPath 'evohime.build.json') -Raw | ConvertFrom-Json
+          if ($marker.commit -ne $env:GITHUB_SHA) { throw "Build marker commit mismatch: $($marker.commit)" }
+          # Установщик пишет конфигурацию обновления в профиль пользователя.
+          $updateConfig = Join-Path $env:LOCALAPPDATA 'EvoHime\update.json'
+          if (-not (Test-Path -LiteralPath $updateConfig)) { throw 'Installer did not write update.json.' }
+          $update = Get-Content -LiteralPath $updateConfig -Raw | ConvertFrom-Json
+          if ($update.branch -ne 'main') { throw "Unexpected update branch: $($update.branch)" }
           & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installPath"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           if (-not (Test-Path -LiteralPath (Join-Path $installPath 'EvoHime.exe'))) { throw 'Upgrade removed the client executable.' }
@@ -220,6 +228,50 @@ jobs:
           $after = (Get-FileHash (Join-Path $rollbackPath 'EvoHime.exe')).Hash
           if ($before -ne $after) { throw 'Rollback did not restore the previous client.' }
           if (Test-Path -LiteralPath (Join-Path $statePath 'transaction.json')) { throw 'Rollback left a transaction journal.' }
+      - name: Staged rebuild apply smoke
+        shell: pwsh
+        run: |
+          # Обновление без релиза: клиент пересобирает продукт локально и отдаёт
+          # готовый пакет transaction worker'у. Здесь проверяется сам обмен.
+          $root = Join-Path $env:RUNNER_TEMP 'EvoHime-staged-smoke'
+          $installPath = Join-Path $root 'install'
+          $stagingPath = Join-Path $root 'staging'
+          $statePath = Join-Path $root 'state'
+          New-Item -ItemType Directory -Force -Path $installPath, $stagingPath | Out-Null
+          foreach ($component in @('EvoHime.exe', 'evohime-core.exe', 'evohime-supervisor.exe', 'evohime.manifest.json')) {
+            Set-Content -LiteralPath (Join-Path $installPath $component) -Value "before:$component"
+            Set-Content -LiteralPath (Join-Path $stagingPath $component) -Value "after:$component"
+          }
+          Set-Content -LiteralPath (Join-Path $installPath 'user-data.txt') -Value 'keep'
+          $updater = Join-Path $env:GITHUB_WORKSPACE 'native-package\evohime-transaction.exe'
+          $process = Start-Process -FilePath $updater -ArgumentList @(
+            '--worker',
+            '--apply-staging',
+            '--staging', $stagingPath,
+            '--install-dir', $installPath,
+            '--state-dir', $statePath
+          ) -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw "Staged apply failed with exit code $($process.ExitCode)." }
+          if ((Get-Content -LiteralPath (Join-Path $installPath 'EvoHime.exe') -Raw).Trim() -ne 'after:EvoHime.exe') {
+            throw 'Staged package was not installed.'
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $installPath 'user-data.txt'))) { throw 'Staged apply removed local files.' }
+          if (Test-Path -LiteralPath (Join-Path $statePath 'transaction.json')) { throw 'Staged apply left a transaction journal.' }
+
+          # Неполный пакет не должен трогать установку.
+          Remove-Item -LiteralPath (Join-Path $stagingPath 'evohime-core.exe') -Force
+          $failed = Start-Process -FilePath $updater -ArgumentList @(
+            '--worker',
+            '--apply-staging',
+            '--staging', $stagingPath,
+            '--install-dir', $installPath,
+            '--state-dir', $statePath
+          ) -Wait -PassThru -NoNewWindow
+          if ($failed.ExitCode -eq 0) { throw 'Incomplete staged package must fail.' }
+          if ((Get-Content -LiteralPath (Join-Path $installPath 'EvoHime.exe') -Raw).Trim() -ne 'after:EvoHime.exe') {
+            throw 'Refused apply must leave the installation untouched.'
+          }
+
       - name: Upload single installer
         uses: actions/upload-artifact@v7
         with:

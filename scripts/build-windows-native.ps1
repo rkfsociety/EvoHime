@@ -4,6 +4,8 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [string]$Version,
+    [string]$Commit,
+    [string]$Branch = 'main',
     [switch]$SkipBuild
 )
 
@@ -69,4 +71,9 @@ if (-not $SkipBuild) {
 if (-not (Test-Path -LiteralPath $uiPackaged)) { throw "Electron UI не найден: $uiPackaged" }
 
 Write-NativePackageManifest -OutputPath (Join-Path $resolvedOutput 'evohime.manifest.json') -Manifest $manifest
+
+# Маркер сборки: установленный клиент по нему знает свой коммит и понимает,
+# отстал ли он от отслеживаемой ветки. Без маркера версия считается неизвестной
+# и клиент пересобирает себя при первом запуске.
+Write-NativeBuildMarker -OutputPath (Join-Path $resolvedOutput 'evohime.build.json') -RepositoryRoot $repoRoot -Commit $Commit -Branch $Branch
 Write-Output "Electron native package: $resolvedOutput"

@@ -13,9 +13,9 @@ EvoHime — локальный Windows-клиент для coding-agent зада
 - `EvoHime.exe` — Electron main process с bundled renderer; native package и installer собирают Electron shell;
 - `evohime-core.exe` — Rust agent loop, model gateway, tools, permissions, approvals и SQLite;
 - `evohime-supervisor.exe` — single-instance mutex, Job Object, restart и диагностика;
-- `evohime-transaction.exe` — скрытый transaction worker для backup, commit и rollback обновлений;
+- `evohime-transaction.exe` — скрытый transaction worker для backup, commit и rollback обновлений, включая подмену локально пересобранного пакета;
 - versioned protobuf over Windows named pipe — единственный UI/Core transport;
-- `%LOCALAPPDATA%\EvoHime` — локальные данные и JSONL-логи.
+- `%LOCALAPPDATA%\EvoHime` — локальные данные и JSONL-логи; `source`, `update-staging`, `update-state` и `update.json` принадлежат обновлению.
 
 Core и supervisor — внутренние компоненты установки, не отдельные пользовательские продукты.
 
@@ -27,7 +27,8 @@ Core и supervisor — внутренние компоненты установ�
 - streamed task timeline, cancellation и approval round-trip;
 - Windows package smoke tests и Windows CI;
 - единый Inno Setup installer с одним desktop shortcut; установленный клиент сам поднимает supervisor, а supervisor — Core;
-- автообнаружение GitHub Release, SHA-256 проверка installer, upgrade smoke в CI, автоматический rollback и recovery незавершённой транзакции перед запуском Core;
+- обновление из исходников без релизов: клиент сверяет `evohime.build.json` с вершиной ветки, ставит недостающие инструменты сборки через winget, обновляет свой git checkout, пересобирает продукт локально и отдаёт готовый пакет `evohime-transaction.exe --apply-staging`. При запуске идёт блокирующий gate с шагами пересборки и кнопкой «Пропустить», у запущенного клиента — фоновая сборка и баннер с перезапуском;
+- upgrade smoke в CI, автоматический rollback и recovery незавершённой транзакции перед запуском Core;
 - release retention: сохраняется только последний стабильный `vX.Y.Z` release/tag;
 - имя агента «Ева» передаётся в system context Core;
 - Core-owned build policy и её хранение;

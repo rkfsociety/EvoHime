@@ -24,11 +24,26 @@ Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-core.exe') -Value 'cor
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-supervisor.exe') -Value 'supervisor'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-transaction.exe') -Value 'updater'
 
-& (Join-Path $PSScriptRoot 'build-windows-native.ps1') -SkipBuild -OutputPath $packageRoot | Out-Null
-& (Join-Path $PSScriptRoot 'build-windows-native.ps1') -SkipBuild -OutputPath $packageRoot | Out-Null
+$commit = 'a' * 40
+& (Join-Path $PSScriptRoot 'build-windows-native.ps1') -SkipBuild -OutputPath $packageRoot -Commit $commit | Out-Null
+& (Join-Path $PSScriptRoot 'build-windows-native.ps1') -SkipBuild -OutputPath $packageRoot -Commit $commit | Out-Null
 if (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'evohime.manifest.json'))) {
     throw 'package manifest was not written'
 }
+
+# Маркер сборки: без него клиент не знает своей версии и пересобирается зря.
+$markerPath = Join-Path $packageRoot 'evohime.build.json'
+if (-not (Test-Path -LiteralPath $markerPath)) { throw 'build marker was not written' }
+$marker = Get-Content -LiteralPath $markerPath -Raw | ConvertFrom-Json
+if ($marker.commit -ne $commit) { throw 'build marker commit mismatch' }
+if ($marker.branch -ne 'main') { throw 'build marker branch mismatch' }
+if ($marker.builtAtMs -le 0) { throw 'build marker timestamp is missing' }
+
+# Неизвестный коммит не подделывается: маркер просто не пишется.
+Remove-Item -LiteralPath $markerPath -Force
+& (Join-Path $PSScriptRoot 'build-windows-native.ps1') -SkipBuild -OutputPath $packageRoot -Commit 'HEAD' -WarningAction SilentlyContinue | Out-Null
+if (Test-Path -LiteralPath $markerPath) { throw 'build marker must stay absent for an unknown commit' }
+
 Remove-Item -LiteralPath $packageRoot -Recurse -Force
 
 Write-Output 'native-package smoke: PASS'
