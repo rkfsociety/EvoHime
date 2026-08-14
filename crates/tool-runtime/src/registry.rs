@@ -1103,7 +1103,12 @@ mod tests {
         let dir = tempfile::tempdir().expect("workspace");
         std::fs::create_dir(dir.path().join("secrets")).expect("secrets directory");
         std::fs::write(dir.path().join("secrets/token.txt"), "secret").expect("secret file");
-        let canonical_pattern = format!("{}/secrets/*", dir.path().display()).replace('\\', "/");
+        let canonical_root = dir.path().canonicalize().expect("canonical workspace");
+        let canonical_pattern = format!("{}/secrets/*", canonical_root.display()).replace('\\', "/");
+        let canonical_pattern = canonical_pattern
+            .strip_prefix("//?/")
+            .unwrap_or(&canonical_pattern)
+            .to_string();
         permissions
             .set_policy_rules(evohime_permissions::PolicyRuleSet::new(vec![
                 evohime_permissions::PolicyRule {
