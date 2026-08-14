@@ -15,12 +15,18 @@ import { describeFailure, runCommand, type CommandRunner } from './run-command'
  * they are what makes a local rebuild take minutes instead of an hour.
  */
 
+/**
+ * Caches, not outputs.
+ *
+ * `target`, `node_modules` and the Electron download are what make a rebuild
+ * take minutes instead of an hour. Build outputs (`release`, `out`) are
+ * deliberately not preserved: a half-written package from an interrupted run
+ * would otherwise be picked up by the next build.
+ */
 const PRESERVED_PATHS = [
   'target',
   'desktop/evohime-electron/node_modules',
-  'desktop/evohime-electron/.electron-cache',
-  'desktop/evohime-electron/release',
-  'desktop/evohime-electron/out'
+  'desktop/evohime-electron/.electron-cache'
 ] as const
 
 const GIT_TIMEOUT_MS = 30 * 60_000

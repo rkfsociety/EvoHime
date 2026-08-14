@@ -292,3 +292,112 @@ describe('background pass', () => {
     expect(test.build).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('resilience', () => {
+  it('keeps the client running when the transaction worker cannot start', () => {
+    const test = harness({
+      spawnWorker: vi.fn(() => {
+        throw new Error('ENOENT')
+      })
+    })
+    test.stage(REMOTE)
+
+    expect(test.service.restart()).toBe(false)
+    expect(test.quit).not.toHaveBeenCalled()
+    expect(test.service.status.phase).toBe('failed')
+  })
+
+  it('releases the gate when the toolchain cannot be installed', async () => {
+    const test = harness({
+      ensure: async () => ({
+        report: { complete: false, pathEntries: [], tools: [] },
+        error: 'Не удалось установить: Rust (cargo).'
+      })
+    })
+
+    await expect(test.service.runLaunchGate()).resolves.toBe('continue')
+    expect(test.build).not.toHaveBeenCalled()
+    expect(test.service.status.blocking).toBe(false)
+    expect(test.service.status.error).toContain('Инструменты сборки не готовы')
+    expect(test.service.status.steps.find((step) => step.id === 'toolchain')?.state).toBe('failed')
+  })
+})
+
+describe('transient build failures', () => {
+  it('clears the derived state and builds once more before giving up', async () => {
+    let attempts = 0
+    const reset = vi.fn(async () => {})
+    const test = harness({
+      reset,
+      build: vi.fn(async () => {
+        attempts += 1
+        // An interrupted Electron download unpacks into a broken package; the
+        // next attempt succeeds once the cache is gone.
+        if (attempts === 1) throw new Error('Invalid package')
+        return { commit: REMOTE, branch: 'main', builtAtMs: 2 }
+      })
+    })
+
+    const status = await test.service.prepare()
+
+    expect(attempts).toBe(2)
+    expect(reset).toHaveBeenCalledTimes(1)
+    expect(status.phase).toBe('ready')
+    expect(status.error).toBeNull()
+  })
+
+  it('reports the second failure instead of retrying forever', async () => {
+    const reset = vi.fn(async () => {})
+    const build = vi.fn(async () => {
+      throw new Error('cargo упал')
+    })
+    const test = harness({ reset, build })
+
+    const status = await test.service.prepare()
+
+    expect(build).toHaveBeenCalledTimes(2)
+    expect(reset).toHaveBeenCalledTimes(1)
+    expect(status.phase).toBe('failed')
+    expect(status.error).toContain('cargo')
+  })
+
+  it('does not retry a build the user skipped', async () => {
+    const reset = vi.fn(async () => {})
+    const test = harness({
+      reset,
+      build: vi.fn(
+        () =>
+          new Promise<never>((_resolve, reject) => {
+            setTimeout(() => reject(new Error('прервано')), 5)
+          })
+      )
+    })
+
+    const running = test.service.prepare()
+    await new Promise((resolve) => setTimeout(resolve, 1))
+    test.service.skip()
+    await running
+
+    expect(reset).not.toHaveBeenCalled()
+  })
+})
+
+describe('build log', () => {
+  it('keeps the whole build output, not just the line the UI shows', async () => {
+    const lines: string[] = []
+    const test = harness({
+      buildLog: { start: (header) => lines.push(header), append: (line) => lines.push(line) },
+      build: vi.fn(async (_inputs, deps) => {
+        deps?.onLine?.('Compiling evohime-core')
+        deps?.onLine?.('Finished release profile')
+        return { commit: REMOTE, branch: 'main', builtAtMs: 2 }
+      })
+    })
+
+    await test.service.prepare()
+
+    expect(lines[0]).toContain(REMOTE)
+    expect(lines).toContain('Compiling evohime-core')
+    expect(lines).toContain('Finished release profile')
+  })
+})

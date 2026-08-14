@@ -15,6 +15,7 @@ import { ReloadLimiter } from './recovery'
 import { hardenProcess, hardenSession, isProduction, type HardeningOptions } from './security'
 import { broadcast, registerShellBridge } from './shell-bridge'
 import { createTray, type TrayController } from './tray'
+import { BuildLog } from './update/build-log'
 import { loadUpdateConfig } from './update/config'
 import { UpdateService } from './update/update-service'
 import { createMainWindow, focusWindow, loadRenderer } from './window'
@@ -110,8 +111,16 @@ if (!app.requestSingleInstanceLock()) {
     })
 
     // Nothing may hold the installed binaries open while a staged rebuild is
-    // swapped in, so the gate runs before the supervisor is started.
-    if ((await updates.runLaunchGate()) === 'applying') {
+    // swapped in, so the gate runs before the supervisor is started. An updater
+    // that fails in an unforeseen way must never keep the client from starting:
+    // the installed build is always launchable.
+    let gate: Awaited<ReturnType<UpdateService['runLaunchGate']>> = 'continue'
+    try {
+      gate = await updates.runLaunchGate()
+    } catch (error) {
+      log('error', 'shell.update_gate_failed', { error })
+    }
+    if (gate === 'applying') {
       log('info', 'shell.update_applying', {})
       return
     }
@@ -165,6 +174,9 @@ function createUpdateService(): UpdateService {
     config: { ...config, enabled, launchPolicy: enabled ? config.launchPolicy : 'off' },
     emit: (status) => broadcast({ kind: 'update', status }),
     log,
+    // The UI shows one build line; the whole output stays on disk, because a
+    // failed rebuild cannot be explained from its last line alone.
+    buildLog: new BuildLog(join(logDirectory(), 'update-build.log')),
     quit: () => app.quit()
   })
 }

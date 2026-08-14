@@ -173,6 +173,21 @@ export async function assembleStaging(
   return marker
 }
 
+/**
+ * Throws away everything a build derives, keeping only the sources.
+ *
+ * The Electron runtime is downloaded into `.electron-cache`, and an interrupted
+ * download leaves an archive that unpacks into a broken package — the failure
+ * then repeats on every attempt until the cache is cleared. Dropping it costs
+ * one download and turns a permanent failure into a slower retry.
+ */
+export async function clearDerivedState(sourceDirectory: string): Promise<void> {
+  const electronRoot = join(sourceDirectory, ELECTRON_SUBPATH)
+  for (const path of ['release', '.electron-cache', 'out']) {
+    await rm(join(electronRoot, path), { recursive: true, force: true })
+  }
+}
+
 /** Same shape as `New-NativePackageManifest` in `scripts/native-package.ps1`. */
 function nativeManifest(): Record<string, unknown> {
   return {

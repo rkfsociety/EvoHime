@@ -12,7 +12,8 @@ import {
 } from '@shared/update'
 
 import { redactError } from '../diagnostics/redact'
-import { buildStagedPackage } from './builder'
+import type { BuildLogWriter } from './build-log'
+import { buildStagedPackage, clearDerivedState } from './builder'
 import { readBuildMarker, type UpdateConfig } from './config'
 import { readRemoteHead, syncCheckout } from './source-checkout'
 import { detectToolchain, ensureToolchain, toolPath, type ToolchainReport } from './toolchain'
@@ -46,6 +47,8 @@ export interface UpdateServiceDeps {
   readonly remoteHead?: typeof readRemoteHead
   readonly sync?: typeof syncCheckout
   readonly build?: typeof buildStagedPackage
+  readonly reset?: typeof clearDerivedState
+  readonly buildLog?: BuildLogWriter
   readonly spawnWorker?: (file: string, args: readonly string[]) => void
   readonly setTimer?: (callback: () => void, ms: number) => { readonly cancel: () => void }
 }
@@ -181,6 +184,7 @@ export class UpdateService {
         steps: initialUpdateSteps(),
         error: null
       })
+      this.deps.buildLog?.start(`EvoHime update ${this.current.installedCommit ?? '—'} → ${target}`)
 
       const toolchain = await this.prepareToolchain(aborter)
       if (!toolchain) return this.current
@@ -197,20 +201,7 @@ export class UpdateService {
       this.step('source', 'done')
 
       this.patch({ message: 'Пересобираю Еву…' })
-      await (this.deps.build ?? buildStagedPackage)(
-        {
-          sourceDirectory: config.sourceDirectory,
-          stagingDirectory: config.stagingDirectory,
-          commit: target,
-          branch: config.branch,
-          toolchain
-        },
-        {
-          onLine: (line) => this.detail(line),
-          onStep: (step) => this.advance(step),
-          signal: aborter.signal
-        }
-      )
+      await this.buildOnceOrRetry(target, toolchain, aborter)
       this.step('package', 'done')
       this.deps.log('info', 'update.staged', {})
       return this.patch({
@@ -273,6 +264,50 @@ export class UpdateService {
     this.schedulePeriodicCheck()
   }
 
+  /**
+   * Builds, and on failure clears the derived state and builds once more.
+   *
+   * Local builds fail transiently — an interrupted Electron download unpacks
+   * into a broken package, and a half-written output directory poisons the next
+   * run. Both survive a plain retry, so the second attempt starts from sources
+   * and caches only. A second failure is reported as-is.
+   */
+  private async buildOnceOrRetry(
+    commit: string,
+    toolchain: ToolchainReport,
+    aborter: AbortController
+  ): Promise<void> {
+    const { config } = this.deps
+    const run = (): Promise<unknown> =>
+      (this.deps.build ?? buildStagedPackage)(
+        {
+          sourceDirectory: config.sourceDirectory,
+          stagingDirectory: config.stagingDirectory,
+          commit,
+          branch: config.branch,
+          toolchain
+        },
+        {
+          onLine: (line) => this.detail(line),
+          onStep: (step) => this.advance(step),
+          signal: aborter.signal
+        }
+      )
+
+    try {
+      await run()
+    } catch (error) {
+      if (aborter.signal.aborted) throw error
+      this.deps.log('warn', 'update.build_retry', { reason: redactError(error) })
+      this.deps.buildLog?.append(`Сборка не удалась, повторяю с чистым кэшем: ${redactError(error)}`)
+      this.patch({ message: 'Сборка не удалась — повторяю с чистым кэшем…', steps: initialUpdateSteps() })
+      this.step('toolchain', 'done')
+      this.step('source', 'done')
+      await (this.deps.reset ?? clearDerivedState)(config.sourceDirectory)
+      await run()
+    }
+  }
+
   private async prepareToolchain(aborter: AbortController): Promise<ToolchainReport | null> {
     this.step('toolchain', 'active')
     const { report, error } = await (this.deps.ensure ?? ensureToolchain)({
@@ -317,7 +352,14 @@ export class UpdateService {
       '--relaunch',
       join(config.installDirectory, SHELL_EXECUTABLE)
     ]
-    ;(this.deps.spawnWorker ?? defaultSpawnWorker)(worker, args)
+    try {
+      ;(this.deps.spawnWorker ?? defaultSpawnWorker)(worker, args)
+    } catch (error) {
+      // Failing to start the worker must not close the client: the installed
+      // build is untouched and still the one that should run.
+      this.fail('Не удалось запустить установку обновления', error)
+      return false
+    }
     this.deps.log('info', 'update.applying', {})
     this.deps.quit()
     return true
@@ -359,6 +401,7 @@ export class UpdateService {
   }
 
   private detail(line: string): void {
+    this.deps.buildLog?.append(line)
     this.patch({ detail: line })
   }
 
@@ -398,5 +441,8 @@ function defaultTimer(callback: () => void, ms: number): { readonly cancel: () =
  */
 function defaultSpawnWorker(file: string, args: readonly string[]): void {
   const child = spawn(file, [...args], { detached: true, stdio: 'ignore', windowsHide: true })
+  // A spawn failure surfaces asynchronously; without a listener it would be an
+  // unhandled error event and would take the shell down with it.
+  child.once('error', () => {})
   child.unref()
 }

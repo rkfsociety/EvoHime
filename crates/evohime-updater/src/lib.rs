@@ -122,6 +122,11 @@ pub fn apply_staged(options: StagedApply<'_>) -> io::Result<()> {
     if let Some(pid) = options.wait_pid {
         wait_for_process_exit(pid, WAIT_FOR_SHELL);
     }
+    // Waiting for the shell process is not enough: Electron's GPU and renderer
+    // children keep the executable and `app.asar` open for a moment after the
+    // main process is gone. Nothing is backed up until the files are actually
+    // writable, so a still-locked installation fails before it is touched.
+    wait_until_writable(options.install_dir, WAIT_FOR_UNLOCK)?;
 
     let _ = UpdateTransaction::recover(options.state_dir)?;
     let transaction = UpdateTransaction::prepare_tree(options.install_dir, options.state_dir)?;
@@ -143,6 +148,45 @@ pub fn apply_staged(options: StagedApply<'_>) -> io::Result<()> {
 }
 
 const WAIT_FOR_SHELL: Duration = Duration::from_secs(60);
+const WAIT_FOR_UNLOCK: Duration = Duration::from_secs(120);
+const RETRY_INTERVAL: Duration = Duration::from_millis(250);
+
+/// Blocks until every installed component can be opened for writing.
+///
+/// A locked file is a timing problem, not a broken installation, so it is
+/// retried rather than reported. After the deadline the caller still sees a
+/// plain error and the installation is left exactly as it was.
+fn wait_until_writable(install_dir: &Path, limit: Duration) -> io::Result<()> {
+    let deadline = std::time::Instant::now() + limit;
+    let mut last: Option<io::Error> = None;
+    loop {
+        match UpdateTransaction::COMPONENTS
+            .iter()
+            .map(|component| install_dir.join(component))
+            .filter(|path| path.exists())
+            .try_for_each(|path| {
+                fs::OpenOptions::new()
+                    .write(true)
+                    .open(&path)
+                    .map(|_| ())
+                    .map_err(|error| {
+                        io::Error::new(
+                            error.kind(),
+                            format!("{} is still in use: {error}", path.display()),
+                        )
+                    })
+            }) {
+            Ok(()) => return Ok(()),
+            Err(error) => last = Some(error),
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(last.unwrap_or_else(|| {
+                io::Error::other("installation stayed locked while the update waited")
+            }));
+        }
+        std::thread::sleep(RETRY_INTERVAL);
+    }
+}
 
 fn rollback_after_failure(transaction: UpdateTransaction, failure: io::Error) -> io::Result<()> {
     match transaction.rollback() {
@@ -329,15 +373,53 @@ fn copy_tree(source: &Path, destination: &Path) -> io::Result<()> {
         if kind.is_dir() {
             copy_tree(&entry.path(), &target)?;
         } else if kind.is_file() {
-            if target.exists() {
-                fs::remove_file(&target)?;
-            }
-            fs::copy(entry.path(), &target)?;
+            copy_file_resilient(&entry.path(), &target)?;
         }
         // Symlinks and reparse points are skipped: an update payload has no
         // reason to carry one, and following it would write outside the tree.
     }
     Ok(())
+}
+
+/// Windows codes for a file another process is holding open.
+const SHARING_VIOLATION: i32 = 32;
+const LOCK_VIOLATION: i32 = 33;
+const ACCESS_DENIED: i32 = 5;
+const COPY_RETRY_LIMIT: Duration = Duration::from_secs(30);
+
+/// Copies one file, retrying while something still holds it open.
+///
+/// On Windows a virus scanner or a lingering child process can hold a file for
+/// a moment right after it appears. Retrying turns that flake into a slightly
+/// slower update instead of a rollback.
+fn copy_file_resilient(source: &Path, destination: &Path) -> io::Result<()> {
+    let deadline = std::time::Instant::now() + COPY_RETRY_LIMIT;
+    loop {
+        let attempt = if destination.exists() {
+            fs::remove_file(destination).and_then(|()| fs::copy(source, destination).map(|_| ()))
+        } else {
+            fs::copy(source, destination).map(|_| ())
+        };
+        match attempt {
+            Ok(()) => return Ok(()),
+            Err(error) if is_locked(&error) && std::time::Instant::now() < deadline => {
+                std::thread::sleep(RETRY_INTERVAL);
+            }
+            Err(error) => {
+                return Err(io::Error::new(
+                    error.kind(),
+                    format!("cannot write {}: {error}", destination.display()),
+                ))
+            }
+        }
+    }
+}
+
+fn is_locked(error: &io::Error) -> bool {
+    matches!(
+        error.raw_os_error(),
+        Some(SHARING_VIOLATION) | Some(LOCK_VIOLATION) | Some(ACCESS_DENIED)
+    ) || error.kind() == io::ErrorKind::PermissionDenied
 }
 
 /// Waits for the shell to release its files, giving up after `limit`.
@@ -584,6 +666,53 @@ mod tests {
             "old:EvoHime.exe"
         );
         assert!(!transaction.state_path().exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn a_locked_installation_is_waited_for_and_never_half_written() {
+        use std::os::windows::fs::OpenOptionsExt;
+        use std::time::{Duration, Instant};
+
+        let root = temp_dir("locked");
+        let install = root.join("install");
+        write_components(&install, "old");
+
+        // FILE_SHARE_READ is how Windows holds a running image: readable by
+        // anyone, writable by no one. Electron's children keep the executable
+        // open like this for a moment after the main process is gone.
+        let held = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(install.join("EvoHime.exe"))
+            .unwrap();
+
+        let started = Instant::now();
+        let error =
+            super::wait_until_writable(&install, Duration::from_millis(600)).unwrap_err();
+
+        assert!(started.elapsed() >= Duration::from_millis(500));
+        assert!(error.to_string().contains("still in use"), "{error}");
+        assert_eq!(
+            fs::read_to_string(install.join("EvoHime.exe")).unwrap(),
+            "old:EvoHime.exe"
+        );
+
+        // Once the handle is gone the same check passes immediately.
+        drop(held);
+        super::wait_until_writable(&install, Duration::from_millis(600)).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn waiting_ignores_components_a_fresh_installation_has_not_written_yet() {
+        let root = temp_dir("writable");
+        write_components(&root, "old");
+        fs::remove_file(root.join("evohime.manifest.json")).unwrap();
+
+        super::wait_until_writable(&root, std::time::Duration::from_millis(100)).unwrap();
+
         fs::remove_dir_all(root).unwrap();
     }
 
