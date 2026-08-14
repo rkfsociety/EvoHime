@@ -29,7 +29,9 @@ foreach ($required in @(
     'publish-installer',
     'RELEASE_TAG: installer',
     'installer/release-notes.md',
-    '--clobber'
+    '--clobber',
+    'Detect touched areas',
+    'needs.changes.outputs'
 )) {
     if ($workflow -notmatch [regex]::Escape($required)) {
         throw "GitHub workflow is missing required entry: $required"
@@ -46,6 +48,20 @@ if ($workflow -match 'gh release create "\$env:RELEASE_TAG"?\s+"?installer-outpu
 }
 if ($workflow -match [regex]::Escape('gh release delete')) {
     throw 'The workflow must not delete releases.'
+}
+
+# Тяжёлые job включаются по затронутым путям, но сам workflow обязан стартовать
+# на каждый коммит: клиент обновляется только на коммит с зелёными проверками, а
+# у коммита без прогона проверок нет вообще — он остался бы непроверенным
+# навсегда. Пропущенный job, в отличие от отсутствующего прогона, засчитывается.
+if ($workflow -match '(?m)^\s*paths(-ignore)?:') {
+    throw 'Workflow triggers must not filter by path.'
+}
+foreach ($job in @('rust-native:', 'electron-shell:', 'windows-check:', 'build-native:')) {
+    $section = $workflow.Substring($workflow.IndexOf($job))
+    if ($section.Substring(0, [Math]::Min(400, $section.Length)) -notmatch 'needs\.changes\.outputs') {
+        throw "Job must be gated by the change filter: $job"
+    }
 }
 
 if ($workflow -match "tags: \['v\*'\]") {
@@ -66,8 +82,12 @@ foreach ($forbidden in @(
     }
 }
 
-if ($workflow -notmatch 'needs: \[rust-native, windows-check\]') {
+if ($workflow -notmatch 'needs: \[changes, rust-native, windows-check\]') {
     throw 'Native package build must depend on all CI checks.'
+}
+# Упавшая проверка обязана остановить сборку пакета, а пропущенная — нет.
+if ($workflow -notmatch [regex]::Escape("!contains(needs.*.result, 'failure')")) {
+    throw 'Native package build must stop on a failed check.'
 }
 
 $buildIndex = $workflow.IndexOf('Build native package after CI checks')

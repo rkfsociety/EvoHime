@@ -17,7 +17,75 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Что именно затронул коммит.
+  #
+  # Отбор делается здесь, а не через paths-ignore: клиент обновляется только на
+  # коммит с зелёными проверками, а у коммита без единого прогона проверок нет
+  # вообще — он навсегда остался бы «непроверенным». Пропущенный job, в отличие
+  # от отсутствующего прогона, числится пройденным, поэтому workflow стартует
+  # всегда, а тяжёлые job включаются по затронутым путям.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      electron: ${{ steps.filter.outputs.electron }}
+      windows: ${{ steps.filter.outputs.windows }}
+      native: ${{ steps.filter.outputs.native }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Detect touched areas
+        id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Ручной запуск и всё, что не push, проверяются целиком.
+          if [ "${{ github.event_name }}" != 'push' ]; then
+            files='ALL'
+          else
+            before='${{ github.event.before }}'
+            if [ -z "$before" ] || [ "$before" = '0000000000000000000000000000000000000000' ] \
+               || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
+              # Первый или force-push: базы для сравнения нет, проверяем всё.
+              files='ALL'
+            else
+              files=$(git diff --name-only "$before" '${{ github.sha }}')
+            fi
+          fi
+          echo "changed files:"; echo "$files"
+
+          matches() {
+            if [ "$files" = 'ALL' ]; then
+              return 0
+            fi
+            echo "$files" | grep -Eq "$1"
+          }
+
+          rust=false
+          electron=false
+          tooling=false
+          winui=false
+          if matches '^(crates/|Cargo\.(toml|lock)$)'; then rust=true; fi
+          if matches '^(desktop/evohime-electron/|crates/desktop-ipc/proto/)'; then electron=true; fi
+          if matches '^(scripts/|installer/|\.github/workflows/)'; then tooling=true; fi
+          if matches '^desktop/EvoHime\.'; then winui=true; fi
+
+          windows=false
+          native=false
+          if [ "$tooling" = true ] || [ "$winui" = true ]; then windows=true; fi
+          if [ "$rust" = true ] || [ "$electron" = true ] || [ "$tooling" = true ]; then native=true; fi
+
+          {
+            echo "rust=$rust"
+            echo "electron=$electron"
+            echo "windows=$windows"
+            echo "native=$native"
+          } >> "$GITHUB_OUTPUT"
+
   rust-native:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || needs.changes.outputs.electron == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -30,6 +98,8 @@ jobs:
         run: cargo check --locked -p evohime-supervisor -p evohime-updater
 
   electron-shell:
+    needs: changes
+    if: needs.changes.outputs.electron == 'true' || needs.changes.outputs.rust == 'true'
     runs-on: windows-latest
     defaults:
       run:
@@ -63,6 +133,8 @@ jobs:
         run: npm run package
 
   windows-check:
+    needs: changes
+    if: needs.changes.outputs.windows == 'true' || needs.changes.outputs.native == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -108,7 +180,13 @@ jobs:
           if-no-files-found: ignore
 
   build-native:
-    needs: [rust-native, windows-check]
+    needs: [changes, rust-native, windows-check]
+    # Пропущенная зависимость не должна пропускать этот job, а упавшая — должна
+    # его остановить: needs.* даёт skipped, поэтому условие пишется явно.
+    if: >-
+      !cancelled()
+      && !contains(needs.*.result, 'failure')
+      && needs.changes.outputs.native == 'true'
     runs-on: windows-latest
     permissions:
       contents: read
@@ -241,8 +319,8 @@ jobs:
   # новых релизов и версионных тегов не появляется. Права на запись есть только
   # у этого job и только при ручном запуске.
   publish-installer:
-    if: github.event_name == 'workflow_dispatch'
     needs: build-native
+    if: github.event_name == 'workflow_dispatch' && needs.build-native.result == 'success'
     runs-on: windows-latest
     permissions:
       contents: write
