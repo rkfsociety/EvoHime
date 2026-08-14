@@ -330,10 +330,13 @@ jobs:
 
   # Один постоянный релиз с фиксированным тегом: файл в нём перезаписывается,
   # новых релизов и версионных тегов не появляется. Права на запись есть только
-  # у этого job и только при ручном запуске.
+  # у этого job после успешной сборки из main или ручного запуска workflow.
   publish-installer:
     needs: build-native
-    if: github.event_name == 'workflow_dispatch' && needs.build-native.result == 'success'
+    if: >-
+      needs.build-native.result == 'success' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main'))
     runs-on: windows-latest
     permissions:
       contents: write

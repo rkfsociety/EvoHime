@@ -43,9 +43,13 @@ foreach ($required in @(
 }
 
 # Установщик живёт в одном постоянном релизе: файл перезаписывается, а тег
-# фиксирован. Публикация возможна только по ручному запуску.
-if ($workflow -notmatch [regex]::Escape("if: github.event_name == 'workflow_dispatch'")) {
-    throw 'Installer publication must stay manual.'
+# фиксирован. Публикация возможна после успешного push в main или по ручному
+# запуску workflow.
+if ($workflow -notmatch [regex]::Escape("github.event_name == 'workflow_dispatch'")) {
+    throw 'Installer publication must remain available for manual workflow runs.'
+}
+if ($workflow -notmatch [regex]::Escape("github.event_name == 'push' && github.ref == 'refs/heads/main'")) {
+    throw 'Installer publication must run for successful pushes to main.'
 }
 if ($workflow -match 'gh release create "\$env:RELEASE_TAG"?\s+"?installer-output') {
     throw 'The installer must be uploaded to the existing release, not published as a new one.'
