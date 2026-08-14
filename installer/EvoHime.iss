@@ -75,15 +75,19 @@ begin
   else
     Enabled := 'false';
 
-  SetArrayLength(Lines, 8);
+  SetArrayLength(Lines, 10);
   Lines[0] := '{';
   Lines[1] := '  "version": 1,';
   Lines[2] := '  "enabled": ' + Enabled + ',';
   Lines[3] := '  "repositoryUrl": "{#UpdateRepository}",';
   Lines[4] := '  "branch": "{#UpdateBranch}",';
   Lines[5] := '  "launchPolicy": "build",';
-  Lines[6] := '  "checkIntervalMinutes": 30';
-  Lines[7] := '}';
+  Lines[6] := '  "checkIntervalMinutes": 30,';
+  { Пересборка идёт на машине пользователя, поэтому красный коммит }
+  { собирать нельзя: клиент ждёт зелёной сборки.                   }
+  Lines[7] := '  "requireGreenCommit": true,';
+  Lines[8] := '  "greenCommitDepth": 10';
+  Lines[9] := '}';
   SaveStringsToUTF8File(Directory + '\update.json', Lines, False);
 end;
 

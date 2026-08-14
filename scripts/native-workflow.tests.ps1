@@ -82,7 +82,7 @@ if ($installer -match '\{autoprograms\}') {
 
 # Обновление идёт из исходников: установщик обязан оставить конфигурацию,
 # по которой клиент знает репозиторий, ветку и режим запуска.
-foreach ($required in @('update.json', 'repositoryUrl', 'launchPolicy', 'autoupdate')) {
+foreach ($required in @('update.json', 'repositoryUrl', 'launchPolicy', 'autoupdate', 'requireGreenCommit')) {
     if ($installer -notmatch [regex]::Escape($required)) {
         throw "The installer must configure source updates: $required"
     }

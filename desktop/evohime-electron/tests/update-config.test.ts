@@ -29,6 +29,8 @@ describe('update config', () => {
     expect(config.repositoryUrl).toBe(DEFAULT_REPOSITORY_URL)
     expect(config.branch).toBe(DEFAULT_BRANCH)
     expect(config.launchPolicy).toBe('build')
+    expect(config.requireGreenCommit).toBe(true)
+    expect(config.greenCommitDepth).toBe(10)
     expect(config.sourceDirectory).toBe('C:\\data\\EvoHime\\source')
     expect(config.stagingDirectory).toBe('C:\\data\\EvoHime\\update-staging')
     expect(config.installDirectory).toBe('C:\\Programs\\EvoHime')
@@ -73,17 +75,23 @@ describe('update config', () => {
     // busy loop.
     expect(load({ checkIntervalMinutes: 0 }).checkIntervalMs).toBe(5 * 60_000)
     expect(load({ checkIntervalMinutes: 10_000 }).checkIntervalMs).toBe(24 * 60 * 60_000)
+
+    // The same for how much history one check may walk through.
+    expect(load({ greenCommitDepth: 0 }).greenCommitDepth).toBe(1)
+    expect(load({ greenCommitDepth: 5_000 }).greenCommitDepth).toBe(30)
   })
 
   it('lets the environment override the source and install locations', () => {
     const config = load(undefined, {
       EVOHIME_UPDATE_ENABLED: '0',
+      EVOHIME_UPDATE_REQUIRE_GREEN: '0',
       EVOHIME_UPDATE_BRANCH: 'work',
       EVOHIME_UPDATE_SOURCE_DIR: 'D:\\src\\EvoHime',
       EVOHIME_UPDATE_INSTALL_DIR: 'relative-is-ignored'
     })
 
     expect(config.enabled).toBe(false)
+    expect(config.requireGreenCommit).toBe(false)
     expect(config.branch).toBe('work')
     expect(config.sourceDirectory).toBe('D:\\src\\EvoHime')
     expect(config.installDirectory).toBe('C:\\Programs\\EvoHime')

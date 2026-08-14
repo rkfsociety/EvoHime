@@ -30,6 +30,14 @@ export interface UpdateConfig {
   readonly branch: string
   readonly launchPolicy: LaunchPolicy
   readonly checkIntervalMs: number
+  /**
+   * Only move to a commit whose CI checks are green. The rebuild happens on the
+   * user's machine, so installing a commit that failed CI would compile a known
+   * broken tree locally.
+   */
+  readonly requireGreenCommit: boolean
+  /** How far back to look for a green commit while CI runs on the tip. */
+  readonly greenCommitDepth: number
   /** Git checkout the rebuild runs in. */
   readonly sourceDirectory: string
   /** Rebuilt package waiting to be swapped in. */
@@ -42,6 +50,7 @@ export interface UpdateConfig {
 
 const MIN_CHECK_INTERVAL_MS = 5 * 60_000
 const DEFAULT_CHECK_INTERVAL_MS = 30 * 60_000
+const DEFAULT_GREEN_DEPTH = 10
 const MAX_CHECK_INTERVAL_MS = 24 * 60 * 60_000
 
 export interface ConfigInputs {
@@ -78,6 +87,11 @@ export function loadUpdateConfig(inputs: ConfigInputs): UpdateConfig {
     branch,
     launchPolicy: enabled ? launchPolicy : 'off',
     checkIntervalMs: normalizeInterval(file['checkIntervalMinutes']),
+    requireGreenCommit:
+      normalizeBoolean(environment['EVOHIME_UPDATE_REQUIRE_GREEN']) ??
+      normalizeBoolean(file['requireGreenCommit']) ??
+      true,
+    greenCommitDepth: normalizeDepth(file['greenCommitDepth']),
     sourceDirectory:
       absoluteOr(environment['EVOHIME_UPDATE_SOURCE_DIR'], join(inputs.dataDirectory, 'source')),
     stagingDirectory:
@@ -155,6 +169,12 @@ function normalizeBoolean(value: unknown): boolean | null {
 function normalizeInterval(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_CHECK_INTERVAL_MS
   return Math.min(MAX_CHECK_INTERVAL_MS, Math.max(MIN_CHECK_INTERVAL_MS, Math.round(value) * 60_000))
+}
+
+/** Bounded so a config file cannot turn one check into a hundred API calls. */
+function normalizeDepth(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_GREEN_DEPTH
+  return Math.min(30, Math.max(1, Math.round(value)))
 }
 
 function absoluteOr(value: unknown, fallback: string): string {

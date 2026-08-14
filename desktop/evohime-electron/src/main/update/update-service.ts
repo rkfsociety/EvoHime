@@ -14,6 +14,7 @@ import {
 import { redactError } from '../diagnostics/redact'
 import type { BuildLogWriter } from './build-log'
 import { buildStagedPackage, clearDerivedState } from './builder'
+import { githubApiBase, selectGreenCommit } from './commit-status'
 import { readBuildMarker, type UpdateConfig } from './config'
 import { readRemoteHead, syncCheckout } from './source-checkout'
 import { detectToolchain, ensureToolchain, toolPath, type ToolchainReport } from './toolchain'
@@ -45,6 +46,7 @@ export interface UpdateServiceDeps {
   readonly detect?: typeof detectToolchain
   readonly ensure?: typeof ensureToolchain
   readonly remoteHead?: typeof readRemoteHead
+  readonly selectGreen?: typeof selectGreenCommit
   readonly sync?: typeof syncCheckout
   readonly build?: typeof buildStagedPackage
   readonly reset?: typeof clearDerivedState
@@ -136,20 +138,81 @@ export class UpdateService {
           checkedAtMs: this.time()
         })
       }
-      const remoteCommit = await (this.deps.remoteHead ?? readRemoteHead)(
+      const tip = await (this.deps.remoteHead ?? readRemoteHead)(
         { directory: config.sourceDirectory, repositoryUrl: config.repositoryUrl, branch: config.branch },
         { git }
       )
-      const upToDate = installedCommit !== null && installedCommit === remoteCommit
-      this.deps.log('info', 'update.checked', { upToDate })
+      const candidate = await this.greenCandidate(tip)
+      if (!candidate.commit) {
+        this.deps.log('info', 'update.checked', { green: false })
+        return this.patch({
+          phase: 'up-to-date',
+          message: candidate.message,
+          remoteCommit: null,
+          checkedAtMs: this.time()
+        })
+      }
+
+      const upToDate = installedCommit !== null && installedCommit === candidate.commit
+      this.deps.log('info', 'update.checked', { upToDate, green: true })
       return this.patch({
         phase: upToDate ? 'up-to-date' : 'available',
-        message: upToDate ? 'Установлена последняя версия.' : 'Доступно обновление.',
-        remoteCommit,
+        message: upToDate ? 'Установлена последняя версия.' : candidate.message,
+        remoteCommit: candidate.commit,
         checkedAtMs: this.time()
       })
     } catch (error) {
       return this.fail('Не удалось проверить обновления', error)
+    }
+  }
+
+  /**
+   * Commit the client is allowed to move to.
+   *
+   * With `requireGreenCommit` the branch tip is not enough: the rebuild happens
+   * on the user's machine, so a commit that failed CI would be compiled and
+   * installed locally. While checks run on the tip, the newest already-green
+   * commit is taken instead, so a push does not stall the client for the length
+   * of a CI run. A repository whose checks cannot be read is never assumed
+   * green — the client simply stays where it is.
+   */
+  private async greenCandidate(
+    tip: string
+  ): Promise<{ readonly commit: string | null; readonly message: string }> {
+    const { config } = this.deps
+    if (!config.requireGreenCommit) {
+      return { commit: tip, message: 'Доступно обновление.' }
+    }
+
+    const apiBase = githubApiBase(config.repositoryUrl)
+    if (!apiBase) {
+      this.deps.log('warn', 'update.checks_unavailable', {})
+      return {
+        commit: null,
+        message: 'Проверки коммитов недоступны для этого репозитория — обновление пропущено.'
+      }
+    }
+
+    const selected = await (this.deps.selectGreen ?? selectGreenCommit)(
+      apiBase,
+      config.branch,
+      config.greenCommitDepth
+    )
+    if (!selected.commit) {
+      return {
+        commit: null,
+        message:
+          selected.tipState === 'pending'
+            ? 'Свежий коммит ещё проверяется — обновлюсь, когда сборка станет зелёной.'
+            : 'Свежие коммиты не прошли проверки — обновление отложено.'
+      }
+    }
+    return {
+      commit: selected.commit,
+      message:
+        selected.commit === tip
+          ? 'Доступно обновление.'
+          : 'Доступно обновление до последнего зелёного коммита.'
     }
   }
 

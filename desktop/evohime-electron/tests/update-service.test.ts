@@ -91,6 +91,8 @@ function harness(overrides: Partial<UpdateServiceDeps> = {}, installedCommit: st
       error: null
     }),
     remoteHead: async () => REMOTE,
+    // The default branch tip is green; tests that care override this.
+    selectGreen: async () => ({ commit: REMOTE, tipState: 'success' as const }),
     sync: async () => REMOTE,
     // Timers never fire on their own in tests.
     setTimer: () => ({ cancel: () => {} }),
@@ -110,7 +112,10 @@ function harness(overrides: Partial<UpdateServiceDeps> = {}, installedCommit: st
 
 describe('update check', () => {
   it('reports an up-to-date installation without touching the sources', async () => {
-    const { service, build } = harness({ remoteHead: async () => INSTALLED })
+    const { service, build } = harness({
+      remoteHead: async () => INSTALLED,
+      selectGreen: async () => ({ commit: INSTALLED, tipState: 'success' })
+    })
 
     const status = await service.check()
 
@@ -399,5 +404,100 @@ describe('build log', () => {
     expect(lines[0]).toContain(REMOTE)
     expect(lines).toContain('Compiling evohime-core')
     expect(lines).toContain('Finished release profile')
+  })
+})
+
+describe('green commits only', () => {
+  it('waits instead of rebuilding a commit whose checks are still running', async () => {
+    const test = harness({
+      selectGreen: async () => ({ commit: null, tipState: 'pending' })
+    })
+
+    const status = await test.service.check()
+
+    expect(status.phase).toBe('up-to-date')
+    expect(status.remoteCommit).toBeNull()
+    expect(status.message).toContain('проверяется')
+    await test.service.prepare()
+    expect(test.build).not.toHaveBeenCalled()
+  })
+
+  it('never installs a commit that failed its checks', async () => {
+    const test = harness({
+      selectGreen: async () => ({ commit: null, tipState: 'failure' })
+    })
+
+    const outcome = await test.service.runLaunchGate()
+
+    expect(outcome).toBe('continue')
+    expect(test.build).not.toHaveBeenCalled()
+    expect(test.quit).not.toHaveBeenCalled()
+    expect(test.service.status.message).toContain('не прошли проверки')
+  })
+
+  it('takes the newest green commit while the tip is still building', async () => {
+    const green = 'c'.repeat(40)
+    const test = harness({
+      // The tip (REMOTE) is pending, the commit before it is already green.
+      selectGreen: async () => ({ commit: green, tipState: 'pending' })
+    })
+
+    const status = await test.service.check()
+
+    expect(status.phase).toBe('available')
+    expect(status.remoteCommit).toBe(green)
+    expect(status.message).toContain('зелёного коммита')
+  })
+
+  it('refuses to guess when the checks cannot be read at all', async () => {
+    const { config } = harness()
+    const statuses: UpdateStatus[] = []
+    const build = vi.fn()
+    const service = new UpdateService({
+      // A non-GitHub remote has no checks API the client could trust.
+      config: { ...config, repositoryUrl: 'https://git.example.invalid/evo.git' },
+      emit: (status) => statuses.push(status),
+      log: () => {},
+      quit: () => {},
+      build: build as never,
+      detect: async () => ({
+        complete: true,
+        pathEntries: [],
+        tools: [{ id: 'git', label: 'Git', available: true, path: 'git' }]
+      }),
+      remoteHead: async () => REMOTE,
+      setTimer: () => ({ cancel: () => {} })
+    })
+
+    const status = await service.check()
+
+    expect(status.phase).toBe('up-to-date')
+    expect(status.remoteCommit).toBeNull()
+    expect(status.message).toContain('недоступны')
+  })
+
+  it('follows the branch tip when the check requirement is switched off', async () => {
+    const { config } = harness()
+    const service = new UpdateService({
+      config: { ...config, requireGreenCommit: false },
+      emit: () => {},
+      log: () => {},
+      quit: () => {},
+      detect: async () => ({
+        complete: true,
+        pathEntries: [],
+        tools: [{ id: 'git', label: 'Git', available: true, path: 'git' }]
+      }),
+      remoteHead: async () => REMOTE,
+      selectGreen: async () => {
+        throw new Error('checks must not be consulted')
+      },
+      setTimer: () => ({ cancel: () => {} })
+    })
+
+    const status = await service.check()
+
+    expect(status.phase).toBe('available')
+    expect(status.remoteCommit).toBe(REMOTE)
   })
 })
