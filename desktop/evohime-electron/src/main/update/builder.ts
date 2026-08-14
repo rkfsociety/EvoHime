@@ -130,8 +130,7 @@ export async function buildStagedPackage(
         '--dir',
         '--config',
         'electron-builder.yml',
-        '--config.directories.output',
-        outputRoot
+        `--config.directories.output=${outputRoot}`
       ],
       electronRoot,
       NPM_TIMEOUT_MS
