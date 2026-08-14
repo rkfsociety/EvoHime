@@ -14,7 +14,7 @@ import {
 import { redactError } from '../diagnostics/redact'
 import type { BuildLogWriter } from './build-log'
 import { buildStagedPackage, clearDerivedState } from './builder'
-import { githubApiBase, selectGreenCommit } from './commit-status'
+import { githubApiBase, selectGreenCommit, type CommitCheckState } from './commit-status'
 import { readBuildMarker, type UpdateConfig } from './config'
 import { readRemoteHead, syncCheckout } from './source-checkout'
 import { detectToolchain, ensureToolchain, toolPath, type ToolchainReport } from './toolchain'
@@ -199,13 +199,7 @@ export class UpdateService {
       config.greenCommitDepth
     )
     if (!selected.commit) {
-      return {
-        commit: null,
-        message:
-          selected.tipState === 'pending'
-            ? 'Свежий коммит ещё проверяется — обновлюсь, когда сборка станет зелёной.'
-            : 'Свежие коммиты не прошли проверки — обновление отложено.'
-      }
+      return { commit: null, message: waitingMessage(selected.tipState) }
     }
     return {
       commit: selected.commit,
@@ -489,6 +483,20 @@ export class UpdateService {
 
   private time(): number {
     return (this.deps.now ?? Date.now)()
+  }
+}
+
+/** Says why nothing is being installed, without claiming more than is known. */
+function waitingMessage(tipState: CommitCheckState): string {
+  switch (tipState) {
+    case 'pending':
+      return 'Свежий коммит ещё проверяется — обновлюсь, когда сборка станет зелёной.'
+    case 'failure':
+      return 'Свежие коммиты не прошли проверки — обновление отложено.'
+    default:
+      // A cancelled or missing run is not a failure: the verdict simply never
+      // arrived, and an unverified commit is not installed.
+      return 'Проверки свежих коммитов не завершились — обновление отложено.'
   }
 }
 

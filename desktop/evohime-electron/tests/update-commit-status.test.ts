@@ -59,14 +59,24 @@ describe('commit verdict', () => {
     await expect(readCommitState(API, TIP, { fetch })).resolves.toBe('pending')
   })
 
-  it('is red when a check failed, cancelled or timed out', async () => {
-    for (const conclusion of ['failure', 'cancelled', 'timed_out']) {
+  it('is red when a check failed or timed out', async () => {
+    for (const conclusion of ['failure', 'timed_out']) {
       const fetch = respond({
         'check-runs': { check_runs: [run('completed', 'success'), run('completed', conclusion)] }
       })
 
       await expect(readCommitState(API, TIP, { fetch })).resolves.toBe('failure')
     }
+  })
+
+  it('treats a cancelled run as no verdict rather than a failure', async () => {
+    // A push that supersedes a running check cancels it. That commit was never
+    // verified, so it is not installed — but calling it broken would be a lie.
+    const fetch = respond({
+      'check-runs': { check_runs: [run('completed', 'success'), run('completed', 'cancelled')] }
+    })
+
+    await expect(readCommitState(API, TIP, { fetch })).resolves.toBe('unknown')
   })
 
   it('falls back to the older commit-status API when no checks ran', async () => {

@@ -501,3 +501,17 @@ describe('green commits only', () => {
     expect(status.remoteCommit).toBe(REMOTE)
   })
 })
+
+describe('inconclusive checks', () => {
+  it('does not call a cancelled run a failure', async () => {
+    const test = harness({
+      selectGreen: async () => ({ commit: null, tipState: 'unknown' })
+    })
+
+    const status = await test.service.check()
+
+    expect(status.phase).toBe('up-to-date')
+    expect(status.message).toContain('не завершились')
+    expect(status.message).not.toContain('не прошли')
+  })
+})

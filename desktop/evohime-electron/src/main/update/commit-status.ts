@@ -21,6 +21,14 @@ const MAX_RESPONSE_ITEMS = 100
 /** Conclusions that do not make a commit red — a skipped job is not a failure. */
 const PASSING_CONCLUSIONS = new Set(['success', 'skipped', 'neutral'])
 
+/**
+ * A run that was cancelled never delivered a verdict — usually because a newer
+ * push superseded it. That is not a failure, but it is not proof of health
+ * either, so such a commit is `unknown`: never installed, and not reported to
+ * the user as broken.
+ */
+const INCONCLUSIVE_CONCLUSIONS = new Set(['cancelled', 'stale', 'action_required'])
+
 export interface CommitStatusDeps {
   readonly fetch?: typeof globalThis.fetch
 }
@@ -63,9 +71,11 @@ export async function readCommitState(
     return summarize(
       checkRuns.map((run) => {
         const record = asRecord(run)
+        const conclusion = String(record['conclusion'] ?? '')
         return {
           finished: record['status'] === 'completed',
-          passed: PASSING_CONCLUSIONS.has(String(record['conclusion'] ?? ''))
+          passed: PASSING_CONCLUSIONS.has(conclusion),
+          inconclusive: INCONCLUSIVE_CONCLUSIONS.has(conclusion)
         }
       })
     )
@@ -148,9 +158,14 @@ async function getJson(url: string, deps: CommitStatusDeps): Promise<unknown> {
   return response.json()
 }
 
-function summarize(checks: readonly { finished: boolean; passed: boolean }[]): CommitCheckState {
-  if (checks.some((check) => check.finished && !check.passed)) return 'failure'
+function summarize(
+  checks: readonly { finished: boolean; passed: boolean; inconclusive: boolean }[]
+): CommitCheckState {
+  if (checks.some((check) => check.finished && !check.passed && !check.inconclusive)) {
+    return 'failure'
+  }
   if (checks.some((check) => !check.finished)) return 'pending'
+  if (checks.some((check) => check.inconclusive)) return 'unknown'
   return 'success'
 }
 
