@@ -21,41 +21,56 @@ hash через versioned Core event/API.
 
 ## Содержание
 
-- Ввести Core-owned `ContextBudget` с уровнями `target`, `soft_limit` и
-  `hard_limit` для system, user, memory, tools, history, scratchpad и output.
-  Ни один model call не отправляется после `hard_limit`.
-- Минимально обязательными считать safety/system policy, approval и permission
-  semantics, текущий user prompt, активное состояние tool-call и cancellation
-  context. Их budget резервируется до обычного pruning; если профиль модели не
-  позволяет вместить обязательный минимум и резервы, Core завершает вызов
+- Ввести Core-owned `ContextBudget` с уровнями `target_tokens`, `soft_limit_tokens` и
+  `hard_limit_tokens` для system, user, memory, tools, history, scratchpad и
+  output. Ни один model call не отправляется после `hard_limit_tokens`.
+- Минимальный обязательный набор вычислять детерминированно из текущего
+  состояния Core: всегда включать safety/system policy и текущий user prompt;
+  добавлять approval/permission semantics при наличии операции, активное
+  состояние незавершённого tool-call и cancellation context при наличии этих
+  состояний. Набор и его причины фиксировать в ledger до обычного pruning.
+  Если профиль модели не позволяет вместить обязательный минимум и резервы,
+  Core завершает вызов
   bounded `BudgetUnavailable`, а не нарушает hard limit.
 - Ввести versioned `ModelContextProfile`, выбираемый по provider/model. Профиль
   обязан содержать `max_context_tokens`, `target_tokens`, `soft_limit_tokens`,
   `hard_limit_tokens`, `tool_schema_reserve`, `tool_call_reserve`,
   `final_answer_reserve`, `streaming_reserve` и `retry_reserve`. Базовый
-  fallback-профиль: `target=60%`, `soft_limit=75%`, `hard_limit=85%` от
+  fallback-профиль: `target_tokens=60%`, `soft_limit_tokens=75%`,
+  `hard_limit_tokens=85%` от
   заявленного окна модели, минимум 1024 токена под tool-call и 2048 под
   final answer; значения проверяются на совместимость с обязательным минимумом,
-  неизвестная модель не может обойти эти ограничения.
-- `target` расходуется на контекст, а резервы считаются отдельно и не могут
+  а сумма обязательного минимума и всех резервов не может превышать
+  `hard_limit_tokens`. Неизвестная модель использует fallback-профиль и не
+  может обойти эти ограничения.
+- `target_tokens` расходуется на контекст, а резервы считаются отдельно и не могут
   быть заняты history или schemas. Профиль и фактическое распределение
   сохраняются в ledger; provider usage после ответа обновляет диагностику.
+- Финальная проверка выполняется после selection, compression и fallback:
+  `mandatory_tokens + selected_optional_tokens + reserves <= hard_limit_tokens`.
+  Если условие не выполняется, Core повторяет только разрешённые deterministic
+  drops; после исчерпания списка возвращает `BudgetUnavailable` без model call.
 - Зафиксировать model-specific tokenizer/estimator: имя, версию, chat-template,
   tool-schema overhead, метаданные и правило округления. Оценка deterministic и
   versioned, кэшируется для неизменных item. При расхождении с фактическим
   usage Core применяет консервативный over-estimate, помечает событие и
   корректирует профиль, но не расширяет уже начатый запуск.
 - Отказ провайдера по длине контекста считать ошибкой оценки, а не поводом
-  расширить бюджет: Core выполняет ровно один deterministic re-plan с
-  ужесточённым профилем и той же обязательной частью контекста. Повторный отказ
-  завершает вызов через `BudgetUnavailable`; каскад re-plan запрещён.
+  расширить бюджет: Core выполняет ровно один deterministic re-plan с профилем
+  версии `v+1`, где `hard_limit_tokens` уменьшается до `min(provider_window,
+  floor(previous_hard_limit * 0.9))`, а необязательные резервы сокращаются по
+  заранее заданному порядку. Обязательная часть контекста не меняется. Повторный
+  отказ завершает вызов через `BudgetUnavailable`; каскад re-plan запрещён.
 - Ввести `ContextItem` с `id`, `task_id`, `session_id`, `parent_id`, `kind`,
   `source`, `priority`, `trust`, `privacy`, `created_at`, `last_used_at`,
   `ttl`, `retention`, `pinned`, `version`, `tokenizer_version`, `content_hash`,
   `bytes`, `estimated_tokens`, `selected` и `drop_reason`.
 - `content_hash` считается по нормализованному содержимому item и служит
   единым основанием для дедупликации, `drop_reason=duplicate`, conflict
-  detection и дедупликации artifact store.
+  detection и дедупликации artifact store. Нормализация versioned: UTF-8,
+  Unicode NFC, нормализация переводов строк и завершающих пробелов; для
+  структурированных JSON-данных — канонический порядок ключей и фиксированное
+  представление чисел. Версия нормализатора входит в hash input.
 - `pinned` выставляется только пользовательской командой, поднимает эффективный
   priority и выводит item из обычного pruning. Pin не может нарушить
   `hard_limit`, вытеснить минимально обязательный контекст или удержать item с
@@ -63,15 +78,21 @@ hash через versioned Core event/API.
   и с явным `drop_reason`.
 - Зафиксировать справочник `drop_reason`: `over_budget`, `low_priority`,
   `duplicate`, `superseded`, `expired`, `unverified`, `offloaded`,
-  `privacy_restricted`, `invalid_tool_state` и `policy_denied`.
+  `privacy_restricted`, `invalid_tool_state` и `policy_denied`. Статус
+  scratchpad (`draft`, `confirmed`, `recovered`) не является drop reason:
+  `recovered` при сборке получает `drop_reason=unverified` или
+  `drop_reason=over_budget` и пониженный priority.
 - Зафиксировать покрытие `context_ledger_hash`: он считается по ids выбранных
-  item, их порядку в собранном контексте, версиям profile и tokenizer и по
-  применённым compression/pruning-решениям. Одинаковый hash обязан означать
-  одинаковый фактический вход модели; изменение порядка или решения о сжатии
-  меняет hash.
+  item, их порядку в собранном контексте, версиям profile, tokenizer и
+  нормализатора, обязательному набору, списку отброшенных item с причинами,
+  применённым compression/pruning-решениям, fallback-флагу и версии стратегии.
+  Одинаковый hash обязан означать одинаковый фактический вход модели; изменение
+  порядка, drop/fallback-решения или сжатия меняет hash.
 - Не сохранять в diagnostics сырой prompt, тело памяти или raw tool output;
   сохранять только ids, counts, hashes, policy labels, bounded reasons,
-  `compression_ratio`, `offloaded_bytes` и budget counters.
+  `compression_ratio`, `offloaded_bytes`, `budget_utilization` по категориям,
+  `drop_reason` histogram, `recovery_items_isolated`, latency selection /
+  compression / offload и budget counters.
 
 ## Проверки
 

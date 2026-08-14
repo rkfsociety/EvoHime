@@ -18,8 +18,9 @@ Additive-поля read-only `ModelContext` и Core-команды просмот
 ## Содержание
 
 - Расширить read-only `ModelContext` additive-полями: `schema_version`, budget,
-  selected item ids, bounded dropped item ids/reasons, compression summary и
-  tool loadout. Старые Electron/WinUI clients игнорируют неизвестные поля;
+  selected item ids, bounded dropped item ids/reasons, `context_ledger_hash`,
+  compression summary и tool loadout. Старые Electron/WinUI clients игнорируют
+  неизвестные поля;
   добавить compatibility tests для старой и новой схемы без major bump.
 - Добавить команду просмотра scratchpad только через Core и с bounded output.
 - Дать UI действия `summarize now`, `clear task scratchpad`, `forget memory` и
@@ -27,6 +28,8 @@ Additive-поля read-only `ModelContext` и Core-команды просмот
   limit и audit. Каждая команда является mutation и получает ledger entry.
   `forget memory` каскадно удаляет производные summaries, scratchpad links и
   task artifacts, сохраняя redacted audit факт удаления.
+- `summarize now` действует только на текущую task-scoped сборку контекста и
+  не меняет долговременную память без отдельной policy-операции.
 - `pin/unpin item` выставляет флаг `pinned` из 01.1. UI показывает, что pin
   повышает приоритет, но не гарантирует включение в контекст: при нехватке
   бюджета pinned item отбрасывается последним и с явной причиной.
@@ -34,8 +37,10 @@ Additive-поля read-only `ModelContext` и Core-команды просмот
   Memory v1 и их производными; UI не обещает удаление того, что Core ещё не
   умеет отслеживать.
 - Отказ сборки контекста показывать явно: `BudgetUnavailable` доходит до UI как
-  bounded человекочитаемая причина с указанием, какой минимум не поместился, а
-  не как молчаливый обрыв ответа или generic error.
+  bounded локализованная причина с кодом, `required_tokens`,
+  `available_tokens`, profile version и указанием, какой минимум не поместился,
+  а не как молчаливый обрыв ответа или generic error. Сырые prompt и содержимое
+  памяти в причине не передаются.
 - UI показывает человекочитаемые bounded причины и влияние операции, но не
   получает тела памяти, raw tool outputs или неограниченный список ids.
 

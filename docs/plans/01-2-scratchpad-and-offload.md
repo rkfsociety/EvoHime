@@ -24,10 +24,17 @@ Task artifact store и bounded task-scoped scratchpad.
   provenance/policy-проверки результата инструмента, явного пользовательского
   подтверждения или завершённой policy-операции; успешный tool result и
   заметка модели сами по себе не становятся фактом.
+- `status` и `drop_reason` — разные измерения: `draft` не восстанавливается,
+  `confirmed` может попасть в контекст, а `recovered` всегда получает
+  `trust=unverified`, пониженный priority и при selection отображается как
+  `drop_reason=unverified`, если не был явно подтверждён заново. Автоматическое
+  подтверждение выключено по умолчанию; безопасные read-only категории могут
+  включаться отдельной Core policy.
 - После restart восстанавливать в рабочий контекст только `confirmed`. Записи
   `recovered/unverified` изолировать в recovery view, понижать их priority,
-  не использовать как instructions и автоматически удалять по TTL либо после
-  N шагов. Перезапись подтверждённой записи допускается только новой ревизией
+  не использовать как instructions и автоматически удалять по умолчанию через
+  1 час или после 10 шагов (меньшее из условий); значения являются Core policy
+  и могут быть изменены пользователем. Перезапись подтверждённой записи допускается только новой ревизией
   с conflict entry, а не silent override.
 - Scratchpad имеет жёсткий лимит размера в пределах своей категории бюджета.
   При превышении Core автоматически выгружает самые старые `confirmed` записи
@@ -43,11 +50,14 @@ Task artifact store и bounded task-scoped scratchpad.
   ссылку, а не копию. Store имеет bounded квоту на задачу и на диск; вытеснение
   идёт по TTL и последнему обращению, при этом артефакт, на который ссылается
   живой ledger entry или confirmed запись scratchpad, не удаляется молча —
-  ссылка помечается как `expired` с сохранением hash и размера.
-- Внешние tool outputs считать недоверенными данными, явно маркировать их как
-  `data_not_instructions` и проверять на prompt-injection перед извлечением
-  scratchpad. Содержимое tool output не может менять policy, permissions,
-  approval или system instructions.
+  ссылка помечается как `expired` с сохранением hash и размера. После удаления
+  содержимого hash сохраняется как tombstone только для аудита и не считается
+  доступным dedup-hit для нового offload.
+- Внешние tool outputs считать недоверенными данными, помещать в отдельный
+  `data_not_instructions` envelope и проверять на prompt-injection перед
+  извлечением scratchpad. Текст внутри envelope не разбирается как policy,
+  даже если имитирует system-инструкцию; содержимое tool output не может менять
+  policy, permissions, approval или system instructions.
 
 ## Проверки
 

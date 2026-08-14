@@ -24,8 +24,13 @@ original items).
   `expired` — истёк TTL или retention независимо от содержимого.
 - При превышении `soft_limit` запускать отдельный bounded summarizer с
   собственным `summary_budget`, входным лимитом и запретом tool calls/retries.
+  Это Core-вызов того же model gateway с отдельным low-cost profile; сам вызов
+  учитывается в ledger как `kind=summary`, но не может вызвать tools или retry.
   Если summarizer недоступен, превышает свой бюджет или возвращает invalid
   output, применять deterministic fallback без каскадного повторного запуска.
+  Summary принимается только после schema-, estimator- и policy-проверки; при
+  частично испорченном JSON весь результат отклоняется, исходные items не
+  удаляются.
 - Fallback удаляет сначала expired/duplicate/low-priority items, затем самые
   старые tool outputs, сохраняя system/policy/approval/user constraints,
   подтверждённые факты, числа, пути, отрицания и валидные пары tool-call/result.
@@ -34,7 +39,8 @@ original items).
 - Original items остаются source of truth в ledger/artifact store. Summary —
   только projection для текущего model call; сохранять связь
   `summary_id -> source_ids`, tokenizer/profile versions и возможность
-  повторной сборки.
+  повторной сборки. Ledger также хранит версию summarizer, параметры стратегии,
+  `summary_budget`, fallback-флаг и причину fallback.
 - Для system/instructions действует иерархия прав, а не простая recency:
   safety/hard-deny и approval policy > system instructions > явные ограничения
   пользователя > confirmed task decisions/facts > history/tool data >
@@ -48,9 +54,14 @@ original items).
   пользователя.
 - Conflict detection первой версии детерминированный: совпадение ключа/сущности
   плюс расхождение по числам, путям, идентификаторам или отрицанию при разном
-  `content_hash`. Semantic-детекция противоречий добавляется только после
+  `content_hash`. Ключи задаются по kind: для memory/fact — `entity_id` и
+  атрибут, для tool result — `tool_call_id` и поле результата, для decisions —
+  `decision_key`. Semantic-детекция противоречий добавляется только после
   evaluation fixtures и измерения precision/recall; до этого неоднозначные
   случаи помечаются `conflicting` и решаются пользователем, а не эвристикой.
+- Для конфликтов применяется явная политика: `user_confirm` по умолчанию для
+  существенных фактов, `keep_higher_trust` и `keep_newer` разрешены только
+  внутри одного уровня иерархии. Pin не разрешает конфликт автоматически.
 
 ## Проверки
 
@@ -64,6 +75,8 @@ original items).
   tool-call state после compression;
 - недоступный, превысивший бюджет или вернувший invalid output summarizer даёт
   deterministic fallback без каскадного повторного запуска;
+- summary-call попадает в ledger, сохраняет `source_ids`, версию и параметры
+  summarizer; частично некорректный результат не заменяет исходные items;
 - load tests для длинной истории и большого числа tool calls.
 
 ## Критерии готовности
