@@ -8,6 +8,7 @@ import { TaskTimeline } from '../src/renderer/src/TaskTimeline'
 
 const calls: Array<{ command: string; payload: unknown }> = []
 let respond: (command: RendererCommand) => unknown
+let clipboardText = ''
 
 function ok<C extends RendererCommand>(value: unknown): CommandOutcome<C> {
   return { ok: true, value } as CommandOutcome<C>
@@ -21,7 +22,10 @@ function installApi(): void {
       return respond(command)
     }) as EvoHimeApiV1['invoke'],
     subscribe: () => () => {},
-    writeClipboardText: async () => true,
+    writeClipboardText: async (text) => {
+      clipboardText = text
+      return true
+    },
     openExternal: async () => true
   }
   Object.defineProperty(window, 'evohime', { value: Object.freeze({ v1: api }), configurable: true })
@@ -33,6 +37,7 @@ function event(eventType: string, payload: Record<string, unknown>, taskId = 'ta
 
 beforeEach(() => {
   calls.length = 0
+  clipboardText = ''
   // The transcript only shows tasks of the open chat, so the store must
   // report this chat as owning them.
   const chat = {
@@ -144,6 +149,40 @@ describe('task timeline', () => {
     await userEvent.click(screen.getByRole('button', { name: /Изучи проект и расскажи/ }))
 
     expect((screen.getByLabelText('Задача') as HTMLTextAreaElement).value).toMatch(/Изучи проект/)
+  })
+
+  it('shows message time and copies the message through the preload bridge', async () => {
+    const atMs = new Date('2026-08-14T13:26:00.000Z').getTime()
+    const chat = {
+      id: 'chat-1',
+      workspacePath: 'C:\\work\\repo',
+      title: 'Чат',
+      createdMs: atMs,
+      updatedMs: atMs,
+      taskIds: ['task-1'],
+      messages: [{ taskId: 'task-1', prompt: 'Покажи время', atMs }]
+    }
+    respond = (command) => command === 'chat.open' ? ok(chat) : ok([])
+    render(
+      <TaskTimeline
+        connection="connected"
+        events={[]}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+        onOpenGit={() => {}}
+      />
+    )
+
+    expect(await screen.findByText('Покажи время')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Скопировать сообщение' })).toBeTruthy()
+    expect(screen.getByText(/\d{2}:\d{2}/)).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: 'Скопировать сообщение' }))
+    await waitFor(() => expect(clipboardText).toBe('Покажи время'))
+    expect(screen.getByRole('button', { name: 'Сообщение скопировано' })).toBeTruthy()
   })
 
   it('starts a task only through the typed bridge', async () => {

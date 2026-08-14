@@ -50,9 +50,12 @@ export function TaskTimeline({
   const [prompt, setPrompt] = useState('')
   const [taskId, setTaskId] = useState<string | null>(null)
   const [sentPrompt, setSentPrompt] = useState<string | null>(null)
+  const [sentPromptAtMs, setSentPromptAtMs] = useState<number | null>(null)
   const [commandError, setCommandError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
+  const entryTimes = useRef(new Map<string, number>())
 
   useEffect(() => {
     if (!api || chatId === null) {
@@ -121,6 +124,7 @@ export function TaskTimeline({
     }
     setTaskId(nextTaskId)
     setSentPrompt(text)
+    setSentPromptAtMs(Date.now())
     setPrompt('')
     const stored = await api.invoke('chat.appendPrompt', {
       chatId: targetChatId,
@@ -177,11 +181,25 @@ export function TaskTimeline({
             {history.map((message) => (
               <li key={`${message.taskId}-${message.atMs}`} className="message message--user">
                 <div className="message__bubble">{message.prompt}</div>
+                <MessageActions
+                  id={`user-${message.taskId}-${message.atMs}`}
+                  text={message.prompt}
+                  atMs={message.atMs}
+                  copied={copiedMessageId === `user-${message.taskId}-${message.atMs}`}
+                  onCopy={setCopiedMessageId}
+                />
               </li>
             ))}
             {sentPrompt && !history.some((message) => message.prompt === sentPrompt) ? (
-              <li className="message message--user">
+              <li className="message message--user" key={`sent-${sentPromptAtMs ?? 'pending'}`}>
                 <div className="message__bubble">{sentPrompt}</div>
+                <MessageActions
+                  id={`sent-${sentPromptAtMs ?? 'pending'}`}
+                  text={sentPrompt}
+                  atMs={sentPromptAtMs}
+                  copied={copiedMessageId === `sent-${sentPromptAtMs ?? 'pending'}`}
+                  onCopy={setCopiedMessageId}
+                />
               </li>
             ) : null}
 
@@ -201,18 +219,35 @@ export function TaskTimeline({
                 )
               }
               if (entry.kind === 'result') {
+                const messageId = `${entry.kind}-${entry.id}-${index}`
+                const atMs = messageTime(entryTimes, messageId)
                 return (
                   <li
-                    key={`${entry.kind}-${entry.id}-${index}`}
+                    key={messageId}
                     className={`message message--agent${entry.failed ? ' message--error' : ''}`}
                   >
                     <div className="message__bubble"><MarkdownMessage text={entry.text} /></div>
+                    <MessageActions
+                      id={messageId}
+                      text={entry.text}
+                      atMs={atMs}
+                      copied={copiedMessageId === messageId}
+                      onCopy={setCopiedMessageId}
+                    />
                   </li>
                 )
               }
+              const messageId = `${entry.kind}-${entry.id}-${index}`
               return (
-                <li key={`${entry.kind}-${entry.id}-${index}`} className="message message--agent">
+                <li key={messageId} className="message message--agent">
                   <div className="message__bubble"><MarkdownMessage text={entry.text} /></div>
+                  <MessageActions
+                    id={messageId}
+                    text={entry.text}
+                    atMs={messageTime(entryTimes, messageId)}
+                    copied={copiedMessageId === messageId}
+                    onCopy={setCopiedMessageId}
+                  />
                 </li>
               )
             })}
@@ -306,6 +341,51 @@ export function TaskTimeline({
       )}
     </section>
   )
+}
+
+function messageTime(times: React.MutableRefObject<Map<string, number>>, id: string): number {
+  const existing = times.current.get(id)
+  if (existing !== undefined) return existing
+  const now = Date.now()
+  times.current.set(id, now)
+  return now
+}
+
+interface MessageActionsProps {
+  readonly id: string
+  readonly text: string
+  readonly atMs: number | null
+  readonly copied: boolean
+  readonly onCopy: (id: string) => void
+}
+
+function MessageActions({ id, text, atMs, copied, onCopy }: MessageActionsProps): React.JSX.Element {
+  const api = useShellApi()
+  return (
+    <div className="message__actions">
+      <button
+        type="button"
+        className="message__copy"
+        aria-label={copied ? 'Сообщение скопировано' : 'Скопировать сообщение'}
+        title={copied ? 'Скопировано' : 'Скопировать'}
+        onClick={() => {
+          if (!api) return
+          void api.writeClipboardText(text).then((ok) => {
+            if (!ok) return
+            onCopy(id)
+            window.setTimeout(() => onCopy(''), 1400)
+          })
+        }}
+      >
+        {copied ? '✓' : '▣'}
+      </button>
+      {atMs !== null ? <time dateTime={new Date(atMs).toISOString()}>{formatMessageTime(atMs)}</time> : null}
+    </div>
+  )
+}
+
+function formatMessageTime(atMs: number): string {
+  return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(atMs)
 }
 
 function makeTaskId(): string {

@@ -551,6 +551,47 @@ body {
   background: none;
 }
 
+.message__actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 20px;
+  color: var(--fg-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.message:hover .message__actions,
+.message:focus-within .message__actions {
+  opacity: 1;
+}
+
+.message--user .message__actions {
+  margin-right: 4px;
+}
+
+.message__actions time {
+  white-space: nowrap;
+}
+
+.message__copy {
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg-faint);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.message__copy:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
 .markdown-message > :first-child { margin-top: 0; }
 .markdown-message > :last-child { margin-bottom: 0; }
 
