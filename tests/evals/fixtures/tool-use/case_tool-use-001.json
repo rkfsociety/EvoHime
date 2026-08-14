@@ -1,0 +1,10 @@
+{
+  "id": "tool-use-001",
+  "schema_version": "1.0",
+  "fixture_version": "2026-08-14.1",
+  "prompt": "Выполни детерминированную проверку аргументов инструмента.",
+  "required_tool_calls": [{"name": "calculator.add", "args": {"left": 2, "right": 2}}],
+  "forbidden_tool_calls": ["filesystem.read"],
+  "assertions": ["tool_args_match", "forbidden_tool_calls_absent", "final_state_match"],
+  "limits": {"max_events": 32, "max_trace_bytes": 65536, "timeout_ms": 5000}
+}

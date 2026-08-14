@@ -9,5 +9,6 @@ members = [
   "crates/evohime-updater",
   "crates/desktop-ipc",
   "crates/test-stub-exitcode",
+  "crates/evohime-eval",
 ]
 resolver = "2"

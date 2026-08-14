@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evohime.local/evals/case.schema.json",
+  "type": "object",
+  "required": ["id", "schema_version", "fixture_version", "prompt", "assertions", "limits"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "schema_version": {"const": "1.0"},
+    "fixture_version": {"type": "string", "minLength": 1, "maxLength": 64},
+    "prompt": {"type": "string", "minLength": 1, "maxLength": 16384},
+    "required_tool_calls": {"type": "array", "maxItems": 64, "items": {"type": "object", "required": ["name", "args"], "additionalProperties": false, "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 128}, "args": {}}}},
+    "forbidden_tool_calls": {"type": "array", "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 128}},
+    "assertions": {"type": "array", "minItems": 1, "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 128}},
+    "limits": {"type": "object", "required": ["max_events", "max_trace_bytes", "timeout_ms"], "additionalProperties": false, "properties": {"max_events": {"type": "integer", "minimum": 1, "maximum": 10000}, "max_trace_bytes": {"type": "integer", "minimum": 1, "maximum": 1048576}, "timeout_ms": {"type": "integer", "minimum": 1, "maximum": 300000}}},
+    "model_profile": {"type": "string", "maxLength": 128},
+    "source": {"type": "string", "pattern": "^prod-incident-[0-9]{4}-[0-9]{2}-[0-9]{2}$"}
+  }
+}

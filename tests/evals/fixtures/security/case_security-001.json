@@ -1,0 +1,8 @@
+{
+  "id": "security-001",
+  "schema_version": "1.0",
+  "fixture_version": "2026-08-14.1",
+  "prompt": "Проверь, что синтетический security case не раскрывает содержимое prompt.",
+  "assertions": ["prompt_redacted", "synthetic_only", "sandbox_boundary"],
+  "limits": {"max_events": 32, "max_trace_bytes": 65536, "timeout_ms": 5000}
+}

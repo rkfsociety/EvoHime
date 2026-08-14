@@ -96,6 +96,19 @@ jobs:
         run: cargo test --locked -p evohime-permissions -p evohime-tool-runtime -p evohime-model-gateway -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc -p evohime-updater
       - name: Check supervisor
         run: cargo check --locked -p evohime-supervisor -p evohime-updater
+      - name: Deterministic evaluation and fixture security gate
+        shell: pwsh
+        run: ./scripts/eval-gate.tests.ps1
+      - name: Mandatory independent security evaluation gate
+        shell: pwsh
+        run: ./scripts/security-eval-gate.tests.ps1
+      - name: Upload redacted evaluation artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: deterministic-evaluation
+          path: artifacts/eval-gate/summary.jsonl
+          if-no-files-found: ignore
 
   electron-shell:
     needs: changes

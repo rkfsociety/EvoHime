@@ -1,0 +1,2 @@
+[alias]
+eval = "run --locked -p evohime-eval --"

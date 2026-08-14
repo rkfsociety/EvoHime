@@ -1,0 +1,9 @@
+schema_version = "1.0"
+
+[deterministic]
+required_verdict = "pass"
+max_duration_ms = 30000
+
+[real]
+promotion = "nightly-only"
+required_verdict = "pass"

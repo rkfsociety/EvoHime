@@ -47,6 +47,7 @@
 | В каком порядке выполнять ближайшую работу | [`development-plan.md`](development-plan.md) |
 | Долгосрочные направления без пошаговой реализации | [`roadmap.md`](roadmap.md) |
 | Security boundaries и release security gates | [`../SECURITY.md`](../SECURITY.md), [`security/`](security/) |
+| Evaluation catalog, deterministic runner и smoke-gate contract | [`evaluations.md`](evaluations.md), [`../tests/evals/`](../tests/evals/) |
 | Provider-specific configuration | [`providers/`](providers/) |
 | Core crate contracts and implementation notes | соответствующий `crates/*/README.md` |
 
