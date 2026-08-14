@@ -36,9 +36,14 @@ $env:EVOHIME_DATA_DIR = $dataPath
 # Keep the lifecycle assertion independent from network latency and update-gate
 # work that runs before the supervisor is started.
 $env:EVOHIME_UPDATE_ENABLED = '0'
-$shell = $null
+$supervisorProcess = $null
 try {
-    $shell = Start-Process -FilePath $shellPath -WorkingDirectory $resolvedPackage -PassThru
+    # Start the packaged supervisor directly: this smoke test verifies Core
+    # recovery and Job Object ownership, while Electron startup is covered by
+    # electron-acceptance.tests.ps1. Keeping the concerns separate avoids
+    # renderer/UI startup latency masking the supervisor lifecycle assertion.
+    $supervisorProcess = Start-Process -FilePath $supervisorPath `
+        -WorkingDirectory $resolvedPackage -PassThru
     Wait-For { $null -ne (Get-PackageProcesses $corePath) } $TimeoutSeconds 'Core did not start.'
     $firstCore = (Get-PackageProcesses $corePath | Select-Object -First 1).ProcessId
 
@@ -49,14 +54,16 @@ try {
     } $TimeoutSeconds 'Supervisor did not restart Core after a forced Core exit.'
     Write-Output 'fault smoke Core restart: PASS'
 
-    $supervisor = Get-PackageProcesses $supervisorPath | Select-Object -First 1
-    if ($null -eq $supervisor) { throw 'Supervisor did not remain alive after Core restart.' }
-    Stop-Process -Id $supervisor.ProcessId -Force
+    $runningSupervisor = Get-PackageProcesses $supervisorPath | Select-Object -First 1
+    if ($null -eq $runningSupervisor) { throw 'Supervisor did not remain alive after Core restart.' }
+    Stop-Process -Id $runningSupervisor.ProcessId -Force
     Wait-For { $null -eq (Get-PackageProcesses $corePath) } $TimeoutSeconds 'Core remained alive after supervisor termination.'
     Write-Output 'fault smoke supervisor ownership: PASS'
 }
 finally {
-    if ($shell -and -not $shell.HasExited) { Stop-Process -Id $shell.Id -Force -ErrorAction SilentlyContinue }
+    if ($supervisorProcess -and -not $supervisorProcess.HasExited) {
+        Stop-Process -Id $supervisorProcess.Id -Force -ErrorAction SilentlyContinue
+    }
     for ($attempt = 0; $attempt -lt 4; $attempt++) {
         $remaining = @(Get-PackageProcesses $shellPath) + @(Get-PackageProcesses $corePath) + @(Get-PackageProcesses $supervisorPath)
         foreach ($process in $remaining) {
