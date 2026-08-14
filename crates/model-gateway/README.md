@@ -18,6 +18,8 @@ LITEROUTER_MODEL=deepseek:free
 - `ModelGateway::stream_chat_for_route(route, messages)` — named route token stream
 - model route configuration is owned by Core and exposed to the desktop UI through versioned IPC
 - `MODEL_ROUTES_JSON` — optional JSON map for multiple task-scoped routes
+- the model is resolved per call, so the desktop `SelectModelRequest` takes effect without restarting Core; an empty value falls back to the model the route is configured with
+- credentials come from the process environment: the shell hands them to the supervisor that owns Core (see [docs/architecture.md](../../docs/architecture.md)), and `.env` is the developer-only equivalent
 
 ## Status
 

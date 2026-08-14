@@ -75,7 +75,7 @@ npm run package          # распакованный Windows package в release
 Real-Core E2E тесты требуют собранный Core: `cargo build -p evohime-core`
 (или `--release`); без бинарника они помечаются как пропущенные.
 
-Для текущих desktop-задач используй Windows launcher, Rust crates, Electron tests в `desktop/evohime-electron` и Windows packaging scripts. WinUI/IPC tests остаются compatibility suite. Подробные решения завершённой миграции хранятся в памяти проекта; активные планы находятся в `docs/plans/`.
+Для текущих desktop-задач используй Windows launcher, Rust crates, Electron tests в `desktop/evohime-electron` и Windows packaging scripts. WinUI/IPC tests остаются compatibility suite. Подробные решения завершённой миграции хранятся в памяти проекта; активные работы описаны в `docs/development-plan.md`.
 Electron renderer — встроенная часть desktop-приложения, а не web-панель: HTTP server, browser launcher и внешний Node.js runtime не возвращаются в продукт.
 
 Если Rust-сборка останавливается на `prost-build` или другом crate, сначала проверь доступ Cargo к crates.io:
@@ -89,7 +89,9 @@ NuGet и crates.io — независимые источники: успешны
 
 ## IPC
 
-Протокол редактируется в `crates/desktop-ipc/proto/evohime.desktop.proto`. Rust transport и Electron main/preload adapter должны сохранять совместимость major-версии, sequence replay и bounded frame size. Изменение протокола требует обновить обе стороны и compatibility tests; C# suite сохраняется только как временный compatibility oracle.
+Протокол редактируется в `crates/desktop-ipc/proto/evohime.desktop.proto`. Rust transport и Electron main/preload adapter должны сохранять совместимость major-версии, sequence replay и bounded frame size. Изменение протокола требует обновить обе стороны и compatibility tests; C# suite сохраняется только как временный compatibility oracle. Генерируемые TypeScript-типы проверяются `npm run check:protocol`.
+
+Команды `workspace.*`, `chat.*`, `provider.*`, `identity.get` и `repository.get` обслуживает main-процесс: это локальное состояние оболочки, а не права. Всё, что доходит до Core, Core проверяет заново.
 
 Подключение к Core аутентифицируется: supervisor выдаёт launch context (`%LOCALAPPDATA%/EvoHime/runtime/session.json`, owner-only DACL) с именем pipe и session secret, Core выдаёт одноразовый nonce, клиент отвечает `HMAC-SHA256(secret, role | client_id | nonce)`. Роли: `shell` (Electron) и `compatibility-shell` (WinUI). Общий known-answer вектор proof продублирован в Rust, Electron и C# тестах — менять его можно только во всех трёх сразу.
 
@@ -98,9 +100,10 @@ NuGet и crates.io — независимые источники: успешны
 - SQLite и backup: `%LOCALAPPDATA%\EvoHime` или `EVOHIME_DATA_DIR`;
 - core log: `%LOCALAPPDATA%\EvoHime\logs\core.jsonl`;
 - supervisor log: `%LOCALAPPDATA%\EvoHime\logs\supervisor.jsonl`;
+- локальное состояние оболочки: `%LOCALAPPDATA%\EvoHime\shell\` — `workspaces.json`, `chats.json`, `provider.json`;
 - экспорт событий — JSONL через `LocalDatabase::export_events_jsonl`.
 
-Миграции SQLite выполняются транзакционно; перед изменением схемы создаётся backup. Секреты должны храниться через Windows Credential Manager/DPAPI, а не в исходниках или логах.
+Миграции SQLite выполняются транзакционно; перед изменением схемы создаётся backup. Секреты не попадают в исходники и логи: ключ провайдера шифруется через Electron `safeStorage` (DPAPI) в `shell\provider.json` и доходит до Core только окружением supervisor; сохранение ключа перезапускает Core. Для локальной разработки используется `.env` рядом с `start-dev.ps1` по allow-list из `.env.example`.
 
 ## Правила разработки
 
@@ -121,4 +124,5 @@ NuGet и crates.io — независимые источники: успешны
 - `docs/development-plan.md` — актуальный implementation plan;
 - `docs/roadmap.md` — долгосрочные направления без деталей реализации;
 - `docs/features/`, `docs/providers/`, `docs/security/` — справочные разделы;
-- `docs/plans/` — рабочие планы и результаты их ревью;
+
+Отдельного каталога `docs/plans/` больше нет: незавершённые работы держатся в `development-plan.md` и `roadmap.md`.

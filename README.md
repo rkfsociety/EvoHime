@@ -7,8 +7,9 @@
 ## Требования
 
 - Windows 10 2004 или Windows 11, x64;
-- .NET SDK 10;
-- Rust toolchain с поддержкой `x86_64-pc-windows-msvc`.
+- Rust toolchain с поддержкой `x86_64-pc-windows-msvc`;
+- Node.js 22 LTS — только для разработки Electron shell; в продукт внешний Node.js не входит;
+- .NET SDK 10 — только для compatibility suite WinUI/IPC.
 
 ## Запуск разработки
 
@@ -32,6 +33,18 @@
 Обычные изменения в `main` проходят CI без публикации релиза. Новый релиз создаётся автоматически только после намеренного изменения версии desktop-пакета; тег и Release создаются самим workflow.
 Еженедельная retention-задача оставляет только текущий стабильный релиз `vX.Y.Z` и удаляет все предыдущие Releases вместе с соответствующими version-tags; вручную это можно запустить через `workflow_dispatch`.
 
+## Ключ провайдера
+
+В приложении ключ вводится в настройках: шестерёнка рядом с аккаунтом внизу левой панели. Ключ шифруется средствами ОС (DPAPI через Electron `safeStorage`), хранится в `%LOCALAPPDATA%\EvoHime\shell\provider.json` и передаётся Core через окружение supervisor; сохранение ключа перезапускает Core. Renderer видит только признак «ключ задан».
+
+Для локальной разработки достаточно `.env` рядом с `start-dev.ps1`:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+`start-dev.ps1` читает из `.env` только перечисленные в `.env.example` имена и передаёт их дочерним процессам. Сам `.env` в репозиторий не попадает и в пакет не копируется.
+
 ## Архитектура
 
 ```text
@@ -40,17 +53,24 @@ EvoHime.exe               Electron main + bundled renderer
 evohime-core.exe ── SQLite + model gateway + tools
         ▲
 evohime-supervisor.exe ── mutex + Job Object + restart + logs
+        │
+evohime-transaction.exe ── backup, commit и rollback обновлений
 ```
 
-Данные и JSONL-логи пользователя хранятся в `%LOCALAPPDATA%\EvoHime`.
+Данные и JSONL-логи пользователя хранятся в `%LOCALAPPDATA%\EvoHime`. Локальное состояние оболочки (список workspace, чаты, настройки провайдера) лежит там же в подкаталоге `shell\`; владельцем задач, инструментов и журнала событий остаётся Core.
 
 ## Проверки
 
 ```powershell
 & (Join-Path $PSHOME 'pwsh.exe') -NoProfile -File scripts\native-package.tests.ps1
-$dotnet = 'C:\Program Files\dotnet\dotnet.exe'
-& $dotnet test desktop\EvoHime.Tests\EvoHime.Tests.csproj -p:Platform=x64
 cargo test -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc
+cd desktop\evohime-electron; npm run typecheck; npm test
 ```
 
-Архитектура находится в [`docs/architecture.md`](docs/architecture.md), фактическое состояние — в [`docs/current-state.md`](docs/current-state.md), ближайший порядок — в [`docs/development-plan.md`](docs/development-plan.md), незавершённые работы — в [`docs/plans/`](docs/plans/).
+Compatibility suite WinUI/IPC (нужен .NET SDK 10):
+
+```powershell
+& 'C:\Program Files\dotnet\dotnet.exe' test desktop\EvoHime.Tests\EvoHime.Tests.csproj -p:Platform=x64
+```
+
+Архитектура находится в [`docs/architecture.md`](docs/architecture.md), фактическое состояние — в [`docs/current-state.md`](docs/current-state.md), ближайший порядок — в [`docs/development-plan.md`](docs/development-plan.md).

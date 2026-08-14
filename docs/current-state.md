@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-13.
+Обновлено: 2026-08-14 (`a403dec`).
 
 ## Продукт
 
@@ -21,29 +21,49 @@ Core и supervisor — внутренние компоненты установ�
 
 ## Готово
 
-- foundation: Core, SQLite, IPC, supervisor, event replay и diagnostics;
-- legacy WinUI workspace picker, persistence, tray, notifications и reconnect;
+### Runtime и foundation
+
+- Core, SQLite, IPC, supervisor, event replay и diagnostics;
 - streamed task timeline, cancellation и approval round-trip;
 - Windows package smoke tests и Windows CI;
-- единый Inno Setup installer с одним desktop shortcut;
-- установленный клиент сам поднимает supervisor и Core;
-- автообнаружение GitHub Release, SHA-256 проверка installer и upgrade smoke в CI;
-- автоматический rollback при ошибке установщика и recovery незавершённой транзакции перед запуском Core;
+- единый Inno Setup installer с одним desktop shortcut; установленный клиент сам поднимает supervisor, а supervisor — Core;
+- автообнаружение GitHub Release, SHA-256 проверка installer, upgrade smoke в CI, автоматический rollback и recovery незавершённой транзакции перед запуском Core;
 - release retention: сохраняется только последний стабильный `vX.Y.Z` release/tag;
 - имя агента «Ева» передаётся в system context Core;
-- Core-owned build policy и её хранение; policy panel работает в Electron shell;
-- durable recovery foundation для длительных запусков и reconciliation.
-- provider secrets хранятся в Credential Manager текущего Windows-пользователя; settings содержат только logical reference, предусмотрены миграция legacy и ручная ротация;
-- Core-first SQLite backup/restore: Online Backup API, WAL checkpoint, DPAPI payload protection, checksum, preview, approval, progress, safety backup, rollback и redacted audit;
+- Core-owned build policy и её хранение;
+- durable recovery foundation для длительных запусков и reconciliation;
+- `run_policy` — неизменяемый snapshot бюджета запуска (итерации, wall clock, tool calls, токены, стоимость); Core проверяет его перед каждым эффектом, renderer может только показать значения;
+- `pulse` в supervisor — честный локальный digest расписаний: dead-letter даёт `Failed`, пропуски и ошибки — `Degraded`, успех не подменяет отказ.
+
+### Безопасность и данные
+
+- Core-first SQLite backup/restore: Online Backup API, WAL checkpoint, DPAPI payload protection, checksum, preview, approval, progress, safety backup, rollback и redacted audit; долгая операция отменяется командой `CancelDatabaseOperation`;
 - filesystem.search исключает hard-default secret/auth paths, не следует symlink/reparse-обходам и не требует POSIX shell;
 - shell blocklist расширен для Windows launcher/LOLBin семейств; recovery timeline различает `RECOVERING`, `BLOCKED`, `WAITING_APPROVAL` и `FAILED`;
-- Core IPC wiring для backup preview/restore и отображения storage progress/error;
-- Electron shell: migration acceptance закрыта на Windows; проверены UI-срезы, authenticated Core IPC, package startup, fault recovery, install/upgrade/rollback и acceptance matrix.
+- ключ провайдера хранится main-процессом Electron: значение шифруется OS (`safeStorage`, DPAPI на Windows) и лежит в `%LOCALAPPDATA%\EvoHime\shell\provider.json` с режимом `600`. Renderer получает только summary «ключ задан/не задан», а Core — переменные окружения выбранного провайдера через supervisor. Смена ключа перезапускает supervisor и Core;
+- base URL провайдера принимается только по `https`, либо `http` на loopback, чтобы ключ не ушёл на произвольный хост.
+
+### Desktop shell (Electron)
+
+- migration acceptance закрыта на Windows: UI-срезы, authenticated Core IPC, package startup, fault recovery, install/upgrade/rollback и acceptance matrix;
+- левая панель — проекты и чаты (`ProjectSidebar`); аккаунт с шестернёй настроек внизу. Имя пользователя берётся из GitHub CLI, `git config user.name` или учётной записи Windows и подписывается источником;
+- главный экран (`HomeScreen`) вместо заглушки: чат создаётся сам при первом запросе;
+- ход задачи свёрнут в читаемую ленту (`ActivityLine`, `transcript.ts`), инструменты подписаны по-русски (`tool-names.ts`), ответы агента отображаются как Markdown (`MarkdownMessage`);
+- строка репозитория над композером (`RepositoryBar`): ветка и счётчики изменений;
+- выбор модели в чате (`ModelPicker`) с разделением каталога на free/paid; выбор применяется без перезапуска Core через IPC `SelectModelRequest`;
+- настройки провайдера собраны в один блок (`ProviderForm`) вместо прежнего `SettingsPanel`; отдельный `WorkspacePicker` убран — папка выбирается из панели проектов;
+- `RecoveryBanner` показывает подтверждённое Core состояние восстановления;
+- `OperationsPanel` («Память и Pulse») — read-only проекция memory-, child- и schedule-событий;
+- чаты shell хранятся в `%LOCALAPPDATA%\EvoHime\shell\chats.json` с ограничениями (100 чатов на workspace, 500 сообщений на чат). Это UI-группировка, а не состояние агента: Core остаётся владельцем задач и заново проверяет каждую команду.
+
+### Разработка
+
+- `.env.example` описывает переменные провайдера для локального запуска; `start-dev.ps1` читает `.env` по allow-list и передаёт значения только дочерним native-процессам.
 
 ## Следующий этап
 
 1. leases/reconciliation и расширенный diff/command preview в approval UI;
-2. продолжить hardening permission policy, credentials, recovery и diagnostics по активным планам;
+2. продолжить hardening permission policy, credentials, recovery и diagnostics;
 3. поддерживать Windows 10/11 CI и compatibility suite, не возвращая web runtime;
 4. informative ARM64/Insider compatibility runs.
 

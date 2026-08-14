@@ -1,12 +1,12 @@
 # Документация EvoHime
 
-Этот каталог описывает поддерживаемый Windows desktop-продукт. Главный источник команд запуска и требований — корневой [`README.md`](../README.md). Незавершённые рабочие планы находятся отдельно в [`plans/`](plans/); закрытая Electron migration в этот каталог не копируется.
+Этот каталог описывает поддерживаемый Windows desktop-продукт. Главный источник команд запуска и требований — корневой [`README.md`](../README.md).
 
 ## Какой документ читать
 
 | Задача | Документ | Назначение |
 | --- | --- | --- |
-| Понять границы и процессы | [`architecture.md`](architecture.md) | Runtime, IPC, данные и упаковка |
+| Понять границы и процессы | [`architecture.md`](architecture.md) | Runtime, оболочка, IPC, данные и упаковка |
 | Узнать, что уже сделано | [`current-state.md`](current-state.md) | Подтверждённое состояние checkout |
 | Понять ближайший порядок работ | [`development-plan.md`](development-plan.md) | Исполняемый план и критерии готовности |
 | Посмотреть долгосрочные направления | [`roadmap.md`](roadmap.md) | Крупные продуктовые этапы без деталей реализации |
@@ -21,7 +21,7 @@
 - [`providers/`](providers/) — провайдеры моделей и их настройка;
 - [`security/`](security/) — расширенная модель угроз;
 
-Планы и их ревью находятся в [`plans/`](plans/). Файлы `1-`…`5-` содержат незавершённые исполняемые работы и должны учитывать уже принятую Electron UI. Это рабочая зона: не трактуйте её документы как замену фактическому состоянию.
+Каталог `plans/` удалён: завершённые планы закрыты, а незавершённые работы описываются в [`development-plan.md`](development-plan.md) и [`roadmap.md`](roadmap.md). Не восстанавливайте параллельный статус в отдельных файлах планов.
 
 ## Пользовательская модель
 
@@ -38,7 +38,6 @@
 | Что реально собрано и проверено в checkout | [`current-state.md`](current-state.md) |
 | Какой runtime является утверждённой целью | [`architecture.md`](architecture.md) |
 | В каком порядке выполнять ближайшую работу | [`development-plan.md`](development-plan.md) |
-| Подробность незавершённых feature-подпланов | [`plans/`](plans/) |
 | Долгосрочные направления без пошаговой реализации | [`roadmap.md`](roadmap.md) |
 | Security boundaries и release security gates | [`../SECURITY.md`](../SECURITY.md), [`security/`](security/) |
 | Provider-specific configuration | [`providers/`](providers/) |

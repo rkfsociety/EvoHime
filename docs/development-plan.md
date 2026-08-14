@@ -48,8 +48,11 @@ Legacy web UI, browser launcher, HTTP server и PostgreSQL persistence удал�
 | Git | ✅ Завершены bounded read-only status/diff через Core IPC; Electron page включена в shell | `ea3f065`, `28d850d` |
 | Terminal | ✅ Завершён bounded Core command: sandbox, approval retry, timeout и ограниченный output | текущий desktop-срез |
 | Leases/reconciliation и расширенный diff review | 🟡 В работе | — |
-| Permission policy rules и закрытие обходов approval | 🟡 В работе | `docs/plans/` |
-| Credentials, расширенный backup/restore и crash recovery UI | ✅ Реализован Core/Electron MVP | текущий Core/Electron-срез; Rust, Electron и IPC tests |
+| Permission policy rules и закрытие обходов approval | 🟡 В работе | — |
+| Credentials, расширенный backup/restore и crash recovery UI | ✅ Реализован Core/Electron MVP | `5033356` |
+| Продуктовая оболочка: проекты и чаты, главный экран, лента хода задачи, Markdown-ответы, выбор модели | ✅ Завершён | `a403dec` |
+| Хранение ключа провайдера в main-процессе (DPAPI) и перезапуск Core при смене | ✅ Завершён | `a403dec` |
+| `run_policy` bounded budgets и supervisor `pulse` digest | ✅ Завершён | `a403dec` |
 
 ## Acceptance criteria
 
@@ -61,4 +64,4 @@ Legacy web UI, browser launcher, HTTP server и PostgreSQL persistence удал�
 - обновление восстанавливает компоненты из pre-upgrade backup при ошибке и после аварийного завершения;
 - core tests работают без UI-сессии, Electron smoke и packaging acceptance — на Windows CI.
 
-Подробные незавершённые планы не дублируются здесь: они ведутся в `docs/plans/`. При расхождении этого плана с реализацией сначала обновляется статус на основании кода и тестов.
+При расхождении этого плана с реализацией сначала обновляется статус на основании кода и тестов. Отдельного каталога планов больше нет: незавершённые работы держатся здесь и в [`roadmap.md`](roadmap.md).

@@ -13,7 +13,7 @@ LITEROUTER_BASE_URL=https://api.literouter.com/v1
 LITEROUTER_MODEL=deepseek:free
 ```
 
-Ключ должен передаваться через Windows Credential Manager/DPAPI в пользовательском приложении; переменные окружения допустимы только для локальной разработки и CI secrets. Не записывайте ключ в Git, SQLite, task events или diagnostics.
+В пользовательском приложении ключ вводится в настройках, шифруется ОС (DPAPI через Electron `safeStorage`) и хранится в `%LOCALAPPDATA%\EvoHime\shell\provider.json`; Core получает его окружением от supervisor. Прямые переменные окружения допустимы только для локальной разработки (`.env`) и CI secrets. Не записывайте ключ в Git, SQLite, task events или diagnostics.
 
 ## Поток данных
 

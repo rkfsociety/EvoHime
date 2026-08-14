@@ -1,18 +1,21 @@
 # Политика безопасности EvoHime
 
-EvoHime — локальный single-user Windows-клиент. Пользовательский интерфейс не открывает сетевой порт: текущий WinUI, а после миграции Electron main process, общается с Rust Core через защищённый versioned Windows named pipe.
+EvoHime — локальный single-user Windows-клиент. Пользовательский интерфейс не открывает сетевой порт: Electron main process общается с Rust Core через защищённый versioned Windows named pipe. WinUI сохранён только как compatibility runtime.
 
 ## Защищаемые границы
 
 - workspace path проверяется Core и ограничивается выбранным workspace;
 - опасные tools требуют approval через UI;
 - shell-команды получают таймаут, cancellation и ограничения вывода;
+- запуск ограничен неизменяемым бюджетом (`run_policy`): итерации, wall clock, tool calls, токены и стоимость проверяются Core перед каждым эффектом и не поднимаются из UI;
 - дочерние процессы находятся в Windows Job Object и завершаются вместе с Core;
 - SQLite и event journal принадлежат только Core;
-- provider credentials хранятся через Windows Credential Manager/DPAPI и не попадают в логи;
+- ключ провайдера шифруется ОС (DPAPI через Electron `safeStorage`), хранится в `%LOCALAPPDATA%\EvoHime\shell\provider.json` с режимом `600` и передаётся Core только через окружение supervisor; renderer видит лишь признак «ключ задан», в логи значение не попадает. Если ОС не может зашифровать, ключ не сохраняется;
+- base URL провайдера принимается только по `https` либо по `http` на loopback, чтобы ключ не ушёл на произвольный хост;
 - JSONL diagnostics редактируют секреты;
 - IPC использует major/minor compatibility и bounded frames;
-- supervisor ограничивает single-instance запуск и восстанавливает Core после сбоя.
+- локальное состояние оболочки (`shell\workspaces.json`, `shell\chats.json`) — только UI-группировка: оно не выдаёт прав, и Core заново проверяет каждую команду;
+- supervisor ограничивает single-instance запуск и восстанавливает Core после сбоя; локальный Pulse digest не маскирует пропущенный или неуспешный запуск успехом.
 
 ## Ограничения
 
@@ -36,6 +39,7 @@ EvoHime — локальный single-user Windows-клиент. Пользов�
 .\scripts\native-workflow.tests.ps1
 .\scripts\native-package.tests.ps1
 cargo test --locked -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc
+cd desktop\evohime-electron; npm run check:protocol; npm test; npm run build; npm run check:bundle
 dotnet test desktop\EvoHime.Tests\EvoHime.Tests.csproj -p:Platform=x64
 ```
 
