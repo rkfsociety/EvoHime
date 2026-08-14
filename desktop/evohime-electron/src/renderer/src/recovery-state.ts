@@ -9,50 +9,61 @@ export interface RecoveryNotice {
   readonly correlationId: string
   readonly phase?: string | undefined
   readonly canCancel: boolean
+  /** Core event this notice was built from; shown in the details view. */
+  readonly eventType: string
+  readonly sequenceId: number
+  /** Already redacted payload of that event, for the details view. */
+  readonly details: Record<string, unknown>
 }
 
 /**
  * Converts only redacted Core events into the small recovery contract exposed
  * by the shell. The renderer never infers an approval or a retry from prose.
+ *
+ * `events` arrive newest first (see App), so the first match wins: a stale
+ * failure must not outlive the recovery events that came after it.
  */
 export function latestRecoveryNotice(events: readonly CoreEvent[]): RecoveryNotice | null {
-  for (const event of [...events].reverse()) {
+  for (const event of events) {
     const payload = parsePayload(event.payload)
+    const common = {
+      taskId: event.taskId,
+      canCancel: false,
+      eventType: event.eventType,
+      sequenceId: event.sequenceId,
+      details: payload
+    }
     if (event.eventType === 'storage.progress') {
       return {
+        ...common,
         state: 'RECOVERING',
-        taskId: event.taskId,
         reason: stringField(payload, 'message') ?? 'Core выполняет восстановление.',
         correlationId: stringField(payload, 'operation_id') ?? event.taskId,
-        phase: stringField(payload, 'phase') ?? undefined,
-        canCancel: false
+        phase: stringField(payload, 'phase') ?? undefined
       }
     }
     if (event.eventType === 'approval.required') {
       return {
+        ...common,
         state: 'WAITING_APPROVAL',
-        taskId: event.taskId,
         reason: 'Core ожидает явного подтверждения эффекта.',
-        correlationId: stringField(payload, 'approval_id') ?? event.taskId,
-        canCancel: false
+        correlationId: stringField(payload, 'approval_id') ?? event.taskId
       }
     }
     if (event.eventType === 'run.recovery.blocked') {
       return {
+        ...common,
         state: 'BLOCKED',
-        taskId: event.taskId,
         reason: stringField(payload, 'reason') ?? 'Восстановление заблокировано после проверки.',
-        correlationId: stringField(payload, 'operation_id') ?? event.taskId,
-        canCancel: false
+        correlationId: stringField(payload, 'operation_id') ?? event.taskId
       }
     }
     if (event.eventType === 'task.failed') {
       return {
+        ...common,
         state: 'FAILED',
-        taskId: event.taskId,
         reason: stringField(payload, 'error') ?? 'Операция завершилась ошибкой.',
-        correlationId: stringField(payload, 'request_id') ?? event.taskId,
-        canCancel: false
+        correlationId: stringField(payload, 'request_id') ?? event.taskId
       }
     }
   }

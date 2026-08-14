@@ -10,6 +10,11 @@
   background: var(--panel);
 }
 
+.recovery-banner__body {
+  flex: 1;
+  min-width: 0;
+}
+
 .recovery-banner strong {
   letter-spacing: .04em;
 }
@@ -31,8 +36,37 @@
   border-color: var(--accent);
 }
 
+.recovery-banner__status {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.recovery-banner__details {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.recovery-banner__details dt {
+  color: var(--muted);
+  letter-spacing: .02em;
+}
+
+.recovery-banner__details dd {
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+}
+
 .recovery-banner__actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-start;
   gap: 8px;
+}
+
+.recovery-banner__dismiss {
+  padding-inline: 10px;
 }
