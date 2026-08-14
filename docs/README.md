@@ -8,8 +8,8 @@
 | --- | --- | --- |
 | Понять границы и процессы | [`architecture.md`](architecture.md) | Runtime, оболочка, IPC, данные и упаковка |
 | Узнать, что уже сделано | [`current-state.md`](current-state.md) | Подтверждённое состояние checkout |
-| Понять ближайший порядок работ | [`plans/development-plan.md`](plans/development-plan.md) | Исполняемый план и критерии готовности |
-| Посмотреть долгосрочные направления | [`plans/roadmap.md`](plans/roadmap.md) | Крупные продуктовые этапы без деталей реализации |
+| Понять ближайший порядок работ | [`plans/00-development-plan.md`](plans/00-development-plan.md) | Исполняемый план и критерии готовности |
+| Посмотреть долгосрочные направления | [`plans/99-roadmap.md`](plans/99-roadmap.md) | Крупные продуктовые этапы без деталей реализации |
 | Проверить границы безопасности | [`../SECURITY.md`](../SECURITY.md) | Угрозы, доверие, диагностика и релизные проверки |
 
 ## Справочные разделы
@@ -25,8 +25,8 @@
 
 Все планы живут в каталоге [`plans/`](plans/):
 
-- [`plans/development-plan.md`](plans/development-plan.md) — исполняемый план текущего цикла;
-- [`plans/roadmap.md`](plans/roadmap.md) — долгосрочные направления без деталей реализации.
+- [`plans/00-development-plan.md`](plans/00-development-plan.md) — исполняемый план текущего цикла;
+- [`plans/99-roadmap.md`](plans/99-roadmap.md) — долгосрочные направления без деталей реализации.
 
 Новый план создавайте файлом в `plans/`, а не в корне `docs/`. Параллельный статус реализации в планах не дублируется: подтверждённое состояние остаётся в [`current-state.md`](current-state.md).
 
@@ -36,7 +36,7 @@
 
 ## Правило источника истины
 
-Если документы расходятся, приоритет такой: код и тесты → `current-state.md` → `architecture.md` → `plans/development-plan.md` → `plans/roadmap.md`. Историю решений и незавершённые варианты не переносите в статус продукта без подтверждения реализацией.
+Если документы расходятся, приоритет такой: код и тесты → `current-state.md` → `architecture.md` → `plans/00-development-plan.md` → `plans/99-roadmap.md`. Историю решений и незавершённые варианты не переносите в статус продукта без подтверждения реализацией.
 
 ## Владельцы информации
 
@@ -44,8 +44,8 @@
 | --- | --- |
 | Что реально собрано и проверено в checkout | [`current-state.md`](current-state.md) |
 | Какой runtime является утверждённой целью | [`architecture.md`](architecture.md) |
-| В каком порядке выполнять ближайшую работу | [`plans/development-plan.md`](plans/development-plan.md) |
-| Долгосрочные направления без пошаговой реализации | [`plans/roadmap.md`](plans/roadmap.md) |
+| В каком порядке выполнять ближайшую работу | [`plans/00-development-plan.md`](plans/00-development-plan.md) |
+| Долгосрочные направления без пошаговой реализации | [`plans/99-roadmap.md`](plans/99-roadmap.md) |
 | Security boundaries и release security gates | [`../SECURITY.md`](../SECURITY.md), [`security/`](security/) |
 | Provider-specific configuration | [`providers/`](providers/) |
 | Core crate contracts and implementation notes | соответствующий `crates/*/README.md` |
@@ -59,4 +59,4 @@
 
 Веб-панель полностью выведена из продукта. Electron renderer — встроенный desktop UI; HTTP server и browser launcher не используются. `start-dev.ps1` собирает native package и открывает Electron `EvoHime.exe`; клиент сам запускает единственный скрытый supervisor, а supervisor — Core. `-SkipBuild` допустим только при наличии готового `.evohime-native\windows-x64`.
 
-При изменении архитектуры, runtime-контрактов или статуса реализации обновляйте соответствующий канонический документ и дату состояния. Не дублируйте подробный план в `plans/roadmap.md` и не добавляйте инструкции для отдельного web-продукта.
+При изменении архитектуры, runtime-контрактов или статуса реализации обновляйте соответствующий канонический документ и дату состояния. Не дублируйте подробный план в `plans/99-roadmap.md` и не добавляйте инструкции для отдельного web-продукта.

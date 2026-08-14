@@ -1,6 +1,6 @@
 # EvoHime — Windows desktop roadmap
 
-Это краткая продуктовая карта, а не список отдельных задач. Детали текущего цикла находятся в [`development-plan.md`](development-plan.md), фактическая реализация — в [`current-state.md`](../current-state.md).
+Это краткая продуктовая карта, а не список отдельных задач. Детали текущего цикла находятся в [`00-development-plan.md`](00-development-plan.md), фактическая реализация — в [`current-state.md`](../current-state.md).
 
 Актуальный roadmap описывает один локальный Windows-клиент Ева, распространяемый через `EvoHime-Setup.exe`. Пользователь запускает один ярлык `EvoHime`; внутренние Core и supervisor не являются отдельными продуктами.
 
@@ -36,4 +36,4 @@
 4. Inno Setup обновляет единственный постоянный release `installer` и его `EvoHime-Setup.exe`.
 5. Новые versioned releases и tags для этого цикла не создаются.
 
-Закрытые этапы не дублируются здесь; фактическое состояние хранится в [`current-state.md`](../current-state.md), а пошаговые работы — в [`development-plan.md`](development-plan.md).
+Закрытые этапы не дублируются здесь; фактическое состояние хранится в [`current-state.md`](../current-state.md), а пошаговые работы — в [`00-development-plan.md`](00-development-plan.md).
