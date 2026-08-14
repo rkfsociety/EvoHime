@@ -63,6 +63,16 @@ Core и supervisor — внутренние компоненты установ�
 ### Разработка
 
 - `.env.example` описывает переменные провайдера для локального запуска; `start-dev.ps1` читает `.env` по allow-list и передаёт значения только дочерним native-процессам.
+- deterministic evaluation catalog и security smoke gates находятся в `tests/evals/` и запускаются из `scripts/eval-gate.tests.ps1` и `scripts/security-eval-gate.tests.ps1`; redacted CI summary сохраняется в `artifacts/eval-gate/summary.jsonl`.
+
+## Последняя проверка checkout
+
+14 августа 2026 года пройдены Rust, Electron, C#/WinUI compatibility, protocol,
+bundle, native package, evaluation и security smoke checks. Source-update E2E
+остаётся штатно пропущенным без `EVOHIME_UPDATE_E2E=1`, поскольку он выполняет
+реальную пересборку и занимает значительно больше времени. Публикация
+установщика разрешена только после полного Windows CI и release smoke из
+[`../SECURITY.md`](../SECURITY.md).
 
 ## Следующие направления
 

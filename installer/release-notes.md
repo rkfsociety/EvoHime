@@ -1,5 +1,7 @@
 Здесь всегда лежит актуальный `EvoHime-Setup.exe`. Это единственный релиз проекта — новые не создаются, файл в нём перезаписывается.
 
+**Текущая сборка:** `0.0.000033` · **актуально на:** 2026-08-14
+
 **Постоянная ссылка на установщик:**
 https://github.com/rkfsociety/EvoHime/releases/latest/download/EvoHime-Setup.exe
 
@@ -17,5 +19,13 @@ https://github.com/rkfsociety/EvoHime/releases/latest/download/EvoHime-Setup.exe
 - Windows 10 2004+ или Windows 11, x64;
 - инструменты сборки (Git, Node.js 22, Rust, MSVC Build Tools) клиент доустанавливает сам через winget при первом обновлении;
 - первая пересборка идёт на пустом кэше и занимает заметное время; последующие — быстрее.
+
+## Проверки публикации
+
+Перед обновлением этого релиза Windows CI проверяет Rust и supervisor, Electron
+protocol/typecheck/tests/bundle, deterministic evaluation и security gate,
+совместимость WinUI/IPC, package startup, fault recovery, install/upgrade и
+rollback. Source-update E2E запускается отдельно с явным флагом и не требуется
+для обычной первой установки.
 
 Версия установки определяется коммитом, из которого она собрана, а не номером версии: он виден в статус-баре клиента.

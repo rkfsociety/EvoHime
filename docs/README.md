@@ -1,6 +1,6 @@
 # Документация EvoHime
 
-Этот каталог описывает поддерживаемый Windows desktop-продукт. Главный источник команд запуска и требований — корневой [`README.md`](../README.md).
+Этот каталог описывает поддерживаемый Windows desktop-продукт. Главный источник команд запуска и требований — корневой [`README.md`](../README.md). Информация о доступном установщике и правилах постоянного релиза находится в [`../installer/release-notes.md`](../installer/release-notes.md).
 
 ## Какой документ читать
 
@@ -48,6 +48,7 @@
 | Долгосрочные направления без пошаговой реализации | [`roadmap.md`](roadmap.md) |
 | Security boundaries и release security gates | [`../SECURITY.md`](../SECURITY.md), [`security/`](security/) |
 | Evaluation catalog, deterministic runner и smoke-gate contract | [`evaluations.md`](evaluations.md), [`../tests/evals/`](../tests/evals/) |
+| Установить текущий Windows-клиент | [`../installer/release-notes.md`](../installer/release-notes.md) | Постоянная ссылка, требования и модель обновления |
 | Provider-specific configuration | [`providers/`](providers/) |
 | Core crate contracts and implementation notes | соответствующий `crates/*/README.md` |
 

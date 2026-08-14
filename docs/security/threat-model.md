@@ -1,6 +1,6 @@
 # EvoHime — security threat model
 
-Дата: 2026-08-13. Версия клиента: `0.0.000033`.
+Дата: 2026-08-14. Версия клиента: `0.0.000033`.
 
 ## Граница доверия
 
@@ -65,7 +65,8 @@ session, но не дают гарантий против вредоносног
 ## Проверка перед релизом
 
 Публикация текущего установщика разрешена только после Rust tests, Electron
-typecheck/tests, protocol и bundle checks, WinUI/IPC compatibility tests,
-package smoke, `git diff --check` и успешной Windows package compilation на
-Windows CI. Release job дополнительно выполняет startup/fault acceptance,
-install/upgrade/rollback smoke и проверку retention.
+typecheck/tests, protocol и bundle checks, deterministic evaluation и security
+gate, WinUI/IPC compatibility tests, package smoke, `git diff --check` и
+успешной Windows package compilation на Windows CI. Release job дополнительно
+выполняет startup/fault acceptance, install/upgrade/rollback smoke и проверку
+retention.

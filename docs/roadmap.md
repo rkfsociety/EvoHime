@@ -8,6 +8,11 @@
 
 `0.0.000033` — текущая версия клиента; оболочка — Electron.
 
+Установщик публикуется в одном постоянном релизе `installer`. Номер версии
+клиента остаётся фиксированным для этого цикла, а актуальные commit и ветка
+сборки записываются в `evohime.build.json`; дальнейшие обновления выполняются
+из исходников.
+
 ## Ближайшая работа
 
 ### 1. Reliability and approval UX
@@ -30,10 +35,10 @@
 
 ## Release workflow
 
-1. Push или pull request запускает проверки Rust, supervisor, Electron, package smoke и Windows acceptance.
+1. Push или pull request запускает проверки Rust, supervisor, Electron, evaluation, package smoke и Windows acceptance.
 2. Job `build-native` стартует только после успешных проверок.
 3. Собирается runtime в staging-каталог.
-4. Inno Setup обновляет единственный постоянный release `installer` и его `EvoHime-Setup.exe`.
+4. Ручной запуск workflow после зелёной сборки обновляет единственный постоянный release `installer` и его `EvoHime-Setup.exe`.
 5. Новые versioned releases и tags для этого цикла не создаются.
 
 Закрытые этапы не дублируются здесь; фактическое состояние хранится в [`current-state.md`](current-state.md), а пошаговые работы — в [`development-plan.md`](development-plan.md).
