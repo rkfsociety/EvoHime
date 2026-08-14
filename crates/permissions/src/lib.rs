@@ -683,6 +683,43 @@ impl PermissionEngine {
         })
     }
 
+    /// Atomically claim a granted approval for execution.
+    ///
+    /// Approval tokens are deliberately consumed before the tool starts. This
+    /// prevents concurrent or replayed requests from executing the same
+    /// approved mutation twice. A failed tool call must request a fresh
+    /// approval rather than silently reusing the old authorization.
+    pub async fn claim_approval_for_call(
+        &self,
+        id: Uuid,
+        task_id: Uuid,
+        session_id: Option<Uuid>,
+        tool_name: &str,
+        permission: Permission,
+        scope: &str,
+        input: &serde_json::Value,
+    ) -> Option<ApprovalState> {
+        let mut approvals = self.approvals.write().await;
+        let matches = approvals.get(&id).is_some_and(|record| {
+            let request = &record.request;
+            request.task_id == task_id
+                && request.session_id == session_id
+                && request.tool_name == tool_name
+                && request.permission == permission
+                && request.scope == normalize_scope_path(scope)
+                && request.call_hash == canonical_call_hash(tool_name, &request.scope, input)
+        });
+        if !matches {
+            return None;
+        }
+
+        let state = approvals.get(&id).map(|record| record.state)?;
+        if state == ApprovalState::Granted {
+            approvals.remove(&id);
+        }
+        Some(state)
+    }
+
     /// Check if approval matches a specific call based on call_hash alone.
     /// Returns true if the approval exists, is in Granted state, and the call_hash matches.
     pub async fn approval_matches(&self, id: Uuid, call_hash: &str) -> bool {
@@ -998,6 +1035,55 @@ mod tests {
                     )
                     .await,
                 Some(ApprovalState::Granted)
+            );
+        });
+    }
+
+    #[test]
+    fn claimed_approval_is_removed_atomically() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let task_id = Uuid::new_v4();
+            let input = serde_json::json!({"path": "a.txt", "content": "x"});
+            let request = engine
+                .create_approval_scoped_for_call(
+                    task_id,
+                    None,
+                    "filesystem.write",
+                    Permission::FilesystemWrite,
+                    "a.txt",
+                    &input,
+                )
+                .await;
+            engine.resolve(request.id, true).await.expect("granted");
+
+            assert_eq!(
+                engine
+                    .claim_approval_for_call(
+                        request.id,
+                        task_id,
+                        None,
+                        "filesystem.write",
+                        Permission::FilesystemWrite,
+                        "a.txt",
+                        &input,
+                    )
+                    .await,
+                Some(ApprovalState::Granted)
+            );
+            assert_eq!(
+                engine
+                    .claim_approval_for_call(
+                        request.id,
+                        task_id,
+                        None,
+                        "filesystem.write",
+                        Permission::FilesystemWrite,
+                        "a.txt",
+                        &input,
+                    )
+                    .await,
+                None
             );
         });
     }

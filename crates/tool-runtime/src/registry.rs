@@ -401,9 +401,26 @@ impl ToolRegistry {
         let command = command_from_input(name, &input);
         let canonical_subject = canonical_policy_subject(ctx, name, &input, command.as_deref())?;
         for permission in definition.permissions {
+            let check = evohime_permissions::PermissionCheck {
+                session_id: ctx.session_id,
+                path: Some(scope.as_str()),
+                command: command.as_deref(),
+            };
+            let decision = match canonical_subject.as_deref() {
+                Some(subject) => self
+                    .permissions
+                    .check_scoped_with_subject(*permission, &check, subject)
+                    .await,
+                None => self.permissions.check_scoped(*permission, &check).await,
+            };
+            if matches!(decision, evohime_permissions::PermissionDecision::Denied) {
+                return Err(ToolError::PermissionDenied(*permission));
+            }
+        }
+        for permission in definition.permissions {
             match self
                 .permissions
-                .approval_matches_call(
+                .claim_approval_for_call(
                     approval_id,
                     ctx.task_id,
                     ctx.session_id,
@@ -421,21 +438,6 @@ impl ToolRegistry {
                 Some(evohime_permissions::ApprovalState::Pending) | None => {
                     return Err(ToolError::ApprovalMismatch);
                 }
-            }
-            let check = evohime_permissions::PermissionCheck {
-                session_id: ctx.session_id,
-                path: Some(scope.as_str()),
-                command: command.as_deref(),
-            };
-            let decision = match canonical_subject.as_deref() {
-                Some(subject) => self
-                    .permissions
-                    .check_scoped_with_subject(*permission, &check, subject)
-                    .await,
-                None => self.permissions.check_scoped(*permission, &check).await,
-            };
-            if matches!(decision, evohime_permissions::PermissionDecision::Denied) {
-                return Err(ToolError::PermissionDenied(*permission));
             }
         }
         let execution = async {
@@ -1316,6 +1318,79 @@ mod tests {
             Err(ToolError::ApprovalDenied)
         ));
         assert!(!dir.path().join("notes/todo.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn granted_approval_is_consumed_before_execution_and_cannot_replay() {
+        let permissions = PermissionEngine::new();
+        permissions
+            .set_mode(
+                evohime_permissions::Permission::FilesystemWrite,
+                evohime_permissions::PermissionMode::Ask,
+            )
+            .await;
+        let registry = ToolRegistry::bootstrap_with_permissions(permissions.clone());
+        let dir = tempfile::tempdir().expect("tempdir");
+        let context = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id: Uuid::new_v4(),
+            session_id: Some(Uuid::new_v4()),
+            progress_tx: None,
+        };
+        let input = serde_json::json!({
+            "path": "notes/once.txt",
+            "content": "written once"
+        });
+        let approval_id = match registry
+            .execute(&context, "filesystem.write", input.clone())
+            .await
+            .expect_err("ask mode should require approval")
+        {
+            ToolError::NeedsApproval { approval_id, .. } => approval_id,
+            other => panic!("expected NeedsApproval, got {other:?}"),
+        };
+        permissions
+            .resolve(approval_id, true)
+            .await
+            .expect("granted");
+
+        let (first, second) = tokio::join!(
+            registry.execute_after_approval(
+                &context,
+                "filesystem.write",
+                input.clone(),
+                approval_id,
+                CancellationToken::new(),
+            ),
+            registry.execute_after_approval(
+                &context,
+                "filesystem.write",
+                input,
+                approval_id,
+                CancellationToken::new(),
+            )
+        );
+        let results = [first, second];
+        assert_eq!(
+            results
+                .iter()
+                .filter(|result| result.is_ok())
+                .count(),
+            1,
+            "one-shot approval must allow exactly one concurrent execution"
+        );
+        assert_eq!(
+            results
+                .iter()
+                .filter(|result| matches!(result, Err(ToolError::ApprovalMismatch)))
+                .count(),
+            1,
+            "replay must be rejected as an approval mismatch"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("notes/once.txt")).expect("written file"),
+            "written once"
+        );
     }
 
     #[tokio::test]
