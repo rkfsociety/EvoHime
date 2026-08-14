@@ -25,7 +25,11 @@ foreach ($component in $required) {
 $dataPath = Join-Path $resolvedPackage ('.acceptance-data-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $dataPath | Out-Null
 $previousDataDir = $env:EVOHIME_DATA_DIR
+$previousUpdateEnabled = $env:EVOHIME_UPDATE_ENABLED
 $env:EVOHIME_DATA_DIR = $dataPath
+# Package startup smoke must not depend on the source updater or network
+# availability; updater behavior is covered by its dedicated test suite.
+$env:EVOHIME_UPDATE_ENABLED = '0'
 $shell = $null
 function Get-PackageProcesses {
     Get-CimInstance Win32_Process | Where-Object {
@@ -62,6 +66,11 @@ finally {
         Remove-Item Env:EVOHIME_DATA_DIR -ErrorAction SilentlyContinue
     } else {
         $env:EVOHIME_DATA_DIR = $previousDataDir
+    }
+    if ($null -eq $previousUpdateEnabled) {
+        Remove-Item Env:EVOHIME_UPDATE_ENABLED -ErrorAction SilentlyContinue
+    } else {
+        $env:EVOHIME_UPDATE_ENABLED = $previousUpdateEnabled
     }
 }
 
