@@ -43,6 +43,11 @@ Core + SQLite + authenticated named-pipe IPC сохраняются. Польз�
 Активных задач текущего implementation-цикла нет. Следующие задачи выбираются из
 долгосрочного [`roadmap.md`](roadmap.md) после отдельного подтверждения приоритета.
 
+После завершения foundation добавлен функциональный slice «Ревью планов» в
+Electron: additive desktop IPC, `plan_review` в Core и event journal для
+истории. DOCX/PDF import, пользовательские критерии и ZIP-экспорт остаются
+последующими улучшениями.
+
 ## Acceptance criteria
 
 - запуск с ярлыка не открывает браузер и консоль;

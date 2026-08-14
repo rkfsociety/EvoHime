@@ -1963,6 +1963,27 @@ impl LocalDatabase {
         Ok(events)
     }
 
+    /// Returns completed review events newest first. Review ids are prefixed
+    /// by the Core review contract, so normal agent task history is excluded.
+    pub fn read_review_events(&self, limit: usize) -> Result<Vec<EventRecord>, StorageError> {
+        let mut statement = self.connection.prepare(
+            "SELECT sequence_id, task_id, event_type, payload, created_at
+             FROM events WHERE task_id LIKE 'review-%' AND event_type = 'task.completed'
+             ORDER BY sequence_id DESC LIMIT ?1",
+        )?;
+        let limit = limit.min(i64::MAX as usize) as i64;
+        let rows = statement.query_map([limit], |row| {
+            Ok(EventRecord {
+                sequence_id: row.get(0)?,
+                task_id: row.get(1)?,
+                event_type: row.get(2)?,
+                payload: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     pub fn export_events_jsonl(&self, output: impl AsRef<Path>) -> Result<(), StorageError> {
         if let Some(parent) = output.as_ref().parent() {
             fs::create_dir_all(parent)?;

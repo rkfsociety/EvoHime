@@ -17,6 +17,12 @@ evohime-transaction.exe   transactional update worker
 
 Renderer не имеет node integration, не выполняет shell-команды и не открывает базу. Electron main ограничен окном, lifecycle, локальным состоянием оболочки и IPC adapter. Core владеет workspace, инструментами, моделью, секретами и локальным состоянием. Supervisor запускает core в Job Object и завершает дочернее дерево при остановке.
 
+Ревью планов — отдельный read-only pipeline Core. Electron main выбирает и
+ограниченно читает Markdown-файл через native dialog, затем передаёт его Core.
+Core параллельно вызывает 2–8 моделей текущего provider catalog с per-request
+model overrides и отдельную synthesis-модель. Review не получает tools, не
+изменяет workspace и сохраняется в локальном event journal без credentials.
+
 WinUI 3 больше не является пользовательской оболочкой пакета. Он сохранён как
 временный compatibility runtime и oracle для совместимости IPC до отдельного
 решения о его удалении.
@@ -34,6 +40,7 @@ Renderer состоит из панели проектов и чатов, лен
 | `RepositoryBar` | ветка и счётчики изменений открытого репозитория |
 | `ModelPicker` | выбор модели в чате; каталог разделён на free и paid |
 | `ProviderForm` | единственная поверхность настроек провайдера (ключ, модель, base URL) |
+| `PlanReviewPanel` | коллективное read-only ревью Markdown-плана несколькими моделями и synthesis-моделью |
 | `RecoveryBanner` + `recovery-state.ts` | состояние восстановления, выведенное только из подтверждённых Core событий |
 | `OperationsPanel` | очередь подтверждения памяти и конфликты (только metadata), плюс read-only проекция child- и schedule-событий |
 | `DeveloperTools`, `EditorPanel`, `TerminalPanel`, `SafetyPanel` | файлы и Git, редактор, ограниченный терминал, permission policy |

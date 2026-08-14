@@ -1,4 +1,6 @@
-import { BrowserWindow, clipboard, ipcMain, shell } from 'electron'
+import { BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
+import { readFile } from 'node:fs/promises'
+import { basename, extname } from 'node:path'
 
 import {
   PROVIDER_KINDS,
@@ -39,6 +41,7 @@ import type { WorkspaceService } from './workspace-service'
 
 const MAX_TEXT_FIELD_CHARS = 4_096
 const MAX_CLIPBOARD_CHARS = 64 * 1024
+const MAX_REVIEW_PLAN_BYTES = 512 * 1024
 
 export interface ShellBridgeOptions {
   readonly client: CorePipeClient
@@ -428,6 +431,64 @@ function dispatch(
       return { ok: true, value: chat ? chats.list(chat.workspacePath) : [] }
     }
 
+    case 'review.pickPlan':
+      return pickReviewPlan()
+
+    case 'review.start': {
+      const value = asRecord(payload)
+      const reviewId = asBoundedString(value['reviewId'])
+      const fileName = asBoundedString(value['fileName'])
+      const sourceMarkdown = asReviewMarkdown(value['sourceMarkdown'])
+      const reviewerModels = asReviewModels(value['reviewerModels'])
+      const synthesisModel = asBoundedString(value['synthesisModel'])
+      if (reviewId === null || fileName === null || sourceMarkdown === null || reviewerModels === null || synthesisModel === null) {
+        return failure('invalid-payload', 'Некорректные параметры ревью плана.')
+      }
+      return accepted(client.send({
+        startPlanReview: { reviewId, fileName, sourceMarkdown, reviewerModels: [...reviewerModels], synthesisModel }
+      }))
+    }
+
+    case 'review.stop': {
+      const reviewId = asBoundedString(asRecord(payload)['reviewId'])
+      if (reviewId === null) return failure('invalid-payload', 'Некорректный идентификатор ревью.')
+      return accepted(client.send({ stopPlanReview: { reviewId } }))
+    }
+
+    case 'review.list': {
+      const limit = asBoundedNumber(asRecord(payload)['limit'], 50)
+      if (limit === null) return failure('invalid-payload', 'Некорректный лимит истории ревью.')
+      return accepted(client.send({ listPlanReviews: { limit } }))
+    }
+
+    case 'review.get': {
+      const reviewId = asBoundedString(asRecord(payload)['reviewId'])
+      if (reviewId === null) return failure('invalid-payload', 'Некорректный идентификатор ревью.')
+      return accepted(client.send({ getPlanReview: { reviewId } }))
+    }
+
+    case 'review.export': {
+      const value = asRecord(payload)
+      const reviewId = asBoundedString(value['reviewId'])
+      const destinationPath = asReviewDestinationPath(value['destinationPath'])
+      const includeReviewers = value['includeReviewers'] === undefined ? false : value['includeReviewers']
+      if (reviewId === null || destinationPath === null || typeof includeReviewers !== 'boolean') {
+        return failure('invalid-payload', 'Некорректные параметры экспорта ревью.')
+      }
+      if (destinationPath.length === 0) {
+        const window = BrowserWindow.getFocusedWindow()
+        const saveOptions: Electron.SaveDialogOptions = {
+          defaultPath: 'review-final.md',
+          filters: [{ name: 'Markdown', extensions: ['md'] }]
+        }
+        const save = window ? dialog.showSaveDialog(window, saveOptions) : dialog.showSaveDialog(saveOptions)
+        return save.then((selected) => selected.canceled || !selected.filePath
+          ? { ok: true, value: { cancelled: true } }
+          : accepted(client.send({ exportPlanReview: { reviewId, destinationPath: selected.filePath, includeReviewers } })))
+      }
+      return accepted(client.send({ exportPlanReview: { reviewId, destinationPath, includeReviewers } }))
+    }
+
     case 'provider.get':
       return { ok: true, value: providers.summary() }
 
@@ -617,4 +678,43 @@ function asArguments(value: unknown): string[] | null {
 
 function asBoundedPayload(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 && value.length <= 256 * 1024 ? value : null
+}
+
+function asReviewMarkdown(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 && Buffer.byteLength(value, 'utf8') <= MAX_REVIEW_PLAN_BYTES
+    ? value
+    : null
+}
+
+function asReviewDestinationPath(value: unknown): string | null {
+  return typeof value === 'string' && value.length <= MAX_TEXT_FIELD_CHARS ? value : null
+}
+
+function asReviewModels(value: unknown): readonly string[] | null {
+  if (!Array.isArray(value) || value.length < 2 || value.length > 8) return null
+  const models = value.map((item) => asBoundedString(item))
+  if (!models.every((model): model is string => model !== null)) return null
+  return new Set(models).size === models.length ? models : null
+}
+
+async function pickReviewPlan(): Promise<unknown> {
+  const window = BrowserWindow.getFocusedWindow()
+  const options: Electron.OpenDialogOptions = {
+    properties: ['openFile'],
+    filters: [{ name: 'Markdown', extensions: ['md'] }]
+  }
+  const selected = window
+    ? await dialog.showOpenDialog(window, options)
+    : await dialog.showOpenDialog(options)
+  if (selected.canceled || selected.filePaths.length === 0) {
+    return { ok: true, value: { cancelled: true, fileName: '', sourceMarkdown: '' } }
+  }
+  const path = selected.filePaths[0]
+  if (!path) return failure('invalid-payload', 'Файл плана не выбран.')
+  if (extname(path).toLowerCase() !== '.md') return failure('invalid-payload', 'Нужен Markdown-файл с расширением .md.')
+  const content = await readFile(path, 'utf8')
+  if (Buffer.byteLength(content, 'utf8') > MAX_REVIEW_PLAN_BYTES) {
+    return failure('invalid-payload', 'Файл плана превышает 512 КБ.')
+  }
+  return { ok: true, value: { cancelled: false, fileName: basename(path), sourceMarkdown: content } }
 }

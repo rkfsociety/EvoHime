@@ -1,9 +1,13 @@
 use evohime_desktop_ipc::{generated, transport, FrameError};
 use prost::Message;
 use serde::Serialize;
+use std::collections::HashMap;
 use tokio::io::{AsyncRead, AsyncWrite};
+use tokio_util::sync::CancellationToken;
 
-use crate::{ApprovalCoordinator, CoreCommand, EventJournal, SelectedModel, TaskCoordinator};
+use crate::{
+    ApprovalCoordinator, CoreCommand, CoreEvent, EventJournal, SelectedModel, TaskCoordinator,
+};
 use evohime_local_storage::WorkItemRecord;
 use evohime_model_gateway::ModelGatewayConfig;
 use evohime_permissions::{Permission, PermissionMode};
@@ -46,6 +50,8 @@ pub struct IpcBridge {
     selected_model: SelectedModel,
     core_instance_id: String,
     session_epoch: u64,
+    review_tasks: Arc<tokio::sync::Mutex<HashMap<String, CancellationToken>>>,
+    review_results: Arc<tokio::sync::Mutex<HashMap<String, crate::plan_review::ReviewResult>>>,
 }
 
 fn runtime_identity() -> (String, u64) {
@@ -71,6 +77,8 @@ impl IpcBridge {
             selected_model: SelectedModel::default(),
             core_instance_id,
             session_epoch,
+            review_tasks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            review_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -86,6 +94,8 @@ impl IpcBridge {
             selected_model: SelectedModel::default(),
             core_instance_id,
             session_epoch,
+            review_tasks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            review_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -108,6 +118,8 @@ impl IpcBridge {
             selected_model: SelectedModel::default(),
             core_instance_id,
             session_epoch,
+            review_tasks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            review_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -405,6 +417,121 @@ impl IpcBridge {
                     event: None,
                 };
                 transport::write_frame(writer, &event.encode_to_vec()).await?;
+            }
+            Some(generated::command_envelope::Command::StartPlanReview(request)) => {
+                self.start_plan_review(request, writer).await?;
+            }
+            Some(generated::command_envelope::Command::StopPlanReview(request)) => {
+                let cancelled = self
+                    .review_tasks
+                    .lock()
+                    .await
+                    .get(&request.review_id)
+                    .cloned();
+                if let Some(ref token) = cancelled {
+                    token.cancel();
+                }
+                self.write_response(
+                    writer,
+                    "review.stop.accepted",
+                    serde_json::to_vec(&serde_json::json!({
+                        "review_id": request.review_id,
+                        "accepted": cancelled.is_some(),
+                    }))
+                    .unwrap_or_default(),
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::ListPlanReviews(request)) => {
+                let limit = (request.limit as usize).clamp(1, 50);
+                let results = self.review_results.lock().await;
+                let mut items: Vec<_> = results.values().cloned().collect();
+                drop(results);
+                if let Ok(events) = self.journal.review_history(limit).await {
+                    for event in events {
+                        if let Some(result) = review_result_from_event(&event.payload) {
+                            if !items.iter().any(|item| item.review_id == result.review_id) {
+                                items.push(result);
+                            }
+                        }
+                    }
+                }
+                items.sort_by(|left, right| left.review_id.cmp(&right.review_id));
+                items.truncate(limit);
+                self.write_response(
+                    writer,
+                    "review.list",
+                    serde_json::to_vec(&serde_json::json!({ "reviews": items }))
+                        .unwrap_or_default(),
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::GetPlanReview(request)) => {
+                let mut result = self
+                    .review_results
+                    .lock()
+                    .await
+                    .get(&request.review_id)
+                    .cloned();
+                if result.is_none() {
+                    if let Ok(events) = self.journal.task_history(&request.review_id, 10).await {
+                        result = events
+                            .iter()
+                            .rev()
+                            .find_map(|event| review_result_from_event(&event.payload));
+                    }
+                }
+                self.write_response(
+                    writer,
+                    "review.result",
+                    serde_json::to_vec(&serde_json::json!({
+                        "review_id": request.review_id,
+                        "result": result,
+                    }))
+                    .unwrap_or_default(),
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::ExportPlanReview(request)) => {
+                let mut result = self
+                    .review_results
+                    .lock()
+                    .await
+                    .get(&request.review_id)
+                    .cloned();
+                if result.is_none() {
+                    if let Ok(events) = self.journal.task_history(&request.review_id, 10).await {
+                        result = events
+                            .iter()
+                            .rev()
+                            .find_map(|event| review_result_from_event(&event.payload));
+                    }
+                }
+                let result = result.ok_or_else(|| FrameError::Io("review not found".into()))?;
+                let destination = std::path::PathBuf::from(&request.destination_path);
+                if destination.extension().and_then(|value| value.to_str()) != Some("md") {
+                    return Err(
+                        FrameError::Io("review export must be a Markdown file".into()).into(),
+                    );
+                }
+                let content = if request.include_reviewers {
+                    serde_json::to_string_pretty(&result).unwrap_or_default()
+                } else {
+                    result.final_markdown.clone()
+                };
+                tokio::fs::write(&destination, content)
+                    .await
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                self.write_response(
+                    writer,
+                    "review.exported",
+                    serde_json::to_vec(&serde_json::json!({
+                        "review_id": request.review_id,
+                        "destination_path": request.destination_path,
+                    }))
+                    .unwrap_or_default(),
+                )
+                .await?;
             }
             Some(generated::command_envelope::Command::PermissionMode(request)) => {
                 if let Some(tools) = &self.tools {
@@ -2459,6 +2586,78 @@ impl IpcBridge {
         )
     }
 
+    async fn start_plan_review<W: AsyncWrite + Unpin>(
+        &self,
+        request: generated::StartPlanReview,
+        writer: &mut W,
+    ) -> Result<(), IpcBridgeError> {
+        if !request.file_name.to_ascii_lowercase().ends_with(".md") {
+            return Err(FrameError::Io("review accepts Markdown files only".into()).into());
+        }
+        let review = crate::plan_review::ReviewRequest {
+            review_id: request.review_id,
+            file_name: request.file_name,
+            source_markdown: request.source_markdown,
+            reviewer_models: request.reviewer_models,
+            synthesis_model: request.synthesis_model,
+        };
+        review
+            .validate()
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        let gateway_config = self
+            .gateway_config
+            .clone()
+            .ok_or_else(|| FrameError::Io("provider is not configured".into()))?;
+        let gateway = evohime_model_gateway::ModelGateway::from_config(&gateway_config)
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        let cancellation = CancellationToken::new();
+        let review_id = review.review_id.clone();
+        self.review_tasks
+            .lock()
+            .await
+            .insert(review_id.clone(), cancellation.clone());
+        let tasks = Arc::clone(&self.review_tasks);
+        let results = Arc::clone(&self.review_results);
+        let journal = self.journal.clone();
+        let task_review_id = review_id.clone();
+        tokio::spawn(async move {
+            let event =
+                match crate::plan_review::run_review(Arc::new(gateway), review, cancellation).await
+                {
+                    Ok(result) => {
+                        let payload = serde_json::to_string(&result).unwrap_or_default();
+                        results
+                            .lock()
+                            .await
+                            .insert(result.review_id.clone(), result.clone());
+                        CoreEvent::TaskCompleted {
+                            task_id: result.review_id,
+                            final_message: payload,
+                        }
+                    }
+                    Err(crate::plan_review::ReviewError::Cancelled) => CoreEvent::TaskStopped {
+                        task_id: task_review_id.clone(),
+                    },
+                    Err(error) => CoreEvent::TaskFailed {
+                        task_id: task_review_id.clone(),
+                        error: error.to_string(),
+                    },
+                };
+            let _ = journal.record(&event).await;
+            tasks.lock().await.remove(&task_review_id);
+        });
+        self.write_response(
+            writer,
+            "review.started",
+            serde_json::to_vec(&serde_json::json!({
+                "review_id": review_id,
+                "accepted": true,
+            }))
+            .unwrap_or_default(),
+        )
+        .await
+    }
+
     async fn write_response<W: AsyncWrite + Unpin>(
         &self,
         writer: &mut W,
@@ -2491,6 +2690,20 @@ fn hex_encode(bytes: &[u8]) -> String {
         let _ = write!(output, "{byte:02x}");
     }
     output
+}
+
+fn review_result_from_event(payload: &[u8]) -> Option<crate::plan_review::ReviewResult> {
+    let value: serde_json::Value = serde_json::from_slice(payload).ok()?;
+    let message = value
+        .get("TaskCompleted")
+        .and_then(|item| item.get("final_message"))
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            value
+                .get("final_message")
+                .and_then(serde_json::Value::as_str)
+        })?;
+    serde_json::from_str(message).ok()
 }
 
 fn protocol() -> generated::ProtocolVersion {

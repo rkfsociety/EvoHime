@@ -761,6 +761,7 @@ pub mod research_search;
 pub mod scope;
 pub mod task_memory;
 pub use task_memory::project_scope_id;
+pub mod plan_review;
 pub mod workflow;
 pub mod workflow_execution;
 pub mod workflow_runner;
@@ -1515,6 +1516,11 @@ impl EventJournal {
             first_available_sequence,
             last_sequence,
         })
+    }
+
+    pub async fn review_history(&self, limit: usize) -> Result<Vec<EventRecord>, StorageError> {
+        let database = self.database.lock().await;
+        database.read_review_events(limit)
     }
 
     pub async fn preview_database_backup(

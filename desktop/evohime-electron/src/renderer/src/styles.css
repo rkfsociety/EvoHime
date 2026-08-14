@@ -1812,3 +1812,27 @@ select:focus {
 @media (max-width: 900px) {
   .operations-grid { grid-template-columns: 1fr; }
 }
+.review-panel {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 24px;
+  display: grid;
+  gap: 18px;
+}
+
+.review-panel__toolbar,
+.review-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.review-panel__file { font-weight: 600; }
+.review-panel__models { display: grid; gap: 8px; border: 1px solid var(--border, #334155); padding: 14px; }
+.review-panel__models label { display: flex; gap: 8px; align-items: center; }
+.review-panel__synthesis { display: grid; gap: 8px; max-width: 520px; }
+.review-panel__synthesis select { min-height: 34px; }
+.review-panel__result { display: grid; gap: 12px; border-top: 1px solid var(--border, #334155); padding-top: 18px; }
+.review-panel__result details { border: 1px solid var(--border, #334155); padding: 10px; }
+.review-panel__history { display: grid; gap: 8px; border-top: 1px solid var(--border, #334155); padding-top: 18px; }
+.review-panel__history button { text-align: left; }

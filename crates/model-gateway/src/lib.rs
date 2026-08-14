@@ -263,6 +263,18 @@ impl ModelGateway {
         })
     }
 
+    /// Streams a completion against the configured default route while using
+    /// a per-request model override. Review orchestration uses this instead of
+    /// mutating the shell-wide selected model, so concurrent review calls do
+    /// not race with normal chat traffic.
+    pub fn stream_chat_with_model(
+        &self,
+        model: &str,
+        messages: &[ChatMessage],
+    ) -> Result<TokenStream, ProviderError> {
+        self.stream_chat_for_route_with_model(&self.default_route, Some(model), messages)
+    }
+
     pub async fn chat_with_tools_for_route(
         &self,
         route: &str,

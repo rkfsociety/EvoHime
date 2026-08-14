@@ -42,6 +42,7 @@ Core и supervisor — внутренние компоненты установ�
 - filesystem.search исключает hard-default secret/auth paths, не следует symlink/reparse-обходам и не требует POSIX shell;
 - shell blocklist расширен для Windows launcher/LOLBin семейств; recovery timeline различает `RECOVERING`, `BLOCKED`, `WAITING_APPROVAL` и `FAILED`;
 - ключ провайдера хранится main-процессом Electron: значение шифруется OS (`safeStorage`, DPAPI на Windows) и лежит в `%LOCALAPPDATA%\EvoHime\shell\provider.json` с режимом `600`. Renderer получает только summary «ключ задан/не задан», а Core — переменные окружения выбранного провайдера через supervisor. Смена ключа перезапускает supervisor и Core;
+- вкладка «Ревью планов» принимает Markdown до 512 КБ, запускает 2–8 параллельных read-only reviewer calls и отдельную synthesis call; результаты доступны через Core history и экспортируются в Markdown;
 - base URL провайдера принимается только по `https`, либо `http` на loopback, чтобы ключ не ушёл на произвольный хост.
 - approval.required передаёт bounded structured preview для команд, записи файлов и unified diff; Electron показывает его в TaskTimeline и Terminal, а Core сохраняет exact-call hash и повторную policy-проверку перед выполнением;
 - approval-токены для tool runtime одноразовые и атомарно погашаются перед выполнением; hard-deny policy проверяет канонический путь, включая вызовы через относительные алиасы;

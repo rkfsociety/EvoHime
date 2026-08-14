@@ -66,6 +66,35 @@ message SelectModelRequest {
   string model = 1;
 }
 
+// Starts a read-only multi-model plan review. The source is supplied as
+// bounded UTF-8 Markdown by the Electron main process; Core owns execution and
+// persistence and never exposes provider credentials to the shell.
+message StartPlanReview {
+  string review_id = 1;
+  string file_name = 2;
+  string source_markdown = 3;
+  repeated string reviewer_models = 4;
+  string synthesis_model = 5;
+}
+
+message StopPlanReview {
+  string review_id = 1;
+}
+
+message ListPlanReviews {
+  uint32 limit = 1;
+}
+
+message GetPlanReview {
+  string review_id = 1;
+}
+
+message ExportPlanReview {
+  string review_id = 1;
+  string destination_path = 2;
+  bool include_reviewers = 3;
+}
+
 message PermissionModeRequest {
   string mode = 1;
 }
@@ -681,6 +710,11 @@ message CommandEnvelope {
     RejectMemory reject_memory = 72;
     SupersedeMemory supersede_memory = 73;
     ReviseMemoryCandidate revise_memory_candidate = 74;
+    StartPlanReview start_plan_review = 75;
+    StopPlanReview stop_plan_review = 76;
+    ListPlanReviews list_plan_reviews = 77;
+    GetPlanReview get_plan_review = 78;
+    ExportPlanReview export_plan_review = 79;
   }
 }
 

@@ -117,6 +117,21 @@ export interface ChatSummary {
   readonly messageCount: number
 }
 
+export interface PlanReviewReviewer {
+  readonly model: string
+  readonly status: string
+  readonly content: string
+  readonly error: string | null
+}
+
+export interface PlanReviewResult {
+  readonly reviewId: string
+  readonly fileName: string
+  readonly synthesisModel: string
+  readonly reviewers: readonly PlanReviewReviewer[]
+  readonly finalMarkdown: string
+}
+
 /**
  * Commands the renderer may ask the main process to forward to Core. The main
  * process only forwards; Core re-validates capability, policy and approval for
@@ -160,6 +175,12 @@ export const RENDERER_COMMANDS = [
   'chat.open',
   'chat.appendPrompt',
   'chat.remove',
+  'review.pickPlan',
+  'review.start',
+  'review.stop',
+  'review.list',
+  'review.get',
+  'review.export',
   'provider.get',
   'provider.save',
   'provider.clearKey',
@@ -246,6 +267,12 @@ export interface CommandPayloads {
   'chat.open': { chatId: string }
   'chat.appendPrompt': { chatId: string; taskId: string; prompt: string }
   'chat.remove': { chatId: string }
+  'review.pickPlan': Record<string, never>
+  'review.start': { reviewId: string; fileName: string; sourceMarkdown: string; reviewerModels: readonly string[]; synthesisModel: string }
+  'review.stop': { reviewId: string }
+  'review.list': { limit?: number }
+  'review.get': { reviewId: string }
+  'review.export': { reviewId: string; destinationPath: string; includeReviewers?: boolean }
   'provider.get': Record<string, never>
   'provider.save': { provider: ProviderKind; apiKey: string; model: string; baseUrl: string; tier: ModelTier }
   'provider.clearKey': Record<string, never>
@@ -299,6 +326,12 @@ export interface CommandResults {
   'chat.open': ChatRecord | null
   'chat.appendPrompt': ChatRecord | null
   'chat.remove': readonly ChatSummary[]
+  'review.pickPlan': { cancelled: boolean; fileName: string; sourceMarkdown: string }
+  'review.start': { accepted: boolean; reviewId: string }
+  'review.stop': { accepted: boolean }
+  'review.list': { reviews: readonly PlanReviewResult[] }
+  'review.get': { review: PlanReviewResult | null }
+  'review.export': { reviewId: string; destinationPath: string }
   'provider.get': ProviderSummary
   /** `restarted` is false when Core could not be relaunched with the new key. */
   'provider.save': { summary: ProviderSummary; restarted: boolean }
