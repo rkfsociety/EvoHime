@@ -1,6 +1,6 @@
-# План: Специализированные child workflows
+# План 05: Специализированные child workflows
 
-Статус: draft для ревью.
+Обзор плана. Этапы вынесены в отдельные файлы и ревьюятся по одному.
 
 ## Цель
 
@@ -58,69 +58,32 @@ implementer.
 
 ## Этапы
 
-### 06.1 Typed contracts
+| Этап | Файл | Что отдаёт наружу | Кто потребляет |
+| --- | --- | --- | --- |
+| 05.1 | [Typed contracts](05-1-typed-child-contracts.md) | typed input/output child task и correlation ids | 05.2–05.4 |
+| 05.2 | [Coordinator state machine](05-2-coordinator-state-machine.md) | состояния, leases и restart recovery | 05.3, 05.4 |
+| 05.3 | [Context isolation](05-3-child-context-isolation.md) | изоляция контекста и offload | 05.4 |
+| 05.4 | [UI и observability](05-4-child-ui-and-observability.md) | timeline, OperationsPanel и trace | UI |
 
-- Расширить existing child IPC/storage additive-полями role, grants, budget,
-  input/output schema и parent sequence.
-- Валидировать report schema до persistence и fan-in.
-- Добавить correlation ids для task, child, tool call и receipt.
+## Зависимости плана
 
-### 06.2 Coordinator state machine
+Блокирующие:
 
-- Зафиксировать Created → Queued → Running → Validating →
-  WaitingParentAcceptance → Accepted/Rejected/Failed/Cancelled.
-- Не считать child success финальным task success.
-- Дочерние leases, cancellation и restart recovery должны быть bounded.
-- После restart coordinator восстанавливает только durable checkpoint и
-  повторно валидирует report/evidence.
+- этапы 01.1 и 01.2 — budget ребёнка, context isolation и offload больших
+  результатов в artifact store;
+- этапы 02.2 и 02.3 — роль `researcher` определена как read-only доступ к
+  workspace/RAG и без retrieval с planner не имеет своего инструмента;
+- этап 03.3 — связь действий ребёнка с approval родителя;
+- существующие child runtime, permission policy, task graph, leases и
+  evaluation catalog (`tests/evals/`).
 
-### 06.3 Context isolation
+Это последний план цепочки: от него никто не зависит. A2A/network protocol
+не нужен — достаточно локальных Core-owned children.
 
-- Child получает только selected context и свой scratchpad.
-- Большие результаты offload в artifact store; parent получает summary + ids.
-- Не передавать секреты соседнему child или role без policy grant.
-- Reviewer видит diff/evidence, но не получает право менять код.
-
-### 06.4 UI и observability
-
-- Task timeline показывает role, status, budget, evidence, approval и reason
-  отказа.
-- OperationsPanel показывает активных children, leases и dead-letter.
-- Trace сохраняет state transitions, not raw hidden chain-of-thought.
-
-## Проверки
-
-- role permission matrix и negative tests;
-- malformed report, oversized report и wrong parent id;
-- sequential, concurrent, conditional workflow fixtures;
-- cancellation/restart/lease-loss recovery;
-- reviewer rejection → bounded revision;
-- child cannot commit/push without parent policy and approval;
-- fan-in deterministic ordering and conflict reporting;
-- smoke test: one full researcher→implementer→tester→reviewer run.
-
-## Критерии готовности
+## Критерии готовности плана
 
 - каждый child имеет typed input/output и отдельный budget;
 - parent никогда не принимает child result без validation;
 - child не расширяет права родителя и не обходит approval;
 - restart/cancellation не оставляют orphan processes or leases;
 - UI и audit показывают фактическое состояние workflow.
-
-## Зависимости
-
-Блокирующие:
-
-- этапы 01.1 и 01.2 — budget ребёнка, context isolation и offload больших
-  результатов в artifact store;
-- этапы 03.2 и 03.3 — роль `researcher` определена как read-only доступ к
-  workspace/RAG и без retrieval с planner не имеет своего инструмента;
-- этап 04.3 — связь действий ребёнка с approval родителя;
-- существующие child runtime, permission policy, task graph, leases и
-  evaluation catalog (`tests/evals/`).
-
-Этап 06.1 (typed contracts) зависит только из этого списка от 04.3, поэтому
-его можно начать раньше остальных этапов плана.
-
-Это последний план цепочки: от него никто не зависит. A2A/network protocol
-не нужен — достаточно локальных Core-owned children.

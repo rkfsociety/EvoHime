@@ -1,16 +1,17 @@
 ﻿$ErrorActionPreference = 'Stop'
 
-# Проверяет правило нумерации из docs/plans/README.md: план может блокирующе
-# зависеть только от планов с меньшим номером. Именно нарушение этого правила
-# однажды сделало выполнимый план похожим на заблокированный.
+# Проверяет правила из docs/plans/README.md: каждый файл — один этап, номера
+# идут подряд, и этап блокирующе зависит только от более раннего этапа. Именно
+# нарушение последнего правила однажды сделало выполнимый план похожим на
+# заблокированный.
 
 $plansDir = Join-Path $PSScriptRoot '..\docs\plans'
-$plans = Get-ChildItem -Path $plansDir -Filter '*.md' |
-    Where-Object { $_.Name -match '^(\d{2})-' } |
+$files = Get-ChildItem -Path $plansDir -Filter '*.md' |
+    Where-Object { $_.Name -match '^(\d{2})-(\d)-' } |
     Sort-Object Name
 
-if ($plans.Count -eq 0) {
-    throw 'No numbered plans found in docs/plans.'
+if ($files.Count -eq 0) {
+    throw 'No stage files found in docs/plans.'
 }
 
 $index = Join-Path $plansDir 'README.md'
@@ -18,79 +19,90 @@ if (-not (Test-Path $index)) {
     throw 'docs/plans/README.md must describe the plan order and numbering rule.'
 }
 
-# Номера обязаны идти подряд с 01: дыра означает потерянный или
-# переименованный план, о котором индекс молчит.
+# Собрать фактическую структуру: план -> список этапов.
+$structure = @{}
+foreach ($file in $files) {
+    $plan = [int]($file.Name -replace '^(\d{2}).*$', '$1')
+    $stage = [int]($file.Name -replace '^\d{2}-(\d).*$', '$1')
+    if (-not $structure.ContainsKey($plan)) { $structure[$plan] = @() }
+    $structure[$plan] += $stage
+}
+
+# Номера планов идут подряд с 01: дыра означает удалённый план, о котором
+# индекс молчит.
+$planNumbers = $structure.Keys | Sort-Object
 $expected = 1
-foreach ($plan in $plans) {
-    $number = [int]($plan.Name -replace '^(\d{2}).*$', '$1')
-    if ($number -ne $expected) {
-        throw "Plan numbers must be consecutive from 01; expected $('{0:d2}' -f $expected) but found $($plan.Name)."
+foreach ($plan in $planNumbers) {
+    if ($plan -ne $expected) {
+        throw "Plan numbers must be consecutive from 01; expected $('{0:d2}' -f $expected) but found $('{0:d2}' -f $plan)."
     }
     $expected++
 }
 
-foreach ($plan in $plans) {
-    $number = [int]($plan.Name -replace '^(\d{2}).*$', '$1')
+# У каждого плана есть обзор (этап 0) и хотя бы один рабочий этап, идущие подряд.
+foreach ($plan in $planNumbers) {
+    $stages = $structure[$plan] | Sort-Object
+    if ($stages[0] -ne 0) {
+        throw "Plan $('{0:d2}' -f $plan) must have an overview file numbered $('{0:d2}' -f $plan)-0-*.md."
+    }
+    if ($stages.Count -lt 2) {
+        throw "Plan $('{0:d2}' -f $plan) must have at least one stage besides the overview."
+    }
+    for ($i = 0; $i -lt $stages.Count; $i++) {
+        if ($stages[$i] -ne $i) {
+            throw "Plan $('{0:d2}' -f $plan) stage numbers must be consecutive from 0; found $($stages[$i])."
+        }
+    }
+}
+
+foreach ($file in $files) {
+    $plan = [int]($file.Name -replace '^(\d{2}).*$', '$1')
+    $stage = [int]($file.Name -replace '^\d{2}-(\d).*$', '$1')
     # Планы лежат в UTF-8 без BOM: PS 5.1 иначе прочитает их как ANSI.
-    $text = Get-Content -Raw -Encoding UTF8 $plan.FullName
+    $text = Get-Content -Raw -Encoding UTF8 $file.FullName
 
     $dependencies = [regex]::Match($text, '(?ms)^## Зависимости.*?(?=^## |\z)')
     if (-not $dependencies.Success) {
-        throw "$($plan.Name) must contain a '## Зависимости' section."
+        throw "$($file.Name) must contain a '## Зависимости' section."
     }
     $section = $dependencies.Value
 
     if ($section -notmatch 'Блокирующ') {
-        throw "$($plan.Name) must state its blocking dependencies explicitly."
+        throw "$($file.Name) must state its blocking dependencies explicitly."
     }
 
     # Блокирующая часть заканчивается там, где начинается описание
-    # опциональных интеграций или того, что план предоставляет другим.
-    $blockingEnd = [regex]::Match($section, 'Опциональн|Что этот план обязан|Это последний план')
+    # опциональных зависимостей или того, что этап предоставляет другим.
+    $blockingEnd = [regex]::Match($section, 'Опциональн|Разблокирует|Это последний|Из списка')
     $blocking = if ($blockingEnd.Success) { $section.Substring(0, $blockingEnd.Index) } else { $section }
 
-    # Зависимость объявляется либо на весь план ("план 01"), либо на его этап
-    # ("этап 01.1"). Оба вида проверяются одинаково: номер плана обязан быть
-    # меньше собственного.
+    foreach ($reference in [regex]::Matches($blocking, '(?<!\d)(\d{2})\.(\d)(?!\d)')) {
+        $referencedPlan = [int]$reference.Groups[1].Value
+        $referencedStage = [int]$reference.Groups[2].Value
+        if ($referencedPlan -gt $plan) {
+            throw "$($file.Name) blocks on stage $($reference.Value) from a later plan. Renumber the plans or make the dependency optional with described degradation."
+        }
+        # Обзор (этап 0) описывает зависимости всего плана и потому вправе
+        # называть любые собственные этапы.
+        if ($stage -ne 0 -and $referencedPlan -eq $plan -and $referencedStage -ge $stage) {
+            throw "$($file.Name) blocks on stage $($reference.Value) of its own plan, which is not earlier than itself."
+        }
+    }
+
     foreach ($reference in [regex]::Matches($blocking, 'план[а-я]*\s+(\d{2})(?!\.)')) {
-        if ([int]$reference.Groups[1].Value -ge $number) {
-            throw "$($plan.Name) blocks on plan $($reference.Groups[1].Value), which is not lower than its own number. Renumber the plans or make the dependency optional with described degradation."
+        if ([int]$reference.Groups[1].Value -ge $plan) {
+            throw "$($file.Name) blocks on plan $($reference.Groups[1].Value), which is not lower than its own number."
         }
-    }
-
-    # Ссылка на собственный этап описывает внутренний порядок работ, а не
-    # зависимость от другого плана, поэтому проверяется только чужой номер.
-    foreach ($reference in [regex]::Matches($blocking, '(?<!\d)(\d{2})\.\d(?!\d)')) {
-        if ([int]$reference.Groups[1].Value -gt $number) {
-            throw "$($plan.Name) blocks on stage $($reference.Value), which belongs to a later plan. Renumber the plans or make the dependency optional with described degradation."
-        }
-    }
-
-    # Этапы обязаны быть пронумерованы как под-планы NN.M: именно они дают
-    # зависящим планам возможность не ждать план целиком.
-    $stages = [regex]::Matches($text, '(?m)^### (\d{2})\.(\d) ')
-    if ($stages.Count -eq 0) {
-        throw "$($plan.Name) must number its stages as NN.M so other plans can depend on a stage."
-    }
-    $stageIndex = 1
-    foreach ($stage in $stages) {
-        if ([int]$stage.Groups[1].Value -ne $number) {
-            throw "$($plan.Name) has a stage numbered for a different plan: $($stage.Value.Trim())."
-        }
-        if ([int]$stage.Groups[2].Value -ne $stageIndex) {
-            throw "$($plan.Name) stage numbers must be consecutive from 1; found $($stage.Value.Trim())."
-        }
-        $stageIndex++
     }
 
     # Опциональная зависимость обязана описывать поведение до её появления:
     # без этого читатель не отличит деградацию от незавершённой работы.
     if ($section -match 'Опциональн' -and $section -notmatch 'Опциональных интеграций нет') {
         $optional = $section.Substring($section.IndexOf('Опциональн'))
-        if ($optional -notmatch 'До его появления|до него|Пока плана нет|до этого|До этого') {
-            throw "$($plan.Name) lists optional integrations without describing the behaviour before they exist."
+        if ($optional -notmatch 'До его появления|до него|до подключения|Пока плана нет|до этого|До этого|без него|Без него') {
+            throw "$($file.Name) lists optional dependencies without describing the behaviour before they exist."
         }
     }
 }
 
-Write-Output "plans order: PASS ($($plans.Count) plans)"
+Write-Output "plans order: PASS ($($files.Count) files, $($planNumbers.Count) plans)"
