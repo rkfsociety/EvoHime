@@ -36,6 +36,7 @@ describe('recovery contract', () => {
     })
     expect(latestRecoveryNotice([event('approval.required', { approval_id: 'approval-1' })])?.state).toBe('WAITING_APPROVAL')
     expect(latestRecoveryNotice([event('run.recovery.blocked', { reason: 'reconcile' })])?.state).toBe('BLOCKED')
+    expect(latestRecoveryNotice([event('run.reconciliation.completed', { run_id: 'run-1' })])?.state).toBe('RESUMABLE')
     expect(latestRecoveryNotice([event('task.failed', { error: 'safe error', request_id: 'request-1' })])?.state).toBe('FAILED')
   })
 

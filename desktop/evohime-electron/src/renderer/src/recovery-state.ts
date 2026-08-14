@@ -1,6 +1,6 @@
 import type { CoreEvent } from '@shared/api'
 
-export type RecoveryUiState = 'RECOVERING' | 'BLOCKED' | 'WAITING_APPROVAL' | 'FAILED'
+export type RecoveryUiState = 'RECOVERING' | 'RESUMABLE' | 'BLOCKED' | 'WAITING_APPROVAL' | 'FAILED'
 
 export interface RecoveryNotice {
   readonly state: RecoveryUiState
@@ -56,6 +56,14 @@ export function latestRecoveryNotice(events: readonly CoreEvent[]): RecoveryNoti
         state: 'BLOCKED',
         reason: stringField(payload, 'reason') ?? 'Восстановление заблокировано после проверки.',
         correlationId: stringField(payload, 'operation_id') ?? event.taskId
+      }
+    }
+    if (event.eventType === 'run.reconciliation.completed') {
+      return {
+        ...common,
+        state: 'RESUMABLE',
+        reason: 'Core подтвердил результат после восстановления.',
+        correlationId: stringField(payload, 'run_id') ?? event.taskId
       }
     }
     if (event.eventType === 'task.failed') {

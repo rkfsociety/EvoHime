@@ -689,7 +689,7 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::PathBuf,
-    sync::Arc,
+    sync::{Arc, Mutex as StdMutex},
     time::{Duration, SystemTime},
 };
 
@@ -2085,6 +2085,14 @@ impl EventJournal {
         database.update_run_status(run_id, if success { "completed" } else { "failed" })?;
         database.release_run_lease(run_id, &format!("lease-{run_id}"), "core", 1)?;
         Ok(effect)
+    }
+
+    pub async fn heartbeat_build_effect(
+        &self,
+        run_id: &str,
+    ) -> Result<evohime_local_storage::RunLeaseRecord, StorageError> {
+        let database = self.database.lock().await;
+        database.heartbeat_run_lease(run_id, &format!("lease-{run_id}"), "core", 1, 30)
     }
 
     pub async fn reconcile_build_effect(
@@ -4076,11 +4084,38 @@ impl TaskCoordinator {
                         .begin_build_effect(&run_id, &task_id, &approved.intent_hash)
                         .await
                         .map_err(|error| error.to_string())?;
-                    let snapshot = match crate::build::apply_approved_build(
-                        &project.workspace_path,
-                        &run_id,
-                        &approved,
-                    ) {
+                    let heartbeat_failure = Arc::new(StdMutex::new(None::<String>));
+                    let heartbeat_cancel = CancellationToken::new();
+                    let heartbeat_journal = journal.clone();
+                    let heartbeat_run_id = run_id.clone();
+                    let heartbeat_failure_slot = heartbeat_failure.clone();
+                    let heartbeat_cancel_for_task = heartbeat_cancel.clone();
+                    let heartbeat_task = tokio::spawn(async move {
+                        let mut interval = tokio::time::interval(Duration::from_secs(10));
+                        loop {
+                            tokio::select! {
+                                _ = heartbeat_cancel_for_task.cancelled() => break,
+                                _ = interval.tick() => {
+                                    if let Err(error) = heartbeat_journal.heartbeat_build_effect(&heartbeat_run_id).await {
+                                        *heartbeat_failure_slot.lock().expect("heartbeat failure lock") = Some(error.to_string());
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    });
+                    let apply_result = tokio::task::spawn_blocking({
+                        let workspace_path = project.workspace_path.clone();
+                        let run_id = run_id.clone();
+                        let approved = approved.clone();
+                        move || crate::build::apply_approved_build(&workspace_path, &run_id, &approved)
+                    })
+                    .await;
+                    heartbeat_cancel.cancel();
+                    let _ = heartbeat_task.await;
+                    let apply_result =
+                        apply_result.map_err(|error| format!("build worker failed: {error}"))?;
+                    let snapshot = match apply_result {
                         Ok(snapshot) => snapshot,
                         Err(error) => {
                             let _ = journal.complete_build_effect(&run_id, false, None).await;
@@ -4115,6 +4150,15 @@ impl TaskCoordinator {
                         )
                         .await
                         .map_err(|error| error.to_string())?;
+                    if let Some(error) = heartbeat_failure
+                        .lock()
+                        .expect("heartbeat failure lock")
+                        .clone()
+                    {
+                        return Err(format!(
+                            "build lease heartbeat failed; outcome requires reconciliation: {error}"
+                        ));
+                    }
                     let audit_payload = serde_json::to_vec(&serde_json::json!({
                         "run_id": run_id,
                         "snapshot_id": snapshot.id,
