@@ -127,6 +127,36 @@ interface GitOptions {
   readonly allowMissingDirectory?: boolean
 }
 
+/**
+ * Configuration forced onto every git invocation of the updater.
+ *
+ * Stored credentials are deliberately left working: the machine may be
+ * authenticated through `gh` or the credential manager, and a private mirror
+ * must keep updating. What is disabled is *asking* — a helper that pops a
+ * window, or git falling back to a terminal prompt, leaves the update waiting
+ * forever behind a dialog nobody sees. An update that fails is recoverable; one
+ * that hangs blocks the launch before the shell is even up.
+ */
+const NON_INTERACTIVE_ARGS = [
+  '-c',
+  'credential.interactive=false',
+  '-c',
+  'core.askPass='
+] as const
+
+function nonInteractiveEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return {
+    ...env,
+    // git itself must not fall back to a terminal prompt, and neither the
+    // credential manager nor an askpass program may open a window. Credentials
+    // already stored on the machine are still used.
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_ASKPASS: '',
+    SSH_ASKPASS: '',
+    GCM_INTERACTIVE: 'never'
+  }
+}
+
 async function git(
   deps: CheckoutDeps,
   directory: string,
@@ -138,10 +168,10 @@ async function git(
   const cwd = options.allowMissingDirectory && !exists(directory) ? (deps.cwd ?? process.cwd()) : directory
   const result = await run({
     file: deps.git,
-    args,
+    args: [...NON_INTERACTIVE_ARGS, ...args],
     cwd,
+    env: nonInteractiveEnvironment(deps.env ?? process.env),
     timeoutMs: options.timeoutMs ?? GIT_TIMEOUT_MS,
-    ...(deps.env ? { env: deps.env } : {}),
     ...(options.capture ? { capture: true } : {}),
     ...(deps.onLine ? { onLine: deps.onLine } : {})
   })

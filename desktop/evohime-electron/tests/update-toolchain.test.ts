@@ -118,6 +118,12 @@ describe('toolchain detection', () => {
   })
 })
 
+/** Every git call carries the forced non-interactive prefix; drop it. */
+const gitArgs = (call: RunOptions | undefined): readonly string[] =>
+  (call?.args ?? []).slice(NON_INTERACTIVE_PREFIX)
+
+const NON_INTERACTIVE_PREFIX = 4
+
 describe('source checkout', () => {
   const options = {
     directory: 'C:\\data\\EvoHime\\source',
@@ -130,7 +136,7 @@ describe('source checkout', () => {
     const run = vi.fn(async (_call: RunOptions) => ok([], [`${head}\trefs/heads/main`]))
 
     await expect(readRemoteHead(options, { git: GIT, run, exists: () => false })).resolves.toBe(head)
-    expect(run.mock.calls[0]?.[0]?.args).toEqual([
+    expect(gitArgs(run.mock.calls[0]?.[0])).toEqual([
       'ls-remote',
       options.repositoryUrl,
       'refs/heads/main'
@@ -147,12 +153,12 @@ describe('source checkout', () => {
 
   it('resets an existing checkout to the wanted commit and keeps build caches', async () => {
     const run = vi.fn(async (call: RunOptions) =>
-      call.args[0] === 'rev-parse' ? ok([], [head]) : ok()
+      gitArgs(call)[0] === 'rev-parse' ? ok([], [head]) : ok()
     )
 
     await expect(syncCheckout(options, head, { git: GIT, run, exists: () => true })).resolves.toBe(head)
 
-    const commands = run.mock.calls.map(([call]) => call.args)
+    const commands = run.mock.calls.map(([call]) => gitArgs(call))
     expect(commands.some((args) => args[0] === 'clone')).toBe(false)
     expect(commands).toContainEqual(['fetch', '--prune', 'origin', 'main'])
     expect(commands).toContainEqual(['reset', '--hard', head])
@@ -163,7 +169,7 @@ describe('source checkout', () => {
 
   it('clones when there is no checkout yet', async () => {
     const run = vi.fn(async (call: RunOptions) =>
-      call.args[0] === 'rev-parse' ? ok([], [head]) : ok()
+      gitArgs(call)[0] === 'rev-parse' ? ok([], [head]) : ok()
     )
     let cloned = false
 
@@ -177,7 +183,7 @@ describe('source checkout', () => {
       }
     })
 
-    expect(run.mock.calls[0]?.[0].args[0]).toBe('clone')
+    expect(gitArgs(run.mock.calls[0]?.[0])[0]).toBe('clone')
   })
 
   it('refuses a commit that is not an object name', async () => {
@@ -187,5 +193,44 @@ describe('source checkout', () => {
       syncCheckout(options, 'HEAD; rm -rf /', { git: GIT, run, exists: () => true })
     ).rejects.toBeInstanceOf(SourceError)
     expect(run).not.toHaveBeenCalled()
+  })
+})
+
+describe('non-interactive git', () => {
+  const options = {
+    directory: 'C:\\data\\EvoHime\\source',
+    repositoryUrl: 'https://example.invalid/evo.git',
+    branch: 'main'
+  }
+  const head = 'd'.repeat(40)
+
+  it('never lets git or a credential helper open a prompt', async () => {
+    const run = vi.fn(async (_call: RunOptions) => ok([], [`${head}\trefs/heads/main`]))
+
+    await readRemoteHead(options, { git: GIT, run, exists: () => false })
+
+    const call = run.mock.calls[0]?.[0]
+    // Asking is disabled, so an update can never hang behind an invisible
+    // dialog during the launch gate.
+    expect(call?.args.slice(0, 4)).toEqual([
+      '-c',
+      'credential.interactive=false',
+      '-c',
+      'core.askPass='
+    ])
+    expect(call?.env?.['GIT_TERMINAL_PROMPT']).toBe('0')
+    expect(call?.env?.['GCM_INTERACTIVE']).toBe('never')
+    expect(call?.env?.['GIT_ASKPASS']).toBe('')
+  })
+
+  it('keeps credentials the machine already stores working', async () => {
+    const run = vi.fn(async (_call: RunOptions) => ok([], [`${head}\trefs/heads/main`]))
+
+    await readRemoteHead(options, { git: GIT, run, exists: () => false })
+
+    // The helper itself is left configured: a private mirror stays reachable
+    // through gh or the Windows credential manager.
+    const args = run.mock.calls[0]?.[0]?.args ?? []
+    expect(args.some((argument) => argument.startsWith('credential.helper'))).toBe(false)
   })
 })
