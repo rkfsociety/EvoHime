@@ -389,6 +389,12 @@ impl ToolRegistry {
             .tools
             .get(name)
             .ok_or_else(|| ToolError::UnknownTool(name.to_string()))?;
+        // Approval is an authorization result, not a substitute for the
+        // tool's input validator. Keep the post-approval path fail-closed
+        // when a caller constructs an approval outside `execute`.
+        if name == tools::patch::NAME {
+            tools::patch::validate_input(&input)?;
+        }
         let scope = scope_from_input(name, &input);
         let command = command_from_input(name, &input);
         for permission in definition.permissions {
@@ -1225,6 +1231,48 @@ mod tests {
             Err(ToolError::ApprovalDenied)
         ));
         assert!(!dir.path().join("notes/todo.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn post_approval_path_revalidates_patch_input() {
+        let permissions = PermissionEngine::new();
+        let task_id = Uuid::new_v4();
+        let malformed = serde_json::json!({ "path": "notes/todo.txt" });
+        let request = permissions
+            .create_approval_scoped_for_call(
+                task_id,
+                None,
+                "filesystem.patch",
+                evohime_permissions::Permission::FilesystemWrite,
+                "notes/todo.txt",
+                &malformed,
+            )
+            .await;
+        permissions
+            .resolve(request.id, true)
+            .await
+            .expect("approval grants");
+        let registry = ToolRegistry::bootstrap_with_permissions(permissions);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let context = ToolContext {
+            workspace_root: dir.path().to_path_buf(),
+            task_id,
+            session_id: None,
+            progress_tx: None,
+        };
+
+        assert!(matches!(
+            registry
+                .execute_after_approval(
+                    &context,
+                    "filesystem.patch",
+                    malformed,
+                    request.id,
+                    CancellationToken::new(),
+                )
+                .await,
+            Err(ToolError::InvalidInput { .. })
+        ));
     }
 
     #[tokio::test]
