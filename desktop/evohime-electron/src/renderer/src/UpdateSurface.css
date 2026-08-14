@@ -179,8 +179,9 @@
 }
 
 .update-popover {
+  /* Открываем вправо: слева от индикатора всего ~260px сайдбара, поповер туда не влезает и обрезался краем окна. */
   position: absolute;
-  right: -8px;
+  left: -8px;
   bottom: calc(100% + 10px);
   z-index: 20;
   width: min(360px, calc(100vw - 32px));
