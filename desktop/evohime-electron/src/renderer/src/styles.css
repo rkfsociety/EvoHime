@@ -535,7 +535,7 @@ body {
   max-width: 100%;
   padding: 10px 14px;
   border-radius: var(--radius-lg);
-  line-height: 1.55;
+  line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -560,7 +560,7 @@ body {
 .markdown-message blockquote,
 .markdown-message pre,
 .markdown-message table {
-  margin: 0 0 12px;
+  margin: 0 0 6px;
 }
 
 .markdown-message h1,
@@ -569,7 +569,7 @@ body {
 .markdown-message h4,
 .markdown-message h5,
 .markdown-message h6 {
-  margin: 18px 0 8px;
+  margin: 12px 0 6px;
   color: var(--fg);
   line-height: 1.3;
 }
