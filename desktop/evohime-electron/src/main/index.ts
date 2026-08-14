@@ -7,7 +7,7 @@ import type { ShellState } from '@shared/api'
 
 import { ChatStore } from './chat-store'
 import { JsonlLogger } from './diagnostics/logger'
-import { readLaunchContext } from './ipc/launch-context'
+import { hasLiveSupervisor, readLaunchContext } from './ipc/launch-context'
 import { CorePipeClient } from './ipc/pipe-client'
 import { dataDirectory, logDirectory } from './paths'
 import { ProviderStore } from './provider-store'
@@ -208,11 +208,7 @@ async function ensureSupervisorSession(
   force = false
 ): Promise<ReturnType<typeof readLaunchContext>> {
   const current = readLaunchContext()
-  if (
-    !force &&
-    !current.developerLaunch &&
-    (!current.supervisorPid || processIsAlive(current.supervisorPid))
-  ) {
+  if (!force && hasLiveSupervisor(current, processIsAlive)) {
     return current
   }
   if (!current.developerLaunch) {

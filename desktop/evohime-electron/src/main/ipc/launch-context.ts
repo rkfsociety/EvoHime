@@ -45,6 +45,25 @@ export function handshakeProof(context: LaunchContext, nonce: string): string {
     .digest('hex')
 }
 
+/**
+ * Whether a supervisor is known to own the current context.
+ *
+ * A context file alone proves nothing: Core writes one in its console mode, and
+ * older supervisors recorded no pid at all. Such a file outlives the process
+ * that made it, so treating its mere presence as "a supervisor is running"
+ * leaves the shell reconnecting forever to a pipe nobody serves. Only a
+ * recorded, still-alive pid counts; anything else means start a supervisor.
+ */
+export function hasLiveSupervisor(
+  context: LaunchContext,
+  isAlive: (pid: number) => boolean
+): boolean {
+  if (context.developerLaunch || context.supervisorPid === undefined) {
+    return false
+  }
+  return isAlive(context.supervisorPid)
+}
+
 export function launchContextPath(environment: NodeJS.ProcessEnv = process.env): string {
   const explicit = sanitize(environment['EVOHIME_LAUNCH_CONTEXT'])
   if (explicit) {
