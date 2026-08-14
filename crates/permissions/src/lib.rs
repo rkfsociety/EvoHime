@@ -881,10 +881,21 @@ fn mode_to_decision(mode: PermissionMode) -> PermissionDecision {
 }
 
 fn normalize_scope_path(path: impl AsRef<str>) -> String {
-    path.as_ref()
+    let normalized = path
+        .as_ref()
         .trim()
         .replace('\\', "/")
         .trim_start_matches("./")
+        .to_string();
+
+    // `Path::canonicalize` on Windows may return the NT extended-length
+    // spelling (`//?/C:/...`), while user policy files normally contain the
+    // regular drive spelling (`C:/...`). Treat both as the same subject so a
+    // hard deny cannot depend on which spelling the filesystem API returned.
+    normalized
+        .strip_prefix("//?/")
+        .or_else(|| normalized.strip_prefix("//./"))
+        .unwrap_or(&normalized)
         .to_string()
 }
 
@@ -1895,5 +1906,13 @@ mod tests {
 
             assert!(!engine.approval_matches(fake_id, &call_hash).await);
         });
+    }
+
+    #[test]
+    fn extended_windows_path_prefix_matches_regular_drive_subject() {
+        assert_eq!(
+            normalize_scope_path("//?/C:/workspace/secrets/token.txt"),
+            "C:/workspace/secrets/token.txt"
+        );
     }
 }
