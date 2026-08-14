@@ -73,4 +73,4 @@ Compatibility suite WinUI/IPC (нужен .NET SDK 10):
 & 'C:\Program Files\dotnet\dotnet.exe' test desktop\EvoHime.Tests\EvoHime.Tests.csproj -p:Platform=x64
 ```
 
-Архитектура находится в [`docs/architecture.md`](docs/architecture.md), фактическое состояние — в [`docs/current-state.md`](docs/current-state.md), ближайший порядок — в [`docs/development-plan.md`](docs/development-plan.md).
+Архитектура находится в [`docs/architecture.md`](docs/architecture.md), фактическое состояние — в [`docs/current-state.md`](docs/current-state.md), ближайший порядок — в [`docs/plans/development-plan.md`](docs/plans/development-plan.md).

@@ -75,7 +75,7 @@ npm run package          # распакованный Windows package в release
 Real-Core E2E тесты требуют собранный Core: `cargo build -p evohime-core`
 (или `--release`); без бинарника они помечаются как пропущенные.
 
-Для текущих desktop-задач используй Windows launcher, Rust crates, Electron tests в `desktop/evohime-electron` и Windows packaging scripts. WinUI/IPC tests остаются compatibility suite. Подробные решения завершённой миграции хранятся в памяти проекта; активные работы описаны в `docs/development-plan.md`.
+Для текущих desktop-задач используй Windows launcher, Rust crates, Electron tests в `desktop/evohime-electron` и Windows packaging scripts. WinUI/IPC tests остаются compatibility suite. Подробные решения завершённой миграции хранятся в памяти проекта; активные работы описаны в `docs/plans/development-plan.md`.
 Electron renderer — встроенная часть desktop-приложения, а не web-панель: HTTP server, browser launcher и внешний Node.js runtime не возвращаются в продукт.
 
 Если Rust-сборка останавливается на `prost-build` или другом crate, сначала проверь доступ Cargo к crates.io:
@@ -121,8 +121,8 @@ NuGet и crates.io — независимые источники: успешны
 - `docs/README.md` — карта документации и правило источника истины;
 - `docs/architecture.md` — архитектура, runtime, IPC и упаковка;
 - `docs/current-state.md` — подтверждённое состояние checkout;
-- `docs/development-plan.md` — актуальный implementation plan;
-- `docs/roadmap.md` — долгосрочные направления без деталей реализации;
+- `docs/plans/development-plan.md` — актуальный implementation plan;
+- `docs/plans/roadmap.md` — долгосрочные направления без деталей реализации;
 - `docs/features/`, `docs/providers/`, `docs/security/` — справочные разделы;
 
-Отдельного каталога `docs/plans/` больше нет: незавершённые работы держатся в `development-plan.md` и `roadmap.md`.
+Все планы лежат в `docs/plans/`. Новый план создаётся файлом в этом каталоге, а не в корне `docs/`.
