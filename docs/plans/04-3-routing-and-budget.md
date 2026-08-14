@@ -14,6 +14,16 @@
 
 Route decision с воспроизводимым trace и учётом бюджета.
 
+## Что уже есть в коде
+
+Есть: `RoutingTelemetry` с детерминированным JSON, fallback notice и счётчики
+итераций/tool calls/времени в `RoutingRuntime`.
+
+Нет: budget snapshot (приходит из этапа 01.1), evaluation gate для small route,
+блокировки cloud при незавершённой classification или непрошедшей redaction, и
+самого подключения к `ToolAgent` — сегодня агент вызывает маршрут `"default"`
+напрямую.
+
 ## Содержание
 
 - Добавить trace decision: candidates, selected route, reason, privacy label,

@@ -13,6 +13,15 @@
 
 Явные состояния child task, bounded leases и restart recovery.
 
+## Что уже есть в коде
+
+Есть: `ChildLifecycleState` ровно в описанных ниже состояниях (плюс `TimedOut`
+и `Aborted`), проверяемые переходы и события lifecycle с порядковым номером.
+
+Нет: восстановления только из durable checkpoint после restart с повторной
+валидацией report/evidence, bounded дочерних leases и fan-in нескольких
+отчётов.
+
 ## Содержание
 
 - Зафиксировать Created → Queued → Running → Validating →

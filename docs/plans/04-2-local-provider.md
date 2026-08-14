@@ -14,6 +14,13 @@
 
 Loopback-only local route с честным статусом доступности.
 
+## Что уже есть в коде
+
+Ничего. В `crates/model-gateway/src/providers/` есть только `literouter`,
+`openai_compatible` и `mock`. Строка `local_route_unavailable` в
+`routing_runtime.rs` — это причина отказа в политике, а не реализованный
+локальный провайдер: падать сейчас некуда.
+
 ## Содержание
 
 - Добавить OpenAI-compatible local endpoint adapter с loopback-only policy.

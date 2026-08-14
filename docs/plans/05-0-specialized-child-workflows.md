@@ -56,6 +56,19 @@ implementer.
 повторяющихся failure patterns переводят задачу в `revise_plan`, а не создают
 новых бесконтрольных детей.
 
+## Что уже есть в коде
+
+`crates/evohime-core/src/child_roles.rs` и `child_runtime.rs` уже содержат
+существенную часть: перечисление ролей (`Coordinator`, `Researcher`,
+`Implementer`, `Reviewer`, `Tester`), lifecycle state machine ровно в тех
+состояниях, что описаны ниже, typed `ChildTaskRequest`/`ChildReport` с
+валидацией до persistence, запрет вложенных детей и разрешение только
+read-only capabilities.
+
+Чего нет: workspace/path grants, token/time/tool-call budget, correlation id
+на receipt, offload в artifact store и изоляция контекста между детьми. Роль
+`researcher` существует как имя, но без RAG у неё нет своего инструмента.
+
 ## Этапы
 
 | Этап | Файл | Что отдаёт наружу | Кто потребляет |

@@ -16,6 +16,16 @@
 Capability metadata провайдеров, разделение route selection и execution,
 health state с TTL и circuit breaker.
 
+## Что уже есть в коде
+
+Есть: `RouteCandidate` с capabilities, privacy class, cost, latency и флагом
+`available`; `select_route` отделён от исполнения; bounded валидация кандидатов
+и запроса.
+
+Нет: health state с TTL, circuit breaker и last failure category — сейчас
+доступность это статический `available: bool` на кандидате; нет Core-owned
+immutable snapshot fallback policy на запуск задачи.
+
 ## Содержание
 
 - Ввести capability metadata: tool calling, structured output, context limit,

@@ -13,6 +13,14 @@
 
 Timeline ролей, панель активных детей и trace переходов состояний.
 
+## Что уже есть в коде
+
+Есть: OperationsPanel считает события `child.*` и показывает число принятых
+отчётов и падений.
+
+Нет: разбивки по ролям, budget, evidence и причине отказа; активных leases и
+dead-letter; trace переходов состояний.
+
 ## Содержание
 
 - Task timeline показывает role, status, budget, evidence, approval и reason

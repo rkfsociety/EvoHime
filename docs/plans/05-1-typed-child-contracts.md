@@ -16,6 +16,16 @@
 
 Typed input/output контракт child task и сквозные correlation ids.
 
+## Что уже есть в коде
+
+Есть: `ChildTaskRequest` с `role`, `reduced_context`, `max_output_bytes` и
+`requested_capabilities`, валидация report до persistence, отказ вложенным
+детям и не-read-only capabilities.
+
+Нет: workspace/path grants, token/time/tool-call budget, явной input/output
+schema, parent sequence и correlation id на receipt (последний приходит из
+этапа 03.3).
+
 ## Содержание
 
 - Расширить existing child IPC/storage additive-полями role, grants, budget,

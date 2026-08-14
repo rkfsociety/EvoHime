@@ -33,6 +33,19 @@ policy. Provider secrets не передаются local route.
 4. cloud timeout/5xx/rate limit → local fallback, если tool calling capable;
 5. mutation/approval semantics не ослабляются при смене модели.
 
+## Что уже есть в коде
+
+`crates/model-gateway/src/routing_policy.rs` и `routing_runtime.rs` уже
+содержат детерминированный выбор маршрута: bounded `RouteCandidate` с
+capabilities, privacy class, cost и latency, `select_route` с fallback chain и
+причинами отказа, режимы `RoutingMode`, лимиты запуска и `RoutingTelemetry`.
+
+**Но это библиотека, не поведение продукта.** Она вызывается только из
+`evals.rs`; сам `ToolAgent` по-прежнему ходит в `chat_with_tools_for_route`
+с фиксированным маршрутом `"default"`. Планировать работу нужно от этого:
+основная часть — подключение и недостающие части контракта, а не написание
+селектора с нуля.
+
 ## Этапы
 
 | Этап | Файл | Что отдаёт наружу | Кто потребляет |
