@@ -21,8 +21,14 @@ Renderer не имеет node integration, не выполняет shell-ком�
 ограниченно читает Markdown-файл через native dialog, затем передаёт его Core.
 Core вызывает 2–8 моделей текущего provider catalog по очереди, по одному
 запросу за раз, чтобы не упираться в лимиты провайдера, и затем отдельную
-synthesis-модель. Per-request model overrides сохраняются. Review не получает tools, не
-изменяет workspace и сохраняется в локальном event journal без credentials.
+synthesis-модель. Per-request model overrides сохраняются. Состав и порядок
+рецензентов фиксируются на момент запуска: неудачное обновление каталога
+возвращает пустой список и трактуется как «нет новостей», а не как «нет
+моделей», поэтому уже выбранные модели не теряются. Исходный Markdown
+ограничен 512 КБ, ответ каждого рецензента — 256 КБ. Review не получает tools,
+не изменяет workspace и сохраняется в локальном event journal без credentials;
+история ревью очищается отдельной командой и исчезает из UI сразу, а не после
+перезапуска.
 
 WinUI 3 больше не является пользовательской оболочкой пакета. Он сохранён как
 временный compatibility runtime и oracle для совместимости IPC до отдельного
@@ -41,7 +47,7 @@ Renderer состоит из панели проектов и чатов, лен
 | `RepositoryBar` | ветка и счётчики изменений открытого репозитория |
 | `ModelPicker` | выбор модели в чате; каталог разделён на free и paid |
 | `ProviderForm` | единственная поверхность настроек провайдера (ключ, модель, base URL) |
-| `PlanReviewPanel` | коллективное read-only ревью Markdown-плана несколькими моделями и synthesis-моделью |
+| `PlanReviewPanel` | коллективное read-only ревью Markdown-плана несколькими моделями и synthesis-моделью; итог копируется в буфер или экспортируется в Markdown, история очищается кнопкой |
 | `RecoveryBanner` + `recovery-state.ts` | состояние восстановления, выведенное только из подтверждённых Core событий |
 | `OperationsPanel` | очередь подтверждения памяти и конфликты (только metadata), плюс read-only проекция child- и schedule-событий |
 | `DeveloperTools`, `EditorPanel`, `TerminalPanel`, `SafetyPanel` | файлы и Git, редактор, ограниченный терминал, permission policy |
@@ -59,6 +65,7 @@ Renderer состоит из панели проектов и чатов, лен
 - cancellation передаётся отдельной командой `StopTask`;
 - `SelectModelRequest` меняет модель следующего запроса без перезапуска Core: gateway разрешает модель на каждый вызов, пустое значение возвращает модель маршрута;
 - `CancelDatabaseOperation` кооперативно отменяет выполняющийся backup или restore;
+- `ClearPlanReviewHistory` удаляет сохранённые ревью планов из локального журнала; Core отвечает подтверждением, и UI перестаёт показывать историю немедленно;
 - команды памяти `GetMemory`, `ListMemoryPending`, `GetMemoryConflicts`, `ConfirmMemory`, `RejectMemory`, `SupersedeMemory`, `ReviseMemoryCandidate` аддитивны. `ListMemory`, `SearchMemory` и `ListMemoryPending` возвращают только metadata; тело записи доступно исключительно через явный `GetMemory` и маскируется для `sensitive` и забытых записей. Confirm/reject/supersede требуют approval-токен и idempotency key: повтор безопасен и возвращает фактическое состояние записи.
 
 ## Memory Extraction

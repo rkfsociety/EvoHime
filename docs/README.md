@@ -1,6 +1,6 @@
 # Документация EvoHime
 
-Этот каталог описывает поддерживаемый Windows desktop-продукт. Главный источник команд запуска и требований — корневой [`README.md`](../README.md). Информация о доступном установщике и правилах постоянного релиза находится в [`../installer/release-notes.md`](../installer/release-notes.md).
+Этот каталог описывает поддерживаемый Windows desktop-продукт. Корневой [`README.md`](../README.md) — пользовательское описание продукта и установка; главный источник команд запуска, требований и критериев проверки — [`AGENTS.md`](../AGENTS.md). Информация о доступном установщике и правилах постоянного релиза находится в [`../installer/release-notes.md`](../installer/release-notes.md).
 
 ## Какой документ читать
 
@@ -50,7 +50,8 @@
 | Долгосрочные направления без пошаговой реализации | [`roadmap.md`](roadmap.md) |
 | Security boundaries и release security gates | [`../SECURITY.md`](../SECURITY.md), [`security/`](security/) |
 | Evaluation catalog, deterministic runner и smoke-gate contract | [`evaluations.md`](evaluations.md), [`../tests/evals/`](../tests/evals/) |
-| Установить текущий Windows-клиент | [`../installer/release-notes.md`](../installer/release-notes.md) | Постоянная ссылка, требования и модель обновления |
+| Команды сборки, запуска и проверок | [`../AGENTS.md`](../AGENTS.md) |
+| Установить текущий Windows-клиент | [`../installer/release-notes.md`](../installer/release-notes.md) |
 | Provider-specific configuration | [`providers/`](providers/) |
 | Core crate contracts and implementation notes | соответствующий `crates/*/README.md` |
 
@@ -59,7 +60,7 @@
 
 ## Рабочие правила
 
-Для текущей разработки используйте `start-dev.ps1`, native package tests, Electron checks, WinUI/IPC compatibility tests и Windows CI. Electron shell живёт в `desktop/evohime-electron`; его protocol check, typecheck, unit-, contract- и real-Core E2E тесты запускаются через npm-команды и входят в Windows CI. Установщик и пользовательский запуск работают через Electron `EvoHime.exe`.
+Для текущей разработки используйте `start-dev.ps1` (нужен PowerShell 7 или новее: в Windows PowerShell 5.1 сборка не работает), native package tests, Electron checks, WinUI/IPC compatibility tests и Windows CI. Electron shell живёт в `desktop/evohime-electron`; его protocol check, typecheck, unit-, contract- и real-Core E2E тесты запускаются через npm-команды и входят в Windows CI. Установщик и пользовательский запуск работают через Electron `EvoHime.exe`.
 
 Веб-панель полностью выведена из продукта. Electron renderer — встроенный desktop UI; HTTP server и browser launcher не используются. `start-dev.ps1` собирает native package и открывает Electron `EvoHime.exe`; клиент сам запускает единственный скрытый supervisor, а supervisor — Core. `-SkipBuild` допустим только при наличии готового `.evohime-native\windows-x64`.
 

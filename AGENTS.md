@@ -23,6 +23,8 @@ UI не обращается к workspace, SQLite или model provider напр
 ## Требования
 
 - Windows 10 2004+ или Windows 11, x64;
+- PowerShell 7 или новее: скрипты сборки и запуска в Windows PowerShell 5.1 не
+  работают и останавливаются с явной ошибкой;
 - .NET SDK 10;
 - Rust MSVC toolchain;
 - Node.js 22 LTS — только для разработки Electron shell; в продукт внешний
@@ -32,10 +34,10 @@ UI не обращается к workspace, SQLite или model provider напр
 
 ```powershell
 # Сборка и запуск desktop-приложения
-.\start-dev.ps1
+pwsh -File .\start-dev.ps1
 
 # Запуск уже собранного desktop-пакета
-.\start-dev.ps1 -SkipBuild
+pwsh -File .\start-dev.ps1 -SkipBuild
 
 # Сборка переносимого Windows-пакета
 .\scripts\build-windows-native.ps1

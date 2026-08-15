@@ -24,7 +24,7 @@
 
 Закрытые foundation, Electron shell, developer tools, installer, update, recovery и
 Windows acceptance не являются задачами текущего плана. Их фактическое состояние
-зафиксировано в [`current-state.md`](../current-state.md).
+зафиксировано в [`current-state.md`](current-state.md).
 
 Проверка 2026-08-14: Rust, Electron, C#/WinUI compatibility, protocol, bundle,
 native, deterministic evaluation и security smoke checks прошли без ошибок;
@@ -38,15 +38,16 @@ Legacy web UI, browser launcher, HTTP server и PostgreSQL persistence удал�
 Core + SQLite + authenticated named-pipe IPC сохраняются. Пользовательская оболочка
 — Electron; WinUI — compatibility runtime.
 
-| Блок | Статус |
-| --- | --- |
 Активных задач текущего implementation-цикла нет. Следующие задачи выбираются из
 долгосрочного [`roadmap.md`](roadmap.md) после отдельного подтверждения приоритета.
 
 После завершения foundation добавлен функциональный slice «Ревью планов» в
 Electron: additive desktop IPC, `plan_review` в Core и event journal для
-истории. DOCX/PDF import, пользовательские критерии и ZIP-экспорт остаются
-последующими улучшениями.
+истории. Slice доведён до рабочего состояния: последовательные reviewer calls с
+прогрессом и явным статусом ошибок, стабильный состав и порядок рецензентов,
+копирование и экспорт итогового Markdown, очистка истории через
+`ClearPlanReviewHistory`. DOCX/PDF import, пользовательские критерии и
+ZIP-экспорт остаются последующими улучшениями.
 
 ## Acceptance criteria
 
