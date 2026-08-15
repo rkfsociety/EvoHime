@@ -185,8 +185,35 @@ function createUpdateService(): UpdateService {
     // The UI shows one build line; the whole output stays on disk, because a
     // failed rebuild cannot be explained from its last line alone.
     buildLog: new BuildLog(join(logDirectory(), 'update-build.log')),
-    quit: () => app.quit()
+    quit: quitForUpdate
   })
+}
+
+/** Grace period before the shell stops asking to exit and simply exits. */
+const UPDATE_QUIT_GRACE_MS = 5_000
+
+/**
+ * Ends the process so the staged package can replace the installed files.
+ *
+ * `app.quit()` on its own is not enough: with keep-alive on, the tray cancels
+ * the window close and hides the window instead, and the shell keeps running.
+ * The transaction then waits for a process that never exits, finds the
+ * installation still locked by it, and gives up — the update stays unapplied
+ * while the UI sits in «Применяю обновление…» forever. Quitting goes through the
+ * tray's own quit path, which clears that veto, and the timer is the backstop
+ * for anything else that could refuse to close.
+ */
+function quitForUpdate(): void {
+  if (tray) {
+    tray.forceQuit()
+  } else {
+    app.quit()
+  }
+  const timer = setTimeout(() => {
+    log('warn', 'shell.update_quit_forced', {})
+    app.exit(0)
+  }, UPDATE_QUIT_GRACE_MS)
+  timer.unref?.()
 }
 
 /**
