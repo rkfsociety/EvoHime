@@ -370,6 +370,29 @@ describe('transient build failures', () => {
     expect(status.error).toContain('cargo')
   })
 
+  it('retries after a failed attempt instead of returning the stale failure', async () => {
+    let attempts = 0
+    const test = harness({
+      reset: vi.fn(async () => {}),
+      // Обе попытки первого запуска падают: статус остаётся «failed», а
+      // remoteCommit уже известен — ровно то состояние, в котором пользователь
+      // жмёт «Повторить».
+      build: vi.fn(async () => {
+        attempts += 1
+        if (attempts <= 2) throw new Error('git fetch: нет сети')
+        return { commit: REMOTE, branch: 'main', builtAtMs: 2 }
+      })
+    })
+
+    expect((await test.service.prepare()).phase).toBe('failed')
+
+    const retried = await test.service.prepare()
+
+    expect(attempts).toBe(3)
+    expect(retried.phase).toBe('ready')
+    expect(retried.error).toBeNull()
+  })
+
   it('does not retry a build the user skipped', async () => {
     const reset = vi.fn(async () => {})
     const test = harness({

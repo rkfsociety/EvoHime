@@ -265,8 +265,16 @@ export class UpdateService {
     this.aborter = aborter
 
     try {
-      const target = this.current.remoteCommit ?? (await this.check()).remoteCommit
-      if (this.current.phase === 'failed' || !target) return this.current
+      // Прошлая неудача не должна блокировать повтор: «failed» из предыдущей
+      // попытки уже показан в UI, и кнопка «Повторить» ведёт сюда же. Отменяет
+      // сборку только та проверка, которую мы запустили прямо сейчас.
+      let target = this.current.remoteCommit
+      if (!target) {
+        const checked = await this.check()
+        if (checked.phase === 'failed') return this.current
+        target = checked.remoteCommit
+      }
+      if (!target) return this.current
       if (target === this.current.installedCommit) {
         return this.patch({ phase: 'up-to-date', message: 'Установлена последняя версия.' })
       }
