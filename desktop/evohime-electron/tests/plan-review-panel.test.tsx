@@ -93,6 +93,39 @@ describe('plan review panel', () => {
     expect(screen.getByText(/Синтез результата · main/)).toBeTruthy()
   })
 
+  it('reads progress from the externally tagged form the core actually sends', async () => {
+    const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
+    const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
+
+    await startReview(['a', 'b', 'main'])
+    const reviewId = startedReviewId()
+    view.rerender(<PlanReviewPanel connection="connected" events={[
+      catalog,
+      event('review.progress', { ReviewProgress: { review_id: reviewId, stage: 'reviewers', status: 'working', model: 'a', completed: 0, total: 2 } }, reviewId),
+      event('review.progress', { ReviewProgress: { review_id: reviewId, stage: 'reviewers', status: 'completed', model: 'b', completed: 1, total: 2 } }, reviewId)
+    ]} />)
+
+    expect(screen.getByText('Рецензенты: 1/2')).toBeTruthy()
+    const statuses = screen.getAllByText(/^(работает|готово|ожидает)$/).map((node) => node.textContent)
+    expect(statuses).toEqual(['работает', 'готово'])
+  })
+
+  it('shows the result delivered as a tagged task.completed event', async () => {
+    const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
+    const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
+
+    await startReview(['a', 'b', 'main'])
+    const reviewId = startedReviewId()
+    const result = { review_id: reviewId, file_name: 'plan.md', synthesis_model: 'main', final_markdown: '# Итог', reviewers: [{ model: 'a', status: 'completed', content: 'ok' }] }
+    view.rerender(<PlanReviewPanel connection="connected" events={[
+      catalog,
+      event('task.completed', { TaskCompleted: { task_id: reviewId, final_message: JSON.stringify(result) } }, reviewId)
+    ]} />)
+
+    expect(screen.getByText('Итоговое ревью')).toBeTruthy()
+    expect(screen.getByText('Готово')).toBeTruthy()
+  })
+
   it('confirms that the core accepted the plan', async () => {
     const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
     const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)

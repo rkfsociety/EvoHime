@@ -253,8 +253,8 @@ function latestReviewFailure(events: readonly CoreEvent[], reviewId: string): Re
     const taskId = event.taskId || String(payload?.task_id ?? '')
     if (taskId !== reviewId) continue
     if (event.eventType === 'task.stopped') return { kind: 'stopped', message: 'Ревью остановлено.' }
-    const nested = payload?.TaskFailed && typeof payload.TaskFailed === 'object' ? (payload.TaskFailed as Record<string, unknown>).error : payload?.error
-    return { kind: 'failed', message: typeof nested === 'string' && nested.length > 0 ? nested : 'Ядро не сообщило причину.' }
+    const reason = payload?.error
+    return { kind: 'failed', message: typeof reason === 'string' && reason.length > 0 ? reason : 'Ядро не сообщило причину.' }
   }
   return null
 }
@@ -263,7 +263,7 @@ function latestReviewResult(events: readonly CoreEvent[]): PlanReviewResult | nu
   const responsePayload = readPayload([...events].reverse().find((item) => item.eventType === 'review.result'))
   if (responsePayload?.result && typeof responsePayload.result === 'object') return normalizeResult(responsePayload.result as Record<string, unknown>)
   const payload = readPayload([...events].reverse().find((item) => item.eventType === 'task.completed' && item.taskId.startsWith('review-')))
-  const finalMessage = payload?.TaskCompleted && typeof payload.TaskCompleted === 'object' ? (payload.TaskCompleted as Record<string, unknown>).final_message : payload?.final_message
+  const finalMessage = payload?.final_message
   if (typeof finalMessage !== 'string') return null
   try { return normalizeResult(JSON.parse(finalMessage) as Record<string, unknown>) } catch { return null }
 }
@@ -275,7 +275,22 @@ function normalizeResult(value: Record<string, unknown>): PlanReviewResult | nul
 }
 
 function normalizeSlots(values: readonly string[], count: number, available: readonly string[] = []): string[] { const result = values.slice(0, count); while (result.length < count) result.push(''); const candidates = available.filter((model) => !result.includes(model)); for (let index = 0; index < result.length; index += 1) if (!result[index] && candidates.length > 0) result[index] = candidates.shift() as string; return result }
-function readPayload(event: CoreEvent | undefined): Record<string, unknown> | null { if (!event) return null; try { const value: unknown = JSON.parse(event.payload); return typeof value === 'object' && value !== null ? value as Record<string, unknown> : null } catch { return null } }
+function readPayload(event: CoreEvent | undefined): Record<string, unknown> | null { if (!event) return null; try { const value: unknown = JSON.parse(event.payload); return typeof value === 'object' && value !== null ? unwrapVariant(value as Record<string, unknown>) : null } catch { return null } }
+
+/**
+ * Core serialises `CoreEvent` as an externally tagged enum, so event fields live
+ * one level down under the variant name, while command responses arrive flat.
+ * Both reach the panel over the same stream, and reading an event as flat left
+ * the progress card blind to a review that was in fact running.
+ */
+function unwrapVariant(value: Record<string, unknown>): Record<string, unknown> {
+  const keys = Object.keys(value)
+  const key = keys.length === 1 ? keys[0] : undefined
+  if (key === undefined || !/^[A-Z]/.test(key)) return value
+  const inner = value[key]
+  // An array belongs to a flat response such as `review.list`, not to a variant.
+  return typeof inner === 'object' && inner !== null && !Array.isArray(inner) ? inner as Record<string, unknown> : value
+}
 function reviewStatus(progress: ReviewProgress | null, finished: boolean, hasResult: boolean, failure: ReviewFailure | null, accepted: boolean): string { if (failure) return failure.kind === 'stopped' ? 'Остановлено' : 'Ошибка'; if (hasResult || finished || progress?.stage === 'completed') return 'Готово'; if (progress?.stage === 'failed') return 'Ошибка'; if (progress?.stage === 'synthesis') return 'Синтез результата'; if (progress?.stage === 'reviewers') return `Рецензенты: ${progress.completed}/${progress.total}`; return accepted ? 'Отправлено в ядро' : 'Отправка плана' }
 function reviewStatusLabel(status: string): string { if (status === 'completed') return 'готово'; if (status === 'failed') return 'ошибка'; if (status === 'cancelled') return 'отменено'; if (status === 'working') return 'работает'; return 'ожидает' }
 function makeReviewId(): string { return typeof crypto.randomUUID === 'function' ? `review-${crypto.randomUUID()}` : `review-${Date.now()}` }
