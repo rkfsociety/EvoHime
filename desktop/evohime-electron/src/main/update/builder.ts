@@ -138,7 +138,7 @@ export async function buildStagedPackage(
 
     return await assembleStaging(inputs, electronRoot, { ...deps, exists }, join(outputRoot, 'win-unpacked'))
   } finally {
-    await removeTreeResilient(outputRoot).catch(() => undefined)
+    await withoutAsar(() => removeTreeResilient(outputRoot)).catch(() => undefined)
   }
 }
 
@@ -159,9 +159,11 @@ export async function assembleStaging(
     throw new BuildError('Electron package не собрался — каталог win-unpacked отсутствует.')
   }
 
-  await removeTreeResilient(inputs.stagingDirectory)
-  await mkdir(inputs.stagingDirectory, { recursive: true })
-  await cp(unpacked, inputs.stagingDirectory, { recursive: true })
+  await withoutAsar(async () => {
+    await removeTreeResilient(inputs.stagingDirectory)
+    await mkdir(inputs.stagingDirectory, { recursive: true })
+    await cp(unpacked, inputs.stagingDirectory, { recursive: true })
+  })
 
   for (const component of REQUIRED_NATIVE_COMPONENTS) {
     const source = join(cargoTarget, component)
@@ -204,8 +206,30 @@ export async function assembleStaging(
  */
 export async function clearDerivedState(sourceDirectory: string): Promise<void> {
   const electronRoot = join(sourceDirectory, ELECTRON_SUBPATH)
-  for (const path of ['release', '.electron-cache', 'out']) {
-    await removeTreeResilient(join(electronRoot, path))
+  await withoutAsar(async () => {
+    for (const path of ['release', '.electron-cache', 'out']) {
+      await removeTreeResilient(join(electronRoot, path))
+    }
+  })
+}
+
+/**
+ * Runs a file operation with Electron's asar mapping switched off.
+ *
+ * The rebuild runs inside an Electron process, where `fs` presents every
+ * `.asar` archive as a directory and keeps it open once touched. Copying the
+ * freshly packaged `win-unpacked` then walks *into* `resources/app.asar`
+ * instead of copying the file, leaves the archive locked, and the copy never
+ * finishes — the update gate hangs forever with no output. `process.noAsar`
+ * turns the archive back into an ordinary file for the duration of the call.
+ */
+async function withoutAsar<T>(operation: () => Promise<T>): Promise<T> {
+  const previous = process.noAsar
+  process.noAsar = true
+  try {
+    return await operation()
+  } finally {
+    process.noAsar = previous
   }
 }
 

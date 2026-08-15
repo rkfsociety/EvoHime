@@ -5,6 +5,25 @@ import { detectToolchain } from './toolchain'
 
 export const BUILD_WORKER_FLAG = '--evohime-update-build-worker'
 
+/**
+ * Marker the worker prints when a build step starts.
+ *
+ * The worker runs in its own process, so the `onStep` callback cannot reach the
+ * shell directly: without this the checklist stayed at «источники» for the whole
+ * rebuild and a working build looked frozen.
+ */
+export const BUILD_STEP_PREFIX = '::evohime-step::'
+
+type BuildStep = 'core' | 'shell' | 'package'
+
+const BUILD_STEPS: readonly BuildStep[] = ['core', 'shell', 'package']
+
+function parseStep(line: string): BuildStep | null {
+  if (!line.startsWith(BUILD_STEP_PREFIX)) return null
+  const value = line.slice(BUILD_STEP_PREFIX.length).trim()
+  return BUILD_STEPS.find((step) => step === value) ?? null
+}
+
 /** Runs the rebuild outside the interactive Electron main process. */
 export function runBuildWorker(inputs: BuildInputs, deps: BuildDeps = {}): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -37,6 +56,11 @@ export function runBuildWorker(inputs: BuildInputs, deps: BuildDeps = {}): Promi
       for (const line of String(chunk).split(/\r?\n/)) {
         const trimmed = line.trim()
         if (!trimmed) continue
+        const step = parseStep(trimmed)
+        if (step) {
+          deps.onStep?.(step)
+          continue
+        }
         lastLine = trimmed
         deps.onLine?.(trimmed)
       }
@@ -66,7 +90,10 @@ export async function runBuildWorkerProcess(args: readonly string[]): Promise<vo
       branch: required(args, '--branch'),
       toolchain: report
     },
-    { onLine: (line) => console.log(line) }
+    {
+      onLine: (line) => console.log(line),
+      onStep: (step) => console.log(`${BUILD_STEP_PREFIX}${step}`)
+    }
   )
 }
 
