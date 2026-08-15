@@ -126,6 +126,29 @@ describe('plan review panel', () => {
     expect(screen.getByText('Готово')).toBeTruthy()
   })
 
+  it('copies the final markdown to the clipboard', async () => {
+    const copied: string[] = []
+    const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
+    const api = (window as unknown as { evohime: { v1: EvoHimeApiV1 } }).evohime.v1
+    Object.defineProperty(window, 'evohime', {
+      value: Object.freeze({ v1: { ...api, writeClipboardText: async (text: string) => { copied.push(text); return true } } }),
+      configurable: true
+    })
+    const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
+
+    await startReview(['a', 'b', 'main'])
+    const reviewId = startedReviewId()
+    const result = { review_id: reviewId, file_name: 'plan.md', synthesis_model: 'main', final_markdown: '# Итог\n\nВывод', reviewers: [] }
+    view.rerender(<PlanReviewPanel connection="connected" events={[
+      catalog,
+      event('task.completed', { TaskCompleted: { task_id: reviewId, final_message: JSON.stringify(result) } }, reviewId)
+    ]} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Скопировать итоговый Markdown' }))
+    expect(copied).toEqual(['# Итог\n\nВывод'])
+    expect(screen.getByRole('button', { name: 'Скопировано' })).toBeTruthy()
+  })
+
   it('confirms that the core accepted the plan', async () => {
     const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
     const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)

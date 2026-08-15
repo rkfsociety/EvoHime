@@ -66,6 +66,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   const [error, setError] = useState<string | null>(null)
   const [startedAt, setStartedAt] = useState<number | null>(null)
   const [elapsed, setElapsed] = useState(0)
+  const [copied, setCopied] = useState(false)
 
   const catalogModels = useMemo(() => latestCatalog(events, tier), [events, tier])
   const reviewResult = useMemo(() => latestReviewResult(events), [events])
@@ -160,6 +161,16 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
     setError(null)
   }
 
+  const copyResult = async (): Promise<void> => {
+    if (!api || !selectedResult) return
+    if (!(await api.writeClipboardText(selectedResult.finalMarkdown))) {
+      setError('Не удалось скопировать итог в буфер обмена.')
+      return
+    }
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1400)
+  }
+
   const exportResult = async (): Promise<void> => {
     if (!api || !selectedResult) return
     const outcome = await api.invoke('review.export', { reviewId: selectedResult.reviewId, destinationPath: '', includeReviewers: false })
@@ -205,7 +216,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
       {failure ? <p role="alert" className="shell__reason">{failure.kind === 'stopped' ? 'Ревью остановлено.' : `Ревью завершилось ошибкой: ${failure.message}`}</p> : null}
       {error ? <p role="alert" className="shell__reason">{error}</p> : null}
 
-      {selectedResult ? <div className="review-panel__result"><div className="review-panel__result-heading"><h3>Итоговое ревью</h3><button type="button" onClick={() => void exportResult()}>Экспортировать итоговый Markdown</button></div><MarkdownMessage text={selectedResult.finalMarkdown} /><h3>Исходные ответы</h3>{selectedResult.reviewers.map((review) => <details key={review.model}><summary>{review.model} · {review.status}</summary>{review.error ? <p>{review.error}</p> : <MarkdownMessage text={review.content} />}</details>)}</div> : null}
+      {selectedResult ? <div className="review-panel__result"><div className="review-panel__result-heading"><h3>Итоговое ревью</h3><div className="review-panel__result-actions"><button type="button" onClick={() => void copyResult()}>{copied ? 'Скопировано' : 'Скопировать итоговый Markdown'}</button><button type="button" onClick={() => void exportResult()}>Экспортировать итоговый Markdown</button></div></div><MarkdownMessage text={selectedResult.finalMarkdown} /><h3>Исходные ответы</h3>{selectedResult.reviewers.map((review) => <details key={review.model}><summary>{review.model} · {review.status}</summary>{review.error ? <p>{review.error}</p> : <MarkdownMessage text={review.content} />}</details>)}</div> : null}
       <History events={events} onOpen={(id) => void openHistory(id)} />
     </section>
   )
