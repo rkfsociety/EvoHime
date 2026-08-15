@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$OutputPath = (Join-Path $PSScriptRoot '..\artifacts\native\windows-x64'),
     [ValidateSet('Debug', 'Release')]
@@ -10,6 +10,14 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# native-package.ps1 использует `Set-Content -Encoding utf8NoBOM`, которого нет
+# в Windows PowerShell 5.1. Без явной проверки запуск падает на разборе скрипта,
+# и настоящая причина в сообщении не видна.
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    throw 'Нужен PowerShell 7 или новее. Run: pwsh -File .\scripts\build-windows-native.ps1'
+}
+
 . (Join-Path $PSScriptRoot 'native-package.ps1')
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path

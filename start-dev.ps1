@@ -1,9 +1,18 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [switch]$SkipBuild
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Сборка опирается на возможности PowerShell 7. В 5.1 запуск обрывается
+# ошибкой разбора вложенного скрипта, поэтому версию проверяем сразу.
+if ($PSVersionTable.PSVersion.Major -lt 7) {
+    # Команда продублирована латиницей: консоль Windows часто выводит кириллицу
+    # мусором, и подсказка о запуске должна читаться в любой кодовой странице.
+    throw 'Нужен PowerShell 7 или новее. Run: pwsh -File .\start-dev.ps1'
+}
+
 $root = (Resolve-Path $PSScriptRoot).Path
 $packagePath = Join-Path $root '.evohime-native\windows-x64'
 $buildScript = Join-Path $root 'scripts\build-windows-native.ps1'

@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $evalGate = 'scripts/eval-gate.tests.ps1'
 if (-not (Test-Path -LiteralPath $evalGate)) { throw "Missing deterministic evaluation gate: $evalGate" }
 $securityGate = 'scripts/security-eval-gate.tests.ps1'
