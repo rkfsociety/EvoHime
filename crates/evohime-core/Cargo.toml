@@ -16,6 +16,7 @@ path = "tests/bin/kill9_worker.rs"
 
 [dependencies]
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+evohime-context-budget = { path = "../context-budget" }
 evohime-model-gateway = { path = "../model-gateway" }
 evohime-tool-runtime = { path = "../tool-runtime" }
 evohime-permissions = { path = "../permissions" }
@@ -30,6 +31,7 @@ tokio-util = { version = "0.7", features = ["rt"] }
 thiserror = "2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "gzip", "brotli", "deflate", "stream"] }
 tracing = "0.1"
+rusqlite = { version = "0.32.1", features = ["bundled"] }
 ring = "0.17"
 unicode-normalization = "0.1"
 

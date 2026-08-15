@@ -733,6 +733,7 @@ pub mod audit;
 pub mod build;
 pub mod capability_registry;
 pub mod capability_selection;
+pub mod context_budget;
 pub mod child_roles;
 pub mod child_runtime;
 pub mod doctor;
@@ -1253,6 +1254,10 @@ pub enum CoreEvent {
         tools: Vec<String>,
         estimated_tokens: usize,
         context_limit_tokens: usize,
+        /// План 01.5: additive bounded projection состава контекста. Старые
+        /// клиенты игнорируют неизвестное поле, поэтому major bump не нужен.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        context: Option<Box<crate::context_budget::ModelContextProjection>>,
     },
     TaskStarted {
         task_id: String,
@@ -1392,6 +1397,61 @@ impl EventJournal {
         Ok(Self {
             database: Arc::new(Mutex::new(LocalDatabase::open(path)?)),
         })
+    }
+
+    /// Общий доступ к базе для контрактов плана 01: ledger, scratchpad и
+    /// artifact store работают против той же мигрированной базы.
+    pub fn database(&self) -> &Arc<Mutex<LocalDatabase>> {
+        &self.database
+    }
+
+    /// Атомарная запись `context_ledger` до model call.
+    pub async fn record_context_ledger(
+        &self,
+        entry: &evohime_context_budget::ledger::ContextLedgerEntry,
+    ) -> Result<(), StorageError> {
+        let database = self.database.lock().await;
+        let store = evohime_local_storage::context_ledger_store::ContextLedgerStore::new(
+            database.connection(),
+        )?;
+        store.append(entry)
+    }
+
+    /// Append-only запись фактического usage провайдера.
+    pub async fn record_context_usage(
+        &self,
+        usage: &evohime_context_budget::ledger::ContextLedgerUsage,
+    ) -> Result<(), StorageError> {
+        let database = self.database.lock().await;
+        let store = evohime_local_storage::context_ledger_store::ContextLedgerStore::new(
+            database.connection(),
+        )?;
+        store.record_usage(usage)
+    }
+
+    /// Bounded projection ledger задачи для UI (этап 01.5).
+    pub async fn context_ledger_projection(
+        &self,
+        task_id: &str,
+        limit: usize,
+    ) -> Result<
+        Vec<evohime_local_storage::context_ledger_store::ContextLedgerProjection>,
+        StorageError,
+    > {
+        let database = self.database.lock().await;
+        let store = evohime_local_storage::context_ledger_store::ContextLedgerStore::new(
+            database.connection(),
+        )?;
+        store.projection(task_id, limit)
+    }
+
+    /// Ротация ledger. Возвращает число удалённых записей.
+    pub async fn prune_context_ledger(&self, now: i64) -> Result<u64, StorageError> {
+        let database = self.database.lock().await;
+        let store = evohime_local_storage::context_ledger_store::ContextLedgerStore::new(
+            database.connection(),
+        )?;
+        store.prune(now)
     }
 
     pub async fn record(&self, event: &CoreEvent) -> Result<i64, StorageError> {
@@ -2763,6 +2823,37 @@ pub enum AgentRunError {
     Cancelled,
     #[error("agent execution timed out after {0} seconds")]
     Timeout(u64),
+    /// План 01.1: сборка контекста завершилась отказом. Это терминальный
+    /// результат, а не обрыв соединения: model call не выполнялся, а
+    /// автоматический retry запрещён на всех уровнях.
+    #[error("context assembly refused ({stage}): {required_tokens} tokens required, {available_tokens} available, profile {profile_version}{missing}")]
+    BudgetUnavailable {
+        stage: String,
+        required_tokens: u32,
+        available_tokens: u32,
+        profile_version: String,
+        missing: String,
+        context_ledger_hash: String,
+    },
+}
+
+impl AgentRunError {
+    /// Отказ сборки контекста в виде bounded ошибки без сырого prompt и памяти.
+    pub fn from_budget_unavailable(
+        refusal: &evohime_context_budget::budget::BudgetUnavailable,
+    ) -> Self {
+        Self::BudgetUnavailable {
+            stage: refusal.stage.as_str().to_string(),
+            required_tokens: refusal.required_tokens,
+            available_tokens: refusal.available_tokens,
+            profile_version: refusal.profile_version.clone(),
+            missing: refusal
+                .missing_part
+                .map(|part| format!(", не поместилась часть {}", part.as_str()))
+                .unwrap_or_default(),
+            context_ledger_hash: refusal.context_ledger_hash.clone(),
+        }
+    }
 }
 
 #[derive(Clone, Default)]
@@ -3342,6 +3433,141 @@ impl ToolAgent {
 
     /// Calls model with retry logic and timeout for resilience (Wave VII).
     /// Returns the model result or a terminal error after max retries.
+    /// Сборка контекста одного шага под bounded budget (план 01).
+    ///
+    /// Artifact store и summarizer подключаются, только если у Core есть
+    /// журнал: их отсутствие не блокирует сборку — соответствующие уровни
+    /// лестницы немедленно считаются исчерпанными с diagnostic.
+    async fn assemble_model_context(
+        &self,
+        runtime: &mut context_budget::ContextRuntime,
+        task_id: &str,
+        session_id: &str,
+        iteration: usize,
+        messages: &[ChatMessage],
+        specs: &[ToolSpec],
+    ) -> context_budget::AssembledContext {
+        let model_call_id = format!("{task_id}-{iteration}");
+        let now = task_memory::now_millis() as i64;
+        let provider = self.gateway.provider_kind().as_str().to_string();
+        let model = self.gateway.model_name().to_string();
+        let contents: Vec<(String, String)> = messages
+            .iter()
+            .enumerate()
+            .map(|(index, message)| {
+                (
+                    context_budget::message_item_id(index, message.role),
+                    message.content.clone(),
+                )
+            })
+            .collect();
+
+        let mut summarizer =
+            context_budget::deterministic_summarizer(runtime.summarizer_config().clone());
+        let assembled = match &self.journal {
+            Some(journal) => {
+                let database = journal.database().lock().await;
+                let mut offload = context_budget::MessageOffload::new(
+                    context_budget::ArtifactOffload::new(
+                        database.connection(),
+                        runtime.artifact_quota(),
+                        task_id,
+                        now,
+                    ),
+                    contents,
+                );
+                runtime.assemble(
+                    task_id,
+                    session_id,
+                    &model_call_id,
+                    &provider,
+                    &model,
+                    now,
+                    messages,
+                    specs,
+                    &[],
+                    &mut offload,
+                    &mut summarizer,
+                )
+            }
+            None => {
+                let mut offload = evohime_context_budget::ladder::NoOffload;
+                runtime.assemble(
+                    task_id,
+                    session_id,
+                    &model_call_id,
+                    &provider,
+                    &model,
+                    now,
+                    messages,
+                    specs,
+                    &[],
+                    &mut offload,
+                    &mut summarizer,
+                )
+            }
+        };
+
+        // Запись ledger атомарна и выполняется до model call. Неудача записи —
+        // diagnostic `ledger_write_failed`, а не повтор вызова модели.
+        if let Some(journal) = &self.journal {
+            if let Err(error) = journal.record_context_ledger(assembled.ledger()).await {
+                write_model_trace(
+                    "context.ledger_write_failed",
+                    serde_json::json!({
+                        "task_id": task_id,
+                        "model_call_id": model_call_id,
+                        "error": error.to_string()
+                    }),
+                );
+            }
+        }
+        write_model_trace(
+            "context.assembled",
+            serde_json::json!({
+                "task_id": task_id,
+                "model_call_id": model_call_id,
+                "context_ledger_hash": assembled.ledger().context_ledger_hash,
+                "selected": assembled.ledger().selected_items.len(),
+                "dropped": assembled.ledger().dropped_items.len(),
+                "ladder_levels": assembled
+                    .ledger()
+                    .ladder_levels_applied
+                    .iter()
+                    .map(|level| level.as_str())
+                    .collect::<Vec<_>>(),
+                "outcome": assembled.ledger().outcome.as_str()
+            }),
+        );
+        assembled
+    }
+
+    /// Фактический usage провайдера пишется в append-only таблицу, поэтому
+    /// запись ledger остаётся immutable и hash-стабильной.
+    async fn record_context_usage(
+        &self,
+        ledger: &evohime_context_budget::ledger::ContextLedgerEntry,
+        actual_prompt_tokens: u32,
+        actual_completion_tokens: u32,
+    ) {
+        let Some(journal) = &self.journal else {
+            return;
+        };
+        let drift = evohime_context_budget::estimator::EstimatorDrift::measure(
+            ledger.estimated_prompt_tokens,
+            actual_prompt_tokens,
+        );
+        let _ = journal
+            .record_context_usage(&evohime_context_budget::ledger::ContextLedgerUsage {
+                ledger_id: ledger.id.clone(),
+                actual_prompt_tokens,
+                actual_completion_tokens,
+                estimator_drift: drift.relative,
+                recorded_at: task_memory::now_millis() as i64,
+            })
+            .await;
+    }
+
     async fn call_model_with_resilience(
         &self,
         task_id: &str,
@@ -3566,16 +3792,14 @@ impl ToolAgent {
         // message to detect an explicit "запомни"-style trigger.
         let extraction_user_prompt = user_prompt.clone();
         let delivery_requirements = DeliveryRequirements::from_prompt(&user_prompt);
-        let _ = events.send(CoreEvent::ModelContext {
-            task_id: task_id.clone(),
-            workspace_path: context.workspace_root.display().to_string(),
-            model: self.gateway.model_name().to_string(),
-            system_prompt,
-            user_prompt,
-            tools: tool_names,
-            estimated_tokens: context_text.chars().count().div_ceil(4),
-            context_limit_tokens: 128_000,
-        });
+        let _ = context_text;
+
+        // План 01: контекст каждого шага собирается планировщиком под bounded
+        // budget. Владелец состояния и политики — Core; наружу уходит только
+        // bounded projection состава и причин сокращения.
+        let mut context_runtime =
+            context_budget::ContextRuntime::new(self.gateway.model_name());
+        let context_session_id = task_id.clone();
 
         let mut recent_tool_calls = recovery::RecentToolCalls::new(6);
         let mut consecutive_failures = HashMap::<String, u32>::new();
@@ -3603,10 +3827,62 @@ impl ToolAgent {
                     "tool_choice": "auto"
                 }),
             );
+            // Сборка контекста: selection -> compress/offload -> финальная
+            // проверка бюджета -> ModelContext event -> model call.
+            let assembled = self
+                .assemble_model_context(
+                    &mut context_runtime,
+                    &task_id,
+                    &context_session_id,
+                    iteration,
+                    &messages,
+                    &specs,
+                )
+                .await;
+            let _ = events.send(CoreEvent::ModelContext {
+                task_id: task_id.clone(),
+                workspace_path: context.workspace_root.display().to_string(),
+                model: self.gateway.model_name().to_string(),
+                system_prompt: system_prompt.clone(),
+                user_prompt: user_prompt.clone(),
+                tools: assembled
+                    .tool_specs
+                    .iter()
+                    .map(|spec| spec.function.name.clone())
+                    .collect(),
+                estimated_tokens: assembled.ledger().estimated_prompt_tokens as usize,
+                context_limit_tokens: assembled.plan.profile.hard_limit_tokens as usize,
+                context: Some(Box::new(assembled.projection())),
+            });
+            if let Some(refusal) = assembled.plan.unavailable.as_ref() {
+                // Отказ сборки — терминальный результат, а не обрыв ответа:
+                // model call не выполняется и не повторяется автоматически.
+                return Err(AgentRunError::from_budget_unavailable(refusal));
+            }
+            messages = assembled.messages.clone();
+            if !assembled.tool_specs.is_empty() {
+                specs = assembled.tool_specs.clone();
+            }
+            let step_loadout = assembled.loadout.clone();
+
             let result = tokio::select! {
                 _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
                 result = self.call_model_with_resilience(&task_id, &messages, &specs, &resilience_config) => result?,
             };
+            if let Some(usage) = result.usage.as_ref() {
+                // Фактический usage провайдера обновляет диагностику оценки и
+                // пишется отдельно от immutable записи ledger.
+                context_runtime.record_actual_usage(
+                    &assembled.plan,
+                    u32::try_from(usage.prompt_tokens).unwrap_or(u32::MAX),
+                );
+                self.record_context_usage(
+                    assembled.ledger(),
+                    u32::try_from(usage.prompt_tokens).unwrap_or(u32::MAX),
+                    u32::try_from(usage.completion_tokens).unwrap_or(u32::MAX),
+                )
+                .await;
+            }
             write_model_trace(
                 "model.response",
                 serde_json::json!({
@@ -3821,11 +4097,46 @@ impl ToolAgent {
                 );
                 let input = serde_json::from_str(&call.arguments)
                     .unwrap_or_else(|_| serde_json::Value::Null);
+                // План 01.4: вызов инструмента вне loadout отклоняется до
+                // эффекта с bounded diagnostic `loadout_miss`.
+                let loadout_miss = step_loadout
+                    .allows(&call.name)
+                    .then_some(None)
+                    .unwrap_or_else(|| {
+                        evohime_context_budget::loadout::check_tool_call(
+                            &step_loadout,
+                            &call.name,
+                        )
+                        .err()
+                    });
                 let commit_blocked = call.name == "git.commit"
                     && delivery_requirements.commit
                     && (!verification_test_passed
                         || (delivery_requirements.diff_check && !diff_check_passed));
-                let outcome = if escalation_remaining.get(&call.name).copied().unwrap_or(0) > 0
+                let outcome = if let Some(miss) = loadout_miss {
+                    write_model_trace(
+                        "loadout.miss",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "tool_id": miss.tool_id,
+                            "intent": miss.intent,
+                            "loadout_id": miss.loadout_id,
+                            "matched_rule": miss.matched_rule,
+                            "policy_reason": miss.policy_reason
+                        }),
+                    );
+                    recovery::ToolOutcome {
+                        ok: false,
+                        kind: Some(recovery::ToolFailureKind::Denied(
+                            recovery::DenialSource::Policy,
+                        )),
+                        output: format!(
+                            "{} вне текущего loadout ({}): {}",
+                            miss.tool_id, miss.intent, miss.policy_reason
+                        ),
+                        structured: serde_json::Value::Null,
+                    }
+                } else if escalation_remaining.get(&call.name).copied().unwrap_or(0) > 0
                     && !matches!(
                         call.name.as_str(),
                         "filesystem.read" | "filesystem.list" | "filesystem.search"
@@ -8248,20 +8559,32 @@ mod tests {
             .await
             .expect("tool loop succeeds");
         assert_eq!(result, "found it");
-        assert!(matches!(
-            receiver.recv().await,
-            Ok(CoreEvent::ModelContext { workspace_path, .. }) if workspace_path == workspace.display().to_string()
-        ));
-        assert!(matches!(
-            receiver.recv().await,
-            Ok(CoreEvent::ToolStarted { .. })
-        ));
-        assert!(
-            matches!(receiver.recv().await, Ok(CoreEvent::ToolOutput { output, .. }) if output.contains("needle"))
-        );
-        assert!(
-            matches!(receiver.recv().await, Ok(CoreEvent::TaskCompleted { final_message, .. }) if final_message == "found it")
-        );
+        // Контекст собирается перед каждым model call (план 01), поэтому
+        // `ModelContext` приходит на каждой итерации и не является разделителем
+        // между остальными событиями.
+        let mut observed = Vec::new();
+        while let Ok(event) = receiver.try_recv() {
+            observed.push(event);
+        }
+        assert!(observed.iter().any(|event| matches!(
+            event,
+            CoreEvent::ModelContext { workspace_path, context: Some(projection), .. }
+                if workspace_path == &workspace.display().to_string()
+                    && projection.context_ledger_hash.len() == 64
+        )));
+        let tool_started = observed
+            .iter()
+            .position(|event| matches!(event, CoreEvent::ToolStarted { .. }))
+            .expect("tool start is observed");
+        let tool_output = observed
+            .iter()
+            .position(|event| matches!(event, CoreEvent::ToolOutput { output, .. } if output.contains("needle")))
+            .expect("tool output is observed");
+        let completed = observed
+            .iter()
+            .position(|event| matches!(event, CoreEvent::TaskCompleted { final_message, .. } if final_message == "found it"))
+            .expect("task completion is observed");
+        assert!(tool_started < tool_output && tool_output < completed);
         let _ = std::fs::remove_dir_all(workspace);
     }
 
