@@ -10,12 +10,15 @@
 catalog; до него работает deterministic intent router, и этап выполним
 полностью.
 
-Разблокирует: никого — внутренний этап плана.
+Разблокирует: 01.5 — состав loadout и `loadout_miss` попадают в projection
+`ModelContext` через `context_ledger` из 01.1.
 
 ## Что этап отдаёт наружу
 
-Ничего: registry остаётся в Core, наружу уходит только сам loadout в model
-call.
+Собственного внешнего контракта нет: registry остаётся в Core, наружу уходит
+сам loadout в model call, а в ledger — loadout id, intent, версия таблицы
+правил, matched rule и bounded diagnostic `loadout_miss`. Именно эти поля 01.5
+показывает в UI.
 
 ## Содержание
 

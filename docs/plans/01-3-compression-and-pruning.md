@@ -7,11 +7,16 @@
 Блокирующие: этапы 01.1 (budget и `drop_reason`) и 01.2 (artifact store для
 original items).
 
-Разблокирует: никого — внутренний этап плана.
+Разблокирует: 01.5 — compression summary, `drop_reason` и причины fallback
+попадают в projection `ModelContext` через `context_ledger` из 01.1.
 
 ## Что этап отдаёт наружу
 
-Ничего: сжатие и pruning видны только внутри сборки контекста.
+Собственного внешнего контракта нет: сжатие и pruning видны только внутри
+сборки контекста. Наружу уходят лишь записи ledger из 01.1 —
+`drop_reason`, связь `summary_id -> source_ids`, версия и параметры
+summarizer, fallback-флаг и причина fallback. Отдельного канала между этим
+этапом и UI не существует: 01.5 читает bounded projection ledger.
 
 ## Содержание
 

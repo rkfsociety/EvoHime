@@ -11,7 +11,12 @@ ledger.
 
 ## Что этап отдаёт наружу
 
-Task artifact store и bounded task-scoped scratchpad.
+Task artifact store и bounded task-scoped scratchpad, а также Core-операции над
+ними, поверх которых 01.5 строит команды UI: bounded чтение scratchpad с
+фильтром по категории и `status`, очистка task-scoped scratchpad, удаление
+записи вместе с её производными ссылками в artifact store и чтение полного
+артефакта по locator с повторной policy/approval-проверкой. Каждая операция —
+mutation с ledger entry, кроме двух операций чтения.
 
 ## Содержание
 
