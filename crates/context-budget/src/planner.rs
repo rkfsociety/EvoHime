@@ -85,6 +85,11 @@ pub struct PlanRequest {
     pub loadout: Option<LoadoutRecord>,
     /// Идентификатор записи ledger, ре-план которой выполняется.
     pub replan_of: Option<String>,
+    /// Команда `summarize now` (01.5): лестница запускается даже ниже
+    /// `soft_limit_tokens`. Действует только на текущую сборку и не меняет
+    /// долговременную память.
+    #[allow(clippy::struct_field_names)]
+    pub force_reduction: bool,
 }
 
 /// Итог сборки. Возвращается и при успехе, и при отказе: в обоих случаях есть
@@ -354,13 +359,22 @@ impl ContextPlanner {
         //    `soft_limit_tokens`; цель — вернуться к `target_tokens`.
         let mut selection = Selection::new(surviving, reserves);
         let mut ladder_outcome = crate::ladder::LadderOutcome::default();
-        if !budget.within_soft_limit(selection.context_tokens()) {
+        if request.force_reduction || !budget.within_soft_limit(selection.context_tokens()) {
             ladder_outcome = run_ladder(
                 &mut selection,
                 &LadderContext {
                     now: request.now,
                     profile: &profile,
-                    goal_context_tokens: profile.target_tokens,
+                    // `summarize now` применяет все уровни сокращения
+                    // содержимого целиком, поэтому цель ставится по обязательной
+                    // части: каждый уровень исчерпывает своих кандидатов.
+                    goal_context_tokens: if request.force_reduction {
+                        mandatory_tokens
+                    } else {
+                        profile.target_tokens
+                    },
+                    // Резервы под ответ и tool-call принудительное сжатие не трогает.
+                    allow_reserve_release: !request.force_reduction,
                 },
                 offload,
                 summarizer,
@@ -753,6 +767,7 @@ mod tests {
             inputs,
             loadout: None,
             replan_of: None,
+            force_reduction: false,
         }
     }
 
@@ -1128,6 +1143,27 @@ mod tests {
             cascaded.unavailable.expect("refusal").stage,
             BudgetUnavailableStage::ProviderReplanFailed
         );
+    }
+
+    #[test]
+    fn forced_reduction_runs_the_ladder_below_the_soft_limit() {
+        let mut planner = planner();
+        let mut inputs = minimal_inputs();
+        inputs.push(text_input("low", ItemKind::History, "малозначимое", 5, 5));
+        let mut forced = request(inputs);
+        forced.force_reduction = true;
+        let plan = planner.plan(&forced);
+        assert!(plan.is_ready());
+        // Ниже soft limit лестница обычно не запускается, но `summarize now`
+        // запускает её принудительно.
+        assert!(plan
+            .ledger
+            .ladder_levels_applied
+            .contains(&LadderLevel::LowPriorityOptional));
+        assert!(plan
+            .dropped
+            .iter()
+            .any(|item| item.id == "low" && item.drop_reason.is_some()));
     }
 
     #[test]

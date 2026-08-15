@@ -168,6 +168,12 @@ export const RENDERER_COMMANDS = [
   'core.rejectMemory',
   'core.supersedeMemory',
   'core.reviseMemoryCandidate',
+  'core.getContextLedger',
+  'core.listTaskScratchpad',
+  'core.clearTaskScratchpad',
+  'core.summarizeContextNow',
+  'core.pinContextItem',
+  'core.readContextArtifact',
   'identity.get',
   'repository.get',
   'chat.list',
@@ -223,6 +229,17 @@ export interface CommandPayloads {
   'core.resolveApproval': { approvalId: string; granted: boolean }
   'core.listWorkspace': { workspacePath: string; relativePath: string; maxEntries?: number }
   'core.readWorkspaceFile': { workspacePath: string; relativePath: string; maxBytes?: number }
+  'core.getContextLedger': { taskId: string; limit?: number }
+  'core.listTaskScratchpad': {
+    taskId: string
+    category?: string
+    status?: string
+    limit?: number
+  }
+  'core.clearTaskScratchpad': { taskId: string }
+  'core.summarizeContextNow': { taskId: string }
+  'core.pinContextItem': { taskId: string; itemId: string; pinned: boolean }
+  'core.readContextArtifact': { taskId: string; locator: string }
   'core.gitStatus': { workspacePath: string; maxBytes?: number }
   'core.gitDiff': { workspacePath: string; relativePath?: string; maxBytes?: number }
   'core.setPermissionMode': { mode: 'ask' | 'read_only' | 'full' }
@@ -321,6 +338,16 @@ export interface CommandResults {
   'core.rejectMemory': { accepted: boolean }
   'core.supersedeMemory': { accepted: boolean }
   'core.reviseMemoryCandidate': { accepted: boolean }
+  /**
+   * План 01.5: команды контекста отвечают отдельным Core-событием, поэтому
+   * здесь возвращается только факт постановки команды в очередь.
+   */
+  'core.getContextLedger': { accepted: boolean }
+  'core.listTaskScratchpad': { accepted: boolean }
+  'core.clearTaskScratchpad': { accepted: boolean }
+  'core.summarizeContextNow': { accepted: boolean }
+  'core.pinContextItem': { accepted: boolean }
+  'core.readContextArtifact': { accepted: boolean }
   'identity.get': UserIdentity
   'repository.get': RepositorySummary | null
   'chat.list': readonly ChatSummary[]

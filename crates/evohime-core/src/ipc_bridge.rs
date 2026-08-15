@@ -992,6 +992,37 @@ impl IpcBridge {
                 self.write_response(writer, "feedback.submitted", result)
                     .await?;
             }
+            Some(generated::command_envelope::Command::GetContextLedger(request)) => {
+                let result = self.dispatch_get_context_ledger(request).await?;
+                self.write_response(writer, "context.ledger", result).await?;
+            }
+            Some(generated::command_envelope::Command::ListTaskScratchpad(request)) => {
+                let result = self
+                    .dispatch_list_task_scratchpad(request)
+                    .await?;
+                self.write_response(writer, "context.scratchpad", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::ClearTaskScratchpad(request)) => {
+                let result = self.dispatch_clear_task_scratchpad(request).await?;
+                self.write_response(writer, "context.scratchpad_cleared", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::SummarizeContextNow(request)) => {
+                let result = self.dispatch_summarize_context_now(request).await?;
+                self.write_response(writer, "context.summarize_requested", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::PinContextItem(request)) => {
+                let result = self.dispatch_pin_context_item(request).await?;
+                self.write_response(writer, "context.item_pinned", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::ReadContextArtifact(request)) => {
+                let result = self.dispatch_read_context_artifact(request).await?;
+                self.write_response(writer, "context.artifact", result)
+                    .await?;
+            }
             Some(generated::command_envelope::Command::ListFeedback(request)) => {
                 let result = self.dispatch_list_feedback(request).await?;
                 self.write_response(writer, "feedback.list", result).await?;
@@ -2359,6 +2390,101 @@ impl IpcBridge {
                 limit: request.limit,
                 reply,
             })
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        response
+            .await
+            .map_err(|_| FrameError::Io("core command queue dropped the response".into()))?
+            .map_err(FrameError::Io)
+            .map_err(IpcBridgeError::from)
+    }
+
+    /// План 01.5: bounded projection состава контекста.
+    async fn dispatch_get_context_ledger(
+        &self,
+        request: generated::GetContextLedger,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        self.dispatch_context(|reply| CoreCommand::GetContextLedger {
+            task_id: request.task_id.clone(),
+            limit: request.limit,
+            reply,
+        })
+        .await
+    }
+
+    async fn dispatch_list_task_scratchpad(
+        &self,
+        request: generated::ListTaskScratchpad,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        self.dispatch_context(|reply| CoreCommand::ListTaskScratchpad {
+            task_id: request.task_id.clone(),
+            category: (!request.category.trim().is_empty()).then(|| request.category.clone()),
+            status: (!request.status.trim().is_empty()).then(|| request.status.clone()),
+            limit: request.limit,
+            reply,
+        })
+        .await
+    }
+
+    async fn dispatch_clear_task_scratchpad(
+        &self,
+        request: generated::ClearTaskScratchpad,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        self.dispatch_context(|reply| CoreCommand::ClearTaskScratchpad {
+            task_id: request.task_id.clone(),
+            reply,
+        })
+        .await
+    }
+
+    async fn dispatch_summarize_context_now(
+        &self,
+        request: generated::SummarizeContextNow,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        self.dispatch_context(|reply| CoreCommand::SummarizeContextNow {
+            task_id: request.task_id.clone(),
+            reply,
+        })
+        .await
+    }
+
+    async fn dispatch_pin_context_item(
+        &self,
+        request: generated::PinContextItem,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        self.dispatch_context(|reply| CoreCommand::PinContextItem {
+            task_id: request.task_id.clone(),
+            item_id: request.item_id.clone(),
+            pinned: request.pinned,
+            reply,
+        })
+        .await
+    }
+
+    async fn dispatch_read_context_artifact(
+        &self,
+        request: generated::ReadContextArtifact,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        self.dispatch_context(|reply| CoreCommand::ReadContextArtifact {
+            task_id: request.task_id.clone(),
+            locator: request.locator.clone(),
+            reply,
+        })
+        .await
+    }
+
+    /// Общая отправка команды контекста в очередь Core.
+    async fn dispatch_context<F>(&self, build: F) -> Result<Vec<u8>, IpcBridgeError>
+    where
+        F: FnOnce(oneshot::Sender<Result<Vec<u8>, String>>) -> CoreCommand,
+    {
+        let coordinator = self
+            .coordinator
+            .as_ref()
+            .ok_or_else(|| FrameError::Io("core command queue is not configured".into()))?;
+        let (reply, response) = oneshot::channel();
+        coordinator
+            .dispatch(build(reply))
             .await
             .map_err(|error| FrameError::Io(error.to_string()))?;
         response

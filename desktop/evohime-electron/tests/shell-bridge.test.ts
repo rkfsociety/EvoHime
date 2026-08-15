@@ -419,3 +419,73 @@ describe('source update commands', () => {
     expect(sent).toHaveLength(0)
   })
 })
+
+/**
+ * План 01.5. Команды контекста доходят до Core через ту же узкую поверхность:
+ * оболочка только валидирует полезную нагрузку, а policy, approval и rate limit
+ * Core проверяет заново.
+ */
+describe('context budget commands', () => {
+  it('forwards the read-only context ledger request', () => {
+    expect(invoke('core.getContextLedger', { taskId: 'task-1', limit: 20 })).toEqual({
+      ok: true,
+      value: { accepted: true }
+    })
+    expect(sent).toEqual([{ getContextLedger: { taskId: 'task-1', limit: 20 } }])
+  })
+
+  it('forwards a scratchpad read with its category and status filter', () => {
+    invoke('core.listTaskScratchpad', {
+      taskId: 'task-1',
+      category: 'open_questions',
+      status: 'confirmed',
+      limit: 50
+    })
+    expect(sent).toEqual([
+      {
+        listTaskScratchpad: {
+          taskId: 'task-1',
+          category: 'open_questions',
+          status: 'confirmed',
+          limit: 50
+        }
+      }
+    ])
+  })
+
+  it('treats an omitted filter as "no filter" rather than a rejected payload', () => {
+    expect((invoke('core.listTaskScratchpad', { taskId: 'task-1' }) as { ok: boolean }).ok).toBe(
+      true
+    )
+    expect(sent).toEqual([
+      { listTaskScratchpad: { taskId: 'task-1', category: '', status: '', limit: 100 } }
+    ])
+  })
+
+  it('forwards every mutation command that the plan exposes', () => {
+    invoke('core.clearTaskScratchpad', { taskId: 'task-1' })
+    invoke('core.summarizeContextNow', { taskId: 'task-1' })
+    invoke('core.pinContextItem', { taskId: 'task-1', itemId: 'msg-0002-tool', pinned: true })
+    invoke('core.readContextArtifact', { taskId: 'task-1', locator: 'artifact://task-1/abc' })
+    expect(sent).toEqual([
+      { clearTaskScratchpad: { taskId: 'task-1' } },
+      { summarizeContextNow: { taskId: 'task-1' } },
+      { pinContextItem: { taskId: 'task-1', itemId: 'msg-0002-tool', pinned: true } },
+      { readContextArtifact: { taskId: 'task-1', locator: 'artifact://task-1/abc' } }
+    ])
+  })
+
+  it('refuses malformed context payloads before they reach Core', () => {
+    const rejected = [
+      invoke('core.getContextLedger', {}),
+      invoke('core.pinContextItem', { taskId: 'task-1', itemId: 'i', pinned: 'yes' }),
+      invoke('core.readContextArtifact', { taskId: 'task-1' }),
+      invoke('core.summarizeContextNow', {})
+    ]
+    for (const outcome of rejected) {
+      expect((outcome as CommandFailure).ok).toBe(false)
+      expect((outcome as CommandFailure).code).toBe('invalid-payload')
+    }
+    expect(sent).toHaveLength(0)
+  })
+})

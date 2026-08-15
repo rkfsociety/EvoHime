@@ -12,6 +12,7 @@ pub mod backup;
 pub mod capability_selection_store;
 pub mod capability_store;
 pub mod child_store;
+pub mod context_command_store;
 pub mod context_ledger_store;
 pub mod feedback_store;
 pub mod memory_store;
@@ -24,7 +25,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 17;
+pub const SCHEMA_VERSION: u32 = 18;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -2650,6 +2651,30 @@ impl LocalDatabase {
                     reason TEXT NOT NULL
                  );
                  PRAGMA user_version = 17;",
+            )?;
+        }
+        if current < 18 {
+            // План 01.5: pin/unpin item, журнал mutation-команд контекста и
+            // rate limit поверх него.
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS context_pins (
+                    task_id TEXT NOT NULL,
+                    item_id TEXT NOT NULL,
+                    pinned INTEGER NOT NULL DEFAULT 1,
+                    updated_at INTEGER NOT NULL,
+                    PRIMARY KEY (task_id, item_id)
+                 );
+                 CREATE TABLE IF NOT EXISTS context_command_audit (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL,
+                    command TEXT NOT NULL,
+                    subject TEXT,
+                    outcome TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                 );
+                 CREATE INDEX IF NOT EXISTS idx_context_command_audit_rate
+                    ON context_command_audit(task_id, command, created_at);
+                 PRAGMA user_version = 18;",
             )?;
         }
         transaction.commit()?;

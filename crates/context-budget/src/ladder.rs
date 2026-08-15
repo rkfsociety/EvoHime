@@ -225,6 +225,10 @@ pub struct LadderContext<'a> {
     pub profile: &'a ModelContextProfile,
     /// Цель лестницы: `context_tokens <= target_tokens`.
     pub goal_context_tokens: u32,
+    /// Разрешён ли отказ от необязательных резервов (уровень L6). Команда
+    /// `summarize now` (01.5) сжимает содержимое, но не трогает резервы под
+    /// ответ и tool-call.
+    pub allow_reserve_release: bool,
 }
 
 /// Проход лестницы. Возвращает состав применённых уровней и diagnostics.
@@ -253,7 +257,11 @@ pub fn run_ladder(
             LadderLevel::CompressHistory => {
                 apply_l5(selection, context, summarizer, &mut outcome);
             }
-            LadderLevel::ReleaseOptionalReserves => apply_l6(selection, context, &mut outcome),
+            LadderLevel::ReleaseOptionalReserves => {
+                if context.allow_reserve_release {
+                    apply_l6(selection, context, &mut outcome);
+                }
+            }
         }
         if selection.total() < before {
             outcome.levels_applied.push(level);
@@ -594,6 +602,7 @@ mod tests {
             now: 10_000,
             profile,
             goal_context_tokens: goal,
+            allow_reserve_release: true,
         }
     }
 

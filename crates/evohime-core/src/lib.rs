@@ -1241,6 +1241,43 @@ pub enum CoreCommand {
         limit: u32,
         reply: oneshot::Sender<Result<Vec<u8>, String>>,
     },
+    /// План 01.5: bounded projection состава контекста последних model call.
+    GetContextLedger {
+        task_id: String,
+        limit: u32,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Bounded чтение scratchpad задачи с фильтром по категории и статусу.
+    ListTaskScratchpad {
+        task_id: String,
+        category: Option<String>,
+        status: Option<String>,
+        limit: u32,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Очистка task-scoped scratchpad. Mutation с записью аудита.
+    ClearTaskScratchpad {
+        task_id: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Принудительное сжатие текущей сборки контекста задачи.
+    SummarizeContextNow {
+        task_id: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// `pin/unpin item`: выставляет флаг `pinned` из 01.1.
+    PinContextItem {
+        task_id: String,
+        item_id: String,
+        pinned: bool,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
+    /// Чтение полного содержимого артефакта с повторной policy-проверкой.
+    ReadContextArtifact {
+        task_id: String,
+        locator: String,
+        reply: oneshot::Sender<Result<Vec<u8>, String>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1443,6 +1480,121 @@ impl EventJournal {
             database.connection(),
         )?;
         store.projection(task_id, limit)
+    }
+
+    /// Bounded projection scratchpad задачи для UI (этап 01.5).
+    pub async fn scratchpad_projection(
+        &self,
+        task_id: &str,
+        category: Option<&str>,
+        status: Option<&str>,
+        limit: usize,
+    ) -> Result<
+        Vec<evohime_local_storage::scratchpad_store::ScratchpadProjection>,
+        StorageError,
+    > {
+        use evohime_context_budget::{item::ScratchpadStatus, scratchpad::ScratchpadCategory};
+        let database = self.database.lock().await;
+        let store =
+            evohime_local_storage::scratchpad_store::ScratchpadStore::new(database.connection());
+        let category = category.and_then(ScratchpadCategory::parse);
+        let status = status.and_then(|value| match value {
+            "draft" => Some(ScratchpadStatus::Draft),
+            "confirmed" => Some(ScratchpadStatus::Confirmed),
+            "recovered" => Some(ScratchpadStatus::Recovered),
+            _ => None,
+        });
+        store.projection(task_id, category, status, limit, 200)
+    }
+
+    /// Очистка task-scoped scratchpad вместе с закреплениями задачи.
+    pub async fn clear_task_scratchpad(&self, task_id: &str) -> Result<usize, StorageError> {
+        let database = self.database.lock().await;
+        let commands = evohime_local_storage::context_command_store::ContextCommandStore::new(
+            database.connection(),
+        );
+        commands.check_rate_limit(task_id, "clear_task_scratchpad", task_memory::now_millis() as i64)?;
+        let store =
+            evohime_local_storage::scratchpad_store::ScratchpadStore::new(database.connection());
+        let removed = store.clear_task(task_id)?;
+        commands.clear_task(task_id, task_memory::now_millis() as i64)?;
+        Ok(removed)
+    }
+
+    /// Запрос `summarize now` на текущую сборку контекста задачи.
+    pub async fn request_context_summarize(&self, task_id: &str) -> Result<(), StorageError> {
+        let database = self.database.lock().await;
+        evohime_local_storage::context_command_store::ContextCommandStore::new(
+            database.connection(),
+        )
+        .request_summarize(task_id, task_memory::now_millis() as i64)
+    }
+
+    /// `pin/unpin item` для сборки контекста задачи.
+    pub async fn set_context_pin(
+        &self,
+        task_id: &str,
+        item_id: &str,
+        pinned: bool,
+    ) -> Result<(), StorageError> {
+        let database = self.database.lock().await;
+        evohime_local_storage::context_command_store::ContextCommandStore::new(
+            database.connection(),
+        )
+        .set_pin(task_id, item_id, pinned, task_memory::now_millis() as i64)
+    }
+
+    /// Чтение полного содержимого артефакта: доступ ограничен задачей-владельцем
+    /// и её детьми, а `content_hash` сверяется заново.
+    pub async fn read_context_artifact(
+        &self,
+        task_id: &str,
+        locator: &str,
+    ) -> Result<String, StorageError> {
+        let database = self.database.lock().await;
+        let store =
+            evohime_local_storage::artifact_store::ArtifactStore::new(database.connection());
+        let reference = store
+            .get_ref(locator)?
+            .ok_or_else(|| StorageError::Context(format!("artifact {locator} was not found")))?;
+        let kind = evohime_context_budget::item::ItemKind::ToolResult.as_str();
+        store.read(
+            locator,
+            task_id,
+            &[reference.owner_task_id.clone()],
+            kind,
+            task_memory::now_millis() as i64,
+        )
+    }
+
+    /// Каскад `forget memory` (01.5): вместе с записью памяти удаляются
+    /// производные scratchpad-ссылки и task artifacts. Факт удаления остаётся
+    /// в аудите в redacted виде.
+    pub async fn forget_context_derivatives(
+        &self,
+        task_id: &str,
+        memory_id: &str,
+    ) -> Result<(usize, usize), StorageError> {
+        let now = task_memory::now_millis() as i64;
+        let database = self.database.lock().await;
+        let scratchpad =
+            evohime_local_storage::scratchpad_store::ScratchpadStore::new(database.connection());
+        let removed_notes = scratchpad.forget(memory_id)?;
+        let artifacts =
+            evohime_local_storage::artifact_store::ArtifactStore::new(database.connection());
+        let removed_artifacts =
+            artifacts.forget_task_artifacts(task_id, now, "forget memory cascade")?;
+        let commands = evohime_local_storage::context_command_store::ContextCommandStore::new(
+            database.connection(),
+        );
+        commands.audit(
+            task_id,
+            "forget_memory_cascade",
+            Some(memory_id),
+            evohime_local_storage::context_command_store::CommandOutcome::Applied,
+            now,
+        )?;
+        Ok((removed_notes, removed_artifacts))
     }
 
     /// Ротация ledger. Возвращает число удалённых записей.
@@ -3467,6 +3619,15 @@ impl ToolAgent {
         let assembled = match &self.journal {
             Some(journal) => {
                 let database = journal.database().lock().await;
+                let commands =
+                    evohime_local_storage::context_command_store::ContextCommandStore::new(
+                        database.connection(),
+                    );
+                let pinned = commands.pinned_items(task_id).unwrap_or_default();
+                // `summarize now` действует только на текущую сборку и не
+                // меняет долговременную память.
+                let force_reduction =
+                    commands.take_pending_summarize(task_id, now).unwrap_or(false);
                 let mut offload = context_budget::MessageOffload::new(
                     context_budget::ArtifactOffload::new(
                         database.connection(),
@@ -3486,6 +3647,8 @@ impl ToolAgent {
                     messages,
                     specs,
                     &[],
+                    &pinned,
+                    force_reduction,
                     &mut offload,
                     &mut summarizer,
                 )
@@ -3502,6 +3665,8 @@ impl ToolAgent {
                     messages,
                     specs,
                     &[],
+                    &[],
+                    false,
                     &mut offload,
                     &mut summarizer,
                 )
@@ -6437,6 +6602,13 @@ impl TaskCoordinator {
                     )
                     .map(|removed| removed.len())
                     .unwrap_or(0);
+                    // План 01.5: каскад удаляет производные записи scratchpad и
+                    // task artifacts. Содержимое стирается, а факт удаления
+                    // остаётся в redacted аудите.
+                    let (removed_notes, removed_artifacts) = journal
+                        .forget_context_derivatives(&id, &id)
+                        .await
+                        .unwrap_or((0, 0));
                     Self::record_audit(
                         &state,
                         crate::audit::AuditKind::Approval,
@@ -6448,6 +6620,11 @@ impl TaskCoordinator {
                             ("tombstone_id".to_owned(), tombstone_id.clone()),
                             ("reason_class".to_owned(), "user_request".to_owned()),
                             ("rotated_backups".to_owned(), rotated.to_string()),
+                            ("removed_scratchpad".to_owned(), removed_notes.to_string()),
+                            (
+                                "removed_artifacts".to_owned(),
+                                removed_artifacts.to_string(),
+                            ),
                         ],
                     )
                     .await;
@@ -6456,6 +6633,8 @@ impl TaskCoordinator {
                         "forgotten": true,
                         "tombstone_id": tombstone_id,
                         "rotated_backups": rotated,
+                        "removed_scratchpad": removed_notes,
+                        "removed_artifacts": removed_artifacts,
                     }))
                     .map_err(|error| error.to_string())
                 }
@@ -7406,8 +7585,140 @@ impl TaskCoordinator {
                 .await;
                 let _ = reply.send(result);
             }
+            CoreCommand::GetContextLedger {
+                task_id,
+                limit,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let projections = journal
+                        .context_ledger_projection(&task_id, bounded_limit(limit))
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    serde_json::to_vec(&serde_json::json!({ "entries": projections }))
+                        .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::ListTaskScratchpad {
+                task_id,
+                category,
+                status,
+                limit,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let entries = journal
+                        .scratchpad_projection(
+                            &task_id,
+                            category.as_deref(),
+                            status.as_deref(),
+                            bounded_limit(limit),
+                        )
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    serde_json::to_vec(&serde_json::json!({ "entries": entries }))
+                        .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::ClearTaskScratchpad { task_id, reply } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let removed = journal
+                        .clear_task_scratchpad(&task_id)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    serde_json::to_vec(&serde_json::json!({ "removed": removed }))
+                        .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::SummarizeContextNow { task_id, reply } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    journal
+                        .request_context_summarize(&task_id)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    serde_json::to_vec(&serde_json::json!({
+                        "requested": true,
+                        "scope": "task_context",
+                    }))
+                    .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::PinContextItem {
+                task_id,
+                item_id,
+                pinned,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    journal
+                        .set_context_pin(&task_id, &item_id, pinned)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    serde_json::to_vec(&serde_json::json!({
+                        "item_id": item_id,
+                        "pinned": pinned,
+                        // Pin повышает приоритет, но не гарантирует включение:
+                        // при нехватке бюджета item отбрасывается последним.
+                        "guaranteed": false,
+                    }))
+                    .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
+            CoreCommand::ReadContextArtifact {
+                task_id,
+                locator,
+                reply,
+            } => {
+                let journal = state.lock().await.journal.clone();
+                let result = async {
+                    let journal =
+                        journal.ok_or_else(|| "storage journal is not configured".to_string())?;
+                    let content = journal
+                        .read_context_artifact(&task_id, &locator)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    serde_json::to_vec(&serde_json::json!({
+                        "locator": locator,
+                        "content": content,
+                    }))
+                    .map_err(|error| error.to_string())
+                }
+                .await;
+                let _ = reply.send(result);
+            }
         }
     }
+}
+
+/// Bounded лимит чтения: базовое значение 01.1 — не более 100 элементов.
+fn bounded_limit(limit: u32) -> usize {
+    let limit = if limit == 0 { 20 } else { limit as usize };
+    limit.min(100)
 }
 
 /// Maps an IPC-layer scope kind + project/secondary id pair into the

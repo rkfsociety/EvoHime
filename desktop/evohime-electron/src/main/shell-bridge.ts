@@ -171,6 +171,72 @@ function dispatch(
       return accepted(client.send({ resolveApproval: { approvalId, granted } }))
     }
 
+    // План 01.5: read-only проекция состава контекста и Core-команды над
+    // scratchpad. Renderer получает только bounded projection: ids, счётчики,
+    // причины и hash, без сырого prompt, тела памяти и raw tool output.
+    case 'core.getContextLedger': {
+      const value = asRecord(payload)
+      const taskId = asBoundedString(value['taskId'])
+      const limit = asBoundedNumber(value['limit'], 100)
+      if (taskId === null || limit === null) {
+        return failure('invalid-payload', 'Некорректные параметры журнала контекста.')
+      }
+      return accepted(client.send({ getContextLedger: { taskId, limit } }))
+    }
+
+    case 'core.listTaskScratchpad': {
+      const value = asRecord(payload)
+      const taskId = asBoundedString(value['taskId'])
+      const category = value['category'] === undefined ? '' : asBoundedString(value['category'])
+      const status = value['status'] === undefined ? '' : asBoundedString(value['status'])
+      const limit = asBoundedNumber(value['limit'], 100)
+      if (taskId === null || category === null || status === null || limit === null) {
+        return failure('invalid-payload', 'Некорректные параметры чтения заметок задачи.')
+      }
+      return accepted(client.send({ listTaskScratchpad: { taskId, category, status, limit } }))
+    }
+
+    case 'core.clearTaskScratchpad': {
+      const taskId = asBoundedString(asRecord(payload)['taskId'])
+      if (taskId === null) {
+        return failure('invalid-payload', 'Некорректный идентификатор задачи.')
+      }
+      log('info', 'shell.command_forwarded', { command })
+      return accepted(client.send({ clearTaskScratchpad: { taskId } }))
+    }
+
+    case 'core.summarizeContextNow': {
+      const taskId = asBoundedString(asRecord(payload)['taskId'])
+      if (taskId === null) {
+        return failure('invalid-payload', 'Некорректный идентификатор задачи.')
+      }
+      log('info', 'shell.command_forwarded', { command })
+      return accepted(client.send({ summarizeContextNow: { taskId } }))
+    }
+
+    case 'core.pinContextItem': {
+      const value = asRecord(payload)
+      const taskId = asBoundedString(value['taskId'])
+      const itemId = asBoundedString(value['itemId'])
+      const pinned = value['pinned']
+      if (taskId === null || itemId === null || typeof pinned !== 'boolean') {
+        return failure('invalid-payload', 'Некорректные параметры закрепления элемента.')
+      }
+      log('info', 'shell.command_forwarded', { command })
+      return accepted(client.send({ pinContextItem: { taskId, itemId, pinned } }))
+    }
+
+    case 'core.readContextArtifact': {
+      const value = asRecord(payload)
+      const taskId = asBoundedString(value['taskId'])
+      const locator = asBoundedString(value['locator'])
+      if (taskId === null || locator === null) {
+        return failure('invalid-payload', 'Некорректные параметры чтения артефакта.')
+      }
+      log('info', 'shell.command_forwarded', { command })
+      return accepted(client.send({ readContextArtifact: { taskId, locator } }))
+    }
+
     case 'core.listWorkspace': {
       const value = asRecord(payload)
       const workspacePath = asBoundedString(value['workspacePath'])

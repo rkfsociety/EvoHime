@@ -642,6 +642,50 @@ message ListFeedback {
   uint32 limit = 2;
 }
 
+// План 01.5: read-only проекция состава контекста последних model call задачи.
+// Возвращает только ids, счётчики, причины и context_ledger_hash -- ни сырого
+// prompt, ни тела памяти, ни raw tool output.
+message GetContextLedger {
+  string task_id = 1;
+  uint32 limit = 2;
+}
+
+// Bounded чтение scratchpad задачи с фильтром по категории и статусу.
+// Пустые category/status означают "без фильтра".
+message ListTaskScratchpad {
+  string task_id = 1;
+  string category = 2;
+  string status = 3;
+  uint32 limit = 4;
+}
+
+// Очистка task-scoped scratchpad. Mutation: получает запись аудита.
+message ClearTaskScratchpad {
+  string task_id = 1;
+}
+
+// Принудительное сжатие текущей task-scoped сборки контекста. Долговременную
+// память не меняет: для этого нужна отдельная policy-операция.
+message SummarizeContextNow {
+  string task_id = 1;
+}
+
+// Выставляет флаг pinned из 01.1. Pin повышает приоритет, но не гарантирует
+// включение в контекст: при нехватке бюджета pinned item отбрасывается
+// последним и с явной причиной.
+message PinContextItem {
+  string task_id = 1;
+  string item_id = 2;
+  bool pinned = 3;
+}
+
+// Чтение полного содержимого артефакта по locator с повторной policy-проверкой
+// и сверкой content_hash.
+message ReadContextArtifact {
+  string task_id = 1;
+  string locator = 2;
+}
+
 message CommandEnvelope {
   ProtocolVersion protocol = 1;
   string request_id = 2;
@@ -720,6 +764,12 @@ message CommandEnvelope {
     GetPlanReview get_plan_review = 78;
     ExportPlanReview export_plan_review = 79;
     ClearPlanReviewHistory clear_plan_review_history = 80;
+    GetContextLedger get_context_ledger = 81;
+    ListTaskScratchpad list_task_scratchpad = 82;
+    ClearTaskScratchpad clear_task_scratchpad = 83;
+    SummarizeContextNow summarize_context_now = 84;
+    PinContextItem pin_context_item = 85;
+    ReadContextArtifact read_context_artifact = 86;
   }
 }
 

@@ -297,6 +297,10 @@ impl ContextRuntime {
         messages: &[ChatMessage],
         specs: &[ToolSpec],
         open_questions: &[String],
+        // Item, закреплённые пользователем командой `pin item` (01.5), и
+        // запрошенное пользователем принудительное сжатие (`summarize now`).
+        pinned_ids: &[String],
+        force_reduction: bool,
         offload: &mut dyn OffloadSink,
         summarizer: &mut dyn Summarizer,
     ) -> AssembledContext {
@@ -327,8 +331,15 @@ impl ContextRuntime {
         );
         let loadout_record = loadout.to_record();
 
-        // 2. Сообщения превращаются в `ContextItem`.
-        let inputs = plan_inputs(task_id, session_id, messages, now);
+        // 2. Сообщения превращаются в `ContextItem`. Pin повышает приоритет,
+        //    но не гарантирует включение в контекст: при нехватке бюджета
+        //    закреплённый item отбрасывается последним и с явной причиной.
+        let mut inputs = plan_inputs(task_id, session_id, messages, now);
+        for input in &mut inputs {
+            if pinned_ids.iter().any(|id| id == &input.item.id) {
+                input.item.pinned = true;
+            }
+        }
 
         let request = PlanRequest {
             task_id: task_id.to_string(),
@@ -341,6 +352,7 @@ impl ContextRuntime {
             inputs,
             loadout: Some(loadout_record),
             replan_of: None,
+            force_reduction,
         };
         let plan = self.planner.plan_with(&request, offload, summarizer, None);
 
@@ -823,6 +835,8 @@ mod tests {
             messages,
             specs,
             &[],
+            &[],
+            false,
             &mut NoOffloadSink,
             &mut NoSummarizer,
         )
@@ -1045,6 +1059,83 @@ mod tests {
             .messages
             .iter()
             .any(|message| message.content == "системная политика"));
+    }
+
+    /// Старый клиент знает только исходные поля `ModelContext`. Additive-поле
+    /// `context` он обязан игнорировать без ошибки и без major bump протокола.
+    #[derive(serde::Deserialize)]
+    struct LegacyModelContext {
+        task_id: String,
+        workspace_path: String,
+        model: String,
+        system_prompt: String,
+        user_prompt: String,
+        tools: Vec<String>,
+        estimated_tokens: usize,
+        context_limit_tokens: usize,
+    }
+
+    #[test]
+    fn old_clients_ignore_the_additive_model_context_field() {
+        let mut runtime = runtime();
+        let messages = vec![
+            ChatMessage::text(ChatRole::System, "системная политика"),
+            ChatMessage::text(ChatRole::User, "проверь репозиторий"),
+        ];
+        let assembled = assemble(&mut runtime, &messages, &[spec("filesystem.read")]);
+        let event = crate::CoreEvent::ModelContext {
+            task_id: "task".to_string(),
+            workspace_path: "C:/work".to_string(),
+            model: "gpt-4o-mini".to_string(),
+            system_prompt: "системная политика".to_string(),
+            user_prompt: "проверь репозиторий".to_string(),
+            tools: vec!["filesystem.read".to_string()],
+            estimated_tokens: 42,
+            context_limit_tokens: 128_000,
+            context: Some(Box::new(assembled.projection())),
+        };
+        let payload = serde_json::to_value(&event).expect("event serializes");
+        let body = payload
+            .get("ModelContext")
+            .expect("externally tagged event body");
+
+        // Новая схема присутствует и читается новым клиентом.
+        assert!(body.get("context").is_some());
+        assert_eq!(
+            body["context"]["schema_version"],
+            serde_json::json!(MODEL_CONTEXT_SCHEMA_VERSION)
+        );
+
+        // Старый клиент читает тот же payload без ошибки.
+        let legacy: LegacyModelContext =
+            serde_json::from_value(body.clone()).expect("legacy client parses the payload");
+        assert_eq!(legacy.task_id, "task");
+        assert_eq!(legacy.workspace_path, "C:/work");
+        assert_eq!(legacy.model, "gpt-4o-mini");
+        assert_eq!(legacy.system_prompt, "системная политика");
+        assert_eq!(legacy.user_prompt, "проверь репозиторий");
+        assert_eq!(legacy.tools, vec!["filesystem.read".to_string()]);
+        assert_eq!(legacy.estimated_tokens, 42);
+        assert_eq!(legacy.context_limit_tokens, 128_000);
+    }
+
+    #[test]
+    fn an_event_without_the_new_field_stays_readable() {
+        // Событие старого Core: поле `context` отсутствует, ошибки нет.
+        let payload = serde_json::json!({
+            "task_id": "task",
+            "workspace_path": "C:/work",
+            "model": "m",
+            "system_prompt": "s",
+            "user_prompt": "u",
+            "tools": [],
+            "estimated_tokens": 1,
+            "context_limit_tokens": 2
+        });
+        let legacy: LegacyModelContext =
+            serde_json::from_value(payload.clone()).expect("payload parses");
+        assert_eq!(legacy.task_id, "task");
+        assert!(payload.get("context").is_none());
     }
 
     #[test]
