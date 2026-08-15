@@ -42,6 +42,20 @@ interface ReviewFailure {
   readonly message: string
 }
 
+/**
+ * Reviewers of one run, accumulated as their events arrive.
+ *
+ * The shell keeps only the newest events, so a long run pushes its own early
+ * events out of that window. Deriving the roster from the window alone made
+ * finished reviewers disappear from the list and left the survivors showing
+ * whatever stale status was still visible.
+ */
+interface ReviewRoster {
+  readonly reviewId: string
+  readonly models: readonly string[]
+  readonly statuses: Readonly<Record<string, string>>
+}
+
 function loadReviewPreferences(): ReviewPreferences {
   try {
     const raw = window.localStorage.getItem(REVIEW_PREFERENCES_KEY)
@@ -74,6 +88,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   const [now, setNow] = useState(() => Date.now())
   const [lastChangeAt, setLastChangeAt] = useState(() => Date.now())
   const [copied, setCopied] = useState(false)
+  const [roster, setRoster] = useState<ReviewRoster>({ reviewId: '', models: [], statuses: {} })
 
   const catalog = useMemo(() => latestCatalog(events, tier), [events, tier])
   const reviewResult = useMemo(() => latestReviewResult(events), [events])
@@ -137,6 +152,35 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   useEffect(() => {
     setLastChangeAt(Date.now())
   }, [progressKey, reviewId])
+
+  // Applied oldest to newest so the last word on a model wins, and kept in
+  // state so a model never leaves the list once the core has named it.
+  useEffect(() => {
+    if (reviewId === null) return
+    setRoster((current) => {
+      const fresh = current.reviewId !== reviewId
+      const models = fresh ? [] : [...current.models]
+      const statuses: Record<string, string> = fresh ? {} : { ...current.statuses }
+      let changed = fresh
+      for (const event of [...events].reverse()) {
+        if (event.eventType !== 'review.progress') continue
+        const payload = readPayload(event)
+        if (payload?.review_id !== reviewId || payload.stage !== 'reviewers') continue
+        const model = typeof payload.model === 'string' ? payload.model : ''
+        if (model.length === 0) continue
+        const status = String(payload.status ?? 'waiting')
+        if (!models.includes(model)) {
+          models.push(model)
+          changed = true
+        }
+        if (statuses[model] !== status) {
+          statuses[model] = status
+          changed = true
+        }
+      }
+      return changed ? { reviewId, models, statuses } : current
+    })
+  }, [events, reviewId])
 
   const pick = async (): Promise<void> => {
     if (!api) return
@@ -249,7 +293,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
       <label className="review-panel__synthesis">Главная модель-синтезатор<select value={synthesisModel} onChange={(event) => setSynthesisModel(event.target.value)} disabled={running}><option value="">Выбери модель</option>{models.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
 
       <div className="review-panel__actions"><button type="button" onClick={() => void start()} disabled={!canStart}>{reviewId && (reviewFinished || failure !== null || progress?.stage === 'failed') ? 'Запустить снова' : 'Запустить ревью'}</button><button type="button" onClick={() => void stop()} disabled={!running}>Остановить</button></div>
-      {reviewId ? <ProgressCard events={events} reviewId={reviewId} progress={progress} status={status} reviewers={reviewers} elapsed={startedAt === null ? null : elapsed} accepted={accepted} failed={failure !== null} /> : null}
+      {reviewId ? <ProgressCard roster={roster} progress={progress} status={status} reviewers={reviewers} elapsed={startedAt === null ? null : elapsed} accepted={accepted} failed={failure !== null} /> : null}
       {launchStalled ? <p role="alert" className="shell__reason">Ядро не подтвердило запуск за {elapsed} с. Проверь, запущено ли ядро и настроен ли провайдер, либо останови ревью и запусти снова.</p> : null}
       {progressStalled ? <p role="alert" className="shell__reason">Модели молчат уже {Math.floor(silence / 60)} мин. Бесплатные модели отвечают медленно — можно подождать или остановить ревью.</p> : null}
       {failure ? <p role="alert" className="shell__reason">{failure.kind === 'stopped' ? 'Ревью остановлено.' : `Ревью завершилось ошибкой: ${failure.message}`}</p> : null}
@@ -261,17 +305,16 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   )
 }
 
-function ProgressCard({ events, reviewId, progress, status, reviewers, elapsed, accepted, failed }: { readonly events: readonly CoreEvent[]; readonly reviewId: string; readonly progress: ReviewProgress | null; readonly status: string; readonly reviewers: readonly string[]; readonly elapsed: number | null; readonly accepted: boolean; readonly failed: boolean }): React.JSX.Element {
-  // The models of a run are taken from its own events when it has any: the
+function ProgressCard({ roster, progress, status, reviewers, elapsed, accepted, failed }: { readonly roster: ReviewRoster; readonly progress: ReviewProgress | null; readonly status: string; readonly reviewers: readonly string[]; readonly elapsed: number | null; readonly accepted: boolean; readonly failed: boolean }): React.JSX.Element {
+  // The roster of a run comes from its own events when it has any: the
   // selection above can be re-picked, or emptied by a failed catalogue refresh,
   // and a finished review must still say who reviewed it.
-  const reported = reviewerModelsOf(events, reviewId)
-  const roster = reported.length > 0 ? reported : reviewers
+  const queue = roster.models.length > 0 ? roster.models : reviewers
   const completed = progress?.completed ?? 0
-  const total = progress?.total || roster.length
+  const total = progress?.total || queue.length
   const working = progress?.stage === 'reviewers' && progress.status === 'working' ? progress.model : null
   const hint = failed ? 'Запуск прерван, подробности ниже' : progress?.stage === 'synthesis' ? `Синтез результата · ${progress.model ?? 'модель'}` : working ? `Рецензенты отвечают по очереди · сейчас ${working}` : progress?.stage === 'reviewers' ? 'Рецензенты отвечают по очереди' : accepted ? 'Ядро приняло план, ждём первый ответ модели' : 'Отправляем план в ядро'
-  return <div className="review-panel__progress" role="status" aria-live="polite"><div className="review-panel__progress-heading"><strong>{status}</strong>{progress?.stage === 'reviewers' ? <span>{Math.min(completed, total)}/{total}</span> : null}{elapsed === null ? null : <span className="review-panel__elapsed">{elapsed} с</span>}</div><div className="review-panel__progress-bar"><span style={{ width: `${total ? Math.round((Math.min(completed, total) / total) * 100) : 0}%` }} /></div><p>{hint}</p><ul>{roster.map((model, index) => { const state = model ? latestReviewerStatus(events, reviewId, model) : 'waiting'; return <li key={`${model}-${index}`}><span>{model || `Рецензент ${index + 1}`}</span><span className={`review-panel__reviewer-status review-panel__reviewer-status--${state}`}>{reviewStatusLabel(state)}</span></li> })}</ul></div>
+  return <div className="review-panel__progress" role="status" aria-live="polite"><div className="review-panel__progress-heading"><strong>{status}</strong>{elapsed === null ? null : <span className="review-panel__elapsed">{elapsed} с</span>}</div><div className="review-panel__progress-bar"><span style={{ width: `${total ? Math.round((Math.min(completed, total) / total) * 100) : 0}%` }} /></div><p>{hint}</p><ul>{queue.map((model, index) => { const state = roster.statuses[model] ?? 'waiting'; return <li key={`${model}-${index}`}><span>{model || `Рецензент ${index + 1}`}</span><span className={`review-panel__reviewer-status review-panel__reviewer-status--${state}`}>{reviewStatusLabel(state)}</span></li> })}</ul></div>
 }
 
 function History({ events, onOpen, onClear }: { readonly events: readonly CoreEvent[]; readonly onOpen: (id: string) => void; readonly onClear: () => void }): React.JSX.Element {
@@ -287,7 +330,7 @@ interface ModelCatalog {
 }
 
 function latestCatalog(events: readonly CoreEvent[], tier: ModelTier): ModelCatalog {
-  const event = [...events].reverse().find((item) => item.eventType === 'model.catalog' && readPayload(item)?.mode === tier)
+  const event = events.find((item) => item.eventType === 'model.catalog' && readPayload(item)?.mode === tier)
   const payload = readPayload(event)
   const models = payload?.models
   return {
@@ -296,33 +339,11 @@ function latestCatalog(events: readonly CoreEvent[], tier: ModelTier): ModelCata
   }
 }
 
-function latestPayload(events: readonly CoreEvent[], type: string): Record<string, unknown> | null { return readPayload([...events].reverse().find((item) => item.eventType === type)) }
+function latestPayload(events: readonly CoreEvent[], type: string): Record<string, unknown> | null { return readPayload(events.find((item) => item.eventType === type)) }
 
 function latestReviewProgress(events: readonly CoreEvent[], reviewId: string): ReviewProgress | null {
-  for (const event of [...events].reverse()) { if (event.eventType !== 'review.progress') continue; const payload = readPayload(event); if (payload?.review_id !== reviewId) continue; return { reviewId, stage: String(payload.stage ?? ''), status: String(payload.status ?? ''), model: typeof payload.model === 'string' ? payload.model : null, completed: Number(payload.completed ?? 0), total: Number(payload.total ?? 0) } }
+  for (const event of events) { if (event.eventType !== 'review.progress') continue; const payload = readPayload(event); if (payload?.review_id !== reviewId) continue; return { reviewId, stage: String(payload.stage ?? ''), status: String(payload.status ?? ''), model: typeof payload.model === 'string' ? payload.model : null, completed: Number(payload.completed ?? 0), total: Number(payload.total ?? 0) } }
   return null
-}
-
-/** Models a run reported, in the order the core queued them. */
-function reviewerModelsOf(events: readonly CoreEvent[], reviewId: string): readonly string[] {
-  const models: string[] = []
-  for (const event of events) {
-    if (event.eventType !== 'review.progress') continue
-    const payload = readPayload(event)
-    if (payload?.review_id !== reviewId || payload.stage !== 'reviewers') continue
-    const model = payload.model
-    if (typeof model === 'string' && model.length > 0 && !models.includes(model)) models.push(model)
-  }
-  return models
-}
-
-function latestReviewerStatus(events: readonly CoreEvent[], reviewId: string, model: string): string {
-  for (const event of [...events].reverse()) {
-    if (event.eventType !== 'review.progress') continue
-    const payload = readPayload(event)
-    if (payload?.review_id === reviewId && payload.model === model) return String(payload.status ?? 'waiting')
-  }
-  return 'waiting'
 }
 
 function latestReviewFailure(events: readonly CoreEvent[], reviewId: string): ReviewFailure | null {
@@ -339,9 +360,9 @@ function latestReviewFailure(events: readonly CoreEvent[], reviewId: string): Re
 }
 
 function latestReviewResult(events: readonly CoreEvent[]): PlanReviewResult | null {
-  const responsePayload = readPayload([...events].reverse().find((item) => item.eventType === 'review.result'))
+  const responsePayload = readPayload(events.find((item) => item.eventType === 'review.result'))
   if (responsePayload?.result && typeof responsePayload.result === 'object') return normalizeResult(responsePayload.result as Record<string, unknown>)
-  const payload = readPayload([...events].reverse().find((item) => item.eventType === 'task.completed' && item.taskId.startsWith('review-')))
+  const payload = readPayload(events.find((item) => item.eventType === 'task.completed' && item.taskId.startsWith('review-')))
   const finalMessage = payload?.final_message
   if (typeof finalMessage !== 'string') return null
   try { return normalizeResult(JSON.parse(finalMessage) as Record<string, unknown>) } catch { return null }

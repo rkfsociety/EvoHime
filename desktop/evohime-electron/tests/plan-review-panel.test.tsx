@@ -12,6 +12,8 @@ function ok<C extends RendererCommand>(value: unknown): CommandOutcome<C> {
   return { ok: true, value } as CommandOutcome<C>
 }
 
+// The shell prepends: the newest event is first, and the oldest falls off the
+// end. Every fixture below is written in that order.
 function event(eventType: string, payload: Record<string, unknown>, taskId = ''): CoreEvent {
   return { sequenceId: 0, taskId, eventType, payload: JSON.stringify(payload) }
 }
@@ -100,9 +102,9 @@ describe('plan review panel', () => {
     await startReview(['a', 'b', 'main'])
     const reviewId = startedReviewId()
     view.rerender(<PlanReviewPanel connection="connected" events={[
-      catalog,
+      event('review.progress', { ReviewProgress: { review_id: reviewId, stage: 'reviewers', status: 'completed', model: 'b', completed: 1, total: 2 } }, reviewId),
       event('review.progress', { ReviewProgress: { review_id: reviewId, stage: 'reviewers', status: 'working', model: 'a', completed: 0, total: 2 } }, reviewId),
-      event('review.progress', { ReviewProgress: { review_id: reviewId, stage: 'reviewers', status: 'completed', model: 'b', completed: 1, total: 2 } }, reviewId)
+      catalog
     ]} />)
 
     expect(screen.getByText('Рецензенты: 1/2')).toBeTruthy()
@@ -154,10 +156,44 @@ describe('plan review panel', () => {
     const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
 
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Модель рецензента 1' }), 'a')
-    view.rerender(<PlanReviewPanel connection="connected" events={[catalog, event('model.catalog', { mode: 'free', models: [], error: 'provider error: 429 rate limit' })]} />)
+    view.rerender(<PlanReviewPanel connection="connected" events={[event('model.catalog', { mode: 'free', models: [], error: 'provider error: 429 rate limit' }), catalog]} />)
 
     expect((screen.getByRole('combobox', { name: 'Модель рецензента 1' }) as HTMLSelectElement).value).toBe('a')
     expect(screen.getByRole('alert').textContent).toContain('429 rate limit')
+  })
+
+  it('keeps every reviewer listed after their events leave the window', async () => {
+    const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
+    const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
+
+    await startReview(['a', 'b', 'main'])
+    const reviewId = startedReviewId()
+    const progress = (model: string, status: string, completed: number): CoreEvent =>
+      event('review.progress', { ReviewProgress: { review_id: reviewId, stage: 'reviewers', status, model, completed, total: 2 } }, reviewId)
+    // The shell keeps newest-first and drops the oldest, so a run outlives its
+    // own early events.
+    view.rerender(<PlanReviewPanel connection="connected" events={[progress('a', 'working', 0), progress('b', 'waiting', 0), progress('a', 'waiting', 0), catalog]} />)
+    view.rerender(<PlanReviewPanel connection="connected" events={[progress('b', 'working', 1), progress('a', 'completed', 1)]} />)
+    view.rerender(<PlanReviewPanel connection="connected" events={[progress('b', 'completed', 2)]} />)
+
+    const card = screen.getByRole('status')
+    const rows = within(card).getAllByRole('listitem').map((node) => node.textContent)
+    expect(rows).toEqual(['aготово', 'bготово'])
+  })
+
+  it('shows only one reviewer working at a time', async () => {
+    const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
+    const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
+
+    await startReview(['a', 'b', 'main'])
+    const reviewId = startedReviewId()
+    const progress = (model: string, status: string, completed: number): CoreEvent =>
+      event('review.progress', { ReviewProgress: { review_id: reviewId, stage: 'reviewers', status, model, completed, total: 2 } }, reviewId)
+    view.rerender(<PlanReviewPanel connection="connected" events={[progress('b', 'working', 1), progress('a', 'completed', 1), progress('a', 'working', 0), progress('b', 'waiting', 0), progress('a', 'waiting', 0), catalog]} />)
+
+    const card = screen.getByRole('status')
+    expect(within(card).getAllByText('работает')).toHaveLength(1)
+    expect(within(card).getAllByRole('listitem').map((node) => node.textContent)).toEqual(['aготово', 'bработает'])
   })
 
   it('names the reviewers of a run from its own events', async () => {
@@ -168,10 +204,10 @@ describe('plan review panel', () => {
     const reviewId = startedReviewId()
     // The catalogue drops out mid-run, so the selects lose their options.
     view.rerender(<PlanReviewPanel connection="connected" events={[
-      catalog,
-      event('review.progress', { ReviewProgress: { review_id: reviewId, stage: 'reviewers', status: 'completed', model: 'a', completed: 1, total: 2 } }, reviewId),
+      event('model.catalog', { mode: 'free', models: [], error: 'provider error: 429 rate limit' }),
       event('review.progress', { ReviewProgress: { review_id: reviewId, stage: 'reviewers', status: 'working', model: 'b', completed: 1, total: 2 } }, reviewId),
-      event('model.catalog', { mode: 'free', models: [], error: 'provider error: 429 rate limit' })
+      event('review.progress', { ReviewProgress: { review_id: reviewId, stage: 'reviewers', status: 'completed', model: 'a', completed: 1, total: 2 } }, reviewId),
+      catalog
     ]} />)
 
     const card = screen.getByRole('status')
