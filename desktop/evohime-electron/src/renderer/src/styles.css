@@ -1876,6 +1876,7 @@ select:focus {
 .review-panel__history-heading { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
 .review-panel__history-confirm { display: flex; gap: 8px; }
 .review-panel__history-note { margin: 0; color: var(--muted, #94a3b8); font-size: 13px; }
+.review-panel__catalog-error { margin: 0 0 8px; color: var(--warning, #e0b341); font-size: 13px; }
 .review-panel__history button { display: grid; gap: 4px; text-align: left; }
 .review-panel__history small { color: var(--muted, #94a3b8); }
 

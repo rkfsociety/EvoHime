@@ -149,6 +149,37 @@ describe('plan review panel', () => {
     expect(screen.getByRole('button', { name: 'Скопировано' })).toBeTruthy()
   })
 
+  it('keeps the picked models when a catalogue refresh fails', async () => {
+    const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
+    const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Модель рецензента 1' }), 'a')
+    view.rerender(<PlanReviewPanel connection="connected" events={[catalog, event('model.catalog', { mode: 'free', models: [], error: 'provider error: 429 rate limit' })]} />)
+
+    expect((screen.getByRole('combobox', { name: 'Модель рецензента 1' }) as HTMLSelectElement).value).toBe('a')
+    expect(screen.getByRole('alert').textContent).toContain('429 rate limit')
+  })
+
+  it('names the reviewers of a run from its own events', async () => {
+    const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
+    const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
+
+    await startReview(['a', 'b', 'main'])
+    const reviewId = startedReviewId()
+    // The catalogue drops out mid-run, so the selects lose their options.
+    view.rerender(<PlanReviewPanel connection="connected" events={[
+      catalog,
+      event('review.progress', { ReviewProgress: { review_id: reviewId, stage: 'reviewers', status: 'completed', model: 'a', completed: 1, total: 2 } }, reviewId),
+      event('review.progress', { ReviewProgress: { review_id: reviewId, stage: 'reviewers', status: 'working', model: 'b', completed: 1, total: 2 } }, reviewId),
+      event('model.catalog', { mode: 'free', models: [], error: 'provider error: 429 rate limit' })
+    ]} />)
+
+    const card = screen.getByRole('status')
+    expect(within(card).getByText('a')).toBeTruthy()
+    expect(within(card).getByText('b')).toBeTruthy()
+    expect(within(card).queryByText('Рецензент 1')).toBeNull()
+  })
+
   it('clears the run history only after a confirmation', async () => {
     const history = event('review.list', { reviews: [{ review_id: 'review-1', file_name: 'plan.md', reviewers: [{ status: 'completed' }] }] })
     render(<PlanReviewPanel connection="connected" events={[event('model.catalog', { mode: 'free', models: ['a', 'b'] }), history]} />)

@@ -75,7 +75,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   const [lastChangeAt, setLastChangeAt] = useState(() => Date.now())
   const [copied, setCopied] = useState(false)
 
-  const catalogModels = useMemo(() => latestCatalog(events, tier), [events, tier])
+  const catalog = useMemo(() => latestCatalog(events, tier), [events, tier])
   const reviewResult = useMemo(() => latestReviewResult(events), [events])
   const progress = useMemo(() => reviewId ? latestReviewProgress(events, reviewId) : null, [events, reviewId])
   const failure = useMemo(() => reviewId ? latestReviewFailure(events, reviewId) : null, [events, reviewId])
@@ -88,15 +88,23 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
 
   useEffect(() => {
     if (!api || !CONNECTED.includes(connection)) return
+    // Refreshing the catalogue costs a provider request, and doing it during a
+    // run competes with the review for the same rate limit.
+    if (running) return
     void api.invoke('core.listModelCatalog', { mode: tier })
     void api.invoke('review.list', { limit: 20 })
-  }, [api, connection, tier])
+  }, [api, connection, running, tier])
 
+  // A failed catalogue request answers with an empty list. Applying it would
+  // erase the models the user picked — including those of a review in flight —
+  // so an empty catalogue is treated as "no news", not as "no models".
   useEffect(() => {
-    setModels(catalogModels)
-    setReviewers((current) => normalizeSlots(current.filter((model) => catalogModels.includes(model)), reviewerCount, catalogModels))
-    setSynthesisModel((current) => catalogModels.includes(current) ? current : catalogModels[0] || '')
-  }, [catalogModels, reviewerCount])
+    if (catalog.models.length === 0) return
+    const available = catalog.models
+    setModels(available)
+    setReviewers((current) => normalizeSlots(current.filter((model) => available.includes(model)), reviewerCount, available))
+    setSynthesisModel((current) => available.includes(current) ? current : available[0] || '')
+  }, [catalog, reviewerCount])
 
   useEffect(() => {
     try {
@@ -226,7 +234,8 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
 
       <fieldset className="review-panel__models">
         <legend>Модели-рецензенты · {reviewers.filter(Boolean).length} из {reviewerCount}</legend>
-        {models.length === 0 ? <p>Каталог {tier === 'free' ? 'бесплатных' : 'платных'} моделей недоступен или пуст.</p> : reviewers.map((model, index) => (
+        {catalog.error ? <p role="alert" className="review-panel__catalog-error">Каталог моделей не обновился: {catalog.error}{models.length > 0 ? ' Показан прошлый список.' : ''}</p> : null}
+        {models.length === 0 ? <p>Каталог {tier === 'free' ? 'бесплатных' : 'платных'} моделей пуст.</p> : reviewers.map((model, index) => (
           <label key={index} className="review-panel__model-row">
             <span>Рецензент {index + 1}</span>
             <select aria-label={`Модель рецензента ${index + 1}`} value={model} onChange={(event) => setReviewerModel(index, event.target.value)} disabled={running}>
@@ -253,11 +262,16 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
 }
 
 function ProgressCard({ events, reviewId, progress, status, reviewers, elapsed, accepted, failed }: { readonly events: readonly CoreEvent[]; readonly reviewId: string; readonly progress: ReviewProgress | null; readonly status: string; readonly reviewers: readonly string[]; readonly elapsed: number | null; readonly accepted: boolean; readonly failed: boolean }): React.JSX.Element {
+  // The models of a run are taken from its own events when it has any: the
+  // selection above can be re-picked, or emptied by a failed catalogue refresh,
+  // and a finished review must still say who reviewed it.
+  const reported = reviewerModelsOf(events, reviewId)
+  const roster = reported.length > 0 ? reported : reviewers
   const completed = progress?.completed ?? 0
-  const total = progress?.total || reviewers.length
+  const total = progress?.total || roster.length
   const working = progress?.stage === 'reviewers' && progress.status === 'working' ? progress.model : null
   const hint = failed ? 'Запуск прерван, подробности ниже' : progress?.stage === 'synthesis' ? `Синтез результата · ${progress.model ?? 'модель'}` : working ? `Рецензенты отвечают по очереди · сейчас ${working}` : progress?.stage === 'reviewers' ? 'Рецензенты отвечают по очереди' : accepted ? 'Ядро приняло план, ждём первый ответ модели' : 'Отправляем план в ядро'
-  return <div className="review-panel__progress" role="status" aria-live="polite"><div className="review-panel__progress-heading"><strong>{status}</strong>{progress?.stage === 'reviewers' ? <span>{Math.min(completed, total)}/{total}</span> : null}{elapsed === null ? null : <span className="review-panel__elapsed">{elapsed} с</span>}</div><div className="review-panel__progress-bar"><span style={{ width: `${total ? Math.round((Math.min(completed, total) / total) * 100) : 0}%` }} /></div><p>{hint}</p><ul>{reviewers.map((model, index) => { const state = model ? latestReviewerStatus(events, reviewId, model) : 'waiting'; return <li key={`${model}-${index}`}><span>{model || `Рецензент ${index + 1}`}</span><span className={`review-panel__reviewer-status review-panel__reviewer-status--${state}`}>{reviewStatusLabel(state)}</span></li> })}</ul></div>
+  return <div className="review-panel__progress" role="status" aria-live="polite"><div className="review-panel__progress-heading"><strong>{status}</strong>{progress?.stage === 'reviewers' ? <span>{Math.min(completed, total)}/{total}</span> : null}{elapsed === null ? null : <span className="review-panel__elapsed">{elapsed} с</span>}</div><div className="review-panel__progress-bar"><span style={{ width: `${total ? Math.round((Math.min(completed, total) / total) * 100) : 0}%` }} /></div><p>{hint}</p><ul>{roster.map((model, index) => { const state = model ? latestReviewerStatus(events, reviewId, model) : 'waiting'; return <li key={`${model}-${index}`}><span>{model || `Рецензент ${index + 1}`}</span><span className={`review-panel__reviewer-status review-panel__reviewer-status--${state}`}>{reviewStatusLabel(state)}</span></li> })}</ul></div>
 }
 
 function History({ events, onOpen, onClear }: { readonly events: readonly CoreEvent[]; readonly onOpen: (id: string) => void; readonly onClear: () => void }): React.JSX.Element {
@@ -267,10 +281,19 @@ function History({ events, onOpen, onClear }: { readonly events: readonly CoreEv
   return <div className="review-panel__history"><div className="review-panel__history-heading"><h3>История запусков</h3>{reviews.length === 0 ? null : confirming ? <span className="review-panel__history-confirm"><button type="button" onClick={() => { setConfirming(false); onClear() }}>Очистить</button><button type="button" onClick={() => setConfirming(false)}>Отмена</button></span> : <button type="button" onClick={() => setConfirming(true)}>Очистить историю</button>}</div>{confirming ? <p className="review-panel__history-note">Список очистится, но сами ревью останутся в журнале и в экспортированных файлах.</p> : null}{reviews.length === 0 ? <p>Завершённых ревью пока нет.</p> : reviews.map((item) => { const value = item as Record<string, unknown>; const reviewers = Array.isArray(value.reviewers) ? value.reviewers : []; const completed = reviewers.filter((review) => (review as Record<string, unknown>).status === 'completed').length; return <button key={String(value.review_id)} type="button" onClick={() => onOpen(String(value.review_id))}><span>{String(value.file_name)}</span><small>{completed}/{reviewers.length} рецензентов · {String(value.review_id)}</small></button> })}</div>
 }
 
-function latestCatalog(events: readonly CoreEvent[], tier: ModelTier): readonly string[] {
+interface ModelCatalog {
+  readonly models: readonly string[]
+  readonly error: string | null
+}
+
+function latestCatalog(events: readonly CoreEvent[], tier: ModelTier): ModelCatalog {
   const event = [...events].reverse().find((item) => item.eventType === 'model.catalog' && readPayload(item)?.mode === tier)
-  const models = readPayload(event)?.models
-  return Array.isArray(models) ? models.filter((model): model is string => typeof model === 'string').sort() : []
+  const payload = readPayload(event)
+  const models = payload?.models
+  return {
+    models: Array.isArray(models) ? models.filter((model): model is string => typeof model === 'string').sort() : [],
+    error: typeof payload?.error === 'string' && payload.error.length > 0 ? payload.error : null
+  }
 }
 
 function latestPayload(events: readonly CoreEvent[], type: string): Record<string, unknown> | null { return readPayload([...events].reverse().find((item) => item.eventType === type)) }
@@ -278,6 +301,19 @@ function latestPayload(events: readonly CoreEvent[], type: string): Record<strin
 function latestReviewProgress(events: readonly CoreEvent[], reviewId: string): ReviewProgress | null {
   for (const event of [...events].reverse()) { if (event.eventType !== 'review.progress') continue; const payload = readPayload(event); if (payload?.review_id !== reviewId) continue; return { reviewId, stage: String(payload.stage ?? ''), status: String(payload.status ?? ''), model: typeof payload.model === 'string' ? payload.model : null, completed: Number(payload.completed ?? 0), total: Number(payload.total ?? 0) } }
   return null
+}
+
+/** Models a run reported, in the order the core queued them. */
+function reviewerModelsOf(events: readonly CoreEvent[], reviewId: string): readonly string[] {
+  const models: string[] = []
+  for (const event of events) {
+    if (event.eventType !== 'review.progress') continue
+    const payload = readPayload(event)
+    if (payload?.review_id !== reviewId || payload.stage !== 'reviewers') continue
+    const model = payload.model
+    if (typeof model === 'string' && model.length > 0 && !models.includes(model)) models.push(model)
+  }
+  return models
 }
 
 function latestReviewerStatus(events: readonly CoreEvent[], reviewId: string, model: string): string {
