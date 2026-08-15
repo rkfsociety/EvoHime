@@ -63,7 +63,6 @@ export function UpdateIndicator({ status }: UpdateIndicatorProps): React.JSX.Ele
         <span className={`update-indicator__spinner${running ? ' update-indicator__spinner--running' : ''}`} aria-hidden="true">
           {failed ? '⚠' : '⟳'}
         </span>
-        <span className="update-indicator__label">Обновление</span>
         <span className="update-indicator__dot" aria-hidden="true" />
       </button>
 
