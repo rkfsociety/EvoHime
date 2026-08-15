@@ -467,6 +467,9 @@ function dispatch(
       return accepted(client.send({ getPlanReview: { reviewId } }))
     }
 
+    case 'review.clearHistory':
+      return accepted(client.send({ clearPlanReviewHistory: {} }))
+
     case 'review.export': {
       const value = asRecord(payload)
       const reviewId = asBoundedString(value['reviewId'])

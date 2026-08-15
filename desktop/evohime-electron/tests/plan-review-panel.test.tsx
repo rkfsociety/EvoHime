@@ -149,6 +149,43 @@ describe('plan review panel', () => {
     expect(screen.getByRole('button', { name: 'Скопировано' })).toBeTruthy()
   })
 
+  it('clears the run history only after a confirmation', async () => {
+    const history = event('review.list', { reviews: [{ review_id: 'review-1', file_name: 'plan.md', reviewers: [{ status: 'completed' }] }] })
+    render(<PlanReviewPanel connection="connected" events={[event('model.catalog', { mode: 'free', models: ['a', 'b'] }), history]} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Очистить историю' }))
+    expect(calls.some((call) => call.command === 'review.clearHistory')).toBe(false)
+    await userEvent.click(screen.getByRole('button', { name: 'Отмена' }))
+    expect(calls.some((call) => call.command === 'review.clearHistory')).toBe(false)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Очистить историю' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Очистить' }))
+    await waitFor(() => expect(calls.some((call) => call.command === 'review.clearHistory')).toBe(true))
+    // The list is owned by the core, so it has to be re-read after clearing.
+    expect(calls.filter((call) => call.command === 'review.list').length).toBeGreaterThan(1)
+  })
+
+  it('offers no clear action for an empty history', async () => {
+    render(<PlanReviewPanel connection="connected" events={[event('model.catalog', { mode: 'free', models: ['a', 'b'] }), event('review.list', { reviews: [] })]} />)
+
+    expect(screen.getByText('Завершённых ревью пока нет.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Очистить историю' })).toBeNull()
+  })
+
+  it('keeps quiet while reviewers are working', async () => {
+    const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
+    const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
+
+    await startReview(['a', 'b', 'main'])
+    const reviewId = startedReviewId()
+    view.rerender(<PlanReviewPanel connection="connected" events={[
+      catalog,
+      event('review.progress', { ReviewProgress: { review_id: reviewId, stage: 'reviewers', status: 'working', model: 'a', completed: 0, total: 2 } }, reviewId)
+    ]} />)
+
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('confirms that the core accepted the plan', async () => {
     const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
     const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)

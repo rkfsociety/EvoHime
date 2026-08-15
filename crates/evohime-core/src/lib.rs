@@ -1303,6 +1303,11 @@ pub enum CoreEvent {
         operation_id: String,
         progress: BackupProgress,
     },
+    /// Marks the point after which review history is shown. The journal is
+    /// append-only, so clearing hides earlier reviews instead of deleting them.
+    ReviewHistoryCleared {
+        marker_id: String,
+    },
 }
 
 #[derive(Clone)]
@@ -1402,6 +1407,7 @@ impl EventJournal {
             | CoreEvent::TaskStopped { task_id } => task_id,
             CoreEvent::ReviewProgress { review_id, .. } => review_id,
             CoreEvent::StorageProgress { operation_id, .. } => operation_id,
+            CoreEvent::ReviewHistoryCleared { marker_id } => marker_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -1415,6 +1421,7 @@ impl EventJournal {
             CoreEvent::TaskStopped { .. } => "task.stopped",
             CoreEvent::ReviewProgress { .. } => "review.progress",
             CoreEvent::StorageProgress { .. } => "storage.progress",
+            CoreEvent::ReviewHistoryCleared { .. } => "review.history_cleared",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {

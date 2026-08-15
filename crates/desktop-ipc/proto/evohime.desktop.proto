@@ -95,6 +95,10 @@ message ExportPlanReview {
   bool include_reviewers = 3;
 }
 
+// Hides earlier reviews from the history list. The journal stays append-only:
+// clearing records a marker, and listing ignores everything recorded before it.
+message ClearPlanReviewHistory {}
+
 message PermissionModeRequest {
   string mode = 1;
 }
@@ -715,6 +719,7 @@ message CommandEnvelope {
     ListPlanReviews list_plan_reviews = 77;
     GetPlanReview get_plan_review = 78;
     ExportPlanReview export_plan_review = 79;
+    ClearPlanReviewHistory clear_plan_review_history = 80;
   }
 }
 

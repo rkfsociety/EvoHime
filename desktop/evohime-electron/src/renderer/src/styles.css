@@ -1855,6 +1855,9 @@ select:focus {
 .review-panel__result-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .review-panel__result details { border: 1px solid var(--border, #334155); padding: 10px; }
 .review-panel__history { display: grid; gap: 8px; border-top: 1px solid var(--border, #334155); padding-top: 18px; }
+.review-panel__history-heading { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.review-panel__history-confirm { display: flex; gap: 8px; }
+.review-panel__history-note { margin: 0; color: var(--muted, #94a3b8); font-size: 13px; }
 .review-panel__history button { display: grid; gap: 4px; text-align: left; }
 .review-panel__history small { color: var(--muted, #94a3b8); }
 

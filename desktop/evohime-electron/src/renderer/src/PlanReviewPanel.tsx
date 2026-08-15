@@ -9,7 +9,13 @@ const CONNECTED: readonly ConnectionState[] = ['connected', 'replaying', 'resync
 const MIN_REVIEWERS = 2
 const MAX_REVIEWERS = 8
 const REVIEW_PREFERENCES_KEY = 'evohime.review-preferences.v2'
-const STALL_SECONDS = 30
+// A review that never reaches the core says so within a second, so a short
+// wait is enough to call the launch itself broken. A review that is running,
+// though, is at the mercy of the slowest free model, and warning on total time
+// cried wolf on healthy runs — what matters there is how long nothing at all
+// has happened.
+const SILENT_LAUNCH_SECONDS = 20
+const SILENT_PROGRESS_SECONDS = 180
 
 interface Props {
   readonly connection: ConnectionState
@@ -65,7 +71,8 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   const [selectedResult, setSelectedResult] = useState<PlanReviewResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [startedAt, setStartedAt] = useState<number | null>(null)
-  const [elapsed, setElapsed] = useState(0)
+  const [now, setNow] = useState(() => Date.now())
+  const [lastChangeAt, setLastChangeAt] = useState(() => Date.now())
   const [copied, setCopied] = useState(false)
 
   const catalogModels = useMemo(() => latestCatalog(events, tier), [events, tier])
@@ -75,6 +82,9 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   const accepted = useMemo(() => reviewId !== null && (progress !== null || events.some((item) => item.eventType === 'review.started' && readPayload(item)?.review_id === reviewId)), [events, progress, reviewId])
   const reviewFinished = reviewResult?.reviewId === reviewId
   const running = reviewId !== null && !reviewFinished && failure === null && progress?.stage !== 'completed' && progress?.stage !== 'failed'
+  const progressKey = progress === null ? '' : `${progress.stage}:${progress.status}:${progress.model ?? ''}:${progress.completed}`
+  const elapsed = startedAt === null ? 0 : Math.round((now - startedAt) / 1000)
+  const silence = Math.round((now - lastChangeAt) / 1000)
 
   useEffect(() => {
     if (!api || !CONNECTED.includes(connection)) return
@@ -109,10 +119,16 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   // A visible clock is the only proof that a silent run is still alive.
   useEffect(() => {
     if (!running || startedAt === null) return
-    setElapsed(Math.round((Date.now() - startedAt) / 1000))
-    const timer = window.setInterval(() => setElapsed(Math.round((Date.now() - startedAt) / 1000)), 1000)
+    setNow(Date.now())
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [running, startedAt])
+
+  // Silence is measured from the last change the core reported, not from the
+  // start: a reviewer that is still thinking keeps the run visibly alive.
+  useEffect(() => {
+    setLastChangeAt(Date.now())
+  }, [progressKey, reviewId])
 
   const pick = async (): Promise<void> => {
     if (!api) return
@@ -141,7 +157,8 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
     setSelectedResult(null)
     setError(null)
     setStartedAt(Date.now())
-    setElapsed(0)
+    setNow(Date.now())
+    setLastChangeAt(Date.now())
     const outcome = await api.invoke('review.start', { reviewId: id, fileName, sourceMarkdown, reviewerModels: reviewers, synthesisModel })
     if (!outcome.ok) setError(`Ядро отклонило запрос: ${outcome.message}`)
   }
@@ -159,6 +176,17 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
     setSelectedResult(null)
     setStartedAt(null)
     setError(null)
+  }
+
+  const clearHistory = async (): Promise<void> => {
+    if (!api) return
+    const outcome = await api.invoke('review.clearHistory', {})
+    if (!outcome.ok) {
+      setError(outcome.message)
+      return
+    }
+    // The list is rebuilt from the core, so it must be re-read after clearing.
+    await api.invoke('review.list', { limit: 20 })
   }
 
   const copyResult = async (): Promise<void> => {
@@ -180,7 +208,8 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   const canStart = CONNECTED.includes(connection) && fileName.length > 0 && reviewers.length >= MIN_REVIEWERS && reviewers.every(Boolean) && new Set(reviewers).size === reviewers.length && synthesisModel.length > 0 && !running
   const status = reviewStatus(progress, reviewFinished, selectedResult !== null, failure, accepted)
   // Without a stall hint a dead core is indistinguishable from a slow model.
-  const stalled = running && elapsed >= STALL_SECONDS && (!accepted || progress === null)
+  const launchStalled = running && progress === null && elapsed >= SILENT_LAUNCH_SECONDS
+  const progressStalled = running && progress !== null && silence >= SILENT_PROGRESS_SECONDS
 
   return (
     <section className="review-panel" aria-label="Ревью планов">
@@ -212,12 +241,13 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
 
       <div className="review-panel__actions"><button type="button" onClick={() => void start()} disabled={!canStart}>{reviewId && (reviewFinished || failure !== null || progress?.stage === 'failed') ? 'Запустить снова' : 'Запустить ревью'}</button><button type="button" onClick={() => void stop()} disabled={!running}>Остановить</button></div>
       {reviewId ? <ProgressCard events={events} reviewId={reviewId} progress={progress} status={status} reviewers={reviewers} elapsed={startedAt === null ? null : elapsed} accepted={accepted} failed={failure !== null} /> : null}
-      {stalled ? <p role="alert" className="shell__reason">Ответа от ядра нет уже {elapsed} с. Проверь, запущено ли ядро и настроен ли провайдер, либо останови ревью и запусти снова.</p> : null}
+      {launchStalled ? <p role="alert" className="shell__reason">Ядро не подтвердило запуск за {elapsed} с. Проверь, запущено ли ядро и настроен ли провайдер, либо останови ревью и запусти снова.</p> : null}
+      {progressStalled ? <p role="alert" className="shell__reason">Модели молчат уже {Math.floor(silence / 60)} мин. Бесплатные модели отвечают медленно — можно подождать или остановить ревью.</p> : null}
       {failure ? <p role="alert" className="shell__reason">{failure.kind === 'stopped' ? 'Ревью остановлено.' : `Ревью завершилось ошибкой: ${failure.message}`}</p> : null}
       {error ? <p role="alert" className="shell__reason">{error}</p> : null}
 
       {selectedResult ? <div className="review-panel__result"><div className="review-panel__result-heading"><h3>Итоговое ревью</h3><div className="review-panel__result-actions"><button type="button" onClick={() => void copyResult()}>{copied ? 'Скопировано' : 'Скопировать итоговый Markdown'}</button><button type="button" onClick={() => void exportResult()}>Экспортировать итоговый Markdown</button></div></div><MarkdownMessage text={selectedResult.finalMarkdown} /><h3>Исходные ответы</h3>{selectedResult.reviewers.map((review) => <details key={review.model}><summary>{review.model} · {review.status}</summary>{review.error ? <p>{review.error}</p> : <MarkdownMessage text={review.content} />}</details>)}</div> : null}
-      <History events={events} onOpen={(id) => void openHistory(id)} />
+      <History events={events} onOpen={(id) => void openHistory(id)} onClear={() => void clearHistory()} />
     </section>
   )
 }
@@ -229,10 +259,11 @@ function ProgressCard({ events, reviewId, progress, status, reviewers, elapsed, 
   return <div className="review-panel__progress" role="status" aria-live="polite"><div className="review-panel__progress-heading"><strong>{status}</strong>{progress?.stage === 'reviewers' ? <span>{Math.min(completed, total)}/{total}</span> : null}{elapsed === null ? null : <span className="review-panel__elapsed">{elapsed} с</span>}</div><div className="review-panel__progress-bar"><span style={{ width: `${total ? Math.round((Math.min(completed, total) / total) * 100) : 0}%` }} /></div><p>{hint}</p><ul>{reviewers.map((model, index) => { const state = model ? latestReviewerStatus(events, reviewId, model) : 'waiting'; return <li key={`${model}-${index}`}><span>{model || `Рецензент ${index + 1}`}</span><span className={`review-panel__reviewer-status review-panel__reviewer-status--${state}`}>{reviewStatusLabel(state)}</span></li> })}</ul></div>
 }
 
-function History({ events, onOpen }: { readonly events: readonly CoreEvent[]; readonly onOpen: (id: string) => void }): React.JSX.Element {
+function History({ events, onOpen, onClear }: { readonly events: readonly CoreEvent[]; readonly onOpen: (id: string) => void; readonly onClear: () => void }): React.JSX.Element {
   const payload = latestPayload(events, 'review.list')
   const reviews = Array.isArray(payload?.reviews) ? payload.reviews : []
-  return <div className="review-panel__history"><h3>История запусков</h3>{reviews.length === 0 ? <p>Завершённых ревью пока нет.</p> : reviews.map((item) => { const value = item as Record<string, unknown>; const reviewers = Array.isArray(value.reviewers) ? value.reviewers : []; const completed = reviewers.filter((review) => (review as Record<string, unknown>).status === 'completed').length; return <button key={String(value.review_id)} type="button" onClick={() => onOpen(String(value.review_id))}><span>{String(value.file_name)}</span><small>{completed}/{reviewers.length} рецензентов · {String(value.review_id)}</small></button> })}</div>
+  const [confirming, setConfirming] = useState(false)
+  return <div className="review-panel__history"><div className="review-panel__history-heading"><h3>История запусков</h3>{reviews.length === 0 ? null : confirming ? <span className="review-panel__history-confirm"><button type="button" onClick={() => { setConfirming(false); onClear() }}>Очистить</button><button type="button" onClick={() => setConfirming(false)}>Отмена</button></span> : <button type="button" onClick={() => setConfirming(true)}>Очистить историю</button>}</div>{confirming ? <p className="review-panel__history-note">Список очистится, но сами ревью останутся в журнале и в экспортированных файлах.</p> : null}{reviews.length === 0 ? <p>Завершённых ревью пока нет.</p> : reviews.map((item) => { const value = item as Record<string, unknown>; const reviewers = Array.isArray(value.reviewers) ? value.reviewers : []; const completed = reviewers.filter((review) => (review as Record<string, unknown>).status === 'completed').length; return <button key={String(value.review_id)} type="button" onClick={() => onOpen(String(value.review_id))}><span>{String(value.file_name)}</span><small>{completed}/{reviewers.length} рецензентов · {String(value.review_id)}</small></button> })}</div>
 }
 
 function latestCatalog(events: readonly CoreEvent[], tier: ModelTier): readonly string[] {

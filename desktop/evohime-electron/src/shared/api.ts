@@ -181,6 +181,7 @@ export const RENDERER_COMMANDS = [
   'review.list',
   'review.get',
   'review.export',
+  'review.clearHistory',
   'provider.get',
   'provider.save',
   'provider.clearKey',
@@ -273,6 +274,7 @@ export interface CommandPayloads {
   'review.list': { limit?: number }
   'review.get': { reviewId: string }
   'review.export': { reviewId: string; destinationPath: string; includeReviewers?: boolean }
+  'review.clearHistory': Record<string, never>
   'provider.get': Record<string, never>
   'provider.save': { provider: ProviderKind; apiKey: string; model: string; baseUrl: string; tier: ModelTier }
   'provider.clearKey': Record<string, never>
@@ -332,6 +334,7 @@ export interface CommandResults {
   'review.list': { reviews: readonly PlanReviewResult[] }
   'review.get': { review: PlanReviewResult | null }
   'review.export': { reviewId: string; destinationPath: string }
+  'review.clearHistory': { cleared: boolean }
   'provider.get': ProviderSummary
   /** `restarted` is false when Core could not be relaunched with the new key. */
   'provider.save': { summary: ProviderSummary; restarted: boolean }

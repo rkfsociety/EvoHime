@@ -466,6 +466,24 @@ impl IpcBridge {
                 )
                 .await?;
             }
+            Some(generated::command_envelope::Command::ClearPlanReviewHistory(_)) => {
+                // Running reviews keep their own state; only what the history
+                // lists is dropped, and the marker is what listing reads.
+                self.review_results.lock().await.clear();
+                let marker_id = format!("review-history-{}", self.latest_sequence().await);
+                publish_review_event(
+                    &self.coordinator,
+                    &self.journal,
+                    CoreEvent::ReviewHistoryCleared { marker_id },
+                )
+                .await;
+                self.write_response(
+                    writer,
+                    "review.historyCleared",
+                    serde_json::to_vec(&serde_json::json!({ "cleared": true })).unwrap_or_default(),
+                )
+                .await?;
+            }
             Some(generated::command_envelope::Command::GetPlanReview(request)) => {
                 let mut result = self
                     .review_results

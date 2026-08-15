@@ -1965,14 +1965,25 @@ impl LocalDatabase {
 
     /// Returns completed review events newest first. Review ids are prefixed
     /// by the Core review contract, so normal agent task history is excluded.
+    /// Completed reviews the history should show.
+    ///
+    /// Clearing the history appends a marker rather than deleting rows, so the
+    /// query starts after the newest marker and older reviews stay in the
+    /// journal for audit and export.
     pub fn read_review_events(&self, limit: usize) -> Result<Vec<EventRecord>, StorageError> {
+        let floor: i64 = self.connection.query_row(
+            "SELECT COALESCE(MAX(sequence_id), 0) FROM events WHERE event_type = 'review.history_cleared'",
+            [],
+            |row| row.get(0),
+        )?;
         let mut statement = self.connection.prepare(
             "SELECT sequence_id, task_id, event_type, payload, created_at
              FROM events WHERE task_id LIKE 'review-%' AND event_type = 'task.completed'
+               AND sequence_id > ?2
              ORDER BY sequence_id DESC LIMIT ?1",
         )?;
         let limit = limit.min(i64::MAX as usize) as i64;
-        let rows = statement.query_map([limit], |row| {
+        let rows = statement.query_map([limit, floor], |row| {
             Ok(EventRecord {
                 sequence_id: row.get(0)?,
                 task_id: row.get(1)?,
@@ -2538,6 +2549,47 @@ mod tests {
 
     fn temp_database_path(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("evohime-test-{name}-{}.db", std::process::id()))
+    }
+
+    /// Clearing the review history must hide earlier runs from the list while
+    /// leaving them in the journal, which stays append-only for audit and
+    /// export.
+    #[test]
+    fn review_history_starts_after_the_newest_clear_marker() {
+        let path = temp_database_path("review-history");
+        let _ = std::fs::remove_file(&path);
+        let database = LocalDatabase::open(&path).expect("database opens");
+        database
+            .append_event("review-old", "task.completed", b"{}")
+            .expect("old review records");
+        assert_eq!(
+            database
+                .read_review_events(10)
+                .expect("history reads")
+                .len(),
+            1
+        );
+
+        database
+            .append_event("review-history-1", "review.history_cleared", b"{}")
+            .expect("marker records");
+        assert!(database
+            .read_review_events(10)
+            .expect("history reads")
+            .is_empty());
+
+        database
+            .append_event("review-new", "task.completed", b"{}")
+            .expect("new review records");
+        let visible = database.read_review_events(10).expect("history reads");
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].task_id, "review-new");
+        // The cleared review is hidden from the list, not removed.
+        let all = database
+            .read_events_after(0, usize::MAX)
+            .expect("journal reads");
+        assert!(all.iter().any(|event| event.task_id == "review-old"));
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

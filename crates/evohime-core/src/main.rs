@@ -269,6 +269,9 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
             progress.completed,
             progress.total.map_or_else(|| "?".into(), |value| value.to_string())
         ),
+        evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
+            println!("review.history_cleared {marker_id}")
+        }
     }
 }
 
