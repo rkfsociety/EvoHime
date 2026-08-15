@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/context-budget",
   "crates/permissions",
   "crates/tool-runtime",
   "crates/model-gateway",
