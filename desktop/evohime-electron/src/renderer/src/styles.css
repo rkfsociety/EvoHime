@@ -5,7 +5,10 @@
  */
 
 :root {
-  color-scheme: dark light;
+  /* Одна схема, а не `dark light`: список у select рисует система, и при двух
+     разрешённых схемах она может выбрать светлую подложку под светлый текст
+     темы — текст становится нечитаемым. */
+  color-scheme: dark;
   font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
   font-size: 14px;
 
@@ -39,6 +42,8 @@
 
 @media (prefers-color-scheme: light) {
   :root {
+    color-scheme: light;
+
     --bg: #f4f4f7;
     --bg-raised: #fff;
     --bg-sunken: #ebebf0;
@@ -1238,11 +1243,24 @@ textarea,
 select {
   min-width: 0;
   padding: 7px 9px;
-  color: inherit;
+  color: var(--fg);
   font: inherit;
   background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+}
+
+/* Выпадающий список select — отдельный слой поверх окна, полупрозрачные
+   токены на нём дают подложку системы. Поэтому у пунктов непрозрачный фон и
+   явный цвет: без них текст сливается с белым системным списком. */
+option,
+optgroup {
+  color: var(--fg);
+  background-color: var(--bg-raised);
+}
+
+option:disabled {
+  color: var(--fg-faint);
 }
 
 input:focus,
