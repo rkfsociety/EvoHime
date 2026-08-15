@@ -1845,7 +1845,9 @@ select:focus {
 .review-panel__progress-bar span { display: block; height: 100%; border-radius: inherit; background: #60a5fa; transition: width 180ms ease; }
 .review-panel__progress ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .review-panel__progress li { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.review-panel__progress-heading .review-panel__elapsed { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--muted, #94a3b8); }
 .review-panel__reviewer-status { color: var(--muted, #94a3b8); }
+.review-panel__reviewer-status--cancelled { color: #fbbf24; }
 .review-panel__reviewer-status--working { color: #facc15; }
 .review-panel__reviewer-status--completed { color: #4ade80; }
 .review-panel__reviewer-status--failed { color: #fb7185; }

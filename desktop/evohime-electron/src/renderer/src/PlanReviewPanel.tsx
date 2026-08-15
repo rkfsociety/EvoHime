@@ -9,6 +9,7 @@ const CONNECTED: readonly ConnectionState[] = ['connected', 'replaying', 'resync
 const MIN_REVIEWERS = 2
 const MAX_REVIEWERS = 8
 const REVIEW_PREFERENCES_KEY = 'evohime.review-preferences.v2'
+const STALL_SECONDS = 30
 
 interface Props {
   readonly connection: ConnectionState
@@ -28,6 +29,11 @@ interface ReviewProgress {
   readonly model: string | null
   readonly completed: number
   readonly total: number
+}
+
+interface ReviewFailure {
+  readonly kind: 'failed' | 'stopped'
+  readonly message: string
 }
 
 function loadReviewPreferences(): ReviewPreferences {
@@ -58,12 +64,16 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   const [reviewId, setReviewId] = useState<string | null>(null)
   const [selectedResult, setSelectedResult] = useState<PlanReviewResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [startedAt, setStartedAt] = useState<number | null>(null)
+  const [elapsed, setElapsed] = useState(0)
 
   const catalogModels = useMemo(() => latestCatalog(events, tier), [events, tier])
   const reviewResult = useMemo(() => latestReviewResult(events), [events])
   const progress = useMemo(() => reviewId ? latestReviewProgress(events, reviewId) : null, [events, reviewId])
+  const failure = useMemo(() => reviewId ? latestReviewFailure(events, reviewId) : null, [events, reviewId])
+  const accepted = useMemo(() => reviewId !== null && (progress !== null || events.some((item) => item.eventType === 'review.started' && readPayload(item)?.review_id === reviewId)), [events, progress, reviewId])
   const reviewFinished = reviewResult?.reviewId === reviewId
-  const running = reviewId !== null && !reviewFinished && progress?.stage !== 'completed' && progress?.stage !== 'failed'
+  const running = reviewId !== null && !reviewFinished && failure === null && progress?.stage !== 'completed' && progress?.stage !== 'failed'
 
   useEffect(() => {
     if (!api || !CONNECTED.includes(connection)) return
@@ -95,6 +105,14 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
     return () => window.clearInterval(timer)
   }, [api, reviewId, running])
 
+  // A visible clock is the only proof that a silent run is still alive.
+  useEffect(() => {
+    if (!running || startedAt === null) return
+    setElapsed(Math.round((Date.now() - startedAt) / 1000))
+    const timer = window.setInterval(() => setElapsed(Math.round((Date.now() - startedAt) / 1000)), 1000)
+    return () => window.clearInterval(timer)
+  }, [running, startedAt])
+
   const pick = async (): Promise<void> => {
     if (!api) return
     const outcome = await api.invoke('review.pickPlan', {})
@@ -121,8 +139,10 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
     setReviewId(id)
     setSelectedResult(null)
     setError(null)
+    setStartedAt(Date.now())
+    setElapsed(0)
     const outcome = await api.invoke('review.start', { reviewId: id, fileName, sourceMarkdown, reviewerModels: reviewers, synthesisModel })
-    if (!outcome.ok) setError(outcome.message)
+    if (!outcome.ok) setError(`Ядро отклонило запрос: ${outcome.message}`)
   }
 
   const stop = async (): Promise<void> => {
@@ -136,6 +156,8 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
     await api.invoke('review.get', { reviewId: id })
     setReviewId(id)
     setSelectedResult(null)
+    setStartedAt(null)
+    setError(null)
   }
 
   const exportResult = async (): Promise<void> => {
@@ -145,7 +167,9 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   }
 
   const canStart = CONNECTED.includes(connection) && fileName.length > 0 && reviewers.length >= MIN_REVIEWERS && reviewers.every(Boolean) && new Set(reviewers).size === reviewers.length && synthesisModel.length > 0 && !running
-  const status = reviewStatus(progress, reviewFinished, selectedResult !== null)
+  const status = reviewStatus(progress, reviewFinished, selectedResult !== null, failure, accepted)
+  // Without a stall hint a dead core is indistinguishable from a slow model.
+  const stalled = running && elapsed >= STALL_SECONDS && (!accepted || progress === null)
 
   return (
     <section className="review-panel" aria-label="Ревью планов">
@@ -175,8 +199,10 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
 
       <label className="review-panel__synthesis">Главная модель-синтезатор<select value={synthesisModel} onChange={(event) => setSynthesisModel(event.target.value)} disabled={running}><option value="">Выбери модель</option>{models.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
 
-      <div className="review-panel__actions"><button type="button" onClick={() => void start()} disabled={!canStart}>{reviewId && (reviewFinished || progress?.stage === 'failed') ? 'Запустить снова' : 'Запустить ревью'}</button><button type="button" onClick={() => void stop()} disabled={!running}>Остановить</button></div>
-      {reviewId ? <ProgressCard events={events} reviewId={reviewId} progress={progress} status={status} reviewers={reviewers} /> : null}
+      <div className="review-panel__actions"><button type="button" onClick={() => void start()} disabled={!canStart}>{reviewId && (reviewFinished || failure !== null || progress?.stage === 'failed') ? 'Запустить снова' : 'Запустить ревью'}</button><button type="button" onClick={() => void stop()} disabled={!running}>Остановить</button></div>
+      {reviewId ? <ProgressCard events={events} reviewId={reviewId} progress={progress} status={status} reviewers={reviewers} elapsed={startedAt === null ? null : elapsed} accepted={accepted} failed={failure !== null} /> : null}
+      {stalled ? <p role="alert" className="shell__reason">Ответа от ядра нет уже {elapsed} с. Проверь, запущено ли ядро и настроен ли провайдер, либо останови ревью и запусти снова.</p> : null}
+      {failure ? <p role="alert" className="shell__reason">{failure.kind === 'stopped' ? 'Ревью остановлено.' : `Ревью завершилось ошибкой: ${failure.message}`}</p> : null}
       {error ? <p role="alert" className="shell__reason">{error}</p> : null}
 
       {selectedResult ? <div className="review-panel__result"><div className="review-panel__result-heading"><h3>Итоговое ревью</h3><button type="button" onClick={() => void exportResult()}>Экспортировать итоговый Markdown</button></div><MarkdownMessage text={selectedResult.finalMarkdown} /><h3>Исходные ответы</h3>{selectedResult.reviewers.map((review) => <details key={review.model}><summary>{review.model} · {review.status}</summary>{review.error ? <p>{review.error}</p> : <MarkdownMessage text={review.content} />}</details>)}</div> : null}
@@ -185,10 +211,11 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   )
 }
 
-function ProgressCard({ events, reviewId, progress, status, reviewers }: { readonly events: readonly CoreEvent[]; readonly reviewId: string; readonly progress: ReviewProgress | null; readonly status: string; readonly reviewers: readonly string[] }): React.JSX.Element {
+function ProgressCard({ events, reviewId, progress, status, reviewers, elapsed, accepted, failed }: { readonly events: readonly CoreEvent[]; readonly reviewId: string; readonly progress: ReviewProgress | null; readonly status: string; readonly reviewers: readonly string[]; readonly elapsed: number | null; readonly accepted: boolean; readonly failed: boolean }): React.JSX.Element {
   const completed = progress?.completed ?? 0
   const total = progress?.total || reviewers.length
-  return <div className="review-panel__progress" role="status" aria-live="polite"><div className="review-panel__progress-heading"><strong>{status}</strong>{progress?.stage === 'reviewers' ? <span>{Math.min(completed, total)}/{total}</span> : null}</div><div className="review-panel__progress-bar"><span style={{ width: `${total ? Math.round((Math.min(completed, total) / total) * 100) : 0}%` }} /></div><p>{progress?.stage === 'synthesis' ? `Синтез результата · ${progress.model ?? 'модель'}` : 'Рецензенты работают параллельно'}</p><ul>{reviewers.map((model, index) => { const state = model ? latestReviewerStatus(events, reviewId, model) : 'waiting'; return <li key={`${model}-${index}`}><span>{model || `Рецензент ${index + 1}`}</span><span className={`review-panel__reviewer-status review-panel__reviewer-status--${state}`}>{reviewStatusLabel(state)}</span></li> })}</ul></div>
+  const hint = failed ? 'Запуск прерван, подробности ниже' : progress?.stage === 'synthesis' ? `Синтез результата · ${progress.model ?? 'модель'}` : progress?.stage === 'reviewers' ? 'Рецензенты работают параллельно' : accepted ? 'Ядро приняло план, ждём первых ответов моделей' : 'Отправляем план в ядро'
+  return <div className="review-panel__progress" role="status" aria-live="polite"><div className="review-panel__progress-heading"><strong>{status}</strong>{progress?.stage === 'reviewers' ? <span>{Math.min(completed, total)}/{total}</span> : null}{elapsed === null ? null : <span className="review-panel__elapsed">{elapsed} с</span>}</div><div className="review-panel__progress-bar"><span style={{ width: `${total ? Math.round((Math.min(completed, total) / total) * 100) : 0}%` }} /></div><p>{hint}</p><ul>{reviewers.map((model, index) => { const state = model ? latestReviewerStatus(events, reviewId, model) : 'waiting'; return <li key={`${model}-${index}`}><span>{model || `Рецензент ${index + 1}`}</span><span className={`review-panel__reviewer-status review-panel__reviewer-status--${state}`}>{reviewStatusLabel(state)}</span></li> })}</ul></div>
 }
 
 function History({ events, onOpen }: { readonly events: readonly CoreEvent[]; readonly onOpen: (id: string) => void }): React.JSX.Element {
@@ -219,6 +246,19 @@ function latestReviewerStatus(events: readonly CoreEvent[], reviewId: string, mo
   return 'waiting'
 }
 
+function latestReviewFailure(events: readonly CoreEvent[], reviewId: string): ReviewFailure | null {
+  for (const event of [...events].reverse()) {
+    if (event.eventType !== 'task.failed' && event.eventType !== 'task.stopped') continue
+    const payload = readPayload(event)
+    const taskId = event.taskId || String(payload?.task_id ?? '')
+    if (taskId !== reviewId) continue
+    if (event.eventType === 'task.stopped') return { kind: 'stopped', message: 'Ревью остановлено.' }
+    const nested = payload?.TaskFailed && typeof payload.TaskFailed === 'object' ? (payload.TaskFailed as Record<string, unknown>).error : payload?.error
+    return { kind: 'failed', message: typeof nested === 'string' && nested.length > 0 ? nested : 'Ядро не сообщило причину.' }
+  }
+  return null
+}
+
 function latestReviewResult(events: readonly CoreEvent[]): PlanReviewResult | null {
   const responsePayload = readPayload([...events].reverse().find((item) => item.eventType === 'review.result'))
   if (responsePayload?.result && typeof responsePayload.result === 'object') return normalizeResult(responsePayload.result as Record<string, unknown>)
@@ -236,6 +276,6 @@ function normalizeResult(value: Record<string, unknown>): PlanReviewResult | nul
 
 function normalizeSlots(values: readonly string[], count: number, available: readonly string[] = []): string[] { const result = values.slice(0, count); while (result.length < count) result.push(''); const candidates = available.filter((model) => !result.includes(model)); for (let index = 0; index < result.length; index += 1) if (!result[index] && candidates.length > 0) result[index] = candidates.shift() as string; return result }
 function readPayload(event: CoreEvent | undefined): Record<string, unknown> | null { if (!event) return null; try { const value: unknown = JSON.parse(event.payload); return typeof value === 'object' && value !== null ? value as Record<string, unknown> : null } catch { return null } }
-function reviewStatus(progress: ReviewProgress | null, finished: boolean, hasResult: boolean): string { if (hasResult || finished) return 'Готово'; if (progress?.stage === 'synthesis') return 'Синтез результата'; if (progress?.stage === 'reviewers') return `Рецензенты: ${progress.completed}/${progress.total}`; return 'Подготовка' }
-function reviewStatusLabel(status: string): string { if (status === 'completed') return 'готово'; if (status === 'failed') return 'ошибка'; if (status === 'working') return 'работает'; return 'ожидает' }
+function reviewStatus(progress: ReviewProgress | null, finished: boolean, hasResult: boolean, failure: ReviewFailure | null, accepted: boolean): string { if (failure) return failure.kind === 'stopped' ? 'Остановлено' : 'Ошибка'; if (hasResult || finished || progress?.stage === 'completed') return 'Готово'; if (progress?.stage === 'failed') return 'Ошибка'; if (progress?.stage === 'synthesis') return 'Синтез результата'; if (progress?.stage === 'reviewers') return `Рецензенты: ${progress.completed}/${progress.total}`; return accepted ? 'Отправлено в ядро' : 'Отправка плана' }
+function reviewStatusLabel(status: string): string { if (status === 'completed') return 'готово'; if (status === 'failed') return 'ошибка'; if (status === 'cancelled') return 'отменено'; if (status === 'working') return 'работает'; return 'ожидает' }
 function makeReviewId(): string { return typeof crypto.randomUUID === 'function' ? `review-${crypto.randomUUID()}` : `review-${Date.now()}` }

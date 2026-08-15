@@ -12,8 +12,20 @@ function ok<C extends RendererCommand>(value: unknown): CommandOutcome<C> {
   return { ok: true, value } as CommandOutcome<C>
 }
 
-function event(eventType: string, payload: Record<string, unknown>): CoreEvent {
-  return { sequenceId: 0, taskId: '', eventType, payload: JSON.stringify(payload) }
+function event(eventType: string, payload: Record<string, unknown>, taskId = ''): CoreEvent {
+  return { sequenceId: 0, taskId, eventType, payload: JSON.stringify(payload) }
+}
+
+function startedReviewId(): string {
+  return (calls.find((call) => call.command === 'review.start')?.payload as { reviewId: string }).reviewId
+}
+
+async function startReview(models: readonly string[]): Promise<void> {
+  await userEvent.click(screen.getByRole('button', { name: 'Выбрать Markdown-план' }))
+  await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Модель рецензента 1' }), models[0] as string)
+  await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Модель рецензента 2' }), models[1] as string)
+  await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Главная модель-синтезатор' }), models[2] as string)
+  await userEvent.click(screen.getByRole('button', { name: 'Запустить ревью' }))
 }
 
 beforeEach(() => {
@@ -79,5 +91,50 @@ describe('plan review panel', () => {
       event('review.progress', { review_id: calls.find((call) => call.command === 'review.start')?.payload && (calls.find((call) => call.command === 'review.start')?.payload as { reviewId: string }).reviewId, stage: 'synthesis', status: 'working', model: 'main', completed: 2, total: 2 })
     ]} />)
     expect(screen.getByText(/Синтез результата · main/)).toBeTruthy()
+  })
+
+  it('confirms that the core accepted the plan', async () => {
+    const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
+    const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
+
+    await startReview(['a', 'b', 'main'])
+    expect(screen.getByText('Отправка плана')).toBeTruthy()
+    view.rerender(<PlanReviewPanel connection="connected" events={[catalog, event('review.started', { review_id: startedReviewId(), accepted: true })]} />)
+    expect(screen.getByText('Отправлено в ядро')).toBeTruthy()
+    expect(screen.getByText(/Ядро приняло план/)).toBeTruthy()
+  })
+
+  it('surfaces the failure reason instead of waiting forever', async () => {
+    const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
+    const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
+
+    await startReview(['a', 'b', 'main'])
+    const reviewId = startedReviewId()
+    view.rerender(<PlanReviewPanel connection="connected" events={[catalog, event('task.failed', { error: 'provider error: 401 unauthorized' }, reviewId)]} />)
+
+    expect(screen.getByText('Ошибка')).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toContain('401 unauthorized')
+    expect(screen.getByRole('button', { name: 'Запустить снова' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('reports a rejected start request', async () => {
+    Object.defineProperty(window, 'evohime', {
+      value: Object.freeze({ v1: {
+        apiVersion: 1,
+        invoke: (async (command: RendererCommand, payload: unknown) => {
+          calls.push({ command, payload })
+          if (command === 'review.start') return { ok: false, message: 'provider is not configured' } as CommandOutcome<RendererCommand>
+          return ok(command === 'review.list' ? { reviews: [] } : command === 'review.pickPlan' ? { cancelled: false, fileName: 'plan.md', sourceMarkdown: '# Plan' } : { accepted: true })
+        }) as EvoHimeApiV1['invoke'],
+        subscribe: () => () => {},
+        writeClipboardText: async () => true,
+        openExternal: async () => true
+      } satisfies EvoHimeApiV1 }),
+      configurable: true
+    })
+    render(<PlanReviewPanel connection="connected" events={[event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })]} />)
+
+    await startReview(['a', 'b', 'main'])
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('provider is not configured'))
   })
 })
