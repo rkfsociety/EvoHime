@@ -7,21 +7,24 @@ use std::{
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+pub mod artifact_store;
 pub mod backup;
 pub mod capability_selection_store;
 pub mod capability_store;
 pub mod child_store;
+pub mod context_ledger_store;
 pub mod feedback_store;
 pub mod memory_store;
 pub mod reconciliation_verifier;
 pub mod research_store;
+pub mod scratchpad_store;
 
 pub use backup::{
     BackupObjectSummary, BackupPreview, BackupProgress, BackupProgressPhase, BackupResult,
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 16;
+pub const SCHEMA_VERSION: u32 = 17;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -67,6 +70,9 @@ pub enum StorageError {
     BackupDestinationExists(String),
     #[error("backup operation was cancelled")]
     BackupCancelled,
+    /// Нарушение контракта плана 01: scratchpad или artifact store.
+    #[error("context operation failed: {0}")]
+    Context(String),
 }
 
 pub struct LocalDatabase {
@@ -2533,6 +2539,119 @@ impl LocalDatabase {
                  PRAGMA user_version = 16;",
             )?;
         }
+        if current < 17 {
+            // План 01: context ledger, scratchpad задачи и artifact store.
+            // Миграция additive: новые таблицы создаются рядом, существующие
+            // записи не переписываются.
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS context_ledger (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    schema_version INTEGER NOT NULL,
+                    task_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    model_call_id TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    provider TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    profile_version TEXT NOT NULL,
+                    profile_snapshot TEXT NOT NULL,
+                    tokenizer_version TEXT NOT NULL,
+                    normalizer_version TEXT NOT NULL,
+                    strategy_version TEXT NOT NULL,
+                    mandatory_tokens INTEGER NOT NULL,
+                    selected_optional_tokens INTEGER NOT NULL,
+                    reserves_tokens INTEGER NOT NULL,
+                    estimated_prompt_tokens INTEGER NOT NULL,
+                    selected_items TEXT NOT NULL DEFAULT '[]',
+                    dropped_items TEXT NOT NULL DEFAULT '[]',
+                    mandatory_parts TEXT NOT NULL DEFAULT '[]',
+                    ladder_levels_applied TEXT NOT NULL DEFAULT '[]',
+                    compression TEXT NOT NULL DEFAULT '[]',
+                    loadout TEXT,
+                    fallback_estimator INTEGER NOT NULL DEFAULT 0,
+                    replan_of TEXT,
+                    outcome TEXT NOT NULL,
+                    budget_unavailable TEXT,
+                    context_ledger_hash TEXT NOT NULL
+                 );
+                 CREATE INDEX IF NOT EXISTS idx_context_ledger_task
+                    ON context_ledger(task_id, created_at);
+                 CREATE INDEX IF NOT EXISTS idx_context_ledger_session
+                    ON context_ledger(session_id, created_at);
+                 CREATE INDEX IF NOT EXISTS idx_context_ledger_hash
+                    ON context_ledger(context_ledger_hash);
+                 CREATE TABLE IF NOT EXISTS context_ledger_usage (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ledger_id TEXT NOT NULL,
+                    actual_prompt_tokens INTEGER NOT NULL,
+                    actual_completion_tokens INTEGER NOT NULL,
+                    estimator_drift REAL NOT NULL,
+                    recorded_at INTEGER NOT NULL
+                 );
+                 CREATE INDEX IF NOT EXISTS idx_context_ledger_usage_ledger
+                    ON context_ledger_usage(ledger_id);
+                 CREATE TABLE IF NOT EXISTS context_ledger_receipts (
+                    ledger_id TEXT NOT NULL,
+                    receipt_id TEXT NOT NULL,
+                    exported INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (ledger_id, receipt_id)
+                 );
+                 CREATE TABLE IF NOT EXISTS task_scratchpad (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    task_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    trust TEXT NOT NULL,
+                    privacy TEXT NOT NULL,
+                    revision INTEGER NOT NULL DEFAULT 1,
+                    parent_id TEXT,
+                    content TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    ttl_ms INTEGER,
+                    confirmation TEXT,
+                    artifact_locator TEXT,
+                    recovered_at_step INTEGER
+                 );
+                 CREATE INDEX IF NOT EXISTS idx_task_scratchpad_task
+                    ON task_scratchpad(task_id, category, status);
+                 CREATE INDEX IF NOT EXISTS idx_task_scratchpad_parent
+                    ON task_scratchpad(parent_id, revision);
+                 CREATE TABLE IF NOT EXISTS task_artifacts (
+                    content_hash TEXT PRIMARY KEY NOT NULL,
+                    bytes INTEGER NOT NULL,
+                    content BLOB NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    last_access_at INTEGER NOT NULL
+                 );
+                 CREATE TABLE IF NOT EXISTS task_artifact_refs (
+                    locator TEXT PRIMARY KEY NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    task_id TEXT NOT NULL,
+                    owner_task_id TEXT NOT NULL,
+                    bytes INTEGER NOT NULL,
+                    privacy TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at INTEGER NOT NULL,
+                    last_access_at INTEGER NOT NULL,
+                    ttl_ms INTEGER,
+                    summary TEXT NOT NULL DEFAULT ''
+                 );
+                 CREATE INDEX IF NOT EXISTS idx_task_artifact_refs_hash
+                    ON task_artifact_refs(content_hash);
+                 CREATE INDEX IF NOT EXISTS idx_task_artifact_refs_task
+                    ON task_artifact_refs(task_id, status);
+                 CREATE TABLE IF NOT EXISTS artifact_tombstones (
+                    content_hash TEXT PRIMARY KEY NOT NULL,
+                    bytes INTEGER NOT NULL,
+                    removed_at INTEGER NOT NULL,
+                    reason TEXT NOT NULL
+                 );
+                 PRAGMA user_version = 17;",
+            )?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -2678,8 +2797,11 @@ mod tests {
                 .expect("legacy schema and data write");
         }
 
-        let database = LocalDatabase::open(&path).expect("database migrates to 16");
-        assert_eq!(database.schema_version().expect("version reads"), 16);
+        let database = LocalDatabase::open(&path).expect("database migrates forward");
+        assert_eq!(
+            database.schema_version().expect("version reads"),
+            SCHEMA_VERSION
+        );
         let feedback_table_exists: i64 = database
             .connection()
             .query_row(
@@ -2704,7 +2826,10 @@ mod tests {
         // not duplicate the feedback_entries table or existing rows
         // (guarded CREATE TABLE IF NOT EXISTS / PRAGMA user_version checks).
         let reopened = LocalDatabase::open(&path).expect("reopen is idempotent");
-        assert_eq!(reopened.schema_version().expect("version still 16"), 16);
+        assert_eq!(
+            reopened.schema_version().expect("version stays current"),
+            SCHEMA_VERSION
+        );
         let row_count: i64 = reopened
             .connection()
             .query_row("SELECT COUNT(*) FROM memory_entries", [], |row| row.get(0))
@@ -2759,8 +2884,11 @@ mod tests {
                 .expect("legacy schema and data write");
         }
 
-        let database = LocalDatabase::open(&path).expect("database migrates to 16");
-        assert_eq!(database.schema_version().expect("version reads"), 16);
+        let database = LocalDatabase::open(&path).expect("database migrates forward");
+        assert_eq!(
+            database.schema_version().expect("version reads"),
+            SCHEMA_VERSION
+        );
         // Транзакционность миграции подтверждается наличием backup рядом.
         assert!(path.with_extension("db.bak").exists());
 
