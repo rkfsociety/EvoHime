@@ -471,12 +471,15 @@ impl IpcBridge {
                 // lists is dropped, and the marker is what listing reads.
                 self.review_results.lock().await.clear();
                 let marker_id = format!("review-history-{}", self.latest_sequence().await);
-                publish_review_event(
-                    &self.coordinator,
-                    &self.journal,
-                    CoreEvent::ReviewHistoryCleared { marker_id },
-                )
-                .await;
+                // Recorded directly rather than published: the shell lists again
+                // as soon as this response arrives, and a marker still travelling
+                // through the coordinator's broadcast would not be in the journal
+                // yet, so that listing would return the reviews just cleared.
+                // Nothing subscribes to the marker, so no push is lost.
+                let _ = self
+                    .journal
+                    .record(&CoreEvent::ReviewHistoryCleared { marker_id })
+                    .await;
                 self.write_response(
                     writer,
                     "review.historyCleared",
@@ -2809,6 +2812,114 @@ mod tests {
     use super::*;
     use crate::CoreEvent;
     use tokio::io::duplex;
+
+    /// Regression: the clear marker was published on the coordinator broadcast,
+    /// so the journal writer recorded it a moment later. The listing that the
+    /// panel sends right after the response still read the old marker and kept
+    /// showing the reviews that had just been cleared.
+    #[tokio::test]
+    async fn clearing_history_hides_reviews_from_the_next_listing() {
+        let path =
+            std::env::temp_dir().join(format!("evohime-ipc-clear-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        journal
+            .record(&CoreEvent::TaskCompleted {
+                task_id: "review-old".into(),
+                final_message: serde_json::json!({
+                    "review_id": "review-old",
+                    "file_name": "plan.md",
+                    "synthesis_model": "main",
+                    "reviewers": [],
+                    "final_markdown": "# Итог"
+                })
+                .to_string(),
+            })
+            .await
+            .expect("review records");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator(journal, coordinator);
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+
+        let list_frame = || {
+            generated::CommandEnvelope {
+                protocol: Some(protocol()),
+                request_id: "review-list".into(),
+                client_id: "test-client".into(),
+                core_instance_id: String::new(),
+                session_epoch: 1,
+                command: Some(generated::command_envelope::Command::ListPlanReviews(
+                    generated::ListPlanReviews { limit: 20 },
+                )),
+            }
+            .encode_to_vec()
+        };
+
+        transport::write_frame(&mut client, &list_frame())
+            .await
+            .expect("list writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("list serves");
+        let response = generated::EventEnvelope::decode(
+            transport::read_frame(&mut client)
+                .await
+                .expect("list response")
+                .as_slice(),
+        )
+        .expect("list decodes");
+        let before: serde_json::Value =
+            serde_json::from_slice(&response.payload).expect("list json");
+        assert_eq!(before["reviews"].as_array().expect("reviews").len(), 1);
+
+        let clear = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "review-clear".into(),
+            client_id: "test-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(
+                generated::command_envelope::Command::ClearPlanReviewHistory(
+                    generated::ClearPlanReviewHistory {},
+                ),
+            ),
+        };
+        transport::write_frame(&mut client, &clear.encode_to_vec())
+            .await
+            .expect("clear writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("clear serves");
+        let _ = transport::read_frame(&mut client)
+            .await
+            .expect("clear response");
+
+        // The panel lists again as soon as the clear is acknowledged.
+        transport::write_frame(&mut client, &list_frame())
+            .await
+            .expect("second list writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("second list serves");
+        let response = generated::EventEnvelope::decode(
+            transport::read_frame(&mut client)
+                .await
+                .expect("second list response")
+                .as_slice(),
+        )
+        .expect("second list decodes");
+        let after: serde_json::Value =
+            serde_json::from_slice(&response.payload).expect("list json");
+        assert!(
+            after["reviews"].as_array().expect("reviews").is_empty(),
+            "a cleared history must be empty in the very next listing"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
 
     #[tokio::test]
     async fn serves_replay_command_over_framed_transport() {
