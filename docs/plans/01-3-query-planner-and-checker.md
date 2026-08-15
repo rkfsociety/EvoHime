@@ -1,12 +1,12 @@
-# Этап 02.3: Deterministic query planner и agentic loop
+# Этап 01.3: Deterministic query planner и agentic loop
 
-Этап плана [02 Локальный Agentic RAG](02-0-local-agentic-rag.md).
+Этап плана [01 Локальный Agentic RAG](01-0-local-agentic-rag.md).
 
 ## Зависимости
 
-Блокирующие: этап 02.2 — planner и checker работают поверх retrieval.
+Блокирующие: этап 01.2 — planner и checker работают поверх retrieval.
 
-Разблокирует: 02.5 (отбор evidence для контекста) и 05.1 (роль `researcher`
+Разблокирует: 01.5 (отбор evidence для контекста) и 04.1 (роль `researcher`
 возвращает evidence и unknowns).
 
 ## Что этап отдаёт наружу
@@ -43,7 +43,7 @@ Planner возвращает только валидированный JSON по
 Agentic loop имеет одновременно hard limit итераций (default 2), wall-clock
 timeout и token budget. Стратегии переписывания идут в порядке: exact
 symbol/identifier, lexical expansion, path/type filter, затем optional
-semantic strategy на этапе 02.4. Вся цепочка rewrite и причины остановки
+semantic strategy на этапе 01.4. Вся цепочка rewrite и причины остановки
 пишутся в diagnostic log без секретного содержимого.
 
 После каждого retrieval checker вычисляет минимум:

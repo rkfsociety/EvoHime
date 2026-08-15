@@ -1,12 +1,12 @@
-# Этап 02.2: Retrieval v1 на SQLite FTS5
+# Этап 01.2: Retrieval v1 на SQLite FTS5
 
-Этап плана [02 Локальный Agentic RAG](02-0-local-agentic-rag.md).
+Этап плана [01 Локальный Agentic RAG](01-0-local-agentic-rag.md).
 
 ## Зависимости
 
-Блокирующие: этап 02.1 — retrieval работает поверх построенного индекса.
+Блокирующие: этап 01.1 — retrieval работает поверх построенного индекса.
 
-Разблокирует: 02.3 (planner вызывает retrieval) и 05.1 (роль `researcher`).
+Разблокирует: 01.3 (planner вызывает retrieval) и 04.1 (роль `researcher`).
 
 ## Что этап отдаёт наружу
 

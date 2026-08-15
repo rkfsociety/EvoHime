@@ -1,13 +1,13 @@
-# Этап 03.1: Canonical contract
+# Этап 02.1: Canonical contract
 
-Этап плана [03 Подписанные hash-chain receipts](03-0-signed-hash-chain-receipts.md).
+Этап плана [02 Подписанные hash-chain receipts](02-0-signed-hash-chain-receipts.md).
 
 ## Зависимости
 
-Блокирующие: этап 01.1 — payload содержит `context_ledger_hash`, определённый
+Блокирующие: нет. Context Budget Manager реализован: payload содержит `context_ledger_hash`, определённый
 именно там.
 
-Разблокирует: все остальные этапы плана 03.
+Разблокирует: все остальные этапы плана 02.
 
 ## Что этап отдаёт наружу
 

@@ -1,14 +1,14 @@
-# Этап 02.1: Bounded incremental indexing
+# Этап 01.1: Bounded incremental indexing
 
-Этап плана [02 Локальный Agentic RAG](02-0-local-agentic-rag.md).
+Этап плана [01 Локальный Agentic RAG](01-0-local-agentic-rag.md).
 
 ## Зависимости
 
-Блокирующие: существующие filesystem sandbox и SQLite. Этапа 01.1 здесь не
+Блокирующие: существующие filesystem sandbox и SQLite. Context Budget Manager здесь не
 требуется — индекс не касается контекста, поэтому этот этап можно вести
 параллельно с планом 01.
 
-Разблокирует: 02.2 (retrieval поверх построенного индекса).
+Разблокирует: 01.2 (retrieval поверх построенного индекса).
 
 ## Что этап отдаёт наружу
 

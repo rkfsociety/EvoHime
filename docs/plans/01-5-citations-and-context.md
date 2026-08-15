@@ -1,12 +1,12 @@
-# Этап 02.5: Citations и context integration
+# Этап 01.5: Citations и context integration
 
-Этап плана [02 Локальный Agentic RAG](02-0-local-agentic-rag.md).
+Этап плана [01 Локальный Agentic RAG](01-0-local-agentic-rag.md).
 
 ## Зависимости
 
-Блокирующие: этап 02.3 (evidence и checker) и этап 01.1 — контекст принимает
+Блокирующие: этап 01.3 (evidence и checker). Context Budget Manager реализован и принимает
 selected evidence blocks и владеет ledger, куда пишется причина выбора. Это
-единственный этап плана, которому нужен план 01.
+единственный этап плана, опирающийся на контракт Context Budget Manager.
 
 Разблокирует: документные цитаты в контексте и приём фактов реализованным
 Memory Extraction.

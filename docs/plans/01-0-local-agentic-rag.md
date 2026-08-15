@@ -1,4 +1,4 @@
-# План 02: Локальный Agentic RAG по документации workspace
+# План 01: Локальный Agentic RAG по документации workspace
 
 Обзор плана. Этапы вынесены в отдельные файлы и ревьюятся по одному.
 
@@ -37,7 +37,7 @@ provider или embeddings backend без отдельного явного ре
 workspace files
   -> bounded scanner + canonical path policy
   -> parser/chunker + parent context + hashes
-  -> SQLite documents/chunks/FTS5 (этап 02.1)
+  -> SQLite documents/chunks/FTS5 (этап 01.1)
   -> deterministic query planner
   -> bounded lexical retrieval
   -> evidence checker
@@ -45,7 +45,7 @@ workspace files
   -> answer with citations/confidence
 ```
 
-Этап 02.4 добавляет локальные embeddings и hybrid retrieval, не меняя границы
+Этап 01.4 добавляет локальные embeddings и hybrid retrieval, не меняя границы
 безопасности и offline-инварианты.
 
 ## Модель данных
@@ -74,13 +74,13 @@ run не публикует неполный индекс как актуаль�
 
 | Этап | Файл | Что отдаёт наружу | Кто потребляет |
 | --- | --- | --- | --- |
-| 02.1 | [Bounded incremental indexing](02-1-workspace-indexing.md) | `workspace_documents`, `document_chunks`, FTS5 и `index_runs` | 02.2 |
-| 02.2 | [Retrieval v1: SQLite FTS5](02-2-fts5-retrieval.md) | bounded lexical retrieval с deterministic tie-break | 02.3, 05.1 |
-| 02.3 | [Query planner и agentic loop](02-3-query-planner-and-checker.md) | planner, evidence checker и bounded loop | 02.5, 05.1 |
-| 02.4 | [Embeddings как опциональный слой](02-4-optional-embeddings.md) | hybrid retrieval поверх 02.2 | — |
-| 02.5 | [Citations и context integration](02-5-citations-and-context.md) | selected evidence blocks с citations | Context Budget Manager, Memory Extraction |
+| 01.1 | [Bounded incremental indexing](01-1-workspace-indexing.md) | `workspace_documents`, `document_chunks`, FTS5 и `index_runs` | 01.2 |
+| 01.2 | [Retrieval v1: SQLite FTS5](01-2-fts5-retrieval.md) | bounded lexical retrieval с deterministic tie-break | 01.3, 04.1 |
+| 01.3 | [Query planner и agentic loop](01-3-query-planner-and-checker.md) | planner, evidence checker и bounded loop | 01.5, 04.1 |
+| 01.4 | [Embeddings как опциональный слой](01-4-optional-embeddings.md) | hybrid retrieval поверх 01.2 | — |
+| 01.5 | [Citations и context integration](01-5-citations-and-context.md) | selected evidence blocks с citations | Context Budget Manager, Memory Extraction |
 
-Порядок: 02.1 → 02.2 → 02.3 → 02.5. Этап 02.4 опционален и выполняется
+Порядок: 01.1 → 01.2 → 01.3 → 01.5. Этап 01.4 опционален и выполняется
 последним; без него retrieval работает на FTS5.
 
 ## IPC и UI
@@ -99,11 +99,11 @@ incremental run, текущий статус, stale/dirty state и source links.
 
 ## Зависимости плана
 
-Блокирующие: этап 01.1 — он принимает selected evidence blocks и владеет
-context ledger, в который этап 02.5 пишет причину выбора; существующие
-filesystem sandbox, Memory v1 и SQLite FTS5. Остальные этапы плана 01 этому
-плану не нужны, а этапы 02.1–02.3 можно делать параллельно с 01.1: индекс,
-retrieval и planner не касаются контекста.
+Блокирующих зависимостей от других планов нет. Реализованный Context Budget
+Manager (см. [`../architecture.md`](../architecture.md)) принимает selected
+evidence blocks и владеет context ledger, в который этап 01.5 пишет причину
+выбора. Нужны только существующие filesystem sandbox, Memory v1 и SQLite FTS5;
+этапы 01.1–01.3 контекста не касаются вовсе.
 
 Реализованный Memory Extraction (см. [`../architecture.md`](../architecture.md))
 принимает извлечённые факты через свой policy gate: факт приходит с provenance

@@ -1,4 +1,4 @@
-# План 03: Подписанные hash-chain receipts
+# План 02: Подписанные hash-chain receipts
 
 Обзор плана. Этапы вынесены в отдельные файлы и ревьюятся по одному.
 
@@ -31,10 +31,10 @@ receipt. Receipt доказывает авторство ключа, целос�
 
 | Этап | Файл | Что отдаёт наружу | Кто потребляет |
 | --- | --- | --- | --- |
-| 03.1 | [Canonical contract](03-1-canonical-contract.md) | canonical encoding payload и known-answer vectors | 03.2–03.4 |
-| 03.2 | [Key lifecycle](03-2-key-lifecycle.md) | key pair, rotation и offline verification | 03.3, 03.4 |
-| 03.3 | [Runtime integration](03-3-runtime-integration.md) | pre/post-action receipts и approval binding | 05.1 |
-| 03.4 | [Chain storage и export](03-4-chain-storage-and-export.md) | verify-chain, IPC и UI | UI |
+| 02.1 | [Canonical contract](02-1-canonical-contract.md) | canonical encoding payload и known-answer vectors | 02.2–02.4 |
+| 02.2 | [Key lifecycle](02-2-key-lifecycle.md) | key pair, rotation и offline verification | 02.3, 02.4 |
+| 02.3 | [Runtime integration](02-3-runtime-integration.md) | pre/post-action receipts и approval binding | 04.1 |
+| 02.4 | [Chain storage и export](02-4-chain-storage-and-export.md) | verify-chain, IPC и UI | UI |
 
 ## IPC и UI
 
@@ -47,13 +47,13 @@ receipt. Receipt доказывает авторство ключа, целос�
 
 ## Зависимости плана
 
-Блокирующие: этап 01.1 — payload содержит `context_ledger_hash`, а ledger
+Блокирующие: нет. Context Budget Manager реализован: payload содержит `context_ledger_hash`, а ledger
 определён именно там; существующие approval, exact-call hash, diagnostics и
 Core-owned storage. Остальные этапы плана 01 этому плану не нужны.
 
-Опциональных интеграций нет. Что этот план обязан предоставить: этап 03.3
-даёт child workflows (этап 05.1) связь действий ребёнка с approval родителя,
-а 03.4 — verify-chain для их аудита.
+Опциональных интеграций нет. Что этот план обязан предоставить: этап 02.3
+даёт child workflows (этап 04.1) связь действий ребёнка с approval родителя,
+а 02.4 — verify-chain для их аудита.
 
 ## Критерии готовности плана
 

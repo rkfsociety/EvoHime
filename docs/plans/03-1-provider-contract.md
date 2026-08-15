@@ -1,14 +1,14 @@
-# Этап 04.1: Provider contract
+# Этап 03.1: Provider contract
 
-Этап плана [04 Локальный SLM fallback и routing](04-0-local-slm-fallback-routing.md).
+Этап плана [03 Локальный SLM fallback и routing](03-0-local-slm-fallback-routing.md).
 
 ## Зависимости
 
-Блокирующие: существующая provider health model. Этапа 01.1 здесь не
+Блокирующие: существующая provider health model. Context Budget Manager здесь не
 требуется — контракт провайдера не касается бюджета, поэтому этот этап можно
 вести параллельно с планом 01.
 
-Разблокирует: 04.2 (локальный провайдер объявляет свои capabilities) и 04.3
+Разблокирует: 03.2 (локальный провайдер объявляет свои capabilities) и 03.3
 (route selection читает их).
 
 ## Что этап отдаёт наружу

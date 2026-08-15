@@ -1,14 +1,14 @@
-# Этап 04.3: Routing и budget
+# Этап 03.3: Routing и budget
 
-Этап плана [04 Локальный SLM fallback и routing](04-0-local-slm-fallback-routing.md).
+Этап плана [03 Локальный SLM fallback и routing](03-0-local-slm-fallback-routing.md).
 
 ## Зависимости
 
-Блокирующие: этап 01.1 — route decision опирается на budget/profile snapshot;
-этапы 04.1 (capabilities и health) и 04.2 (куда падать). Это единственный этап
-плана, которому нужен план 01.
+Блокирующие: нет. Context Budget Manager реализован: route decision опирается на budget/profile snapshot;
+этапы 03.1 (capabilities и health) и 03.2 (куда падать). Это единственный этап
+плана, опирающегося на контракт Context Budget Manager.
 
-Разблокирует: 04.4 — UI показывает именно этот trace.
+Разблокирует: 03.4 — UI показывает именно этот trace.
 
 ## Что этап отдаёт наружу
 
@@ -19,7 +19,7 @@ Route decision с воспроизводимым trace и учётом бюдж�
 Есть: `RoutingTelemetry` с детерминированным JSON, fallback notice и счётчики
 итераций/tool calls/времени в `RoutingRuntime`.
 
-Нет: budget snapshot (приходит из этапа 01.1), evaluation gate для small route,
+Нет: budget snapshot (приходит из Context Budget Manager), evaluation gate для small route,
 блокировки cloud при незавершённой classification или непрошедшей redaction, и
 самого подключения к `ToolAgent` — сегодня агент вызывает маршрут `"default"`
 напрямую.

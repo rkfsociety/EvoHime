@@ -1,14 +1,14 @@
-# Этап 05.3: Context isolation
+# Этап 04.3: Context isolation
 
-Этап плана [05 Специализированные child workflows](05-0-specialized-child-workflows.md).
+Этап плана [04 Специализированные child workflows](04-0-specialized-child-workflows.md).
 
 ## Зависимости
 
-Блокирующие: этапы 01.1 (budget ребёнка) и 01.2 (scratchpad и artifact store);
-этапы 02.2 и 02.3 — роль `researcher` без retrieval и planner не имеет своего
-инструмента; этап 05.2 (состояния, в которых живёт контекст ребёнка).
+Блокирующие: нет. Budget ребёнка, scratchpad и artifact store реализованы;
+этапы 01.2 и 01.3 — роль `researcher` без retrieval и planner не имеет своего
+инструмента; этап 04.2 (состояния, в которых живёт контекст ребёнка).
 
-Разблокирует: 05.4.
+Разблокирует: 04.4.
 
 ## Что этап отдаёт наружу
 

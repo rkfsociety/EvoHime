@@ -1,12 +1,12 @@
-# Этап 03.2: Key lifecycle
+# Этап 02.2: Key lifecycle
 
-Этап плана [03 Подписанные hash-chain receipts](03-0-signed-hash-chain-receipts.md).
+Этап плана [02 Подписанные hash-chain receipts](02-0-signed-hash-chain-receipts.md).
 
 ## Зависимости
 
-Блокирующие: этап 03.1 — подписывается именно canonical payload.
+Блокирующие: этап 02.1 — подписывается именно canonical payload.
 
-Разблокирует: 03.3 (подпись действий) и 03.4 (offline verification).
+Разблокирует: 02.3 (подпись действий) и 02.4 (offline verification).
 
 ## Что этап отдаёт наружу
 

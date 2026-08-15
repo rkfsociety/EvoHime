@@ -1,4 +1,4 @@
-# План 05: Специализированные child workflows
+# План 04: Специализированные child workflows
 
 Обзор плана. Этапы вынесены в отдельные файлы и ревьюятся по одному.
 
@@ -73,20 +73,20 @@ read-only capabilities.
 
 | Этап | Файл | Что отдаёт наружу | Кто потребляет |
 | --- | --- | --- | --- |
-| 05.1 | [Typed contracts](05-1-typed-child-contracts.md) | typed input/output child task и correlation ids | 05.2–05.4 |
-| 05.2 | [Coordinator state machine](05-2-coordinator-state-machine.md) | состояния, leases и restart recovery | 05.3, 05.4 |
-| 05.3 | [Context isolation](05-3-child-context-isolation.md) | изоляция контекста и offload | 05.4 |
-| 05.4 | [UI и observability](05-4-child-ui-and-observability.md) | timeline, OperationsPanel и trace | UI |
+| 04.1 | [Typed contracts](04-1-typed-child-contracts.md) | typed input/output child task и correlation ids | 04.2–04.4 |
+| 04.2 | [Coordinator state machine](04-2-coordinator-state-machine.md) | состояния, leases и restart recovery | 04.3, 04.4 |
+| 04.3 | [Context isolation](04-3-child-context-isolation.md) | изоляция контекста и offload | 04.4 |
+| 04.4 | [UI и observability](04-4-child-ui-and-observability.md) | timeline, OperationsPanel и trace | UI |
 
 ## Зависимости плана
 
 Блокирующие:
 
-- этапы 01.1 и 01.2 — budget ребёнка, context isolation и offload больших
+- Context Budget Manager (реализован, см. [`../architecture.md`](../architecture.md)) — budget ребёнка, context isolation и offload больших
   результатов в artifact store;
-- этапы 02.2 и 02.3 — роль `researcher` определена как read-only доступ к
+- этапы 01.2 и 01.3 — роль `researcher` определена как read-only доступ к
   workspace/RAG и без retrieval с planner не имеет своего инструмента;
-- этап 03.3 — связь действий ребёнка с approval родителя;
+- этап 02.3 — связь действий ребёнка с approval родителя;
 - существующие child runtime, permission policy, task graph, leases и
   evaluation catalog (`tests/evals/`).
 

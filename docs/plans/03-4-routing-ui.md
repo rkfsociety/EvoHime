@@ -1,10 +1,10 @@
-# Этап 04.4: UI
+# Этап 03.4: UI
 
-Этап плана [04 Локальный SLM fallback и routing](04-0-local-slm-fallback-routing.md).
+Этап плана [03 Локальный SLM fallback и routing](03-0-local-slm-fallback-routing.md).
 
 ## Зависимости
 
-Блокирующие: этап 04.3 — UI показывает его trace.
+Блокирующие: этап 03.3 — UI показывает его trace.
 
 Это последний этап плана.
 

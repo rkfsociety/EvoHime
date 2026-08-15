@@ -1,13 +1,13 @@
-# Этап 03.3: Runtime integration
+# Этап 02.3: Runtime integration
 
-Этап плана [03 Подписанные hash-chain receipts](03-0-signed-hash-chain-receipts.md).
+Этап плана [02 Подписанные hash-chain receipts](02-0-signed-hash-chain-receipts.md).
 
 ## Зависимости
 
-Блокирующие: этапы 03.1 (payload) и 03.2 (ключ); существующие approval и
+Блокирующие: этапы 02.1 (payload) и 02.2 (ключ); существующие approval и
 exact-call hash.
 
-Разблокирует: 05.1 — child workflows связывают действия ребёнка с approval
+Разблокирует: 04.1 — child workflows связывают действия ребёнка с approval
 родителя именно через этот механизм.
 
 ## Что этап отдаёт наружу
