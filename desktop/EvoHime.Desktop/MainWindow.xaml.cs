@@ -18,6 +18,7 @@ using Windows.ApplicationModel.DataTransfer;
 using Windows.System;
 using Windows.UI.Core;
 using Microsoft.UI.Input;
+using System.Runtime.InteropServices;
 using WinRT.Interop;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -91,7 +92,8 @@ public partial class MainWindow : Window
     private ComboBox? _modelModeBox;
     private ComboBox? _modelSelector;
     private string _configuredModel = string.Empty;
-    private readonly List<StorageFile> _attachments = [];
+    private readonly List<AttachmentFile> _attachments = [];
+    private readonly RecentFolderService _recentFolders = new();
     private TextBlock? _attachmentsText;
     private string _permissionMode = "ask";
     private TextBlock? _githubProfileText;
@@ -4066,23 +4068,42 @@ public partial class MainWindow : Window
 
     private async void AttachFiles_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new FileOpenPicker();
-        picker.FileTypeFilter.Add("*");
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(this));
-        var files = await picker.PickMultipleFilesAsync();
-        if (files is null || files.Count == 0)
+        var paths = await PickAttachmentPathsAsync();
+        if (paths.Count == 0)
         {
             return;
         }
 
-        foreach (var file in files)
+        foreach (var path in paths)
         {
-            if (_attachments.All(item => !string.Equals(item.Path, file.Path, StringComparison.OrdinalIgnoreCase)))
+            if (_attachments.All(item => !string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase)))
             {
-                _attachments.Add(file);
+                _attachments.Add(new AttachmentFile(Path.GetFileName(path), path));
             }
         }
+
+        // Следующий диалог откроется в папке последнего выбранного файла.
+        _recentFolders.RememberFile(RecentFolderService.AttachmentsKey, paths[^1]);
         UpdateAttachmentsText();
+    }
+
+    private async Task<IReadOnlyList<string>> PickAttachmentPathsAsync()
+    {
+        var owner = WindowNative.GetWindowHandle(this);
+        var lastFolder = _recentFolders.Get(RecentFolderService.AttachmentsKey);
+        try
+        {
+            return FileDialogService.PickFiles(owner, lastFolder, allowMultiple: true, title: "Добавить файлы");
+        }
+        catch (Exception exception) when (exception is COMException or InvalidCastException or NotSupportedException)
+        {
+            // Резерв: системный диалог недоступен — стартовую папку задать не выйдет.
+            var picker = new FileOpenPicker();
+            picker.FileTypeFilter.Add("*");
+            InitializeWithWindow.Initialize(picker, owner);
+            var files = await picker.PickMultipleFilesAsync();
+            return files is null ? [] : files.Select(file => file.Path).ToList();
+        }
     }
 
     private void UpdateAttachmentsText()
@@ -4798,3 +4819,6 @@ public partial class MainWindow : Window
         }
     }
 }
+
+/// <summary>Файл, прикреплённый к задаче: имя для UI и полный путь для копирования в workspace.</summary>
+public sealed record AttachmentFile(string Name, string Path);
