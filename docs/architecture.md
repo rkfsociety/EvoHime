@@ -19,8 +19,9 @@ Renderer не имеет node integration, не выполняет shell-ком�
 
 Ревью планов — отдельный read-only pipeline Core. Electron main выбирает и
 ограниченно читает Markdown-файл через native dialog, затем передаёт его Core.
-Core параллельно вызывает 2–8 моделей текущего provider catalog с per-request
-model overrides и отдельную synthesis-модель. Review не получает tools, не
+Core вызывает 2–8 моделей текущего provider catalog по очереди, по одному
+запросу за раз, чтобы не упираться в лимиты провайдера, и затем отдельную
+synthesis-модель. Per-request model overrides сохраняются. Review не получает tools, не
 изменяет workspace и сохраняется в локальном event journal без credentials.
 
 WinUI 3 больше не является пользовательской оболочкой пакета. Он сохранён как

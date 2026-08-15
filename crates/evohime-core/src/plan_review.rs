@@ -127,63 +127,72 @@ pub async fn run_review_with_progress(
             total,
         });
     }
-    let mut jobs = Vec::with_capacity(request.reviewer_models.len());
+    // Reviewers run one at a time on purpose. Firing every model at once is
+    // faster but walks straight into per-key rate limits, and a review that
+    // fails halfway is worth less than one that takes longer.
+    let mut reviewers = Vec::with_capacity(total);
     for model in request.reviewer_models.iter().cloned() {
-        let gateway = Arc::clone(&gateway);
-        let source = Arc::clone(&source);
-        let cancellation = cancellation.clone();
-        let progress = Arc::clone(&progress);
-        let completed_reviewers = Arc::clone(&completed_reviewers);
-        let review_id = request.review_id.clone();
-        jobs.push(tokio::spawn(async move {
-            progress(ReviewProgress {
-                review_id: review_id.clone(),
-                stage: "reviewers".into(),
-                status: "working".into(),
-                model: Some(model.clone()),
-                completed: 0,
-                total,
-            });
-            let result =
-                collect_model_response(gateway, &model, reviewer_messages(&source), cancellation)
-                    .await;
-            let reviewer = match result {
-                Ok(content) => ReviewerResult {
-                    model: model.clone(),
-                    status: "completed".into(),
-                    content,
-                    error: None,
-                },
-                Err(error) => ReviewerResult {
-                    model: model.clone(),
-                    status: if matches!(error, ReviewError::Cancelled) {
-                        "cancelled".into()
-                    } else {
-                        "failed".into()
-                    },
-                    content: String::new(),
-                    error: Some(error.to_string()),
-                },
-            };
+        if cancellation.is_cancelled() {
             let completed = completed_reviewers.fetch_add(1, Ordering::Relaxed) + 1;
             progress(ReviewProgress {
-                review_id,
+                review_id: request.review_id.clone(),
                 stage: "reviewers".into(),
-                status: reviewer.status.clone(),
-                model: Some(reviewer.model.clone()),
+                status: "cancelled".into(),
+                model: Some(model.clone()),
                 completed,
                 total,
             });
-            reviewer
-        }));
-    }
-
-    let mut reviewers = Vec::with_capacity(jobs.len());
-    for job in jobs {
-        reviewers.push(
-            job.await
-                .map_err(|error| ReviewError::Provider(error.to_string()))?,
-        );
+            reviewers.push(ReviewerResult {
+                model,
+                status: "cancelled".into(),
+                content: String::new(),
+                error: Some(ReviewError::Cancelled.to_string()),
+            });
+            continue;
+        }
+        progress(ReviewProgress {
+            review_id: request.review_id.clone(),
+            stage: "reviewers".into(),
+            status: "working".into(),
+            model: Some(model.clone()),
+            completed: completed_reviewers.load(Ordering::Relaxed),
+            total,
+        });
+        let reviewer = match collect_model_response(
+            Arc::clone(&gateway),
+            &model,
+            reviewer_messages(&source),
+            cancellation.clone(),
+        )
+        .await
+        {
+            Ok(content) => ReviewerResult {
+                model: model.clone(),
+                status: "completed".into(),
+                content,
+                error: None,
+            },
+            Err(error) => ReviewerResult {
+                model: model.clone(),
+                status: if matches!(error, ReviewError::Cancelled) {
+                    "cancelled".into()
+                } else {
+                    "failed".into()
+                },
+                content: String::new(),
+                error: Some(error.to_string()),
+            },
+        };
+        let completed = completed_reviewers.fetch_add(1, Ordering::Relaxed) + 1;
+        progress(ReviewProgress {
+            review_id: request.review_id.clone(),
+            stage: "reviewers".into(),
+            status: reviewer.status.clone(),
+            model: Some(reviewer.model.clone()),
+            completed,
+            total,
+        });
+        reviewers.push(reviewer);
     }
     if cancellation.is_cancelled() {
         return Err(ReviewError::Cancelled);
@@ -334,8 +343,37 @@ mod tests {
         assert_eq!(result.final_markdown, "mock response");
     }
 
+    /// Reviewers share one provider key, so they are queued rather than fanned
+    /// out: the next model must not be asked until the previous one is done.
     #[tokio::test]
-    async fn reports_parallel_reviewer_and_synthesis_progress() {
+    async fn queues_reviewers_one_at_a_time() {
+        let gateway = Arc::new(mock_gateway(vec!["mock response".into()]));
+        let progress_events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let collected = Arc::clone(&progress_events);
+        run_review_with_progress(
+            gateway,
+            request(),
+            CancellationToken::new(),
+            Arc::new(move |progress| collected.lock().unwrap().push(progress)),
+        )
+        .await
+        .expect("review completes");
+
+        let events = progress_events.lock().unwrap();
+        let position = |model: &str, status: &str| {
+            events
+                .iter()
+                .position(|event| event.model.as_deref() == Some(model) && event.status == status)
+                .unwrap_or_else(|| panic!("{model} must report {status}"))
+        };
+        assert!(
+            position("two", "working") > position("one", "completed"),
+            "the second reviewer must start only after the first one finished"
+        );
+    }
+
+    #[tokio::test]
+    async fn reports_reviewer_and_synthesis_progress() {
         let gateway = Arc::new(mock_gateway(vec!["mock response".into()]));
         let progress_events = Arc::new(std::sync::Mutex::new(Vec::new()));
         let collected = Arc::clone(&progress_events);
