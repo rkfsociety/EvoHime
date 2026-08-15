@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { cp, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -30,6 +31,9 @@ export const REQUIRED_NATIVE_COMPONENTS = [
   'evohime-supervisor.exe',
   'evohime-transaction.exe'
 ] as const
+
+/** Records which lockfile the current `node_modules` was installed from. */
+export const DEPENDENCY_MARKER = join('node_modules', '.evohime-deps')
 
 const CARGO_TIMEOUT_MS = 90 * 60_000
 const NPM_TIMEOUT_MS = 60 * 60_000
@@ -106,14 +110,23 @@ export async function buildStagedPackage(
   )
 
   deps.onStep?.('shell')
-  await exec('npm ci', npm.file, [...npm.args, 'ci', '--ignore-scripts'], electronRoot, NPM_TIMEOUT_MS)
-  await exec(
-    'postinstall allow-list',
-    node,
-    [join('scripts', 'postinstall-allowlist.mjs')],
-    electronRoot,
-    NPM_TIMEOUT_MS
-  )
+  // `npm ci` deletes node_modules and reinstalls every package, and the
+  // allow-list then unpacks Electron again — a minute of work that changes
+  // nothing while the lockfile is the same. Most updates do not touch it.
+  const lockDigest = await lockfileDigest(electronRoot)
+  if (lockDigest === null || lockDigest !== (await installedDependencies(electronRoot))) {
+    await exec('npm ci', npm.file, [...npm.args, 'ci', '--ignore-scripts'], electronRoot, NPM_TIMEOUT_MS)
+    await exec(
+      'postinstall allow-list',
+      node,
+      [join('scripts', 'postinstall-allowlist.mjs')],
+      electronRoot,
+      NPM_TIMEOUT_MS
+    )
+    await recordDependencies(electronRoot, lockDigest)
+  } else {
+    deps.onLine?.('Зависимости не изменились — установка пропущена.')
+  }
   await exec('npm run build', npm.file, [...npm.args, 'run', 'build'], electronRoot, NPM_TIMEOUT_MS)
 
   const outputRoot = await mkdtemp(join(tmpdir(), 'evohime-electron-build-'))
@@ -160,9 +173,8 @@ export async function assembleStaging(
   }
 
   await withoutAsar(async () => {
-    await removeTreeResilient(inputs.stagingDirectory)
     await mkdir(inputs.stagingDirectory, { recursive: true })
-    await cp(unpacked, inputs.stagingDirectory, { recursive: true })
+    await syncTree(unpacked, inputs.stagingDirectory)
   })
 
   for (const component of REQUIRED_NATIVE_COMPONENTS) {
@@ -211,6 +223,94 @@ export async function clearDerivedState(sourceDirectory: string): Promise<void> 
       await removeTreeResilient(join(electronRoot, path))
     }
   })
+}
+
+/**
+ * Brings `destination` to exactly the contents of `source`, copying only what
+ * differs.
+ *
+ * Almost all of a package is the Electron runtime, which is unpacked from the
+ * same cached archive on every build: copying it again moves hundreds of
+ * megabytes past the antivirus to produce byte-identical files. Only the parts
+ * the build actually regenerates — the asar payload and the patched executable —
+ * change size or timestamp, so a size-and-mtime comparison is what separates
+ * them. Files that are no longer produced are removed, so the staging directory
+ * never accumulates leftovers from an older package.
+ */
+async function syncTree(source: string, destination: string): Promise<void> {
+  const wanted = await readdir(source, { withFileTypes: true })
+  const present = new Set(
+    await readdir(destination).catch(() => [] as string[])
+  )
+
+  for (const entry of wanted) {
+    present.delete(entry.name)
+    const from = join(source, entry.name)
+    const to = join(destination, entry.name)
+    if (entry.isDirectory()) {
+      await mkdir(to, { recursive: true })
+      await syncTree(from, to)
+      continue
+    }
+    if (await sameFile(from, to)) continue
+    await rm(to, { force: true, maxRetries: CLEANUP_MAX_RETRIES, retryDelay: CLEANUP_RETRY_DELAY_MS })
+    // Timestamps are carried over deliberately: they are half of what the next
+    // build compares, and without them every file looks changed every time.
+    await cp(from, to, { preserveTimestamps: true })
+  }
+
+  for (const stale of present) {
+    await removeTreeResilient(join(destination, stale))
+  }
+}
+
+/** Same size and modification time — rsync's test, and enough for build output. */
+async function sameFile(source: string, destination: string): Promise<boolean> {
+  try {
+    const [from, to] = await Promise.all([stat(source), stat(destination)])
+    return from.size === to.size && Math.abs(from.mtimeMs - to.mtimeMs) < 1
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Fingerprint of the dependency set the next `npm ci` would install.
+ *
+ * `null` means "cannot tell" — an unreadable lockfile always reinstalls, because
+ * building against stale `node_modules` is far worse than a wasted minute.
+ */
+async function lockfileDigest(electronRoot: string): Promise<string | null> {
+  try {
+    const lock = await readFile(join(electronRoot, 'package-lock.json'))
+    return createHash('sha256').update(lock).digest('hex')
+  } catch {
+    return null
+  }
+}
+
+/** Fingerprint recorded by the install that produced the current node_modules. */
+async function installedDependencies(electronRoot: string): Promise<string | null> {
+  try {
+    const recorded = await readFile(join(electronRoot, DEPENDENCY_MARKER), 'utf8')
+    return recorded.trim().length > 0 ? recorded.trim() : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The marker lives inside `node_modules`, so it disappears together with the
+ * tree it describes: a wiped or partially installed directory can never be
+ * mistaken for a current one.
+ */
+async function recordDependencies(electronRoot: string, digest: string | null): Promise<void> {
+  if (!digest) return
+  try {
+    await writeFile(join(electronRoot, DEPENDENCY_MARKER), `${digest}\n`, 'utf8')
+  } catch {
+    // Losing the marker only costs the next build a reinstall.
+  }
 }
 
 /**
