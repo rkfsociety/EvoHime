@@ -70,6 +70,10 @@ pub enum ReviewError {
     Cancelled,
     #[error("provider error: {0}")]
     Provider(String),
+    #[error(
+        "review cannot be synthesized: {failed} of {total} reviewers failed or were cancelled"
+    )]
+    IncompleteReviewers { failed: usize, total: usize },
 }
 
 impl ReviewRequest {
@@ -196,6 +200,14 @@ pub async fn run_review_with_progress(
     }
     if cancellation.is_cancelled() {
         return Err(ReviewError::Cancelled);
+    }
+
+    let failed = reviewers
+        .iter()
+        .filter(|review| review.status != "completed")
+        .count();
+    if failed > 0 {
+        return Err(ReviewError::IncompleteReviewers { failed, total });
     }
 
     let synthesis_input = reviewers
@@ -396,5 +408,38 @@ mod tests {
         assert!(events
             .iter()
             .any(|event| event.stage == "synthesis" && event.status == "working"));
+    }
+
+    #[test]
+    fn refuses_to_synthesize_when_a_reviewer_failed() {
+        let reviewers = [
+            ReviewerResult {
+                model: "ok".into(),
+                status: "completed".into(),
+                content: "review".into(),
+                error: None,
+            },
+            ReviewerResult {
+                model: "offline".into(),
+                status: "failed".into(),
+                content: String::new(),
+                error: Some("network timeout".into()),
+            },
+        ];
+
+        let failed = reviewers
+            .iter()
+            .filter(|review| review.status != "completed")
+            .count();
+        assert_eq!(
+            ReviewError::IncompleteReviewers {
+                failed,
+                total: reviewers.len()
+            },
+            ReviewError::IncompleteReviewers {
+                failed: 1,
+                total: 2
+            }
+        );
     }
 }

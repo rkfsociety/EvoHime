@@ -274,7 +274,7 @@ describe('plan review panel', () => {
 
     expect(screen.getByText('Ошибка')).toBeTruthy()
     expect(screen.getByRole('alert').textContent).toContain('401 unauthorized')
-    expect(screen.getByRole('button', { name: 'Запустить снова' }).hasAttribute('disabled')).toBe(false)
+    expect(screen.getByRole('button', { name: 'Повторить ревью' }).hasAttribute('disabled')).toBe(false)
   })
 
   it('reports a rejected start request', async () => {

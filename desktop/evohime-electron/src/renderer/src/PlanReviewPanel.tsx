@@ -292,7 +292,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
 
       <label className="review-panel__synthesis">Главная модель-синтезатор<select value={synthesisModel} onChange={(event) => setSynthesisModel(event.target.value)} disabled={running}><option value="">Выбери модель</option>{models.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
 
-      <div className="review-panel__actions"><button type="button" onClick={() => void start()} disabled={!canStart}>{reviewId && (reviewFinished || failure !== null || progress?.stage === 'failed') ? 'Запустить снова' : 'Запустить ревью'}</button><button type="button" onClick={() => void stop()} disabled={!running}>Остановить</button></div>
+      <div className="review-panel__actions"><button type="button" onClick={() => void start()} disabled={!canStart}>{failure !== null || progress?.stage === 'failed' ? 'Повторить ревью' : reviewId && reviewFinished ? 'Запустить снова' : 'Запустить ревью'}</button><button type="button" onClick={() => void stop()} disabled={!running}>Остановить</button></div>
       {reviewId ? <ProgressCard roster={roster} progress={progress} status={status} reviewers={reviewers} elapsed={startedAt === null ? null : elapsed} accepted={accepted} failed={failure !== null} /> : null}
       {launchStalled ? <p role="alert" className="shell__reason">Ядро не подтвердило запуск за {elapsed} с. Проверь, запущено ли ядро и настроен ли провайдер, либо останови ревью и запусти снова.</p> : null}
       {progressStalled ? <p role="alert" className="shell__reason">Модели молчат уже {Math.floor(silence / 60)} мин. Бесплатные модели отвечают медленно — можно подождать или остановить ревью.</p> : null}
