@@ -1482,6 +1482,91 @@ impl EventJournal {
         store.projection(task_id, limit)
     }
 
+    /// Запись заметки scratchpad. Подтверждённая запись не перезаписывается
+    /// на месте: при попытке silent override возвращается ошибка.
+    pub async fn write_scratchpad_entry(
+        &self,
+        entry: &evohime_context_budget::scratchpad::ScratchpadEntry,
+    ) -> Result<(), StorageError> {
+        let database = self.database.lock().await;
+        evohime_local_storage::scratchpad_store::ScratchpadStore::new(database.connection())
+            .upsert(entry)
+    }
+
+    /// Подтверждённые записи scratchpad задачи: только они возвращаются в
+    /// рабочий контекст после restart.
+    pub async fn confirmed_scratchpad(
+        &self,
+        task_id: &str,
+        limit: usize,
+    ) -> Result<Vec<evohime_context_budget::scratchpad::ScratchpadEntry>, StorageError> {
+        use evohime_context_budget::item::ScratchpadStatus;
+        let database = self.database.lock().await;
+        evohime_local_storage::scratchpad_store::ScratchpadStore::new(database.connection())
+            .list(task_id, None, Some(ScratchpadStatus::Confirmed), limit)
+    }
+
+    /// Восстановление scratchpad после restart: `confirmed` возвращаются в
+    /// рабочий контекст, остальные изолируются в recovery view.
+    pub async fn recover_scratchpad(
+        &self,
+        task_id: &str,
+        current_step: u32,
+    ) -> Result<(usize, usize), StorageError> {
+        let now = task_memory::now_millis() as i64;
+        let database = self.database.lock().await;
+        let store =
+            evohime_local_storage::scratchpad_store::ScratchpadStore::new(database.connection());
+        store.mark_unconfirmed_as_recovered(task_id, now, current_step)?;
+        let (restored, isolated) = store.recover(task_id, now, current_step)?;
+        store.discard_expired_recovered(
+            task_id,
+            evohime_context_budget::scratchpad::RecoveryPolicy::default(),
+            now,
+            current_step,
+        )?;
+        Ok((restored.len(), isolated.len()))
+    }
+
+    /// Выгрузка перечисленных записей scratchpad в artifact store. Содержимое
+    /// заменяется bounded summary с hash и locator; запись остаётся `confirmed`,
+    /// а её ревизия не меняется.
+    pub async fn offload_scratchpad_entries(
+        &self,
+        task_id: &str,
+        ids: &[String],
+        now: i64,
+    ) -> Result<usize, StorageError> {
+        let database = self.database.lock().await;
+        let store =
+            evohime_local_storage::scratchpad_store::ScratchpadStore::new(database.connection());
+        let artifacts =
+            evohime_local_storage::artifact_store::ArtifactStore::new(database.connection());
+        let kind = evohime_context_budget::item::ItemKind::Scratchpad.as_str();
+        let mut offloaded = 0;
+        for id in ids {
+            let Some(mut entry) = store.get(id)? else {
+                continue;
+            };
+            if entry.artifact_locator.is_some() || !entry.privacy.allows_offload() {
+                continue;
+            }
+            let result = artifacts.offload(
+                kind,
+                task_id,
+                task_id,
+                &entry.content,
+                entry.privacy,
+                now,
+            )?;
+            entry.artifact_locator = Some(result.reference.locator);
+            entry.updated_at = now;
+            store.upsert(&entry)?;
+            offloaded += 1;
+        }
+        Ok(offloaded)
+    }
+
     /// Bounded projection scratchpad задачи для UI (этап 01.5).
     pub async fn scratchpad_projection(
         &self,
@@ -3614,6 +3699,55 @@ impl ToolAgent {
             })
             .collect();
 
+        // Подтверждённые записи scratchpad участвуют в сборке; их
+        // `open_questions` дополнительно питают intent router (01.4).
+        let scratchpad = match &self.journal {
+            Some(journal) => {
+                let entries = journal
+                    .confirmed_scratchpad(task_id, 100)
+                    .await
+                    .unwrap_or_default();
+                // Scratchpad имеет жёсткий лимит в пределах своей категории
+                // бюджета: при превышении самые старые `confirmed` записи
+                // выгружаются в artifact store, а в контексте остаётся bounded
+                // ссылка с hash и locator. Молчаливое усечение запрещено.
+                let scratchpad_budget = evohime_context_budget::ContextBudget::from_profile(
+                    &evohime_context_budget::ProfileCatalog::builtin().resolve(
+                        &provider,
+                        &model,
+                        None,
+                    ),
+                )
+                .scratchpad
+                .target_tokens;
+                let overflow = context_budget::scratchpad_offload_candidates(
+                    &entries,
+                    scratchpad_budget,
+                );
+                if overflow.is_empty() {
+                    entries
+                } else {
+                    journal
+                        .offload_scratchpad_entries(task_id, &overflow, now)
+                        .await
+                        .unwrap_or_default();
+                    journal
+                        .confirmed_scratchpad(task_id, 100)
+                        .await
+                        .unwrap_or(entries)
+                }
+            }
+            None => Vec::new(),
+        };
+        let open_questions: Vec<String> = scratchpad
+            .iter()
+            .filter(|entry| {
+                entry.category
+                    == evohime_context_budget::scratchpad::ScratchpadCategory::OpenQuestions
+            })
+            .map(|entry| entry.content.clone())
+            .collect();
+
         let mut summarizer =
             context_budget::deterministic_summarizer(runtime.summarizer_config().clone());
         let assembled = match &self.journal {
@@ -3646,7 +3780,8 @@ impl ToolAgent {
                     now,
                     messages,
                     specs,
-                    &[],
+                    &open_questions,
+                    &scratchpad,
                     &pinned,
                     force_reduction,
                     &mut offload,
@@ -3664,6 +3799,7 @@ impl ToolAgent {
                     now,
                     messages,
                     specs,
+                    &[],
                     &[],
                     &[],
                     false,
@@ -3705,6 +3841,42 @@ impl ToolAgent {
             }),
         );
         assembled
+    }
+
+    /// Запись результата инструмента в scratchpad задачи (план 01.2).
+    ///
+    /// Успешный tool result сам по себе фактом не становится: запись получает
+    /// `confirmed` только после provenance/policy-проверки Core — инструмент
+    /// отработал без ошибки и envelope не обнаружил попытки prompt-injection.
+    /// Иначе остаётся `draft`, который после restart не восстанавливается.
+    async fn record_tool_finding(
+        &self,
+        task_id: &str,
+        session_id: &str,
+        tool_name: &str,
+        output: &str,
+        tool_ok: bool,
+        envelope: &evohime_context_budget::scratchpad::EnvelopeCheck,
+    ) {
+        use evohime_context_budget::scratchpad::{
+            external_output_can_confirm, ConfirmationBasis, ScratchpadCategory, ScratchpadEntry,
+        };
+        let Some(journal) = &self.journal else {
+            return;
+        };
+        let now = task_memory::now_millis() as i64;
+        let mut entry = ScratchpadEntry::draft(
+            format!("{task_id}/{tool_name}/{now}"),
+            task_id,
+            session_id,
+            ScratchpadCategory::ToolFindings,
+            output,
+            now,
+        );
+        if external_output_can_confirm(envelope, tool_ok) {
+            entry.confirm(ConfirmationBasis::ToolProvenanceVerified, now);
+        }
+        let _ = journal.write_scratchpad_entry(&entry).await;
     }
 
     /// Фактический usage провайдера пишется в append-only таблицу, поэтому
@@ -3965,6 +4137,28 @@ impl ToolAgent {
         let mut context_runtime =
             context_budget::ContextRuntime::new(self.gateway.model_name());
         let context_session_id = task_id.clone();
+        // План 01.2: после restart в рабочий контекст возвращаются только
+        // `confirmed` записи; остальные изолируются в recovery view с
+        // пониженным приоритетом и удаляются по policy.
+        if let Some(journal) = &self.journal {
+            match journal.recover_scratchpad(&task_id, 0).await {
+                Ok((restored, isolated)) => write_model_trace(
+                    "context.scratchpad_recovered",
+                    serde_json::json!({
+                        "task_id": task_id,
+                        "restored": restored,
+                        "isolated": isolated
+                    }),
+                ),
+                Err(error) => write_model_trace(
+                    "context.scratchpad_recovery_failed",
+                    serde_json::json!({
+                        "task_id": task_id,
+                        "error": error.to_string()
+                    }),
+                ),
+            }
+        }
 
         let mut recent_tool_calls = recovery::RecentToolCalls::new(6);
         let mut consecutive_failures = HashMap::<String, u32>::new();
@@ -4572,7 +4766,32 @@ impl ToolAgent {
                         )
                         .await;
                 }
-                messages.push(ChatMessage::tool_observation(call.id, outcome.output));
+                // План 01.2: внешние tool outputs — недоверенные данные. Они
+                // помещаются в `data_not_instructions` envelope и проверяются на
+                // prompt-injection перед извлечением в scratchpad; текст внутри
+                // envelope не разбирается как policy.
+                let (wrapped_output, envelope) =
+                    evohime_context_budget::scratchpad::wrap_external_output(&outcome.output);
+                self.record_tool_finding(
+                    &task_id,
+                    &context_session_id,
+                    &call.name,
+                    &outcome.output,
+                    outcome.ok,
+                    &envelope,
+                )
+                .await;
+                if envelope.injection_suspected {
+                    write_model_trace(
+                        "tool.injection_suspected",
+                        serde_json::json!({
+                            "task_id": task_id,
+                            "tool_name": call.name,
+                            "markers": envelope.markers
+                        }),
+                    );
+                }
+                messages.push(ChatMessage::tool_observation(call.id, wrapped_output));
                 if failed {
                     let schema = tool_parameters(&call.name);
                     let description = self

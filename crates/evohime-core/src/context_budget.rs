@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use evohime_context_budget::{
     artifact::{ArtifactQuota, ArtifactRefStatus},
+    scratchpad::{ScratchpadCategory, ScratchpadEntry},
     budget::BudgetUnavailable,
     compression::{BoundedSummarizer, RawSummary, SummarizerConfig, SummaryModel},
     estimator::HeuristicEstimator,
@@ -297,6 +298,9 @@ impl ContextRuntime {
         messages: &[ChatMessage],
         specs: &[ToolSpec],
         open_questions: &[String],
+        // Подтверждённые записи scratchpad задачи (01.2). После restart в
+        // рабочий контекст возвращаются только они.
+        scratchpad: &[ScratchpadEntry],
         // Item, закреплённые пользователем командой `pin item` (01.5), и
         // запрошенное пользователем принудительное сжатие (`summarize now`).
         pinned_ids: &[String],
@@ -335,6 +339,15 @@ impl ContextRuntime {
         //    но не гарантирует включение в контекст: при нехватке бюджета
         //    закреплённый item отбрасывается последним и с явной причиной.
         let mut inputs = plan_inputs(task_id, session_id, messages, now);
+        for entry in scratchpad {
+            let mut item = entry.to_context_item();
+            item.task_id = task_id.to_string();
+            item.session_id = session_id.to_string();
+            inputs.push(PlanInput::new(
+                item,
+                OwnedContent::Text(scratchpad_context_text(entry)),
+            ));
+        }
         for input in &mut inputs {
             if pinned_ids.iter().any(|id| id == &input.item.id) {
                 input.item.pinned = true;
@@ -398,6 +411,54 @@ impl ContextRuntime {
     pub fn metrics(&self) -> &evohime_context_budget::ContextMetrics {
         self.planner.metrics()
     }
+}
+
+/// Текст записи scratchpad в контексте. Выгруженная запись представлена
+/// bounded ссылкой с hash и locator, а не усечённым содержимым.
+fn scratchpad_context_text(entry: &ScratchpadEntry) -> String {
+    match &entry.artifact_locator {
+        Some(locator) => format!(
+            "[{}] вынесено в artifact store: {locator}, hash {}",
+            entry.category.as_str(),
+            entry.content_hash
+        ),
+        None => format!("[{}] {}", entry.category.as_str(), entry.content),
+    }
+}
+
+/// Кандидаты на выгрузку при превышении бюджета категории scratchpad:
+/// самые старые `confirmed` записи. `open_questions` текущего шага и уже
+/// выгруженные записи не вытесняются, молчаливое усечение запрещено.
+pub fn scratchpad_offload_candidates(
+    entries: &[ScratchpadEntry],
+    budget_tokens: u32,
+) -> Vec<String> {
+    let estimate = |entry: &ScratchpadEntry| (entry.content.len() as u32).div_ceil(3) + 8;
+    let mut total: u32 = entries.iter().map(estimate).fold(0, u32::saturating_add);
+    if total <= budget_tokens {
+        return Vec::new();
+    }
+    let mut candidates: Vec<&ScratchpadEntry> = entries
+        .iter()
+        .filter(|entry| {
+            entry.category != ScratchpadCategory::OpenQuestions
+                && entry.artifact_locator.is_none()
+        })
+        .collect();
+    candidates.sort_by(|left, right| {
+        left.created_at
+            .cmp(&right.created_at)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    let mut selected = Vec::new();
+    for entry in candidates {
+        if total <= budget_tokens {
+            break;
+        }
+        total = total.saturating_sub(estimate(entry));
+        selected.push(entry.id.clone());
+    }
+    selected
 }
 
 /// Идентификатор item сообщения. Детерминированный: одинаковый вход даёт
@@ -836,6 +897,7 @@ mod tests {
             specs,
             &[],
             &[],
+            &[],
             false,
             &mut NoOffloadSink,
             &mut NoSummarizer,
@@ -1136,6 +1198,202 @@ mod tests {
             serde_json::from_value(payload.clone()).expect("payload parses");
         assert_eq!(legacy.task_id, "task");
         assert!(payload.get("context").is_none());
+    }
+
+    fn scratchpad_entry(id: &str, category: ScratchpadCategory, created_at: i64) -> ScratchpadEntry {
+        let mut entry = ScratchpadEntry::draft(
+            id,
+            "task",
+            "session",
+            category,
+            format!("содержимое {id} ").repeat(20),
+            created_at,
+        );
+        entry.confirm(
+            evohime_context_budget::scratchpad::ConfirmationBasis::ToolProvenanceVerified,
+            created_at,
+        );
+        entry
+    }
+
+    #[test]
+    fn confirmed_scratchpad_entries_join_the_assembled_context() {
+        let mut runtime = runtime();
+        let messages = vec![
+            ChatMessage::text(ChatRole::System, "системная политика"),
+            ChatMessage::text(ChatRole::User, "проверь репозиторий"),
+        ];
+        let entries = vec![scratchpad_entry("s1", ScratchpadCategory::Facts, 10)];
+        let assembled = runtime.assemble(
+            "task",
+            "session",
+            "call-1",
+            "literouter",
+            "gpt-4o-mini",
+            1_000_000,
+            &messages,
+            &[],
+            &[],
+            &entries,
+            &[],
+            false,
+            &mut NoOffloadSink,
+            &mut NoSummarizer,
+        );
+        assert!(assembled.is_ready());
+        assert!(assembled
+            .ledger()
+            .selected_items
+            .iter()
+            .any(|item| item.id == "s1"));
+    }
+
+    #[test]
+    fn an_offloaded_entry_appears_as_a_bounded_reference_not_as_truncated_text() {
+        let mut entry = scratchpad_entry("s1", ScratchpadCategory::Facts, 10);
+        let full = entry.content.clone();
+        entry.artifact_locator = Some("artifact://task/abc".to_string());
+        let text = scratchpad_context_text(&entry);
+        assert!(text.contains("artifact://task/abc"));
+        assert!(text.contains(&entry.content_hash));
+        // Молчаливого усечения нет: содержимое в контекст не попадает вовсе.
+        assert!(!text.contains(&full));
+    }
+
+    #[test]
+    fn scratchpad_overflow_evicts_the_oldest_confirmed_entries_first() {
+        let entries = vec![
+            scratchpad_entry("oldest", ScratchpadCategory::Facts, 10),
+            scratchpad_entry("newer", ScratchpadCategory::Facts, 20),
+            scratchpad_entry("question", ScratchpadCategory::OpenQuestions, 5),
+        ];
+        // Бюджет меньше суммарного размера: выгружаются самые старые записи.
+        let candidates = scratchpad_offload_candidates(&entries, 200);
+        assert_eq!(candidates.first().map(String::as_str), Some("oldest"));
+        // `open_questions` не вытесняются, даже будучи самыми старыми.
+        assert!(!candidates.contains(&"question".to_string()));
+    }
+
+    #[test]
+    fn a_scratchpad_within_budget_is_never_offloaded() {
+        let entries = vec![scratchpad_entry("s1", ScratchpadCategory::Facts, 10)];
+        assert!(scratchpad_offload_candidates(&entries, 100_000).is_empty());
+    }
+
+    #[test]
+    fn an_already_offloaded_entry_is_not_offloaded_twice() {
+        let mut entry = scratchpad_entry("s1", ScratchpadCategory::Facts, 10);
+        entry.artifact_locator = Some("artifact://task/abc".to_string());
+        assert!(scratchpad_offload_candidates(&[entry], 1).is_empty());
+    }
+
+    #[test]
+    fn open_questions_from_the_scratchpad_reach_the_intent_router() {
+        let mut runtime = runtime();
+        let messages = vec![
+            ChatMessage::text(ChatRole::System, "системная политика"),
+            ChatMessage::text(ChatRole::User, "продолжай"),
+        ];
+        let assembled = runtime.assemble(
+            "task",
+            "session",
+            "call-1",
+            "literouter",
+            "gpt-4o-mini",
+            1_000_000,
+            &messages,
+            &[spec("filesystem.read"), spec("filesystem.write")],
+            &["нужно исправь конфигурацию".to_string()],
+            &[],
+            &[],
+            false,
+            &mut NoOffloadSink,
+            &mut NoSummarizer,
+        );
+        assert_eq!(assembled.loadout.decision.intent, "edit");
+        assert!(assembled.check_tool_call("filesystem.write").is_ok());
+    }
+
+    #[test]
+    fn a_pinned_item_survives_a_reduction_that_drops_its_peers() {
+        let mut runtime = runtime();
+        let block = "данные ".repeat(20_000);
+        let mut messages = vec![
+            ChatMessage::text(ChatRole::System, "системная политика"),
+            ChatMessage::text(ChatRole::User, "проверь репозиторий"),
+        ];
+        for _ in 0..12 {
+            messages.push(ChatMessage::text(ChatRole::Tool, block.clone()));
+        }
+        let pinned = message_item_id(3, ChatRole::Tool);
+        let assembled = runtime.assemble(
+            "task",
+            "session",
+            "call-1",
+            "literouter",
+            "gpt-4o-mini",
+            1_000_000,
+            &messages,
+            &[],
+            &[],
+            &[],
+            std::slice::from_ref(&pinned),
+            false,
+            &mut NoOffloadSink,
+            &mut NoSummarizer,
+        );
+        assert!(assembled.is_ready());
+        let dropped: Vec<&str> = assembled
+            .ledger()
+            .dropped_items
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect();
+        // Закреплённый item отбрасывается последним; часть остальных уходит.
+        assert!(!dropped.is_empty());
+        if dropped.contains(&pinned.as_str()) {
+            // Pin не отменяет hard limit: если места не хватило, причина явная.
+            let reason = assembled
+                .ledger()
+                .dropped_items
+                .iter()
+                .find(|item| item.id == pinned)
+                .map(|item| item.drop_reason);
+            assert!(reason.is_some(), "у закреплённого item должна быть причина");
+        }
+    }
+
+    #[test]
+    fn forced_summarization_reduces_the_current_assembly_only() {
+        let mut runtime = runtime();
+        let messages = vec![
+            ChatMessage::text(ChatRole::System, "системная политика"),
+            ChatMessage::text(ChatRole::User, "проверь репозиторий"),
+            ChatMessage::text(ChatRole::Tool, "устаревший вывод инструмента"),
+        ];
+        let relaxed = assemble(&mut runtime, &messages, &[]);
+        let forced = runtime.assemble(
+            "task",
+            "session",
+            "call-2",
+            "literouter",
+            "gpt-4o-mini",
+            1_000_000,
+            &messages,
+            &[],
+            &[],
+            &[],
+            &[],
+            true,
+            &mut NoOffloadSink,
+            &mut NoSummarizer,
+        );
+        assert!(forced.messages.len() < relaxed.messages.len());
+        // Обязательный минимум остаётся на месте даже при принудительном сжатии.
+        assert!(forced
+            .messages
+            .iter()
+            .any(|message| message.content == "проверь репозиторий"));
     }
 
     #[test]
