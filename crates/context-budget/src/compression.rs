@@ -340,6 +340,10 @@ pub fn prune(items: &mut [ContextItem], now: i64) -> Vec<(String, DropReason)> {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SummarizerConfig {
     pub summary_budget_tokens: u32,
+    /// Верхняя граница текста, который Core отправляет модели-суммаризатору.
+    /// Лимит ограничивает prompt вызова, а не набор сжимаемых item: сжатие
+    /// покрывает весь набор целиком, иначе лестница не смогла бы вернуть
+    /// контекст в бюджет.
     pub input_limit_tokens: u32,
     pub version: String,
     /// Вызов summarizer не может вызывать инструменты и не повторяется.
@@ -487,13 +491,6 @@ impl<M: SummaryModel> Summarizer for BoundedSummarizer<M> {
     fn summarize(&mut self, items: &[ContextItem]) -> Result<SummaryOutcome, String> {
         if items.len() < 2 {
             return Err("summarizer needs at least two items".to_string());
-        }
-        let input_tokens: u32 = items
-            .iter()
-            .map(|item| item.estimated_tokens)
-            .fold(0, u32::saturating_add);
-        if input_tokens > self.config.input_limit_tokens {
-            return Ok(self.fallback_summary(items, "input exceeds summarizer input limit"));
         }
         if self.model_attempted {
             return Ok(self.fallback_summary(items, "summarizer already attempted for this call"));

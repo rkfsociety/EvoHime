@@ -848,6 +848,56 @@ pub fn deterministic_summarizer(config: SummarizerConfig) -> impl Summarizer {
     )
 }
 
+/// Summarizer поверх уже полученного ответа модели. Вызов gateway выполняется
+/// вызывающей стороной один раз до сборки, поэтому внутри лестницы не остаётся
+/// ни асинхронности, ни повторов; отсутствующий ответ означает deterministic
+/// fallback.
+pub fn model_summarizer(
+    config: SummarizerConfig,
+    summary: Option<String>,
+) -> BoundedSummarizer<PrecomputedSummaryModel> {
+    let model = summary.map(|text| PrecomputedSummaryModel { text });
+    BoundedSummarizer::new(model, config)
+}
+
+/// Модель-суммаризатор с заранее полученным ответом.
+pub struct PrecomputedSummaryModel {
+    text: String,
+}
+
+impl SummaryModel for PrecomputedSummaryModel {
+    fn available(&self) -> bool {
+        !self.text.trim().is_empty()
+    }
+
+    fn summarize(
+        &mut self,
+        items: &[ContextItem],
+        _config: &SummarizerConfig,
+    ) -> Result<RawSummary, String> {
+        let source_ids: Vec<String> = items
+            .iter()
+            .filter(|item| !item.is_mandatory_kind() && item.tool_pair_complete)
+            .map(|item| item.id.clone())
+            .collect();
+        if source_ids.is_empty() {
+            return Err("no compressible items".to_string());
+        }
+        Ok(RawSummary {
+            summary_id: format!(
+                "summary-{}",
+                evohime_context_budget::hash::sha256_hex(&source_ids.join(","))
+                    .chars()
+                    .take(16)
+                    .collect::<String>()
+            ),
+            source_ids,
+            estimated_tokens: (self.text.len() as u32).div_ceil(3) + 8,
+            text: self.text.clone(),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1394,6 +1444,109 @@ mod tests {
             .messages
             .iter()
             .any(|message| message.content == "проверь репозиторий"));
+    }
+
+    #[test]
+    fn a_model_summary_replaces_the_compressed_history() {
+        let mut runtime = runtime();
+        let block = "данные ".repeat(20_000);
+        let mut messages = vec![
+            ChatMessage::text(ChatRole::System, "системная политика"),
+            ChatMessage::text(ChatRole::User, "проверь репозиторий"),
+        ];
+        for index in 0..12 {
+            // Содержимое различается: иначе уровень L1 отбросил бы реплики как
+            // дубликаты и до сжатия дело бы не дошло.
+            messages.push(ChatMessage::text(
+                ChatRole::Assistant,
+                format!("шаг {index}: {block}"),
+            ));
+        }
+        let mut summarizer = model_summarizer(
+            SummarizerConfig::default(),
+            Some("краткое изложение истории".to_string()),
+        );
+        let assembled = runtime.assemble(
+            "task",
+            "session",
+            "call-1",
+            "literouter",
+            "gpt-4o-mini",
+            1_000_000,
+            &messages,
+            &[],
+            &[],
+            &[],
+            &[],
+            false,
+            &mut NoOffloadSink,
+            &mut summarizer,
+        );
+        assert!(assembled.is_ready());
+        let compression = &assembled.ledger().compression;
+        assert_eq!(compression.len(), 1, "ровно одно compression-решение");
+        assert!(!compression[0].fallback, "использован ответ модели");
+        assert!(!compression[0].source_ids.is_empty());
+        // Связь summary_id -> source_ids сохранена для повторной сборки.
+        assert!(compression[0].compression_ratio < 1.0);
+    }
+
+    #[test]
+    fn a_missing_model_answer_falls_back_deterministically() {
+        let mut runtime = runtime();
+        let block = "данные ".repeat(20_000);
+        let mut messages = vec![
+            ChatMessage::text(ChatRole::System, "системная политика"),
+            ChatMessage::text(ChatRole::User, "проверь репозиторий"),
+        ];
+        for index in 0..12 {
+            // Содержимое различается: иначе уровень L1 отбросил бы реплики как
+            // дубликаты и до сжатия дело бы не дошло.
+            messages.push(ChatMessage::text(
+                ChatRole::Assistant,
+                format!("шаг {index}: {block}"),
+            ));
+        }
+        let mut summarizer = model_summarizer(SummarizerConfig::default(), None);
+        let assembled = runtime.assemble(
+            "task",
+            "session",
+            "call-1",
+            "literouter",
+            "gpt-4o-mini",
+            1_000_000,
+            &messages,
+            &[],
+            &[],
+            &[],
+            &[],
+            false,
+            &mut NoOffloadSink,
+            &mut summarizer,
+        );
+        assert!(assembled.is_ready());
+        let compression = &assembled.ledger().compression;
+        assert_eq!(compression.len(), 1);
+        assert!(compression[0].fallback, "без ответа модели работает fallback");
+        assert!(compression[0].fallback_reason.is_some());
+    }
+
+    #[test]
+    fn an_empty_model_answer_is_treated_as_unavailable() {
+        let mut summarizer = model_summarizer(
+            SummarizerConfig::default(),
+            Some("   ".to_string()),
+        );
+        let items = vec![
+            ContextItemBuilder::new("h1", ItemKind::History, "hash-1")
+                .sizes(300, 100)
+                .build(),
+            ContextItemBuilder::new("h2", ItemKind::History, "hash-2")
+                .sizes(300, 100)
+                .build(),
+        ];
+        let outcome = summarizer.summarize(&items).expect("summary");
+        assert!(outcome.fallback);
     }
 
     #[test]
