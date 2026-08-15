@@ -2619,6 +2619,7 @@ impl IpcBridge {
         let tasks = Arc::clone(&self.review_tasks);
         let results = Arc::clone(&self.review_results);
         let journal = self.journal.clone();
+        let coordinator = self.coordinator.clone();
         let task_review_id = review_id.clone();
         let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
         let progress = Arc::new(move |progress: crate::plan_review::ReviewProgress| {
@@ -2626,18 +2627,22 @@ impl IpcBridge {
         });
         tokio::spawn(async move {
             let progress_journal = journal.clone();
+            let progress_coordinator = coordinator.clone();
             let progress_writer = tokio::spawn(async move {
                 while let Some(progress) = progress_rx.recv().await {
-                    let _ = progress_journal
-                        .record(&CoreEvent::ReviewProgress {
+                    publish_review_event(
+                        &progress_coordinator,
+                        &progress_journal,
+                        CoreEvent::ReviewProgress {
                             review_id: progress.review_id,
                             stage: progress.stage,
                             status: progress.status,
                             model: progress.model,
                             completed: progress.completed,
                             total: progress.total,
-                        })
-                        .await;
+                        },
+                    )
+                    .await;
                 }
             });
             let event = match crate::plan_review::run_review_with_progress(
@@ -2688,9 +2693,9 @@ impl IpcBridge {
                 _ => None,
             };
             if let Some(progress) = terminal_progress {
-                let _ = journal.record(&progress).await;
+                publish_review_event(&coordinator, &journal, progress).await;
             }
-            let _ = journal.record(&event).await;
+            publish_review_event(&coordinator, &journal, event).await;
             tasks.lock().await.remove(&task_review_id);
         });
         self.write_response(
@@ -2737,6 +2742,27 @@ fn hex_encode(bytes: &[u8]) -> String {
         let _ = write!(output, "{byte:02x}");
     }
     output
+}
+
+/// Publishes a review event on the path a connected shell actually reads.
+///
+/// The pipe server flushes its journal tail only on the coordinator's
+/// `journalled` signal, and that signal is raised by the coordinator's own
+/// journal writer. An event recorded straight into the journal is durable but
+/// stays invisible until some later event wakes the pump, which left a running
+/// review looking frozen in the UI. Recording directly is the fallback for a
+/// bridge built without a coordinator.
+async fn publish_review_event(
+    coordinator: &Option<TaskCoordinator>,
+    journal: &EventJournal,
+    event: CoreEvent,
+) {
+    match coordinator {
+        Some(coordinator) => coordinator.emit(event).await,
+        None => {
+            let _ = journal.record(&event).await;
+        }
+    }
 }
 
 fn review_result_from_event(payload: &[u8]) -> Option<crate::plan_review::ReviewResult> {

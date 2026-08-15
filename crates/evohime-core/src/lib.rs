@@ -4253,6 +4253,17 @@ impl TaskCoordinator {
         self.journalled.clone()
     }
 
+    /// Publishes an event produced outside the task executor.
+    ///
+    /// Recording straight into the journal is not enough: the pipe server
+    /// flushes its tail only on the `journalled` signal, which the coordinator
+    /// raises after it records an event taken from this broadcast. A producer
+    /// that bypasses the broadcast lands in the database but never reaches a
+    /// connected shell.
+    pub async fn emit(&self, event: CoreEvent) {
+        let _ = self.state.lock().await.events.send(event);
+    }
+
     pub fn new_with_executor(
         buffer: usize,
         executor: Option<Arc<dyn TaskExecutor>>,
@@ -8282,6 +8293,47 @@ mod tests {
                 .iter()
                 .any(|record| record.task_id == "task-signal"),
             "event must be readable when its sequence is announced"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Regression: plan review recorded its progress straight into the journal.
+    /// The events were durable, but the pipe server flushes its tail only on the
+    /// `journalled` signal, so the shell saw nothing and a running review looked
+    /// frozen. Emitted events must both persist and raise the signal.
+    #[tokio::test]
+    async fn emitted_events_reach_the_journal_signal() {
+        let path =
+            std::env::temp_dir().join(format!("evohime-core-emit-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(64, None, journal.clone());
+        let mut journalled = coordinator.journalled();
+
+        coordinator
+            .emit(CoreEvent::ReviewProgress {
+                review_id: "review-emit".into(),
+                stage: "reviewers".into(),
+                status: "working".into(),
+                model: Some("model-a".into()),
+                completed: 0,
+                total: 2,
+            })
+            .await;
+
+        journalled.changed().await.expect("journal signals");
+        let sequence = *journalled.borrow_and_update();
+        let batch = journal
+            .replay_bounded(sequence as i64 - 1, 16)
+            .await
+            .expect("tail reads");
+        assert!(
+            batch
+                .events
+                .iter()
+                .any(|record| record.task_id == "review-emit"
+                    && record.event_type == "review.progress"),
+            "an emitted review event must be readable when its sequence is announced"
         );
         let _ = std::fs::remove_file(&path);
     }
