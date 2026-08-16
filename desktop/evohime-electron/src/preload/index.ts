@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 import {
   API_NAMESPACE,
@@ -50,6 +50,17 @@ const api: EvoHimeApiV1 = {
 
   openExternal(url: string): Promise<boolean> {
     return ipcRenderer.invoke(OPEN_EXTERNAL_CHANNEL, url) as Promise<boolean>
+  },
+
+  // Единственное место, где renderer вообще узнаёт путь: имя папки нужно, чтобы
+  // диалог выбора открывался там же, куда пользователь уже ходил. Ничего
+  // Electron-образного при этом не пересекает мост — наружу уходит строка.
+  pathForFile(file: File): string {
+    try {
+      return webUtils.getPathForFile(file)
+    } catch {
+      return ''
+    }
   }
 }
 

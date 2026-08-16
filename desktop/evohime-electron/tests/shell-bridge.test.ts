@@ -40,7 +40,26 @@ vi.mock('electron', () => ({
     }
   },
   BrowserWindow: {
-    getAllWindows: () => []
+    getAllWindows: () => [],
+    getFocusedWindow: () => null
+  },
+  dialog: {
+    showOpenDialog: async (options: { defaultPath?: string }) => {
+      dialogOptions.push(options)
+      return { canceled: true, filePaths: [] }
+    }
+  }
+}))
+
+/** Папки, существующие в тесте: остальные `stat` считает отсутствующими. */
+const existingDirectories = new Set<string>()
+const dialogOptions: { defaultPath?: string }[] = []
+
+vi.mock('node:fs/promises', () => ({
+  readFile: async () => '',
+  stat: async (path: string) => {
+    if (!existingDirectories.has(path)) throw new Error('ENOENT')
+    return { isDirectory: () => true }
   }
 }))
 
@@ -124,9 +143,11 @@ const chats = {
   remove: () => {}
 }
 
+let selectedWorkspace: string | null = null
+
 /** Stands in for the workspace service; its own behaviour is tested separately. */
 const workspaces = {
-  list: () => ({ selected: null, options: [] }),
+  list: () => ({ selected: selectedWorkspace, options: [] }),
   pick: async () => ({ cancelled: true, selection: { selected: null, options: [] } }),
   select: () => 'unknown-workspace' as const,
   forget: () => ({ selected: null, options: [] })
@@ -518,6 +539,42 @@ describe('workspace knowledge commands', () => {
         }
       }
     ])
+  })
+
+  /**
+   * Без подсказки Electron открывает диалог в папке загрузок — планов там не
+   * бывает. Порядок предпочтений: прошлый выбор, затем `docs/plans` рабочей
+   * папки, затем сама рабочая папка.
+   */
+  it('opens the plan dialog where plans actually live', async () => {
+    dialogOptions.length = 0
+    existingDirectories.clear()
+    selectedWorkspace = null
+
+    // Ничего не известно — подсказывать нечем.
+    await invoke('review.pickPlan', { directory: '' })
+    expect(dialogOptions.at(-1)?.defaultPath).toBeUndefined()
+
+    // Рабочая папка есть, отдельной папки планов в ней нет.
+    selectedWorkspace = 'C:\\work'
+    existingDirectories.add('C:\\work')
+    await invoke('review.pickPlan', { directory: '' })
+    expect(dialogOptions.at(-1)?.defaultPath).toBe('C:\\work')
+
+    // Появилась docs/plans — она точнее рабочей папки.
+    existingDirectories.add('C:\\work\\docs\\plans')
+    await invoke('review.pickPlan', { directory: '' })
+    expect(dialogOptions.at(-1)?.defaultPath).toBe('C:\\work\\docs\\plans')
+
+    // Прошлый выбор пользователя важнее любых догадок.
+    existingDirectories.add('D:\\другие-планы')
+    await invoke('review.pickPlan', { directory: 'D:\\другие-планы' })
+    expect(dialogOptions.at(-1)?.defaultPath).toBe('D:\\другие-планы')
+
+    // Папку могли удалить или переименовать — тогда работает запасной путь.
+    await invoke('review.pickPlan', { directory: 'D:\\удалённая' })
+    expect(dialogOptions.at(-1)?.defaultPath).toBe('C:\\work\\docs\\plans')
+    selectedWorkspace = null
   })
 
   it('rejects malformed workspace knowledge payloads', () => {

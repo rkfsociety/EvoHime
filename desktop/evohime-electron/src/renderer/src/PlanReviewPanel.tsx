@@ -97,6 +97,15 @@ function loadPlanDirectory(): string {
   }
 }
 
+/**
+ * Папка файла по его пути. Renderer не знает про `node:path`, а разделитель
+ * зависит от системы, поэтому берётся последний из встреченных.
+ */
+function parentDirectory(path: string): string {
+  const cut = Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/'))
+  return cut > 0 ? path.slice(0, cut) : ''
+}
+
 function savePlanDirectory(directory: string): void {
   if (typeof directory !== 'string' || directory.length === 0) return
   try {
@@ -289,6 +298,17 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
     }
     const loaded: PlanFile[] = []
     for (const file of accepted) loaded.push({ fileName: file.name, sourceMarkdown: await file.text() })
+    // Папку запоминаем и по брошенным файлам: иначе тот, кто планы только
+    // перетаскивает, каждый раз получал бы диалог в папке загрузок. Путь —
+    // удобство, поэтому его отсутствие не мешает добавить сами файлы.
+    const [first] = accepted
+    if (first) {
+      try {
+        savePlanDirectory(parentDirectory(api?.pathForFile(first) ?? ''))
+      } catch {
+        // Файл мог прийти не из файловой системы — папки у него просто нет.
+      }
+    }
     addPlans(loaded, rejected)
   }
 

@@ -41,7 +41,8 @@ beforeEach(() => {
     }) as EvoHimeApiV1['invoke'],
     subscribe: () => () => {},
     writeClipboardText: async () => true,
-    openExternal: async () => true
+    openExternal: async () => true,
+    pathForFile: (file: File) => 'C:/plans/' + file.name
   }
   Object.defineProperty(window, 'evohime', { value: Object.freeze({ v1: api }), configurable: true })
 })
@@ -302,7 +303,8 @@ describe('plan review panel', () => {
         }) as EvoHimeApiV1['invoke'],
         subscribe: () => () => {},
         writeClipboardText: async () => true,
-        openExternal: async () => true
+        openExternal: async () => true,
+        pathForFile: (file: File) => 'C:/plans/' + file.name
       } satisfies EvoHimeApiV1 }),
       configurable: true
     })
@@ -356,7 +358,8 @@ describe('plan review panel', () => {
         }) as EvoHimeApiV1['invoke'],
         subscribe: () => () => {},
         writeClipboardText: async () => true,
-        openExternal: async () => true
+        openExternal: async () => true,
+        pathForFile: (file: File) => 'C:/plans/' + file.name
       } satisfies EvoHimeApiV1 }),
       configurable: true
     })
@@ -412,6 +415,22 @@ describe('plan review panel', () => {
     await waitFor(() => expect(calls.some((call) => call.command === 'review.start')).toBe(true))
   })
 
+  it('reopens the picker where the dropped plan came from', async () => {
+    const first = render(<PlanReviewPanel connection="connected" events={[event('model.catalog', { mode: 'free', models: ['a', 'b'] })]} />)
+
+    // Перетаскивание — единственный путь, где renderer сам не знает папку:
+    // у объекта File её нет, путь приходит из preload.
+    fireEvent.drop(screen.getByRole('group', { name: 'Планы на ревью' }), {
+      dataTransfer: { files: [new File(['# A'], 'dropped.md')] }
+    })
+    await waitFor(() => expect(screen.getByText('dropped.md')).toBeTruthy())
+    first.unmount()
+
+    render(<PlanReviewPanel connection="connected" events={[event('model.catalog', { mode: 'free', models: ['a', 'b'] })]} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Выбрать Markdown-планы' }))
+    expect(calls).toContainEqual({ command: 'review.pickPlan', payload: { directory: 'C:/plans' } })
+  })
+
   it('reports a rejected start request', async () => {
     Object.defineProperty(window, 'evohime', {
       value: Object.freeze({ v1: {
@@ -423,7 +442,8 @@ describe('plan review panel', () => {
         }) as EvoHimeApiV1['invoke'],
         subscribe: () => () => {},
         writeClipboardText: async () => true,
-        openExternal: async () => true
+        openExternal: async () => true,
+        pathForFile: (file: File) => 'C:/plans/' + file.name
       } satisfies EvoHimeApiV1 }),
       configurable: true
     })

@@ -58,6 +58,7 @@ describe('preload bridge', () => {
       'apiVersion',
       'invoke',
       'openExternal',
+      'pathForFile',
       'subscribe',
       'writeClipboardText'
     ])

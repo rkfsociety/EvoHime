@@ -1,6 +1,6 @@
 import { BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { readFile, stat } from 'node:fs/promises'
-import { basename, dirname, extname, isAbsolute } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join } from 'node:path'
 
 import {
   PROVIDER_KINDS,
@@ -543,7 +543,7 @@ function dispatch(
     }
 
     case 'review.pickPlan':
-      return pickReviewPlan(asRecord(payload)['directory'])
+      return pickReviewPlan(asRecord(payload)['directory'], workspaces.list().selected)
 
     case 'review.start': {
       const value = asRecord(payload)
@@ -814,19 +814,27 @@ function asReviewModels(value: unknown): readonly string[] | null {
 /**
  * `directory` — папка прошлого выбора: планы почти всегда лежат рядом, поэтому
  * диалог открывается там же. Каталог мог быть удалён или переименован, так что
- * недоступный путь просто игнорируется и диалог открывается по умолчанию.
+ * недоступный путь просто игнорируется.
+ *
+ * Пока прошлого выбора нет, Electron открыл бы папку загрузок — планов там не
+ * бывает. Поэтому первым делом предлагается рабочая папка, а если в ней есть
+ * `docs/plans`, то сразу она.
  *
  * Файлов можно выбрать несколько: ядро принимает один документ, поэтому склейку
  * делает панель — здесь важно лишь, чтобы суммарный размер уже прошёл проверку
  * и пользователь узнал о превышении до запуска ревью.
  */
-async function pickReviewPlan(directory: unknown): Promise<unknown> {
+async function pickReviewPlan(directory: unknown, workspace: string | null): Promise<unknown> {
   const window = BrowserWindow.getFocusedWindow()
   const options: Electron.OpenDialogOptions = {
     properties: ['openFile', 'multiSelections'],
     filters: [{ name: 'Markdown', extensions: ['md'] }]
   }
-  const startIn = await usableDirectory(directory)
+  const startIn = await firstUsableDirectory([
+    directory,
+    workspace === null ? null : join(workspace, 'docs', 'plans'),
+    workspace
+  ])
   if (startIn !== null) options.defaultPath = startIn
   const selected = window
     ? await dialog.showOpenDialog(window, options)
@@ -847,6 +855,14 @@ async function pickReviewPlan(directory: unknown): Promise<unknown> {
   }
   const last = selected.filePaths[selected.filePaths.length - 1] as string
   return { ok: true, value: { cancelled: false, files, directory: dirname(last) } }
+}
+
+async function firstUsableDirectory(candidates: readonly unknown[]): Promise<string | null> {
+  for (const candidate of candidates) {
+    const directory = await usableDirectory(candidate)
+    if (directory !== null) return directory
+  }
+  return null
 }
 
 async function usableDirectory(value: unknown): Promise<string | null> {

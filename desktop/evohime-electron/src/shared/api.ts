@@ -455,6 +455,12 @@ export interface EvoHimeApiV1 {
   writeClipboardText(text: string): Promise<boolean>
   /** Opens an https URL that passed the main-process allow-list. */
   openExternal(url: string): Promise<boolean>
+  /**
+   * Путь файла, брошенного в окно. Нужен ровно затем, чтобы следующий диалог
+   * открылся в той же папке: у объекта `File` в renderer пути нет. Возвращает
+   * пустую строку, если файл пришёл не из файловой системы.
+   */
+  pathForFile(file: File): string
 }
 
 declare global {
