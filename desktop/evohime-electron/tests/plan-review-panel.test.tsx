@@ -37,7 +37,7 @@ beforeEach(() => {
     apiVersion: 1,
     invoke: (async (command: RendererCommand, payload: unknown) => {
       calls.push({ command, payload })
-      return ok(command === 'review.list' ? { reviews: [] } : command === 'review.get' ? { review: null } : command === 'review.pickPlan' ? { cancelled: false, fileName: 'plan.md', sourceMarkdown: '# Plan' } : { accepted: true })
+      return ok(command === 'review.list' ? { reviews: [] } : command === 'review.get' ? { review: null } : command === 'review.pickPlan' ? { cancelled: false, fileName: 'plan.md', sourceMarkdown: '# Plan', directory: '/plans' } : { accepted: true })
     }) as EvoHimeApiV1['invoke'],
     subscribe: () => () => {},
     writeClipboardText: async () => true,
@@ -277,6 +277,21 @@ describe('plan review panel', () => {
     expect(screen.getByRole('button', { name: 'Повторить ревью' }).hasAttribute('disabled')).toBe(false)
   })
 
+  it('reopens the picker in the directory of the previous plan', async () => {
+    const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
+    const first = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Выбрать Markdown-план' }))
+    expect(calls).toContainEqual({ command: 'review.pickPlan', payload: { directory: '' } })
+    first.unmount()
+
+    // A fresh mount stands for the next launch of the shell: the folder must
+    // survive it, otherwise the user navigates to their plans every time.
+    render(<PlanReviewPanel connection="connected" events={[catalog]} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Выбрать Markdown-план' }))
+    expect(calls).toContainEqual({ command: 'review.pickPlan', payload: { directory: '/plans' } })
+  })
+
   it('reports a rejected start request', async () => {
     Object.defineProperty(window, 'evohime', {
       value: Object.freeze({ v1: {
@@ -284,7 +299,7 @@ describe('plan review panel', () => {
         invoke: (async (command: RendererCommand, payload: unknown) => {
           calls.push({ command, payload })
           if (command === 'review.start') return { ok: false, message: 'provider is not configured' } as CommandOutcome<RendererCommand>
-          return ok(command === 'review.list' ? { reviews: [] } : command === 'review.pickPlan' ? { cancelled: false, fileName: 'plan.md', sourceMarkdown: '# Plan' } : { accepted: true })
+          return ok(command === 'review.list' ? { reviews: [] } : command === 'review.pickPlan' ? { cancelled: false, fileName: 'plan.md', sourceMarkdown: '# Plan', directory: '/plans' } : { accepted: true })
         }) as EvoHimeApiV1['invoke'],
         subscribe: () => () => {},
         writeClipboardText: async () => true,

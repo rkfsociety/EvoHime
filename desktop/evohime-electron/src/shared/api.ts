@@ -301,7 +301,8 @@ export interface CommandPayloads {
   'chat.open': { chatId: string }
   'chat.appendPrompt': { chatId: string; taskId: string; prompt: string }
   'chat.remove': { chatId: string }
-  'review.pickPlan': Record<string, never>
+  /** `directory` — папка, открытая в диалоге; пустая строка = выбор системы. */
+  'review.pickPlan': { directory?: string }
   'review.start': { reviewId: string; fileName: string; sourceMarkdown: string; reviewerModels: readonly string[]; synthesisModel: string }
   'review.stop': { reviewId: string }
   'review.list': { limit?: number }
@@ -376,7 +377,8 @@ export interface CommandResults {
   'chat.open': ChatRecord | null
   'chat.appendPrompt': ChatRecord | null
   'chat.remove': readonly ChatSummary[]
-  'review.pickPlan': { cancelled: boolean; fileName: string; sourceMarkdown: string }
+  /** `directory` — папка выбранного файла, чтобы следующий диалог открылся в ней. */
+  'review.pickPlan': { cancelled: boolean; fileName: string; sourceMarkdown: string; directory: string }
   'review.start': { accepted: boolean; reviewId: string }
   'review.stop': { accepted: boolean }
   'review.list': { reviews: readonly PlanReviewResult[] }

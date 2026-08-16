@@ -9,6 +9,9 @@ const CONNECTED: readonly ConnectionState[] = ['connected', 'replaying', 'resync
 const MIN_REVIEWERS = 2
 const MAX_REVIEWERS = 8
 const REVIEW_PREFERENCES_KEY = 'evohime.review-preferences.v2'
+// Папка планов хранится отдельно от выбора моделей: она переживает смену
+// каталога моделей и не должна теряться при сбросе настроек ревью.
+const PLAN_DIRECTORY_KEY = 'evohime.review-plan-directory.v1'
 // A review that never reaches the core says so within a second, so a short
 // wait is enough to call the launch itself broken. A review that is running,
 // though, is at the mercy of the slowest free model, and warning on total time
@@ -68,6 +71,23 @@ function loadReviewPreferences(): ReviewPreferences {
     }
   } catch {
     return { tier: 'free', reviewerModels: [], synthesisModel: '' }
+  }
+}
+
+function loadPlanDirectory(): string {
+  try {
+    return window.localStorage.getItem(PLAN_DIRECTORY_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function savePlanDirectory(directory: string): void {
+  if (typeof directory !== 'string' || directory.length === 0) return
+  try {
+    window.localStorage.setItem(PLAN_DIRECTORY_KEY, directory)
+  } catch {
+    // Запоминание папки — удобство, а не условие запуска ревью.
   }
 }
 
@@ -184,8 +204,9 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
 
   const pick = async (): Promise<void> => {
     if (!api) return
-    const outcome = await api.invoke('review.pickPlan', {})
+    const outcome = await api.invoke('review.pickPlan', { directory: loadPlanDirectory() })
     if (!outcome.ok || outcome.value.cancelled) return
+    savePlanDirectory(outcome.value.directory)
     setFileName(outcome.value.fileName)
     setSourceMarkdown(outcome.value.sourceMarkdown)
     setSelectedResult(null)

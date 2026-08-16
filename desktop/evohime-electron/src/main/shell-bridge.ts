@@ -1,6 +1,6 @@
 import { BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
-import { readFile } from 'node:fs/promises'
-import { basename, extname } from 'node:path'
+import { readFile, stat } from 'node:fs/promises'
+import { basename, dirname, extname, isAbsolute } from 'node:path'
 
 import {
   PROVIDER_KINDS,
@@ -543,7 +543,7 @@ function dispatch(
     }
 
     case 'review.pickPlan':
-      return pickReviewPlan()
+      return pickReviewPlan(asRecord(payload)['directory'])
 
     case 'review.start': {
       const value = asRecord(payload)
@@ -811,17 +811,24 @@ function asReviewModels(value: unknown): readonly string[] | null {
   return new Set(models).size === models.length ? models : null
 }
 
-async function pickReviewPlan(): Promise<unknown> {
+/**
+ * `directory` — папка прошлого выбора: планы почти всегда лежат рядом, поэтому
+ * диалог открывается там же. Каталог мог быть удалён или переименован, так что
+ * недоступный путь просто игнорируется и диалог открывается по умолчанию.
+ */
+async function pickReviewPlan(directory: unknown): Promise<unknown> {
   const window = BrowserWindow.getFocusedWindow()
   const options: Electron.OpenDialogOptions = {
     properties: ['openFile'],
     filters: [{ name: 'Markdown', extensions: ['md'] }]
   }
+  const startIn = await usableDirectory(directory)
+  if (startIn !== null) options.defaultPath = startIn
   const selected = window
     ? await dialog.showOpenDialog(window, options)
     : await dialog.showOpenDialog(options)
   if (selected.canceled || selected.filePaths.length === 0) {
-    return { ok: true, value: { cancelled: true, fileName: '', sourceMarkdown: '' } }
+    return { ok: true, value: { cancelled: true, fileName: '', sourceMarkdown: '', directory: '' } }
   }
   const path = selected.filePaths[0]
   if (!path) return failure('invalid-payload', 'Файл плана не выбран.')
@@ -830,5 +837,15 @@ async function pickReviewPlan(): Promise<unknown> {
   if (Buffer.byteLength(content, 'utf8') > MAX_REVIEW_PLAN_BYTES) {
     return failure('invalid-payload', 'Файл плана превышает 512 КБ.')
   }
-  return { ok: true, value: { cancelled: false, fileName: basename(path), sourceMarkdown: content } }
+  return { ok: true, value: { cancelled: false, fileName: basename(path), sourceMarkdown: content, directory: dirname(path) } }
+}
+
+async function usableDirectory(value: unknown): Promise<string | null> {
+  const path = asBoundedString(value)
+  if (path === null || path.length === 0 || !isAbsolute(path)) return null
+  try {
+    return (await stat(path)).isDirectory() ? path : null
+  } catch {
+    return null
+  }
 }
