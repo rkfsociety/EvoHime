@@ -65,6 +65,38 @@ fn runtime_identity() -> (String, u64) {
 }
 
 impl IpcBridge {
+    /// Записывает лимиты каталога в локальную базу. Это подсказка для
+    /// планировщика контекста, а не условие работы: провайдер может не сообщить
+    /// окно, а база — быть занята другим писателем, и ни то, ни другое не повод
+    /// проваливать запрос каталога.
+    async fn remember_model_limits(
+        &self,
+        provider: &str,
+        entries: &[evohime_model_gateway::ModelCatalogEntry],
+    ) {
+        if entries.is_empty() {
+            return;
+        }
+        let records = entries
+            .iter()
+            .map(
+                |entry| evohime_local_storage::model_limit_store::ModelLimitRecord {
+                    model: entry.id.clone(),
+                    provider: provider.to_string(),
+                    context_tokens: entry.context_tokens,
+                    max_output_tokens: entry.max_output_tokens,
+                },
+            )
+            .collect::<Vec<_>>();
+        let database = self.journal.database().lock().await;
+        if let Err(error) = evohime_local_storage::model_limit_store::ModelLimitStoreSql::upsert_all(
+            database.connection(),
+            &records,
+        ) {
+            tracing::warn!(target: "model.catalog", %error, "model context limits were not stored");
+        }
+    }
+
     pub fn new(journal: EventJournal) -> Self {
         let (core_instance_id, session_epoch) = runtime_identity();
         Self {
@@ -371,27 +403,33 @@ impl IpcBridge {
                 } else {
                     "free"
                 };
+                let provider = self
+                    .gateway_config
+                    .as_ref()
+                    .and_then(|config| config.routes.get(&config.default_route))
+                    .map(|route| route.provider.as_str().to_string())
+                    .unwrap_or_else(|| "unknown".into());
                 let result = self
                     .gateway_config
                     .as_ref()
                     .and_then(|config| config.routes.get(&config.default_route))
                     .map(|route| async move {
-                        evohime_model_gateway::fetch_available_models(route)
+                        evohime_model_gateway::fetch_model_catalog(route)
                             .await
-                            .map(|models| {
-                                models
+                            .map(|entries| {
+                                entries
                                     .into_iter()
-                                    .filter(|model| {
+                                    .filter(|entry| {
                                         if mode == "free" {
-                                            model.ends_with(":free")
+                                            entry.id.ends_with(":free")
                                         } else {
-                                            !model.ends_with(":free")
+                                            !entry.id.ends_with(":free")
                                         }
                                     })
                                     .collect::<Vec<_>>()
                             })
                     });
-                let (models, error) = match result {
+                let (entries, error) = match result {
                     Some(request) => request.await,
                     None => Err(evohime_model_gateway::providers::ProviderError::Config(
                         "provider is not configured".into(),
@@ -399,11 +437,32 @@ impl IpcBridge {
                 }
                 .map_or_else(
                     |error| (Vec::new(), Some(error.to_string())),
-                    |models| (models, None),
+                    |entries| (entries, None),
                 );
+                // Лимиты переживают сессию: планировщик контекста и ревью
+                // должны знать окно модели ещё до первого обновления каталога,
+                // а неудачный запрос не должен стирать то, что уже известно.
+                self.remember_model_limits(&provider, &entries).await;
+                let models = entries
+                    .iter()
+                    .map(|entry| entry.id.clone())
+                    .collect::<Vec<_>>();
+                let limits = entries
+                    .iter()
+                    .map(|entry| {
+                        (
+                            entry.id.clone(),
+                            serde_json::json!({
+                                "context": entry.context_tokens,
+                                "maxOutput": entry.max_output_tokens,
+                            }),
+                        )
+                    })
+                    .collect::<serde_json::Map<_, _>>();
                 let payload = serde_json::json!({
                     "mode": mode,
                     "models": models,
+                    "limits": limits,
                     "error": error,
                 });
                 let event = generated::EventEnvelope {

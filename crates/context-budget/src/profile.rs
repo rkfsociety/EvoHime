@@ -300,12 +300,19 @@ impl ProfileCatalog {
             })
             .max_by_key(|entry| entry.model_prefix.len());
         match matched {
-            Some(entry) => {
+            // Встроенный профиль — предположение, а окно из каталога провайдера
+            // — факт. Пока факта нет, побеждает профиль; как только провайдер
+            // назвал окно и оно расходится с профилем, бюджет пересчитывается
+            // под реальное окно по тем же пропорциям.
+            Some(entry)
+                if provider_window
+                    .is_none_or(|window| window == entry.profile.max_context_tokens) =>
+            {
                 let mut profile = entry.profile.clone();
                 profile.model = model.to_string();
                 profile
             }
-            None => ModelContextProfile::fallback(
+            Some(_) | None => ModelContextProfile::fallback(
                 provider,
                 model,
                 provider_window.unwrap_or(DEFAULT_UNKNOWN_WINDOW),
@@ -409,6 +416,40 @@ mod tests {
         let catalog = ProfileCatalog::from_json(json).expect("json parses");
         assert_eq!(catalog.resolve("p", "small-1", None).profile_version, "p-any");
         assert_eq!(catalog.resolve("p", "big-1", None).profile_version, "p-big");
+    }
+
+    /// Каталог провайдера — источник правды об окне, встроенный профиль —
+    /// предположение. Расхождение решается в пользу провайдера, иначе
+    /// планировщик уверенно считает бюджет по устаревшей цифре.
+    #[test]
+    fn a_provider_window_overrides_the_builtin_profile() {
+        let json = r#"{"entries":[
+          {"provider":"p","model_prefix":"",
+           "schema_version":1,"profile_version":"p-any","model":"",
+           "max_context_tokens":128000,"target_tokens":70000,
+           "soft_limit_tokens":96000,"hard_limit_tokens":108800,
+           "absolute_mvc_max_limit":50000,"tool_schema_reserve":4096,
+           "tool_call_reserve":1024,"final_answer_reserve":2048,
+           "streaming_reserve":512,"retry_reserve":1024,
+           "low_priority_cutoff":30,"offload_threshold_bytes":32768}]}"#;
+        let catalog = ProfileCatalog::from_json(json).expect("json parses");
+
+        // Провайдер молчит — остаётся встроенный профиль.
+        assert_eq!(catalog.resolve("p", "m", None).max_context_tokens, 128_000);
+        // Совпало — тоже: пересчитывать нечего.
+        assert_eq!(
+            catalog.resolve("p", "m", Some(128_000)).profile_version,
+            "p-any"
+        );
+
+        let narrow = catalog.resolve("p", "m", Some(32_000));
+        assert_eq!(narrow.max_context_tokens, 32_000);
+        assert!(narrow.hard_limit_tokens <= 32_000);
+        narrow.validate().expect("narrowed profile is valid");
+
+        let wide = catalog.resolve("p", "m", Some(1_000_000));
+        assert_eq!(wide.max_context_tokens, 1_000_000);
+        wide.validate().expect("widened profile is valid");
     }
 
     #[test]

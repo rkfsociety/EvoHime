@@ -16,6 +16,7 @@ pub mod context_command_store;
 pub mod context_ledger_store;
 pub mod feedback_store;
 pub mod memory_store;
+pub mod model_limit_store;
 pub mod reconciliation_verifier;
 pub mod research_store;
 pub mod scratchpad_store;
@@ -25,7 +26,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 19;
+pub const SCHEMA_VERSION: u32 = 20;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -2836,6 +2837,21 @@ impl LocalDatabase {
                  PRAGMA user_version = 19;",
             )?;
         }
+        if current < 20 {
+            // Лимиты приходят от провайдера и живут дольше одного запуска: без
+            // них планировщик контекста и ревью считают окно вслепую, а каталог
+            // перечитывается не при каждом действии.
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS model_context_limits (
+                    model TEXT PRIMARY KEY,
+                    provider TEXT NOT NULL,
+                    context_tokens INTEGER,
+                    max_output_tokens INTEGER,
+                    fetched_at TEXT NOT NULL
+                 );
+                 PRAGMA user_version = 20;",
+            )?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -2938,7 +2954,9 @@ mod tests {
                 .expect("legacy schema seeds");
         }
         let database = LocalDatabase::open(&path).expect("migration succeeds");
-        assert_eq!(database.schema_version().unwrap(), 19);
+        // Открытие всегда доводит базу до текущей версии, поэтому проверяется
+        // не «19», а наличие таблиц, которые добавила именно эта миграция.
+        assert_eq!(database.schema_version().unwrap(), SCHEMA_VERSION);
         for table in [
             "workspace_index_runs",
             "workspace_documents",
@@ -2957,6 +2975,32 @@ mod tests {
                 .unwrap();
             assert_eq!(exists, 1, "{table} must exist after migration");
         }
+        let _ = std::fs::remove_file(path);
+    }
+
+    /// Лимиты моделей должны появиться на уже работающей базе: пользователь
+    /// обновляет сборку, а не заводит хранилище заново.
+    #[test]
+    fn migrates_schema_19_to_model_context_limits_schema_20() {
+        let path = temp_database_path("migration-19-to-20-limits");
+        let _ = std::fs::remove_file(&path);
+        {
+            let connection = rusqlite::Connection::open(&path).expect("legacy database opens");
+            connection
+                .execute_batch("CREATE TABLE legacy_marker(id INTEGER); PRAGMA user_version = 19;")
+                .expect("legacy schema seeds");
+        }
+        let database = LocalDatabase::open(&path).expect("migration succeeds");
+        assert_eq!(database.schema_version().unwrap(), SCHEMA_VERSION);
+        let exists: i64 = database
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'model_context_limits'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(exists, 1, "model_context_limits must exist after migration");
         let _ = std::fs::remove_file(path);
     }
 

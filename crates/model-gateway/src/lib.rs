@@ -68,21 +68,46 @@ struct ProviderModelsResponse {
 #[derive(Debug, Deserialize)]
 struct ProviderModelEntry {
     id: String,
+    /// OpenAI-compatible aggregators report the context window here. Plain
+    /// OpenAI does not, so the field stays optional and callers treat a missing
+    /// window as "unknown", never as "unlimited".
+    #[serde(default)]
+    context_length: Option<u64>,
+    #[serde(default)]
+    top_provider: Option<ProviderModelTop>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProviderModelTop {
+    #[serde(default)]
+    max_completion_tokens: Option<u64>,
+}
+
+/// A model as the provider describes it: identifier plus the limits that decide
+/// whether a request can fit at all.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ModelCatalogEntry {
+    pub id: String,
+    pub context_tokens: Option<u32>,
+    pub max_output_tokens: Option<u32>,
 }
 
 /// Fetches the provider's current model catalog without exposing the API key
 /// to the desktop UI. The provider API is OpenAI-compatible and returns
-/// `{ "data": [{ "id": "..." }] }`.
-pub async fn fetch_available_models(
+/// `{ "data": [{ "id": "...", "context_length": 128000 }] }`.
+pub async fn fetch_model_catalog(
     route: &ModelRouteConfig,
-) -> Result<Vec<String>, ProviderError> {
+) -> Result<Vec<ModelCatalogEntry>, ProviderError> {
     if route.provider == ProviderKind::Mock {
-        return Ok(route
-            .literouter
-            .model
-            .is_empty()
-            .then(Vec::new)
-            .unwrap_or_else(|| vec![route.literouter.model.clone()]));
+        return Ok(if route.literouter.model.is_empty() {
+            Vec::new()
+        } else {
+            vec![ModelCatalogEntry {
+                id: route.literouter.model.clone(),
+                context_tokens: None,
+                max_output_tokens: None,
+            }]
+        });
     }
     if route.literouter.api_key.is_empty() {
         return Err(ProviderError::Config(
@@ -110,12 +135,35 @@ pub async fn fetch_available_models(
     let mut models: Vec<_> = payload
         .data
         .into_iter()
-        .map(|model| model.id)
-        .filter(|model| !model.trim().is_empty())
+        .filter(|entry| !entry.id.trim().is_empty())
+        .map(|entry| ModelCatalogEntry {
+            id: entry.id,
+            context_tokens: entry.context_length.and_then(clamp_tokens),
+            max_output_tokens: entry
+                .top_provider
+                .and_then(|top| top.max_completion_tokens)
+                .and_then(clamp_tokens),
+        })
         .collect();
-    models.sort_unstable();
-    models.dedup();
+    models.sort_unstable_by(|left, right| left.id.cmp(&right.id));
+    models.dedup_by(|left, right| left.id == right.id);
     Ok(models)
+}
+
+/// A window that does not fit `u32` is a provider bug, and a zero window would
+/// make every request look impossible; both are reported as "unknown".
+fn clamp_tokens(value: u64) -> Option<u32> {
+    (value > 0).then(|| u32::try_from(value).unwrap_or(u32::MAX))
+}
+
+pub async fn fetch_available_models(
+    route: &ModelRouteConfig,
+) -> Result<Vec<String>, ProviderError> {
+    Ok(fetch_model_catalog(route)
+        .await?
+        .into_iter()
+        .map(|entry| entry.id)
+        .collect())
 }
 
 impl ModelGateway {

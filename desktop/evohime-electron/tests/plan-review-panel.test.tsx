@@ -345,6 +345,73 @@ describe('plan review panel', () => {
     expect(screen.getByText('Файлы не выбраны.')).toBeTruthy()
   })
 
+  it('blocks the launch when the plan does not fit the reviewer window', async () => {
+    const bigPlan = '# Plan\n' + 'я'.repeat(200_000)
+    Object.defineProperty(window, 'evohime', {
+      value: Object.freeze({ v1: {
+        apiVersion: 1,
+        invoke: (async (command: RendererCommand, payload: unknown) => {
+          calls.push({ command, payload })
+          return ok(command === 'review.list' ? { reviews: [] } : command === 'review.pickPlan' ? { cancelled: false, files: [{ fileName: 'big.md', sourceMarkdown: bigPlan }], directory: '/plans' } : { accepted: true })
+        }) as EvoHimeApiV1['invoke'],
+        subscribe: () => () => {},
+        writeClipboardText: async () => true,
+        openExternal: async () => true
+      } satisfies EvoHimeApiV1 }),
+      configurable: true
+    })
+    // 400 КБ кириллицы ≈ 133k токенов по оценке 3 байта на токен: в окно 128k
+    // это не влезает, в 262k — влезает.
+    render(<PlanReviewPanel connection="connected" events={[event('model.catalog', {
+      mode: 'free',
+      models: ['small', 'big', 'main'],
+      limits: { small: { context: 128000, maxOutput: 8192 }, big: { context: 262144, maxOutput: 32768 }, main: { context: 262144, maxOutput: 32768 } }
+    })]} />)
+
+    await startReview(['small', 'big', 'main'])
+
+    expect(screen.getByRole('alert').textContent).toContain('small')
+    expect(screen.getByRole('button', { name: 'Запустить ревью' }).hasAttribute('disabled')).toBe(true)
+    expect(calls.some((call) => call.command === 'review.start')).toBe(false)
+  })
+
+  it('allows the launch and names the request size when every window fits', async () => {
+    render(<PlanReviewPanel connection="connected" events={[event('model.catalog', {
+      mode: 'free',
+      models: ['a', 'b', 'main'],
+      limits: { a: { context: 262144, maxOutput: 32768 }, b: { context: 262144, maxOutput: 32768 }, main: { context: 1000000, maxOutput: 65536 } }
+    })]} />)
+
+    await startReview(['a', 'b', 'main'])
+
+    expect(screen.getByText(/Объём запроса/)).toBeTruthy()
+    await waitFor(() => expect(calls.some((call) => call.command === 'review.start')).toBe(true))
+  })
+
+  it('warns about the synthesis worst case without blocking the launch', async () => {
+    render(<PlanReviewPanel connection="connected" events={[event('model.catalog', {
+      mode: 'free',
+      models: ['a', 'b', 'main'],
+      limits: { a: { context: 262144, maxOutput: 32768 }, b: { context: 262144, maxOutput: 32768 }, main: { context: 131072, maxOutput: 32768 } }
+    })]} />)
+
+    await startReview(['a', 'b', 'main'])
+
+    // Два рецензента по 256 КБ ответа — это уже за окном синтезатора, но
+    // реальные ответы почти всегда короче, поэтому запуск остаётся разрешённым.
+    expect(screen.getByText(/В худшем случае синтезатор/)).toBeTruthy()
+    await waitFor(() => expect(calls.some((call) => call.command === 'review.start')).toBe(true))
+  })
+
+  it('says so when the provider reported no window at all', async () => {
+    render(<PlanReviewPanel connection="connected" events={[event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })]} />)
+
+    await startReview(['a', 'b', 'main'])
+
+    expect(screen.getByText(/не сообщил окно/).textContent).toContain('a, b, main')
+    await waitFor(() => expect(calls.some((call) => call.command === 'review.start')).toBe(true))
+  })
+
   it('reports a rejected start request', async () => {
     Object.defineProperty(window, 'evohime', {
       value: Object.freeze({ v1: {

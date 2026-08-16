@@ -127,6 +127,16 @@ export interface PlanFile {
   readonly sourceMarkdown: string
 }
 
+/**
+ * Лимиты модели, как их сообщил провайдер. `null` означает «провайдер не
+ * сказал» — это не «без ограничений», поэтому проверки при неизвестном окне
+ * молчат, а не разрешают запуск как заведомо безопасный.
+ */
+export interface ModelLimits {
+  readonly context: number | null
+  readonly maxOutput: number | null
+}
+
 export interface PlanReviewReviewer {
   readonly model: string
   readonly status: string

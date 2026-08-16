@@ -1854,6 +1854,10 @@ select:focus {
 .review-panel__files li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; }
 .review-panel__files small { color: var(--muted, #94a3b8); }
 .review-panel__files button { line-height: 1; padding: 2px 8px; }
+.review-panel__limits { display: grid; gap: 6px; border: 1px solid var(--border, #334155); border-radius: 10px; padding: 12px 14px; font-size: 13px; }
+.review-panel__limits p { margin: 0; }
+.review-panel__limit-error { color: #fca5a5; }
+.review-panel__limit-warning { color: #fcd34d; }
 .review-panel__controls { display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 12px; }
 .review-panel__controls label,
 .review-panel__model-row,

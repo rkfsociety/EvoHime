@@ -4536,6 +4536,29 @@ impl ToolAgent {
         // budget. Владелец состояния и политики — Core; наружу уходит только
         // bounded projection состава и причин сокращения.
         let mut context_runtime = context_budget::ContextRuntime::new(self.gateway.model_name());
+        // Окна моделей приходят из каталога провайдера и переживают сессию.
+        // Пока их нет, планировщик считает по встроенному профилю — это
+        // консервативная оценка, а не ошибка, поэтому пустая таблица молчит.
+        if let Some(journal) = &self.journal {
+            let windows = {
+                let database = journal.database().lock().await;
+                evohime_local_storage::model_limit_store::ModelLimitStoreSql::list(
+                    database.connection(),
+                )
+                .map(|records| {
+                    records
+                        .into_iter()
+                        .filter_map(|record| {
+                            record.context_tokens.map(|window| (record.model, window))
+                        })
+                        .collect::<std::collections::HashMap<_, _>>()
+                })
+                .unwrap_or_default()
+            };
+            if !windows.is_empty() {
+                context_runtime.set_model_windows(windows);
+            }
+        }
         let context_session_id = task_id.clone();
         // План 01.2: после restart в рабочий контекст возвращаются только
         // `confirmed` записи; остальные изолируются в recovery view с

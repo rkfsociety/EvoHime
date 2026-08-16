@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import type { ConnectionState, CoreEvent, ModelTier, PlanFile, PlanReviewResult } from '@shared/api'
+import type { ConnectionState, CoreEvent, ModelLimits, ModelTier, PlanFile, PlanReviewResult } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { MarkdownMessage } from './MarkdownMessage'
@@ -22,6 +22,18 @@ const SILENT_PROGRESS_SECONDS = 180
 // Тот же потолок, что и в мосте оболочки и в ядре: считаем по склеенному
 // документу, потому что именно он уходит в ревью.
 const MAX_PLAN_BYTES = 512 * 1024
+// Ядро обрезает ответ рецензента на этой границе, и синтезатор получает все
+// ответы разом — это и есть худший случай, который надо уметь назвать.
+const MAX_REVIEW_OUTPUT_BYTES = 256 * 1024
+// Та же грубая оценка, что и у HeuristicEstimator ядра: 3 байта на токен.
+// Точный токенизатор здесь недоступен, а расхождение играет в запас — реальные
+// тексты дают меньше токенов, чем эта формула.
+const BYTES_PER_TOKEN = 3
+// Системное сообщение и инструкция рецензента, которые ядро добавляет к плану.
+const PROMPT_OVERHEAD_TOKENS = 300
+// Ответу нужно место в том же окне. Больше 8k рецензент всё равно не напишет —
+// ядро обрежет его раньше по MAX_REVIEW_OUTPUT_BYTES.
+const OUTPUT_RESERVE_TOKENS = 8_192
 
 interface Props {
   readonly connection: ConnectionState
@@ -101,6 +113,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   const [dragging, setDragging] = useState(false)
   const [tier, setTier] = useState<ModelTier>(preferences.tier)
   const [models, setModels] = useState<readonly string[]>([])
+  const [limits, setLimits] = useState<Readonly<Record<string, ModelLimits>>>({})
   const [reviewerCount, setReviewerCount] = useState(Math.max(MIN_REVIEWERS, Math.min(MAX_REVIEWERS, preferences.reviewerModels.length || MIN_REVIEWERS)))
   const [reviewers, setReviewers] = useState<readonly string[]>(normalizeSlots(preferences.reviewerModels, reviewerCount))
   const [synthesisModel, setSynthesisModel] = useState(preferences.synthesisModel)
@@ -121,6 +134,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   const sourceMarkdown = useMemo(() => mergePlans(plans), [plans])
   const fileName = useMemo(() => describePlans(plans), [plans])
   const catalog = useMemo(() => latestCatalog(events, tier), [events, tier])
+  const checks = useMemo(() => preflight(sourceMarkdown, reviewers, synthesisModel, limits), [limits, reviewers, sourceMarkdown, synthesisModel])
   const reviewResult = useMemo(() => latestReviewResult(events), [events])
   const progress = useMemo(() => reviewId ? latestReviewProgress(events, reviewId) : null, [events, reviewId])
   const failure = useMemo(() => reviewId ? latestReviewFailure(events, reviewId) : null, [events, reviewId])
@@ -147,6 +161,9 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
     if (catalog.models.length === 0) return
     const available = catalog.models
     setModels(available)
+    // Лимиты обновляются только вместе с непустым каталогом — по той же
+    // причине, по которой не затирается список моделей.
+    setLimits(catalog.limits)
     setReviewers((current) => normalizeSlots(current.filter((model) => available.includes(model)), reviewerCount, available))
     setSynthesisModel((current) => available.includes(current) ? current : available[0] || '')
   }, [catalog, reviewerCount])
@@ -285,7 +302,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   }
 
   const start = async (): Promise<void> => {
-    if (!api || !fileName || !sourceMarkdown || reviewers.length < MIN_REVIEWERS || reviewers.some((model) => !model) || new Set(reviewers).size !== reviewers.length || !synthesisModel) return
+    if (!api || !fileName || !sourceMarkdown || reviewers.length < MIN_REVIEWERS || reviewers.some((model) => !model) || new Set(reviewers).size !== reviewers.length || !synthesisModel || checks.tooSmall.length > 0) return
     const id = makeReviewId()
     setReviewId(id)
     setSelectedResult(null)
@@ -339,7 +356,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
     if (!outcome.ok) setError(outcome.message)
   }
 
-  const canStart = CONNECTED.includes(connection) && fileName.length > 0 && reviewers.length >= MIN_REVIEWERS && reviewers.every(Boolean) && new Set(reviewers).size === reviewers.length && synthesisModel.length > 0 && !running
+  const canStart = CONNECTED.includes(connection) && fileName.length > 0 && reviewers.length >= MIN_REVIEWERS && reviewers.every(Boolean) && new Set(reviewers).size === reviewers.length && synthesisModel.length > 0 && !running && checks.tooSmall.length === 0
   const status = reviewStatus(progress, reviewFinished, selectedResult !== null, failure, accepted)
   // Without a stall hint a dead core is indistinguishable from a slow model.
   const launchStalled = running && progress === null && elapsed >= SILENT_LAUNCH_SECONDS
@@ -396,6 +413,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
 
       <label className="review-panel__synthesis">Главная модель-синтезатор<select value={synthesisModel} onChange={(event) => setSynthesisModel(event.target.value)} disabled={running}><option value="">Выбери модель</option>{models.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
 
+      {plans.length > 0 ? <LimitsCard checks={checks} /> : null}
       <div className="review-panel__actions"><button type="button" onClick={() => void start()} disabled={!canStart}>{failure !== null || progress?.stage === 'failed' ? 'Повторить ревью' : reviewId && reviewFinished ? 'Запустить снова' : 'Запустить ревью'}</button><button type="button" onClick={() => void stop()} disabled={!running}>Остановить</button></div>
       {reviewId ? <ProgressCard roster={roster} progress={progress} status={status} reviewers={reviewers} elapsed={startedAt === null ? null : elapsed} accepted={accepted} failed={failure !== null} /> : null}
       {launchStalled ? <p role="alert" className="shell__reason">Ядро не подтвердило запуск за {elapsed} с. Проверь, запущено ли ядро и настроен ли провайдер, либо останови ревью и запусти снова.</p> : null}
@@ -407,6 +425,37 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
       <History events={events} onOpen={(id) => void openHistory(id)} onClear={() => void clearHistory()} />
     </section>
   )
+}
+
+/**
+ * Что известно про запуск до его начала. Блокирующее сообщение отделено от
+ * предупреждения намеренно: первое — арифметика по окну модели, второе —
+ * догадка о том, насколько многословными окажутся рецензенты.
+ */
+function LimitsCard({ checks }: { readonly checks: Preflight }): React.JSX.Element {
+  const synthesisRisk = checks.synthesisContext !== null && checks.synthesisWorstTokens > checks.synthesisContext
+  return (
+    <div className="review-panel__limits">
+      <p>Объём запроса ≈ {formatTokens(checks.planTokens)} токенов на каждого рецензента.</p>
+      {checks.tooSmall.length > 0 ? (
+        <p role="alert" className="review-panel__limit-error">
+          Не влезает в окно: {checks.tooSmall.map((item) => `${item.model} (${formatTokens(item.context)}${item.role === 'synthesis' ? ', синтезатор' : ''})`).join(', ')}. Убери часть файлов или выбери модель с бо́льшим окном.
+        </p>
+      ) : null}
+      {checks.tooSmall.length === 0 && synthesisRisk ? (
+        <p className="review-panel__limit-warning">
+          В худшем случае синтезатор получит ≈ {formatTokens(checks.synthesisWorstTokens)} токенов при окне {formatTokens(checks.synthesisContext ?? 0)}: столько выйдет, только если каждый рецензент упрётся в свой потолок ответа. Обычно ответы короче, но при длинных ревью синтез может не собраться.
+        </p>
+      ) : null}
+      {checks.unknown.length > 0 ? (
+        <p className="review-panel__limit-warning">Провайдер не сообщил окно для {checks.unknown.join(', ')} — заранее проверить нельзя.</p>
+      ) : null}
+    </div>
+  )
+}
+
+function formatTokens(value: number): string {
+  return value.toLocaleString('ru-RU')
 }
 
 function ProgressCard({ roster, progress, status, reviewers, elapsed, accepted, failed }: { readonly roster: ReviewRoster; readonly progress: ReviewProgress | null; readonly status: string; readonly reviewers: readonly string[]; readonly elapsed: number | null; readonly accepted: boolean; readonly failed: boolean }): React.JSX.Element {
@@ -430,6 +479,7 @@ function History({ events, onOpen, onClear }: { readonly events: readonly CoreEv
 
 interface ModelCatalog {
   readonly models: readonly string[]
+  readonly limits: Readonly<Record<string, ModelLimits>>
   readonly error: string | null
 }
 
@@ -439,7 +489,80 @@ function latestCatalog(events: readonly CoreEvent[], tier: ModelTier): ModelCata
   const models = payload?.models
   return {
     models: Array.isArray(models) ? models.filter((model): model is string => typeof model === 'string').sort() : [],
+    limits: readLimits(payload?.limits),
     error: typeof payload?.error === 'string' && payload.error.length > 0 ? payload.error : null
+  }
+}
+
+/**
+ * Ядро отдаёт лимиты картой `модель → { context, maxOutput }`. Поле может
+ * отсутствовать целиком (старое ядро) или содержать `null` там, где провайдер
+ * промолчал; и то, и другое читается как «окно неизвестно».
+ */
+function readLimits(value: unknown): Record<string, ModelLimits> {
+  if (typeof value !== 'object' || value === null) return {}
+  const limits: Record<string, ModelLimits> = {}
+  for (const [model, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof raw !== 'object' || raw === null) continue
+    const entry = raw as Record<string, unknown>
+    limits[model] = {
+      context: typeof entry['context'] === 'number' && entry['context'] > 0 ? entry['context'] : null,
+      maxOutput: typeof entry['maxOutput'] === 'number' && entry['maxOutput'] > 0 ? entry['maxOutput'] : null
+    }
+  }
+  return limits
+}
+
+interface Preflight {
+  readonly planTokens: number
+  /** Модели, которым план заведомо не влезет: запуск блокируется. */
+  readonly tooSmall: readonly { model: string; context: number; role: 'reviewer' | 'synthesis' }[]
+  /** Худший случай синтеза и окно синтезатора, если оно известно. */
+  readonly synthesisWorstTokens: number
+  readonly synthesisContext: number | null
+  /** Выбранные модели, про окно которых провайдер ничего не сказал. */
+  readonly unknown: readonly string[]
+}
+
+/**
+ * Считает, влезает ли запуск в окна выбранных моделей.
+ *
+ * Рецензент получает план целиком, синтезатор — план плюс все ответы
+ * рецензентов, каждый до `MAX_REVIEW_OUTPUT_BYTES`. Первое можно проверить
+ * точно и потому блокируется; второе зависит от того, насколько многословными
+ * окажутся рецензенты, поэтому остаётся предупреждением.
+ */
+function preflight(
+  sourceMarkdown: string,
+  reviewers: readonly string[],
+  synthesisModel: string,
+  limits: Readonly<Record<string, ModelLimits>>
+): Preflight {
+  const planTokens = Math.ceil(byteLength(sourceMarkdown) / BYTES_PER_TOKEN) + PROMPT_OVERHEAD_TOKENS
+  const tooSmall: { model: string; context: number; role: 'reviewer' | 'synthesis' }[] = []
+  const unknown: string[] = []
+  const selected: { model: string; role: 'reviewer' | 'synthesis' }[] = [
+    ...reviewers.filter(Boolean).map((model) => ({ model, role: 'reviewer' as const })),
+    ...(synthesisModel ? [{ model: synthesisModel, role: 'synthesis' as const }] : [])
+  ]
+  for (const { model, role } of selected) {
+    const limit = limits[model]
+    if (!limit || limit.context === null) {
+      if (!unknown.includes(model)) unknown.push(model)
+      continue
+    }
+    const reserve = Math.min(limit.maxOutput ?? OUTPUT_RESERVE_TOKENS, OUTPUT_RESERVE_TOKENS)
+    if (planTokens + reserve > limit.context && !tooSmall.some((item) => item.model === model)) {
+      tooSmall.push({ model, context: limit.context, role })
+    }
+  }
+  const reviewerCount = reviewers.filter(Boolean).length
+  return {
+    planTokens,
+    tooSmall,
+    synthesisWorstTokens: planTokens + reviewerCount * Math.ceil(MAX_REVIEW_OUTPUT_BYTES / BYTES_PER_TOKEN),
+    synthesisContext: synthesisModel ? (limits[synthesisModel]?.context ?? null) : null,
+    unknown
   }
 }
 

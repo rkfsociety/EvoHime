@@ -7,6 +7,7 @@
 //! Наружу (в `ModelContext` и UI) уходит только bounded projection: ids, счётчики,
 //! причины и hash. Сырой prompt, тело памяти и raw tool output Core не покидают.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use evohime_context_budget::{
@@ -249,6 +250,10 @@ pub struct ContextRuntime {
     rules: IntentRules,
     summarizer_config: SummarizerConfig,
     artifact_quota: ArtifactQuota,
+    /// Реальные окна моделей, как их сообщил провайдер. Пустая карта означает
+    /// «провайдер ещё не спрошен», и профиль берётся из встроенного каталога —
+    /// это осознанно консервативная оценка, а не признак ошибки.
+    model_windows: HashMap<String, u32>,
 }
 
 impl ContextRuntime {
@@ -261,7 +266,18 @@ impl ContextRuntime {
             rules: default_intent_rules(),
             summarizer_config: SummarizerConfig::default(),
             artifact_quota: ArtifactQuota::default(),
+            model_windows: HashMap::new(),
         }
+    }
+
+    /// Подставляет окна, вычитанные из каталога провайдера. Вызывается при
+    /// старте (из локальной базы) и после каждого обновления каталога.
+    pub fn set_model_windows(&mut self, windows: HashMap<String, u32>) {
+        self.model_windows = windows;
+    }
+
+    pub fn model_window(&self, model: &str) -> Option<u32> {
+        self.model_windows.get(model).copied()
     }
 
     pub fn rules(&self) -> &IntentRules {
@@ -319,10 +335,11 @@ impl ContextRuntime {
         let registry = registry_from_specs(specs);
         let decision = route_intent(&self.rules, &user_prompt, open_questions);
         let schema_estimator = |schema: &str| (schema.len() as u32).div_ceil(3) + 16;
+        let provider_window = self.model_window(model);
         let profile = self
             .planner
             .catalog()
-            .resolve(provider, model, None);
+            .resolve(provider, model, provider_window);
         let loadout = build_loadout(
             &registry,
             &self.rules,
@@ -360,7 +377,7 @@ impl ContextRuntime {
             model_call_id: model_call_id.to_string(),
             provider: provider.to_string(),
             model: model.to_string(),
-            provider_window: None,
+            provider_window,
             now,
             inputs,
             loadout: Some(loadout_record),
@@ -967,6 +984,37 @@ mod tests {
         assert_eq!(assembled.messages[0].role, ChatRole::System);
         assert_eq!(assembled.messages[1].content, "проверь репозиторий");
         assert_eq!(assembled.ledger().context_ledger_hash.len(), 64);
+    }
+
+    /// Окно, названное провайдером, должно доходить до планировщика: без этого
+    /// Ева считает бюджет по встроенному профилю и не знает, что у модели
+    /// контекст на порядок больше или меньше.
+    #[test]
+    fn a_provider_window_reaches_the_planned_budget() {
+        let messages = vec![
+            ChatMessage::text(ChatRole::System, "системная политика"),
+            ChatMessage::text(ChatRole::User, "проверь репозиторий"),
+        ];
+
+        let mut default_runtime = runtime();
+        let default_limit = assemble(&mut default_runtime, &messages, &[])
+            .plan
+            .profile
+            .hard_limit_tokens;
+
+        let mut narrow = runtime();
+        narrow.set_model_windows(HashMap::from([("gpt-4o-mini".to_string(), 8_192)]));
+        let narrow_limit = assemble(&mut narrow, &messages, &[])
+            .plan
+            .profile
+            .hard_limit_tokens;
+
+        assert_eq!(narrow.model_window("gpt-4o-mini"), Some(8_192));
+        assert!(narrow_limit <= 8_192, "окно провайдера ограничивает бюджет");
+        assert!(
+            narrow_limit < default_limit,
+            "узкое окно должно давать меньший бюджет, чем встроенный профиль"
+        );
     }
 
     #[test]
