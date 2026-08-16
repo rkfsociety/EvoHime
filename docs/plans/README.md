@@ -40,12 +40,21 @@
 | 01 Signed hash-chain receipts | [обзор](01-0-signed-hash-chain-receipts.md) | — |
 | 02 Локальный SLM fallback и routing | [обзор](02-0-local-slm-fallback-routing.md) | — |
 | 03 Специализированные child workflows | [обзор](03-0-specialized-child-workflows.md) | 01.3 |
+| 04 Постоянное слушание и ambient-память | [обзор](04-0-ambient-listening.md) | — |
 
 ```text
 01.1 Canonical contract ── 01.3 Runtime ── 03 Child workflows
 
 02.1-02.2 provider, 02.3 routing  (независимый путь)
+
+04.1 контракт ── 04.2 хранение ── 04.3 листенер ── 04.4 движок ──
+     04.5 UI ── 04.6 память ── 04.7 проактивность  (независимый путь)
 ```
+
+План 04 опирается только на уже реализованные Memory Extraction, permissions,
+desktop IPC, local storage и supervisor, поэтому блокирующих зависимостей от
+01–03 у него нет. Единственная связь с планом 01 — receipts на проактивные
+эффекты — объявлена опциональной с описанной деградацией в этапе 04.7.
 
 ## Что уже реализовано
 
