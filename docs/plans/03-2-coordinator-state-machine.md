@@ -1,13 +1,13 @@
-# Этап 04.2: Coordinator state machine
+# Этап 03.2: Coordinator state machine
 
-Этап плана [04 Специализированные child workflows](04-0-specialized-child-workflows.md).
+Этап плана [03 Специализированные child workflows](03-0-specialized-child-workflows.md).
 
 ## Зависимости
 
-Блокирующие: этап 04.1 (typed report, который валидируется при переходах) и
+Блокирующие: этап 03.1 (typed report, который валидируется при переходах) и
 существующие leases и task graph.
 
-Разблокирует: 04.3 и 04.4.
+Разблокирует: 03.3 и 03.4.
 
 ## Что этап отдаёт наружу
 

@@ -1,4 +1,4 @@
-# План 02: Подписанные hash-chain receipts
+# План 01: Подписанные hash-chain receipts
 
 Обзор плана. Этапы вынесены в отдельные файлы и ревьюятся по одному.
 
@@ -31,10 +31,10 @@ receipt. Receipt доказывает авторство ключа, целос�
 
 | Этап | Файл | Что отдаёт наружу | Кто потребляет |
 | --- | --- | --- | --- |
-| 02.1 | [Canonical contract](02-1-canonical-contract.md) | canonical encoding payload и known-answer vectors | 02.2–02.4 |
-| 02.2 | [Key lifecycle](02-2-key-lifecycle.md) | key pair, rotation и offline verification | 02.3, 02.4 |
-| 02.3 | [Runtime integration](02-3-runtime-integration.md) | pre/post-action receipts и approval binding | 04.1 |
-| 02.4 | [Chain storage и export](02-4-chain-storage-and-export.md) | verify-chain, IPC и UI | UI |
+| 01.1 | [Canonical contract](01-1-canonical-contract.md) | canonical encoding payload и known-answer vectors | 01.2–01.4 |
+| 01.2 | [Key lifecycle](01-2-key-lifecycle.md) | key pair, rotation и offline verification | 01.3, 01.4 |
+| 01.3 | [Runtime integration](01-3-runtime-integration.md) | pre/post-action receipts и approval binding | 03.1 |
+| 01.4 | [Chain storage и export](01-4-chain-storage-and-export.md) | verify-chain, IPC и UI | UI |
 
 ## IPC и UI
 
@@ -49,11 +49,11 @@ receipt. Receipt доказывает авторство ключа, целос�
 
 Блокирующие: нет. Context Budget Manager реализован: payload содержит `context_ledger_hash`, а ledger
 определён именно там; существующие approval, exact-call hash, diagnostics и
-Core-owned storage. Остальные этапы плана 01 этому плану не нужны.
+Core-owned storage.
 
-Опциональных интеграций нет. Что этот план обязан предоставить: этап 02.3
-даёт child workflows (этап 04.1) связь действий ребёнка с approval родителя,
-а 02.4 — verify-chain для их аудита.
+Опциональных интеграций нет. Что этот план обязан предоставить: этап 01.3
+даёт child workflows (этап 03.1) связь действий ребёнка с approval родителя,
+а 01.4 — verify-chain для их аудита.
 
 ## Критерии готовности плана
 

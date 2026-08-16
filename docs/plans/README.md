@@ -6,12 +6,12 @@
 
 ## С чего начинать
 
-Следующий шаг — **[02.1 Canonical receipt contract](02-1-canonical-contract.md)**.
+Следующий шаг — **[01.1 Canonical receipt contract](01-1-canonical-contract.md)**.
 
-План 01 Context Budget Manager реализован целиком и удалён из каталога: его
-контракт живёт в [`../architecture.md`](../architecture.md), состояние — в
+План Local Agentic RAG реализован целиком и удалён из каталога: его контракт
+живёт в [`../architecture.md`](../architecture.md), состояние — в
 [`../current-state.md`](../current-state.md). Вместе с ним снялись блокирующие
-зависимости этапов 01.5, 02.1, 03.3 и всего плана 04, а оставшиеся планы
+зависимости этапов бывшего плана 04 (теперь 03), а оставшиеся планы
 перенумерованы подряд с 01, как того требует правило нумерации. Брать их можно
 в порядке номеров.
 
@@ -37,14 +37,14 @@
 
 | План | Обзор | Блокирующие зависимости |
 | --- | --- | --- |
-| 02 Signed hash-chain receipts | [обзор](02-0-signed-hash-chain-receipts.md) | — |
-| 03 Локальный SLM fallback и routing | [обзор](03-0-local-slm-fallback-routing.md) | — |
-| 04 Специализированные child workflows | [обзор](04-0-specialized-child-workflows.md) | 01.2, 01.3, 02.3 |
+| 01 Signed hash-chain receipts | [обзор](01-0-signed-hash-chain-receipts.md) | — |
+| 02 Локальный SLM fallback и routing | [обзор](02-0-local-slm-fallback-routing.md) | — |
+| 03 Специализированные child workflows | [обзор](03-0-specialized-child-workflows.md) | 01.3 |
 
 ```text
-02.1 Canonical contract ── 02.3 Runtime ── 04 Child workflows
+01.1 Canonical contract ── 01.3 Runtime ── 03 Child workflows
 
-03.1-03.2 provider, 03.3 routing  (независимый путь)
+02.1-02.2 provider, 02.3 routing  (независимый путь)
 ```
 
 ## Что уже реализовано
@@ -54,7 +54,7 @@
 а контракт — в [`../architecture.md`](../architecture.md).
 
 Так уже удалены планы Memory Extraction (коммиты `0d67554`, `4b376c6`), Context
-Budget Manager и Local Agentic RAG 01.1–01.5. Их контракты живут в
+Budget Manager и Local Agentic RAG. Их контракты живут в
 [`../architecture.md`](../architecture.md), подтверждённое состояние — в
 [`../current-state.md`](../current-state.md).
 
@@ -65,9 +65,9 @@ Budget Manager и Local Agentic RAG 01.1–01.5. Их контракты жив�
 поведением: библиотека без подключения не закрывает этап.
 
 Проверка на 2026-08-16: Local Agentic RAG реализован целиком и удалён из
-каталога. Следующий незавершённый план — 02 Signed hash-chain receipts.
-Частичный код есть в плане 03 (детерминированный выбор маршрута существует, но
-не подключён к агенту) и в плане 04 (роли и lifecycle есть, grants, budget и
+каталога. Следующий незавершённый план — 01 Signed hash-chain receipts.
+Частичный код есть в плане 02 (детерминированный выбор маршрута существует, но
+не подключён к агенту) и в плане 03 (роли и lifecycle есть, grants, budget и
 изоляции нет); оба случая отмечены внутри соответствующих этапов.
 
 ## Что здесь не хранится

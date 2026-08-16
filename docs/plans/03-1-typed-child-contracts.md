@@ -1,16 +1,16 @@
-# Этап 04.1: Typed contracts
+# Этап 03.1: Typed contracts
 
-Этап плана [04 Специализированные child workflows](04-0-specialized-child-workflows.md).
+Этап плана [03 Специализированные child workflows](03-0-specialized-child-workflows.md).
 
 ## Зависимости
 
-Блокирующие: этап 02.3 — correlation id связывает tool call ребёнка с receipt
+Блокирующие: этап 01.3 — correlation id связывает tool call ребёнка с receipt
 и approval родителя; существующие child runtime и IPC/storage.
 
-Из списка блокирующих зависимостей плана этому этапу нужен только 02.3,
+Из списка блокирующих зависимостей плана этому этапу нужен только 01.3,
 поэтому его можно начать раньше остальных этапов плана.
 
-Разблокирует: все остальные этапы плана 04.
+Разблокирует: все остальные этапы плана 03.
 
 ## Что этап отдаёт наружу
 
@@ -24,7 +24,7 @@ Typed input/output контракт child task и сквозные correlation i
 
 Нет: workspace/path grants, token/time/tool-call budget, явной input/output
 schema, parent sequence и correlation id на receipt (последний приходит из
-этапа 02.3).
+этапа 01.3).
 
 ## Содержание
 

@@ -1,4 +1,4 @@
-# План 03: Локальный SLM fallback и routing
+# План 02: Локальный SLM fallback и routing
 
 Обзор плана. Этапы вынесены в отдельные файлы и ревьюятся по одному.
 
@@ -50,19 +50,19 @@ capabilities, privacy class, cost и latency, `select_route` с fallback chain �
 
 | Этап | Файл | Что отдаёт наружу | Кто потребляет |
 | --- | --- | --- | --- |
-| 03.1 | [Provider contract](03-1-provider-contract.md) | capability metadata и health state | 03.2, 03.3 |
-| 03.2 | [Local provider](03-2-local-provider.md) | loopback-only local route | 03.3 |
-| 03.3 | [Routing и budget](03-3-routing-and-budget.md) | route decision с trace | 03.4 |
-| 03.4 | [UI](03-4-routing-ui.md) | фактический route в интерфейсе | UI |
+| 02.1 | [Provider contract](02-1-provider-contract.md) | capability metadata и health state | 02.2, 02.3 |
+| 02.2 | [Local provider](02-2-local-provider.md) | loopback-only local route | 02.3 |
+| 02.3 | [Routing и budget](02-3-routing-and-budget.md) | route decision с trace | 02.4 |
+| 02.4 | [UI](02-4-routing-ui.md) | фактический route в интерфейсе | UI |
 
-Этапы 03.1 и 03.2 можно вести параллельно с планом 01: provider contract и
-локальный адаптер не касаются бюджета.
+Этапы 02.1 и 02.2 не касаются бюджета и потому не зависят от Context Budget
+Manager.
 
 ## Зависимости плана
 
 Блокирующие: нет. Context Budget Manager реализован: route decision опирается на budget/profile snapshot,
 который определён именно там; существующие evaluation catalog (`tests/evals/`)
-и provider health model. Остальные этапы плана 01 этому плану не нужны.
+и provider health model.
 
 Опциональных интеграций нет. Поддержка конкретной SLM/launcher выбирается
 отдельным ADR после проверки Windows resource requirements; этот план не

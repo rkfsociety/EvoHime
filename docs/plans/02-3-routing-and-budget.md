@@ -1,14 +1,14 @@
-# Этап 03.3: Routing и budget
+# Этап 02.3: Routing и budget
 
-Этап плана [03 Локальный SLM fallback и routing](03-0-local-slm-fallback-routing.md).
+Этап плана [02 Локальный SLM fallback и routing](02-0-local-slm-fallback-routing.md).
 
 ## Зависимости
 
 Блокирующие: нет. Context Budget Manager реализован: route decision опирается на budget/profile snapshot;
-этапы 03.1 (capabilities и health) и 03.2 (куда падать). Это единственный этап
+этапы 02.1 (capabilities и health) и 02.2 (куда падать). Это единственный этап
 плана, опирающегося на контракт Context Budget Manager.
 
-Разблокирует: 03.4 — UI показывает именно этот trace.
+Разблокирует: 02.4 — UI показывает именно этот trace.
 
 ## Что этап отдаёт наружу
 

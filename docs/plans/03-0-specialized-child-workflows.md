@@ -1,4 +1,4 @@
-# План 04: Специализированные child workflows
+# План 03: Специализированные child workflows
 
 Обзор плана. Этапы вынесены в отдельные файлы и ревьюятся по одному.
 
@@ -67,16 +67,17 @@ read-only capabilities.
 
 Чего нет: workspace/path grants, token/time/tool-call budget, correlation id
 на receipt, offload в artifact store и изоляция контекста между детьми. Роль
-`researcher` существует как имя, но без RAG у неё нет своего инструмента.
+`researcher` существует как имя: workspace retrieval для неё уже есть, но
+grants и budget не заданы.
 
 ## Этапы
 
 | Этап | Файл | Что отдаёт наружу | Кто потребляет |
 | --- | --- | --- | --- |
-| 04.1 | [Typed contracts](04-1-typed-child-contracts.md) | typed input/output child task и correlation ids | 04.2–04.4 |
-| 04.2 | [Coordinator state machine](04-2-coordinator-state-machine.md) | состояния, leases и restart recovery | 04.3, 04.4 |
-| 04.3 | [Context isolation](04-3-child-context-isolation.md) | изоляция контекста и offload | 04.4 |
-| 04.4 | [UI и observability](04-4-child-ui-and-observability.md) | timeline, OperationsPanel и trace | UI |
+| 03.1 | [Typed contracts](03-1-typed-child-contracts.md) | typed input/output child task и correlation ids | 03.2–03.4 |
+| 03.2 | [Coordinator state machine](03-2-coordinator-state-machine.md) | состояния, leases и restart recovery | 03.3, 03.4 |
+| 03.3 | [Context isolation](03-3-child-context-isolation.md) | изоляция контекста и offload | 03.4 |
+| 03.4 | [UI и observability](03-4-child-ui-and-observability.md) | timeline, OperationsPanel и trace | UI |
 
 ## Зависимости плана
 
@@ -84,9 +85,9 @@ read-only capabilities.
 
 - Context Budget Manager (реализован, см. [`../architecture.md`](../architecture.md)) — budget ребёнка, context isolation и offload больших
   результатов в artifact store;
-- этапы 01.2 и 01.3 — роль `researcher` определена как read-only доступ к
-  workspace/RAG и без retrieval с planner не имеет своего инструмента;
-- этап 02.3 — связь действий ребёнка с approval родителя;
+- Local Agentic RAG (реализован, см. [`../architecture.md`](../architecture.md)) — workspace retrieval и query planner, на
+  которые опирается read-only роль `researcher`;
+- этап 01.3 — связь действий ребёнка с approval родителя;
 - существующие child runtime, permission policy, task graph, leases и
   evaluation catalog (`tests/evals/`).
 

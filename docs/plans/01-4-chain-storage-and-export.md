@@ -1,11 +1,11 @@
-# Этап 02.4: Chain storage и export
+# Этап 01.4: Chain storage и export
 
-Этап плана [02 Подписанные hash-chain receipts](02-0-signed-hash-chain-receipts.md).
+Этап плана [01 Подписанные hash-chain receipts](01-0-signed-hash-chain-receipts.md).
 
 ## Зависимости
 
-Блокирующие: этапы 02.1 (canonical bytes для проверки), 02.2 (public key) и
-02.3 (сами receipts).
+Блокирующие: этапы 01.1 (canonical bytes для проверки), 01.2 (public key) и
+01.3 (сами receipts).
 
 Это последний этап плана: он показывает и проверяет результат остальных.
 
