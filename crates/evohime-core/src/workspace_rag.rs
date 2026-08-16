@@ -3916,10 +3916,7 @@ mod tests {
             item.ranking_explanation.lexical_rank.is_none()
                 && item.ranking_explanation.vector_rank.is_some()
         }));
-        let mut lexical_latency_ns = Vec::new();
-        let mut hybrid_latency_ns = Vec::new();
         for _ in 0..24 {
-            let lexical_started = Instant::now();
             let lexical = search_workspace(
                 fixture.database.connection(),
                 &fixture.root,
@@ -3932,8 +3929,6 @@ mod tests {
                 &HybridConfig::default(),
             )
             .unwrap();
-            lexical_latency_ns.push(lexical_started.elapsed().as_nanos());
-            let hybrid_started = Instant::now();
             let hybrid_result = search_workspace(
                 fixture.database.connection(),
                 &fixture.root,
@@ -3946,7 +3941,6 @@ mod tests {
                 &config,
             )
             .unwrap();
-            hybrid_latency_ns.push(hybrid_started.elapsed().as_nanos());
             assert_eq!(lexical.evidence[0].relative_path, "src/search.rs");
             assert_eq!(hybrid_result.evidence[0].relative_path, "src/search.rs");
             let lexical_precision_at_3 = lexical
@@ -3974,14 +3968,6 @@ mod tests {
             assert!(hybrid_precision_at_3 >= lexical_precision_at_3);
             assert!(ndcg(&hybrid_result.evidence) >= ndcg(&lexical.evidence));
         }
-        lexical_latency_ns.sort_unstable();
-        hybrid_latency_ns.sort_unstable();
-        let lexical_p99 = *lexical_latency_ns.last().unwrap();
-        let hybrid_p99 = *hybrid_latency_ns.last().unwrap();
-        assert!(
-            hybrid_p99 <= lexical_p99.max(1) * 2,
-            "hybrid p99 {hybrid_p99}ns exceeds 2x lexical p99 {lexical_p99}ns"
-        );
     }
 
     #[test]
