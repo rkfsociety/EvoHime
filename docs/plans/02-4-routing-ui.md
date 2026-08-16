@@ -22,8 +22,11 @@
 UI получает decision/trace только через Core IPC и показывает фактически
 выбранный route, причину (`privacy`, `offline`, `health`, `budget`,
 `evaluation`, `preference`) и статус. `preferred route` хранится как
-непривилегированная настройка; при конфликте Core возвращает override reason,
-а не позволяет renderer подменить решение.
+непривилегированная настройка; при конфликте Core возвращает override reason
+(`policy_precedence`, `privacy_boundary`, `approval_required`,
+`route_unavailable`), а renderer не может подменить решение. При fallback на
+local для non-sensitive задачи UI явно показывает `degraded mode`, причину и
+факт переопределения preference policy.
 
 ## Проверки
 
@@ -36,3 +39,5 @@ UI получает decision/trace только через Core IPC и пока�
 - UI показывает фактический результат routing;
 - cloud outage оставляет usable local degraded mode, если он настроен;
 - UI показывает причину выбора route и не позволяет preferred route обойти policy.
+- override reason и degraded mode понятны без просмотра технического trace;
+- sensitive/offline refusal показывает безопасное следующее действие.

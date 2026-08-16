@@ -24,8 +24,13 @@ Loopback-only local route с честным статусом доступнос�
 ## Содержание
 
 - Добавить OpenAI-compatible local endpoint adapter с loopback-only policy.
+- Аутентифицировать каждый запрос короткоживущим provider session token,
+  выданным supervisor; одного loopback недостаточно. Токен не попадает в
+  renderer, prompt или логи.
 - Проверять model capabilities при startup; malformed tool calls не считать
-  успешным fallback.
+  успешным fallback. Malformed означает невалидный JSON, неизвестное имя,
+  отсутствие `id/name/arguments`, нарушение JSON Schema или mutation tool без
+  approval metadata.
 - Поддержать graceful absence: если local model не установлена, сообщать
   `unavailable`, не маскировать это как provider success.
 - Ограничить local process/resource lifetime supervisor policy.
@@ -36,6 +41,11 @@ loopback bind address, Job Object, timeout, memory/CPU limits и cancellation.
 Core не принимает произвольный порт или command line от renderer. Статусы
 `starting`, `ready`, `unavailable`, `degraded` и `stopped` публикуются через
 provider health contract.
+
+Каждый запрос имеет bounded connect/read/total timeout. При timeout или
+cancellation Core отправляет supervisor stop request; supervisor закрывает
+pipe и завершает process tree через Job Object, а после grace period применяет
+принудительное завершение. Отмена по authenticated Core IPC идемпотентна.
 
 Если local model отсутствует, повреждена, не прошла capability probe или
 запущена не на loopback, route получает `unavailable` с безопасной причиной.
@@ -48,10 +58,13 @@ provider health contract.
 - malformed tool-call tests: такой ответ не засчитывается как успешный fallback;
 - local unavailable → bounded refusal, а не маскировка под успех;
 - Windows loopback and supervisor lifecycle tests;
-- streaming/cancellation/resource cleanup.
+- streaming/cancellation/resource cleanup;
+- token authentication, host/port rejection и capability-version probe;
+- timeout с подтверждённым завершением процесса.
 
 ## Критерии готовности
 
 - отсутствие локальной модели видно как `unavailable`;
 - local route не выходит за loopback и подчиняется supervisor lifetime;
 - sensitive/offline задача при недоступной local model завершается truthful refusal.
+- malformed response, timeout и cancellation никогда не маскируются под success.

@@ -82,6 +82,24 @@ Context Budget Manager, evaluation catalog и provider health model считаю
 отдельным ADR после проверки Windows resource requirements; этот план не
 фиксирует бренд модели.
 
+## Уточнения ревью
+
+`privacy boundary` — capability провайдера, подтверждённая Core policy;
+capability не расширяет policy. `approval policy` и `tool policy` — разные
+проверки, обе сохраняются при fallback. Классификацию и redaction sensitive
+данных выполняет локальный Core-owned classifier; неопределённость считается
+`complex`, а multi-hop — complex до доказанного обратного.
+
+`truthful refusal` — явный отказ с причиной и следующим действием;
+`bounded` означает соблюдение лимитов времени, токенов, контекста, tool calls и
+попыток до отказа. Если routes не осталось, итог не может быть success.
+
+Tie-break — лексикографический по нормализованному UTF-8 `route_id` после всех
+policy scores. Offline mode — effective Core state: пользовательская настройка
+может включить его, а автоматический degraded state возникает при cloud outage.
+Supervisor запускается Electron main, владеет Job Object и через
+authenticated named pipe получает от Core команды для local provider.
+
 ## Критерии готовности плана
 
 - решение route воспроизводимо по snapshot и trace;
@@ -91,3 +109,5 @@ Context Budget Manager, evaluation catalog и provider health model считаю
 - cloud outage оставляет usable local degraded mode, если он настроен.
 - ToolAgent использует `select_route`, а не фиксированный `"default"`;
 - приоритеты правил и разрешение конфликтов определены явно.
+- при отсутствии обоих routes выдаётся truthful refusal с безопасным действием;
+- trace и evaluation catalog имеют versioned схемы для воспроизводимого replay.
