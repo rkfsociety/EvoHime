@@ -95,6 +95,8 @@ function harness(overrides: Partial<UpdateServiceDeps> = {}, installedCommit: st
     // override these.
     selectGreen: async () => ({ commit: REMOTE, tipState: 'success' as const }),
     productChanges: async () => true,
+    // No test may shell out to the real gh CLI for a credential.
+    resolveToken: async () => null,
     sync: async () => REMOTE,
     // Timers never fire on their own in tests.
     setTimer: () => ({ cancel: () => {} }),
@@ -232,6 +234,7 @@ describe('launch gate', () => {
       remoteHead: async () => REMOTE,
       selectGreen: async () => ({ commit: REMOTE, tipState: 'success' }),
       productChanges: async () => true,
+      resolveToken: async () => null,
       setTimer: () => ({ cancel: () => {} })
     })
 
@@ -520,6 +523,7 @@ describe('green commits only', () => {
         throw new Error('checks must not be consulted')
       },
       productChanges: async () => true,
+      resolveToken: async () => null,
       setTimer: () => ({ cancel: () => {} })
     })
 

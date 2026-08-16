@@ -22,6 +22,7 @@ import {
   type CommitCheckState
 } from './commit-status'
 import { readBuildMarker, type UpdateConfig } from './config'
+import { resolveGithubToken } from './github-token'
 import { readRemoteHead, syncCheckout } from './source-checkout'
 import { detectToolchain, ensureToolchain, toolPath, type ToolchainReport } from './toolchain'
 
@@ -54,6 +55,7 @@ export interface UpdateServiceDeps {
   readonly remoteHead?: typeof readRemoteHead
   readonly selectGreen?: typeof selectGreenCommit
   readonly productChanges?: typeof touchesProductCode
+  readonly resolveToken?: typeof resolveGithubToken
   readonly sync?: typeof syncCheckout
   readonly build?: typeof buildStagedPackage
   readonly reset?: typeof clearDerivedState
@@ -68,6 +70,7 @@ export class UpdateService {
   private aborter: AbortController | null = null
   private timer: { readonly cancel: () => void } | null = null
   private skipped = false
+  private token: Promise<string | null> | null = null
 
   constructor(private readonly deps: UpdateServiceDeps) {
     this.current = deps.config.enabled
@@ -195,6 +198,29 @@ export class UpdateService {
   }
 
   /**
+   * Credential for the GitHub API, looked up once per process.
+   *
+   * Anonymous checks share a 60-per-hour budget with everything else behind the
+   * same address, and a check that ran out of budget looks to the user like a
+   * broken updater. The lookup can spawn `gh`, so its result is cached, and a
+   * failed lookup is not an error: the check simply runs anonymously.
+   */
+  private githubToken(): Promise<string | null> {
+    this.token ??= (this.deps.resolveToken ?? resolveGithubToken)({
+      configured: this.deps.config.githubToken
+    })
+      .then((found) => {
+        this.deps.log('info', 'update.github_token', { source: found?.source ?? 'none' })
+        return found?.token ?? null
+      })
+      .catch((error) => {
+        this.deps.log('warn', 'update.github_token_failed', { reason: redactError(error) })
+        return null
+      })
+    return this.token
+  }
+
+  /**
    * Commit the client is allowed to move to.
    *
    * With `requireGreenCommit` the branch tip is not enough: the rebuild happens
@@ -224,7 +250,8 @@ export class UpdateService {
     const selected = await (this.deps.selectGreen ?? selectGreenCommit)(
       apiBase,
       config.branch,
-      config.greenCommitDepth
+      config.greenCommitDepth,
+      { token: await this.githubToken() }
     )
     if (!selected.commit) {
       return { commit: null, message: waitingMessage(selected.tipState) }
@@ -248,7 +275,9 @@ export class UpdateService {
     const apiBase = githubApiBase(this.deps.config.repositoryUrl)
     if (!apiBase) return true
     try {
-      return await (this.deps.productChanges ?? touchesProductCode)(apiBase, installed, target)
+      return await (this.deps.productChanges ?? touchesProductCode)(apiBase, installed, target, {
+        token: await this.githubToken()
+      })
     } catch (error) {
       this.deps.log('warn', 'update.compare_failed', { reason: redactError(error) })
       return true

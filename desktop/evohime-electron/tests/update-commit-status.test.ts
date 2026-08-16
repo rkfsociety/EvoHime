@@ -151,6 +151,46 @@ describe('choosing a commit to install', () => {
   })
 })
 
+describe('request budget', () => {
+  it('authenticates the request when a token is available', async () => {
+    const fetch = respond({ '/commits?': [] })
+
+    await listRecentCommits(API, 'main', 10, { fetch, token: 'ghp_secret0123456789abcdefghij' })
+
+    const init = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as RequestInit
+    expect((init.headers as Record<string, string>).authorization).toBe(
+      'Bearer ghp_secret0123456789abcdefghij'
+    )
+  })
+
+  it('sends no credential when there is none', async () => {
+    const fetch = respond({ '/commits?': [] })
+
+    await listRecentCommits(API, 'main', 10, { fetch })
+
+    const init = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as RequestInit
+    expect((init.headers as Record<string, string>).authorization).toBeUndefined()
+  })
+
+  it('names an exhausted budget instead of reporting a bare 403', async () => {
+    // Именно это видит пользователь, когда анонимный лимит выбран чужим трафиком
+    // с того же адреса, — и по этому сообщению он может действовать.
+    const limited = vi.fn(async () => ({
+      ok: false,
+      status: 403,
+      headers: new Headers({ 'x-ratelimit-remaining': '0' }),
+      json: async () => ({})
+    })) as unknown as typeof globalThis.fetch
+
+    await expect(listRecentCommits(API, 'main', 10, { fetch: limited })).rejects.toThrow(
+      /анонимных запросов/
+    )
+    await expect(
+      listRecentCommits(API, 'main', 10, { fetch: limited, token: 'ghp_secret0123456789abcdefghij' })
+    ).rejects.toThrow(/лимит запросов токена/)
+  })
+})
+
 describe('what counts as product code', () => {
   it('treats documentation, plans and CI config as harmless', () => {
     for (const path of [

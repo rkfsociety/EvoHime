@@ -31,6 +31,12 @@ const INCONCLUSIVE_CONCLUSIONS = new Set(['cancelled', 'stale', 'action_required
 
 export interface CommitStatusDeps {
   readonly fetch?: typeof globalThis.fetch
+  /**
+   * Credential raising the API budget from 60 anonymous requests per hour to
+   * 5000. Optional: without it the check works as before, until a shared
+   * address runs the anonymous budget out.
+   */
+  readonly token?: string | null
 }
 
 /**
@@ -199,18 +205,41 @@ export async function touchesProductCode(
 
 async function getJson(url: string, deps: CommitStatusDeps): Promise<unknown> {
   const request = deps.fetch ?? globalThis.fetch
+  const headers: Record<string, string> = {
+    accept: 'application/vnd.github+json',
+    'user-agent': 'EvoHime-Updater',
+    'x-github-api-version': '2022-11-28'
+  }
+  // The credential goes to api.github.com only: every URL reaching this
+  // function is built from the base `githubApiBase` validated.
+  if (deps.token) {
+    headers.authorization = `Bearer ${deps.token}`
+  }
+
   const response = await request(url, {
-    headers: {
-      accept: 'application/vnd.github+json',
-      'user-agent': 'EvoHime-Updater',
-      'x-github-api-version': '2022-11-28'
-    },
+    headers,
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
   })
   if (!response.ok) {
-    throw new Error(`GitHub API ответил ${response.status}`)
+    throw new Error(describeHttpFailure(response, deps.token != null))
   }
   return response.json()
+}
+
+/**
+ * An exhausted request budget is the one failure the user can act on, so it is
+ * named instead of shown as a bare `403`.
+ */
+function describeHttpFailure(response: Response, authenticated: boolean): string {
+  const exhausted =
+    (response.status === 403 || response.status === 429) &&
+    response.headers?.get?.('x-ratelimit-remaining') === '0'
+  if (exhausted) {
+    return authenticated
+      ? 'GitHub API: исчерпан лимит запросов токена, проверка отложена.'
+      : 'GitHub API: исчерпан лимит анонимных запросов (60 в час). Войдите через gh auth login или укажите githubToken в update.json.'
+  }
+  return `GitHub API ответил ${response.status}`
 }
 
 function summarize(

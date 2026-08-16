@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 
+import { normalizeGithubToken } from './github-token'
+
 /**
  * Configuration of the source-based updater.
  *
@@ -38,6 +40,12 @@ export interface UpdateConfig {
   readonly requireGreenCommit: boolean
   /** How far back to look for a green commit while CI runs on the tip. */
   readonly greenCommitDepth: number
+  /**
+   * Credential for the GitHub API check. `null` is the normal case: the token
+   * is then taken from the environment or the gh CLI, and the check falls back
+   * to anonymous requests when neither has one.
+   */
+  readonly githubToken: string | null
   /** Git checkout the rebuild runs in. */
   readonly sourceDirectory: string
   /** Rebuilt package waiting to be swapped in. */
@@ -92,6 +100,7 @@ export function loadUpdateConfig(inputs: ConfigInputs): UpdateConfig {
       normalizeBoolean(file['requireGreenCommit']) ??
       true,
     greenCommitDepth: normalizeDepth(file['greenCommitDepth']),
+    githubToken: normalizeGithubToken(file['githubToken']),
     sourceDirectory:
       absoluteOr(environment['EVOHIME_UPDATE_SOURCE_DIR'], join(inputs.dataDirectory, 'source')),
     stagingDirectory:
