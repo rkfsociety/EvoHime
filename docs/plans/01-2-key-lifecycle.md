@@ -160,7 +160,9 @@ transition независимо от его continuity и обязан совп�
 
 История ограничена максимум 100 transition records на key lineage. При
 достижении лимита rotation блокируется с `key.rotation_limit`; pruning
-истории без подписанного checkpoint запрещён.
+истории без отдельного подписанного `KeyHistoryCheckpointV1` запрещён.
+`ReceiptCheckpointV1` из 01.4 не заменяет его: receipt prefix и
+key-transition lineage — независимые структуры и компактифицируются раздельно.
 
 SQLite — единственный mutable source of truth. Dual-write в SQLite и JSONL
 запрещён: `public-history-v1.jsonl` строится только как snapshot export после
@@ -190,6 +192,14 @@ commit в read transaction.
   требуют новый explicit pin;
 - старые receipts проверяются старым public key и не требуют старого private
   key.
+
+`trusted-roots-v1.json` имеет versioned schema, owner-only DACL и пишется через
+temporary file → flush/fsync → atomic replace. На старте Core проверяются
+version, duplicate roots, schema, DACL и revoked/superseded markers. Удалённый,
+повреждённый или отсутствующий trust store при наличии key history даёт
+`key.trust_required`: read/verify разрешены, mutation signing запрещён, а
+автоматический повторный TOFU запрещён. Self-signed genesis/transition — это
+только proof of possession и никогда не trust без pin.
 
 Результаты различаются как минимум на `verified`, `untrusted`, `broken` и
 `unsupported`. Verifier никогда не преобразует `untrusted` в `verified`
@@ -246,6 +256,13 @@ journal; состояние, где active key сменился без transitio
 очистка не завершилась, файл сохраняется с bounded phase/error code и recovery
 идемпотентно повторяет только cleanup.
 
+Каждая запись или обновление `rotation-state-v1.json` выполняется как
+temporary file → flush/fsync → atomic replace, с повторной проверкой owner-only
+DACL. Core обязан прочитать и проверить journal при старте. Повреждённый journal
+не удаляется молча: если active key, transition и audit нельзя однозначно
+сопоставить, rotation блокируется с `key.rotation_incomplete` до ручного
+вмешательства; если они согласованы, journal можно удалить после bounded audit.
+
 ## Audit и diagnostics
 
 Rotation пишет bounded structured event в существующий Core audit trail
@@ -284,7 +301,10 @@ Rotation считается завершённой только после durab
   новый сегмент не выдаётся за продолжение старой identity.
 - При подозрении на компрометацию выполняется manual rotation с reason
   `compromise`; old public key и старые receipts не удаляются. Verifier
-  показывает compromised boundary, после которой требуется новый pin. Receipts
+  показывает compromised boundary по порядку transition commit/sequence, а не
+  по wall-clock timestamp; receipts старого key до boundary остаются
+  `verified`, после boundary получают `stale_key`. Новый key до отдельного pin
+  остаётся `unverified`, после pin проверяется как новый сегмент. Receipts
   с математически валидной подписью отозванного сегмента получают
   `stale_key`; v1 не вводит per-receipt CRL, поэтому отзыв отдельного receipt
   достигается только компрометацией/ротацией соответствующего key segment.
@@ -308,10 +328,15 @@ receipt; read-only диагностика и offline verification продолж
   shutdown без private file и с network denied;
 - crash injection после каждого шага transaction: после restart существует
   ровно один active signer, transition/audit согласованы, fork отсутствует;
+- crash/partial-write tests для rotation journal и trust store проверяют
+  fsync/atomic replace, DACL, fail-closed recovery и отсутствие автоматического
+  TOFU;
 - удаление/reorder/tamper/fork/cycle public transition records даёт отдельный
   deterministic error;
 - missing/corrupt DPAPI blob не создаёт key молча; approved recovery создаёт
   broken boundary и новый untrusted до pin сегмент;
+- compromise vectors различают old receipts до transition sequence
+  (`verified`), после boundary (`stale_key`) и новый key до/после explicit pin;
 - другой Windows user и скопированный data directory не decrypt private key;
 - shutdown/restart очищает plaintext buffers; secret types не поддерживают
   debug/serialization и покрыты compile-time/API tests;

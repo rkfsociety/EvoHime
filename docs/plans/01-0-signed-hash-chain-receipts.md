@@ -138,3 +138,28 @@ retention и offline verify. Целевой smoke-budget: sign/append не бл�
   быть включён только явным режимом проверки;
 - если receipt нельзя надёжно записать, mutation не запускается, а
   `pending_recovery` никогда не превращается в synthetic success.
+
+## Сквозные неизменяемые инварианты
+
+Эти правила имеют приоритет над удобством отдельного этапа и должны быть
+закреплены общими schemas/vectors:
+
+1. Только 01.1 определяет canonical signed bytes, `receipt_hash` и v1 limits.
+2. Private key существует только внутри Core/key manager и никогда не выходит
+   в renderer, IPC, export или обычные diagnostics.
+3. SQLite — единственный mutable source of truth; JSONL не импортируется для
+   repair и не исправляет SQLite.
+4. Mutation не получает dispatch до durable pre receipt либо durable refusal.
+5. После uncertain external outcome tool не вызывается автоматически повторно.
+6. Один `action_id` имеет не более одного terminal receipt.
+7. Rotation никогда не связывает receipt chains через `previous_receipt_hash`:
+   первый receipt нового key имеет отсутствующий predecessor, а continuity
+   между сегментами доказывается только KeyTransition/Checkpoint history.
+8. Математически корректная signature не равна trust без explicit pinned root.
+9. Verifier не repair-ит malformed, non-canonical, broken или incomplete input.
+10. Любой terminal receipt требует matching pre receipt, который находится
+    раньше него по durable sequence; `pending_recovery` не является terminal.
+
+Версии схем, лимиты и все stable error codes публикуются единым manifest
+`contracts/receipts/v1/version-manifest.json`; реализации не поддерживают
+раздельные локальные mapping-файлы.

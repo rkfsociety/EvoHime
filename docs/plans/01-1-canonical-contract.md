@@ -87,14 +87,16 @@ Verifier принимает JSON только после проверки исх
 | `tool_args_hash` | lowercase SHA-256 hex, 64 ASCII; обязателен для action/refusal |
 | `result_hash` | lowercase SHA-256 hex, 64 ASCII; только и обязательно для `post_action` |
 | `policy_id` | typed identifier; обязателен для action/refusal |
-| `policy_decision` | enum: `allowed`, `denied`, `approval_required`, `approved` |
+| `policy_decision` | результат policy evaluation: `allowed`, `denied`, `approval_required`, `approved`; не является approval state |
 | `approval_id`, `parent_approval_ref` | typed identifier; допускаются только когда решение или parent binding требует approval |
 | `previous_receipt_hash` | lowercase SHA-256 hex; отсутствует только у genesis receipt данного key/chain |
-| `context_ledger_hash` | готовый lowercase SHA-256 hex из Context Budget Manager; отсутствует только если model call не создавался |
+| `context_ledger_hash` | готовый lowercase SHA-256 hex из Context Budget Manager; обязателен при model call и запрещён без model call |
 | `model_route` | объект из двух typed identifiers `provider_id` и `model_id`; отсутствует без model call |
 
 Для `context_ledger_hash` verifier независимо от upstream проверяет regex
 `^[0-9a-f]{64}$`; поле не принимается как непрозрачная произвольная строка.
+Конструктор отклоняет как отсутствие hash при созданном model call, так и
+hash/route у action, который model call не создавал.
 
 ### Conditional rules
 
@@ -114,8 +116,10 @@ Verifier принимает JSON только после проверки исх
 
 Для `refusal` допустимы только такие пары `refusal_code` и
 `policy_decision`: `policy_denied` → `denied`; `approval_denied`,
-`approval_expired` и `approval_stale` → `approved`; `call_changed` →
-`approval_required`. Для отказа без созданного approval поля `approval_id` и
+`approval_expired`, `approval_stale` и `call_changed` → `approval_required`.
+Здесь `policy_decision=approval_required` сохраняет факт исходной policy
+оценки; результат пользовательского approval хранится в approval state/action
+projection и не подменяет policy decision. Для отказа без созданного approval поля `approval_id` и
 `parent_approval_ref` отсутствуют. `parent_approval_ref` — это `approval_id`
 родительского approval, к которому привязывается child action; формат —
 lowercase UUIDv7.
@@ -146,12 +150,15 @@ projection и только затем применяет SHA-256. Projection н�
 результат, prompt, stdout/stderr, path или error text:
 
 ```json
-{"status":"succeeded","tool_name":"<typed tool id>","result_hash":"<64 lowercase hex>"}
+{"status":"succeeded","tool_name":"<typed tool id>","output_digest":"<64 lowercase hex>"}
 ```
 
-Для неуспешного terminal action projection имеет вид
-`{"status":"failed"|"cancelled","error_category":"<bounded enum>"}`.
-Projection канонизируется JCS до вычисления digest.
+`output_digest` — digest bounded typed result projection, вычисленный до
+receipt projection; сам `result_hash` в projection не входит. Для неуспешного
+terminal action projection имеет вид `{"status":"failed","error_category":"<bounded enum>"}`
+или `{"status":"cancelled","error_category":"<bounded enum>"}`. Во всех
+случаях `result_hash = lowercase_hex(SHA-256("evohime-result-v1\\0" ||
+JCS(result_projection)))`; domain prefix входит в digest input, но не в JSON.
 
 ## Что означает запрет свободных raw strings
 
@@ -181,7 +188,8 @@ encoding.
 - `canonicalize(payload)`: не более **4096 bytes**, проверка до подписи и при
   верификации;
 - canonical envelope: не более **8192 bytes**;
-- максимальная вложенность JSON: **4** уровня, включая корневой envelope;
+- максимальная вложенность JSON: **4** уровня от корневого JSON-документа до
+  самого глубокого leaf, включая корневой envelope;
 - typed identifier: не более **128 ASCII bytes**; `provider_id` и `model_id` —
   не более **128 ASCII bytes** каждый.
 - `canonical_call_input_max_bytes`: не более **262144 UTF-8 bytes** после
@@ -239,6 +247,8 @@ key/signature/hash.
 - `receipt.unsupported_version`, `receipt.schema_violation`;
 - `receipt.secret_field`, `receipt.non_canonical`, `receipt.chain_incomplete`;
 - `receipt.key_unknown`, `receipt.signature_invalid`, `receipt.hash_mismatch`.
+- `receipt.timestamp_skew` — только для runtime и явно включённого offline
+  режима; обычная offline verification проверяет timestamp синтаксически.
 
 Verifier не падает, не исправляет вход и не возвращает частично verified
 результат. Diagnostics может добавить bounded локализованное описание, но code
@@ -251,6 +261,8 @@ Verifier не падает, не исправляет вход и не возв�
 - `contracts/receipts/v1/receipt.schema.json` — JSON Schema 2020-12;
 - `contracts/receipts/v1/limits.json` — shared manifest лимитов, regex и
   canonical constants;
+- `contracts/receipts/v1/version-manifest.json` — версии schemas, limits и
+  единый registry stable error codes для Rust/Electron/Core/verifier;
 - `contracts/receipts/v1/vectors.json` — единый manifest positive/negative
   vectors;
 - `scripts/check-receipt-vectors.ps1` — запускает Rust и Electron consumers

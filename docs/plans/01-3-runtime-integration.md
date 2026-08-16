@@ -62,7 +62,9 @@ Core и Electron adapter; renderer не может увеличить его.
 result_hash вычисляется как lowercase SHA-256 от bounded canonical result
 projection с domain prefix evohime-result-v1\0. Raw result никогда не попадает
 в receipt, journal, IPC или diagnostics; для failed/cancelled result хешируется
-только typed projection {status, error_category} без error text.
+только typed projection {status, error_category} без error text. Для success
+projection использует `output_digest`, а не `result_hash` самого себя; точная
+формула и JCS bytes нормативно определены в 01.1.
 
 `action_id` уникален в `receipt_actions` и имеет UNIQUE constraint. Prepare при
 коллизии не переиспользует action: если digest и binding совпадают, выполняется
@@ -121,12 +123,14 @@ approval_expired. Restart инвалидирует pending in-memory approval; p
 intent получает recovery_pending refusal после recovery, а не автоматически
 возобновляет mutation.
 
-Нормативное race rule: `expires_at_ms` хранится в БД вместе с intent. В одной
-BEGIN IMMEDIATE transaction claim сначала проверяет wall/monotonic deadline и
-только если текущее время строго меньше `expires_at_ms` условно меняет
-`pending` на `claimed`; истёкший на границе claim approval получает
-`approval_expired` и не запускает tool. Это правило имеет приоритет над любым
-описательным clock wording выше.
+Нормативное race rule: `expires_at_ms` хранится в БД вместе с intent только для
+UI/diagnostics. В одной `BEGIN IMMEDIATE` transaction claim проверяет единый
+persisted monotonic deadline/monotonic elapsed value и только если текущее
+monotonic время строго меньше deadline условно меняет `pending` на `claimed`;
+истёкший на границе claim approval получает `approval_expired` и не запускает
+tool. Wall clock нельзя использовать для authorization claim: NTP, sleep/resume
+и перевод часов не должны продлить или сократить TTL. Это правило имеет
+приоритет над любым описательным clock wording выше.
 
 Перед claim Core обязан в одном execution gate заново выполнить:
 
@@ -287,6 +291,10 @@ pending_limit=1011, action_id_conflict=1012. В signed receipt использу�
 `signer_unavailable=2006`, `key_untrusted=2007`, `recovery_pending=2008`.
 Эти aliases не сериализуются в payload и не заменяют строковый enum.
 
+Оба mapping-а являются частью общего
+`contracts/receipts/v1/version-manifest.json`; Rust, Electron и offline
+verifier импортируют один источник и не имеют локальных числовых таблиц.
+
 ## Read-only sampling
 
 Sampling никогда не применяется к mutations, refusals, approvals, failures,
@@ -294,7 +302,9 @@ key/trust events или recovery. Для successful read-only actions v1 хра�
 deterministic sample:
 
 - configuration — Core-owned audit_sampling_v1 с rate **10%** по умолчанию,
-  integer 0–100, изменяемый только authenticated settings command;
+  integer 0–100, изменяемый только authenticated settings command; marker
+  всегда содержит `sampling_policy_version`, поэтому изменение rate не меняет
+  интерпретацию старых действий;
 - decision — SHA-256 от UTF-8 строки
   `evohime-sample-v1\0` + `action_id` + `\0` + `tool_name` modulo 100 < rate;
   оба идентификатора уже bounded typed strings, разделитель обязателен и
@@ -310,6 +320,10 @@ deterministic sample:
   verified;
 - failed/cancelled read-only actions всегда записываются, чтобы sampling не
   скрывал ошибки.
+
+При rate `0` mutations, refusals, failures и cancellations всё равно получают
+полные signed receipts; sampling может влиять только на успешные read-only
+actions.
 
 ## Recovery procedure
 
@@ -354,6 +368,13 @@ diagnostics. Export обязан сохранить для action marker в mani
 `requires_reconciliation=true`; это не signed receipt payload и не может быть
 истолковано verifier как success.
 
+`ReconcilePendingAction` — отдельная authenticated command. Она всегда требует
+новый `action_id`, новый approval и новый exact-call hash; старый pending row
+остаётся историческим фактом. Команда может выполнить только read-only
+reconciliation capability либо явно закрыть состояние как
+`reconciled_manually`/`unknown_result`; она никогда не dispatch-ит исходный
+mutation автоматически и не превращает pending в synthetic success.
+
 Persisted receipt/action rows имеют `schema_version=1`; миграция повышает версию
 транзакционно с backup, не меняет canonical blobs и не смешивает версии в одной
 chain segment. Если ключ отозван или ротирован между pre и post, каждый receipt
@@ -378,7 +399,7 @@ tool dispatch, tool return, post append и head update. В каждой точк
   call hash;
 - two-phase IPC test: approval.required не блокирует pipe, retry с exact
   approval_id проходит один раз, повторный retry отклоняется;
-- TTL tests на 10 минут, monotonic expiry, restart invalidation и
+- TTL tests на 10 минут, monotonic-only expiry under NTP/sleep-resume, restart invalidation и
   approval_expired;
 - pre-before-mutation test: при storage/signer failure tool не вызывается;
 - hash-chain tests: concurrent append, deletion/reorder/tamper, wrong previous
@@ -387,8 +408,8 @@ tool dispatch, tool return, post append и head update. В каждой точк
   запускает mutation повторно;
 - result hash tests не оставляют raw output/error/secret в receipt, SQLite,
   IPC, audit или diagnostics;
-- sampling tests: deterministic 10%, rate change audit, 100% failures/refusals/
-  mutations;
+- sampling tests: deterministic 10%, versioned marker, rate=0, rate change
+  audit, 100% failures/refusals/mutations;
 - signer rotation test: active key change между pre/post не ломает chain; each
   receipt verifies by its own envelope key id and public history;
 - child handoff vector: parent_approval_ref связывает child action с
@@ -397,6 +418,10 @@ tool dispatch, tool return, post append и head update. В каждой точк
   policy enforcement beyond fields.
 - post-signature failure test сохраняет `pending_recovery` с
   `signature_failed` и исключает повторное выполнение tool;
+- reconciliation test требует новый action/approval/call hash, проверяет
+  read-only reconciliation capability и оставляет исходный pending action
+  исторически видимым;
+- preview vectors покрывают emoji и combining characters на границе 1024 bytes;
 
 ## Критерии готовности
 

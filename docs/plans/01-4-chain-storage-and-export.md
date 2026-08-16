@@ -37,7 +37,7 @@ migration runner с backup до изменения схемы. Foreign keys и W
 
 | Column | Type / constraint |
 | --- | --- |
-| sequence | INTEGER PRIMARY KEY AUTOINCREMENT; commit order, not signed payload |
+| sequence | INTEGER PRIMARY KEY AUTOINCREMENT; commit order, not signed payload. `AUTOINCREMENT` intentional: sequence identifiers MUST NOT be reused after retention/purge or crash recovery |
 | receipt_id | TEXT NOT NULL UNIQUE; lowercase UUIDv7 |
 | action_id | TEXT NOT NULL; lowercase UUIDv7 |
 | receipt_kind | TEXT NOT NULL CHECK pre_action/post_action/refusal |
@@ -82,7 +82,12 @@ Indexes:
 
 The row is updated only in the same transaction as its receipt append. A
 terminal row must have exactly one terminal receipt; a pending row must have
-pre_receipt_hash and no terminal hash. approval_call_hash makes offline
+pre_receipt_hash and no terminal hash. `terminal_receipt_hash != NULL` implies
+`state=terminal`; `state=prepared` implies a pre hash and no terminal hash;
+`state=pending_recovery` implies a pre hash and no terminal hash. A terminal
+receipt must have exactly one matching pre receipt for the same action, and its
+sequence must be greater than the pre sequence. These invariants are enforced
+by foreign keys plus migration triggers/Rust transaction checks. approval_call_hash makes offline
 approval-binding verification possible even after in-memory PermissionEngine
 state is gone.
 
@@ -100,11 +105,14 @@ receipts.chain_conflict; the tool is not run after such a failure.
 Used only when retention compacts a prefix:
 
 checkpoint_id, key_id, cutoff_sequence, first_retained_hash,
-prefix_last_hash, last_deleted_receipt_hash, created_at, canonical_checkpoint,
-signature, status.
+prefix_last_hash, last_deleted_receipt_hash, head_receipt_hash, created_at,
+canonical_checkpoint, signature, status.
 
 The checkpoint object is JCS ReceiptCheckpointV1, signed by the key active at
-checkpoint creation. It proves the retained suffix begins after the stated
+checkpoint creation and includes `key_id` and `head_receipt_hash` at creation.
+Verifier resolves that key through signed key-history and confirms it was
+trusted at checkpoint sequence/transition order; wall-clock timestamp alone is
+insufficient. It proves the retained suffix begins after the stated
 prefix hash; it does not pretend deleted receipts were individually verified.
 
 ## Metadata, privacy и retention
@@ -187,6 +195,7 @@ Manifest is canonical JSON:
       "export_id": "<uuidv7>",
       "created_at": "<canonical timestamp>",
       "snapshot_last_sequence": "123",
+      "requested_count": 12,
       "selected_count": 12,
       "record_count": 42,
       "first_receipt_hash": "<sha256 hex>",
@@ -219,7 +228,12 @@ Failure removes only the uniquely named staging directory, never source rows.
 Crash leaves no directory with a valid manifest until the final rename; the next
 startup scans the export parent for uniquely named staging directories and
 removes them automatically after validating that they are owned by EvoHime and
-contain no committed destination marker.
+contain no committed destination marker. A destination directory with a valid
+manifest but without the bounded `receipts.exported` audit event is treated as
+an orphaned completed bundle: startup verifies ownership and manifest hashes,
+then records a deduplicated recovery audit event (or quarantines it if
+ownership/manifest validation fails). It is never overwritten or imported into
+SQLite.
 
 ## Verify-chain algorithm
 
@@ -234,10 +248,13 @@ Verification operates on a consistent SQLite snapshot or an export bundle:
 4. resolve key_id through signed transition history and verify trust path from
    pinned genesis;
 5. compare previous_receipt_hash to the preceding selected row or a trusted
-   checkpoint boundary; detect deletion, reorder, duplicate, fork and cycle;
-6. verify action_id pairing: pre exists before terminal, tool_args_hash is
-   unchanged, approval_id/approval_call_hash match, and terminal status agrees
-   with receipt_kind;
+   checkpoint boundary; detect deletion, reorder, duplicate, fork and cycle.
+   A new key segment must start with an absent predecessor; verifier MUST NOT
+   connect it to the prior key segment through receipt hash or checkpoint when
+   continuity is `broken`/`compromised`.
+6. verify action_id pairing: exactly one pre exists before terminal by durable
+   `sequence`, tool_args_hash is unchanged, approval_id/approval_call_hash
+   match, and terminal status agrees with receipt_kind;
 7. classify each row and the chain; never repair input or return partial
    success.
 
@@ -248,7 +265,11 @@ history hash and checkpoint; cache is an optimization, never a trust source.
 Фильтры task/run/action не могут скрыть predecessor: VerifyReceipts расширяет
 выбранный диапазон до chain closure между первой и последней sequence (либо до
 доверенного checkpoint). ExportReceipts делает то же самое и включает в bundle
-контекстные chain rows; selected_count и record_count в manifest различаются.
+контекстные chain rows; `requested_count` — число строк до closure,
+`selected_count` — число строк после фильтра, а `record_count` — фактически
+экспортированное число receipt records. VerifyReceipts также возвращает
+`requested_count` и `actual_verified_count`, чтобы расширение диапазона было
+видно клиенту.
 Если closure превышает limit, операция завершается receipts.limit_exceeded, а
 не выдаёт частично verified chain.
 
@@ -259,9 +280,10 @@ missing approval audit is unverified, not success.
 
 Key status rules:
 
-- retired key is valid for receipts whose timestamp precedes its rotation;
-- compromised transition makes receipts at/after its transition stale_key, even
-  if the Ed25519 signature is mathematically valid;
+- retired key is valid for receipts before its rotation transition sequence;
+- compromised transition makes receipts at/after its transition sequence
+  `stale_key`, even if the Ed25519 signature is mathematically valid; timestamp
+  is diagnostic only and cannot define the compromise boundary;
 - missing public history/genesis pin is unverified;
 - unknown key id is unverified/key_unknown, not broken;
 - invalid signature, receipt hash, predecessor or canonical bytes is broken.
@@ -325,7 +347,7 @@ Request:
 Response:
 
 - overall status and stable code;
-- checked count, snapshot sequence;
+- requested_count, actual_verified_count, snapshot sequence;
 - per-receipt bounded status/code/hash/key id;
 - chain_start_hash and chain_end_hash.
 
@@ -385,7 +407,9 @@ logged.
 
 UI mapping:
 
-- verified → green “verified” only for complete trusted chain;
+- verified → green “verified” only for complete trusted chain with no
+  `pending_recovery` action in the selected range; any pending action downgrades
+  the overall projection to “pending recovery”;
 - verified_pruned → “verified, history compacted” with checkpoint boundary;
 - pending → “pending recovery”, never success;
 - stale_key → “stale/compromised key”;
@@ -402,6 +426,8 @@ renders canonical payload automatically and never labels a receipt as correct.
 - `contracts/receipts/v1/export-record.schema.json`;
 - `contracts/receipts/v1/action-projection.schema.json`;
 - `contracts/receipts/v1/checkpoint.schema.json`;
+- `contracts/receipts/v1/version-manifest.json` и общий registry stable error
+  codes из 01.1;
 - generated IPC additions in
   `crates/desktop-ipc/proto/evohime.desktop.proto`;
 - shared JSONL/verification fixtures in
@@ -427,6 +453,8 @@ renders canonical payload automatically and never labels a receipt as correct.
 - performance regression: verify 1,000 receipts ≤2 seconds p95 and export
   10,000 receipts ≤5 seconds p95 on reference CI runner, with bounded streaming
   memory ≤64 MiB;
+- concurrent List/Verify during append tests keep read snapshots consistent and
+  do not block the writer beyond the bounded SQLite read transaction;
 - legacy audit remains visible as unverified and never becomes signed;
 - UI status tests cover every status/code mapping and never display raw payload.
 
