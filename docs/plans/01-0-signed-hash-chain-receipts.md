@@ -25,8 +25,12 @@ receipt. Receipt доказывает авторство ключа, целос�
 
 Подписываемый canonical payload содержит:
 
-- `receipt_version`, `receipt_id`, `timestamp`, `task_id`, `run_id`;
+- `receipt_version`, `receipt_id`, `action_id`, `timestamp`, `task_id`, `run_id`;
 - `tool_name`, `tool_args_hash`, `result_hash`, `policy_id`, `policy_decision`;
+- `action_status` (`prepared`, `succeeded`, `failed`, `cancelled`, `refused`);
+- `refusal_code` для refusal (`policy_denied`, `approval_denied`,
+  `approval_expired`, `approval_stale`, `call_changed`, `signer_unavailable`,
+  `key_untrusted`, `recovery_pending`);
 - `approval_id`/`parent_approval_ref` при необходимости;
 - `previous_receipt_hash`, `context_ledger_hash`, `model_route`.
 

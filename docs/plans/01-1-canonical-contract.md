@@ -63,7 +63,10 @@ Verifier принимает JSON только после проверки исх
 | --- | --- |
 | `receipt_version` | JSON number, строго `1` |
 | `receipt_id` | lowercase UUIDv7 |
+| `action_id` | lowercase UUIDv7; один call связывает pre/post/refusal receipts |
 | `receipt_kind` | enum: `pre_action`, `post_action`, `refusal` |
+| `action_status` | enum: `prepared` для pre, `succeeded`/`failed`/`cancelled` для post, `refused` для refusal |
+| `refusal_code` | enum только для `refusal`: `policy_denied`, `approval_denied`, `approval_expired`, `approval_stale`, `call_changed`, `signer_unavailable`, `key_untrusted`, `recovery_pending` |
 | `timestamp` | UTC RFC 3339 с ровно тремя долями секунды, например `2026-08-16T12:34:56.789Z` |
 | `task_id`, `run_id` | typed identifier: 1–128 ASCII bytes, regex `[A-Za-z0-9][A-Za-z0-9._:-]{0,127}` |
 | `tool_name` | зарегистрированный tool id, тот же regex и лимит; обязателен для action/refusal |
