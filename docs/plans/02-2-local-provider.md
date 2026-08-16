@@ -30,6 +30,19 @@ Loopback-only local route с честным статусом доступнос�
   `unavailable`, не маскировать это как provider success.
 - Ограничить local process/resource lifetime supervisor policy.
 
+Supervisor остаётся владельцем процесса local provider: Core отправляет ему
+валидированный launch/stop request, а supervisor создаёт процесс только с
+loopback bind address, Job Object, timeout, memory/CPU limits и cancellation.
+Core не принимает произвольный порт или command line от renderer. Статусы
+`starting`, `ready`, `unavailable`, `degraded` и `stopped` публикуются через
+provider health contract.
+
+Если local model отсутствует, повреждена, не прошла capability probe или
+запущена не на loopback, route получает `unavailable` с безопасной причиной.
+Для sensitive/offline задачи это окончательный bounded refusal с указанием
+действия пользователя; cloud не пробуется. Для non-sensitive задачи разрешён
+только явно предусмотренный cloud fallback.
+
 ## Проверки
 
 - malformed tool-call tests: такой ответ не засчитывается как успешный fallback;
@@ -40,4 +53,5 @@ Loopback-only local route с честным статусом доступнос�
 ## Критерии готовности
 
 - отсутствие локальной модели видно как `unavailable`;
-- local route не выходит за loopback и подчиняется supervisor lifetime.
+- local route не выходит за loopback и подчиняется supervisor lifetime;
+- sensitive/offline задача при недоступной local model завершается truthful refusal.

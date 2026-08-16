@@ -25,13 +25,24 @@ policy. Provider secrets не передаются local route.
 - latency, token budget и cost budget;
 - user-selected model preference в пределах разрешённой policy.
 
-Начальные правила:
+Правила применяются в фиксированном порядке (от более сильного ограничения к
+более слабому): `privacy/secret` → `offline` → `approval/tool policy` →
+`context/capability` → `health/circuit breaker` → `evaluation gate` →
+`budget/cost` → `user preference` → стабильный tie-break по `route_id`.
+Предпочтение пользователя является только подсказкой внутри уже разрешённого
+множества и не может поднять route выше privacy, approval или sandbox policy.
 
-1. secret/private/offline → local route;
-2. bounded read-only/simple → local route;
-3. complex multi-hop non-sensitive → configured cloud route;
-4. cloud timeout/5xx/rate limit → local fallback, если tool calling capable;
-5. mutation/approval semantics не ослабляются при смене модели.
+Классификация запроса формальна: `simple` — read-only, не более 2 tool calls,
+без multi-hop зависимости и с контекстом не более 25% окна выбранной модели;
+`complex` — mutation/approval, более 2 tool calls, multi-hop либо превышение
+этого порога. Неопределённая классификация считается `complex` и не проходит
+small-route gate.
+
+Начальные правила: secret/private/offline требуют local; bounded
+read-only/simple допускает local после evaluation gate; complex non-sensitive
+использует configured cloud; cloud timeout/5xx/rate-limit допускает local
+fallback только при совместимых capabilities. Mutation, approval, tool
+permissions и sandbox не меняются при смене модели.
 
 ## Что уже есть в коде
 
@@ -60,9 +71,12 @@ Manager.
 
 ## Зависимости плана
 
-Блокирующие: нет. Context Budget Manager реализован: route decision опирается на budget/profile snapshot,
-который определён именно там; существующие evaluation catalog (`tests/evals/`)
-и provider health model.
+Блокирующие: нет. До появления этапов 02.1–02.4 существующий режим `default`
+остаётся единственным route, а недоступность local/cloud возвращается честным
+`unavailable`/`route_denied`, без маскировки под успех.
+
+Context Budget Manager, evaluation catalog и provider health model считаются
+доступными контрактами; их минимальные интерфейсы зафиксированы в этапах ниже.
 
 Опциональных интеграций нет. Поддержка конкретной SLM/launcher выбирается
 отдельным ADR после проверки Windows resource requirements; этот план не
@@ -75,3 +89,5 @@ Manager.
 - fallback не меняет tool permissions, approval или sandbox;
 - UI показывает фактический результат routing;
 - cloud outage оставляет usable local degraded mode, если он настроен.
+- ToolAgent использует `select_route`, а не фиксированный `"default"`;
+- приоритеты правил и разрешение конфликтов определены явно.

@@ -19,6 +19,12 @@
 - Разрешить пользователю выбрать preferred route, но не обходить privacy и
   approval policy.
 
+UI получает decision/trace только через Core IPC и показывает фактически
+выбранный route, причину (`privacy`, `offline`, `health`, `budget`,
+`evaluation`, `preference`) и статус. `preferred route` хранится как
+непривилегированная настройка; при конфликте Core возвращает override reason,
+а не позволяет renderer подменить решение.
+
 ## Проверки
 
 - три состояния отказа различимы в UI и не сливаются в одно сообщение;
@@ -28,4 +34,5 @@
 ## Критерии готовности
 
 - UI показывает фактический результат routing;
-- cloud outage оставляет usable local degraded mode, если он настроен.
+- cloud outage оставляет usable local degraded mode, если он настроен;
+- UI показывает причину выбора route и не позволяет preferred route обойти policy.
