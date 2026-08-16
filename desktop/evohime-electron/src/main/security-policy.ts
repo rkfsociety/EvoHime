@@ -65,3 +65,19 @@ export const CONTENT_SECURITY_POLICY = [
   "form-action 'none'",
   "frame-ancestors 'none'"
 ].join('; ')
+
+/** Dev-only policy for the local Vite renderer and its HMR websocket. */
+export const DEV_CONTENT_SECURITY_POLICY = [
+  "default-src 'self' http://localhost:5173",
+  "script-src 'self' http://localhost:5173",
+  "style-src 'self' 'unsafe-inline' http://localhost:5173",
+  "img-src 'self' data: http://localhost:5173",
+  "font-src 'self' http://localhost:5173",
+  "connect-src 'self' http://localhost:5173 ws://localhost:5173",
+  "object-src 'none'",
+  "frame-src 'none'",
+  "worker-src 'self' blob:",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'"
+].join('; ')

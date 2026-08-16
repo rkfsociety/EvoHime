@@ -3,6 +3,7 @@ import { app, shell, Menu, session, type WebContents } from 'electron'
 import type { ShellLog } from './diagnostics/logger'
 import {
   CONTENT_SECURITY_POLICY,
+  DEV_CONTENT_SECURITY_POLICY,
   findForbiddenSwitches,
   isAllowedExternalUrl
 } from './security-policy'
@@ -20,6 +21,7 @@ export const isProduction = (): boolean => app.isPackaged
 
 export {
   CONTENT_SECURITY_POLICY,
+  DEV_CONTENT_SECURITY_POLICY,
   EXTERNAL_URL_ALLOW_LIST,
   FORBIDDEN_SWITCHES,
   findForbiddenSwitches,
@@ -84,7 +86,7 @@ export function hardenSession(options: HardeningOptions): void {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': [CONTENT_SECURITY_POLICY]
+        'Content-Security-Policy': [isProduction() ? CONTENT_SECURITY_POLICY : DEV_CONTENT_SECURITY_POLICY]
       }
     })
   })

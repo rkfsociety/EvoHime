@@ -3,6 +3,16 @@ import { resolve } from 'node:path'
 import react from '@vitejs/plugin-react'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 
+function stripProductionCspInDev() {
+  return {
+    name: 'strip-production-csp-in-dev',
+    transformIndexHtml(html: string, context: { server?: unknown }) {
+      if (!context.server) return html
+      return html.replace(/\s*<meta\s+http-equiv="Content-Security-Policy"[^>]*>\s*/i, '\n')
+    }
+  }
+}
+
 // Production builds never emit source maps: the packaged renderer must not ship
 // readable sources or map files (plan 0, stage 2).
 const isProduction = process.env.NODE_ENV === 'production'
@@ -39,7 +49,7 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
-    plugins: [react()],
+    plugins: [react(), stripProductionCspInDev()],
     resolve: {
       alias: { '@shared': resolve(__dirname, 'src/shared') }
     },
