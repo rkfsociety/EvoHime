@@ -20,11 +20,11 @@ export const DEFAULT_BRANCH = 'main'
 /**
  * What a launch does when the tracked branch moved ahead.
  *
- * `build` rebuilds before the shell opens and shows the progress gate — the
- * default, because a locally rebuilt product is the whole point. `apply-ready`
- * only swaps a package that a previous background run already staged.
+ * `installer` downloads the installer produced by the green GitHub workflow.
+ * `build` is retained as a development fallback. `apply-ready` only swaps a
+ * package that a previous background run already staged.
  */
-export type LaunchPolicy = 'build' | 'apply-ready' | 'off'
+export type LaunchPolicy = 'installer' | 'build' | 'apply-ready' | 'off'
 
 export interface UpdateConfig {
   readonly enabled: boolean
@@ -82,10 +82,14 @@ export function loadUpdateConfig(inputs: ConfigInputs): UpdateConfig {
     normalizeBranch(environment['EVOHIME_UPDATE_BRANCH']) ??
     normalizeBranch(file['branch']) ??
     DEFAULT_BRANCH
+  const configuredPolicy = normalizeLaunchPolicy(file['launchPolicy'])
   const launchPolicy =
     normalizeLaunchPolicy(environment['EVOHIME_UPDATE_LAUNCH_POLICY']) ??
-    normalizeLaunchPolicy(file['launchPolicy']) ??
-    'build'
+    // Version 1 installers configured local rebuilding. Migrate those
+    // installations automatically; an environment override still permits
+    // developers to opt into the old path explicitly.
+    (file['version'] === 1 && configuredPolicy === 'build' ? 'installer' : configuredPolicy) ??
+    'installer'
   const enabled =
     normalizeBoolean(environment['EVOHIME_UPDATE_ENABLED']) ?? normalizeBoolean(file['enabled']) ?? true
 
@@ -165,7 +169,7 @@ export function normalizeBranch(value: unknown): string | null {
 }
 
 function normalizeLaunchPolicy(value: unknown): LaunchPolicy | null {
-  return value === 'build' || value === 'apply-ready' || value === 'off' ? value : null
+  return value === 'installer' || value === 'build' || value === 'apply-ready' || value === 'off' ? value : null
 }
 
 function normalizeBoolean(value: unknown): boolean | null {

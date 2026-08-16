@@ -1,10 +1,10 @@
 /**
- * Contract of the source-based updater, shared by main, preload and renderer.
+ * Contract of the updater, shared by main, preload and renderer.
  *
- * EvoHime updates from its own git checkout instead of a published release: the
- * shell fetches `origin/<branch>`, rebuilds the product locally and swaps the
- * installed files through `evohime-transaction.exe`. This file must stay free of
- * Electron and Node imports — it is compiled into the sandboxed renderer.
+ * The default path downloads the CI installer for a green commit and swaps the
+ * installed files through `evohime-transaction.exe`; a local source rebuild is
+ * retained for development. This file must stay free of Electron and Node
+ * imports — it is compiled into the sandboxed renderer.
  */
 
 /** Ordered stages of one update run; the UI renders them as a checklist. */

@@ -62,10 +62,18 @@ pub fn verify_installation(install_dir: &Path) -> io::Result<()> {
     Ok(())
 }
 
-pub fn run_update(installer: &Path, install_dir: &Path, state_dir: &Path) -> io::Result<()> {
+pub fn run_update(
+    installer: &Path,
+    install_dir: &Path,
+    state_dir: &Path,
+    relaunch: Option<&Path>,
+) -> io::Result<()> {
     validate_absolute(installer, "installer path")?;
     let _ = UpdateTransaction::recover(state_dir)?;
-    let transaction = UpdateTransaction::prepare(install_dir, state_dir)?;
+    // Inno Setup can replace the Electron payload as well as the four native
+    // components. Back up the whole tree so a failure after app.asar or a
+    // resource write restores a runnable installation, not just its binaries.
+    let transaction = UpdateTransaction::prepare_tree(install_dir, state_dir)?;
     if !installer.is_file() {
         return rollback_after_failure(
             transaction,
@@ -87,7 +95,13 @@ pub fn run_update(installer: &Path, install_dir: &Path, state_dir: &Path) -> io:
 
     match status {
         Ok(status) if status.success() => match verify_installation(install_dir) {
-            Ok(()) => transaction.commit(),
+            Ok(()) => {
+                transaction.commit()?;
+                if let Some(executable) = relaunch {
+                    Command::new(executable).current_dir(install_dir).spawn()?;
+                }
+                Ok(())
+            }
             Err(error) => rollback_after_failure(transaction, error),
         },
         Ok(status) => rollback_after_failure(
@@ -158,9 +172,8 @@ const RETRY_INTERVAL: Duration = Duration::from_millis(250);
 /// plain error and the installation is left exactly as it was.
 fn wait_until_writable(install_dir: &Path, limit: Duration) -> io::Result<()> {
     let deadline = std::time::Instant::now() + limit;
-    let mut last: Option<io::Error> = None;
     loop {
-        match UpdateTransaction::COMPONENTS
+        let error = match UpdateTransaction::COMPONENTS
             .iter()
             .map(|component| install_dir.join(component))
             .filter(|path| path.exists())
@@ -177,12 +190,10 @@ fn wait_until_writable(install_dir: &Path, limit: Duration) -> io::Result<()> {
                     })
             }) {
             Ok(()) => return Ok(()),
-            Err(error) => last = Some(error),
-        }
+            Err(error) => error,
+        };
         if std::time::Instant::now() >= deadline {
-            return Err(last.unwrap_or_else(|| {
-                io::Error::other("installation stayed locked while the update waited")
-            }));
+            return Err(error);
         }
         std::thread::sleep(RETRY_INTERVAL);
     }

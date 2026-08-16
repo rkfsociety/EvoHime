@@ -35,9 +35,9 @@ RestartApplications=no
 CloseApplicationsFilter=EvoHime.exe
 
 [Tasks]
-; EvoHime обновляется из исходников и пересобирается на машине пользователя,
-; поэтому автообновление — выбор пользователя, а не молчаливая настройка.
-Name: "autoupdate"; Description: "Обновлять автоматически при запуске (пересборка из исходников)"; GroupDescription: "Обновления"
+; Установщик CI уже собран и проверен на зелёном коммите. Клиент скачивает
+; этот установщик из постоянного GitHub Release и применяет его в фоне.
+Name: "autoupdate"; Description: "Обновлять автоматически из GitHub Release"; GroupDescription: "Обновления"
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -77,11 +77,11 @@ begin
 
   SetArrayLength(Lines, 10);
   Lines[0] := '{';
-  Lines[1] := '  "version": 1,';
+  Lines[1] := '  "version": 2,';
   Lines[2] := '  "enabled": ' + Enabled + ',';
   Lines[3] := '  "repositoryUrl": "{#UpdateRepository}",';
   Lines[4] := '  "branch": "{#UpdateBranch}",';
-  Lines[5] := '  "launchPolicy": "build",';
+  Lines[5] := '  "launchPolicy": "installer",';
   Lines[6] := '  "checkIntervalMinutes": 30,';
   { Пересборка идёт на машине пользователя, поэтому красный коммит }
   { собирать нельзя: клиент ждёт зелёной сборки.                   }

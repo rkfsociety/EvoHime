@@ -23,11 +23,12 @@ import {
 } from './commit-status'
 import { readBuildMarker, type UpdateConfig } from './config'
 import { resolveGithubToken } from './github-token'
+import { downloadReleaseInstaller } from './release-installer'
 import { readRemoteHead, syncCheckout } from './source-checkout'
 import { detectToolchain, ensureToolchain, toolPath, type ToolchainReport } from './toolchain'
 
 /**
- * Orchestrates the source-based update: check, rebuild, stage, swap.
+ * Orchestrates the update: check, download/build, stage, swap.
  *
  * Only this class decides what the user is told. It never applies anything
  * itself — the swap is handed to `evohime-transaction.exe`, which keeps its own
@@ -58,6 +59,7 @@ export interface UpdateServiceDeps {
   readonly resolveToken?: typeof resolveGithubToken
   readonly sync?: typeof syncCheckout
   readonly build?: typeof buildStagedPackage
+  readonly downloadInstaller?: typeof downloadReleaseInstaller
   readonly reset?: typeof clearDerivedState
   readonly buildLog?: BuildLogWriter
   readonly spawnWorker?: (file: string, args: readonly string[]) => void
@@ -108,8 +110,28 @@ export class UpdateService {
       return this.releaseGate()
     }
 
+    // Installer updates are intentionally background-only: starting the shell
+    // must never wait for GitHub or for a multi-hundred-megabyte download.
+    // The periodic pass downloads the verified installer and then notifies the
+    // user that a restart is ready.
+    if (config.launchPolicy === 'installer') {
+      const stagedInstaller = this.stagedInstallerMarker()
+      if (stagedInstaller && stagedInstaller.commit === checked.remoteCommit) {
+        this.patch({
+          phase: 'ready',
+          message: 'Проверенный установщик уже скачан — можно перезапустить Еву.',
+          restartRequired: true
+        })
+      }
+      return this.releaseGate()
+    }
+
     // A background run of the previous session may already have staged exactly
     // the commit we want; then the launch is only a file swap.
+    const stagedInstaller = this.stagedInstallerMarker()
+    if (stagedInstaller && stagedInstaller.commit === checked.remoteCommit && stagedInstaller.commit !== checked.installedCommit) {
+      return this.apply() ? 'applying' : this.releaseGate()
+    }
     if (staged && staged.commit === checked.remoteCommit && staged.commit !== checked.installedCommit) {
       return this.apply() ? 'applying' : this.releaseGate()
     }
@@ -307,6 +329,9 @@ export class UpdateService {
       if (target === this.current.installedCommit) {
         return this.patch({ phase: 'up-to-date', message: 'Установлена последняя версия.' })
       }
+      if (config.launchPolicy === 'installer') {
+        return this.prepareInstaller(target)
+      }
       if (this.stagedMarker()?.commit === target) {
         // A previous run already built this commit; rebuilding it would only
         // burn minutes of the user's machine.
@@ -354,6 +379,38 @@ export class UpdateService {
     } finally {
       this.running = false
       this.aborter = null
+    }
+  }
+
+  /** Downloads the installer published by CI after its checks passed. */
+  private async prepareInstaller(target: string): Promise<UpdateStatus> {
+    const { config } = this.deps
+    this.patch({
+      phase: 'preparing',
+      message: 'Скачиваю проверенный установщик…',
+      steps: initialUpdateSteps(),
+      error: null
+    })
+    this.step('package', 'active')
+    try {
+      const downloaded = await (this.deps.downloadInstaller ?? downloadReleaseInstaller)(
+        config.repositoryUrl,
+        config.branch,
+        target,
+        config.stagingDirectory,
+        await this.githubToken()
+      )
+      this.step('package', 'done')
+      this.deps.log('info', 'update.installer_downloaded', { commit: downloaded.marker.commit })
+      return this.patch({
+        phase: 'ready',
+        message: 'Установщик скачан — нужен перезапуск.',
+        restartRequired: true,
+        detail: ''
+      })
+    } catch (error) {
+      this.step('package', 'failed')
+      return this.fail('Скачивание установщика не удалось', error)
     }
   }
 
@@ -467,9 +524,10 @@ export class UpdateService {
     const { config } = this.deps
     const exists = this.deps.exists ?? existsSync
     const marker = this.stagedMarker()
+    const installerMarker = this.stagedInstallerMarker()
     const worker = join(config.installDirectory, TRANSACTION_EXECUTABLE)
-    if (!marker || !exists(worker)) {
-      this.deps.log('warn', 'update.apply_unavailable', { staged: marker !== null })
+    if ((!marker && !installerMarker) || !exists(worker)) {
+      this.deps.log('warn', 'update.apply_unavailable', { staged: marker !== null, installer: installerMarker !== null })
       return false
     }
 
@@ -479,19 +537,18 @@ export class UpdateService {
       restartRequired: false
     })
     this.step('apply', 'active')
-    const args = [
-      '--apply-staging',
-      '--staging',
-      config.stagingDirectory,
-      '--install-dir',
-      config.installDirectory,
-      '--state-dir',
-      config.stateDirectory,
-      '--wait-pid',
-      String(process.pid),
-      '--relaunch',
-      join(config.installDirectory, SHELL_EXECUTABLE)
-    ]
+    const args = installerMarker
+      ? [
+          '--installer', join(config.stagingDirectory, 'EvoHime-Setup.exe'),
+          '--install-dir', config.installDirectory,
+          '--state-dir', config.stateDirectory,
+          '--relaunch', join(config.installDirectory, SHELL_EXECUTABLE)
+        ]
+      : [
+          '--apply-staging', '--staging', config.stagingDirectory,
+          '--install-dir', config.installDirectory, '--state-dir', config.stateDirectory,
+          '--wait-pid', String(process.pid), '--relaunch', join(config.installDirectory, SHELL_EXECUTABLE)
+        ]
     try {
       ;(this.deps.spawnWorker ?? defaultSpawnWorker)(worker, args)
     } catch (error) {
@@ -524,6 +581,13 @@ export class UpdateService {
     const marker = readBuildMarker(this.deps.config.stagingDirectory)
     const exists = this.deps.exists ?? existsSync
     if (!marker || !exists(join(this.deps.config.stagingDirectory, SHELL_EXECUTABLE))) return null
+    return marker
+  }
+
+  private stagedInstallerMarker(): { readonly commit: string } | null {
+    const marker = readBuildMarker(this.deps.config.stagingDirectory)
+    const exists = this.deps.exists ?? existsSync
+    if (!marker || !exists(join(this.deps.config.stagingDirectory, 'EvoHime-Setup.exe'))) return null
     return marker
   }
 

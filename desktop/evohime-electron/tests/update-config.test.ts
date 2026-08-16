@@ -28,7 +28,7 @@ describe('update config', () => {
     expect(config.enabled).toBe(true)
     expect(config.repositoryUrl).toBe(DEFAULT_REPOSITORY_URL)
     expect(config.branch).toBe(DEFAULT_BRANCH)
-    expect(config.launchPolicy).toBe('build')
+    expect(config.launchPolicy).toBe('installer')
     expect(config.requireGreenCommit).toBe(true)
     expect(config.greenCommitDepth).toBe(10)
     expect(config.sourceDirectory).toBe('C:\\data\\EvoHime\\source')
@@ -49,6 +49,11 @@ describe('update config', () => {
     expect(config.branch).toBe('release/next')
     expect(config.launchPolicy).toBe('apply-ready')
     expect(config.checkIntervalMs).toBe(120 * 60_000)
+  })
+
+  it('migrates a version 1 installer from local builds to CI installers', () => {
+    expect(load({ version: 1, launchPolicy: 'build' }).launchPolicy).toBe('installer')
+    expect(load({ version: 1, launchPolicy: 'build' }, { EVOHIME_UPDATE_LAUNCH_POLICY: 'build' }).launchPolicy).toBe('build')
   })
 
   it('never launches an update run when it is disabled', () => {

@@ -31,7 +31,11 @@ interface Harness {
   stage(commit: string): void
 }
 
-function harness(overrides: Partial<UpdateServiceDeps> = {}, installedCommit: string | null = INSTALLED): Harness {
+function harness(
+  overrides: Partial<UpdateServiceDeps> = {},
+  installedCommit: string | null = INSTALLED,
+  configOverrides: Partial<UpdateConfig> = {}
+): Harness {
   const root = mkdtempSync(join(tmpdir(), 'evohime-update-'))
   roots.push(root)
   const install = join(root, 'install')
@@ -50,6 +54,7 @@ function harness(overrides: Partial<UpdateServiceDeps> = {}, installedCommit: st
     executablePath: join(install, 'EvoHime.exe'),
     readFile: () => null
   })
+  const updateConfig: UpdateConfig = { ...config, launchPolicy: 'build', ...configOverrides }
 
   const statuses: UpdateStatus[] = []
   const spawnWorker = vi.fn()
@@ -70,7 +75,7 @@ function harness(overrides: Partial<UpdateServiceDeps> = {}, installedCommit: st
   })
 
   const service = new UpdateService({
-    config,
+    config: updateConfig,
     emit: (status) => statuses.push(status),
     log: () => {},
     quit,
@@ -155,6 +160,25 @@ describe('update check', () => {
 })
 
 describe('launch gate', () => {
+  it('does not block startup while a CI installer downloads', async () => {
+    const downloadInstaller = vi.fn(async (_repository: string, _branch: string, commit: string, staging: string) => {
+      mkdirSync(staging, { recursive: true })
+      writeFileSync(join(staging, 'EvoHime-Setup.exe'), 'installer')
+      writeFileSync(join(staging, 'evohime.build.json'), JSON.stringify({ commit, branch: 'main', builtAtMs: 2 }))
+      return { installer: join(staging, 'EvoHime-Setup.exe'), marker: { commit, branch: 'main', builtAtMs: 2 } }
+    })
+    const test = harness({ downloadInstaller }, INSTALLED, { launchPolicy: 'installer' })
+
+    await expect(test.service.runLaunchGate()).resolves.toBe('continue')
+    expect(downloadInstaller).not.toHaveBeenCalled()
+    expect(test.quit).not.toHaveBeenCalled()
+
+    const status = await test.service.prepare()
+    expect(status.phase).toBe('ready')
+    expect(status.restartRequired).toBe(true)
+    expect(downloadInstaller).toHaveBeenCalledTimes(1)
+  })
+
   it('does nothing when updates are disabled', async () => {
     const { config, build } = harness()
     const disabled = new UpdateService({

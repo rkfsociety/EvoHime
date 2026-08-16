@@ -13,7 +13,7 @@ EvoHime — локальный Windows-клиент для coding-agent зада
 - `EvoHime.exe` — Electron main process с bundled renderer; native package и installer собирают Electron shell;
 - `evohime-core.exe` — Rust agent loop, model gateway, tools, permissions, approvals и SQLite;
 - `evohime-supervisor.exe` — single-instance mutex, Job Object, restart и диагностика;
-- `evohime-transaction.exe` — скрытый transaction worker для backup, commit и rollback обновлений, включая подмену локально пересобранного пакета;
+- `evohime-transaction.exe` — скрытый transaction worker для backup, commit и rollback обновлений, включая подмену CI-установщика или локально пересобранного пакета;
 - versioned protobuf over Windows named pipe — единственный UI/Core transport;
 - `%LOCALAPPDATA%\EvoHime` — локальные данные и JSONL-логи; `source`, `update-staging`, `update-state` и `update.json` принадлежат обновлению.
 
@@ -27,9 +27,9 @@ Core и supervisor — внутренние компоненты установ�
 - streamed task timeline, cancellation и approval round-trip;
 - Windows package smoke tests и Windows CI;
 - единый Inno Setup installer с одним desktop shortcut; установленный клиент сам поднимает supervisor, а supervisor — Core;
-- обновление из исходников без релизов: клиент сверяет `evohime.build.json` с вершиной ветки, ставит недостающие инструменты сборки через winget, обновляет свой git checkout, пересобирает продукт локально и отдаёт готовый пакет `evohime-transaction.exe --apply-staging`. При запуске идёт блокирующий gate с шагами пересборки и кнопкой «Пропустить», у запущенного клиента — фоновая сборка и баннер с перезапуском;
+- фоновое обновление из постоянного GitHub Release: клиент сверяет зелёный commit, скачивает `EvoHime-Setup.exe` только при совпадении манифеста и SHA-256, а затем отдаёт его `evohime-transaction.exe --installer`. Запуск приложения не блокируется скачиванием; после фоновой загрузки UI показывает баннер с предложением перезапуска. Локальная пересборка через `launchPolicy: "build"` сохранена для разработки;
 - upgrade smoke в CI, автоматический rollback и recovery незавершённой транзакции перед запуском Core;
-- один постоянный релиз `installer` с описанием из `installer/release-notes.md`: `EvoHime-Setup.exe` в нём перезаписывается по ручному запуску workflow, новых релизов и версионных тегов не создаётся. Постоянная ссылка — `releases/latest/download/EvoHime-Setup.exe`. Установщик нужен только для первой установки, дальше клиент обновляет себя сам;
+- один постоянный релиз `installer` с описанием из `installer/release-notes.md`: `EvoHime-Setup.exe` и `EvoHime-Setup.json` в нём перезаписываются после успешного CI на `main`, новых релизов и версионных тегов не создаётся. Установщик нужен для первой установки и фоновых обновлений клиента;
 - имя агента «Ева» передаётся в system context Core;
 - Core-owned build policy и её хранение;
 - durable recovery foundation для длительных запусков и reconciliation;
