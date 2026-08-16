@@ -1846,6 +1846,14 @@ select:focus {
 }
 
 .review-panel__file { font-weight: 600; }
+.review-panel__dropzone { display: grid; gap: 10px; border: 1px dashed var(--border, #334155); border-radius: 10px; padding: 14px; transition: border-color .12s ease, background .12s ease; }
+.review-panel__dropzone--active { border-color: #6366f1; background: color-mix(in srgb, var(--panel, #111827) 82%, #6366f1); }
+.review-panel__hint,
+.review-panel__empty { color: var(--muted, #94a3b8); font-size: 13px; margin: 0; }
+.review-panel__files { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.review-panel__files li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; }
+.review-panel__files small { color: var(--muted, #94a3b8); }
+.review-panel__files button { line-height: 1; padding: 2px 8px; }
 .review-panel__controls { display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 12px; }
 .review-panel__controls label,
 .review-panel__model-row,

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -23,7 +23,7 @@ function startedReviewId(): string {
 }
 
 async function startReview(models: readonly string[]): Promise<void> {
-  await userEvent.click(screen.getByRole('button', { name: 'Выбрать Markdown-план' }))
+  await userEvent.click(screen.getByRole('button', { name: 'Выбрать Markdown-планы' }))
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Модель рецензента 1' }), models[0] as string)
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Модель рецензента 2' }), models[1] as string)
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Главная модель-синтезатор' }), models[2] as string)
@@ -37,7 +37,7 @@ beforeEach(() => {
     apiVersion: 1,
     invoke: (async (command: RendererCommand, payload: unknown) => {
       calls.push({ command, payload })
-      return ok(command === 'review.list' ? { reviews: [] } : command === 'review.get' ? { review: null } : command === 'review.pickPlan' ? { cancelled: false, fileName: 'plan.md', sourceMarkdown: '# Plan', directory: '/plans' } : { accepted: true })
+      return ok(command === 'review.list' ? { reviews: [] } : command === 'review.get' ? { review: null } : command === 'review.pickPlan' ? { cancelled: false, files: [{ fileName: 'plan.md', sourceMarkdown: '# Plan' }], directory: '/plans' } : { accepted: true })
     }) as EvoHimeApiV1['invoke'],
     subscribe: () => () => {},
     writeClipboardText: async () => true,
@@ -83,7 +83,7 @@ describe('plan review panel', () => {
       event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] }),
     ]} />)
 
-    await userEvent.click(screen.getByRole('button', { name: 'Выбрать Markdown-план' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Выбрать Markdown-планы' }))
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Модель рецензента 1' }), 'a')
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Модель рецензента 2' }), 'b')
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Главная модель-синтезатор' }), 'main')
@@ -281,15 +281,68 @@ describe('plan review panel', () => {
     const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
     const first = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
 
-    await userEvent.click(screen.getByRole('button', { name: 'Выбрать Markdown-план' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Выбрать Markdown-планы' }))
     expect(calls).toContainEqual({ command: 'review.pickPlan', payload: { directory: '' } })
     first.unmount()
 
     // A fresh mount stands for the next launch of the shell: the folder must
     // survive it, otherwise the user navigates to their plans every time.
     render(<PlanReviewPanel connection="connected" events={[catalog]} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Выбрать Markdown-план' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Выбрать Markdown-планы' }))
     expect(calls).toContainEqual({ command: 'review.pickPlan', payload: { directory: '/plans' } })
+  })
+
+  it('merges several picked plans into one review document', async () => {
+    Object.defineProperty(window, 'evohime', {
+      value: Object.freeze({ v1: {
+        apiVersion: 1,
+        invoke: (async (command: RendererCommand, payload: unknown) => {
+          calls.push({ command, payload })
+          return ok(command === 'review.list' ? { reviews: [] } : command === 'review.pickPlan' ? { cancelled: false, files: [{ fileName: 'a.md', sourceMarkdown: '# A' }, { fileName: 'b.md', sourceMarkdown: '# B' }], directory: '/plans' } : { accepted: true })
+        }) as EvoHimeApiV1['invoke'],
+        subscribe: () => () => {},
+        writeClipboardText: async () => true,
+        openExternal: async () => true
+      } satisfies EvoHimeApiV1 }),
+      configurable: true
+    })
+    render(<PlanReviewPanel connection="connected" events={[event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })]} />)
+
+    await startReview(['a', 'b', 'main'])
+    const payload = calls.find((call) => call.command === 'review.start')?.payload as { fileName: string; sourceMarkdown: string }
+    expect(payload.fileName).toBe('a.md, b.md')
+    expect(payload.sourceMarkdown).toBe('## Файл 1 из 2: a.md\n\n# A\n\n---\n\n## Файл 2 из 2: b.md\n\n# B')
+    expect(screen.getByText(/Файлов: 2/)).toBeTruthy()
+  })
+
+  it('accepts markdown dropped onto the panel and skips other files', async () => {
+    render(<PlanReviewPanel connection="connected" events={[event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })]} />)
+
+    fireEvent.drop(screen.getByRole('group', { name: 'Планы на ревью' }), {
+      dataTransfer: { files: [new File(['# A'], 'a.md'), new File(['x'], 'notes.txt')] }
+    })
+
+    await waitFor(() => expect(screen.getByText('a.md')).toBeTruthy())
+    expect(screen.queryByText('notes.txt')).toBeNull()
+    expect(screen.getByRole('alert').textContent).toContain('notes.txt')
+
+    // Крестик убирает лишний файл, не трогая остальной выбор.
+    await userEvent.click(screen.getByRole('button', { name: 'Убрать a.md' }))
+    expect(screen.getByText('Файлы не выбраны.')).toBeTruthy()
+  })
+
+  it('adds dropped plans to the ones already picked', async () => {
+    render(<PlanReviewPanel connection="connected" events={[event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })]} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Выбрать Markdown-планы' }))
+    fireEvent.drop(screen.getByRole('group', { name: 'Планы на ревью' }), {
+      dataTransfer: { files: [new File(['# Extra'], 'extra.md')] }
+    })
+
+    await waitFor(() => expect(screen.getByText('extra.md')).toBeTruthy())
+    expect(screen.getByText('plan.md')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: 'Очистить список' }))
+    expect(screen.getByText('Файлы не выбраны.')).toBeTruthy()
   })
 
   it('reports a rejected start request', async () => {
@@ -299,7 +352,7 @@ describe('plan review panel', () => {
         invoke: (async (command: RendererCommand, payload: unknown) => {
           calls.push({ command, payload })
           if (command === 'review.start') return { ok: false, message: 'provider is not configured' } as CommandOutcome<RendererCommand>
-          return ok(command === 'review.list' ? { reviews: [] } : command === 'review.pickPlan' ? { cancelled: false, fileName: 'plan.md', sourceMarkdown: '# Plan', directory: '/plans' } : { accepted: true })
+          return ok(command === 'review.list' ? { reviews: [] } : command === 'review.pickPlan' ? { cancelled: false, files: [{ fileName: 'plan.md', sourceMarkdown: '# Plan' }], directory: '/plans' } : { accepted: true })
         }) as EvoHimeApiV1['invoke'],
         subscribe: () => () => {},
         writeClipboardText: async () => true,

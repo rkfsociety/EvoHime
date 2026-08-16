@@ -117,6 +117,16 @@ export interface ChatSummary {
   readonly messageCount: number
 }
 
+/**
+ * Один выбранный Markdown-план. Ревью запускается по одному документу, поэтому
+ * несколько файлов оболочка склеивает перед отправкой в ядро — здесь они ещё
+ * лежат раздельно, чтобы список в панели можно было править по одному файлу.
+ */
+export interface PlanFile {
+  readonly fileName: string
+  readonly sourceMarkdown: string
+}
+
 export interface PlanReviewReviewer {
   readonly model: string
   readonly status: string
@@ -378,7 +388,7 @@ export interface CommandResults {
   'chat.appendPrompt': ChatRecord | null
   'chat.remove': readonly ChatSummary[]
   /** `directory` — папка выбранного файла, чтобы следующий диалог открылся в ней. */
-  'review.pickPlan': { cancelled: boolean; fileName: string; sourceMarkdown: string; directory: string }
+  'review.pickPlan': { cancelled: boolean; files: readonly PlanFile[]; directory: string }
   'review.start': { accepted: boolean; reviewId: string }
   'review.stop': { accepted: boolean }
   'review.list': { reviews: readonly PlanReviewResult[] }

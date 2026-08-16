@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
-import type { ConnectionState, CoreEvent, ModelTier, PlanReviewResult } from '@shared/api'
+import type { ConnectionState, CoreEvent, ModelTier, PlanFile, PlanReviewResult } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { MarkdownMessage } from './MarkdownMessage'
@@ -19,6 +19,9 @@ const PLAN_DIRECTORY_KEY = 'evohime.review-plan-directory.v1'
 // has happened.
 const SILENT_LAUNCH_SECONDS = 20
 const SILENT_PROGRESS_SECONDS = 180
+// Тот же потолок, что и в мосте оболочки и в ядре: считаем по склеенному
+// документу, потому что именно он уходит в ревью.
+const MAX_PLAN_BYTES = 512 * 1024
 
 interface Props {
   readonly connection: ConnectionState
@@ -94,8 +97,8 @@ function savePlanDirectory(directory: string): void {
 export function PlanReviewPanel({ connection, events }: Props): React.JSX.Element {
   const api = useShellApi()
   const [preferences] = useState(loadReviewPreferences)
-  const [fileName, setFileName] = useState('')
-  const [sourceMarkdown, setSourceMarkdown] = useState('')
+  const [plans, setPlans] = useState<readonly PlanFile[]>([])
+  const [dragging, setDragging] = useState(false)
   const [tier, setTier] = useState<ModelTier>(preferences.tier)
   const [models, setModels] = useState<readonly string[]>([])
   const [reviewerCount, setReviewerCount] = useState(Math.max(MIN_REVIEWERS, Math.min(MAX_REVIEWERS, preferences.reviewerModels.length || MIN_REVIEWERS)))
@@ -109,7 +112,14 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   const [lastChangeAt, setLastChangeAt] = useState(() => Date.now())
   const [copied, setCopied] = useState(false)
   const [roster, setRoster] = useState<ReviewRoster>({ reviewId: '', models: [], statuses: {} })
+  // Перетаскивание над вложенными узлами шлёт dragleave родителю, поэтому
+  // подсветка снимается по счётчику входов, а не по первому же выходу.
+  const dragDepth = useRef(0)
 
+  // Ядро принимает один документ, поэтому несколько планов склеиваются здесь:
+  // рецензенты читают их как разделы одного плана и видят связи между ними.
+  const sourceMarkdown = useMemo(() => mergePlans(plans), [plans])
+  const fileName = useMemo(() => describePlans(plans), [plans])
   const catalog = useMemo(() => latestCatalog(events, tier), [events, tier])
   const reviewResult = useMemo(() => latestReviewResult(events), [events])
   const progress = useMemo(() => reviewId ? latestReviewProgress(events, reviewId) : null, [events, reviewId])
@@ -202,16 +212,67 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
     })
   }, [events, reviewId])
 
+  // Файл, брошенный мимо зоны, иначе открылся бы вместо оболочки: Electron
+  // считает такой drop навигацией и выгружает окно вместе с текущим ревью.
+  useEffect(() => {
+    const swallow = (event: DragEvent): void => event.preventDefault()
+    window.addEventListener('dragover', swallow)
+    window.addEventListener('drop', swallow)
+    return () => {
+      window.removeEventListener('dragover', swallow)
+      window.removeEventListener('drop', swallow)
+    }
+  }, [])
+
   const pick = async (): Promise<void> => {
     if (!api) return
     const outcome = await api.invoke('review.pickPlan', { directory: loadPlanDirectory() })
-    if (!outcome.ok || outcome.value.cancelled) return
+    if (!outcome.ok) {
+      setError(outcome.message)
+      return
+    }
+    if (outcome.value.cancelled) return
     savePlanDirectory(outcome.value.directory)
-    setFileName(outcome.value.fileName)
-    setSourceMarkdown(outcome.value.sourceMarkdown)
+    addPlans(outcome.value.files, [])
+  }
+
+  /**
+   * Список пополняется, а не заменяется: набрать план из нескольких файлов
+   * можно и в несколько заходов — диалогом, перетаскиванием или вперемешку.
+   * Лишнее снимается крестиком у файла или кнопкой «Очистить список».
+   */
+  const addPlans = (incoming: readonly PlanFile[], rejected: readonly string[]): void => {
+    const merged = [...plans]
+    for (const plan of incoming) {
+      if (merged.some((item) => item.fileName === plan.fileName && item.sourceMarkdown === plan.sourceMarkdown)) continue
+      merged.push(plan)
+    }
+    if (byteLength(mergePlans(merged)) > MAX_PLAN_BYTES) {
+      setError('Планы в сумме превышают 512 КБ — ядро такой документ не примет. Убери часть файлов.')
+      return
+    }
+    setPlans(merged)
     setSelectedResult(null)
     setReviewId(null)
-    setError(null)
+    setError(rejected.length > 0 ? `Приняты только .md: пропущены ${rejected.join(', ')}.` : null)
+  }
+
+  const removePlan = (index: number): void => {
+    setPlans((current) => current.filter((_, position) => position !== index))
+  }
+
+  const drop = async (transfer: DataTransfer): Promise<void> => {
+    const dropped = Array.from(transfer.files)
+    if (dropped.length === 0) return
+    const accepted = dropped.filter((file) => file.name.toLowerCase().endsWith('.md'))
+    const rejected = dropped.filter((file) => !file.name.toLowerCase().endsWith('.md')).map((file) => file.name)
+    if (accepted.length === 0) {
+      setError(`Приняты только .md: пропущены ${rejected.join(', ')}.`)
+      return
+    }
+    const loaded: PlanFile[] = []
+    for (const file of accepted) loaded.push({ fileName: file.name, sourceMarkdown: await file.text() })
+    addPlans(loaded, rejected)
   }
 
   const changeCount = (count: number): void => {
@@ -286,11 +347,33 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
 
   return (
     <section className="review-panel" aria-label="Ревью планов">
-      <div className="review-panel__toolbar">
-        <button type="button" onClick={() => void pick()}>Выбрать Markdown-план</button>
-        {fileName ? <span className="review-panel__file">{fileName}</span> : <span>Файл не выбран</span>}
+      <div
+        role="group"
+        aria-label="Планы на ревью"
+        className={`review-panel__dropzone${dragging ? ' review-panel__dropzone--active' : ''}`}
+        onDragEnter={(event) => { event.preventDefault(); dragDepth.current += 1; setDragging(true) }}
+        onDragOver={(event) => event.preventDefault()}
+        onDragLeave={(event) => { event.preventDefault(); dragDepth.current -= 1; if (dragDepth.current <= 0) { dragDepth.current = 0; setDragging(false) } }}
+        onDrop={(event) => { event.preventDefault(); dragDepth.current = 0; setDragging(false); if (!running) void drop(event.dataTransfer) }}
+      >
+        <div className="review-panel__toolbar">
+          <button type="button" onClick={() => void pick()}>Выбрать Markdown-планы</button>
+          {plans.length > 0 ? <button type="button" onClick={() => setPlans([])} disabled={running}>Очистить список</button> : null}
+          <span className="review-panel__hint">Можно выбрать несколько файлов сразу или перетащить их сюда.</span>
+        </div>
+        {plans.length === 0 ? <p className="review-panel__empty">Файлы не выбраны.</p> : (
+          <ul className="review-panel__files">
+            {plans.map((plan, index) => (
+              <li key={`${plan.fileName}-${index}`}>
+                <span className="review-panel__file">{plan.fileName}</span>
+                <small>{plan.sourceMarkdown.length} символов</small>
+                <button type="button" aria-label={`Убрать ${plan.fileName}`} onClick={() => removePlan(index)} disabled={running}>×</button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
-      {fileName ? <p className="review-panel__source">Загружено символов: {sourceMarkdown.length}</p> : null}
+      {plans.length > 0 ? <p className="review-panel__source">Файлов: {plans.length} · загружено символов: {sourceMarkdown.length}</p> : null}
 
       <div className="review-panel__controls">
         <label>Режим каталога<select value={tier} onChange={(event) => setTier(event.target.value as ModelTier)} disabled={running}><option value="free">Бесплатные</option><option value="paid">Платные</option></select></label>
@@ -393,6 +476,34 @@ function normalizeResult(value: Record<string, unknown>): PlanReviewResult | nul
   const reviewId = value.review_id ?? value.reviewId; const fileName = value.file_name ?? value.fileName; const synthesisModel = value.synthesis_model ?? value.synthesisModel; const finalMarkdown = value.final_markdown ?? value.finalMarkdown
   if (typeof reviewId !== 'string' || typeof fileName !== 'string' || typeof synthesisModel !== 'string' || typeof finalMarkdown !== 'string' || !Array.isArray(value.reviewers)) return null
   return { reviewId, fileName, synthesisModel, finalMarkdown, reviewers: value.reviewers.map((item) => { const review = item as Record<string, unknown>; return { model: String(review.model ?? ''), status: String(review.status ?? ''), content: String(review.content ?? ''), error: typeof review.error === 'string' ? review.error : null } }) }
+}
+
+/**
+ * Один файл уходит в ревью как есть: подписывать единственный план незачем, а
+ * лишний заголовок сместил бы структуру документа. Несколько файлов становятся
+ * разделами с явной нумерацией, чтобы модель понимала, где кончается один план
+ * и начинается следующий.
+ */
+function mergePlans(plans: readonly PlanFile[]): string {
+  const [first] = plans
+  if (!first) return ''
+  if (plans.length === 1) return first.sourceMarkdown
+  return plans
+    .map((plan, index) => `## Файл ${index + 1} из ${plans.length}: ${plan.fileName}\n\n${plan.sourceMarkdown.trim()}`)
+    .join('\n\n---\n\n')
+}
+
+/** Имя для ядра и истории: список имён, а для длинного набора — счёт остатка. */
+function describePlans(plans: readonly PlanFile[]): string {
+  const [first] = plans
+  if (!first) return ''
+  if (plans.length === 1) return first.fileName
+  const joined = plans.map((plan) => plan.fileName).join(', ')
+  return joined.length <= 120 ? joined : `${first.fileName} и ещё ${plans.length - 1}`
+}
+
+function byteLength(value: string): number {
+  return new TextEncoder().encode(value).length
 }
 
 function normalizeSlots(values: readonly string[], count: number, available: readonly string[] = []): string[] { const result = values.slice(0, count); while (result.length < count) result.push(''); const candidates = available.filter((model) => !result.includes(model)); for (let index = 0; index < result.length; index += 1) if (!result[index] && candidates.length > 0) result[index] = candidates.shift() as string; return result }

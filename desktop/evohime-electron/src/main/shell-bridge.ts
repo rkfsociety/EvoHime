@@ -815,11 +815,15 @@ function asReviewModels(value: unknown): readonly string[] | null {
  * `directory` — папка прошлого выбора: планы почти всегда лежат рядом, поэтому
  * диалог открывается там же. Каталог мог быть удалён или переименован, так что
  * недоступный путь просто игнорируется и диалог открывается по умолчанию.
+ *
+ * Файлов можно выбрать несколько: ядро принимает один документ, поэтому склейку
+ * делает панель — здесь важно лишь, чтобы суммарный размер уже прошёл проверку
+ * и пользователь узнал о превышении до запуска ревью.
  */
 async function pickReviewPlan(directory: unknown): Promise<unknown> {
   const window = BrowserWindow.getFocusedWindow()
   const options: Electron.OpenDialogOptions = {
-    properties: ['openFile'],
+    properties: ['openFile', 'multiSelections'],
     filters: [{ name: 'Markdown', extensions: ['md'] }]
   }
   const startIn = await usableDirectory(directory)
@@ -828,16 +832,21 @@ async function pickReviewPlan(directory: unknown): Promise<unknown> {
     ? await dialog.showOpenDialog(window, options)
     : await dialog.showOpenDialog(options)
   if (selected.canceled || selected.filePaths.length === 0) {
-    return { ok: true, value: { cancelled: true, fileName: '', sourceMarkdown: '', directory: '' } }
+    return { ok: true, value: { cancelled: true, files: [], directory: '' } }
   }
-  const path = selected.filePaths[0]
-  if (!path) return failure('invalid-payload', 'Файл плана не выбран.')
-  if (extname(path).toLowerCase() !== '.md') return failure('invalid-payload', 'Нужен Markdown-файл с расширением .md.')
-  const content = await readFile(path, 'utf8')
-  if (Buffer.byteLength(content, 'utf8') > MAX_REVIEW_PLAN_BYTES) {
-    return failure('invalid-payload', 'Файл плана превышает 512 КБ.')
+  const files: { fileName: string; sourceMarkdown: string }[] = []
+  let total = 0
+  for (const path of selected.filePaths) {
+    if (extname(path).toLowerCase() !== '.md') return failure('invalid-payload', 'Нужны Markdown-файлы с расширением .md.')
+    const content = await readFile(path, 'utf8')
+    total += Buffer.byteLength(content, 'utf8')
+    if (total > MAX_REVIEW_PLAN_BYTES) {
+      return failure('invalid-payload', 'Выбранные планы в сумме превышают 512 КБ.')
+    }
+    files.push({ fileName: basename(path), sourceMarkdown: content })
   }
-  return { ok: true, value: { cancelled: false, fileName: basename(path), sourceMarkdown: content, directory: dirname(path) } }
+  const last = selected.filePaths[selected.filePaths.length - 1] as string
+  return { ok: true, value: { cancelled: false, files, directory: dirname(last) } }
 }
 
 async function usableDirectory(value: unknown): Promise<string | null> {
