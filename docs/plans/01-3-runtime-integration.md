@@ -82,6 +82,11 @@ Approval record хранит и повторно сравнивает:
 - bounded preview и created_at_ms/fixed expires_at_ms;
 - state pending|granted|denied|expired|claimed.
 
+Durable approval audit sink расширяет существующий ApprovalAuditEntry полем
+call_hash и сохраняет pending/granted/denied/expired decision. In-memory approval
+record может быть погашен, но эта bounded audit row остаётся для offline
+проверки binding; raw input в неё не попадает.
+
 TTL v1 — **10 минут** от создания approval; clock checks используют monotonic
 deadline, wall expires_at_ms служит только для UI/diagnostics. После TTL claim
 атомарно переводит approval в expired и action получает signed refusal_code=
@@ -142,7 +147,8 @@ append-only таблицах:
 - receipt_records: receipt id, action id, kind/status, task/run, key id,
   canonical payload/envelope blobs, receipt hash, previous hash, timestamp;
 - receipt_actions: action id, pre receipt hash, terminal receipt hash,
-  current internal state, approval id, tool args hash и bounded recovery code;
+  current internal state, approval id, approval call hash, approval outcome,
+  tool args hash и bounded recovery code;
 - receipt_chain_heads: один head на key id с последним receipt hash;
 - receipt_approval_intents: bounded pending intents, TTL и recovery marker.
 
