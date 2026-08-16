@@ -65,6 +65,14 @@ CREATE INDEX idx_ambient_expiry ON ambient_utterances(expires_at);
   `provenance_source_id = episode_id` причиной `source_deleted` и вращает
   backup-контейнеры старше 7 дней — тем же приёмом, что `forget` в Memory
   Extraction.
+- Ошибка вставки (диск заполнен, блокировка или другая ошибка SQLite) не
+  ретраится листенером: Core возвращает `storage_failed`, не создаёт ложную
+  запись и публикует `ambient.storage_error` в UI. Листенер помечает исходное
+  высказывание как `dropped` и продолжает работу со следующим сегментом.
+- `forget_window(minutes)` удаляет высказывания с `started_at` в замкнутом
+  окне `[now - minutes, now]` и отклоняет производные кандидаты. Эпизод,
+  начавшийся до окна, не удаляется целиком только из-за того, что пересекает
+  его границу.
 
 ## Файлы
 

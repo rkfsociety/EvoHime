@@ -16,37 +16,54 @@
 
 ## Что уже есть в коде
 
-Супервизор спавнит ровно одного ребёнка и завершает цикл после успешного
-выхода Core (`windows_supervisor.rs`). Core-пайп обслуживает одно соединение за
-раз (`pipe_server.rs`). `ALLOWED_CLIENT_ROLES` (`crates/desktop-ipc/src/session.rs`)
-содержит две роли.
+Супервизор сейчас спавнит ровно одного ребёнка и завершает цикл после успешного
+выхода Core (`windows_supervisor.rs`). Для ambient он расширяется вторым
+ребёнком в том же Job Object; основной и listener pipe-серверы работают в
+отдельных задачах и используют общий `Arc<Mutex<CoreState>>`. До изменения
+`ALLOWED_CLIENT_ROLES` (`crates/desktop-ipc/src/session.rs`) содержит две роли.
 
 ## Содержание
 
 - `crates/evohime-listener-audio`:
   - захват через `cpal` (WASAPI shared, event-driven) — shared mode не отбирает
     устройство у Zoom и Discord;
-  - кольцевой буфер в `VirtualLock`-страницах, чтобы PCM не уходил в pagefile;
+  - кольцевой буфер в `VirtualLock`-страницах, чтобы снизить риск попадания PCM
+    в pagefile. Это best-effort мера, а не доказательство абсолютного
+    отсутствия аудио на диске; тестовый инвариант формулируется как отсутствие
+    файлового I/O и отключённые WER-дампы;
   - фиксированный полифазный дециматор 48/32→16 кГц (48→16 — ровно /3) и
     `rubato` для нестандартных частот;
   - двухступенчатый VAD: энергетический (RMS + zero-crossing, адаптивный шумовой
     пол) всегда, Silero через `ort` с feature `load-dynamic`, если рядом лежит
     `onnxruntime.dll`;
   - автомат сегментации по лимитам 04.1: вход в речь по трём voiced-кадрам,
-    pre-roll 300 мс, выход по 700 мс тишины, минимум 400 мс, потолок 20 с с
-    флагом `continued`;
+    pre-roll 300 мс, выход по 700 мс тишины, минимум 400 мс, потолок 20 с.
+    Длинная речь разбивается на последовательные сегменты с `continued`; мост
+    в память объединяет их в один кандидат по `episode_id`;
   - крейт не имеет файлового I/O вообще.
 - `crates/evohime-listener` (bin): цикл жизни, клиент пайпа с реконнектом и
   backoff, применение политики, опрос активного окна раз в 500 мс
   (`GetForegroundWindow` + `QueryFullProcessImageNameW`), стоп-слово, трейт
   `SpeechEngine` с `FixtureEngine` и `NullEngine`.
-- `crates/listener-ipc`: `evohime.listener.proto` (`Hello`/`Handshake`,
+  - `crates/listener-ipc`: `evohime.listener.proto` (`Hello`/`Handshake`,
   `PolicyUpdate`, `StateChanged`, `UtteranceRecognized`, `EngineStatus`,
-  `LocalCommand{ pause | forget_window }`) поверх того же framing, что
+  `LocalCommand{ pause | reset_buffers }`) поверх того же framing, что
   desktop-ipc; frame limit 256 KiB.
 - Core: второй pipe-сервер на `<pipe_name>-listener`, роль `listener` в
   `ALLOWED_CLIENT_ROLES`, приём высказываний, выдача политики, проверка
   `MicrophoneListen` перед выдачей разрешения на захват.
+- `reset_buffers` в listener-ipc сбрасывает только кольцевой буфер, VAD и
+  незавершённый сегмент. Удаление транскриптов и производных кандидатов —
+  исключительно команда Core/desktop-ipc `ForgetAmbientWindow`.
+- При exclusive-захвате или недоступности выбранного устройства листенер
+  переходит в `DeviceConflict` с причиной для UI; список устройств и смена
+  устройства не требуют перезапуска приложения.
+- При уходе Windows в сон захват закрывается и состояние становится
+  `PausedByPolicy`; после пробуждения листенер повторно проверяет capability,
+  устройство и политику, затем восстанавливает прежнее состояние только если
+  это разрешено пользователем.
+- Стоп-слово определяется отдельным лёгким детектором параллельно с STT и
+  закрывает поток захвата до отправки текущего текста в Core.
 - Супервизор: второй ребёнок в том же Job Object с собственным restart budget.
   Падение листенера не влияет на решение по Core; падение Core не убивает
   листенер до исчерпания реконнектов.

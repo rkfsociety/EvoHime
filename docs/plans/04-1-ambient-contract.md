@@ -27,12 +27,17 @@ capability микрофона и правила логирования.
   `evohime-supervisor::schedule_contract`: без файловой системы, часов и
   процессов. В нём:
   - `ListeningState`: `Stopped`, `Starting`, `Listening`, `PausedByUser`,
-    `PausedByPolicy`, `EngineUnavailable`, `Denied` и допустимые переходы;
+    `PausedByPolicy`, `DeviceConflict`, `EngineUnavailable`, `Denied` и
+    допустимые переходы;
   - `AmbientLimits`: кадр 30 мс, pre-roll 300 мс, hangover 700 мс, минимум
     400 мс, потолок высказывания 20 с, эпизод 10 мин, окно дедупликации 60 с;
   - `AmbientPolicy` v1 (пауза, тихие часы, чёрные списки процессов и заголовков
-    окон, retention) с валидацией и потолками длины;
-  - `ProactivityBudget` — неизменяемый снимок по образцу `run_policy`;
+    окон, retention) с валидацией и потолками длины. В тихие часы поток
+    захвата полностью закрыт: высказывания не распознаются и не сохраняются;
+  - `ProactivityBudget` — неизменяемый снимок лимитов (3/час, 10/сутки,
+    10 минут между предложениями) по образцу `run_policy`. Текущие счётчики и
+    время последнего предложения не входят в snapshot и живут в Core-состоянии
+    `ambient_proactivity_state`;
   - закрытый набор кодов ошибок.
 - `Permission::MicrophoneListen` (serde `microphone_listen`) с дефолтом `Deny`;
   правило в `permission_rules.rs` и в `permissions.json.example`.
