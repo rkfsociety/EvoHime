@@ -211,7 +211,9 @@ index. При lock conflict выполняются три попытки с back
 управление, action остаётся pending_recovery), возвращается
 `receipt.chain_conflict` и создаётся durable diagnostic event; автоматический
 fallback без цепочного receipt запрещён. Отдельный
-Core receipt-writer mutex сериализует порядок. Поэтому concurrent actions
+Core receipt-writer mutex охватывает весь критический участок от чтения chain
+head до SQLite commit, включая predecessor verification, signing, receipt
+insert, action-index update и head update. Поэтому concurrent actions
 получают детерминированный порядок commit, а post receipt не обязан быть
 соседним с собственным pre: связь пары идёт через action_id и receipt_actions,
 chain — через previous_receipt_hash.
@@ -219,8 +221,10 @@ chain — через previous_receipt_hash.
 Receipt transaction и action state commit происходят до IPC event. События
 receipt.prepared, receipt.completed, receipt.refused и
 receipt.pending_recovery являются bounded projections, не источником истины.
-Existing EventJournal replay после restart восстанавливает action index; 01.4
-добавляет verify-chain/list/export поверх этих таблиц.
+Existing EventJournal остаётся projection/diagnostic sink: после restart replay
+сверяет его с durable `receipt_actions` и исправляет только индекс/доставку
+событий, но не receipt chain. Durable receipt/action tables являются источником
+истины; 01.4 добавляет verify-chain/list/export поверх этих таблиц.
 
 01.3 ничего не удаляет из receipt chain. Retention/compaction принадлежит 01.4
 и может удалять только старые сегменты с signed checkpoint; pending actions
@@ -241,6 +245,10 @@ Mutation policy:
   Core сохраняет pending_recovery, result hash/status только в bounded protected
   action row и не объявляет success; повторная подпись выполняется только
   recovery path;
+- если signer доступен, но post-signature не удалась из-за canonicalization,
+  size limit или другой детерминированной ошибки, action переходит в
+  `pending_recovery` с `recovery_code=signature_failed`; повторная подпись
+  разрешена только после проверки неизменности action/result digest;
 - policy denial/refusal не считается успешной mutation и не продвигает
   action_status beyond refused.
 
@@ -279,8 +287,11 @@ deterministic sample:
 - rate change создаёт audit event с old/new rate; renderer не меняет rate
   напрямую;
 - sampled read-only action получает обычный signed pre/post pair; unsampled
-  action получает bounded action.sampled=false event с digest, но не raw
-  arguments/results;
+  action получает durable unsigned audit marker `action.sampled=false` с
+  action id, digest, timestamp и sampling policy version. Marker не является
+  receipt, не входит в chain и не содержит raw arguments/results; он доступен
+  через audit diagnostics и не может отображаться как cryptographically
+  verified;
 - failed/cancelled read-only actions всегда записываются, чтобы sampling не
   скрывал ошибки.
 
@@ -314,7 +325,11 @@ deterministic sample:
 
 `pending_recovery` публикуется наружу как bounded event
 `receipt.pending_recovery` с `action_id`, state, reason_code, timestamp и
-`requires_reconciliation=true`; raw input/result отсутствуют. Event доставляется
+`requires_reconciliation=true`; raw input/result отсутствуют. UI показывает
+состояние «требуется сверка», recovery code и действие «Проверить/закрыть»;
+закрытие требует нового authenticated reconciliation command, не повторяет
+tool автоматически и не может объявить success без terminal receipt. Event
+доставляется
 через Core IPC после durable commit и может быть повторно прочитан через 01.4
 diagnostics.
 
@@ -359,6 +374,8 @@ tool dispatch, tool return, post append и head update. В каждой точк
   родительским approval без нового raw payload;
 - observability test confirms bounded events and no claim of correctness/
   policy enforcement beyond fields.
+- post-signature failure test сохраняет `pending_recovery` с
+  `signature_failed` и исключает повторное выполнение tool;
 
 ## Критерии готовности
 

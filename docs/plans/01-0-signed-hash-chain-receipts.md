@@ -44,8 +44,10 @@ Core-ключом и связанный с предыдущим receipt. Read-on
 содержит `payload`, `key_id`, `signature_algorithm` и `signature`; точный формат,
 лимиты и правила версионирования задаёт этап 01.1. `previous_receipt_hash` —
 lowercase hex SHA-256 от canonical signed envelope предыдущего receipt, а не от
-payload или raw JSON. Genesis единственный для `(key_id, chain)`; новый ключ
-начинает новый chain только после проверки trusted rotation/checkpoint history.
+payload или raw JSON. `chain` — это последовательность receipts, подписанных
+одним `key_id` и связанных через `previous_receipt_hash`, начиная с genesis
+receipt. Каждый `(key_id, chain)` имеет ровно один genesis; новый ключ начинает
+новую chain только после проверки trusted rotation/checkpoint history.
 
 ## Этапы
 
@@ -82,8 +84,9 @@ Core-owned storage.
 Полный canonical JSON/JCS, Ed25519 envelope, SHA-256 domains, limits, vectors,
 negative cases и version dispatch нормативно определены в 01.1; этот обзор не
 создаёт второй источник правил. `context_ledger_hash` — lowercase hex SHA-256
-ровно 64 ASCII bytes, вычисляется Context Budget Manager и валидируется
-verifier независимо от upstream.
+ровно 64 ASCII bytes, вычисляется Context Budget Manager; нормативная схема
+ledger hash находится в `docs/architecture.md` и не дублируется этим планом.
+Verifier валидирует его независимо от upstream.
 
 Adversary model включает скомпрометированный renderer, подменённый IPC input,
 повтор старого approval/receipt, повреждение SQLite и попытку подменить key
@@ -104,8 +107,9 @@ public-key history; private key не восстанавливается из rec
 Производительность и retention задаются этапами: 01.3 ограничивает runtime
 preview/diagnostics и транзакционные retries, 01.4 задаёт signed checkpoints,
 retention и offline verify. Целевой smoke-budget: sign/append не блокирует IPC,
-а verify 1000 receipts выполняется асинхронно UI и укладывается в 100 ms на
-локальном SSD после прогрева кэша; превышение измеряется отдельной метрикой.
+а verify 1000 receipts выполняется асинхронно UI и укладывается в 2 секунды p95
+на локальном SSD после прогрева кэша; превышение измеряется отдельной
+метрикой.
 
 ## Критерии готовности плана
 

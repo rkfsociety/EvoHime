@@ -100,7 +100,8 @@ receipts.chain_conflict; the tool is not run after such a failure.
 Used only when retention compacts a prefix:
 
 checkpoint_id, key_id, cutoff_sequence, first_retained_hash,
-prefix_last_hash, created_at, canonical_checkpoint, signature, status.
+prefix_last_hash, last_deleted_receipt_hash, created_at, canonical_checkpoint,
+signature, status.
 
 The checkpoint object is JCS ReceiptCheckpointV1, signed by the key active at
 checkpoint creation. It proves the retained suffix begins after the stated
@@ -207,7 +208,10 @@ Export algorithm:
    count, file hashes and outcome.
 
 Failure removes only the uniquely named staging directory, never source rows.
-Crash leaves no directory with a valid manifest until the final rename.
+Crash leaves no directory with a valid manifest until the final rename; the next
+startup scans the export parent for uniquely named staging directories and
+removes them automatically after validating that they are owned by EvoHime and
+contain no committed destination marker.
 
 ## Verify-chain algorithm
 
@@ -254,7 +258,8 @@ Key status rules:
 
 Statuses:
 
-- verified — complete trusted chain, signatures, action/approval binding;
+- verified — complete trusted chain, signatures, action/approval binding; no
+  receipt before the selected range was pruned;
 - verified_pruned — trusted signed checkpoint plus valid retained suffix;
 - pending — pre exists without terminal receipt, no success claim;
 - stale_key — signature valid but key trust is invalid after compromise;
@@ -399,6 +404,8 @@ renders canonical payload automatically and never labels a receipt as correct.
   checkpoint, broken predecessor, deletion/reorder, duplicate/fork/cycle,
   invalid signature, stale/unknown key, digest mismatch, missing receipt and
   pending action;
+- unsupported-version vector: `receipt_version>1` returns
+  `receipts.unsupported_version` and does not mark the chain broken;
 - approval binding tests distinguish binding_verified, approval_granted and
   approval_unverified;
 - SQLite snapshot/export consistency under process termination and disk-full

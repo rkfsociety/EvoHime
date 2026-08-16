@@ -102,7 +102,7 @@ Verifier принимает JSON только после проверки исх
 
 | `receipt_kind` | `action_status` | `refusal_code` | `result_hash` | `approval_id` / `parent_approval_ref` |
 | --- | --- | --- | --- | --- |
-| `pre_action` | `prepared` | запрещён | запрещён | оба отсутствуют, либо `approval_id` обязателен при `policy_decision=approval_required` |
+| `pre_action` | `prepared` | запрещён | запрещён | при `policy_decision != approval_required` оба отсутствуют; при `policy_decision=approval_required` `approval_id` обязателен, `parent_approval_ref` запрещён |
 | `post_action` | `succeeded`, `failed` или `cancelled` | запрещён | обязателен | `approval_id` обязателен, если pre-receipt имел approval; `parent_approval_ref` запрещён |
 | `refusal` | `refused` | обязателен | запрещён | `approval_id` допускается только для отказа уже созданного approval; `parent_approval_ref` допускается только как binding к этому approval |
 
@@ -112,14 +112,24 @@ Verifier принимает JSON только после проверки исх
 запуска action; post-receipt создаётся только после завершения action, включая
 `failed` и `cancelled`. Этап 01.3 может уточнять orchestration, но не bytes.
 
+Для `refusal` допустимы только такие пары `refusal_code` и
+`policy_decision`: `policy_denied` → `denied`; `approval_denied`,
+`approval_expired` и `approval_stale` → `approved`; `call_changed` →
+`approval_required`. Для отказа без созданного approval поля `approval_id` и
+`parent_approval_ref` отсутствуют. `parent_approval_ref` — это `approval_id`
+родительского approval, к которому привязывается child action; формат —
+lowercase UUIDv7.
+
 Envelope v1 имеет ровно четыре поля в нормативном порядке документации
 (`payload`, `key_id`, `signature_algorithm`, `signature`): `payload`, `key_id`,
 `signature_algorithm` и `signature`. `signature` — unpadded base64url по RFC
 4648 §5 (символ `=` запрещён). Любое другое поле запрещено.
 
 UUID имеют канонический RFC 9562 UUIDv7 с дефисами и lowercase hex. Timestamp
-проверяется синтаксически как UTC RFC 3339; clock skew является операционной
-политикой verifier и не меняет canonical bytes.
+проверяется синтаксически как UTC RFC 3339. Verifier отклоняет receipt с
+timestamp, отличающимся от времени верификации более чем на 5 минут, с кодом
+`receipt.timestamp_skew`; это операционная политика и она не меняет
+canonical bytes.
 
 `previous_receipt_hash` отсутствует только у единственного genesis receipt для
 конкретной `(key_id, chain)` в хранилище. У любого следующего receipt поле
@@ -127,6 +137,18 @@ UUID имеют канонический RFC 9562 UUIDv7 с дефисами и 
 `receipt.hash_mismatch`. Ротация ключа из этапа 01.2 начинает новую key-chain и
 создаёт новый genesis; граница принимается только из доверенного
 rotation/checkpoint контекста.
+
+Для вычисления `result_hash` runtime сначала строит bounded canonical result
+projection и только затем применяет SHA-256. Projection не содержит raw
+результат, prompt, stdout/stderr, path или error text:
+
+```json
+{"status":"succeeded","tool_name":"<typed tool id>","result_hash":"<64 lowercase hex>"}
+```
+
+Для неуспешного terminal action projection имеет вид
+`{"status":"failed"|"cancelled","error_category":"<bounded enum>"}`.
+Projection канонизируется JCS до вычисления digest.
 
 ## Что означает запрет свободных raw strings
 
@@ -266,6 +288,8 @@ Verifier не падает, не исправляет вход и не возв�
 - численные лимиты и граничные значения совпадают в документации, schema и
   коде;
 - version dispatch и stable error codes покрыты тестами;
+- vector с `receipt_version=2` возвращает `receipt.unsupported_version` и не
+  помечает chain broken;
 - подписываются ровно canonical payload bytes, а receipt hash считается от
   canonical signed envelope;
 - receipt невозможно сконструировать с raw arguments/results, неизвестным

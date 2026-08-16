@@ -132,6 +132,7 @@ Private key не экспортируется и не резервируется
 | `continuity` | `genesis`, `chained`, `compromised` или `broken` |
 | `signed_by_key_id` | old key для chained transition, new key для self-signed genesis/broken recovery |
 | `signature` | Ed25519 signature от canonical объекта без поля `signature` |
+| `previous_transition_hash` | lowercase SHA-256 hex от полной canonical transition record; отсутствует только для initial genesis |
 
 Для обычной scheduled/manual rotation новый public key подписывается старым и
 `continuity=chained`. Initial genesis self-signed только для proof of
@@ -140,12 +141,22 @@ trust не наследуется даже при доступном old key: co
 `compromised`, и новый fingerprint должен быть подтверждён отдельно. Если old
 key потерян, recovery создаёт self-signed transition с `continuity=broken`.
 
-Удаление transition обнаруживается по невозможности построить путь между
-pinned genesis и key receipt. Подмена полей ломает signature; перестановка
-строк не меняет граф доверия, но duplicate transition id, fork от одного active
-key и cycle отклоняются. Active key определяется единственным terminal
+Удаление или частичное повреждение `public-history-v1.jsonl` обнаруживается по
+невозможности построить и проверить непрерывную цепочку
+`previous_transition_hash` между pinned genesis и key receipt; файл проверяется
+построчно, с обнаружением обрыва, дубликата и trailing partial line. Подмена
+полей ломает signature; перестановка строк не меняет граф доверия, но duplicate
+transition id, fork от одного active key и cycle отклоняются. Active key определяется единственным terminal
 transition независимо от его continuity и обязан совпадать с
 `active-key-v1.json`.
+
+История ограничена максимум 100 transition records на key lineage. При
+достижении лимита rotation блокируется с `key.rotation_limit`; pruning
+истории без подписанного checkpoint запрещён.
+
+SQLite — единственный mutable source of truth. Dual-write в SQLite и JSONL
+запрещён: `public-history-v1.jsonl` строится только как snapshot export после
+commit в read transaction.
 
 Нормативные schema и vectors этапа:
 
@@ -288,8 +299,9 @@ receipt; read-only диагностика и offline verification продолж
 - другой Windows user и скопированный data directory не decrypt private key;
 - shutdown/restart очищает plaintext buffers; secret types не поддерживают
   debug/serialization и покрыты compile-time/API tests;
-- release x64 verifier проверяет 1000 synthetic receipts менее чем за 5 секунд
-  на CI runner; это regression budget, а не криптографическая гарантия.
+- release x64 verifier проверяет 1000 synthetic receipts не более чем за 2
+  секунды p95 на локальном SSD после прогрева кэша; это regression budget, а не
+  криптографическая гарантия.
 
 ## Критерии готовности
 
