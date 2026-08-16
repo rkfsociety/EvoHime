@@ -13,7 +13,11 @@ receipt. Receipt доказывает авторство ключа, целос�
 
 - Private signing key создаёт и хранит supervisor/Core через Windows-protected
   storage; в source, renderer и обычные logs ключ не попадает.
-- Public key доступен для локальной проверки и экспорта пользователем.
+- Public-key history доступна для локальной проверки и экспорта пользователем;
+  доверие начинается с явно подтверждённого genesis fingerprint, а не с
+  молчаливого TOFU.
+- После rotation старый private key уничтожается: исторические receipts
+  проверяются по сохранённому public key.
 - Receipt подписывает canonical payload; raw arguments/result заменяются hash.
 - Approval receipt и action receipt должны ссылаться на один action digest.
 
