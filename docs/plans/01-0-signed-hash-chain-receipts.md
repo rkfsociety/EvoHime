@@ -17,15 +17,18 @@ receipt. Receipt доказывает авторство ключа, целос�
 - Receipt подписывает canonical payload; raw arguments/result заменяются hash.
 - Approval receipt и action receipt должны ссылаться на один action digest.
 
-## Payload v1
+## Receipt v1
 
-Минимальные поля:
+Подписываемый canonical payload содержит:
 
 - `receipt_version`, `receipt_id`, `timestamp`, `task_id`, `run_id`;
 - `tool_name`, `tool_args_hash`, `result_hash`, `policy_id`, `policy_decision`;
 - `approval_id`/`parent_approval_ref` при необходимости;
-- `previous_receipt_hash`, `context_ledger_hash`, `model_route`;
-- `signature.algorithm`, `key_id`, `signature`.
+- `previous_receipt_hash`, `context_ledger_hash`, `model_route`.
+
+Подпись не может входить в подписываемый payload. Signed envelope отдельно
+содержит `payload`, `key_id`, `signature_algorithm` и `signature`; точный формат,
+лимиты и правила версионирования задаёт этап 01.1.
 
 ## Этапы
 
