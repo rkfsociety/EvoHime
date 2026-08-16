@@ -992,14 +992,38 @@ impl IpcBridge {
                 self.write_response(writer, "feedback.submitted", result)
                     .await?;
             }
+            Some(generated::command_envelope::Command::IndexWorkspace(request)) => {
+                let result = self.dispatch_index_workspace(request, false).await?;
+                self.write_response(writer, "workspace.indexed", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::RebuildIndex(request)) => {
+                let result = self.dispatch_rebuild_index(request).await?;
+                self.write_response(writer, "workspace.indexed", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::SearchWorkspaceKnowledge(request)) => {
+                let result = self.dispatch_search_workspace_knowledge(request).await?;
+                self.write_response(writer, "workspace.knowledge", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::GetIndexStatus(request)) => {
+                let result = self.dispatch_get_index_status(request).await?;
+                self.write_response(writer, "workspace.index_status", result)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::CancelWorkspaceIndex(request)) => {
+                let result = self.dispatch_cancel_workspace_index(request).await?;
+                self.write_response(writer, "workspace.index_cancelled", result)
+                    .await?;
+            }
             Some(generated::command_envelope::Command::GetContextLedger(request)) => {
                 let result = self.dispatch_get_context_ledger(request).await?;
-                self.write_response(writer, "context.ledger", result).await?;
+                self.write_response(writer, "context.ledger", result)
+                    .await?;
             }
             Some(generated::command_envelope::Command::ListTaskScratchpad(request)) => {
-                let result = self
-                    .dispatch_list_task_scratchpad(request)
-                    .await?;
+                let result = self.dispatch_list_task_scratchpad(request).await?;
                 self.write_response(writer, "context.scratchpad", result)
                     .await?;
             }
@@ -2400,6 +2424,80 @@ impl IpcBridge {
     }
 
     /// План 01.5: bounded projection состава контекста.
+    async fn dispatch_index_workspace(
+        &self,
+        request: generated::IndexWorkspace,
+        rebuild: bool,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        self.dispatch_context(|reply| {
+            if rebuild {
+                CoreCommand::RebuildIndex {
+                    workspace_path: request.workspace_path.clone(),
+                    enable_embeddings: request.enable_embeddings,
+                    reply,
+                }
+            } else {
+                CoreCommand::IndexWorkspace {
+                    workspace_path: request.workspace_path.clone(),
+                    enable_embeddings: request.enable_embeddings,
+                    reply,
+                }
+            }
+        })
+        .await
+    }
+
+    async fn dispatch_rebuild_index(
+        &self,
+        request: generated::RebuildIndex,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        self.dispatch_context(|reply| CoreCommand::RebuildIndex {
+            workspace_path: request.workspace_path.clone(),
+            enable_embeddings: request.enable_embeddings,
+            reply,
+        })
+        .await
+    }
+
+    async fn dispatch_search_workspace_knowledge(
+        &self,
+        request: generated::SearchWorkspaceKnowledge,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        self.dispatch_context(|reply| CoreCommand::SearchWorkspaceKnowledge {
+            workspace_path: request.workspace_path.clone(),
+            query: request.query.clone(),
+            path_filter: (!request.path_filter.trim().is_empty())
+                .then(|| request.path_filter.clone()),
+            language_filter: (!request.language_filter.trim().is_empty())
+                .then(|| request.language_filter.clone()),
+            hybrid: request.hybrid,
+            reply,
+        })
+        .await
+    }
+
+    async fn dispatch_get_index_status(
+        &self,
+        request: generated::GetIndexStatus,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        self.dispatch_context(|reply| CoreCommand::GetIndexStatus {
+            workspace_path: request.workspace_path.clone(),
+            reply,
+        })
+        .await
+    }
+
+    async fn dispatch_cancel_workspace_index(
+        &self,
+        request: generated::CancelWorkspaceIndex,
+    ) -> Result<Vec<u8>, IpcBridgeError> {
+        self.dispatch_context(|reply| CoreCommand::CancelWorkspaceIndex {
+            workspace_path: request.workspace_path.clone(),
+            reply,
+        })
+        .await
+    }
+
     async fn dispatch_get_context_ledger(
         &self,
         request: generated::GetContextLedger,

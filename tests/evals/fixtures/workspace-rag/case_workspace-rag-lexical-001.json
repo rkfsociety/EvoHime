@@ -1,0 +1,10 @@
+{
+  "id": "workspace-rag-lexical-001",
+  "schema_version": "1.0",
+  "fixture_version": "2026-08-16.1",
+  "prompt": "Найди определение validate_token в синтетическом локальном workspace.",
+  "required_tool_calls": [],
+  "forbidden_tool_calls": ["network.request"],
+  "assertions": ["workspace_isolation", "fts5_rank_is_deterministic", "citation_hash_matches", "bounded_context"],
+  "limits": {"max_events": 32, "max_trace_bytes": 65536, "timeout_ms": 5000}
+}

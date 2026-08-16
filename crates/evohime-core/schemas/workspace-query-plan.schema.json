@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evohime.local/schemas/workspace-query-plan.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["need_search", "strategy", "query", "filters", "reason", "confidence"],
+  "properties": {
+    "need_search": {"type": "boolean"},
+    "strategy": {"enum": ["exact_symbol", "lexical", "path", "metadata"]},
+    "query": {"type": "string", "minLength": 1, "maxLength": 512},
+    "filters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "language"],
+      "properties": {
+        "path": {"type": ["string", "null"], "maxLength": 1024},
+        "language": {"type": ["string", "null"], "pattern": "^[A-Za-z0-9._+-]{1,32}$"}
+      }
+    },
+    "reason": {"type": "string", "minLength": 1, "maxLength": 256},
+    "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0}
+  }
+}

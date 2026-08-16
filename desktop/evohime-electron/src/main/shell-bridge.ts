@@ -237,6 +237,51 @@ function dispatch(
       return accepted(client.send({ readContextArtifact: { taskId, locator } }))
     }
 
+    case 'core.indexWorkspace':
+    case 'core.rebuildIndex': {
+      const value = asRecord(payload)
+      const workspacePath = asBoundedString(value['workspacePath'])
+      const enableEmbeddings = value['enableEmbeddings'] ?? false
+      if (workspacePath === null || typeof enableEmbeddings !== 'boolean') {
+        return failure('invalid-payload', 'Некорректные параметры индекса workspace.')
+      }
+      log('info', 'shell.command_forwarded', { command })
+      return command === 'core.rebuildIndex'
+        ? accepted(client.send({ rebuildIndex: { workspacePath, enableEmbeddings } }))
+        : accepted(client.send({ indexWorkspace: { workspacePath, enableEmbeddings } }))
+    }
+
+    case 'core.searchWorkspaceKnowledge': {
+      const value = asRecord(payload)
+      const workspacePath = asBoundedString(value['workspacePath'])
+      const query = asBoundedString(value['query'])
+      const pathFilter = value['pathFilter'] === undefined ? '' : asBoundedString(value['pathFilter'])
+      const languageFilter = value['languageFilter'] === undefined ? '' : asBoundedString(value['languageFilter'])
+      const hybrid = value['hybrid'] ?? false
+      if (workspacePath === null || query === null || pathFilter === null || languageFilter === null || typeof hybrid !== 'boolean') {
+        return failure('invalid-payload', 'Некорректные параметры поиска по workspace.')
+      }
+      return accepted(client.send({
+        searchWorkspaceKnowledge: { workspacePath, query, pathFilter, languageFilter, hybrid },
+      }))
+    }
+
+    case 'core.getIndexStatus': {
+      const workspacePath = asBoundedString(asRecord(payload)['workspacePath'])
+      if (workspacePath === null) {
+        return failure('invalid-payload', 'Некорректный путь workspace.')
+      }
+      return accepted(client.send({ getIndexStatus: { workspacePath } }))
+    }
+
+    case 'core.cancelWorkspaceIndex': {
+      const workspacePath = asBoundedString(asRecord(payload)['workspacePath'])
+      if (workspacePath === null) {
+        return failure('invalid-payload', 'Некорректный путь workspace.')
+      }
+      return accepted(client.send({ cancelWorkspaceIndex: { workspacePath } }))
+    }
+
     case 'core.listWorkspace': {
       const value = asRecord(payload)
       const workspacePath = asBoundedString(value['workspacePath'])

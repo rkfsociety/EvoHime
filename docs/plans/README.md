@@ -6,7 +6,7 @@
 
 ## С чего начинать
 
-Следующий шаг — **[01.1 Bounded incremental indexing](01-1-workspace-indexing.md)**.
+Следующий шаг — **[02.1 Canonical receipt contract](02-1-canonical-contract.md)**.
 
 План 01 Context Budget Manager реализован целиком и удалён из каталога: его
 контракт живёт в [`../architecture.md`](../architecture.md), состояние — в
@@ -37,19 +37,14 @@
 
 | План | Обзор | Блокирующие зависимости |
 | --- | --- | --- |
-| 01 Локальный Agentic RAG | [обзор](01-0-local-agentic-rag.md) | — |
 | 02 Signed hash-chain receipts | [обзор](02-0-signed-hash-chain-receipts.md) | — |
 | 03 Локальный SLM fallback и routing | [обзор](03-0-local-slm-fallback-routing.md) | — |
 | 04 Специализированные child workflows | [обзор](04-0-specialized-child-workflows.md) | 01.2, 01.3, 02.3 |
 
 ```text
-01.1 Bounded incremental indexing  <- начинать здесь
-   └── 01.2 FTS5 ── 01.3 Query planner ── 01.5 Citations
-                       └───────────────┐
-02.1 Canonical contract ── 02.3 Runtime ┤
-                                        └── 04 Child workflows
+02.1 Canonical contract ── 02.3 Runtime ── 04 Child workflows
 
-03.1-03.2 provider, 03.3 routing, 01.4 embeddings  (никто не зависит)
+03.1-03.2 provider, 03.3 routing  (независимый путь)
 ```
 
 ## Что уже реализовано
@@ -58,9 +53,10 @@
 подтверждённое состояние живёт в [`../current-state.md`](../current-state.md),
 а контракт — в [`../architecture.md`](../architecture.md).
 
-Так уже удалены план Memory Extraction (коммиты `0d67554`, `4b376c6`) и план
-01 Context Budget Manager. Memory Extraction остаётся опциональной интеграцией
-для плана 01, но реализовывать в нём нечего.
+Так уже удалены планы Memory Extraction (коммиты `0d67554`, `4b376c6`), Context
+Budget Manager и Local Agentic RAG 01.1–01.5. Их контракты живут в
+[`../architecture.md`](../architecture.md), подтверждённое состояние — в
+[`../current-state.md`](../current-state.md).
 
 Удаляется только этап, выполненный **целиком**: критерии готовности достигнуты
 и покрыты тестами. Частично сделанное не удаляется, а описывается в секции
@@ -68,9 +64,8 @@
 нет. Существующий модуль, который никем не вызывается, считается отсутствующим
 поведением: библиотека без подключения не закрывает этап.
 
-Проверка на 2026-08-15: Context Budget Manager реализован целиком и удалён из
-каталога, а оставшиеся планы перенумерованы в 01–04. Ни один из них не начат,
-кроме частей, отмеченных внутри их собственных этапов.
+Проверка на 2026-08-16: Local Agentic RAG реализован целиком и удалён из
+каталога. Следующий незавершённый план — 02 Signed hash-chain receipts.
 Частичный код есть в плане 03 (детерминированный выбор маршрута существует, но
 не подключён к агенту) и в плане 04 (роли и lifecycle есть, grants, budget и
 изоляции нет); оба случая отмечены внутри соответствующих этапов.

@@ -1,0 +1,10 @@
+{
+  "id": "workspace-rag-hybrid-001",
+  "schema_version": "1.0",
+  "fixture_version": "2026-08-16.1",
+  "prompt": "Сравни локальный hybrid ranking с FTS5 на синтетическом corpus.",
+  "required_tool_calls": [],
+  "forbidden_tool_calls": ["network.request"],
+  "assertions": ["rrf_k_60", "deterministic_tie_break", "fts5_fallback", "atomic_vector_publication"],
+  "limits": {"max_events": 32, "max_trace_bytes": 65536, "timeout_ms": 5000}
+}

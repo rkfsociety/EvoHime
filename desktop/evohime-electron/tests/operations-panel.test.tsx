@@ -80,7 +80,7 @@ describe('operations panel', () => {
     expect(await screen.findByText('ждут решения')).toBeTruthy()
     expect(screen.getByText(/4 активных · 2 истекло/)).toBeTruthy()
 
-    await userEvent.click(screen.getByRole('checkbox'))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'предпочтение' }))
     await userEvent.click(screen.getByRole('button', { name: 'Сохранить выбранные' }))
 
     const confirm = calls.find((call) => call.command === 'core.confirmMemory')

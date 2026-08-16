@@ -37,6 +37,28 @@ interface MemoryConflict {
   readonly supersession_chain: readonly string[]
 }
 
+interface WorkspaceIndexStatus {
+  readonly workspace_key: string
+  readonly generation: number | null
+  readonly status: string
+  readonly indexed_files: number
+  readonly chunks: number
+  readonly excluded: number
+  readonly dirty: boolean
+  readonly published_at: number | null
+  readonly vector_mode: string
+  readonly vector_index_id: string | null
+}
+
+interface WorkspaceSearchPayload {
+  readonly search: {
+    readonly query_id: string
+    readonly evidence: readonly { readonly relative_path: string; readonly lines: readonly number[] | null }[]
+    readonly diagnostics: { readonly mode: string; readonly coverage: number; readonly stop_reason: string }
+    readonly uncertainty: string | null
+  }
+}
+
 const KIND_LABELS: Record<string, string> = {
   preference: 'предпочтение',
   constraint: 'ограничение',
@@ -75,6 +97,8 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
   const [message, setMessage] = useState<string | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
+  const [embeddingEnabled, setEmbeddingEnabled] = useState(false)
+  const [knowledgeQuery, setKnowledgeQuery] = useState('')
 
   const connected = CONNECTED_STATES.includes(connection)
   const count = (name: string) => events.filter((event) => event.eventType === name).length
@@ -94,6 +118,14 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
     () => parsePayload<readonly MemoryConflict[]>(latest(events, 'memory.conflicts'), 'conflicts') ?? [],
     [events]
   )
+  const indexStatus = useMemo(
+    () => parsePayload<WorkspaceIndexStatus>(latest(events, 'workspace.index_status'), 'status'),
+    [events]
+  )
+  const searchPayload = useMemo(
+    () => parsePayload<WorkspaceSearchPayload['search']>(latest(events, 'workspace.knowledge'), 'search'),
+    [events]
+  )
 
   useEffect(() => {
     if (!api) return
@@ -107,7 +139,28 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
     const request = { scopeKind: 'project', projectId: 'workspace', workspacePath, limit: 50 }
     void api.invoke('core.listMemoryPending', request)
     void api.invoke('core.getMemoryConflicts', request)
+    void api.invoke('core.getIndexStatus', { workspacePath })
   }, [api, connected, workspacePath])
+
+  const updateIndex = useCallback(async (rebuild: boolean) => {
+    if (!api || !workspacePath) return
+    setMessage(rebuild ? 'Полная пересборка индекса запущена…' : 'Инкрементальная индексация запущена…')
+    const outcome = await api.invoke(rebuild ? 'core.rebuildIndex' : 'core.indexWorkspace', {
+      workspacePath,
+      enableEmbeddings: embeddingEnabled
+    })
+    setMessage(outcome.ok ? 'Команда индексации передана Core.' : outcome.message)
+  }, [api, embeddingEnabled, workspacePath])
+
+  const searchKnowledge = useCallback(async () => {
+    if (!api || !workspacePath || knowledgeQuery.trim().length === 0) return
+    const outcome = await api.invoke('core.searchWorkspaceKnowledge', {
+      workspacePath,
+      query: knowledgeQuery,
+      hybrid: embeddingEnabled
+    })
+    setMessage(outcome.ok ? 'Поиск выполняется в Core.' : outcome.message)
+  }, [api, embeddingEnabled, knowledgeQuery, workspacePath])
 
   useEffect(() => {
     refresh()
@@ -224,6 +277,62 @@ export function OperationsPanel({ connection, events }: Props): React.JSX.Elemen
           <small>{count('runtime.schedule_completed')} completed · {count('runtime.schedule_requeued')} requeued · {count('runtime.schedule_dead_letter')} dead-letter</small>
         </article>
       </div>
+
+      <section className="operations-timeline" aria-label="Локальный индекс workspace">
+        <h3>Локальные знания workspace</h3>
+        <p>
+          {indexStatus
+            ? `${indexStatus.indexed_files} файлов · ${indexStatus.chunks} фрагментов · ${indexStatus.excluded} исключено · поколение ${indexStatus.generation ?? '—'} · ${indexStatus.vector_mode}`
+            : 'Состояние индекса ещё не получено.'}
+          {indexStatus?.dirty ? ' · индекс требует обновления' : ''}
+        </p>
+        <div className="operations-actions">
+          <label>
+            <input
+              type="checkbox"
+              checked={embeddingEnabled}
+              onChange={(input) => setEmbeddingEnabled(input.target.checked)}
+            />
+            локальные embeddings
+          </label>
+          <button type="button" disabled={!connected || !workspacePath} onClick={() => void updateIndex(false)}>
+            Обновить индекс
+          </button>
+          <button type="button" disabled={!connected || !workspacePath} onClick={() => void updateIndex(true)}>
+            Пересобрать полностью
+          </button>
+          <button
+            type="button"
+            disabled={!workspacePath}
+            onClick={() => {
+              if (api && workspacePath) void api.invoke('core.cancelWorkspaceIndex', { workspacePath })
+            }}
+          >
+            Отменить
+          </button>
+          <button type="button" disabled={!connected || !workspacePath} onClick={refresh}>
+            Обновить статус
+          </button>
+        </div>
+        <div className="operations-actions">
+          <input
+            type="search"
+            aria-label="Поиск по локальному индексу"
+            placeholder="Найти symbol, путь или факт"
+            value={knowledgeQuery}
+            onChange={(input) => setKnowledgeQuery(input.target.value)}
+          />
+          <button type="button" disabled={!workspacePath || knowledgeQuery.trim().length === 0} onClick={() => void searchKnowledge()}>
+            Найти
+          </button>
+        </div>
+        {searchPayload ? (
+          <p>
+            {searchPayload.evidence.length} источников · coverage {searchPayload.diagnostics.coverage.toFixed(2)} · {searchPayload.diagnostics.mode} · {searchPayload.diagnostics.stop_reason}
+            {searchPayload.uncertainty ? ` · ${searchPayload.uncertainty}` : ''}
+          </p>
+        ) : null}
+      </section>
 
       {message ? <p className="empty-state">{message}</p> : null}
 

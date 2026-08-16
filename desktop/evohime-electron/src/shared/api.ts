@@ -174,6 +174,11 @@ export const RENDERER_COMMANDS = [
   'core.summarizeContextNow',
   'core.pinContextItem',
   'core.readContextArtifact',
+  'core.indexWorkspace',
+  'core.rebuildIndex',
+  'core.searchWorkspaceKnowledge',
+  'core.getIndexStatus',
+  'core.cancelWorkspaceIndex',
   'identity.get',
   'repository.get',
   'chat.list',
@@ -240,6 +245,17 @@ export interface CommandPayloads {
   'core.summarizeContextNow': { taskId: string }
   'core.pinContextItem': { taskId: string; itemId: string; pinned: boolean }
   'core.readContextArtifact': { taskId: string; locator: string }
+  'core.indexWorkspace': { workspacePath: string; enableEmbeddings?: boolean }
+  'core.rebuildIndex': { workspacePath: string; enableEmbeddings?: boolean }
+  'core.searchWorkspaceKnowledge': {
+    workspacePath: string
+    query: string
+    pathFilter?: string
+    languageFilter?: string
+    hybrid?: boolean
+  }
+  'core.getIndexStatus': { workspacePath: string }
+  'core.cancelWorkspaceIndex': { workspacePath: string }
   'core.gitStatus': { workspacePath: string; maxBytes?: number }
   'core.gitDiff': { workspacePath: string; relativePath?: string; maxBytes?: number }
   'core.setPermissionMode': { mode: 'ask' | 'read_only' | 'full' }
@@ -348,6 +364,11 @@ export interface CommandResults {
   'core.summarizeContextNow': { accepted: boolean }
   'core.pinContextItem': { accepted: boolean }
   'core.readContextArtifact': { accepted: boolean }
+  'core.indexWorkspace': { accepted: boolean }
+  'core.rebuildIndex': { accepted: boolean }
+  'core.searchWorkspaceKnowledge': { accepted: boolean }
+  'core.getIndexStatus': { accepted: boolean }
+  'core.cancelWorkspaceIndex': { accepted: boolean }
   'identity.get': UserIdentity
   'repository.get': RepositorySummary | null
   'chat.list': readonly ChatSummary[]

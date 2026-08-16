@@ -489,3 +489,46 @@ describe('context budget commands', () => {
     expect(sent).toHaveLength(0)
   })
 })
+
+describe('workspace knowledge commands', () => {
+  it('forwards indexing, status and bounded retrieval without filesystem access in renderer', () => {
+    invoke('core.indexWorkspace', { workspacePath: 'C:\\work', enableEmbeddings: false })
+    invoke('core.rebuildIndex', { workspacePath: 'C:\\work', enableEmbeddings: true })
+    invoke('core.getIndexStatus', { workspacePath: 'C:\\work' })
+    invoke('core.cancelWorkspaceIndex', { workspacePath: 'C:\\work' })
+    invoke('core.searchWorkspaceKnowledge', {
+      workspacePath: 'C:\\work',
+      query: 'validate_token',
+      pathFilter: 'src',
+      languageFilter: 'rust',
+      hybrid: true
+    })
+    expect(sent).toEqual([
+      { indexWorkspace: { workspacePath: 'C:\\work', enableEmbeddings: false } },
+      { rebuildIndex: { workspacePath: 'C:\\work', enableEmbeddings: true } },
+      { getIndexStatus: { workspacePath: 'C:\\work' } },
+      { cancelWorkspaceIndex: { workspacePath: 'C:\\work' } },
+      {
+        searchWorkspaceKnowledge: {
+          workspacePath: 'C:\\work',
+          query: 'validate_token',
+          pathFilter: 'src',
+          languageFilter: 'rust',
+          hybrid: true
+        }
+      }
+    ])
+  })
+
+  it('rejects malformed workspace knowledge payloads', () => {
+    const outcomes = [
+      invoke('core.indexWorkspace', {}),
+      invoke('core.searchWorkspaceKnowledge', { workspacePath: 'C:\\work' }),
+      invoke('core.getIndexStatus', {})
+    ]
+    for (const outcome of outcomes) {
+      expect((outcome as CommandFailure).ok).toBe(false)
+    }
+    expect(sent).toHaveLength(0)
+  })
+})

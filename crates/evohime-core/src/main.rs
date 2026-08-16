@@ -269,6 +269,18 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
             progress.completed,
             progress.total.map_or_else(|| "?".into(), |value| value.to_string())
         ),
+        evohime_core::CoreEvent::WorkspaceIndexProgress { workspace_path, progress } => println!(
+            "workspace.index_progress {workspace_path}: {} {}/{} chunks",
+            progress.phase,
+            progress.indexed_files,
+            progress.chunks
+        ),
+        evohime_core::CoreEvent::WorkspaceRetrievalProgress { workspace_path, progress } => println!(
+            "workspace.retrieval_progress {workspace_path}: {} iteration={} results={}",
+            progress.event_type,
+            progress.iteration,
+            progress.result_count
+        ),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             println!("review.history_cleared {marker_id}")
         }

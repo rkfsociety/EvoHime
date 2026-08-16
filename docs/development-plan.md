@@ -26,11 +26,14 @@
 Windows acceptance не являются задачами текущего плана. Их фактическое состояние
 зафиксировано в [`current-state.md`](current-state.md).
 
-Проверка 2026-08-14: Rust, Electron, C#/WinUI compatibility, protocol, bundle,
-native, deterministic evaluation и security smoke checks прошли без ошибок;
-source-update E2E остаётся штатно пропущенным без включённого флага.
+Проверка 2026-08-16: Rust, Electron, protocol, bundle, deterministic Local
+Agentic RAG/evaluation и security smoke checks прошли без ошибок; C#/WinUI
+compatibility и native acceptance перепроверяются полным финальным прогоном.
+Source-update E2E остаётся штатно пропущенным без включённого флага.
 
-Текущий цикл завершён: обходы permission policy и approval закрыты и проверены.
+Текущий цикл завершён: обходы permission policy и approval закрыты и проверены;
+Local Agentic RAG 01.1–01.5 реализован, интегрирован в agent loop/IPC/Electron и
+перенесён в канонические `architecture.md`/`current-state.md`.
 
 ## Текущий статус
 

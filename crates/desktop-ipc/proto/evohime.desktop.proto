@@ -642,6 +642,34 @@ message ListFeedback {
   uint32 limit = 2;
 }
 
+// Local Agentic RAG commands. The path is the already selected workspace;
+// Core canonicalizes and checks it again before any filesystem access.
+message IndexWorkspace {
+  string workspace_path = 1;
+  bool enable_embeddings = 2;
+}
+
+message RebuildIndex {
+  string workspace_path = 1;
+  bool enable_embeddings = 2;
+}
+
+message SearchWorkspaceKnowledge {
+  string workspace_path = 1;
+  string query = 2;
+  string path_filter = 3;
+  string language_filter = 4;
+  bool hybrid = 5;
+}
+
+message GetIndexStatus {
+  string workspace_path = 1;
+}
+
+message CancelWorkspaceIndex {
+  string workspace_path = 1;
+}
+
 // План 01.5: read-only проекция состава контекста последних model call задачи.
 // Возвращает только ids, счётчики, причины и context_ledger_hash -- ни сырого
 // prompt, ни тела памяти, ни raw tool output.
@@ -770,6 +798,11 @@ message CommandEnvelope {
     SummarizeContextNow summarize_context_now = 84;
     PinContextItem pin_context_item = 85;
     ReadContextArtifact read_context_artifact = 86;
+    IndexWorkspace index_workspace = 87;
+    RebuildIndex rebuild_index = 88;
+    SearchWorkspaceKnowledge search_workspace_knowledge = 89;
+    GetIndexStatus get_index_status = 90;
+    CancelWorkspaceIndex cancel_workspace_index = 91;
   }
 }
 
