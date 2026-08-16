@@ -17,6 +17,7 @@ import { TerminalPanel } from './TerminalPanel'
 import { RecoveryBanner } from './RecoveryBanner'
 import { OperationsPanel } from './OperationsPanel'
 import { PlanReviewPanel } from './PlanReviewPanel'
+import { OverviewPanel } from './OverviewPanel'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -39,7 +40,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'reviews' | 'files' | 'editor' | 'operations' | 'terminal' | 'safety' | 'settings'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'files' | 'editor' | 'operations' | 'terminal' | 'safety' | 'settings'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -52,6 +53,7 @@ interface ViewDescriptor {
  * opening a chat, which is where the user already looks for it.
  */
 const VIEWS: readonly ViewDescriptor[] = [
+  { id: 'overview', label: 'Обзор', icon: '◉' },
   { id: 'reviews', label: 'Ревью планов', icon: '✓' },
   { id: 'files', label: 'Файлы и Git', icon: '▤' },
   { id: 'editor', label: 'Редактор', icon: '✎' },
@@ -230,6 +232,7 @@ export function App(): React.JSX.Element {
           ) : (
             <div className="main__scroll">
               {view === 'files' ? <DeveloperTools connection={connection} events={events} /> : null}
+              {view === 'overview' ? <OverviewPanel connection={connection} events={events} workspace={workspace} /> : null}
               {view === 'reviews' ? <PlanReviewPanel connection={connection} events={events} /> : null}
               {view === 'editor' ? <EditorPanel connection={connection} events={events} /> : null}
               {view === 'operations' ? <OperationsPanel connection={connection} events={events} /> : null}
