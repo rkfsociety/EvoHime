@@ -312,7 +312,7 @@ describe('plan review panel', () => {
 
     await startReview(['a', 'b', 'main'])
     const payload = calls.find((call) => call.command === 'review.start')?.payload as { fileName: string; sourceMarkdown: string }
-    expect(payload.fileName).toBe('a.md, b.md')
+    expect(payload.fileName).toBe('combined-plan.md')
     expect(payload.sourceMarkdown).toBe('## Файл 1 из 2: a.md\n\n# A\n\n---\n\n## Файл 2 из 2: b.md\n\n# B')
     expect(screen.getByText(/Файлов: 2/)).toBeTruthy()
   })

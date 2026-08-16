@@ -636,13 +636,12 @@ function mergePlans(plans: readonly PlanFile[]): string {
     .join('\n\n---\n\n')
 }
 
-/** Имя для ядра и истории: список имён, а для длинного набора — счёт остатка. */
+/** Имя для ядра и истории. Объединённый документ всегда остаётся Markdown. */
 function describePlans(plans: readonly PlanFile[]): string {
   const [first] = plans
   if (!first) return ''
   if (plans.length === 1) return first.fileName
-  const joined = plans.map((plan) => plan.fileName).join(', ')
-  return joined.length <= 120 ? joined : `${first.fileName} и ещё ${plans.length - 1}`
+  return 'combined-plan.md'
 }
 
 function byteLength(value: string): number {
