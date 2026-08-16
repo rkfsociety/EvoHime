@@ -266,6 +266,7 @@ Stable verify codes:
 
 receipts.invalid_json, receipts.non_canonical, receipts.manifest_mismatch,
 receipts.hash_mismatch, receipts.signature_invalid,
+receipts.chain_incomplete,
 receipts.previous_mismatch, receipts.digest_mismatch,
 receipts.approval_unverified, receipts.missing_receipt, receipts.key_unknown,
 receipts.stale_key, receipts.chain_fork, receipts.chain_cycle,

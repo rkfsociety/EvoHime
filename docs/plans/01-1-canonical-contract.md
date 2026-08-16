@@ -31,6 +31,19 @@ lowercase hex `SHA-256(canonicalize(envelope))` уже после добавле
 Этап 01.1 фиксирует этот стык и тестовый вектор с открытым тестовым ключом;
 генерация, защита и ротация реального ключа относятся к этапу 01.2.
 
+### Нормативное определение `receipt_hash`
+
+Для принятого envelope вычисляется ровно:
+
+```text
+receipt_hash := lowercase_hex(SHA-256(canonicalize(envelope)))
+```
+
+В hash-chain это значение записывается как `previous_receipt_hash` следующего
+receipt после проверки и подписи текущего envelope. Хэш payload, подписи,
+сырого входного JSON или их конкатенации не является `receipt_hash`. Определение
+дублируется в нормативном документе, JSON vectors и формате export.
+
 ## Canonical JSON v1
 
 Алгоритм — JSON Canonicalization Scheme (JCS),
@@ -45,9 +58,10 @@ lowercase hex `SHA-256(canonicalize(envelope))` уже после добавле
 - в payload v1 единственное JSON number — `receipt_version` со значением `1`;
   float и остальные числа запрещены схемой, чтобы Rust и JavaScript не
   расходились из-за IEEE-754; время и digest представлены строками;
-- optional-поля отсутствуют целиком: `null` запрещён; неизвестные поля в v1
-  запрещены; порядок элементов массивов, если они появятся в следующей версии,
-  считается значимым.
+- optional-поля отсутствуют целиком: `null` запрещён в объектах и массивах;
+  `undefined` не является JSON-значением и отвергается typed-конструктором;
+  неизвестные поля в v1 запрещены; порядок элементов массивов, если они
+  появятся в следующей версии, считается значимым.
 
 Verifier принимает JSON только после проверки исходного размера, разбирает его
 парсером с обнаружением duplicate keys, валидирует схему, заново канонизирует и
@@ -79,15 +93,40 @@ Verifier принимает JSON только после проверки исх
 | `context_ledger_hash` | готовый lowercase SHA-256 hex из Context Budget Manager; отсутствует только если model call не создавался |
 | `model_route` | объект из двух typed identifiers `provider_id` и `model_id`; отсутствует без model call |
 
-Envelope v1 имеет ровно четыре поля: `payload` по схеме выше, `key_id` в формате
-`ed25519:<64 lowercase hex>` (SHA-256 raw public key), константу
-`signature_algorithm: "Ed25519"` и `signature` как unpadded base64url от
-64-byte Ed25519 signature. Любое другое поле запрещено.
+Для `context_ledger_hash` verifier независимо от upstream проверяет regex
+`^[0-9a-f]{64}$`; поле не принимается как непрозрачная произвольная строка.
 
-Условные требования между `receipt_kind`, result и approval фиксируются через
-`oneOf` в JSON Schema и отдельными negative vectors. Этап 01.3 может уточнить
-момент создания этих видов receipt, но не может менять их байтовое
-представление без новой версии.
+### Conditional rules
+
+Таблица является нормативной и отражается без расширений в `oneOf` JSON Schema:
+
+| `receipt_kind` | `action_status` | `refusal_code` | `result_hash` | `approval_id` / `parent_approval_ref` |
+| --- | --- | --- | --- | --- |
+| `pre_action` | `prepared` | запрещён | запрещён | оба отсутствуют, либо `approval_id` обязателен при `policy_decision=approval_required` |
+| `post_action` | `succeeded`, `failed` или `cancelled` | запрещён | обязателен | `approval_id` обязателен, если pre-receipt имел approval; `parent_approval_ref` запрещён |
+| `refusal` | `refused` | обязателен | запрещён | `approval_id` допускается только для отказа уже созданного approval; `parent_approval_ref` допускается только как binding к этому approval |
+
+Для `pre_action` с `policy_decision=approval_required` сначала создаётся
+`approval_id`; после успешной проверки approval runtime-переходом становится
+`approved`, и это связывается с post-receipt. Отказ policy создаёт `refusal` до
+запуска action; post-receipt создаётся только после завершения action, включая
+`failed` и `cancelled`. Этап 01.3 может уточнять orchestration, но не bytes.
+
+Envelope v1 имеет ровно четыре поля в нормативном порядке документации
+(`payload`, `key_id`, `signature_algorithm`, `signature`): `payload`, `key_id`,
+`signature_algorithm` и `signature`. `signature` — unpadded base64url по RFC
+4648 §5 (символ `=` запрещён). Любое другое поле запрещено.
+
+UUID имеют канонический RFC 9562 UUIDv7 с дефисами и lowercase hex. Timestamp
+проверяется синтаксически как UTC RFC 3339; clock skew является операционной
+политикой verifier и не меняет canonical bytes.
+
+`previous_receipt_hash` отсутствует только у единственного genesis receipt для
+конкретной `(key_id, chain)` в хранилище. У любого следующего receipt поле
+обязательно: отсутствие даёт `receipt.chain_incomplete`, неверное значение —
+`receipt.hash_mismatch`. Ротация ключа из этапа 01.2 начинает новую key-chain и
+создаёт новый genesis; граница принимается только из доверенного
+rotation/checkpoint контекста.
 
 ## Что означает запрет свободных raw strings
 
@@ -98,7 +137,10 @@ provider response или произвольную map metadata. Они соде�
 typed identifiers, timestamp, digest и signature из схемы выше.
 
 Конструктор receipt принимает typed Rust/TypeScript структуры, а не
-произвольный JSON. Попытка передать поля, чьё имя case-insensitive содержит
+произвольный JSON. Secret-field scan выполняется на typed input до
+JSON-сериализации; raw JSON verifier не выполняет этот семантический scan, а
+отвергает неизвестные поля схемой. Попытка передать поля, чьё имя
+case-insensitive содержит
 `secret`, `token`, `password`, `api_key`, `apikey`, `authorization`, `cookie`
 или `private_key`, отклоняется как `receipt.secret_field`; замена на
 `[REDACTED]` внутри подписываемого объекта не применяется. Фактические
@@ -119,8 +161,13 @@ encoding.
   не более **128 ASCII bytes** каждый.
 
 Размер ровно на границе принимается, на один byte больше — отклоняется. Одни и
-те же константы экспортируются из Rust и дублируются в Electron только под
-тестом shared manifest, чтобы drift ломал CI.
+те же константы публикуются в `contracts/receipts/v1/limits.json` (UTF-8 без
+BOM) и импортируются Rust/Electron; generated bindings не редактируются
+вручную. Shared manifest является единственным источником численных лимитов.
+Лимиты выбраны как bounded operational boundaries: envelope 8192 bytes
+покрывает payload, ключ и подпись; payload 4096 ограничивает audit metadata;
+128 bytes достаточно для локальных идентификаторов; depth 4 исключает скрытые
+вложенные контейнеры.
 
 ## Версионирование
 
@@ -136,17 +183,34 @@ encoding.
 - Экспорт хранит исходные canonical bytes, поэтому более новый verifier не
   пересериализует старую запись по новой схеме.
 
+Миграция v1→v2 выполняется отдельным versioned adapter/export path: v1 receipt
+не переписывается и не получает новые поля, а v2 verifier обязан сохранить
+v1-проверку. Это не разрешает backport изменения в v1.
+
+## Security considerations
+
+Контракт защищает от canonicalization confusion (разные key order/escaping),
+duplicate-key и surrogate атак, подмены алгоритма или key id, signature/hash
+tampering, replay через action/approval binding и downgrade через обязательный
+version dispatch. `key_id` выбирается только из доверенного key registry этапа
+01.2; `signature_algorithm` фиксирован и не negotiable. Секретоподобные поля
+отбрасываются до сериализации, raw arguments/results не входят в receipt, а
+bounded sizes/depth ограничивают memory/CPU abuse. Timestamp не является
+источником криптографической свежести: replay/TTL проверяются runtime и
+approval policy этапа 01.3.
+
 ## Ошибки и reject logic
 
-Первая ошибка определяется в порядке: raw size → UTF-8/JSON/duplicate key →
-version → secret-field scan → schema → canonical bytes/size →
+Для typed-конструктора secret-field scan выполняется до сериализации. Для
+входного envelope первая ошибка определяется детерминированно: raw size →
+UTF-8/JSON/duplicate key → version → schema → canonical bytes/size →
 key/signature/hash.
 Публичные стабильные codes:
 
 - `receipt.too_large`, `receipt.payload_too_large`;
 - `receipt.invalid_utf8`, `receipt.invalid_json`, `receipt.duplicate_key`;
 - `receipt.unsupported_version`, `receipt.schema_violation`;
-- `receipt.secret_field`, `receipt.non_canonical`;
+- `receipt.secret_field`, `receipt.non_canonical`, `receipt.chain_incomplete`;
 - `receipt.key_unknown`, `receipt.signature_invalid`, `receipt.hash_mismatch`.
 
 Verifier не падает, не исправляет вход и не возвращает частично verified
@@ -158,6 +222,8 @@ Verifier не падает, не исправляет вход и не возв�
 - `docs/security/receipt-canonical-v1.md` — нормативное описание этого
   контракта и правила добавления версии;
 - `contracts/receipts/v1/receipt.schema.json` — JSON Schema 2020-12;
+- `contracts/receipts/v1/limits.json` — shared manifest лимитов, regex и
+  canonical constants;
 - `contracts/receipts/v1/vectors.json` — единый manifest positive/negative
   vectors;
 - `scripts/check-receipt-vectors.ps1` — запускает Rust и Electron consumers
@@ -193,7 +259,7 @@ Verifier не падает, не исправляет вход и не возв�
 
 ## Критерии готовности
 
-- все четыре артефакта существуют и являются единственным источником правил
+- все пять артефактов существуют и являются единственным источником правил
   v1 для Rust и Electron;
 - обе реализации проходят все shared positive/negative vectors и дают
   идентичные canonical bytes;
@@ -206,3 +272,6 @@ Verifier не падает, не исправляет вход и не возв�
   полем или secret-like field; тесты подтверждают отсутствие незардактированных
   секретов;
 - known-answer проверка запускается одной командой и обязательна в CI.
+- `oneOf` conditional rules, genesis/chain-incomplete semantics, shared limits
+  manifest и security considerations покрыты нормативным документом и
+  vectors.
