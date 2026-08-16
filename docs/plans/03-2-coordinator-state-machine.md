@@ -29,7 +29,18 @@
 - Не считать child success финальным task success.
 - Дочерние leases, cancellation и restart recovery должны быть bounded.
 - После restart coordinator восстанавливает только durable checkpoint и
-  повторно валидирует report/evidence.
+  повторно валидирует report/evidence. Checkpoint — атомарная SQLite-запись,
+  содержащая child state, revision, reports, evidence locators и hashes,
+  active leases, parent sequence и last transition event; запись выполняется
+  после каждого state transition в одной транзакции с событием.
+- После restart `Running`, `Validating` и `WaitingParentAcceptance` без
+  подтверждённого живого lease помечаются `Failed` с причиной `restart`, а
+  cleanup lease/process выполняется идемпотентно.
+- Reviewer `revise` содержит evidence и список нарушенных acceptance criteria.
+  Coordinator создаёт новую revision только в пределах `max_revisions`;
+  после лимита действует правило из 03-0.
+- Fan-in выполняется до implementer по правилам 03-0; выбранные evidence,
+  конфликты и причины выбора входят в checkpoint и trace.
 
 ## Проверки
 
@@ -37,6 +48,9 @@
 - cancellation/restart/lease-loss recovery;
 - reviewer rejection → bounded revision;
 - fan-in deterministic ordering and conflict reporting.
+- partial tester failure: обязательный criterion → revise, необязательный →
+  Accepted с риском и coordinator approval;
+- checkpoint round-trip и restart cleanup без orphan leases/processes.
 
 ## Критерии готовности
 

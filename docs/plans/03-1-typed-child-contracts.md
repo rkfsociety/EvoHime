@@ -4,11 +4,14 @@
 
 ## Зависимости
 
-Блокирующие: этап 01.3 — correlation id связывает tool call ребёнка с receipt
-и approval родителя; существующие child runtime и IPC/storage.
+Блокирующие: существующие child runtime и IPC/storage. Этап 01.3 нужен для
+полной receipt-интеграции: до него сохраняется task/child/tool correlation, а
+receipt correlation остаётся `pending`.
 
-Из списка блокирующих зависимостей плана этому этапу нужен только 01.3,
-поэтому его можно начать раньше остальных этапов плана.
+Из зависимостей плана 03 этот этап можно начать раньше остальных: базовые
+контракты не требуют готового coordinator. Receipt-поле и соответствующие
+проверки остаются gated этапом 01.3 и не считаются завершёнными до его
+интеграции.
 
 Разблокирует: все остальные этапы плана 03.
 
@@ -24,14 +27,21 @@ Typed input/output контракт child task и сквозные correlation i
 
 Нет: workspace/path grants, token/time/tool-call budget, явной input/output
 schema, parent sequence и correlation id на receipt (последний приходит из
-этапа 01.3).
+этапа 01.3). Базовые Context Budget Manager и Artifact Store уже существуют,
+но child policy enforcement — часть этого плана.
 
 ## Содержание
 
 - Расширить existing child IPC/storage additive-полями role, grants, budget,
-  input/output schema и parent sequence.
+  input/output schema, acceptance criteria, `max_revisions` и parent sequence.
+- Ввести `contract_version` с major/minor: minor совместима при неизвестных
+  additive-полях, major отклоняется до явной миграции.
 - Валидировать report schema до persistence и fan-in.
 - Добавить correlation ids для task, child, tool call и receipt.
+- В provenance включить input/evidence hashes, версии tool/schema, model IDs,
+  timestamps и parent sequence; проверять их перед persistence.
+- Проверять, что каждый child grant является подмножеством parent grant, и
+  передавать grants в Core tool policy на каждый вызов.
 
 ## Проверки
 
@@ -39,6 +49,9 @@ schema, parent sequence и correlation id на receipt (последний пр�
   persistence;
 - role permission matrix и negative tests;
 - child cannot commit/push without parent policy and approval.
+- grant/path/capability escalation и stale provenance отклоняются;
+- parent sequence монотонен в пределах parent task и однозначно упорядочивает
+  fan-in.
 
 ## Критерии готовности
 
