@@ -6,7 +6,7 @@
 
 ## С чего начинать
 
-Следующий шаг — **[01.1 Canonical receipt contract](01-1-canonical-contract.md)**.
+Следующий шаг — **[01.2 Key lifecycle](01-2-key-lifecycle.md)**.
 
 План Local Agentic RAG реализован целиком и удалён из каталога: его контракт
 живёт в [`../architecture.md`](../architecture.md), состояние — в

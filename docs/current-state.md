@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-15.
+Обновлено: 2026-08-16.
 
 ## Продукт
 
@@ -23,6 +23,10 @@ Core и supervisor — внутренние компоненты установ�
 
 ### Runtime и foundation
 
+- Canonical Receipt v1: bounded JCS payload/envelope, UTF-16 key ordering,
+  duplicate-key/UTF-8 checks, stable schema limits and error codes, Ed25519
+  verification, result hash domain и единые Rust/Electron known-answer vectors;
+  см. `docs/security/receipt-canonical-v1.md` и `contracts/receipts/v1/`;
 - Core, SQLite, IPC, supervisor, event replay и diagnostics;
 - streamed task timeline, cancellation и approval round-trip;
 - Windows package smoke tests и Windows CI;

@@ -11,5 +11,6 @@ members = [
   "crates/desktop-ipc",
   "crates/test-stub-exitcode",
   "crates/evohime-eval",
+  "crates/evohime-receipts",
 ]
 resolver = "2"

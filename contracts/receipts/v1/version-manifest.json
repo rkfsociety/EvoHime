@@ -1,0 +1,15 @@
+{
+  "contract": "evohime.receipt",
+  "current_version": 1,
+  "supported_versions": [1],
+  "schema": "receipt.schema.json",
+  "limits": "limits.json",
+  "vectors": "vectors.json",
+  "stable_error_codes": [
+    "receipt.too_large", "receipt.payload_too_large", "receipt.invalid_utf8",
+    "receipt.invalid_json", "receipt.duplicate_key", "receipt.unsupported_version",
+    "receipt.schema_violation", "receipt.secret_field", "receipt.non_canonical",
+    "receipt.chain_incomplete", "receipt.key_unknown", "receipt.signature_invalid",
+    "receipt.hash_mismatch", "receipt.timestamp_skew"
+  ]
+}

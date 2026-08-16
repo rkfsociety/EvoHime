@@ -73,6 +73,16 @@ Renderer состоит из панели проектов и чатов, лен
 - `ClearPlanReviewHistory` удаляет сохранённые ревью планов из локального журнала; Core отвечает подтверждением, и UI перестаёт показывать историю немедленно;
 - команды памяти `GetMemory`, `ListMemoryPending`, `GetMemoryConflicts`, `ConfirmMemory`, `RejectMemory`, `SupersedeMemory`, `ReviseMemoryCandidate` аддитивны. `ListMemory`, `SearchMemory` и `ListMemoryPending` возвращают только metadata; тело записи доступно исключительно через явный `GetMemory` и маскируется для `sensitive` и забытых записей. Confirm/reject/supersede требуют approval-токен и idempotency key: повтор безопасен и возвращает фактическое состояние записи.
 
+## Signed receipts
+
+Canonical Receipt v1 реализован в `crates/evohime-receipts` и Electron main
+consumer `desktop/evohime-electron/src/main/receipt-crypto.ts`. Нормативные
+JCS bytes, envelope `receipt_hash`, Ed25519, result domain, schema, limits,
+stable error codes и cross-language vectors находятся в
+`contracts/receipts/v1/`; подробное правило — `docs/security/receipt-canonical-v1.md`.
+Этап 01.1 фиксирует bytes и проверку контракта, а key lifecycle, runtime
+orchestration и storage остаются последующими этапами 01.2–01.4.
+
 ## Context Budget Manager
 
 Сборка контекста реализована в `crates/context-budget` (контракты и детерминированная логика), `crates/evohime-local-storage` (ledger, scratchpad, artifact store, команды) и `crates/evohime-core/src/context_budget.rs` (интеграция в agent loop). Этот раздел — канонический контракт: исходный план удалён из `docs/plans/` после реализации, как того требует правило каталога.
