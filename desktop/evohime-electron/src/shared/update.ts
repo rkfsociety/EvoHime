@@ -17,7 +17,9 @@ export const UPDATE_STEPS = [
   'apply'
 ] as const
 
-export type UpdateStepId = (typeof UPDATE_STEPS)[number]
+export const INSTALLER_UPDATE_STEPS = ['download', 'apply'] as const
+
+export type UpdateStepId = (typeof UPDATE_STEPS | typeof INSTALLER_UPDATE_STEPS)[number]
 
 export type UpdateStepState = 'pending' | 'active' | 'done' | 'failed' | 'skipped'
 
@@ -70,6 +72,7 @@ export interface UpdateStatus {
 }
 
 export const UPDATE_STEP_LABELS: Record<UpdateStepId, string> = {
+  download: 'Скачивание обновления',
   toolchain: 'Инструменты сборки',
   source: 'Исходники',
   core: 'Сборка Core',
@@ -79,6 +82,7 @@ export const UPDATE_STEP_LABELS: Record<UpdateStepId, string> = {
 }
 
 export const UPDATE_STEP_DESCRIPTIONS: Record<UpdateStepId, string> = {
+  download: 'Скачиваю проверенный установщик в фоне.',
   toolchain: 'Проверяю и подготавливаю Git, Rust и Node.js.',
   source: 'Синхронизирую локальную копию с выбранным commit.',
   core: 'Компилирую Rust Core и supervisor.',
@@ -89,6 +93,10 @@ export const UPDATE_STEP_DESCRIPTIONS: Record<UpdateStepId, string> = {
 
 export function initialUpdateSteps(): readonly UpdateStep[] {
   return UPDATE_STEPS.map((id) => ({ id, label: UPDATE_STEP_LABELS[id], state: 'pending' as const }))
+}
+
+export function initialInstallerUpdateSteps(): readonly UpdateStep[] {
+  return INSTALLER_UPDATE_STEPS.map((id) => ({ id, label: UPDATE_STEP_LABELS[id], state: 'pending' as const }))
 }
 
 export function disabledUpdateStatus(branch = 'main'): UpdateStatus {

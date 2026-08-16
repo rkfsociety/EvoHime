@@ -20,7 +20,7 @@ interface UpdateIndicatorProps {
   readonly status: UpdateStatus | null
 }
 
-/** Compact, always-available entry point for the non-blocking source rebuild. */
+/** Compact, always-available entry point for the non-blocking installer update. */
 export function UpdateIndicator({ status }: UpdateIndicatorProps): React.JSX.Element | null {
   const api = useShellApi()
   const [open, setOpen] = useState(false)
@@ -86,7 +86,7 @@ export function UpdateIndicator({ status }: UpdateIndicatorProps): React.JSX.Ele
           <div
             className={`update-progress${progress === null ? ' update-progress--indeterminate' : ''}`}
             role="progressbar"
-            aria-label="Прогресс пересборки"
+            aria-label="Прогресс обновления"
             {...(progress === null ? {} : { 'aria-valuenow': Math.round(progress * 100), 'aria-valuemin': 0, 'aria-valuemax': 100 })}
           >
             <div className="update-progress__value" style={progress === null ? undefined : { width: `${progress * 100}%` }} />
@@ -110,7 +110,7 @@ export function UpdateIndicator({ status }: UpdateIndicatorProps): React.JSX.Ele
               </button>
             ) : null}
             {status.phase === 'ready' ? (
-              <button type="button" onClick={() => void api?.invoke('update.restart', {})}>Перезапустить</button>
+              <button type="button" onClick={() => void api?.invoke('update.restart', {})}>Обновить</button>
             ) : null}
           </div>
         </section>

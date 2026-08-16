@@ -106,7 +106,7 @@ describe('update banner', () => {
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Перезапустить' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
 
     expect(invoke).toHaveBeenCalledWith('update.restart', {})
   })

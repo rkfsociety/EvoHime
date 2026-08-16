@@ -8,7 +8,7 @@ import './UpdateSurface.css'
  * Update notice for an already running shell.
  *
  * The background pass never interrupts work: it says an update exists, shows the
- * rebuild running, and offers the restart only once a package is staged.
+ * installer download running, and offers the update only once it is staged.
  */
 
 const VISIBLE_PHASES = ['available', 'preparing', 'ready', 'applying', 'failed'] as const
@@ -47,7 +47,7 @@ export function UpdateBanner({ status }: UpdateBannerProps): React.JSX.Element |
           <span
             className={`update-progress${progress === null ? ' update-progress--indeterminate' : ''}`}
             role="progressbar"
-            aria-label="Прогресс пересборки"
+            aria-label="Прогресс обновления"
           >
             <span
               className="update-progress__value"
@@ -64,7 +64,7 @@ export function UpdateBanner({ status }: UpdateBannerProps): React.JSX.Element |
             void api?.invoke('update.restart', {})
           }}
         >
-          Перезапустить
+          Обновить
         </button>
       ) : null}
 

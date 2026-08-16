@@ -51,8 +51,9 @@ describe('update config', () => {
     expect(config.checkIntervalMs).toBe(120 * 60_000)
   })
 
-  it('migrates a version 1 installer from local builds to CI installers', () => {
+  it('migrates persisted local-build configs to CI installers', () => {
     expect(load({ version: 1, launchPolicy: 'build' }).launchPolicy).toBe('installer')
+    expect(load({ version: 2, launchPolicy: 'build' }).launchPolicy).toBe('installer')
     expect(load({ version: 1, launchPolicy: 'build' }, { EVOHIME_UPDATE_LAUNCH_POLICY: 'build' }).launchPolicy).toBe('build')
   })
 

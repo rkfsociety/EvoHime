@@ -97,6 +97,19 @@ export async function readCommitState(
   return 'unknown'
 }
 
+/** Current branch tip for the installer updater; no local Git is required. */
+export async function readBranchHead(
+  apiBase: string,
+  branch: string,
+  deps: CommitStatusDeps = {}
+): Promise<string> {
+  const commits = await getJson(`${apiBase}/commits?sha=${encodeURIComponent(branch)}&per_page=1`, deps)
+  const first = asArray(commits)[0]
+  const head = normalizeCommit(asRecord(first)['sha'])
+  if (!head) throw new Error(`GitHub API: ветка ${branch} не содержит коммитов.`)
+  return head
+}
+
 export interface GreenCommit {
   /** Newest commit whose checks are green, or `null` when none qualifies. */
   readonly commit: string | null

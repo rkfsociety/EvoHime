@@ -167,16 +167,15 @@ describe('launch gate', () => {
       writeFileSync(join(staging, 'evohime.build.json'), JSON.stringify({ commit, branch: 'main', builtAtMs: 2 }))
       return { installer: join(staging, 'EvoHime-Setup.exe'), marker: { commit, branch: 'main', builtAtMs: 2 } }
     })
-    const test = harness({ downloadInstaller }, INSTALLED, { launchPolicy: 'installer' })
+    const test = harness({ downloadInstaller, remoteBranchHead: async () => REMOTE }, INSTALLED, { launchPolicy: 'installer' })
 
     await expect(test.service.runLaunchGate()).resolves.toBe('continue')
-    expect(downloadInstaller).not.toHaveBeenCalled()
-    expect(test.quit).not.toHaveBeenCalled()
-
-    const status = await test.service.prepare()
-    expect(status.phase).toBe('ready')
-    expect(status.restartRequired).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, 0))
     expect(downloadInstaller).toHaveBeenCalledTimes(1)
+    expect(test.quit).not.toHaveBeenCalled()
+    expect(test.service.status.phase).toBe('ready')
+    expect(test.service.status.restartRequired).toBe(true)
+    expect(test.service.status.blocking).toBe(false)
   })
 
   it('does nothing when updates are disabled', async () => {
@@ -533,7 +532,7 @@ describe('green commits only', () => {
   it('follows the branch tip when the check requirement is switched off', async () => {
     const { config } = harness()
     const service = new UpdateService({
-      config: { ...config, requireGreenCommit: false },
+      config: { ...config, launchPolicy: 'build', requireGreenCommit: false },
       emit: () => {},
       log: () => {},
       quit: () => {},

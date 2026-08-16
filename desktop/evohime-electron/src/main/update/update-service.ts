@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import {
   disabledUpdateStatus,
+  initialInstallerUpdateSteps,
   initialUpdateSteps,
   type UpdateStatus,
   type UpdateStep,
@@ -17,6 +18,7 @@ import { buildStagedPackage, clearDerivedState } from './builder'
 import { runBuildWorker } from './build-worker'
 import {
   githubApiBase,
+  readBranchHead,
   selectGreenCommit,
   touchesProductCode,
   type CommitCheckState
@@ -54,6 +56,7 @@ export interface UpdateServiceDeps {
   readonly detect?: typeof detectToolchain
   readonly ensure?: typeof ensureToolchain
   readonly remoteHead?: typeof readRemoteHead
+  readonly remoteBranchHead?: typeof readBranchHead
   readonly selectGreen?: typeof selectGreenCommit
   readonly productChanges?: typeof touchesProductCode
   readonly resolveToken?: typeof resolveGithubToken
@@ -100,7 +103,7 @@ export class UpdateService {
       return 'continue'
     }
 
-    this.patch({ blocking: true })
+    if (config.launchPolicy !== 'installer') this.patch({ blocking: true })
     const staged = this.stagedMarker()
     const checked = await this.check()
 
@@ -122,6 +125,12 @@ export class UpdateService {
           message: 'Проверенный установщик уже скачан — можно перезапустить Еву.',
           restartRequired: true
         })
+      } else if (checked.phase === 'available') {
+        // Download immediately after discovery, but never block startup or
+        // show the build gate. The user only confirms the final apply/restart.
+        this.releaseGate()
+        void this.prepare()
+        return 'continue'
       }
       return this.releaseGate()
     }
@@ -160,20 +169,36 @@ export class UpdateService {
     })
 
     try {
-      const toolchain = await (this.deps.detect ?? detectToolchain)({})
-      const git = toolPath(toolchain, 'git')
-      if (!git) {
-        return this.patch({
-          phase: 'available',
-          message: 'Git не установлен — обновление требует установки инструментов сборки.',
-          remoteCommit: null,
-          checkedAtMs: this.time()
+      let tip: string
+      if (config.launchPolicy === 'installer') {
+        const apiBase = githubApiBase(config.repositoryUrl)
+        if (!apiBase) {
+          return this.patch({
+            phase: 'up-to-date',
+            message: 'Проверки CI-установщика недоступны вне GitHub-репозитория.',
+            remoteCommit: null,
+            checkedAtMs: this.time()
+          })
+        }
+        tip = await (this.deps.remoteBranchHead ?? readBranchHead)(apiBase, config.branch, {
+          token: await this.githubToken()
         })
+      } else {
+        const toolchain = await (this.deps.detect ?? detectToolchain)({})
+        const git = toolPath(toolchain, 'git')
+        if (!git) {
+          return this.patch({
+            phase: 'available',
+            message: 'Git не установлен — обновление требует установки инструментов сборки.',
+            remoteCommit: null,
+            checkedAtMs: this.time()
+          })
+        }
+        tip = await (this.deps.remoteHead ?? readRemoteHead)(
+          { directory: config.sourceDirectory, repositoryUrl: config.repositoryUrl, branch: config.branch },
+          { git }
+        )
       }
-      const tip = await (this.deps.remoteHead ?? readRemoteHead)(
-        { directory: config.sourceDirectory, repositoryUrl: config.repositoryUrl, branch: config.branch },
-        { git }
-      )
       const candidate = await this.greenCandidate(tip)
       if (!candidate.commit) {
         this.deps.log('info', 'update.checked', { green: false })
@@ -388,10 +413,10 @@ export class UpdateService {
     this.patch({
       phase: 'preparing',
       message: 'Скачиваю проверенный установщик…',
-      steps: initialUpdateSteps(),
+      steps: initialInstallerUpdateSteps(),
       error: null
     })
-    this.step('package', 'active')
+    this.step('download', 'active')
     try {
       const downloaded = await (this.deps.downloadInstaller ?? downloadReleaseInstaller)(
         config.repositoryUrl,
@@ -400,7 +425,7 @@ export class UpdateService {
         config.stagingDirectory,
         await this.githubToken()
       )
-      this.step('package', 'done')
+      this.step('download', 'done')
       this.deps.log('info', 'update.installer_downloaded', { commit: downloaded.marker.commit })
       return this.patch({
         phase: 'ready',
@@ -409,7 +434,7 @@ export class UpdateService {
         detail: ''
       })
     } catch (error) {
-      this.step('package', 'failed')
+      this.step('download', 'failed')
       return this.fail('Скачивание установщика не удалось', error)
     }
   }

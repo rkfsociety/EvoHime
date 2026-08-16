@@ -85,10 +85,11 @@ export function loadUpdateConfig(inputs: ConfigInputs): UpdateConfig {
   const configuredPolicy = normalizeLaunchPolicy(file['launchPolicy'])
   const launchPolicy =
     normalizeLaunchPolicy(environment['EVOHIME_UPDATE_LAUNCH_POLICY']) ??
-    // Version 1 installers configured local rebuilding. Migrate those
-    // installations automatically; an environment override still permits
-    // developers to opt into the old path explicitly.
-    (file['version'] === 1 && configuredPolicy === 'build' ? 'installer' : configuredPolicy) ??
+    // Persisted user configurations must never select the local rebuild path:
+    // production updates download the CI installer and stay non-blocking.
+    // An environment override still permits developers to opt into the old
+    // path explicitly.
+    (configuredPolicy === 'build' ? 'installer' : configuredPolicy) ??
     'installer'
   const enabled =
     normalizeBoolean(environment['EVOHIME_UPDATE_ENABLED']) ?? normalizeBoolean(file['enabled']) ?? true
