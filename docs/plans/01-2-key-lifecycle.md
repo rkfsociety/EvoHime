@@ -109,6 +109,14 @@ Public history:
 локальной подмены. Его криптографическая целостность определяется signed
 transition records, а не ACL.
 
+История имеет bounded compaction policy. После достижения лимита transition
+records Core создаёт signed `KeyHistoryCheckpointV1`, содержащий hash полного
+префикса, последний transition hash, key id checkpoint и границу retained
+suffix; checkpoint fsync-ится и экспортируется вместе с history до удаления
+старых строк. Offline verifier принимает сокращённую историю только при наличии
+доверенного checkpoint и проверяет suffix от него. Без checkpoint удаление
+истории классифицируется как `key.history_incomplete`, а не как новая genesis.
+
 Private key не экспортируется и не резервируется в v1. Старые private keys
 после успешной rotation уничтожаются: для проверки старых receipts нужны
 старые **public** keys. Архивирование retired private keys запрещено, поскольку
@@ -161,6 +169,7 @@ commit в read transaction.
 Нормативные schema и vectors этапа:
 
 - `contracts/receipts/v1/key-transition.schema.json`;
+- `contracts/receipts/v1/key-history-checkpoint.schema.json`;
 - `contracts/receipts/v1/key-transition-vectors.json`;
 - `docs/security/receipt-key-lifecycle-v1.md`.
 
@@ -232,6 +241,10 @@ key. Crash recovery идемпотентно продолжает либо от�
 journal; состояние, где active key сменился без transition и audit, не
 допускается. Ошибка удаления old private material оставляет status
 `cleanup_required`, блокирует следующую rotation и не объявляется успехом.
+После успешной rotation `rotation-state-v1.json` удаляется только после
+повторной проверки active key, signed transition, audit event и DACL. Если
+очистка не завершилась, файл сохраняется с bounded phase/error code и recovery
+идемпотентно повторяет только cleanup.
 
 ## Audit и diagnostics
 
@@ -271,7 +284,10 @@ Rotation считается завершённой только после durab
   новый сегмент не выдаётся за продолжение старой identity.
 - При подозрении на компрометацию выполняется manual rotation с reason
   `compromise`; old public key и старые receipts не удаляются. Verifier
-  показывает compromised boundary, после которой требуется новый pin.
+  показывает compromised boundary, после которой требуется новый pin. Receipts
+  с математически валидной подписью отозванного сегмента получают
+  `stale_key`; v1 не вводит per-receipt CRL, поэтому отзыв отдельного receipt
+  достигается только компрометацией/ротацией соответствующего key segment.
 - Backup/export содержит receipts и public history, но никогда private key или
   DPAPI blob. Импорт private key и автоматическое восстановление из cloud не
   входят в v1.

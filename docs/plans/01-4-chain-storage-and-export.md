@@ -140,6 +140,7 @@ ExportReceipts creates a directory bundle atomically:
     <destination>\
       manifest.json
       receipts.jsonl
+      actions.jsonl          (present when selected range has action state)
       key-history.jsonl
       checkpoints.jsonl       (present only when snapshot includes checkpoints)
       trusted-roots.json      (present only when explicitly requested)
@@ -171,6 +172,12 @@ one per line. checkpoints.jsonl contains exact signed ReceiptCheckpointV1
 records. trusted-roots.json is optional, user-selected trust metadata and is
 never silently treated as a trust root on another machine.
 
+`actions.jsonl` содержит bounded projection action rows, включая
+`pending_recovery`, `recovery_code` и `requires_reconciliation`; raw input,
+result и error text запрещены. Эта projection signed receipt не является и
+проверяется только на согласованность с `receipt_actions`. Отсутствие
+`actions.jsonl` в архиве без action projection не является ошибкой.
+
 ### manifest.json
 
 Manifest is canonical JSON:
@@ -186,7 +193,8 @@ Manifest is canonical JSON:
       "last_receipt_hash": "<sha256 hex>",
       "files": [
         {"name":"receipts.jsonl","bytes":1234,"sha256":"<64 hex>"},
-        {"name":"key-history.jsonl","bytes":456,"sha256":"<64 hex>"}
+         {"name":"key-history.jsonl","bytes":456,"sha256":"<64 hex>"},
+         {"name":"actions.jsonl","bytes":789,"sha256":"<64 hex>"}
       ]
     }
 
@@ -217,7 +225,9 @@ contain no committed destination marker.
 
 Verification operates on a consistent SQLite snapshot or an export bundle:
 
-1. validate input size, manifest file hashes and JSON/JCS bytes;
+1. validate input size, manifest file hashes and JSON/JCS bytes; timestamp
+   проверять синтаксически всегда, а skew — только при явно включённом
+   offline policy flag;
 2. load public key history and explicit trust roots;
 3. for each selected receipt in sequence order, check envelope size,
    canonical bytes, receipt hash and Ed25519 signature over canonical payload;
@@ -359,9 +369,11 @@ During the transition:
   versions fail closed with unsupported-version code.
 
 There is no SQLite/JSONL dual-write consistency problem: SQLite commits first and
-export is a snapshot after commit. The consistency test compares every exported
-receipt hash and manifest file hash with the source snapshot, including process
-termination during staging.
+export is a snapshot after commit. SQLite is authoritative if an existing export
+differs: the export is stale/corrupt, is never imported back into SQLite, and a
+new export must be generated from a fresh snapshot. The consistency test compares
+every exported receipt/action hash and manifest file hash with the source
+snapshot, including process termination during staging.
 
 ## Audit, UI и access
 
@@ -388,6 +400,7 @@ renders canonical payload automatically and never labels a receipt as correct.
 - migration SQL: `crates/evohime-local-storage/migrations/*_receipts_v1.sql`;
 - `contracts/receipts/v1/export-manifest.schema.json`;
 - `contracts/receipts/v1/export-record.schema.json`;
+- `contracts/receipts/v1/action-projection.schema.json`;
 - `contracts/receipts/v1/checkpoint.schema.json`;
 - generated IPC additions in
   `crates/desktop-ipc/proto/evohime.desktop.proto`;
@@ -399,7 +412,7 @@ renders canonical payload automatically and never labels a receipt as correct.
 
 - migration/DDL tests: constraints, indexes, foreign keys, backup and restart;
 - JSONL vectors: LF/UTF-8, final newline, no nulls, line/manifest/file hashes,
-  base64 exact bytes and schema rejection;
+  base64 exact bytes, pending_recovery action markers and schema rejection;
 - full verify vectors for valid chain, empty range, genesis, rotation,
   checkpoint, broken predecessor, deletion/reorder, duplicate/fork/cycle,
   invalid signature, stale/unknown key, digest mismatch, missing receipt and

@@ -9,8 +9,12 @@
 Core-ключом и связанный с предыдущим receipt. Read-only actions без side effect
 могут проходить детерминированный sampling по правилам 01.3; failures и refusals
 никогда не sampling-ятся. Критерий значимости вычисляет Core по registry/policy,
-а не renderer. Receipt доказывает авторство ключа, целостность и порядок, но не
-доказывает правильность действия.
+а не renderer. Действие считается значимым, если оно изменяет состояние
+EvoHime/workspace/локального ресурса, вызывает внешний сервис или иной внешний
+side effect, либо является refusal, failure, cancellation или recovery-событием
+для такого действия. Только read-only вызов без side effect и без ошибки может
+попасть в sampling; renderer не может понизить значимость. Receipt доказывает
+авторство ключа, целостность и порядок, но не доказывает правильность действия.
 
 ## Модель доверия
 
@@ -124,5 +128,13 @@ retention и offline verify. Целевой smoke-budget: sign/append не бл�
   одноразовый approval claim обеспечивают identity/anti-replay binding;
 - public-key history и rotation checkpoints экспортируются вместе с chain и
   защищаются тем же trusted verification path;
+- все mutation-записи receipt, action и chain head выполняются в одной
+  `BEGIN IMMEDIATE`-транзакции; частичный commit этих таблиц запрещён;
+- SQLite Core является источником истины, а JSONL — только атомарный экспортный
+  снимок; расхождение не исправляется по JSONL и классифицируется как ошибка
+  экспорта/целостности;
+- timestamp skew применяется при runtime-записи относительно часов Core, а при
+  offline-проверке экспортированного архива не применяется по умолчанию и может
+  быть включён только явным режимом проверки;
 - если receipt нельзя надёжно записать, mutation не запускается, а
   `pending_recovery` никогда не превращается в synthetic success.

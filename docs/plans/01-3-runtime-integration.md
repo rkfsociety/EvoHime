@@ -52,6 +52,13 @@ PermissionEngine; 01.3 не реализует параллельный hash. Ap
 обязан побайтно совпадать с tool_args_hash. Этот digest связывает approval
 preview, pre receipt, execution claim и post/refusal receipt.
 
+До `fingerprint_input` Core применяет общий лимит
+`canonical_call_input_max_bytes` из `contracts/receipts/v1/limits.json` (v1:
+262144 bytes после нормализации). Размер считается по UTF-8 canonical input до
+SHA-256; превышение даёт `receipt.call_input_too_large`, не создаёт claim/pre
+receipt и не запускает tool. Один и тот же лимит обязателен для PermissionEngine,
+Core и Electron adapter; renderer не может увеличить его.
+
 result_hash вычисляется как lowercase SHA-256 от bounded canonical result
 projection с domain prefix evohime-result-v1\0. Raw result никогда не попадает
 в receipt, journal, IPC или diagnostics; для failed/cancelled result хешируется
@@ -155,8 +162,14 @@ BEGIN IMMEDIATE transaction. Post receipt и перевод action в terminal s
 pending_recovery — internal action-store state, не новый receipt enum. Для него
 Core сохраняет только action id, pre hash, tool args hash и bounded recovery
 code; raw arguments/results не сохраняются. Recovery не повторяет mutation
-автоматически. Пользователь либо подтверждает reconciliation свежим action,
-либо оставляет pending для 01.4 diagnostics.
+автоматически. Пользователь видит tool id, время, recovery code и предупреждение,
+что внешний side effect мог произойти; Core не утверждает ни успех, ни его
+отсутствие. Допустимы два authenticated flow: (1) новый read-only
+reconciliation action проверяет внешний ресурс и закрывает исходный action
+signed post со статусом `succeeded`/`failed`/`cancelled`; (2) явное признание
+неизвестного результата создаёт signed refusal с `recovery_pending` и оставляет
+исходную связь видимой. Ни один flow не повторяет исходный mutation; отмена
+закрытия оставляет action pending.
 
 Receipt может утверждать только:
 
@@ -282,8 +295,11 @@ deterministic sample:
 
 - configuration — Core-owned audit_sampling_v1 с rate **10%** по умолчанию,
   integer 0–100, изменяемый только authenticated settings command;
-- decision — SHA-256("evohime-sample-v1\0" + action_id + tool_name) modulo 100
-  < rate, без random state и без повторной выборки после restart;
+- decision — SHA-256 от UTF-8 строки
+  `evohime-sample-v1\0` + `action_id` + `\0` + `tool_name` modulo 100 < rate;
+  оба идентификатора уже bounded typed strings, разделитель обязателен и
+  входит в canonical input, поэтому конкатенация недвусмысленна и одинаково
+  реализуется Rust/Electron без locale-зависимого кодирования;
 - rate change создаёт audit event с old/new rate; renderer не меняет rate
   напрямую;
 - sampled read-only action получает обычный signed pre/post pair; unsampled
@@ -306,8 +322,10 @@ deterministic sample:
 4. если post terminal уже durable, закрыть только index (idempotent replay);
 5. если post отсутствует, оставить pending, создать recovery diagnostic и
    никогда не synthesise succeeded;
-6. восстановить persisted approval intents как expired/lost и создать refusal
-   только при доступном trusted signer;
+6. восстановить persisted approval intents как expired/lost; для каждого
+   `pending_recovery` показать выбор reconciliation/read-only check или explicit
+   unknown-result refusal, а signed refusal создать только после нового
+   authenticated command и при доступном trusted signer;
 7. разрешить mutation path только после signer/trust/chain readiness.
 
 ### Recovery state matrix
@@ -331,7 +349,10 @@ deterministic sample:
 tool автоматически и не может объявить success без terminal receipt. Event
 доставляется
 через Core IPC после durable commit и может быть повторно прочитан через 01.4
-diagnostics.
+diagnostics. Export обязан сохранить для action marker в manifest или отдельной
+`actions.jsonl` записью `state=pending_recovery`, `recovery_code` и
+`requires_reconciliation=true`; это не signed receipt payload и не может быть
+истолковано verifier как success.
 
 Persisted receipt/action rows имеют `schema_version=1`; миграция повышает версию
 транзакционно с backup, не меняет canonical blobs и не смешивает версии в одной
@@ -386,6 +407,9 @@ tool dispatch, tool return, post append и head update. В каждой точк
   current policy recheck, one-shot claim и двухфазный IPC;
 - SQLite receipt/action tables, chain-head transaction и recovery procedure
   задокументированы и проходят crash/concurrency tests;
+- recovery vectors покрывают внешний side effect до/после crash, оба
+  authenticated reconciliation flow и отсутствие автоматического повторного
+  mutation;
 - action_id, action_status, refusal_code, pre/post pairing и
   previous_receipt_hash проверяются shared vectors/schema из 01.1;
 - старый/новый key id и rotation history корректно проверяются offline;

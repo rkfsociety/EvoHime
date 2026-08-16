@@ -126,10 +126,13 @@ Envelope v1 имеет ровно четыре поля в нормативно�
 4648 §5 (символ `=` запрещён). Любое другое поле запрещено.
 
 UUID имеют канонический RFC 9562 UUIDv7 с дефисами и lowercase hex. Timestamp
-проверяется синтаксически как UTC RFC 3339. Verifier отклоняет receipt с
-timestamp, отличающимся от времени верификации более чем на 5 минут, с кодом
-`receipt.timestamp_skew`; это операционная политика и она не меняет
-canonical bytes.
+проверяется синтаксически как UTC RFC 3339. При runtime-записи Core применяет
+политику skew в 5 минут относительно своих часов и отклоняет нарушение с кодом
+`receipt.timestamp_skew`. Offline verifier по умолчанию проверяет только
+синтаксис, порядок и cryptographic trust экспортированного архива: часы другой
+машины не должны сделать архив ложноповреждённым. Режим
+`--enforce-timestamp-skew` явно включает ту же 5-минутную проверку; это не
+меняет canonical bytes.
 
 `previous_receipt_hash` отсутствует только у единственного genesis receipt для
 конкретной `(key_id, chain)` в хранилище. У любого следующего receipt поле
@@ -181,6 +184,8 @@ encoding.
 - максимальная вложенность JSON: **4** уровня, включая корневой envelope;
 - typed identifier: не более **128 ASCII bytes**; `provider_id` и `model_id` —
   не более **128 ASCII bytes** каждый.
+- `canonical_call_input_max_bytes`: не более **262144 UTF-8 bytes** после
+  нормализации PermissionEngine; превышение отклоняется до hash/claim.
 
 Размер ровно на границе принимается, на один byte больше — отклоняется. Одни и
 те же константы публикуются в `contracts/receipts/v1/limits.json` (UTF-8 без
