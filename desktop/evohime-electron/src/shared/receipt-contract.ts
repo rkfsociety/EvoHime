@@ -3,6 +3,10 @@ export const RECEIPT_LIMITS = {
   maxPayloadBytes: 4096,
   maxIdentifierBytes: 128,
   maxDepth: 4,
+  fingerprintInputVersion: 1,
+  samplingPolicyVersion: 1,
+  defaultReadOnlySamplingRate: 10,
+  maxPreviewBytes: 1024,
 } as const
 
 export type ReceiptErrorCode =

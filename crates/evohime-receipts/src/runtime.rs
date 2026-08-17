@@ -18,7 +18,7 @@ use uuid::Uuid;
 
 pub const APPROVAL_TTL_MS: i64 = 600_000;
 pub const MAX_PENDING_ACTIONS: i64 = 1024;
-pub const MAX_PREVIEW_BYTES: usize = 1024;
+pub const MAX_PREVIEW_BYTES: usize = crate::CONTRACT_MAX_PREVIEW_BYTES;
 pub const MAX_CALL_INPUT_BYTES: usize = 262_144;
 pub const MAX_PROTECTED_ROW_BYTES: usize = 512;
 static PROCESS_BOOT: OnceLock<Instant> = OnceLock::new();
@@ -408,7 +408,7 @@ impl<'a> ReceiptRuntime<'a> {
         if pending >= MAX_PENDING_ACTIONS { return Err(RuntimeError::Code("pending_limit")); }
         let action = request.action_id.to_string();
         let initial_state = if matches!(request.policy_decision, PolicyDecision::ApprovalRequired) { "awaiting_approval" } else { "prepared" };
-        tx.execute("INSERT INTO receipt_actions(schema_version,action_id,task_id,run_id,tool_name,normalized_scope,fingerprint_input_version,tool_args_hash,policy_id,policy_decision,state,dispatch_state,approval_id,approval_call_hash) VALUES(1,?1,?2,?3,?4,?5,1,?6,?7,?8,?9,'not_started',?10,?6)", params![action, request.task_id, request.run_id, request.tool_name, request.normalized_scope, args_hash, request.policy_id, request.policy_decision.as_str(), initial_state, request.approval_id.map(|v|v.to_string())])?;
+        tx.execute("INSERT INTO receipt_actions(schema_version,action_id,task_id,run_id,tool_name,normalized_scope,fingerprint_input_version,tool_args_hash,policy_id,policy_decision,state,dispatch_state,approval_id,approval_call_hash) VALUES(1,?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'not_started',?11,?7)", params![action, request.task_id, request.run_id, request.tool_name, request.normalized_scope, crate::FINGERPRINT_INPUT_VERSION, args_hash, request.policy_id, request.policy_decision.as_str(), initial_state, request.approval_id.map(|v|v.to_string())])?;
         match request.policy_decision {
             PolicyDecision::Deny => {
                 let (hash, _) = signed_receipt(&tx, self.signer, &request, "refusal", "refused", &args_hash, None, Some("policy_denied"))?;
