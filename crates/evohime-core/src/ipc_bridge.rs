@@ -11,7 +11,7 @@ use crate::{
 use evohime_local_storage::WorkItemRecord;
 use evohime_model_gateway::ModelGatewayConfig;
 use evohime_permissions::{Permission, PermissionMode};
-use evohime_receipts::{key_lifecycle::{ReceiptKeyManager, VerificationStatus}, runtime::{ProtectedActionRow, ReceiptSigner}};
+use evohime_receipts::{key_lifecycle::{ReceiptKeyManager, VerificationStatus}, runtime::ProtectedActionRow};
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -3030,7 +3030,7 @@ impl IpcBridge {
                             result_hash: evohime_receipts::sha256_hex(error.to_string().as_bytes()),
                             recovery_code: "unknown".into(),
                             created_at_ms: SystemTime::now().duration_since(UNIX_EPOCH).map(|value| value.as_millis() as i64).unwrap_or_default(),
-                            key_id: signer.key_id().unwrap_or_else(|_| "unavailable".into()),
+                            key_id: self.receipt_keys.storage_key_id().unwrap_or_else(|_| "unavailable".into()),
                         };
                         if let Ok(plain) = serde_json::to_vec(&row) {
                             if let Ok(envelope) = self.receipt_keys.protect_storage(&plain) { let _ = runtime.store_protected_envelope(&row, envelope); }

@@ -10,7 +10,8 @@ use base64::{
 };
 use chrono::Utc;
 use ring::{
-    rand::SystemRandom,
+    aead,
+    rand::{SecureRandom, SystemRandom},
     signature::{self, Ed25519KeyPair, KeyPair},
 };
 use rusqlite::OptionalExtension;
@@ -35,8 +36,20 @@ pub const RECOVERY_FORENSIC_FILE: &str = "recovery-forensic-v1.json";
 pub const ROTATION_CHECK_FILE: &str = "rotation-check-v1.json";
 pub const PENDING_KEY_FILE: &str = "pending-key-v1.json";
 pub const CHECKPOINT_FILE: &str = "key-history-checkpoint-v1.json";
+pub const STORAGE_KEY_FILE: &str = "recovery-storage-key-v1.json";
+pub const STORAGE_KEY_HISTORY_FILE: &str = "recovery-storage-key-history-v1.json";
 pub const MAX_TRANSITIONS: usize = 100;
 pub const MAX_HISTORY_BYTES: usize = 16 * 1024 * 1024;
+const STORAGE_KEY_BYTES: usize = 32;
+const STORAGE_NONCE_BYTES: usize = 12;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct StorageKeyMetadata {
+    storage_version: u8,
+    key_id: String,
+    protected_key: String,
+}
 
 #[derive(Debug, Error)]
 pub enum KeyError {
@@ -466,6 +479,9 @@ impl ReceiptKeyManager {
         self.root.join(ROTATION_CHECK_FILE)
     }
 
+    fn storage_key_path(&self) -> PathBuf { self.root.join(STORAGE_KEY_FILE) }
+    fn storage_key_history_path(&self) -> PathBuf { self.root.join(STORAGE_KEY_HISTORY_FILE) }
+
     pub fn initialize(&self) -> Result<String, KeyError> {
         if self.active_path().exists() {
             return Err(KeyError::Corrupt);
@@ -601,14 +617,87 @@ impl ReceiptKeyManager {
         Ok((metadata.key_id, signer.sign(&bytes)))
     }
 
-    /// Protects bounded Core recovery material with the same user-bound DPAPI
-    /// boundary as the receipt private key. Plaintext never leaves this API.
+    fn new_storage_metadata(&self) -> Result<(StorageKeyMetadata, [u8; STORAGE_KEY_BYTES]), KeyError> {
+        fs::create_dir_all(&self.root)?;
+        let mut key = [0u8; STORAGE_KEY_BYTES];
+        SystemRandom::new().fill(&mut key).map_err(|_| KeyError::DpapiFailed)?;
+        let id = format!("{:x}", Sha256::digest(key));
+        let metadata = StorageKeyMetadata { storage_version: 1, key_id: id, protected_key: STANDARD.encode(protect(&key)?) };
+        atomic_write_json(&self.storage_key_path(), &metadata)?;
+        Ok((metadata, key))
+    }
+
+    fn read_storage_metadata(&self, path: &Path) -> Result<(StorageKeyMetadata, [u8; STORAGE_KEY_BYTES]), KeyError> {
+        let metadata: StorageKeyMetadata = serde_json::from_slice(&fs::read(path)?)?;
+        if metadata.storage_version != 1 { return Err(KeyError::Corrupt); }
+        let protected = STANDARD.decode(&metadata.protected_key).map_err(|_| KeyError::Corrupt)?;
+        let plain = unprotect(&protected)?;
+        if plain.len() != STORAGE_KEY_BYTES || format!("{:x}", Sha256::digest(&plain)) != metadata.key_id { return Err(KeyError::Corrupt); }
+        let mut key = [0u8; STORAGE_KEY_BYTES];
+        key.copy_from_slice(&plain);
+        Ok((metadata, key))
+    }
+
+    fn active_storage_key(&self) -> Result<(StorageKeyMetadata, [u8; STORAGE_KEY_BYTES]), KeyError> {
+        if self.storage_key_path().exists() { self.read_storage_metadata(&self.storage_key_path()) } else { self.new_storage_metadata() }
+    }
+
+    pub fn storage_key_id(&self) -> Result<String, KeyError> {
+        Ok(self.active_storage_key()?.0.key_id)
+    }
+
+    /// Encrypts bounded recovery material with a versioned per-user storage
+    /// key. The key itself is DPAPI-protected and never leaves this manager.
     pub fn protect_storage(&self, bytes: &[u8]) -> Result<Vec<u8>, KeyError> {
-        protect(bytes)
+        let (_, key) = self.active_storage_key()?;
+        let unbound = aead::UnboundKey::new(&aead::AES_256_GCM, &key).map_err(|_| KeyError::DpapiFailed)?;
+        let less = aead::LessSafeKey::new(unbound);
+        let mut nonce = [0u8; STORAGE_NONCE_BYTES];
+        SystemRandom::new().fill(&mut nonce).map_err(|_| KeyError::DpapiFailed)?;
+        let mut output = bytes.to_vec();
+        less.seal_in_place_append_tag(aead::Nonce::assume_unique_for_key(nonce), aead::Aad::empty(), &mut output).map_err(|_| KeyError::DpapiFailed)?;
+        let mut envelope = nonce.to_vec();
+        envelope.extend(output);
+        Ok(envelope)
     }
 
     pub fn unprotect_storage(&self, bytes: &[u8]) -> Result<Vec<u8>, KeyError> {
-        unprotect(bytes)
+        if bytes.len() < STORAGE_NONCE_BYTES + aead::AES_256_GCM.tag_len() { return Err(KeyError::Corrupt); }
+        let mut candidates = Vec::new();
+        if let Ok((_, key)) = self.active_storage_key() { candidates.push(key); }
+        if let Ok(raw) = fs::read(self.storage_key_history_path()) {
+            if let Ok(history) = serde_json::from_slice::<Vec<StorageKeyMetadata>>(&raw) {
+                for metadata in history.into_iter().rev().take(8) {
+                    if let Ok((_, key)) = self.read_storage_metadata_from_value(&metadata) { candidates.push(key); }
+                }
+            }
+        }
+        let nonce_bytes: [u8; STORAGE_NONCE_BYTES] = bytes[..STORAGE_NONCE_BYTES].try_into().map_err(|_| KeyError::Corrupt)?;
+        for key in candidates {
+            let unbound = aead::UnboundKey::new(&aead::AES_256_GCM, &key).map_err(|_| KeyError::Corrupt)?;
+            let less = aead::LessSafeKey::new(unbound);
+            let mut ciphertext = bytes[STORAGE_NONCE_BYTES..].to_vec();
+            if let Ok(plain) = less.open_in_place(aead::Nonce::assume_unique_for_key(nonce_bytes), aead::Aad::empty(), &mut ciphertext) { return Ok(plain.to_vec()); }
+        }
+        Err(KeyError::DpapiFailed)
+    }
+
+    fn read_storage_metadata_from_value(&self, metadata: &StorageKeyMetadata) -> Result<(StorageKeyMetadata, [u8; STORAGE_KEY_BYTES]), KeyError> {
+        if metadata.storage_version != 1 { return Err(KeyError::Corrupt); }
+        let protected = STANDARD.decode(&metadata.protected_key).map_err(|_| KeyError::Corrupt)?;
+        let plain = unprotect(&protected)?;
+        if plain.len() != STORAGE_KEY_BYTES || format!("{:x}", Sha256::digest(&plain)) != metadata.key_id { return Err(KeyError::Corrupt); }
+        let mut key = [0u8; STORAGE_KEY_BYTES]; key.copy_from_slice(&plain); Ok((metadata.clone(), key))
+    }
+
+    pub fn rotate_storage_key(&self, authenticated_operator: bool) -> Result<String, KeyError> {
+        if !authenticated_operator { return Err(KeyError::TrustRequired); }
+        let (old, _) = self.active_storage_key()?;
+        let mut history: Vec<StorageKeyMetadata> = fs::read(&self.storage_key_history_path()).ok().and_then(|raw| serde_json::from_slice(&raw).ok()).unwrap_or_default();
+        if !history.iter().any(|item: &StorageKeyMetadata| item.key_id == old.key_id) { history.push(old); }
+        if history.len() > 8 { history.drain(..history.len() - 8); }
+        atomic_write_json(&self.storage_key_history_path(), &history)?;
+        Ok(self.new_storage_metadata()?.0.key_id)
     }
 
     pub fn rotate(&self, reason: &str, actor: &str) -> Result<String, KeyError> {
@@ -1700,6 +1789,21 @@ fn unprotect(_: &[u8]) -> Result<Vec<u8>, KeyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn protected_storage_survives_rotation_with_history_fallback() {
+        let root = std::env::temp_dir().join(format!("evohime-receipt-storage-{}", Uuid::now_v7()));
+        let manager = ReceiptKeyManager::new(&root);
+        manager.initialize().unwrap();
+        let first_id = manager.storage_key_id().unwrap();
+        let envelope = manager.protect_storage(b"bounded recovery").unwrap();
+        let second_id = manager.rotate_storage_key(true).unwrap();
+        assert_ne!(first_id, second_id);
+        assert_eq!(manager.unprotect_storage(&envelope).unwrap(), b"bounded recovery");
+        assert!(manager.rotate_storage_key(false).is_err());
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     fn genesis() -> KeyTransition {
         let pair = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).unwrap();

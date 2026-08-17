@@ -3745,7 +3745,7 @@ impl ToolAgent {
                 result_hash: output_digest,
                 recovery_code: "signature_failed".to_owned(),
                 created_at_ms: SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|value| value.as_millis() as i64).unwrap_or_default(),
-                key_id: signer.key_id().unwrap_or_else(|_| "unavailable".to_owned()),
+                key_id: keys.storage_key_id().unwrap_or_else(|_| "unavailable".to_owned()),
             };
             if let Ok(plain) = serde_json::to_vec(&row) {
                 if let Ok(envelope) = keys.protect_storage(&plain) {
