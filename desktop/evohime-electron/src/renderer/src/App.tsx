@@ -9,7 +9,6 @@ import { UpdateIndicator } from './UpdateIndicator'
 import { UpdateGate } from './UpdateGate'
 import { ProjectSidebar } from './ProjectSidebar'
 import { TaskTimeline } from './TaskTimeline'
-import { EditorPanel } from './EditorPanel'
 import { ProviderForm } from './ProviderForm'
 import { RecoveryBanner } from './RecoveryBanner'
 import { OperationsPanel } from './OperationsPanel'
@@ -37,7 +36,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'editor' | 'operations' | 'settings'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'settings'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -52,7 +51,6 @@ interface ViewDescriptor {
 const VIEWS: readonly ViewDescriptor[] = [
   { id: 'overview', label: 'Обзор', icon: '◉' },
   { id: 'reviews', label: 'Ревью планов', icon: '✓' },
-  { id: 'editor', label: 'Редактор', icon: '✎' },
   { id: 'operations', label: 'Память и Pulse', icon: '◌' },
 ]
 
@@ -226,7 +224,6 @@ export function App(): React.JSX.Element {
             <div className="main__scroll">
               {view === 'overview' ? <OverviewPanel connection={connection} events={events} workspace={workspace} /> : null}
               {view === 'reviews' ? <PlanReviewPanel connection={connection} events={events} /> : null}
-              {view === 'editor' ? <EditorPanel connection={connection} events={events} /> : null}
               {view === 'operations' ? <OperationsPanel connection={connection} events={events} /> : null}
               {view === 'settings' ? <ProviderForm /> : null}
             </div>
