@@ -58,3 +58,8 @@ try {
 } finally {
     Pop-Location
 }
+
+# The last verifier invocation intentionally returns exit code 4 for the
+# argument-validation case. Do not leak that expected native exit code from
+# the successful PowerShell test script when it runs through the CI wrapper.
+exit 0
