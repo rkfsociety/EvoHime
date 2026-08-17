@@ -294,6 +294,12 @@ message ClosePendingReceiptAction {
   bool operator_confirmed = 3;
 }
 
+// Core-authenticated change to read-only audit sampling. Renderer input is
+// bounded and cannot modify the SQLite setting directly.
+message SetReceiptAuditSamplingRate {
+  uint32 rate = 1;
+}
+
 // Bounded, read-only Core Doctor diagnostic. project_id is optional; when
 // set, the permissions check is grounded in that project's real workspace.
 // detail_level is user-configurable verbosity: 0 = SUMMARY (default),
@@ -839,6 +845,7 @@ message CommandEnvelope {
     GetReceiptKeyStatus get_receipt_key_status = 94;
     CreateNewReceiptGenesis create_new_receipt_genesis = 95;
     ClosePendingReceiptAction close_pending_receipt_action = 96;
+    SetReceiptAuditSamplingRate set_receipt_audit_sampling_rate = 97;
   }
 }
 

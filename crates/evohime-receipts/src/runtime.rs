@@ -304,6 +304,13 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
            sampling_policy_version INTEGER NOT NULL,
            created_at_ms INTEGER NOT NULL
          );
+         CREATE TABLE IF NOT EXISTS receipt_sampling_changes (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           old_rate INTEGER NOT NULL,
+           new_rate INTEGER NOT NULL,
+           sampling_policy_version INTEGER NOT NULL,
+           created_at_ms INTEGER NOT NULL
+         );
          INSERT OR IGNORE INTO receipt_runtime_guard(id,phase,generation,updated_at_ms)
            VALUES(1,'ready',0,0);",
     )?;
@@ -649,7 +656,11 @@ impl<'a> ReceiptRuntime<'a> {
 
     pub fn set_audit_sampling_rate(&self, authenticated_core_command: bool, rate: u8) -> Result<(), RuntimeError> {
         if !authenticated_core_command || rate > 100 { return Err(RuntimeError::Code("key_untrusted")); }
-        self.connection.execute("UPDATE receipt_runtime_config SET audit_sampling_rate=?1,sampling_policy_version=?2 WHERE id=1", params![rate as i64, crate::SAMPLING_POLICY_VERSION as i64])?;
+        let tx = self.connection.unchecked_transaction()?;
+        let old_rate: i64 = tx.query_row("SELECT audit_sampling_rate FROM receipt_runtime_config WHERE id=1", [], |row| row.get(0))?;
+        tx.execute("UPDATE receipt_runtime_config SET audit_sampling_rate=?1,sampling_policy_version=?2 WHERE id=1", params![rate as i64, crate::SAMPLING_POLICY_VERSION as i64])?;
+        tx.execute("INSERT INTO receipt_sampling_changes(old_rate,new_rate,sampling_policy_version,created_at_ms) VALUES(?1,?2,?3,?4)", params![old_rate, rate as i64, crate::SAMPLING_POLICY_VERSION as i64, now_ms()])?;
+        tx.commit()?;
         Ok(())
     }
 

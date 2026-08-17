@@ -398,6 +398,19 @@ impl IpcBridge {
                     .map_err(|error| FrameError::Io(error.to_string()))?;
                 self.write_response(writer, "receipt.pending_close", serde_json::to_vec(&serde_json::json!({"ok":true,"action_id":request.action_id,"receipt_hash":receipt_hash,"completion_source":"reconciliation"}))?).await?;
             }
+            Some(generated::command_envelope::Command::SetReceiptAuditSamplingRate(request)) => {
+                if request.rate > 100 {
+                    self.write_response(writer, "receipt.sampling_rate", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.schema_violation"}))?).await?;
+                    return Ok(());
+                }
+                let mut database = self.journal.database().lock().await;
+                let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
+                let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                runtime.set_audit_sampling_rate(true, request.rate as u8)
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                self.write_response(writer, "receipt.sampling_rate", serde_json::to_vec(&serde_json::json!({"ok":true,"rate":request.rate,"policy_version":evohime_receipts::SAMPLING_POLICY_VERSION}))?).await?;
+            }
             Some(generated::command_envelope::Command::TrustReceiptGenesis(request)) => {
                 if !self
                     .take_receipt_approval(writer, &request.approval_id, "TrustReceiptGenesis")
