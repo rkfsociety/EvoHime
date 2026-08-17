@@ -629,13 +629,19 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(())
     }
 
-    /// Manual operator closure is deliberately incapable of returning an
-    /// action to a dispatchable state.
-    pub fn unquarantine(&self, action_id: Uuid, authenticated_operator: bool, checkpoint: &str) -> Result<(), RuntimeError> {
+    /// Authenticated operator closure for an invariant-violating action. It
+    /// can only produce a signed terminal refusal and never re-enables dispatch.
+    pub fn unquarantine(&self, request: &ActionRequest, authenticated_operator: bool, checkpoint: &str) -> Result<String, RuntimeError> {
         if !authenticated_operator || checkpoint.is_empty() || checkpoint.len() > 256 { return Err(RuntimeError::Code("key_untrusted")); }
-        let changed = self.connection.execute("UPDATE receipt_actions SET state='refused',recovery_code='unknown' WHERE action_id=?1 AND state='quarantined'", [action_id.to_string()])?;
-        if changed != 1 { return Err(RuntimeError::Code("schema_violation")); }
-        Ok(())
+        let args_hash = canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input)?;
+        let tx = self.connection.unchecked_transaction()?;
+        let state: String = tx.query_row("SELECT state FROM receipt_actions WHERE action_id=?1", [request.action_id.to_string()], |row| row.get(0))?;
+        if state != "quarantined" { return Err(RuntimeError::Code("schema_violation")); }
+        let (hash, _) = signed_receipt(&tx, self.signer, request, "refusal", "refused", &args_hash, None, Some("recovery_pending"))?;
+        tx.execute("UPDATE receipt_actions SET state='refused',recovery_code='unknown',completion_source='reconciliation',terminal_receipt_hash=?2 WHERE action_id=?1 AND state='quarantined'", params![request.action_id.to_string(), hash])?;
+        tx.execute("DELETE FROM receipt_protected_actions WHERE action_id=?1", [request.action_id.to_string()])?;
+        tx.commit()?;
+        Ok(hash)
     }
 
     pub fn action(&self, action_id: Uuid) -> Result<Option<ActionState>, RuntimeError> {
