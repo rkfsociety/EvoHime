@@ -2931,6 +2931,36 @@ impl IpcBridge {
         .map_err(|error| FrameError::Io(error.to_string()).into())
     }
 
+    async fn execute_terminal_with_receipt(
+        &self,
+        context: &ToolContext,
+        input: serde_json::Value,
+        cancellation: CancellationToken,
+    ) -> Result<evohime_tool_runtime::ToolResult, evohime_tool_runtime::ToolError> {
+        match self.tools.as_ref().ok_or_else(|| evohime_tool_runtime::ToolError::Execution("Terminal tools are not configured".into()))?.preflight(context, "shell.execute", &input).await? {
+            evohime_tool_runtime::ToolPreflightDecision::Allowed { scope, preview } => {
+                let request = evohime_receipts::runtime::ActionRequest { action_id: uuid::Uuid::now_v7(), task_id: context.task_id.to_string(), run_id: context.task_id.to_string(), tool_name: "shell.execute".into(), policy_id: "permission:ShellExecute".into(), normalized_scope: scope, input: input.clone(), policy_decision: evohime_receipts::runtime::PolicyDecision::Allow, approval_id: None, preview: serde_json::to_string(&preview).unwrap_or_else(|_| "terminal".into()) };
+                let mut database = self.journal.database().lock().await;
+                let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
+                let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
+                if !matches!(runtime.prepare(request.clone()).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?, evohime_receipts::runtime::PrepareOutcome::Prepared { .. }) { return Err(evohime_tool_runtime::ToolError::Execution("receipt.precondition_failed".into())); }
+                runtime.mark_started(request.action_id).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
+                drop(database);
+                let result = self.tools.as_ref().unwrap().execute_with_cancellation(context, "shell.execute", input, cancellation).await;
+                let mut database = self.journal.database().lock().await;
+                let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
+                let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
+                match &result {
+                    Ok(value) => { runtime.mark_returned(request.action_id).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?; let digest = evohime_receipts::sha256_hex(value.output.as_bytes()); runtime.complete(&request, "succeeded", &digest, None).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?; }
+                    Err(_) => { let _ = runtime.mark_pending_recovery(request.action_id, "unknown"); }
+                }
+                result
+            }
+            evohime_tool_runtime::ToolPreflightDecision::Denied(permission) => Err(evohime_tool_runtime::ToolError::PermissionDenied(permission)),
+            evohime_tool_runtime::ToolPreflightDecision::ApprovalRequired { .. } => self.tools.as_ref().unwrap().execute_with_cancellation(context, "shell.execute", input, cancellation).await,
+        }
+    }
+
     async fn dispatch_terminal_execute<W: AsyncWrite + Unpin>(
         &self,
         request: generated::TerminalExecute,
@@ -2959,14 +2989,7 @@ impl IpcBridge {
         };
         let cancellation = tokio_util::sync::CancellationToken::new();
         let result = if request.approval_id.is_empty() {
-            match tools
-                .execute_with_cancellation(
-                    &context,
-                    "shell.execute",
-                    input.clone(),
-                    cancellation.clone(),
-                )
-                .await
+            match self.execute_terminal_with_receipt(&context, input.clone(), cancellation.clone()).await
             {
                 Ok(result) => result,
                 Err(evohime_tool_runtime::ToolError::NeedsApproval {
@@ -2977,6 +3000,27 @@ impl IpcBridge {
                     input,
                     preview,
                 }) => {
+                    let durable_action_id = uuid::Uuid::now_v7();
+                    let receipt_request = evohime_receipts::runtime::ActionRequest {
+                        action_id: durable_action_id,
+                        task_id: task_id.to_string(),
+                        run_id: task_id.to_string(),
+                        tool_name: tool.clone(),
+                        policy_id: format!("permission:{permission:?}"),
+                        normalized_scope: scope.clone(),
+                        input: input.clone(),
+                        policy_decision: evohime_receipts::runtime::PolicyDecision::ApprovalRequired,
+                        approval_id: Some(approval_id),
+                        preview: serde_json::to_string(&preview).unwrap_or_else(|_| "approval".into()),
+                    };
+                    {
+                        let mut database = self.journal.database().lock().await;
+                        let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
+                        let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
+                            .map_err(|error| FrameError::Io(error.to_string()))?;
+                        runtime.prepare_existing_approval(receipt_request)
+                            .map_err(|error| FrameError::Io(error.to_string()))?;
+                    }
                     self.write_response(
                         writer,
                         "approval.required",
@@ -2986,7 +3030,6 @@ impl IpcBridge {
                             "tool_name": tool,
                             "permission": format!("{permission:?}"),
                             "scope": scope,
-                            "input": input,
                             "preview": preview,
                         }))?,
                     )
@@ -3011,12 +3054,51 @@ impl IpcBridge {
             let approval_id = uuid::Uuid::parse_str(&request.approval_id).map_err(|error| {
                 FrameError::Io(format!("invalid terminal approval id: {error}"))
             })?;
+            let (action_id, receipt_request) = {
+                let database = self.journal.database().lock().await;
+                let (action_id, receipt_scope): (String, String) = database.connection().query_row(
+                    "SELECT action_id,normalized_scope FROM receipt_approval_intents WHERE approval_id=?1",
+                    [approval_id.to_string()], |row| Ok((row.get(0)?, row.get(1)?)),
+                ).map_err(|error| FrameError::Io(error.to_string()))?;
+                let action_id = uuid::Uuid::parse_str(&action_id).map_err(|error| FrameError::Io(error.to_string()))?;
+                (action_id, evohime_receipts::runtime::ActionRequest {
+                    action_id,
+                    task_id: task_id.to_string(), run_id: task_id.to_string(), tool_name: "shell.execute".into(),
+                    policy_id: "permission:ShellExecute".into(), normalized_scope: receipt_scope, input: input.clone(),
+                    policy_decision: evohime_receipts::runtime::PolicyDecision::ApprovalRequired,
+                    approval_id: Some(approval_id), preview: "terminal approval".into(),
+                })
+            };
+            {
+                let mut database = self.journal.database().lock().await;
+                let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
+                let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                runtime.grant_approval(approval_id).map_err(|error| FrameError::Io(error.to_string()))?;
+                runtime.claim_approval(&receipt_request, approval_id).map_err(|error| FrameError::Io(error.to_string()))?;
+                runtime.mark_started(action_id).map_err(|error| FrameError::Io(error.to_string()))?;
+            }
             match tools
                 .execute_after_approval(&context, "shell.execute", input, approval_id, cancellation)
                 .await
             {
-                Ok(result) => result,
+                Ok(result) => {
+                    let output_digest = evohime_receipts::sha256_hex(result.output.as_bytes());
+                    let mut database = self.journal.database().lock().await;
+                    let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
+                    let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
+                        .map_err(|error| FrameError::Io(error.to_string()))?;
+                    runtime.mark_returned(action_id).map_err(|error| FrameError::Io(error.to_string()))?;
+                    runtime.complete(&receipt_request, "succeeded", &output_digest, None)
+                        .map_err(|error| FrameError::Io(error.to_string()))?;
+                    result
+                }
                 Err(error) => {
+                    let mut database = self.journal.database().lock().await;
+                    let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
+                    if let Ok(runtime) = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer) {
+                        let _ = runtime.mark_pending_recovery(action_id, "external_error");
+                    }
                     return self
                         .write_response(
                             writer,
@@ -3534,9 +3616,13 @@ mod tests {
             std::env::temp_dir().join(format!("evohime-ipc-terminal-root-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("terminal root");
-        let journal_path =
-            std::env::temp_dir().join(format!("evohime-ipc-terminal-{}.db", std::process::id()));
+        let data_root = std::env::temp_dir().join(format!("evohime-ipc-terminal-data-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&data_root);
+        std::fs::create_dir_all(&data_root).expect("terminal data root");
+        let journal_path = data_root.join("events.db");
         let _ = std::fs::remove_file(&journal_path);
+        let receipt_keys = ReceiptKeyManager::new(&data_root);
+        receipt_keys.initialize().expect("receipt keys initialize");
         let journal = EventJournal::open(&journal_path).expect("journal opens");
         let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
         let tools = Arc::new(ToolRegistry::bootstrap());
@@ -3634,7 +3720,7 @@ mod tests {
         assert_eq!(result_json["ok"], false);
         assert_eq!(result_json["error"], "approval was denied for this call");
         let _ = std::fs::remove_dir_all(root);
-        let _ = std::fs::remove_file(journal_path);
+        let _ = std::fs::remove_dir_all(data_root);
     }
 
     #[tokio::test]

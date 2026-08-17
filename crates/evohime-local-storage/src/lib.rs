@@ -26,7 +26,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 22;
+pub const SCHEMA_VERSION: u32 = 23;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -2886,6 +2886,9 @@ impl LocalDatabase {
         }
         if current < 22 {
             transaction.execute_batch("PRAGMA user_version = 22;")?;
+        }
+        if current < 23 {
+            transaction.execute_batch("PRAGMA user_version = 23;")?;
         }
         transaction.commit()?;
         Ok(())

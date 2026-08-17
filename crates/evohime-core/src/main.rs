@@ -14,12 +14,15 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    let receipt_keys = evohime_receipts::key_lifecycle::ReceiptKeyManager::new(&data_dir);
+    let receipt_keys = std::sync::Arc::new(evohime_receipts::key_lifecycle::ReceiptKeyManager::new(&data_dir));
     {
         let mut database = journal.database().lock().await;
         if let Err(error) = receipt_keys.startup_with_database(database.connection_mut()) {
             eprintln!("evohime-core receipt key lifecycle failed: {error}");
             std::process::exit(1);
+        }
+        if let Err(error) = evohime_receipts::runtime::recover_database(database.connection_mut()) {
+            eprintln!("evohime-core receipt recovery failed: {error}");
         }
         if receipt_keys.scheduled_rotation_due().unwrap_or(false) {
             let trusted = receipt_keys
@@ -84,6 +87,7 @@ async fn main() {
                     approvals.clone(),
                 )
                 .with_journal(journal.clone())
+                .with_receipt_keys(receipt_keys.clone())
                 .with_selected_model(selected_model.clone()),
             ) as std::sync::Arc<dyn evohime_core::TaskExecutor>
         });

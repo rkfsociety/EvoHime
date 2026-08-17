@@ -563,7 +563,7 @@ impl PermissionEngine {
         let scope = normalize_scope_path(scope.into());
         let call_hash = canonical_call_hash(&tool_name, &scope, input);
         let request = ApprovalRequest {
-            id: Uuid::new_v4(),
+            id: Uuid::now_v7(),
             task_id,
             session_id,
             tool_name,
@@ -927,7 +927,7 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-fn fingerprint_input(input: &serde_json::Value) -> String {
+pub fn fingerprint_input(input: &serde_json::Value) -> String {
     match input {
         serde_json::Value::Null => "null".to_string(),
         serde_json::Value::Bool(value) => value.to_string(),

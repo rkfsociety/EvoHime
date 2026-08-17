@@ -84,6 +84,13 @@ pub struct ToolDefinition {
     pub timeout: Duration,
 }
 
+#[derive(Debug, Clone)]
+pub enum ToolPreflightDecision {
+    Allowed { scope: String, preview: ApprovalPreview },
+    Denied(Permission),
+    ApprovalRequired { permission: Permission, scope: String, preview: ApprovalPreview },
+}
+
 #[derive(Clone)]
 pub struct ToolRegistry {
     tools: HashMap<&'static str, ToolDefinition>,
@@ -257,6 +264,31 @@ impl ToolRegistry {
         let mut items: Vec<_> = self.tools.values().collect();
         items.sort_by_key(|tool| tool.name);
         items
+    }
+
+    /// Performs the exact policy/scope check without creating an in-memory
+    /// approval and without dispatching a tool. Core uses this boundary to
+    /// append a durable pre receipt before any effect.
+    pub async fn preflight(&self, ctx: &ToolContext, name: &str, input: &Value) -> Result<ToolPreflightDecision, ToolError> {
+        let definition = self.tools.get(name).ok_or_else(|| ToolError::UnknownTool(name.to_owned()))?;
+        if name == tools::patch::NAME { tools::patch::validate_input(input)?; }
+        let scope = scope_from_input(name, input);
+        let command = command_from_input(name, input);
+        let subject = canonical_policy_subject(ctx, name, input, command.as_deref())?;
+        let preview = approval_preview(name, &scope, command.as_deref(), input);
+        for permission in definition.permissions {
+            let check = evohime_permissions::PermissionCheck { session_id: ctx.session_id, path: Some(scope.as_str()), command: command.as_deref() };
+            let decision = match subject.as_deref() {
+                Some(value) => self.permissions.check_scoped_with_subject(*permission, &check, value).await,
+                None => self.permissions.check_scoped(*permission, &check).await,
+            };
+            match decision {
+                PermissionDecision::Allowed => {}
+                PermissionDecision::Denied => return Ok(ToolPreflightDecision::Denied(*permission)),
+                PermissionDecision::NeedsApproval => return Ok(ToolPreflightDecision::ApprovalRequired { permission: *permission, scope, preview }),
+            }
+        }
+        Ok(ToolPreflightDecision::Allowed { scope, preview })
     }
 
     pub async fn execute(

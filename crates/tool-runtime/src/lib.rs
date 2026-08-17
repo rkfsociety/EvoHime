@@ -7,7 +7,7 @@ mod shell_env;
 mod ssrf;
 mod tools;
 
-pub use registry::{ToolContext, ToolError, ToolProgress, ToolRegistry, ToolResult};
+pub use registry::{ToolContext, ToolError, ToolPreflightDecision, ToolProgress, ToolRegistry, ToolResult};
 pub use risk::{classify_call_risk, ToolRiskLevel};
 pub use sandbox::WorkspaceSandbox;
 pub use ssrf::{

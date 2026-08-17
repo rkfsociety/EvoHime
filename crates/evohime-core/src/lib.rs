@@ -720,12 +720,14 @@ use evohime_model_gateway::{
     ModelGateway, NativeToolCall, ToolSpec,
 };
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
+use evohime_receipts::{runtime::{ActionRequest as ReceiptActionRequest, PolicyDecision as ReceiptPolicyDecision, PrepareOutcome as ReceiptPrepareOutcome, ProtectedActionRow, ReceiptRuntime, ReceiptSigner, RuntimeError as ReceiptRuntimeError}, key_lifecycle::ReceiptKeyManager};
 use futures_util::future::BoxFuture;
 use futures_util::StreamExt;
 use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 pub mod audit;
 pub mod build;
@@ -1351,7 +1353,6 @@ pub enum CoreEvent {
         tool_name: String,
         permission: String,
         scope: String,
-        input: serde_json::Value,
         preview: evohime_permissions::ApprovalPreview,
     },
     TaskCompleted {
@@ -3275,6 +3276,8 @@ pub enum AgentRunError {
     Cancelled,
     #[error("agent execution timed out after {0} seconds")]
     Timeout(u64),
+    #[error("agent runtime failed: {0}")]
+    Internal(String),
     /// План 01.1: сборка контекста завершилась отказом. Это терминальный
     /// результат, а не обрыв соединения: model call не выполнялся, а
     /// автоматический retry запрещён на всех уровнях.
@@ -3468,6 +3471,20 @@ impl SelectedModel {
     }
 }
 
+struct CoreReceiptSigner(Arc<ReceiptKeyManager>);
+
+impl ReceiptSigner for CoreReceiptSigner {
+    fn key_id(&self) -> Result<String, ReceiptRuntimeError> {
+        self.0.load_signer().map(|(metadata, _)| metadata.key_id)
+            .map_err(|_| ReceiptRuntimeError::SignerUnavailable)
+    }
+
+    fn sign_payload_hash(&self, payload_hash: &str) -> Result<String, ReceiptRuntimeError> {
+        self.0.sign_payload_hash(payload_hash).map(|(_, signature)| signature)
+            .map_err(|_| ReceiptRuntimeError::SignerUnavailable)
+    }
+}
+
 pub struct ToolAgent {
     gateway: Arc<ModelGateway>,
     tools: Arc<ToolRegistry>,
@@ -3475,6 +3492,7 @@ pub struct ToolAgent {
     approvals: ApprovalCoordinator,
     journal: Option<EventJournal>,
     selected_model: SelectedModel,
+    receipt_keys: Option<Arc<ReceiptKeyManager>>,
     /// Per-workspace rate limit, token budget and circuit breaker for memory
     /// extraction. Shared across turns because the limits are hourly.
     extraction_guard: Arc<Mutex<crate::memory_extraction::ExtractionGuard>>,
@@ -3497,6 +3515,7 @@ impl ToolAgent {
             approvals,
             journal: None,
             selected_model: SelectedModel::default(),
+            receipt_keys: None,
             extraction_guard: Arc::new(
                 Mutex::new(crate::memory_extraction::ExtractionGuard::new()),
             ),
@@ -3512,6 +3531,212 @@ impl ToolAgent {
     pub fn with_journal(mut self, journal: EventJournal) -> Self {
         self.journal = Some(journal);
         self
+    }
+
+    pub fn with_receipt_keys(mut self, keys: Arc<ReceiptKeyManager>) -> Self {
+        self.receipt_keys = Some(keys);
+        self
+    }
+
+    async fn receipt_prepare_approval(
+        &self,
+        task_id: &str,
+        tool: &str,
+        permission: &str,
+        scope: &str,
+        input: &serde_json::Value,
+        preview: &evohime_permissions::ApprovalPreview,
+        approval_id: Uuid,
+    ) -> Result<(), String> {
+        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else {
+            return Ok(());
+        };
+        let action_id = Uuid::now_v7();
+        let request = ReceiptActionRequest {
+            action_id,
+            task_id: task_id.to_owned(),
+            run_id: task_id.to_owned(),
+            tool_name: tool.to_owned(),
+            policy_id: format!("permission:{permission}"),
+            normalized_scope: scope.to_owned(),
+            input: input.clone(),
+            policy_decision: ReceiptPolicyDecision::ApprovalRequired,
+            approval_id: Some(approval_id),
+            preview: serde_json::to_string(preview).unwrap_or_else(|_| "approval".to_owned()),
+        };
+        let mut database = journal.database().lock().await;
+        let signer = CoreReceiptSigner(Arc::clone(keys));
+        let runtime = ReceiptRuntime::new(database.connection_mut(), &signer)
+            .map_err(|error| error.to_string())?;
+        match runtime.prepare_existing_approval(request).map_err(|error| error.to_string())? {
+            ReceiptPrepareOutcome::ApprovalRequired { .. } => Ok(()),
+            _ => Err("receipt.approval_required".to_owned()),
+        }
+    }
+
+    async fn receipt_prepare_allowed(
+        &self, task_id: &str, tool: &str, scope: &str, input: &serde_json::Value, preview: &evohime_permissions::ApprovalPreview,
+    ) -> Result<Option<ReceiptActionRequest>, String> {
+        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else { return Ok(None); };
+        let request = ReceiptActionRequest { action_id: Uuid::now_v7(), task_id: task_id.to_owned(), run_id: task_id.to_owned(), tool_name: tool.to_owned(), policy_id: "permission-v1".into(), normalized_scope: scope.to_owned(), input: input.clone(), policy_decision: ReceiptPolicyDecision::Allow, approval_id: None, preview: serde_json::to_string(preview).unwrap_or_else(|_| "read".into()) };
+        let mut database = journal.database().lock().await;
+        let signer = CoreReceiptSigner(Arc::clone(keys));
+        let runtime = ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| e.to_string())?;
+        if !matches!(runtime.prepare(request.clone()).map_err(|e| e.to_string())?, ReceiptPrepareOutcome::Prepared { .. }) { return Err("receipt.precondition_failed".into()); }
+        runtime.mark_started(request.action_id).map_err(|e| e.to_string())?;
+        Ok(Some(request))
+    }
+
+    async fn receipt_claim_approval(
+        &self,
+        task_id: &str,
+        tool: &str,
+        permission: &str,
+        scope: &str,
+        input: &serde_json::Value,
+        preview: &evohime_permissions::ApprovalPreview,
+        approval_id: Uuid,
+    ) -> Result<(Uuid, ReceiptActionRequest), String> {
+        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else {
+            return Ok((Uuid::nil(), ReceiptActionRequest {
+                action_id: Uuid::nil(), task_id: task_id.to_owned(), run_id: task_id.to_owned(),
+                tool_name: tool.to_owned(), policy_id: permission.to_owned(), normalized_scope: scope.to_owned(),
+                input: input.clone(), policy_decision: ReceiptPolicyDecision::ApprovalRequired,
+                approval_id: Some(approval_id), preview: String::new(),
+            }));
+        };
+        let action_id = {
+            let database = journal.database().lock().await;
+            database.connection().query_row(
+                "SELECT action_id FROM receipt_approval_intents WHERE approval_id=?1",
+                [approval_id.to_string()], |row| row.get::<_, String>(0),
+            ).map_err(|error| error.to_string())?.parse::<Uuid>().map_err(|_| "receipt.schema_violation".to_owned())?
+        };
+        let request = ReceiptActionRequest {
+            action_id, task_id: task_id.to_owned(), run_id: task_id.to_owned(), tool_name: tool.to_owned(),
+            policy_id: format!("permission:{permission}"), normalized_scope: scope.to_owned(), input: input.clone(),
+            policy_decision: ReceiptPolicyDecision::ApprovalRequired, approval_id: Some(approval_id),
+            preview: serde_json::to_string(preview).unwrap_or_else(|_| "approval".to_owned()),
+        };
+        let mut database = journal.database().lock().await;
+        let signer = CoreReceiptSigner(Arc::clone(keys));
+        let mut runtime = ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| e.to_string())?;
+        runtime.grant_approval(approval_id).map_err(|e| e.to_string())?;
+        runtime.claim_approval(&request, approval_id).map_err(|e| e.to_string())?;
+        Ok((action_id, request))
+    }
+
+    async fn receipt_refuse_approval(
+        &self,
+        task_id: &str,
+        tool: &str,
+        permission: &str,
+        scope: &str,
+        input: &serde_json::Value,
+        preview: &evohime_permissions::ApprovalPreview,
+        approval_id: Uuid,
+        code: &str,
+    ) {
+        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else { return; };
+        let mut database = journal.database().lock().await;
+        let action_id: Result<String, _> = database.connection().query_row(
+            "SELECT action_id FROM receipt_approval_intents WHERE approval_id=?1",
+            [approval_id.to_string()], |row| row.get(0),
+        );
+        let Ok(action_id) = action_id else { return; };
+        let Ok(action_id) = action_id.parse::<Uuid>() else { return; };
+        let request = ReceiptActionRequest {
+            action_id, task_id: task_id.to_owned(), run_id: task_id.to_owned(), tool_name: tool.to_owned(),
+            policy_id: format!("permission:{permission}"), normalized_scope: scope.to_owned(), input: input.clone(),
+            policy_decision: ReceiptPolicyDecision::ApprovalRequired, approval_id: Some(approval_id),
+            preview: serde_json::to_string(preview).unwrap_or_else(|_| "approval".to_owned()),
+        };
+        let signer = CoreReceiptSigner(Arc::clone(keys));
+        let Ok(runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) else { return; };
+        let _ = runtime.refuse(&request, code);
+    }
+
+    async fn execute_tool_with_receipt(
+        &self,
+        context: &ToolContext,
+        name: &str,
+        input: serde_json::Value,
+        cancellation: CancellationToken,
+    ) -> Result<evohime_tool_runtime::ToolResult, evohime_tool_runtime::ToolError> {
+        let preflight = self.tools.preflight(context, name, &input).await?;
+        match preflight {
+            evohime_tool_runtime::ToolPreflightDecision::Denied(permission) => {
+                if let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) {
+                    let request = ReceiptActionRequest { action_id: Uuid::now_v7(), task_id: context.task_id.to_string(), run_id: context.task_id.to_string(), tool_name: name.to_owned(), policy_id: "permission-v1".into(), normalized_scope: String::new(), input: input.clone(), policy_decision: ReceiptPolicyDecision::Deny, approval_id: None, preview: String::new() };
+                    let mut database = journal.database().lock().await;
+                    let signer = CoreReceiptSigner(Arc::clone(keys));
+                    if let Ok(runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) { let _ = runtime.prepare(request); }
+                }
+                Err(evohime_tool_runtime::ToolError::PermissionDenied(permission))
+            }
+            evohime_tool_runtime::ToolPreflightDecision::ApprovalRequired { .. } => {
+                self.tools.execute_with_cancellation(context, name, input, cancellation).await
+            }
+            evohime_tool_runtime::ToolPreflightDecision::Allowed { scope, preview } => {
+                let request = self.receipt_prepare_allowed(&context.task_id.to_string(), name, &scope, &input, &preview).await
+                    .map_err(evohime_tool_runtime::ToolError::Execution)?;
+                let result = self.tools.execute_with_cancellation(context, name, input, cancellation).await;
+                if let Some(request) = request {
+                    if matches!(&result, Err(evohime_tool_runtime::ToolError::NeedsApproval { .. })) {
+                        self.receipt_pending(&request, "unknown").await;
+                        return Err(evohime_tool_runtime::ToolError::Execution("receipt.policy_changed".into()));
+                    }
+                    let outcome = match &result {
+                        Ok(value) => recovery::ToolOutcome::success(value.clone()),
+                        Err(error) => recovery::ToolOutcome::from_error(evohime_tool_runtime::ToolError::Execution(error.to_string())),
+                    };
+                    self.receipt_complete(&request, &outcome).await;
+                }
+                result
+            }
+        }
+    }
+
+    async fn receipt_complete(
+        &self,
+        request: &ReceiptActionRequest,
+        outcome: &recovery::ToolOutcome,
+    ) {
+        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else { return; };
+        let output_digest = outcome.structured.get("output_digest").and_then(|value| value.as_str())
+            .map(str::to_owned).unwrap_or_else(|| evohime_receipts::sha256_hex(outcome.output.as_bytes()));
+        let mut database = journal.database().lock().await;
+        let signer = CoreReceiptSigner(Arc::clone(keys));
+        let runtime = match ReceiptRuntime::new(database.connection_mut(), &signer) { Ok(value) => value, Err(_) => return };
+        let status = if outcome.ok { "succeeded" } else { "failed" };
+        runtime.mark_returned(request.action_id).ok();
+        if runtime.complete(request, status, &output_digest, (!outcome.ok).then_some("tool_error")).is_err() {
+            let pre_hash = runtime.action(request.action_id).ok().flatten().and_then(|row| row.pre_receipt_hash).unwrap_or_default();
+            let row = ProtectedActionRow {
+                schema_version: 1,
+                action_id: request.action_id.to_string(),
+                pre_receipt_hash: pre_hash,
+                tool_args_hash: evohime_receipts::runtime::canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input).unwrap_or_default(),
+                result_status: status.to_owned(),
+                result_hash: output_digest,
+                recovery_code: "signature_failed".to_owned(),
+                created_at_ms: SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|value| value.as_millis() as i64).unwrap_or_default(),
+                key_id: signer.key_id().unwrap_or_else(|_| "unavailable".to_owned()),
+            };
+            if let Ok(plain) = serde_json::to_vec(&row) {
+                if let Ok(envelope) = keys.protect_storage(&plain) {
+                    let _ = runtime.store_protected_envelope(&row, envelope);
+                }
+            }
+            let _ = runtime.mark_pending_recovery(request.action_id, "signature_failed");
+        }
+    }
+
+    async fn receipt_pending(&self, request: &ReceiptActionRequest, code: &str) {
+        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else { return; };
+        let mut database = journal.database().lock().await;
+        let signer = CoreReceiptSigner(Arc::clone(keys));
+        if let Ok(runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) { let _ = runtime.mark_pending_recovery(request.action_id, code); }
     }
 
     async fn persist_lesson(&self, task_id: &str, workspace_root: &std::path::Path) {
@@ -5066,7 +5291,7 @@ impl ToolAgent {
                     } else {
                         tokio::select! {
                             _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
-                            result = self.tools.execute_with_cancellation(&context, &call.name, input, cancellation.clone()) => result,
+                            result = self.execute_tool_with_receipt(&context, &call.name, input, cancellation.clone()) => result,
                         }
                     } {
                         Ok(result) => recovery::ToolOutcome::success(result),
@@ -5078,39 +5303,72 @@ impl ToolAgent {
                             input,
                             preview,
                         }) => {
+                            if let Err(error) = self
+                                .receipt_prepare_approval(
+                                    &task_id,
+                                    &tool,
+                                    &format!("{permission:?}"),
+                                    &scope,
+                                    &input,
+                                    &preview,
+                                    approval_id,
+                                )
+                                .await
+                            {
+                                recovery::ToolOutcome::from_error(
+                                    evohime_tool_runtime::ToolError::Execution(error),
+                                )
+                            } else {
                             let receiver = self.approvals.register(approval_id).await;
                             let _ = events.send(CoreEvent::ApprovalRequired {
                                 task_id: task_id.clone(),
                                 approval_id: approval_id.to_string(),
                                 tool_name: tool.clone(),
                                 permission: format!("{permission:?}"),
-                                scope,
-                                input: input.clone(),
-                                preview,
+                                scope: scope.clone(),
+                                preview: preview.clone(),
                             });
                             let granted = tokio::select! {
                                 _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
                                 result = receiver => result.unwrap_or(false),
                             };
                             if !granted {
+                                self.receipt_refuse_approval(
+                                    &task_id, &tool, &format!("{permission:?}"), &scope,
+                                    &input, &preview, approval_id, "approval_denied",
+                                ).await;
                                 recovery::ToolOutcome::denied_by_user(
                                     "approval denied: mutation not performed",
                                 )
                             } else {
-                                match self
-                                    .tools
-                                    .execute_after_approval(
-                                        &context,
-                                        &tool,
-                                        input,
-                                        approval_id,
-                                        cancellation.clone(),
-                                    )
-                                    .await
-                                {
-                                    Ok(result) => recovery::ToolOutcome::success(result),
-                                    Err(error) => recovery::ToolOutcome::from_error(error),
+                                match self.receipt_claim_approval(
+                                    &task_id, &tool, &format!("{permission:?}"), &scope,
+                                    &input, &preview, approval_id,
+                                ).await {
+                                    Ok((action_id, request)) => {
+                                        if action_id != Uuid::nil() {
+                                            if let Some(journal) = &self.journal {
+                                                if let Some(keys) = &self.receipt_keys {
+                                                    let mut database = journal.database().lock().await;
+                                                    let signer = CoreReceiptSigner(Arc::clone(keys));
+                                                    if let Ok(runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) {
+                                                        if let Err(error) = runtime.mark_started(action_id) {
+                                                            return Err(AgentRunError::Internal(error.to_string()));
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        let outcome = match self.tools.execute_after_approval(&context, &tool, input, approval_id, cancellation.clone()).await {
+                                            Ok(result) => recovery::ToolOutcome::success(result),
+                                            Err(error) => recovery::ToolOutcome::from_error(error),
+                                        };
+                                        if action_id != Uuid::nil() { self.receipt_complete(&request, &outcome).await; }
+                                        outcome
+                                    }
+                                    Err(error) => recovery::ToolOutcome::from_error(evohime_tool_runtime::ToolError::Execution(error)),
                                 }
+                            }
                             }
                         }
                         Err(error) => recovery::ToolOutcome::from_error(error),
@@ -5398,6 +5656,7 @@ impl TaskExecutor for ToolAgent {
             approvals: self.approvals.clone(),
             journal: self.journal.clone(),
             selected_model: self.selected_model.clone(),
+            receipt_keys: self.receipt_keys.clone(),
             // Shared, not cloned: the hourly candidate/token limits and the
             // circuit breaker have to hold across concurrent tasks.
             extraction_guard: Arc::clone(&self.extraction_guard),

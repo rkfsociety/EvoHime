@@ -601,6 +601,16 @@ impl ReceiptKeyManager {
         Ok((metadata.key_id, signer.sign(&bytes)))
     }
 
+    /// Protects bounded Core recovery material with the same user-bound DPAPI
+    /// boundary as the receipt private key. Plaintext never leaves this API.
+    pub fn protect_storage(&self, bytes: &[u8]) -> Result<Vec<u8>, KeyError> {
+        protect(bytes)
+    }
+
+    pub fn unprotect_storage(&self, bytes: &[u8]) -> Result<Vec<u8>, KeyError> {
+        unprotect(bytes)
+    }
+
     pub fn rotate(&self, reason: &str, actor: &str) -> Result<String, KeyError> {
         if !matches!(reason, "scheduled" | "manual" | "compromise")
             || !matches!(actor, "system" | "user")
