@@ -283,6 +283,11 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
            envelope BLOB NOT NULL,
            created_at_ms INTEGER NOT NULL
          );
+         CREATE TABLE IF NOT EXISTS receipt_runtime_config (
+           id INTEGER PRIMARY KEY CHECK(id=1),
+           audit_sampling_rate INTEGER NOT NULL CHECK(audit_sampling_rate BETWEEN 0 AND 100),
+           sampling_policy_version INTEGER NOT NULL
+         );
          INSERT OR IGNORE INTO receipt_runtime_guard(id,phase,generation,updated_at_ms)
            VALUES(1,'ready',0,0);",
     )?;
@@ -293,6 +298,7 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
     if marker_column.is_none() { connection.execute("ALTER TABLE receipt_actions ADD COLUMN result_marker BLOB", [])?; }
     let boot_column: Option<String> = connection.query_row("SELECT name FROM pragma_table_info('receipt_approval_intents') WHERE name='clock_boot_id'", [], |row| row.get(0)).optional()?;
     if boot_column.is_none() { connection.execute("ALTER TABLE receipt_approval_intents ADD COLUMN clock_boot_id TEXT NOT NULL DEFAULT 'legacy'", [])?; }
+    connection.execute("INSERT OR IGNORE INTO receipt_runtime_config(id,audit_sampling_rate,sampling_policy_version) VALUES(1,?1,?2)", params![crate::DEFAULT_READ_ONLY_SAMPLING_RATE as i64, crate::SAMPLING_POLICY_VERSION as i64])?;
     for (table, column, definition) in [
         ("receipt_records", "schema_version", "INTEGER NOT NULL DEFAULT 1"),
         ("receipt_actions", "schema_version", "INTEGER NOT NULL DEFAULT 1"),
@@ -612,6 +618,16 @@ impl<'a> ReceiptRuntime<'a> {
             [approval_id.to_string()],
             |row| Ok((row.get(0)?, row.get(1)?)),
         ).map_err(RuntimeError::from)
+    }
+
+    pub fn audit_sampling_config(&self) -> Result<(u8, u8), RuntimeError> {
+        self.connection.query_row("SELECT audit_sampling_rate,sampling_policy_version FROM receipt_runtime_config WHERE id=1", [], |row| Ok((row.get::<_, i64>(0)? as u8, row.get::<_, i64>(1)? as u8))).map_err(RuntimeError::from)
+    }
+
+    pub fn set_audit_sampling_rate(&self, authenticated_core_command: bool, rate: u8) -> Result<(), RuntimeError> {
+        if !authenticated_core_command || rate > 100 { return Err(RuntimeError::Code("key_untrusted")); }
+        self.connection.execute("UPDATE receipt_runtime_config SET audit_sampling_rate=?1,sampling_policy_version=?2 WHERE id=1", params![rate as i64, crate::SAMPLING_POLICY_VERSION as i64])?;
+        Ok(())
     }
 
     pub fn counts(&self) -> Result<RuntimeCounts, RuntimeError> {
