@@ -523,9 +523,11 @@ impl<'a> ReceiptRuntime<'a> {
         let args_hash = canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input)?;
         let tx = self.connection.unchecked_transaction()?;
         let (hash, _) = signed_receipt(&tx, self.signer, request, "refusal", "refused", &args_hash, None, Some(code))?;
-        tx.execute("UPDATE receipt_actions SET state='refused',terminal_receipt_hash=?2 WHERE action_id=?1", params![request.action_id.to_string(), hash])?;
+        let source = if code == "recovery_pending" { "reconciliation" } else { "execution" };
+        tx.execute("UPDATE receipt_actions SET state='refused',completion_source=?3,terminal_receipt_hash=?2 WHERE action_id=?1", params![request.action_id.to_string(), hash, source])?;
         let approval_state = match code { "approval_expired" => "expired", "approval_denied" => "denied", _ => "lost" };
         tx.execute("UPDATE receipt_approval_intents SET state=?2 WHERE action_id=?1 AND state IN ('pending','granted')", params![request.action_id.to_string(), approval_state])?;
+        tx.execute("DELETE FROM receipt_protected_actions WHERE action_id=?1", [request.action_id.to_string()])?;
         tx.commit()?;
         Ok(hash)
     }

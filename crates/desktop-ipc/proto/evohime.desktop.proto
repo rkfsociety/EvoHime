@@ -285,6 +285,15 @@ message CreateNewReceiptGenesis {
   string source = 2;
 }
 
+// Explicit authenticated closure for an action whose external result is
+// unknown. The JSON is used only to recompute the exact-call hash; Core never
+// persists or echoes it. This command never dispatches the original tool.
+message ClosePendingReceiptAction {
+  string action_id = 1;
+  string input_json = 2;
+  bool operator_confirmed = 3;
+}
+
 // Bounded, read-only Core Doctor diagnostic. project_id is optional; when
 // set, the permissions check is grounded in that project's real workspace.
 // detail_level is user-configurable verbosity: 0 = SUMMARY (default),
@@ -829,6 +838,7 @@ message CommandEnvelope {
     TrustReceiptGenesis trust_receipt_genesis = 93;
     GetReceiptKeyStatus get_receipt_key_status = 94;
     CreateNewReceiptGenesis create_new_receipt_genesis = 95;
+    ClosePendingReceiptAction close_pending_receipt_action = 96;
   }
 }
 

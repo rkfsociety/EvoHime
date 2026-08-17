@@ -347,6 +347,38 @@ impl IpcBridge {
                 )
                 .await?;
             }
+            Some(generated::command_envelope::Command::ClosePendingReceiptAction(request)) => {
+                if !request.operator_confirmed || request.action_id.is_empty() || request.input_json.len() > evohime_receipts::runtime::MAX_CALL_INPUT_BYTES {
+                    self.write_response(writer, "receipt.pending_close", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.schema_violation"}))?).await?;
+                    return Ok(());
+                }
+                let action_id = uuid::Uuid::parse_str(&request.action_id).map_err(|error| FrameError::Io(error.to_string()))?;
+                let input: serde_json::Value = serde_json::from_str(&request.input_json).map_err(|error| FrameError::Io(error.to_string()))?;
+                let mut database = self.journal.database().lock().await;
+                let (task_id, run_id, tool_name, normalized_scope, policy_id, decision, state): (String,String,String,String,String,String,String) = database.connection().query_row(
+                    "SELECT task_id,run_id,tool_name,normalized_scope,policy_id,policy_decision,state FROM receipt_actions WHERE action_id=?1",
+                    [action_id.to_string()], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?)),
+                ).map_err(|error| FrameError::Io(error.to_string()))?;
+                if state != "pending_recovery" {
+                    self.write_response(writer, "receipt.pending_close", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.pending_recovery"}))?).await?;
+                    return Ok(());
+                }
+                let policy_decision = match decision.as_str() {
+                    "allow" => evohime_receipts::runtime::PolicyDecision::Allow,
+                    "approval_required" => evohime_receipts::runtime::PolicyDecision::ApprovalRequired,
+                    _ => evohime_receipts::runtime::PolicyDecision::Deny,
+                };
+                let receipt_request = evohime_receipts::runtime::ActionRequest {
+                    action_id, task_id, run_id, tool_name, policy_id, normalized_scope,
+                    input, policy_decision, approval_id: None, preview: "unknown result closure".into(),
+                };
+                let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
+                let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                let receipt_hash = runtime.refuse(&receipt_request, "recovery_pending")
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                self.write_response(writer, "receipt.pending_close", serde_json::to_vec(&serde_json::json!({"ok":true,"action_id":request.action_id,"receipt_hash":receipt_hash,"completion_source":"reconciliation"}))?).await?;
+            }
             Some(generated::command_envelope::Command::TrustReceiptGenesis(request)) => {
                 if !self
                     .take_receipt_approval(writer, &request.approval_id, "TrustReceiptGenesis")
