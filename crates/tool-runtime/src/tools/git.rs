@@ -50,6 +50,7 @@ pub const CHANGED_FILES_NAME: &str = "git.changed_files";
 pub const CHANGED_FILES_DESCRIPTION: &str = "List changed files with status";
 pub const CHANGED_FILES_PERMISSIONS: &[Permission] = &[Permission::GitRead];
 pub const CHANGED_FILES_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_GIT_OUTPUT_BYTES: usize = 256 * 1024;
 
 #[derive(Debug, Deserialize, Default)]
 struct DiffInput {
@@ -180,6 +181,7 @@ pub async fn log(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErro
         count.as_str(),
     ];
     if let Some(path) = input.path.as_deref() {
+        validate_git_path(ctx, path, LOG_NAME)?;
         args.extend(["--", path]);
     }
     run_git(ctx, &args).await
@@ -213,6 +215,7 @@ pub async fn blame(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolEr
             message: "path must be a non-empty workspace-relative path".into(),
         });
     }
+    validate_git_path(ctx, path, BLAME_NAME)?;
     let range = match (input.start_line, input.end_line) {
         (Some(start), Some(end)) if start >= 1 && end >= start && end - start < 500 => {
             Some(format!("{start},{end}"))
@@ -258,6 +261,12 @@ fn validate_revision(reference: &str, tool: &str) -> Result<(), ToolError> {
         });
     }
     Ok(())
+}
+
+fn validate_git_path(ctx: &ToolContext, path: &str, tool: &str) -> Result<(), ToolError> {
+    ctx.sandbox()?
+        .resolve_existing_for_tool(path, tool)
+        .map(|_| ())
 }
 
 /// Validate git push network policy: block force push and enforce remote/branch restrictions (7.12)
@@ -428,8 +437,8 @@ async fn run_git(ctx: &ToolContext, args: &[&str]) -> Result<ToolResult, ToolErr
         .await
         .map_err(|error| ToolError::Execution(format!("failed to run git: {error}")))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let (stdout, stdout_truncated) = bounded_output(&output.stdout);
+    let (stderr, stderr_truncated) = bounded_output(&output.stderr);
     let command_text = format!("git -C {} {}", ctx.workspace_root.display(), args.join(" "));
 
     if !output.status.success() {
@@ -453,9 +462,21 @@ async fn run_git(ctx: &ToolContext, args: &[&str]) -> Result<ToolResult, ToolErr
             "command": command_text,
             "stdout": stdout,
             "stderr": stderr,
+            "stdout_truncated": stdout_truncated,
+            "stderr_truncated": stderr_truncated,
             "status_code": output.status.code(),
         }),
     })
+}
+
+fn bounded_output(bytes: &[u8]) -> (String, bool) {
+    let truncated = bytes.len() > MAX_GIT_OUTPUT_BYTES;
+    let end = bytes.len().min(MAX_GIT_OUTPUT_BYTES);
+    let mut output = String::from_utf8_lossy(&bytes[..end]).trim().to_string();
+    if truncated {
+        output.push_str("\n… output truncated");
+    }
+    (output, truncated)
 }
 
 fn parse_optional_input<T: for<'de> Deserialize<'de> + Default>(
