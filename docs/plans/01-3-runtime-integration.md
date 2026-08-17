@@ -71,6 +71,13 @@ projection использует `output_digest`, а не `result_hash` само�
 идемпотентное чтение существующего состояния; при любом расхождении возвращается
 `receipt.action_id_conflict` и tool не запускается.
 
+После создания `pre_action` поля `action_id`, `tool_args_hash`, версия
+`fingerprint_input` и `canonical_call_hash` immutable для данного action_id.
+Post/refusal используют значения из durable `receipt_actions`, а не пересчитывают
+их из нового input. Изменение правил fingerprint между pre и post считается
+schema/configuration violation; такой action не закрывается успешным post без
+явного reconciliation.
+
 ## Execution protocol
 
 Обычный Core path выполняет следующие фазы:
@@ -117,11 +124,16 @@ record может быть погашен, но эта bounded audit row ост�
 проверки binding; raw input в неё не попадает.
 
 TTL v1 — **10 минут** от создания approval; clock checks используют monotonic
-deadline, wall expires_at_ms служит только для UI/diagnostics. После TTL claim
-атомарно переводит approval в expired и action получает signed refusal_code=
-approval_expired. Restart инвалидирует pending in-memory approval; persisted
-intent получает recovery_pending refusal после recovery, а не автоматически
-возобновляет mutation.
+deadline, wall expires_at_ms служит только для UI/diagnostics. В persisted intent
+хранятся monotonic deadline и момент его фиксации; hibernate/sleep учитываются
+как прошедшее время. Restart не продлевает и не пересоздаёт deadline: claim
+сравнивает текущее monotonic значение с сохранённым deadline. Если monotonic
+epoch после restart нельзя надёжно сопоставить, Core fail-closed переводит
+intent в expired/lost, а не выдаёт новый TTL. После TTL claim атомарно переводит
+approval в expired и action получает signed refusal_code=approval_expired.
+Restart инвалидирует pending in-memory approval; persisted intent получает
+recovery_pending refusal только после recovery/authenticated closure, а не
+автоматически возобновляет mutation.
 
 Нормативное race rule: `expires_at_ms` хранится в БД вместе с intent только для
 UI/diagnostics. В одной `BEGIN IMMEDIATE` transaction claim проверяет единый
@@ -163,7 +175,8 @@ BEGIN IMMEDIATE transaction. Post receipt и перевод action в terminal s
     succeeded/failed/cancelled ─> terminal
     pending_recovery    ─> post terminal или explicit refusal after reconciliation
 
-pending_recovery — internal action-store state, не новый receipt enum. Для него
+`pending_recovery` — internal action-store state, не новый receipt kind или
+автоматически создаваемый signed refusal. Для него
 Core сохраняет только action id, pre hash, tool args hash и bounded recovery
 code; raw arguments/results не сохраняются. Recovery не повторяет mutation
 автоматически. Пользователь видит tool id, время, recovery code и предупреждение,
@@ -171,7 +184,8 @@ code; raw arguments/results не сохраняются. Recovery не повт�
 отсутствие. Допустимы два authenticated flow: (1) новый read-only
 reconciliation action проверяет внешний ресурс и закрывает исходный action
 signed post со статусом `succeeded`/`failed`/`cancelled`; (2) явное признание
-неизвестного результата создаёт signed refusal с `recovery_pending` и оставляет
+неизвестного результата создаёт signed refusal с canonical refusal_code
+`recovery_pending` и оставляет
 исходную связь видимой. Ни один flow не повторяет исходный mutation; отмена
 закрытия оставляет action pending.
 
@@ -223,12 +237,16 @@ canonical envelope bounds.
 
 Append выполняется одной SQLite BEGIN IMMEDIATE transaction: прочитать chain
 head, canonicalize/sign envelope, вставить receipt, обновить head и action
-index. При lock conflict выполняются три попытки с backoff 10/50/250 ms. Если
+index. Нормативная последовательность lock retry: попытка 1 сразу, затем
+повтор через 10 ms; попытка 2 через 50 ms; попытка 3 через 250 ms. Если
 конфликт сохраняется, mutation не запускается (либо, если tool уже вернул
 управление, action остаётся pending_recovery), возвращается
 `receipt.chain_conflict` и создаётся durable diagnostic event; автоматический
-fallback без цепочного receipt запрещён. Отдельный
-Core receipt-writer mutex охватывает весь критический участок от чтения chain
+fallback без цепочного receipt запрещён. Отдельный Core receipt-writer mutex —
+process-local mutex singleton внутри одного Core instance; межпроцессную
+сериализацию отдельно обеспечивает SQLite locking, а второй Core instance не
+является поддержанным владельцем этой БД. Mutex охватывает весь критический
+участок от чтения chain
 head до SQLite commit, включая predecessor verification, signing, receipt
 insert, action-index update и head update. Поэтому concurrent actions
 получают детерминированный порядок commit, а post receipt не обязан быть
@@ -249,6 +267,21 @@ Existing EventJournal остаётся projection/diagnostic sink: после re
 
 ## Mutation, refusal и signer failures
 
+### Bounded protected action row
+
+`bounded protected action row` — отдельная Core-owned SQLite row для случая,
+когда tool уже вернул управление, а post receipt ещё нельзя подписать или
+сохранить. Row имеет фиксированный canonical binary/JSON-представитель не более
+**512 bytes** и содержит только `schema_version`, `action_id`, `pre_receipt_hash`,
+`tool_args_hash`, typed `result_status`, `result_hash`, `recovery_code`,
+`created_at_ms` и `key_id`. Raw arguments, raw result, error text, stdout/stderr
+и paths запрещены. Представитель защищён authenticated encryption с
+Core-owned storage key (ciphertext, nonce и authentication tag входят в лимит);
+при недоступном или повреждённом ключе row не принимается за достоверную и
+action остаётся pending без synthetic success. Row удаляется только после
+durable terminal receipt в одной транзакции; повторная подпись использует лишь
+проверенный digest/status из row.
+
 Mutation policy:
 
 - любой mutation с policy deny, approval deny/expiry/stale, changed call,
@@ -268,6 +301,17 @@ Mutation policy:
   разрешена только после проверки неизменности action/result digest;
 - policy denial/refusal не считается успешной mutation и не продвигает
   action_status beyond refused.
+
+`receipt.pending_recovery` (transport/runtime code 1010) и canonical
+`refusal_code=recovery_pending` имеют разные роли: первый сообщает наружу о
+внутреннем незакрытом состоянии, второй допустим только в явно authenticated
+explicit-unknown reconciliation и является terminal signed refusal.
+`pending_recovery` не блокирует chain: pending row не резервирует head, любой
+следующий receipt append-ится к фактическому `receipt_chain_heads` на момент
+commit. Если post исходного action подписывается позднее, его
+`previous_receipt_hash` берётся из фактического head в этот момент; связь с
+собственным pre сохраняется через `action_id` и `receipt_actions`, а не через
+соседство в chain. Виртуальные узлы и unsigned gaps не создаются.
 
 Stable runtime errors:
 
@@ -294,6 +338,8 @@ pending_limit=1011, action_id_conflict=1012. В signed receipt использу�
 Оба mapping-а являются частью общего
 `contracts/receipts/v1/version-manifest.json`; Rust, Electron и offline
 verifier импортируют один источник и не имеют локальных числовых таблиц.
+Тест manifest обязан проверять непрерывность transport range 1001–1012 и
+canonical alias range 2001–2008 без пропусков или дубликатов.
 
 ## Read-only sampling
 
@@ -302,7 +348,9 @@ key/trust events или recovery. Для successful read-only actions v1 хра�
 deterministic sample:
 
 - configuration — Core-owned audit_sampling_v1 с rate **10%** по умолчанию,
-  integer 0–100, изменяемый только authenticated settings command; marker
+  integer 0–100, изменяемый только authenticated Core command
+  `SetAuditSamplingRate`; команда проверяет role/session и пишет bounded audit
+  event до применения нового значения; marker
   всегда содержит `sampling_policy_version`, поэтому изменение rate не меняет
   интерпретацию старых действий;
 - decision — SHA-256 от UTF-8 строки
@@ -329,7 +377,12 @@ actions.
 
 При старте Core до принятия новых mutations:
 
-1. открыть SQLite journal и выполнить bounded integrity check;
+1. открыть SQLite journal и выполнить bounded integrity check: `PRAGMA
+   quick_check(100)` в read-only connection с лимитом **2 секунды** и максимумом
+   100 диагностических строк; любое отличие от ровно `ok`, timeout или ошибка
+   чтения означает повреждённое/не готовое хранилище, блокирует новые mutations
+   и требует восстановления из backup. Recovery не чинит SQLite на месте и не
+   переписывает chain;
 2. найти actions в prepared/internal pending_recovery;
 3. сопоставить receipt rows по action id, проверить signature/canonical bytes/
    chain predecessor;
@@ -348,7 +401,7 @@ actions.
 | --- | --- | --- | --- |
 | нет | нет | нет | action не запускался; unsigned marker или signed refusal, новый запуск только новой action |
 | нет | нет | да | orphan post отвергается как `receipt.schema_violation`; chain не переписывается |
-| нет | да | нет | external side effect неизвестен; `pending_recovery`, повтор запрещён |
+| нет | да | нет | невозможное состояние протокола: `receipt.schema_violation`, chain не переписывается, tool не запускается повторно |
 | нет | да | да | проверить signature/chain, закрыть action idempotently |
 | да | нет | нет | pre остаётся durable; claim/intent expired, tool не запускается повторно |
 | да | нет | да | закрыть index idempotently после проверки post pairing |
@@ -404,6 +457,9 @@ tool dispatch, tool return, post append и head update. В каждой точк
 - pre-before-mutation test: при storage/signer failure tool не вызывается;
 - hash-chain tests: concurrent append, deletion/reorder/tamper, wrong previous
   hash, duplicate action id и chain-head conflict;
+- long-running tool + parallel new action test: новый action может append-иться к
+  текущему head, пока первый tool выполняется; pending recovery не создаёт
+  виртуальный узел и не блокирует chain;
 - crash/restart matrix из восьми состояний recovery не создаёт fake success и не
   запускает mutation повторно;
 - result hash tests не оставляют raw output/error/secret в receipt, SQLite,
@@ -418,6 +474,9 @@ tool dispatch, tool return, post append и head update. В каждой точк
   policy enforcement beyond fields.
 - post-signature failure test сохраняет `pending_recovery` с
   `signature_failed` и исключает повторное выполнение tool;
+- protected-action-row tests проверяют размер 512 bytes, authenticated
+  protection, повреждённый/отсутствующий storage key и удаление row только
+  вместе с terminal receipt;
 - reconciliation test требует новый action/approval/call hash, проверяет
   read-only reconciliation capability и оставляет исходный pending action
   исторически видимым;
@@ -432,6 +491,11 @@ tool dispatch, tool return, post append и head update. В каждой точк
   current policy recheck, one-shot claim и двухфазный IPC;
 - SQLite receipt/action tables, chain-head transaction и recovery procedure
   задокументированы и проходят crash/concurrency tests;
+- bounded protected action row имеет фиксированный формат, лимит 512 bytes,
+  authenticated protection и удаляется только вместе с terminal receipt;
+- bounded recovery integrity check использует `PRAGMA quick_check(100)` с
+  двухсекундным лимитом, не выполняет in-place repair и блокирует mutations при
+  failure;
 - recovery vectors покрывают внешний side effect до/после crash, оба
   authenticated reconciliation flow и отсутствие автоматического повторного
   mutation;
@@ -440,6 +504,8 @@ tool dispatch, tool return, post append и head update. В каждой точк
 - старый/новый key id и rotation history корректно проверяются offline;
 - read-only sampling детерминирован, настраиваем только Core command, а
   mutations/refusals/failures всегда полностью аудируются;
+- restart не продлевает persisted monotonic deadline, а chain append при
+  pending_recovery использует фактический head и не создаёт виртуальных узлов;
 - после restart ни один pending action не объявляется success и mutation не
   повторяется автоматически;
 - recovery matrix, bounded diagnostics, schema_version и key-rotation boundary
