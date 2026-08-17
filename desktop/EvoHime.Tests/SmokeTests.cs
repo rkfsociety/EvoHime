@@ -53,6 +53,16 @@ public sealed class SmokeTests
     }
 
     [TestMethod]
+    public void HiddenModelIsExcludedFromEveryCatalogTier()
+    {
+        var models = ModelCatalogFilter.Filter(
+            new[] { "mythomax-l2-13b:free", "usable:free", "paid-model" },
+            "free");
+
+        CollectionAssert.AreEqual(new[] { "usable:free" }, models.ToArray());
+    }
+
+    [TestMethod]
     public void ProviderSettingsKeepSecretInCredentialStoreAndRotateReferences()
     {
         var path = Path.Combine(Path.GetTempPath(), $"evohime-provider-settings-{Guid.NewGuid():N}.bin");

@@ -649,7 +649,10 @@ impl IpcBridge {
             Some(generated::command_envelope::Command::SelectModel(request)) => {
                 // Bounded: a model identifier is a short single-line token.
                 let model = request.model.trim();
-                if model.len() > 128 || model.contains(char::is_whitespace) {
+                if model.len() > 128
+                    || model.contains(char::is_whitespace)
+                    || model.eq_ignore_ascii_case(crate::plan_review::REVIEW_BLOCKED_MODEL)
+                {
                     self.write_response(
                         writer,
                         "model.select.rejected",
@@ -702,6 +705,12 @@ impl IpcBridge {
                                 entries
                                     .into_iter()
                                     .filter(|entry| {
+                                        if entry
+                                            .id
+                                            .eq_ignore_ascii_case(crate::plan_review::REVIEW_BLOCKED_MODEL)
+                                        {
+                                            return false;
+                                        }
                                         if mode == "free" {
                                             entry.id.ends_with(":free")
                                         } else {

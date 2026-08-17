@@ -14,6 +14,11 @@ import { useShellApi } from './shell-api'
  */
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
+const HIDDEN_MODEL = 'mythomax-l2-13b:free'
+
+function isVisibleModel(model: string): boolean {
+  return model.trim().toLowerCase() !== HIDDEN_MODEL
+}
 
 export interface ModelPickerProps {
   readonly connection: ConnectionState
@@ -49,7 +54,7 @@ export function ModelPicker({ connection, events }: ModelPickerProps): React.JSX
     const parsed = parseJson(catalog.payload)
     setModels(
       Array.isArray(parsed['models'])
-        ? parsed['models'].filter((model): model is string => typeof model === 'string')
+        ? parsed['models'].filter((model): model is string => typeof model === 'string' && isVisibleModel(model))
         : []
     )
     setError(typeof parsed['error'] === 'string' ? parsed['error'] : null)

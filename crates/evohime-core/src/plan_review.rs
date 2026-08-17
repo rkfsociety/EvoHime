@@ -17,6 +17,7 @@ pub const MIN_REVIEWERS: usize = 2;
 pub const MAX_REVIEWERS: usize = 8;
 pub const MAX_PLAN_BYTES: usize = 512 * 1024;
 pub const MAX_REVIEW_OUTPUT_BYTES: usize = 256 * 1024;
+pub const REVIEW_BLOCKED_MODEL: &str = "mythomax-l2-13b:free";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReviewRequest {
@@ -69,6 +70,8 @@ pub enum ReviewError {
     InvalidReviewerCount,
     #[error("model identifier is invalid")]
     InvalidModel,
+    #[error("model is not available for plan review")]
+    ModelUnavailableForReview,
     #[error("review was cancelled")]
     Cancelled,
     #[error("provider error: {0}")]
@@ -101,6 +104,14 @@ impl ReviewRequest {
         unique.dedup();
         if unique.len() != self.reviewer_models.len() || !valid_model(&self.synthesis_model) {
             return Err(ReviewError::InvalidModel);
+        }
+        if self
+            .reviewer_models
+            .iter()
+            .any(|model| is_blocked_review_model(model))
+            || is_blocked_review_model(&self.synthesis_model)
+        {
+            return Err(ReviewError::ModelUnavailableForReview);
         }
         Ok(())
     }
@@ -266,7 +277,12 @@ pub async fn run_review_with_progress(
         cancellation,
     )
     .await?;
-    let final_markdown = format_review_markdown(&request.file_names, &synthesized_markdown);
+    let final_markdown = format_review_markdown(
+        &request.file_names,
+        &request.reviewer_models,
+        &request.synthesis_model,
+        &synthesized_markdown,
+    );
 
     Ok(ReviewResult {
         review_id: request.review_id,
@@ -278,23 +294,35 @@ pub async fn run_review_with_progress(
     })
 }
 
-fn format_review_markdown(file_names: &[String], final_markdown: &str) -> String {
+fn format_review_markdown(
+    file_names: &[String],
+    reviewer_models: &[String],
+    synthesis_model: &str,
+    final_markdown: &str,
+) -> String {
     let names = if file_names.is_empty() {
         vec!["(имя файла не передано)".to_string()]
     } else {
         file_names
             .iter()
-            .map(|name| {
-                let safe = name.replace(['`', '\r', '\n'], " ");
-                format!("- `{safe}`")
-            })
+            .map(|name| format!("- `{}`", safe_markdown_value(name)))
             .collect()
     };
+    let reviewers = reviewer_models
+        .iter()
+        .map(|model| format!("- `{}`", safe_markdown_value(model)))
+        .collect::<Vec<_>>();
     format!(
-        "<!-- Контекст EvoHime: это ревью сделано по указанным файлам. -->\n\n## Файлы, которые проверялись\n\n{}\n\n---\n\n{}",
+        "<!-- Контекст EvoHime: это ревью сделано по указанным файлам. -->\n\n## Модели, использованные для ревью\n\n- **Рецензенты:**\n{}\n- **Главная модель-синтезатор:** `{}`\n\n## Файлы, которые проверялись\n\n{}\n\n---\n\n{}",
+        reviewers.join("\n"),
+        safe_markdown_value(synthesis_model),
         names.join("\n"),
         final_markdown.trim_start()
     )
+}
+
+fn safe_markdown_value(value: &str) -> String {
+    value.replace(['`', '\r', '\n'], " ")
 }
 
 async fn collect_model_response(
@@ -335,6 +363,10 @@ fn provider_error(error: ProviderError) -> ReviewError {
 fn valid_model(model: &str) -> bool {
     let trimmed = model.trim();
     !trimmed.is_empty() && trimmed.len() <= 128 && !trimmed.chars().any(char::is_whitespace)
+}
+
+fn is_blocked_review_model(model: &str) -> bool {
+    model.trim().eq_ignore_ascii_case(REVIEW_BLOCKED_MODEL)
 }
 
 fn reviewer_messages(source: &str) -> Vec<ChatMessage> {
@@ -383,6 +415,23 @@ mod tests {
     }
 
     #[test]
+    fn rejects_blocked_model_for_review() {
+        let mut invalid = request();
+        invalid.reviewer_models[0] = REVIEW_BLOCKED_MODEL.into();
+        assert_eq!(
+            invalid.validate(),
+            Err(ReviewError::ModelUnavailableForReview)
+        );
+
+        invalid = request();
+        invalid.synthesis_model = REVIEW_BLOCKED_MODEL.into();
+        assert_eq!(
+            invalid.validate(),
+            Err(ReviewError::ModelUnavailableForReview)
+        );
+    }
+
+    #[test]
     fn rejects_empty_and_oversized_plans() {
         let mut invalid = request();
         invalid.source_markdown = " \n".into();
@@ -403,8 +452,15 @@ mod tests {
             .reviewers
             .iter()
             .all(|review| review.status == "completed"));
-        assert!(result.final_markdown.contains("## Файлы, которые проверялись"));
+        assert!(result
+            .final_markdown
+            .contains("## Файлы, которые проверялись"));
         assert!(result.final_markdown.contains("`plan.md`"));
+        assert!(result
+            .final_markdown
+            .contains("## Модели, использованные для ревью"));
+        assert!(result.final_markdown.contains("`one`"));
+        assert!(result.final_markdown.contains("`main`"));
     }
 
     /// Reviewers share one provider key, so they are queued rather than fanned
