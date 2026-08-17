@@ -340,10 +340,29 @@ impl IpcBridge {
                 transport::write_frame(writer, &event.encode_to_vec()).await?;
             }
             Some(generated::command_envelope::Command::GetReceiptKeyStatus(_)) => {
+                let mut status = self.receipt_status();
+                if let Ok(mut database) = self.journal.database().try_lock() {
+                    let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
+                    if let Ok(runtime) = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer) {
+                        if let Ok(counts) = runtime.counts() {
+                            if let Some(object) = status.as_object_mut() {
+                                object.insert("runtime_counts".into(), serde_json::json!({
+                                    "pending": counts.pending,
+                                    "pending_recovery": counts.pending_recovery,
+                                    "quarantined": counts.quarantined,
+                                    "approval_pending": counts.approval_pending,
+                                }));
+                                if let Ok((rate, version)) = runtime.audit_sampling_config() {
+                                    object.insert("audit_sampling".into(), serde_json::json!({"rate": rate, "policy_version": version}));
+                                }
+                            }
+                        }
+                    }
+                }
                 self.write_response(
                     writer,
                     "key.status",
-                    serde_json::to_vec(&self.receipt_status())?,
+                    serde_json::to_vec(&status)?,
                 )
                 .await?;
             }
