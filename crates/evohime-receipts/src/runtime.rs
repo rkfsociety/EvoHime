@@ -807,6 +807,8 @@ impl<'a> ReceiptRuntime<'a> {
     }
 
     pub fn approval_gc(&self, now_ms_value: i64) -> Result<i64, RuntimeError> {
+        let phase: String = self.connection.query_row("SELECT phase FROM receipt_runtime_guard WHERE id=1", [], |row| row.get(0))?;
+        if phase != "ready" { return Err(RuntimeError::Code("pending_recovery")); }
         let cutoff = now_ms_value.saturating_sub(APPROVAL_TTL_MS);
         let deleted = self.connection.execute(
             "DELETE FROM receipt_approval_intents WHERE state IN ('expired','lost','claimed') AND expires_at_ms<=?1 AND NOT EXISTS (SELECT 1 FROM receipt_actions a WHERE a.action_id=receipt_approval_intents.action_id AND a.state='pending_recovery')",
@@ -1289,6 +1291,16 @@ mod tests {
         assert_eq!(pending, 0);
         let phase: String = db.query_row("SELECT phase FROM receipt_runtime_guard WHERE id=1", [], |row| row.get(0)).unwrap();
         assert_eq!(phase, "ready");
+    }
+
+    #[test]
+    fn approval_gc_is_blocked_until_recovery_guard_is_ready() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        ReceiptRuntime::new(&mut db, &signer).unwrap();
+        db.execute("UPDATE receipt_runtime_guard SET phase='read_only_recovery' WHERE id=1", []).unwrap();
+        let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        assert!(matches!(runtime.approval_gc(now_ms()), Err(RuntimeError::Code("pending_recovery"))));
     }
 
     #[test]

@@ -434,7 +434,7 @@ mod tests {
             command: None,
         }
         .encode_to_vec();
-        encoded.extend_from_slice(&[0x98, 0x06, 0x01]);
+        encoded.extend_from_slice(&[0xa0, 0x06, 0x01]);
         let decoded = generated::CommandEnvelope::decode(encoded.as_slice())
             .expect("unknown field is ignored");
         assert_eq!(decoded.request_id, "request");

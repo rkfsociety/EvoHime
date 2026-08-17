@@ -706,7 +706,7 @@ impl IpcBridge {
                             let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
                                 .map_err(|error| error.to_string())?;
                             let existing_job = runtime.storage_rotation_job().map_err(|error| error.to_string())?;
-                            let (job_id, old_storage_key_id, new_storage_key_id, generation) = if let Some(job) = existing_job.filter(|job| job.state == "running") {
+                            let (job_id, old_storage_key_id, new_storage_key_id, generation) = if let Some(job) = existing_job.filter(|job| matches!(job.state.as_str(), "running" | "failed")) {
                                 (job.job_id, job.old_key_id, job.new_key_id, job.generation)
                             } else {
                                 let old_storage_key_id = manager.storage_key_id().map_err(|error| error.to_string())?;
