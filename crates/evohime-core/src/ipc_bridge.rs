@@ -23,6 +23,20 @@ const PROTOCOL_MAJOR: u32 = 1;
 const EXPECTED_TOOL_COUNT: u32 = 23;
 const PROTOCOL_MINOR: u32 = 0;
 
+fn bounded_tool_error_code(error: &evohime_tool_runtime::ToolError) -> &'static str {
+    match error {
+        evohime_tool_runtime::ToolError::UnknownTool(_) => "unknown_tool",
+        evohime_tool_runtime::ToolError::InvalidInput { .. } => "invalid_input",
+        evohime_tool_runtime::ToolError::PermissionDenied(_) => "permission_denied",
+        evohime_tool_runtime::ToolError::NotFound { .. } => "not_found",
+        evohime_tool_runtime::ToolError::NeedsApproval { .. } => "approval_required",
+        evohime_tool_runtime::ToolError::ApprovalMismatch => "approval_mismatch",
+        evohime_tool_runtime::ToolError::ApprovalDenied => "approval_denied",
+        evohime_tool_runtime::ToolError::Execution(_) => "execution_failed",
+        evohime_tool_runtime::ToolError::TimedOut(_) => "timed_out",
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum IpcBridgeError {
     #[error("IPC frame failed: {0}")]
@@ -388,7 +402,11 @@ impl IpcBridge {
                 let policy_decision = match decision.as_str() {
                     "allow" => evohime_receipts::runtime::PolicyDecision::Allow,
                     "approval_required" => evohime_receipts::runtime::PolicyDecision::ApprovalRequired,
-                    _ => evohime_receipts::runtime::PolicyDecision::Deny,
+                    "deny" => evohime_receipts::runtime::PolicyDecision::Deny,
+                    _ => {
+                        self.write_response(writer, "receipt.pending_close", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.schema_violation"}))?).await?;
+                        return Ok(());
+                    }
                 };
                 let receipt_request = evohime_receipts::runtime::ActionRequest {
                     action_id, task_id, run_id, tool_name, policy_id, normalized_scope,
@@ -3129,7 +3147,7 @@ impl IpcBridge {
                             serde_json::to_vec(&serde_json::json!({
                                 "task_id": task_id.to_string(),
                                 "ok": false,
-                                "error": error.to_string(),
+                                "error_code": bounded_tool_error_code(&error),
                             }))?,
                         )
                         .await;
@@ -3191,7 +3209,7 @@ impl IpcBridge {
                             serde_json::to_vec(&serde_json::json!({
                                 "task_id": task_id.to_string(),
                                 "ok": false,
-                                "error": error.to_string(),
+                                "error_code": bounded_tool_error_code(&error),
                             }))?,
                         )
                         .await;
@@ -3803,7 +3821,8 @@ mod tests {
         let result_json: serde_json::Value =
             serde_json::from_slice(&result.payload).expect("result json");
         assert_eq!(result_json["ok"], false);
-        assert_eq!(result_json["error"], "approval was denied for this call");
+        assert_eq!(result_json["error_code"], "approval_denied");
+        assert!(result_json.get("error").is_none());
         let _ = std::fs::remove_dir_all(root);
         let _ = std::fs::remove_dir_all(data_root);
     }
