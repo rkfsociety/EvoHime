@@ -348,12 +348,14 @@ fn build_payload(request: &ActionRequest, kind: &str, status: &str, args_hash: &
 fn signed_receipt(tx: &Transaction<'_>, signer: &dyn ReceiptSigner, request: &ActionRequest,
                   kind: &str, status: &str, args_hash: &str, result: Option<&str>, refusal: Option<&str>)
                   -> Result<(String, String), RuntimeError> {
-    let previous: Option<String> = tx.query_row("SELECT receipt_hash FROM receipt_chain_heads WHERE key_id=?1", [signer.key_id()?], |r| r.get(0)).optional()?;
+    let key_id = signer.key_id()?;
+    let previous: Option<String> = tx.query_row("SELECT receipt_hash FROM receipt_chain_heads WHERE key_id=?1", [&key_id], |r| r.get(0)).optional()?;
+    let last: Option<String> = tx.query_row("SELECT receipt_hash FROM receipt_records WHERE key_id=?1 ORDER BY created_at_ms DESC, rowid DESC LIMIT 1", [&key_id], |r| r.get(0)).optional()?;
+    if previous != last { return Err(RuntimeError::Code("schema_violation")); }
     let payload = build_payload(request, kind, status, args_hash, previous.as_deref(), result, refusal);
     crate::validate_payload_v1(&payload)?;
     let payload_bytes = crate::payload_bytes(&payload)?;
     let payload_hash = crate::sha256_hex(&payload_bytes);
-    let key_id = signer.key_id()?;
     let signature = signer.sign_payload_hash(&payload_hash)?;
     let envelope = Envelope { payload: payload.clone(), key_id: key_id.clone(), signature_algorithm: "Ed25519".into(), signature };
     let envelope_bytes = canonicalize_json(&serde_json::to_vec(&envelope).map_err(|_| ReceiptError::InvalidJson)?)?;
