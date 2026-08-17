@@ -3742,7 +3742,11 @@ impl ToolAgent {
                 pre_receipt_hash: pre_hash,
                 tool_args_hash: evohime_receipts::runtime::canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input).unwrap_or_default(),
                 result_status: status.to_owned(),
-                result_hash: output_digest,
+                result_hash: evohime_receipts::result_hash(&if outcome.ok {
+                    serde_json::json!({"status":"succeeded","output_digest":output_digest})
+                } else {
+                    serde_json::json!({"status":"failed","error_category":"tool_error"})
+                }).unwrap_or_else(|_| evohime_receipts::sha256_hex(b"tool_error")),
                 recovery_code: "signature_failed".to_owned(),
                 created_at_ms: SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|value| value.as_millis() as i64).unwrap_or_default(),
                 key_id: keys.storage_key_id().unwrap_or_else(|_| "unavailable".to_owned()),

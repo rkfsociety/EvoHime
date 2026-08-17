@@ -391,9 +391,9 @@ impl IpcBridge {
                 let action_id = uuid::Uuid::parse_str(&request.action_id).map_err(|error| FrameError::Io(error.to_string()))?;
                 let input: serde_json::Value = serde_json::from_str(&request.input_json).map_err(|error| FrameError::Io(error.to_string()))?;
                 let mut database = self.journal.database().lock().await;
-                let (task_id, run_id, tool_name, normalized_scope, policy_id, decision, state): (String,String,String,String,String,String,String) = database.connection().query_row(
-                    "SELECT task_id,run_id,tool_name,normalized_scope,policy_id,policy_decision,state FROM receipt_actions WHERE action_id=?1",
-                    [action_id.to_string()], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?)),
+                let (task_id, run_id, tool_name, normalized_scope, policy_id, decision, state, approval_id, parent_approval_ref): (String,String,String,String,String,String,String,Option<String>,Option<String>) = database.connection().query_row(
+                    "SELECT task_id,run_id,tool_name,normalized_scope,policy_id,policy_decision,state,approval_id,parent_approval_ref FROM receipt_actions WHERE action_id=?1",
+                    [action_id.to_string()], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?,row.get(7)?,row.get(8)?)),
                 ).map_err(|error| FrameError::Io(error.to_string()))?;
                 if state != "pending_recovery" {
                     self.write_response(writer, "receipt.pending_close", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.pending_recovery"}))?).await?;
@@ -410,7 +410,11 @@ impl IpcBridge {
                 };
                 let receipt_request = evohime_receipts::runtime::ActionRequest {
                     action_id, task_id, run_id, tool_name, policy_id, normalized_scope,
-                    input, policy_decision, approval_id: None, parent_approval_ref: None, preview: "unknown result closure".into(),
+                    input,
+                    policy_decision,
+                    approval_id: approval_id.and_then(|value| uuid::Uuid::parse_str(&value).ok()),
+                    parent_approval_ref,
+                    preview: "unknown result closure".into(),
                 };
                 let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
                 let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
@@ -431,6 +435,115 @@ impl IpcBridge {
                 runtime.set_audit_sampling_rate(true, request.rate as u8)
                     .map_err(|error| FrameError::Io(error.to_string()))?;
                 self.write_response(writer, "receipt.sampling_rate", serde_json::to_vec(&serde_json::json!({"ok":true,"rate":request.rate,"policy_version":evohime_receipts::SAMPLING_POLICY_VERSION}))?).await?;
+            }
+            Some(generated::command_envelope::Command::ReconcilePendingReceiptAction(request)) => {
+                const MAX_RECONCILIATION_INPUT_BYTES: usize = evohime_receipts::runtime::MAX_CALL_INPUT_BYTES;
+                let read_only = matches!(request.tool_name.as_str(), "filesystem.read" | "filesystem.list" | "git.status" | "git.diff" | "workspace.list" | "workspace.read" | "workspace.search");
+                if request.old_action_id.is_empty()
+                    || request.tool_name.len() > 128
+                    || !read_only
+                    || request.input_json.len() > MAX_RECONCILIATION_INPUT_BYTES
+                    || request.workspace_path.is_empty()
+                    || request.workspace_path.len() > 32 * 1024
+                    || request.workspace_path.contains('\n')
+                {
+                    self.write_response(writer, "receipt.reconciliation", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.schema_violation"}))?).await?;
+                    return Ok(());
+                }
+                let old_action_id = match uuid::Uuid::parse_str(&request.old_action_id) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        self.write_response(writer, "receipt.reconciliation", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.schema_violation"}))?).await?;
+                        return Ok(());
+                    }
+                };
+                let input: serde_json::Value = match serde_json::from_str(&request.input_json) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        self.write_response(writer, "receipt.reconciliation", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.schema_violation"}))?).await?;
+                        return Ok(());
+                    }
+                };
+                let tools = match self.tools.as_ref() {
+                    Some(value) => Arc::clone(value),
+                    None => {
+                        self.write_response(writer, "receipt.reconciliation", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.tool_unavailable"}))?).await?;
+                        return Ok(());
+                    }
+                };
+                let (task_id, old_state): (String, String) = {
+                    let database = self.journal.database().lock().await;
+                    database.connection().query_row(
+                        "SELECT task_id,state FROM receipt_actions WHERE action_id=?1",
+                        [old_action_id.to_string()],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    ).map_err(|error| FrameError::Io(error.to_string()))?
+                };
+                if old_state != "pending_recovery" {
+                    self.write_response(writer, "receipt.reconciliation", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.pending_recovery"}))?).await?;
+                    return Ok(());
+                }
+                let context = ToolContext {
+                    workspace_root: std::path::PathBuf::from(&request.workspace_path),
+                    task_id: task_id.parse().unwrap_or_else(|_| uuid::Uuid::now_v7()),
+                    session_id: None,
+                    progress_tx: None,
+                };
+                let (scope, preview) = match tools.preflight(&context, &request.tool_name, &input).await {
+                    Ok(evohime_tool_runtime::ToolPreflightDecision::Allowed { scope, preview }) => (scope, preview),
+                    Ok(_) => {
+                        self.write_response(writer, "receipt.reconciliation", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.policy_denied"}))?).await?;
+                        return Ok(());
+                    }
+                    Err(_) => {
+                        self.write_response(writer, "receipt.reconciliation", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.policy_denied"}))?).await?;
+                        return Ok(());
+                    }
+                };
+                let new_action_id = uuid::Uuid::now_v7();
+                let receipt_request = evohime_receipts::runtime::ActionRequest {
+                    action_id: new_action_id,
+                    task_id: task_id.clone(),
+                    run_id: format!("reconciliation-{}", new_action_id),
+                    tool_name: request.tool_name.clone(),
+                    policy_id: "reconciliation:read_only".into(),
+                    normalized_scope: scope,
+                    input: input.clone(),
+                    policy_decision: evohime_receipts::runtime::PolicyDecision::Allow,
+                    approval_id: None,
+                    parent_approval_ref: None,
+                    preview: serde_json::to_string(&preview).unwrap_or_else(|_| "read-only reconciliation".into()),
+                };
+                {
+                    let mut database = self.journal.database().lock().await;
+                    let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
+                    let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|error| FrameError::Io(error.to_string()))?;
+                    if !matches!(runtime.prepare(receipt_request.clone()).map_err(|error| FrameError::Io(error.to_string()))?, evohime_receipts::runtime::PrepareOutcome::Prepared { .. }) {
+                        self.write_response(writer, "receipt.reconciliation", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.precondition_failed"}))?).await?;
+                        return Ok(());
+                    }
+                    runtime.mark_started(new_action_id).map_err(|error| FrameError::Io(error.to_string()))?;
+                }
+                let result = tools.execute_with_cancellation(&context, &request.tool_name, input, CancellationToken::new()).await;
+                let (status, digest, error_category) = match &result {
+                    Ok(value) => ("succeeded", evohime_receipts::sha256_hex(value.output.as_bytes()), None),
+                    Err(_error) => ("failed", evohime_receipts::sha256_hex(b"reconciliation_tool_error"), Some("tool_error")),
+                };
+                let receipt_hash = {
+                    let mut database = self.journal.database().lock().await;
+                    let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
+                    let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|error| FrameError::Io(error.to_string()))?;
+                    runtime.mark_returned(new_action_id).map_err(|error| FrameError::Io(error.to_string()))?;
+                    match runtime.complete_reconciliation(&receipt_request, old_action_id, status, &digest, error_category) {
+                        Ok(hash) => hash,
+                        Err(_error) => {
+                            let _ = runtime.mark_pending_recovery(new_action_id, "signature_failed");
+                            self.write_response(writer, "receipt.reconciliation", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.pending_recovery","action_id":new_action_id.to_string()}))?).await?;
+                            return Ok(());
+                        }
+                    }
+                };
+                self.write_response(writer, "receipt.reconciliation", serde_json::to_vec(&serde_json::json!({"ok":true,"old_action_id":old_action_id.to_string(),"action_id":new_action_id.to_string(),"status":status,"receipt_hash":receipt_hash,"completion_source":"reconciliation"}))?).await?;
             }
             Some(generated::command_envelope::Command::TrustReceiptGenesis(request)) => {
                 if !self
@@ -498,19 +611,53 @@ impl IpcBridge {
                     let manager = self.receipt_keys.clone();
                     let database = self.journal.database().clone();
                     let rotation_reason = reason.clone();
-                    let result = tokio::task::spawn_blocking(move || {
+                    let result = tokio::task::spawn_blocking(move || -> Result<(String, Option<String>), String> {
                         let mut database = database.blocking_lock();
-                        manager.rotate_with_database(
+                        let protected_count: i64 = database.connection().query_row(
+                            "SELECT COUNT(*) FROM receipt_protected_actions",
+                            [],
+                            |row| row.get(0),
+                        ).map_err(|error| error.to_string())?;
+                        let storage_key_id: Option<String> = if protected_count > 0 {
+                            let signer = super::CoreReceiptSigner(Arc::clone(&manager));
+                            let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
+                                .map_err(|error| error.to_string())?;
+                            let existing_job = runtime.storage_rotation_job().map_err(|error| error.to_string())?;
+                            let (job_id, old_storage_key_id, new_storage_key_id, generation) = if let Some(job) = existing_job.filter(|job| job.state == "running") {
+                                (job.job_id, job.old_key_id, job.new_key_id, job.generation)
+                            } else {
+                                let old_storage_key_id = manager.storage_key_id().map_err(|error| error.to_string())?;
+                                let new_storage_key_id = manager.rotate_storage_key(true).map_err(|error| error.to_string())?;
+                                (format!("storage-{}", uuid::Uuid::now_v7()), old_storage_key_id, new_storage_key_id, SystemTime::now().duration_since(UNIX_EPOCH).map(|value| value.as_millis() as i64).unwrap_or_default())
+                            };
+                            loop {
+                                let progressed = runtime.rewrap_protected_batch(
+                                    &job_id,
+                                    &old_storage_key_id,
+                                    &new_storage_key_id,
+                                    generation,
+                                    32,
+                                    |envelope| manager.rewrap_storage_with_key_id(envelope, &new_storage_key_id).map_err(|_| evohime_receipts::runtime::RuntimeError::Code("storage_key_unavailable")),
+                                ).map_err(|error| error.to_string())?;
+                                if !progressed { break; }
+                            }
+                            drop(runtime);
+                            Some(new_storage_key_id)
+                        } else {
+                            None
+                        };
+                        let signing_key_id = manager.rotate_with_database(
                             database.connection_mut(),
                             &rotation_reason,
                             "user",
-                        )
+                        ).map_err(|error| error.to_string())?;
+                        Ok((signing_key_id, storage_key_id))
                     })
                     .await
                     .map_err(|error| FrameError::Io(error.to_string()))?;
                     let payload = match result {
-                        Ok(key_id) => {
-                            serde_json::json!({"status":"rotated", "key_id":key_id, "reason":reason})
+                        Ok((key_id, storage_key_id)) => {
+                            serde_json::json!({"status":"rotated", "key_id":key_id, "storage_key_id":storage_key_id, "reason":reason})
                         }
                         Err(error) => {
                             serde_json::json!({"status":"failed", "error_code":error.to_string()})
@@ -3046,7 +3193,12 @@ impl IpcBridge {
                 let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
                 match &result {
                     Ok(value) => { runtime.mark_returned(request.action_id).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?; let digest = evohime_receipts::sha256_hex(value.output.as_bytes()); runtime.complete(&request, "succeeded", &digest, None).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?; }
-                    Err(error) => {
+                    Err(_error) => {
+                        runtime.mark_returned(request.action_id).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
+                        let failed_digest = evohime_receipts::sha256_hex(b"tool_error");
+                        if runtime.complete(&request, "failed", &failed_digest, Some("tool_error")).is_ok() {
+                            return result;
+                        }
                         let pre_hash = runtime.action(request.action_id).ok().flatten().and_then(|row| row.pre_receipt_hash).unwrap_or_default();
                         let row = ProtectedActionRow {
                             schema_version: 1,
@@ -3054,7 +3206,7 @@ impl IpcBridge {
                             pre_receipt_hash: pre_hash,
                             tool_args_hash: evohime_receipts::runtime::canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input).unwrap_or_default(),
                             result_status: "failed".into(),
-                            result_hash: evohime_receipts::sha256_hex(error.to_string().as_bytes()),
+                            result_hash: evohime_receipts::result_hash(&serde_json::json!({"status":"failed","error_category":"tool_error"})).unwrap_or_else(|_| evohime_receipts::sha256_hex(b"tool_error")),
                             recovery_code: "unknown".into(),
                             created_at_ms: SystemTime::now().duration_since(UNIX_EPOCH).map(|value| value.as_millis() as i64).unwrap_or_default(),
                             key_id: self.receipt_keys.storage_key_id().unwrap_or_else(|_| "unavailable".into()),

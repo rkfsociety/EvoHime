@@ -300,6 +300,15 @@ message SetReceiptAuditSamplingRate {
   uint32 rate = 1;
 }
 
+// Authenticated read-only reconciliation of a pending external mutation.
+// Core creates a new action and never dispatches the original action again.
+message ReconcilePendingReceiptAction {
+  string old_action_id = 1;
+  string tool_name = 2;
+  string input_json = 3;
+  string workspace_path = 4;
+}
+
 // Bounded, read-only Core Doctor diagnostic. project_id is optional; when
 // set, the permissions check is grounded in that project's real workspace.
 // detail_level is user-configurable verbosity: 0 = SUMMARY (default),
@@ -846,6 +855,7 @@ message CommandEnvelope {
     CreateNewReceiptGenesis create_new_receipt_genesis = 95;
     ClosePendingReceiptAction close_pending_receipt_action = 96;
     SetReceiptAuditSamplingRate set_receipt_audit_sampling_rate = 97;
+    ReconcilePendingReceiptAction reconcile_pending_receipt_action = 98;
   }
 }
 

@@ -92,6 +92,14 @@ trusted genesis, signed checkpoint contract и `evohime-verify.exe`. Core
 terminal post/refusal append-ятся в SQLite hash-chain. Startup recovery
 устанавливает guard, истекает старые approval intents и переводит незакрытые
 вызовы в `pending_recovery`; raw input/result в receipt runtime не сохраняются.
+Для восстановления результата Core предоставляет authenticated
+`ReconcilePendingReceiptAction`: он создаёт новый read-only action с собственным
+hash/call binding и атомарно связывает его с историческим action; исходный tool
+повторно не запускается. `ClosePendingReceiptAction` закрывает только explicit
+unknown-result как signed refusal. Protected recovery rows шифруются
+AES-256-GCM, а storage-key rotation выполняется возобновляемыми bounded batch с
+durable cursor. Read-only sampling, recovery state и bounded runtime counters
+доступны только через Core diagnostics.
 Retention/compaction receipt chain по-прежнему относится к отдельному этапу
 01.4.
 

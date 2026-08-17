@@ -684,6 +684,29 @@ impl ReceiptKeyManager {
         Err(KeyError::DpapiFailed)
     }
 
+    /// Re-encrypts a protected recovery envelope with the current active
+    /// storage key. Plaintext remains inside the key-manager boundary and is
+    /// never returned to Core.
+    pub fn rewrap_storage(&self, bytes: &[u8]) -> Result<Vec<u8>, KeyError> {
+        let plaintext = self.unprotect_storage(bytes)?;
+        self.protect_storage(&plaintext)
+    }
+
+    /// Rewraps a JSON recovery envelope while updating its bounded storage-key
+    /// metadata. This keeps the row's authenticated key identifier aligned
+    /// with the database index without exposing key bytes to Core.
+    pub fn rewrap_storage_with_key_id(&self, bytes: &[u8], key_id: &str) -> Result<Vec<u8>, KeyError> {
+        if key_id.is_empty() || key_id.len() > 128 || key_id.contains('\n') {
+            return Err(KeyError::Corrupt);
+        }
+        let plaintext = self.unprotect_storage(bytes)?;
+        let mut value: serde_json::Value = serde_json::from_slice(&plaintext).map_err(|_| KeyError::Corrupt)?;
+        let object = value.as_object_mut().ok_or(KeyError::Corrupt)?;
+        object.insert("key_id".into(), serde_json::Value::String(key_id.into()));
+        let updated = serde_json::to_vec(&value).map_err(|_| KeyError::Corrupt)?;
+        self.protect_storage(&updated)
+    }
+
     fn read_storage_metadata_from_value(&self, metadata: &StorageKeyMetadata) -> Result<(StorageKeyMetadata, [u8; STORAGE_KEY_BYTES]), KeyError> {
         if metadata.storage_version != 1 { return Err(KeyError::Corrupt); }
         let protected = STANDARD.decode(&metadata.protected_key).map_err(|_| KeyError::Corrupt)?;

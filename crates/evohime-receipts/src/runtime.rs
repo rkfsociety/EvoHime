@@ -48,6 +48,7 @@ fn boot_id() -> &'static str {
 /// require a signer: recovery may inspect and expire state even when signing
 /// is unavailable, while all writes to the chain remain blocked by the guard.
 pub fn recover_database(connection: &mut Connection) -> Result<i64, RuntimeError> {
+    let recovery_started = Instant::now();
     install_schema(connection)?;
     // Recovery must not wait indefinitely behind another writer. SQLite still
     // reports a busy/error condition; the guard remains non-ready on failure.
@@ -56,19 +57,64 @@ pub fn recover_database(connection: &mut Connection) -> Result<i64, RuntimeError
     tx.execute("UPDATE receipt_runtime_guard SET phase='recovery_in_progress',generation=generation+1,updated_at_ms=?1 WHERE id=1", [now_ms()])?;
     let quick: String = tx.query_row("PRAGMA quick_check(100)", [], |r| r.get(0))?;
     if quick != "ok" {
+        increment_metric_tx(&tx, "recovery_safe_mode", 1)?;
         tx.execute("UPDATE receipt_runtime_guard SET phase='read_only_recovery',updated_at_ms=?1 WHERE id=1", [now_ms()])?;
         tx.commit()?;
         return Err(RuntimeError::Code("schema_violation"));
     }
     let wall_now = now_ms(); let mono_now = monotonic_ms();
     tx.execute("UPDATE receipt_approval_intents SET state='expired' WHERE state IN ('pending','granted') AND ((clock_boot_id=?1 AND deadline_monotonic_ms<=?2) OR (clock_boot_id<>?1 AND expires_at_ms<=?3))", params![boot_id(), mono_now, wall_now])?;
+    // A terminal post/refusal may have committed before the action-index
+    // update. Reconcile only that durable receipt; never synthesize a result.
+    tx.execute(
+        "UPDATE receipt_actions SET
+            state=(SELECT CASE WHEN r.receipt_kind='refusal' THEN 'refused' ELSE r.action_status END FROM receipt_records r WHERE r.receipt_hash=(SELECT r2.receipt_hash FROM receipt_records r2 WHERE r2.action_id=receipt_actions.action_id AND r2.receipt_kind IN ('post_action','refusal') ORDER BY r2.rowid DESC LIMIT 1)),
+            dispatch_state='returned',
+            terminal_receipt_hash=(SELECT r.receipt_hash FROM receipt_records r WHERE r.action_id=receipt_actions.action_id AND r.receipt_kind IN ('post_action','refusal') ORDER BY r.rowid DESC LIMIT 1),
+            recovery_code=NULL
+         WHERE state IN ('awaiting_approval','prepared','pending_recovery') AND terminal_receipt_hash IS NULL
+           AND EXISTS (SELECT 1 FROM receipt_records r WHERE r.action_id=receipt_actions.action_id AND r.receipt_kind IN ('post_action','refusal'))",
+        [],
+    )?;
+    let invariant_count: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM receipt_actions WHERE state IN ('prepared','pending_recovery') AND pre_receipt_hash IS NULL AND dispatch_state IN ('started','returned')",
+        [], |row| row.get(0),
+    )?;
+    tx.execute(
+        "INSERT OR IGNORE INTO receipt_runtime_diagnostics(code,action_id,detail_code,created_at_ms)
+         SELECT 'receipt.schema_violation',action_id,'started_without_pre',?1 FROM receipt_actions
+         WHERE state IN ('prepared','pending_recovery') AND pre_receipt_hash IS NULL AND dispatch_state IN ('started','returned')",
+        [now_ms()],
+    )?;
     // A dispatch transition is valid only after a durable pre receipt. These
     // rows are invariant violations, not recoverable executions.
     tx.execute("UPDATE receipt_actions SET state='quarantined',recovery_code='unknown' WHERE state IN ('prepared','pending_recovery') AND dispatch_state IN ('started','returned') AND pre_receipt_hash IS NULL", [])?;
+    // A durable pre with no dispatch transition cannot be retried after a
+    // restart: preserve it as an unknown recovery fact instead.
+    tx.execute("UPDATE receipt_actions SET state='pending_recovery',recovery_code='unknown' WHERE state='prepared' AND dispatch_state='not_started' AND pre_receipt_hash IS NOT NULL AND terminal_receipt_hash IS NULL", [])?;
     // A crash after the pre transaction but before/around dispatch must never
     // cause an automatic retry. Preserve the action as an unknown result.
     tx.execute("UPDATE receipt_actions SET state='pending_recovery',recovery_code='unknown' WHERE state='prepared' AND dispatch_state IN ('started','returned') AND pre_receipt_hash IS NOT NULL AND terminal_receipt_hash IS NULL", [])?;
+    let orphan_count: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM receipt_records r LEFT JOIN receipt_actions a ON a.action_id=r.action_id WHERE r.receipt_kind IN ('post_action','refusal') AND a.action_id IS NULL",
+        [], |row| row.get(0),
+    )?;
+    tx.execute(
+        "INSERT OR IGNORE INTO receipt_runtime_diagnostics(code,action_id,detail_code,created_at_ms)
+         SELECT 'receipt.schema_violation',r.action_id,'orphan_terminal_receipt',?1 FROM receipt_records r
+         LEFT JOIN receipt_actions a ON a.action_id=r.action_id
+         WHERE r.receipt_kind IN ('post_action','refusal') AND a.action_id IS NULL LIMIT 128",
+        [now_ms()],
+    )?;
+    if invariant_count > 0 || orphan_count > 0 {
+        increment_metric_tx(&tx, "receipt_schema_violations", invariant_count.saturating_add(orphan_count))?;
+        increment_metric_tx(&tx, "recovery_safe_mode", 1)?;
+        tx.execute("UPDATE receipt_runtime_guard SET phase='read_only_recovery',updated_at_ms=?1", [now_ms()])?;
+        tx.commit()?;
+        return Err(RuntimeError::Code("schema_violation"));
+    }
     let pending: i64 = tx.query_row("SELECT COUNT(*) FROM receipt_actions WHERE state IN ('prepared','pending_recovery','quarantined')", [], |r| r.get(0))?;
+    increment_metric_tx(&tx, "recovery_duration_ms", recovery_started.elapsed().as_millis().min(i64::MAX as u128) as i64)?;
     tx.execute("UPDATE receipt_runtime_guard SET phase='ready',updated_at_ms=?1 WHERE id=1", [now_ms()])?;
     tx.commit()?;
     Ok(pending)
@@ -214,6 +260,16 @@ pub struct RuntimeMetrics {
     pub counters: BTreeMap<String, i64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StorageRotationJob {
+    pub job_id: String,
+    pub old_key_id: String,
+    pub new_key_id: String,
+    pub cursor: String,
+    pub generation: i64,
+    pub state: String,
+}
+
 /// Signing boundary.  The signer receives the SHA-256 digest of canonical
 /// payload bytes, never raw tool input or a mutable JSON representation.
 pub trait ReceiptSigner: Send + Sync {
@@ -326,6 +382,24 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
            metric TEXT PRIMARY KEY NOT NULL,
            value INTEGER NOT NULL
          );
+         CREATE TABLE IF NOT EXISTS receipt_runtime_diagnostics (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           code TEXT NOT NULL,
+           action_id TEXT NOT NULL,
+           detail_code TEXT NOT NULL,
+           created_at_ms INTEGER NOT NULL,
+           UNIQUE(code,action_id,detail_code)
+         );
+         CREATE TABLE IF NOT EXISTS receipt_storage_rotation (
+           id INTEGER PRIMARY KEY CHECK(id=1),
+           job_id TEXT NOT NULL,
+           old_key_id TEXT NOT NULL,
+           new_key_id TEXT NOT NULL,
+           cursor TEXT NOT NULL DEFAULT '',
+           generation INTEGER NOT NULL,
+           state TEXT NOT NULL CHECK(state IN ('running','completed','failed')),
+           updated_at_ms INTEGER NOT NULL
+         );
          INSERT OR IGNORE INTO receipt_runtime_guard(id,phase,generation,updated_at_ms)
            VALUES(1,'ready',0,0);",
     )?;
@@ -410,6 +484,7 @@ fn build_payload(request: &ActionRequest, kind: &str, status: &str, args_hash: &
 fn signed_receipt(tx: &Transaction<'_>, signer: &dyn ReceiptSigner, request: &ActionRequest,
                   kind: &str, status: &str, args_hash: &str, result: Option<&str>, refusal: Option<&str>)
                   -> Result<(String, String), RuntimeError> {
+    let append_started = Instant::now();
     let key_id = signer.key_id()?;
     let previous: Option<String> = tx.query_row("SELECT receipt_hash FROM receipt_chain_heads WHERE key_id=?1", [&key_id], |r| r.get(0)).optional()?;
     let last: Option<String> = tx.query_row("SELECT receipt_hash FROM receipt_records WHERE key_id=?1 ORDER BY created_at_ms DESC, rowid DESC LIMIT 1", [&key_id], |r| r.get(0)).optional()?;
@@ -426,6 +501,9 @@ fn signed_receipt(tx: &Transaction<'_>, signer: &dyn ReceiptSigner, request: &Ac
     tx.execute("INSERT INTO receipt_records(schema_version,receipt_id,action_id,receipt_kind,action_status,task_id,run_id,key_id,canonical_payload,canonical_envelope,receipt_hash,previous_receipt_hash,created_at_ms) VALUES(1,?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)", params![object["receipt_id"].as_str(), request.action_id.to_string(), kind, status, request.task_id, request.run_id, key_id, payload_bytes, envelope_bytes, hash, previous, now_ms()])?;
     tx.execute("INSERT INTO receipt_chain_heads(key_id,receipt_hash,updated_at_ms) VALUES(?1,?2,?3) ON CONFLICT(key_id) DO UPDATE SET receipt_hash=excluded.receipt_hash,updated_at_ms=excluded.updated_at_ms", params![key_id, hash, now_ms()])?;
     increment_metric_tx(tx, "receipt_append_count", 1)?;
+    let elapsed = append_started.elapsed().as_millis().min(i64::MAX as u128) as i64;
+    increment_metric_tx(tx, "receipt_append_latency_ms", elapsed)?;
+    increment_metric_tx(tx, if kind == "pre_action" { "receipt_pre_latency_ms" } else if kind == "post_action" { "receipt_post_latency_ms" } else { "receipt_refusal_latency_ms" }, elapsed)?;
     Ok((hash, payload_hash))
 }
 
@@ -568,6 +646,17 @@ impl<'a> ReceiptRuntime<'a> {
     }
 
     pub fn complete(&self, request: &ActionRequest, status: &str, output_digest: &str, error_category: Option<&str>) -> Result<String, RuntimeError> {
+        self.complete_inner(request, status, output_digest, error_category, None)
+    }
+
+    /// Completes a separately authorized read-only reconciliation action and
+    /// links it to the historical pending action in the same transaction.
+    pub fn complete_reconciliation(&self, request: &ActionRequest, old_action_id: Uuid, status: &str, output_digest: &str, error_category: Option<&str>) -> Result<String, RuntimeError> {
+        if old_action_id == request.action_id { return Err(RuntimeError::Code("schema_violation")); }
+        self.complete_inner(request, status, output_digest, error_category, Some(old_action_id))
+    }
+
+    fn complete_inner(&self, request: &ActionRequest, status: &str, output_digest: &str, error_category: Option<&str>, reconciliation_old_action: Option<Uuid>) -> Result<String, RuntimeError> {
         if !matches!(status, "succeeded"|"failed"|"cancelled") { return Err(RuntimeError::Code("schema_violation")); }
         let args_hash = canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input)?;
         if output_digest.len() != 64 || !output_digest.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) { return Err(RuntimeError::Code("schema_violation")); }
@@ -575,10 +664,42 @@ impl<'a> ReceiptRuntime<'a> {
         let result = result_hash(&projection)?;
         let marker = bounded_result_marker(status, &result, error_category, now_ms(), status == "succeeded")?;
         let tx = self.connection.unchecked_transaction()?;
-        let (state, dispatch, stored_hash): (String,String,String) = tx.query_row("SELECT state,dispatch_state,tool_args_hash FROM receipt_actions WHERE action_id=?1", [request.action_id.to_string()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
-        if (state != "prepared" && state != "pending_recovery") || (dispatch != "started" && dispatch != "returned") || stored_hash != args_hash { return Err(RuntimeError::Code("schema_violation")); }
+        let (state, dispatch, stored_hash, task_id, run_id, tool_name, normalized_scope, policy_id, policy_decision, fingerprint_version, stored_approval, stored_parent): (String,String,String,String,String,String,String,String,String,i64,Option<String>,Option<String>) = tx.query_row(
+            "SELECT state,dispatch_state,tool_args_hash,task_id,run_id,tool_name,normalized_scope,policy_id,policy_decision,fingerprint_input_version,approval_id,parent_approval_ref FROM receipt_actions WHERE action_id=?1",
+            [request.action_id.to_string()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?,r.get(10)?,r.get(11)?)))?;
+        let binding_matches = state == "prepared"
+            || state == "pending_recovery";
+        let identity_matches = request.task_id == task_id
+            && request.run_id == run_id
+            && request.tool_name == tool_name
+            && request.normalized_scope == normalized_scope
+            && request.policy_id == policy_id
+            && request.policy_decision.as_str() == policy_decision
+            && fingerprint_version == crate::FINGERPRINT_INPUT_VERSION as i64
+            && request.approval_id.map(|value| value.to_string()) == stored_approval
+            && request.parent_approval_ref == stored_parent
+            && stored_hash == args_hash;
+        if !binding_matches || dispatch != "started" && dispatch != "returned" || !identity_matches {
+            if binding_matches {
+                tx.execute("UPDATE receipt_actions SET state='quarantined',recovery_code='unknown' WHERE action_id=?1 AND state IN ('prepared','pending_recovery')", [request.action_id.to_string()])?;
+                tx.commit()?;
+            }
+            return Err(RuntimeError::Code("schema_violation"));
+        }
+        if let Some(old_action_id) = reconciliation_old_action {
+            let old_state: String = tx.query_row("SELECT state FROM receipt_actions WHERE action_id=?1", [old_action_id.to_string()], |row| row.get(0))?;
+            if old_state != "pending_recovery" {
+                return Err(RuntimeError::Code("pending_recovery"));
+            }
+        }
         let (hash, _) = signed_receipt(&tx, self.signer, request, "post_action", status, &stored_hash, Some(&result), None)?;
         tx.execute("UPDATE receipt_actions SET state=?2,dispatch_state='returned',result_hash=?3,result_marker=?4,terminal_receipt_hash=?5 WHERE action_id=?1", params![request.action_id.to_string(), status, result, marker, hash])?;
+        if let Some(old_action_id) = reconciliation_old_action {
+            let old_linked = tx.execute("UPDATE receipt_actions SET state='succeeded',reconciliation_action_id=?2,completion_source='reconciliation',terminal_receipt_hash=?3 WHERE action_id=?1 AND state='pending_recovery' AND reconciliation_action_id IS NULL", params![old_action_id.to_string(), request.action_id.to_string(), hash])?;
+            let new_linked = tx.execute("UPDATE receipt_actions SET reconciles_action_id=?2,completion_source='reconciliation' WHERE action_id=?1 AND state=?3 AND reconciles_action_id IS NULL", params![request.action_id.to_string(), old_action_id.to_string(), status])?;
+            if old_linked != 1 || new_linked != 1 { return Err(RuntimeError::Code("pending_recovery")); }
+            tx.execute("DELETE FROM receipt_protected_actions WHERE action_id=?1", [old_action_id.to_string()])?;
+        }
         tx.commit()?;
         Ok(hash)
     }
@@ -587,7 +708,34 @@ impl<'a> ReceiptRuntime<'a> {
         if !matches!(code, "policy_denied"|"approval_denied"|"approval_expired"|"approval_stale"|"call_changed"|"key_untrusted"|"recovery_pending") { return Err(RuntimeError::Code("schema_violation")); }
         let args_hash = canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input)?;
         let tx = self.connection.unchecked_transaction()?;
-        let (hash, _) = signed_receipt(&tx, self.signer, request, "refusal", "refused", &args_hash, None, Some(code))?;
+        let binding: (String,String,String,String,String,String,i64,Option<String>,Option<String>,String) = tx.query_row(
+            "SELECT task_id,run_id,tool_name,normalized_scope,policy_id,policy_decision,fingerprint_input_version,approval_id,parent_approval_ref,state FROM receipt_actions WHERE action_id=?1",
+            [request.action_id.to_string()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?)))?;
+        let identity_matches = request.task_id == binding.0
+            && request.run_id == binding.1
+            && request.tool_name == binding.2
+            && request.normalized_scope == binding.3
+            && request.policy_id == binding.4
+            && request.policy_decision.as_str() == binding.5
+            && binding.6 == crate::FINGERPRINT_INPUT_VERSION as i64
+            && request.approval_id.map(|value| value.to_string()) == binding.7
+            && request.parent_approval_ref == binding.8;
+        if !identity_matches || !matches!(binding.9.as_str(), "awaiting_approval" | "prepared" | "pending_recovery") {
+            if matches!(binding.9.as_str(), "prepared" | "pending_recovery") {
+                tx.execute("UPDATE receipt_actions SET state='quarantined',recovery_code='unknown' WHERE action_id=?1", [request.action_id.to_string()])?;
+                tx.commit()?;
+            }
+            return Err(RuntimeError::Code("schema_violation"));
+        }
+        let stored_hash: String = tx.query_row("SELECT tool_args_hash FROM receipt_actions WHERE action_id=?1", [request.action_id.to_string()], |r| r.get(0))?;
+        if stored_hash != args_hash {
+            if matches!(binding.9.as_str(), "prepared" | "pending_recovery") {
+                tx.execute("UPDATE receipt_actions SET state='quarantined',recovery_code='unknown' WHERE action_id=?1", [request.action_id.to_string()])?;
+                tx.commit()?;
+            }
+            return Err(RuntimeError::Code("schema_violation"));
+        }
+        let (hash, _) = signed_receipt(&tx, self.signer, request, "refusal", "refused", &stored_hash, None, Some(code))?;
         let source = if code == "recovery_pending" { "reconciliation" } else { "execution" };
         tx.execute("UPDATE receipt_actions SET state='refused',completion_source=?3,terminal_receipt_hash=?2 WHERE action_id=?1", params![request.action_id.to_string(), hash, source])?;
         let approval_state = match code { "approval_expired" => "expired", "approval_denied" => "denied", _ => "lost" };
@@ -599,7 +747,10 @@ impl<'a> ReceiptRuntime<'a> {
 
     pub fn mark_pending_recovery(&self, action_id: Uuid, code: &str) -> Result<(), RuntimeError> {
         if !valid_recovery_code(code) { return Err(RuntimeError::Code("schema_violation")); }
-        self.connection.execute("UPDATE receipt_actions SET state='pending_recovery',recovery_code=?2 WHERE action_id=?1 AND dispatch_state IN ('started','returned')", params![action_id.to_string(), code])?;
+        let changed = self.connection.execute("UPDATE receipt_actions SET state='pending_recovery',recovery_code=?2 WHERE action_id=?1 AND dispatch_state IN ('started','returned')", params![action_id.to_string(), code])?;
+        if changed == 1 {
+            self.connection.execute("INSERT INTO receipt_runtime_metrics(metric,value) VALUES('pending_recovery_count',1) ON CONFLICT(metric) DO UPDATE SET value=value+1", [])?;
+        }
         Ok(())
     }
 
@@ -626,6 +777,7 @@ impl<'a> ReceiptRuntime<'a> {
             "DELETE FROM receipt_approval_intents WHERE state IN ('expired','lost','claimed') AND expires_at_ms<=?1 AND NOT EXISTS (SELECT 1 FROM receipt_actions a WHERE a.action_id=receipt_approval_intents.action_id AND a.state='pending_recovery')",
             [cutoff],
         )?;
+        self.connection.execute("INSERT INTO receipt_runtime_metrics(metric,value) VALUES('approval_gc_deleted_count',?1) ON CONFLICT(metric) DO UPDATE SET value=value+excluded.value", [deleted as i64])?;
         Ok(deleted as i64)
     }
 
@@ -647,9 +799,78 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(())
     }
 
+    /// Rewraps one bounded batch of protected rows. The callback performs the
+    /// key-manager operation outside SQLite; the durable cursor is advanced
+    /// only in the same short transaction as the envelope replacement.
+    pub fn rewrap_protected_batch<F>(
+        &mut self,
+        job_id: &str,
+        old_key_id: &str,
+        new_key_id: &str,
+        generation: i64,
+        batch_size: usize,
+        rewrap: F,
+    ) -> Result<bool, RuntimeError>
+    where
+        F: Fn(&[u8]) -> Result<Vec<u8>, RuntimeError>,
+    {
+        if job_id.is_empty() || job_id.len() > 128 || old_key_id.is_empty() || old_key_id.len() > 128
+            || new_key_id.is_empty() || new_key_id.len() > 128 || batch_size == 0 || batch_size > 64
+        {
+            return Err(RuntimeError::Code("schema_violation"));
+        }
+        let current: Option<(String, String, String, i64, String)> = self.connection.query_row(
+            "SELECT job_id,old_key_id,new_key_id,generation,state FROM receipt_storage_rotation WHERE id=1",
+            [], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+        ).optional()?;
+        if let Some((current_job, current_old, current_new, current_generation, state)) = current {
+            if state == "completed" {
+                self.connection.execute("UPDATE receipt_storage_rotation SET job_id=?1,old_key_id=?2,new_key_id=?3,cursor='',generation=?4,state='running',updated_at_ms=?5 WHERE id=1", params![job_id, old_key_id, new_key_id, generation, now_ms()])?;
+            } else if current_job != job_id || current_old != old_key_id || current_new != new_key_id || current_generation != generation {
+                return Err(RuntimeError::Code("chain_conflict"));
+            }
+        } else {
+            self.connection.execute(
+                "INSERT INTO receipt_storage_rotation(id,job_id,old_key_id,new_key_id,cursor,generation,state,updated_at_ms) VALUES(1,?1,?2,?3,'',?4,'running',?5)",
+                params![job_id, old_key_id, new_key_id, generation, now_ms()],
+            )?;
+        }
+        let cursor: String = self.connection.query_row("SELECT cursor FROM receipt_storage_rotation WHERE id=1", [], |row| row.get(0))?;
+        let rows: Vec<(String, Vec<u8>)> = {
+            let mut statement = self.connection.prepare(
+                "SELECT action_id,envelope FROM receipt_protected_actions WHERE action_id>?1 ORDER BY action_id LIMIT ?2",
+            )?;
+            let mapped = statement.query_map(params![cursor, batch_size as i64], |row| Ok((row.get(0)?, row.get(1)?)))?;
+            mapped.collect::<Result<Vec<_>, _>>()?
+        };
+        if rows.is_empty() {
+            self.connection.execute("UPDATE receipt_storage_rotation SET state='completed',updated_at_ms=?1 WHERE id=1", [now_ms()])?;
+            return Ok(false);
+        }
+        let mut replacement = Vec::with_capacity(rows.len());
+        for (action_id, envelope) in rows {
+            let next = rewrap(&envelope)?;
+            if next.len() > MAX_PROTECTED_ROW_BYTES { return Err(RuntimeError::Code("storage_key_unavailable")); }
+            replacement.push((action_id, next));
+        }
+        let tx = self.connection.unchecked_transaction()?;
+        let mut last = String::new();
+        for (action_id, envelope) in replacement {
+            tx.execute("UPDATE receipt_protected_actions SET key_id=?2,envelope=?3 WHERE action_id=?1", params![action_id, new_key_id, envelope])?;
+            last = action_id;
+        }
+        tx.execute("UPDATE receipt_storage_rotation SET cursor=?1,state='running',updated_at_ms=?2 WHERE id=1", params![last, now_ms()])?;
+        tx.commit()?;
+        Ok(true)
+    }
+
     pub fn load_protected_action(&self, action_id: Uuid, key: &[u8; 32]) -> Result<ProtectedActionRow, RuntimeError> {
-        let envelope: Vec<u8> = self.connection.query_row("SELECT envelope FROM receipt_protected_actions WHERE action_id=?1", [action_id.to_string()], |row| row.get(0))?;
-        unprotect_action_row(&envelope, key)
+        let (stored_key_id, envelope): (String, Vec<u8>) = self.connection.query_row("SELECT key_id,envelope FROM receipt_protected_actions WHERE action_id=?1", [action_id.to_string()], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        let row = unprotect_action_row(&envelope, key)?;
+        if row.action_id != action_id.to_string() || row.key_id != stored_key_id {
+            return Err(RuntimeError::Code("pending_recovery"));
+        }
+        Ok(row)
     }
 
     pub fn delete_protected_after_terminal(&self, action_id: Uuid) -> Result<(), RuntimeError> {
@@ -710,6 +931,7 @@ impl<'a> ReceiptRuntime<'a> {
     pub fn store_unsampled_read_only_marker(&self, action_id: Uuid, tool_name: &str, call_hash: &str, policy_version: u8) -> Result<(), RuntimeError> {
         if tool_name.is_empty() || tool_name.len() > crate::MAX_IDENTIFIER_BYTES || call_hash.len() != 64 || !call_hash.bytes().all(|value| value.is_ascii_hexdigit() && !value.is_ascii_uppercase()) { return Err(RuntimeError::Code("schema_violation")); }
         self.connection.execute("INSERT INTO receipt_audit_markers(action_id,tool_name,call_hash,sampled,sampling_policy_version,created_at_ms) VALUES(?1,?2,?3,0,?4,?5)", params![action_id.to_string(), tool_name, call_hash, policy_version as i64, now_ms()])?;
+        self.connection.execute("INSERT INTO receipt_runtime_metrics(metric,value) VALUES('read_only_unsampled_count',1) ON CONFLICT(metric) DO UPDATE SET value=value+1", [])?;
         Ok(())
     }
 
@@ -728,6 +950,16 @@ impl<'a> ReceiptRuntime<'a> {
         let mut counters = BTreeMap::new();
         for row in rows { let (metric, value) = row?; counters.insert(metric, value); }
         Ok(RuntimeMetrics { counters })
+    }
+
+    pub fn storage_rotation_job(&self) -> Result<Option<StorageRotationJob>, RuntimeError> {
+        Ok(self.connection.query_row(
+            "SELECT job_id,old_key_id,new_key_id,cursor,generation,state FROM receipt_storage_rotation WHERE id=1",
+            [], |row| Ok(StorageRotationJob {
+                job_id: row.get(0)?, old_key_id: row.get(1)?, new_key_id: row.get(2)?,
+                cursor: row.get(3)?, generation: row.get(4)?, state: row.get(5)?,
+            }),
+        ).optional()?)
     }
 }
 
@@ -805,6 +1037,26 @@ mod tests {
     }
 
     #[test]
+    fn post_binding_mismatch_quarantines_without_terminal_success() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let request = request(PolicyDecision::Allow);
+        let id = request.action_id;
+        runtime.prepare(request.clone()).unwrap();
+        runtime.mark_started(id).unwrap();
+        let mut changed = request;
+        changed.tool_name = "filesystem.other_write".into();
+        assert!(matches!(
+            runtime.complete(&changed, "succeeded", &"a".repeat(64), None),
+            Err(RuntimeError::Code("schema_violation"))
+        ));
+        let state = runtime.action(id).unwrap().unwrap();
+        assert_eq!(state.state, "quarantined");
+        assert!(state.terminal_receipt_hash.is_none());
+    }
+
+    #[test]
     fn protected_row_is_authenticated_bounded_and_fail_closed() {
         let row = ProtectedActionRow { schema_version: 1, action_id: Uuid::now_v7().to_string(), pre_receipt_hash: "a".repeat(64), tool_args_hash: "b".repeat(64), result_status: "failed".into(), result_hash: "c".repeat(64), recovery_code: "external_error".into(), created_at_ms: 1, key_id: "key-1".into() };
         let key = [7u8; 32];
@@ -816,10 +1068,77 @@ mod tests {
     }
 
     #[test]
+    fn protected_rotation_advances_cursor_and_rewraps_without_losing_rows() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let request = request(PolicyDecision::Allow);
+        let action_id = request.action_id;
+        runtime.prepare(request).unwrap();
+        runtime.mark_started(action_id).unwrap();
+        let row = ProtectedActionRow { schema_version: 1, action_id: action_id.to_string(), pre_receipt_hash: "a".repeat(64), tool_args_hash: "b".repeat(64), result_status: "failed".into(), result_hash: "c".repeat(64), recovery_code: "external_error".into(), created_at_ms: 1, key_id: "old".into() };
+        runtime.store_protected_action(&row, &[1u8; 32]).unwrap();
+        assert!(runtime.rewrap_protected_batch("job-1", "old", "new", 1, 8, |envelope| {
+            let mut plain = unprotect_action_row(envelope, &[1u8; 32])?;
+            plain.key_id = "new".into();
+            protect_action_row(&plain, &[2u8; 32])
+        }).unwrap());
+        assert!(!runtime.rewrap_protected_batch("job-1", "old", "new", 1, 8, |envelope| {
+            let mut plain = unprotect_action_row(envelope, &[2u8; 32])?;
+            plain.key_id = "new".into();
+            protect_action_row(&plain, &[2u8; 32])
+        }).unwrap());
+        assert_eq!(runtime.load_protected_action(action_id, &[2u8; 32]).unwrap().key_id, "new");
+        assert!(runtime.load_protected_action(action_id, &[1u8; 32]).is_err());
+    }
+
+    #[test]
+    fn reconciliation_completion_links_old_and_new_actions_atomically() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let old = request(PolicyDecision::Allow);
+        let old_id = old.action_id;
+        runtime.prepare(old.clone()).unwrap();
+        runtime.mark_started(old_id).unwrap();
+        runtime.mark_returned(old_id).unwrap();
+        runtime.mark_pending_recovery(old_id, "unknown").unwrap();
+        let mut new = request(PolicyDecision::Allow);
+        new.action_id = Uuid::now_v7();
+        new.tool_name = "filesystem.read".into();
+        runtime.prepare(new.clone()).unwrap();
+        runtime.mark_started(new.action_id).unwrap();
+        runtime.mark_returned(new.action_id).unwrap();
+        runtime.complete_reconciliation(&new, old_id, "succeeded", &"d".repeat(64), None).unwrap();
+        let links: (String, String, String, String, String) = db.query_row(
+            "SELECT o.state,o.reconciliation_action_id,n.reconciles_action_id,o.completion_source,n.completion_source FROM receipt_actions o JOIN receipt_actions n ON n.action_id=o.reconciliation_action_id WHERE o.action_id=?1",
+            [old_id.to_string()], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+        ).unwrap();
+        assert_eq!(links.0, "succeeded");
+        assert_eq!(links.1, new.action_id.to_string());
+        assert_eq!(links.2, old_id.to_string());
+        assert_eq!(links.3, "reconciliation");
+        assert_eq!(links.4, "reconciliation");
+    }
+
+    #[test]
     fn sampling_is_deterministic_and_zero_does_not_sample() {
         assert_eq!(sampled_read_only("018f0f2a-2222-7222-8222-222222222222", "filesystem.read", 10), sampled_read_only("018f0f2a-2222-7222-8222-222222222222", "filesystem.read", 10));
         assert!(!sampled_read_only("action", "filesystem.read", 0));
         assert!(sampled_read_only("action", "filesystem.read", 100));
+    }
+
+    #[test]
+    fn shared_runtime_error_manifest_has_contiguous_alias_ranges() {
+        let manifest: Value = serde_json::from_str(include_str!("../../../contracts/receipts/v1/version-manifest.json")).unwrap();
+        let transport = manifest["transport_runtime_error_codes"].as_object().unwrap();
+        let mut transport_codes = transport.values().map(|value| value.as_i64().unwrap()).collect::<Vec<_>>();
+        transport_codes.sort_unstable();
+        assert_eq!(transport_codes, (1001_i64..=1013).collect::<Vec<_>>());
+        let aliases = manifest["canonical_refusal_aliases"].as_object().unwrap();
+        let mut alias_codes = aliases.values().map(|value| value.as_i64().unwrap()).collect::<Vec<_>>();
+        alias_codes.sort_unstable();
+        assert_eq!(alias_codes, (2001_i64..=2008).collect::<Vec<_>>());
     }
 
     #[test]
@@ -838,10 +1157,50 @@ mod tests {
         install_schema(&db).unwrap();
         db.execute("INSERT INTO receipt_actions(schema_version,action_id,task_id,run_id,tool_name,normalized_scope,fingerprint_input_version,tool_args_hash,policy_id,policy_decision,state,dispatch_state) VALUES(1,?1,'task','run','shell.execute','workspace',1,?2,'policy','allow','prepared','started')", params![Uuid::now_v7().to_string(), "a".repeat(64)]).unwrap();
         let action_id = db.query_row("SELECT action_id FROM receipt_actions LIMIT 1", [], |row| row.get::<_, String>(0)).unwrap();
-        recover_database(&mut db).unwrap();
+        assert!(matches!(recover_database(&mut db), Err(RuntimeError::Code("schema_violation"))));
         let (state, code): (String, Option<String>) = db.query_row("SELECT state,recovery_code FROM receipt_actions WHERE action_id=?1", [action_id], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
         assert_eq!(state, "quarantined");
         assert_eq!(code.as_deref(), Some("unknown"));
+        assert_eq!(db.query_row("SELECT phase FROM receipt_runtime_guard WHERE id=1", [], |row| row.get::<_, String>(0)).unwrap(), "read_only_recovery");
+    }
+
+    #[test]
+    fn startup_recovery_rebuilds_action_index_from_durable_terminal_post() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        let request = request(PolicyDecision::Allow);
+        let id = request.action_id;
+        {
+            let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+            runtime.prepare(request.clone()).unwrap();
+            runtime.mark_started(id).unwrap();
+            runtime.mark_returned(id).unwrap();
+            runtime.complete(&request, "failed", &"a".repeat(64), Some("tool_error")).unwrap();
+        }
+        db.execute("UPDATE receipt_actions SET state='prepared',terminal_receipt_hash=NULL WHERE action_id=?1", [id.to_string()]).unwrap();
+        assert_eq!(recover_database(&mut db).unwrap(), 0);
+        let (state, terminal): (String, Option<String>) = db.query_row("SELECT state,terminal_receipt_hash FROM receipt_actions WHERE action_id=?1", [id.to_string()], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
+        assert_eq!(state, "failed");
+        assert!(terminal.is_some());
+    }
+
+    #[test]
+    fn startup_recovery_enters_safe_mode_for_orphan_terminal_receipt() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        let request = request(PolicyDecision::Allow);
+        let id = request.action_id;
+        {
+            let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+            runtime.prepare(request.clone()).unwrap();
+            runtime.mark_started(id).unwrap();
+            runtime.mark_returned(id).unwrap();
+            runtime.complete(&request, "succeeded", &"a".repeat(64), None).unwrap();
+        }
+        db.execute("DELETE FROM receipt_actions WHERE action_id=?1", [id.to_string()]).unwrap();
+        assert!(matches!(recover_database(&mut db), Err(RuntimeError::Code("schema_violation"))));
+        assert_eq!(db.query_row("SELECT phase FROM receipt_runtime_guard WHERE id=1", [], |row| row.get::<_, String>(0)).unwrap(), "read_only_recovery");
+        assert_eq!(db.query_row("SELECT detail_code FROM receipt_runtime_diagnostics LIMIT 1", [], |row| row.get::<_, String>(0)).unwrap(), "orphan_terminal_receipt");
     }
 
     #[test]
