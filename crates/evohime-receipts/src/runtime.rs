@@ -437,6 +437,7 @@ pub struct ReceiptRuntime<'a> {
 impl<'a> ReceiptRuntime<'a> {
     pub fn new(connection: &'a mut Connection, signer: &'a dyn ReceiptSigner) -> Result<Self, RuntimeError> {
         install_schema(connection)?;
+        connection.busy_timeout(Duration::from_secs(2))?;
         Ok(Self { connection, signer })
     }
 
@@ -841,5 +842,28 @@ mod tests {
         let (state, code): (String, Option<String>) = db.query_row("SELECT state,recovery_code FROM receipt_actions WHERE action_id=?1", [action_id], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
         assert_eq!(state, "quarantined");
         assert_eq!(code.as_deref(), Some("unknown"));
+    }
+
+    #[test]
+    fn parallel_file_backed_prepares_keep_a_single_verifiable_chain_head() {
+        let path = std::env::temp_dir().join(format!("evohime-receipt-concurrency-{}.db", Uuid::now_v7()));
+        let connection = Connection::open(&path).unwrap();
+        install_schema(&connection).unwrap();
+        drop(connection);
+        let first = request(PolicyDecision::Allow);
+        let second = request(PolicyDecision::Allow);
+        std::thread::scope(|scope| {
+            scope.spawn(|| { let mut db = Connection::open(&path).unwrap(); let signer = TestSigner; let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap(); assert!(matches!(runtime.prepare(first), Ok(PrepareOutcome::Prepared { .. }))); });
+            scope.spawn(|| { let mut db = Connection::open(&path).unwrap(); let signer = TestSigner; let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap(); assert!(matches!(runtime.prepare(second), Ok(PrepareOutcome::Prepared { .. }))); });
+        });
+        let db = Connection::open(&path).unwrap();
+        let records: i64 = db.query_row("SELECT COUNT(*) FROM receipt_records", [], |row| row.get(0)).unwrap();
+        let heads: i64 = db.query_row("SELECT COUNT(*) FROM receipt_chain_heads", [], |row| row.get(0)).unwrap();
+        assert_eq!(records, 2);
+        assert_eq!(heads, 1);
+        let head: String = db.query_row("SELECT receipt_hash FROM receipt_chain_heads WHERE key_id='test-key'", [], |row| row.get(0)).unwrap();
+        let last: String = db.query_row("SELECT receipt_hash FROM receipt_records WHERE key_id='test-key' ORDER BY rowid DESC LIMIT 1", [], |row| row.get(0)).unwrap();
+        assert_eq!(head, last);
+        let _ = std::fs::remove_file(path);
     }
 }
