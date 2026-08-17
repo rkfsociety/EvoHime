@@ -3184,7 +3184,15 @@ impl IpcBridge {
                 let mut database = self.journal.database().lock().await;
                 let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
                 let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
-                if !matches!(runtime.prepare(request.clone()).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?, evohime_receipts::runtime::PrepareOutcome::Prepared { .. }) { return Err(evohime_tool_runtime::ToolError::Execution("receipt.precondition_failed".into())); }
+                let prepared = match runtime.prepare(request.clone()) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        let marker = if error.to_string().contains("signer_unavailable") { "signer_unavailable" } else { "storage_key_unavailable" };
+                        let _ = runtime.store_unsigned_runtime_marker(request.action_id, marker);
+                        return Err(evohime_tool_runtime::ToolError::Execution(error.to_string()));
+                    }
+                };
+                if !matches!(prepared, evohime_receipts::runtime::PrepareOutcome::Prepared { .. }) { return Err(evohime_tool_runtime::ToolError::Execution("receipt.precondition_failed".into())); }
                 runtime.mark_started(request.action_id).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
                 drop(database);
                 let result = self.tools.as_ref().unwrap().execute_with_cancellation(context, "shell.execute", input, cancellation).await;

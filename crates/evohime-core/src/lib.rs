@@ -3569,7 +3569,16 @@ impl ToolAgent {
         let signer = CoreReceiptSigner(Arc::clone(keys));
         let runtime = ReceiptRuntime::new(database.connection_mut(), &signer)
             .map_err(|error| error.to_string())?;
-        match runtime.prepare_existing_approval(request).map_err(|error| error.to_string())? {
+        let prepared = match runtime.prepare_existing_approval(request.clone()) {
+            Ok(value) => value,
+            Err(error) => {
+                let code = error.to_string();
+                let marker = if code.contains("signer_unavailable") { "signer_unavailable" } else if code.contains("storage_key_unavailable") { "storage_key_unavailable" } else { "signer_unavailable" };
+                let _ = runtime.store_unsigned_runtime_marker(request.action_id, marker);
+                return Err(code);
+            }
+        };
+        match prepared {
             ReceiptPrepareOutcome::ApprovalRequired { .. } => Ok(()),
             _ => Err("receipt.approval_required".to_owned()),
         }
@@ -3583,7 +3592,16 @@ impl ToolAgent {
         let mut database = journal.database().lock().await;
         let signer = CoreReceiptSigner(Arc::clone(keys));
         let runtime = ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| e.to_string())?;
-        if !matches!(runtime.prepare(request.clone()).map_err(|e| e.to_string())?, ReceiptPrepareOutcome::Prepared { .. }) { return Err("receipt.precondition_failed".into()); }
+        let prepared = match runtime.prepare(request.clone()) {
+            Ok(value) => value,
+            Err(error) => {
+                let code = error.to_string();
+                let marker = if code.contains("signer_unavailable") { "signer_unavailable" } else if code.contains("storage_key_unavailable") { "storage_key_unavailable" } else { "signer_unavailable" };
+                let _ = runtime.store_unsigned_runtime_marker(request.action_id, marker);
+                return Err(code);
+            }
+        };
+        if !matches!(prepared, ReceiptPrepareOutcome::Prepared { .. }) { return Err("receipt.precondition_failed".into()); }
         runtime.mark_started(request.action_id).map_err(|e| e.to_string())?;
         Ok(Some(request))
     }

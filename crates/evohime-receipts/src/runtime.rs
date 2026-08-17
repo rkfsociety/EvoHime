@@ -80,7 +80,7 @@ pub fn recover_database(connection: &mut Connection) -> Result<i64, RuntimeError
             terminal_receipt_hash=(SELECT r.receipt_hash FROM receipt_records r WHERE r.action_id=receipt_actions.action_id AND r.receipt_kind IN ('post_action','refusal') ORDER BY r.rowid DESC LIMIT 1),
             recovery_code=NULL
          WHERE state IN ('awaiting_approval','prepared','pending_recovery') AND terminal_receipt_hash IS NULL
-           AND EXISTS (SELECT 1 FROM receipt_records r WHERE r.action_id=receipt_actions.action_id AND r.receipt_kind IN ('post_action','refusal'))",
+           AND EXISTS (SELECT 1 FROM receipt_records r WHERE r.action_id=receipt_actions.action_id AND ((r.receipt_kind='post_action' AND receipt_actions.pre_receipt_hash IS NOT NULL) OR (r.receipt_kind='refusal' AND (receipt_actions.pre_receipt_hash IS NOT NULL OR receipt_actions.policy_decision IN ('deny','approval_required')))))",
         [],
     )?;
     let invariant_count: i64 = tx.query_row(
@@ -106,6 +106,10 @@ pub fn recover_database(connection: &mut Connection) -> Result<i64, RuntimeError
         "SELECT COUNT(*) FROM receipt_records r LEFT JOIN receipt_actions a ON a.action_id=r.action_id WHERE r.receipt_kind IN ('post_action','refusal') AND a.action_id IS NULL",
         [], |row| row.get(0),
     )?;
+    let terminal_without_pre_count: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM receipt_records r JOIN receipt_actions a ON a.action_id=r.action_id WHERE r.receipt_kind='post_action' AND a.pre_receipt_hash IS NULL",
+        [], |row| row.get(0),
+    )?;
     tx.execute(
         "INSERT OR IGNORE INTO receipt_runtime_diagnostics(code,action_id,detail_code,created_at_ms)
          SELECT 'receipt.schema_violation',r.action_id,'orphan_terminal_receipt',?1 FROM receipt_records r
@@ -113,8 +117,15 @@ pub fn recover_database(connection: &mut Connection) -> Result<i64, RuntimeError
          WHERE r.receipt_kind IN ('post_action','refusal') AND a.action_id IS NULL LIMIT 128",
         [now_ms()],
     )?;
-    if invariant_count > 0 || orphan_count > 0 {
-        increment_metric_tx(&tx, "receipt_schema_violations", invariant_count.saturating_add(orphan_count))?;
+    tx.execute(
+        "INSERT OR IGNORE INTO receipt_runtime_diagnostics(code,action_id,detail_code,created_at_ms)
+         SELECT 'receipt.schema_violation',r.action_id,'terminal_without_pre',?1 FROM receipt_records r
+         JOIN receipt_actions a ON a.action_id=r.action_id
+         WHERE r.receipt_kind='post_action' AND a.pre_receipt_hash IS NULL LIMIT 128",
+        [now_ms()],
+    )?;
+    if invariant_count > 0 || orphan_count > 0 || terminal_without_pre_count > 0 {
+        increment_metric_tx(&tx, "receipt_schema_violations", invariant_count.saturating_add(orphan_count).saturating_add(terminal_without_pre_count))?;
         if invariant_count > 0 { increment_metric_tx(&tx, "quarantined_count", invariant_count)?; }
         increment_metric_tx(&tx, "recovery_safe_mode", 1)?;
         tx.execute("UPDATE receipt_runtime_guard SET phase='read_only_recovery',updated_at_ms=?1", [now_ms()])?;
@@ -948,6 +959,20 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(())
     }
 
+    /// Records a bounded unsigned runtime fact. It is deliberately stored in
+    /// diagnostics only and can never be interpreted as a receipt or advance
+    /// the hash chain.
+    pub fn store_unsigned_runtime_marker(&self, action_id: Uuid, code: &str) -> Result<(), RuntimeError> {
+        if !matches!(code, "signer_unavailable" | "storage_key_unavailable") {
+            return Err(RuntimeError::Code("schema_violation"));
+        }
+        self.connection.execute(
+            "INSERT OR IGNORE INTO receipt_runtime_diagnostics(code,action_id,detail_code,created_at_ms) VALUES('receipt.unsigned_audit',?1,?2,?3)",
+            params![action_id.to_string(), code, now_ms()],
+        )?;
+        Ok(())
+    }
+
     pub fn counts(&self) -> Result<RuntimeCounts, RuntimeError> {
         Ok(RuntimeCounts {
             pending: self.connection.query_row("SELECT COUNT(*) FROM receipt_actions WHERE state IN ('awaiting_approval','prepared','pending_recovery')", [], |r| r.get(0))?,
@@ -1158,6 +1183,18 @@ mod tests {
     }
 
     #[test]
+    fn unsigned_runtime_marker_never_creates_a_receipt_or_chain_head() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let action_id = Uuid::now_v7();
+        runtime.store_unsigned_runtime_marker(action_id, "signer_unavailable").unwrap();
+        assert_eq!(db.query_row("SELECT COUNT(*) FROM receipt_records", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        assert_eq!(db.query_row("SELECT COUNT(*) FROM receipt_chain_heads", [], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        assert_eq!(db.query_row("SELECT detail_code FROM receipt_runtime_diagnostics WHERE action_id=?1", [action_id.to_string()], |row| row.get::<_, String>(0)).unwrap(), "signer_unavailable");
+    }
+
+    #[test]
     fn startup_recovery_expires_only_intents_and_never_synthesizes_success() {
         let mut db = Connection::open_in_memory().unwrap();
         install_schema(&db).unwrap();
@@ -1217,6 +1254,50 @@ mod tests {
         assert!(matches!(recover_database(&mut db), Err(RuntimeError::Code("schema_violation"))));
         assert_eq!(db.query_row("SELECT phase FROM receipt_runtime_guard WHERE id=1", [], |row| row.get::<_, String>(0)).unwrap(), "read_only_recovery");
         assert_eq!(db.query_row("SELECT detail_code FROM receipt_runtime_diagnostics LIMIT 1", [], |row| row.get::<_, String>(0)).unwrap(), "orphan_terminal_receipt");
+    }
+
+    #[test]
+    fn recovery_matrix_covers_all_eight_pre_started_post_combinations() {
+        let cases = [
+            (false, false, false, false, false),
+            (false, false, true, true, true),
+            (true, false, false, false, false),
+            (true, false, true, false, false),
+            (true, true, false, false, false),
+            (true, true, true, false, false),
+            (false, true, false, true, true),
+            (false, true, true, true, true),
+        ];
+        for (pre, started, post, expect_safe_mode, expect_pending) in cases {
+            let mut db = Connection::open_in_memory().unwrap();
+            install_schema(&db).unwrap();
+            if !pre && !started && !post {
+                assert_eq!(recover_database(&mut db).unwrap(), 0);
+                continue;
+            }
+            let signer = TestSigner;
+            let request = request(PolicyDecision::Allow);
+            let id = request.action_id;
+            {
+                let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+                runtime.prepare(request.clone()).unwrap();
+                if started || post {
+                    runtime.mark_started(id).unwrap();
+                    runtime.mark_returned(id).unwrap();
+                    if post { runtime.complete(&request, "succeeded", &"a".repeat(64), None).unwrap(); }
+                }
+            }
+            db.execute("UPDATE receipt_actions SET state='prepared',dispatch_state=?2,terminal_receipt_hash=NULL,pre_receipt_hash=CASE WHEN ?3 THEN pre_receipt_hash ELSE NULL END WHERE action_id=?1", params![id.to_string(), if started { "started" } else { "not_started" }, pre]).unwrap();
+            if !pre { db.execute("DELETE FROM receipt_records WHERE action_id=?1 AND receipt_kind='pre_action'", [id.to_string()]).unwrap(); }
+            let recovery = recover_database(&mut db);
+            assert_eq!(recovery.is_err(), expect_safe_mode, "case pre={pre} started={started} post={post}");
+            if expect_safe_mode {
+                assert_eq!(db.query_row("SELECT phase FROM receipt_runtime_guard WHERE id=1", [], |row| row.get::<_, String>(0)).unwrap(), "read_only_recovery");
+            } else {
+                let state: String = db.query_row("SELECT state FROM receipt_actions WHERE action_id=?1", [id.to_string()], |row| row.get(0)).unwrap();
+                if expect_pending { assert_eq!(state, "pending_recovery"); } else if post { assert_eq!(state, "succeeded"); } else { assert_eq!(state, "pending_recovery"); }
+            }
+        }
     }
 
     #[test]
