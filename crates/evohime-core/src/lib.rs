@@ -3562,6 +3562,7 @@ impl ToolAgent {
             input: input.clone(),
             policy_decision: ReceiptPolicyDecision::ApprovalRequired,
             approval_id: Some(approval_id),
+            parent_approval_ref: None,
             preview: serde_json::to_string(preview).unwrap_or_else(|_| "approval".to_owned()),
         };
         let mut database = journal.database().lock().await;
@@ -3578,7 +3579,7 @@ impl ToolAgent {
         &self, task_id: &str, tool: &str, scope: &str, input: &serde_json::Value, preview: &evohime_permissions::ApprovalPreview,
     ) -> Result<Option<ReceiptActionRequest>, String> {
         let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else { return Ok(None); };
-        let request = ReceiptActionRequest { action_id: Uuid::now_v7(), task_id: task_id.to_owned(), run_id: task_id.to_owned(), tool_name: tool.to_owned(), policy_id: "permission-v1".into(), normalized_scope: scope.to_owned(), input: input.clone(), policy_decision: ReceiptPolicyDecision::Allow, approval_id: None, preview: serde_json::to_string(preview).unwrap_or_else(|_| "read".into()) };
+        let request = ReceiptActionRequest { action_id: Uuid::now_v7(), task_id: task_id.to_owned(), run_id: task_id.to_owned(), tool_name: tool.to_owned(), policy_id: "permission-v1".into(), normalized_scope: scope.to_owned(), input: input.clone(), policy_decision: ReceiptPolicyDecision::Allow, approval_id: None, parent_approval_ref: None, preview: serde_json::to_string(preview).unwrap_or_else(|_| "read".into()) };
         let mut database = journal.database().lock().await;
         let signer = CoreReceiptSigner(Arc::clone(keys));
         let runtime = ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| e.to_string())?;
@@ -3602,7 +3603,7 @@ impl ToolAgent {
                 action_id: Uuid::nil(), task_id: task_id.to_owned(), run_id: task_id.to_owned(),
                 tool_name: tool.to_owned(), policy_id: permission.to_owned(), normalized_scope: scope.to_owned(),
                 input: input.clone(), policy_decision: ReceiptPolicyDecision::ApprovalRequired,
-                approval_id: Some(approval_id), preview: String::new(),
+                approval_id: Some(approval_id), parent_approval_ref: None, preview: String::new(),
             }));
         };
         let action_id = {
@@ -3616,6 +3617,7 @@ impl ToolAgent {
             action_id, task_id: task_id.to_owned(), run_id: task_id.to_owned(), tool_name: tool.to_owned(),
             policy_id: format!("permission:{permission}"), normalized_scope: scope.to_owned(), input: input.clone(),
             policy_decision: ReceiptPolicyDecision::ApprovalRequired, approval_id: Some(approval_id),
+            parent_approval_ref: None,
             preview: serde_json::to_string(preview).unwrap_or_else(|_| "approval".to_owned()),
         };
         let mut database = journal.database().lock().await;
@@ -3649,6 +3651,7 @@ impl ToolAgent {
             action_id, task_id: task_id.to_owned(), run_id: task_id.to_owned(), tool_name: tool.to_owned(),
             policy_id: format!("permission:{permission}"), normalized_scope: scope.to_owned(), input: input.clone(),
             policy_decision: ReceiptPolicyDecision::ApprovalRequired, approval_id: Some(approval_id),
+            parent_approval_ref: None,
             preview: serde_json::to_string(preview).unwrap_or_else(|_| "approval".to_owned()),
         };
         let signer = CoreReceiptSigner(Arc::clone(keys));
@@ -3667,7 +3670,7 @@ impl ToolAgent {
         match preflight {
             evohime_tool_runtime::ToolPreflightDecision::Denied(permission) => {
                 if let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) {
-                    let request = ReceiptActionRequest { action_id: Uuid::now_v7(), task_id: context.task_id.to_string(), run_id: context.task_id.to_string(), tool_name: name.to_owned(), policy_id: "permission-v1".into(), normalized_scope: String::new(), input: input.clone(), policy_decision: ReceiptPolicyDecision::Deny, approval_id: None, preview: String::new() };
+                    let request = ReceiptActionRequest { action_id: Uuid::now_v7(), task_id: context.task_id.to_string(), run_id: context.task_id.to_string(), tool_name: name.to_owned(), policy_id: "permission-v1".into(), normalized_scope: String::new(), input: input.clone(), policy_decision: ReceiptPolicyDecision::Deny, approval_id: None, parent_approval_ref: None, preview: String::new() };
                     let mut database = journal.database().lock().await;
                     let signer = CoreReceiptSigner(Arc::clone(keys));
                     if let Ok(runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) { let _ = runtime.prepare(request); }

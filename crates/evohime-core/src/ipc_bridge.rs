@@ -370,7 +370,7 @@ impl IpcBridge {
                 };
                 let receipt_request = evohime_receipts::runtime::ActionRequest {
                     action_id, task_id, run_id, tool_name, policy_id, normalized_scope,
-                    input, policy_decision, approval_id: None, preview: "unknown result closure".into(),
+                    input, policy_decision, approval_id: None, parent_approval_ref: None, preview: "unknown result closure".into(),
                 };
                 let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
                 let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
@@ -2971,7 +2971,7 @@ impl IpcBridge {
     ) -> Result<evohime_tool_runtime::ToolResult, evohime_tool_runtime::ToolError> {
         match self.tools.as_ref().ok_or_else(|| evohime_tool_runtime::ToolError::Execution("Terminal tools are not configured".into()))?.preflight(context, "shell.execute", &input).await? {
             evohime_tool_runtime::ToolPreflightDecision::Allowed { scope, preview } => {
-                let request = evohime_receipts::runtime::ActionRequest { action_id: uuid::Uuid::now_v7(), task_id: context.task_id.to_string(), run_id: context.task_id.to_string(), tool_name: "shell.execute".into(), policy_id: "permission:ShellExecute".into(), normalized_scope: scope, input: input.clone(), policy_decision: evohime_receipts::runtime::PolicyDecision::Allow, approval_id: None, preview: serde_json::to_string(&preview).unwrap_or_else(|_| "terminal".into()) };
+                let request = evohime_receipts::runtime::ActionRequest { action_id: uuid::Uuid::now_v7(), task_id: context.task_id.to_string(), run_id: context.task_id.to_string(), tool_name: "shell.execute".into(), policy_id: "permission:ShellExecute".into(), normalized_scope: scope, input: input.clone(), policy_decision: evohime_receipts::runtime::PolicyDecision::Allow, approval_id: None, parent_approval_ref: None, preview: serde_json::to_string(&preview).unwrap_or_else(|_| "terminal".into()) };
                 let mut database = self.journal.database().lock().await;
                 let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
                 let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
@@ -3060,6 +3060,7 @@ impl IpcBridge {
                         input: input.clone(),
                         policy_decision: evohime_receipts::runtime::PolicyDecision::ApprovalRequired,
                         approval_id: Some(approval_id),
+                        parent_approval_ref: None,
                         preview: serde_json::to_string(&preview).unwrap_or_else(|_| "approval".into()),
                     };
                     {
@@ -3115,7 +3116,7 @@ impl IpcBridge {
                     task_id: task_id.to_string(), run_id: task_id.to_string(), tool_name: "shell.execute".into(),
                     policy_id: "permission:ShellExecute".into(), normalized_scope: receipt_scope, input: input.clone(),
                     policy_decision: evohime_receipts::runtime::PolicyDecision::ApprovalRequired,
-                    approval_id: Some(approval_id), preview: "terminal approval".into(),
+                    approval_id: Some(approval_id), parent_approval_ref: None, preview: "terminal approval".into(),
                 })
             };
             {

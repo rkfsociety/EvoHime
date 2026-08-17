@@ -176,6 +176,7 @@ pub struct ActionRequest {
     pub input: Value,
     pub policy_decision: PolicyDecision,
     pub approval_id: Option<Uuid>,
+    pub parent_approval_ref: Option<String>,
     pub preview: String,
 }
 
@@ -244,6 +245,7 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
            dispatch_state TEXT NOT NULL CHECK(dispatch_state IN ('not_started','started','returned')),
            approval_id TEXT,
            approval_call_hash TEXT,
+           parent_approval_ref TEXT,
            pre_receipt_hash TEXT,
            terminal_receipt_hash TEXT,
            recovery_code TEXT,
@@ -314,6 +316,7 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
         ("receipt_actions", "reconciliation_action_id", "TEXT"),
         ("receipt_actions", "reconciles_action_id", "TEXT"),
         ("receipt_actions", "completion_source", "TEXT NOT NULL DEFAULT 'execution'"),
+        ("receipt_actions", "parent_approval_ref", "TEXT"),
     ] {
         let exists: Option<String> = connection.query_row(
             &format!("SELECT name FROM pragma_table_info('{table}') WHERE name='{column}'"),
@@ -360,6 +363,9 @@ fn build_payload(request: &ActionRequest, kind: &str, status: &str, args_hash: &
     if let Some(value) = result { object.insert("result_hash".into(), Value::String(value.into())); }
     if let Some(value) = refusal { object.insert("refusal_code".into(), Value::String(value.into())); }
     if let Some(id) = request.approval_id { object.insert("approval_id".into(), Value::String(id.to_string())); }
+    if kind != "post_action" {
+        if let Some(parent) = request.parent_approval_ref.as_deref() { object.insert("parent_approval_ref".into(), Value::String(parent.into())); }
+    }
     payload
 }
 
@@ -411,6 +417,7 @@ impl<'a> ReceiptRuntime<'a> {
         if phase != "ready" { return Err(RuntimeError::Code("pending_recovery")); }
         if request.action_id.get_version_num() != 7 { return Err(RuntimeError::Code("schema_violation")); }
         request.preview = bounded_preview(&request.preview);
+        if request.parent_approval_ref.as_ref().is_some_and(|value| value.is_empty() || value.len() > 256) { return Err(RuntimeError::Code("schema_violation")); }
         let args_hash = canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input)?;
         let tx = self.connection.unchecked_transaction()?;
         if tx.query_row("SELECT 1 FROM receipt_actions WHERE action_id=?1", [request.action_id.to_string()], |_| Ok(1)).optional()?.is_some() {
@@ -420,7 +427,7 @@ impl<'a> ReceiptRuntime<'a> {
         if pending >= MAX_PENDING_ACTIONS { return Err(RuntimeError::Code("pending_limit")); }
         let action = request.action_id.to_string();
         let initial_state = if matches!(request.policy_decision, PolicyDecision::ApprovalRequired) { "awaiting_approval" } else { "prepared" };
-        tx.execute("INSERT INTO receipt_actions(schema_version,action_id,task_id,run_id,tool_name,normalized_scope,fingerprint_input_version,tool_args_hash,policy_id,policy_decision,state,dispatch_state,approval_id,approval_call_hash) VALUES(1,?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'not_started',?11,?7)", params![action, request.task_id, request.run_id, request.tool_name, request.normalized_scope, crate::FINGERPRINT_INPUT_VERSION, args_hash, request.policy_id, request.policy_decision.as_str(), initial_state, request.approval_id.map(|v|v.to_string())])?;
+        tx.execute("INSERT INTO receipt_actions(schema_version,action_id,task_id,run_id,tool_name,normalized_scope,fingerprint_input_version,tool_args_hash,policy_id,policy_decision,state,dispatch_state,approval_id,approval_call_hash,parent_approval_ref) VALUES(1,?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'not_started',?11,?7,?12)", params![action, request.task_id, request.run_id, request.tool_name, request.normalized_scope, crate::FINGERPRINT_INPUT_VERSION, args_hash, request.policy_id, request.policy_decision.as_str(), initial_state, request.approval_id.map(|v|v.to_string()), request.parent_approval_ref])?;
         match request.policy_decision {
             PolicyDecision::Deny => {
                 let (hash, _) = signed_receipt(&tx, self.signer, &request, "refusal", "refused", &args_hash, None, Some("policy_denied"))?;
@@ -660,7 +667,7 @@ mod tests {
     }
 
     fn request(policy: PolicyDecision) -> ActionRequest {
-        ActionRequest { action_id: Uuid::now_v7(), task_id:"task-1".into(), run_id:"run-1".into(), tool_name:"filesystem.write".into(), policy_id:"policy-v1".into(), normalized_scope:"workspace".into(), input:json!({"path":"a.txt","content":"x"}), policy_decision:policy, approval_id:None, preview:"write a file".into() }
+        ActionRequest { action_id: Uuid::now_v7(), task_id:"task-1".into(), run_id:"run-1".into(), tool_name:"filesystem.write".into(), policy_id:"policy-v1".into(), normalized_scope:"workspace".into(), input:json!({"path":"a.txt","content":"x"}), policy_decision:policy, approval_id:None, parent_approval_ref:None, preview:"write a file".into() }
     }
 
     #[test]
