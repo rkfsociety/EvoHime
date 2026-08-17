@@ -419,6 +419,16 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
            state TEXT NOT NULL CHECK(state IN ('running','completed','failed')),
            updated_at_ms INTEGER NOT NULL
          );
+         CREATE TABLE IF NOT EXISTS receipt_storage_rotation_audit (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           job_id TEXT NOT NULL,
+           cursor TEXT NOT NULL,
+           old_key_id TEXT NOT NULL,
+           new_key_id TEXT NOT NULL,
+           processed_count INTEGER NOT NULL,
+           outcome TEXT NOT NULL CHECK(outcome IN ('batch_committed','completed','failed')),
+           created_at_ms INTEGER NOT NULL
+         );
          INSERT OR IGNORE INTO receipt_runtime_guard(id,phase,generation,updated_at_ms)
            VALUES(1,'ready',0,0);",
     )?;
@@ -868,21 +878,35 @@ impl<'a> ReceiptRuntime<'a> {
         };
         if rows.is_empty() {
             self.connection.execute("UPDATE receipt_storage_rotation SET state='completed',updated_at_ms=?1 WHERE id=1", [now_ms()])?;
+            self.connection.execute("INSERT INTO receipt_storage_rotation_audit(job_id,cursor,old_key_id,new_key_id,processed_count,outcome,created_at_ms) VALUES(?1,?2,?3,?4,0,'completed',?5)", params![job_id, cursor, old_key_id, new_key_id, now_ms()])?;
             return Ok(false);
         }
         let mut replacement = Vec::with_capacity(rows.len());
         for (action_id, envelope) in rows {
-            let next = rewrap(&envelope)?;
-            if next.len() > MAX_PROTECTED_ROW_BYTES { return Err(RuntimeError::Code("storage_key_unavailable")); }
+            let next = match rewrap(&envelope) {
+                Ok(value) => value,
+                Err(error) => {
+                    self.connection.execute("UPDATE receipt_storage_rotation SET state='failed',updated_at_ms=?1 WHERE id=1", [now_ms()])?;
+                    self.connection.execute("INSERT INTO receipt_storage_rotation_audit(job_id,cursor,old_key_id,new_key_id,processed_count,outcome,created_at_ms) VALUES(?1,?2,?3,?4,0,'failed',?5)", params![job_id, cursor, old_key_id, new_key_id, now_ms()])?;
+                    return Err(error);
+                }
+            };
+            if next.len() > MAX_PROTECTED_ROW_BYTES {
+                self.connection.execute("UPDATE receipt_storage_rotation SET state='failed',updated_at_ms=?1 WHERE id=1", [now_ms()])?;
+                self.connection.execute("INSERT INTO receipt_storage_rotation_audit(job_id,cursor,old_key_id,new_key_id,processed_count,outcome,created_at_ms) VALUES(?1,?2,?3,?4,0,'failed',?5)", params![job_id, cursor, old_key_id, new_key_id, now_ms()])?;
+                return Err(RuntimeError::Code("storage_key_unavailable"));
+            }
             replacement.push((action_id, next));
         }
         let tx = self.connection.unchecked_transaction()?;
         let mut last = String::new();
+        let processed_count = replacement.len() as i64;
         for (action_id, envelope) in replacement {
             tx.execute("UPDATE receipt_protected_actions SET key_id=?2,envelope=?3 WHERE action_id=?1", params![action_id, new_key_id, envelope])?;
             last = action_id;
         }
         tx.execute("UPDATE receipt_storage_rotation SET cursor=?1,state='running',updated_at_ms=?2 WHERE id=1", params![last, now_ms()])?;
+        tx.execute("INSERT INTO receipt_storage_rotation_audit(job_id,cursor,old_key_id,new_key_id,processed_count,outcome,created_at_ms) VALUES(?1,?2,?3,?4,?5,'batch_committed',?6)", params![job_id, last, old_key_id, new_key_id, processed_count, now_ms()])?;
         tx.commit()?;
         Ok(true)
     }
@@ -1137,8 +1161,12 @@ mod tests {
             plain.key_id = "new".into();
             protect_action_row(&plain, &[2u8; 32])
         }).unwrap());
-        assert_eq!(runtime.load_protected_action(action_id, &[2u8; 32]).unwrap().key_id, "new");
-        assert!(runtime.load_protected_action(action_id, &[1u8; 32]).is_err());
+        let rewrapped_key_id = runtime.load_protected_action(action_id, &[2u8; 32]).unwrap().key_id;
+        let old_key_rejected = runtime.load_protected_action(action_id, &[1u8; 32]).is_err();
+        drop(runtime);
+        assert_eq!(db.query_row("SELECT COUNT(*) FROM receipt_storage_rotation_audit WHERE job_id='job-1'", [], |row| row.get::<_, i64>(0)).unwrap(), 2);
+        assert_eq!(rewrapped_key_id, "new");
+        assert!(old_key_rejected);
     }
 
     #[test]
