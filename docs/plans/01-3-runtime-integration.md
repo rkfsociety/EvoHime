@@ -27,6 +27,14 @@
 | `post_action` | `action_id`, terminal status, `tool_args_hash`, `result_hash`, policy fields | `refusal_code`, `parent_approval_ref` | approval binding переносится из pre, если он был |
 | `refusal` | `action_id`, `action_status=refused`, `tool_args_hash`, policy fields, `refusal_code` | `result_hash` | approval refs только для отказа существующего approval |
 
+`policy_decision` — закрытый enum `allow | deny | approval_required`.
+`allow` разрешает dispatch только после durable pre; `deny` создаёт terminal
+signed refusal с `policy_denied`; `approval_required` создаёт bounded intent и
+не может создавать pre или запускать tool до успешного one-shot claim.
+`action_status=prepared` допустим только для `allow` или успешно claimed
+`approval_required`; `deny` никогда не создаёт prepared action. Неизвестное
+значение policy decision является `receipt.schema_violation`.
+
 Канонизация receipt выполняется в два строго разделённых шага. Сначала Core
 строит `canonical_payload` со всеми полями payload, включая
 `previous_receipt_hash`, и вычисляет `payload_hash = SHA-256(canonical_payload)`.
@@ -56,8 +64,14 @@ SHA-256 от:
 
     tool_name + "\n" + normalized_scope + "\n" + fingerprint_input(input)
 
-Порядок object keys, scope normalization и fingerprint rules берутся из
-PermissionEngine; 01.3 не реализует параллельный hash. Approval request.call_hash
+`normalized_scope` — результат единственного вызова
+`PermissionEngine::normalize_scope(scope)`: UTF-8 canonical representation без
+неопределённого порядка полей, с нормализованными разделителями и правилами
+путей/идентификаторов, определёнными PermissionEngine. Core не trim-ит, не
+lowercase-ит и не меняет scope самостоятельно; при невозможности нормализации
+запрос отвергается до hash. Набор canonical scope vectors PermissionEngine
+является нормативным источником. Порядок object keys и fingerprint rules берутся
+из PermissionEngine; 01.3 не реализует параллельный hash. Approval request.call_hash
 обязан побайтно совпадать с tool_args_hash. Этот digest связывает approval
 preview, pre receipt, execution claim и post/refusal receipt.
 
@@ -140,6 +154,10 @@ TTL v1 — **10 минут** от создания approval. В persisted intent
 `created_wall_at_ms`, `expires_at_ms`, `clock_boot_id`, `created_monotonic_ms` и
 `deadline_monotonic_ms`. В течение одного boot authorization claim использует
 только `deadline_monotonic_ms`; sleep/hibernate считаются прошедшим временем.
+`clock_boot_id` — стабильный идентификатор OS boot session, полученный через
+platform clock API, а не случайный process id; Core проверяет его при каждом
+расчёте monotonic deadline. Если платформа не предоставляет надёжный boot id,
+Core не создаёт новый approval intent и возвращает fail-closed runtime error.
 После restart новый monotonic epoch не сопоставляется со старым: Core проверяет
 `expires_at_ms` по wall clock только как fail-closed recovery boundary. Если
 wall clock ушёл назад, timestamp повреждён или boot identity не совпадает,
@@ -186,6 +204,22 @@ result marker. При
 коллизии action id или lock failure до pre tool не запускается.
 Повторный retry не может выполнить mutation дважды. Failure после claim не
 возвращает approval: новая попытка получает новый action_id и новый approval.
+
+### Migration existing approvals
+
+При миграции из PermissionEngine Core не переносит in-memory approvals и не
+считает старый grant действующим автоматически. Версионированный migration
+step читает только pending durable records, для которых доступны task/session,
+tool, permission, normalized scope, exact call hash, created/expires timestamps
+и policy snapshot. Для каждой полной записи в одной transaction создаются новый
+`receipt_actions` row и связанный `receipt_approval_intents` row с новым
+`approval_id`; исходный идентификатор сохраняется только как
+`legacy_approval_ref`, а новый claim всё равно требует
+нового Core approval и повторной проверки current policy. Неполные, истёкшие
+или неаутентифицированные записи помечаются `lost`, не создают intent и не
+могут запускать tool. Migration сохраняет bounded count/audit marker, не
+переносит raw input/secrets и является idempotent по
+`migration_version + legacy_approval_ref`.
 
 ## Receipt state machine
 
@@ -244,6 +278,15 @@ diagnostics — не более 512 bytes, только enum-коды и counter
 stdout/stderr, paths и raw results запрещены. Превышение bound отбрасывает
 контент, но не action.
 
+`bounded result marker` — canonical JSON row не более **256 bytes** с полями
+`schema_version=1`, `result_status=success|failed|cancelled`,
+`result_hash` (lowercase SHA-256), `error_category` (enum или `null`),
+`returned_at_ms` и `output_present` (boolean). Он хранится в
+`receipt_actions`/protected action row только для recovery и не содержит raw
+output, error text, paths или provider metadata. Если marker не помещается в
+лимит или не проходит schema validation, Core сохраняет `pending_recovery` с
+`recovery_code=external_error`, а не создаёт synthetic result.
+
 Лимит 1024 pending actions на task ограничивает память и незавершённые
 approval rows; при достижении Core возвращает `receipt.pending_limit` и
 backpressure event с текущим count/limit. Лимит конфигурируется только через
@@ -294,15 +337,25 @@ head и action index. Для pre эта transaction также содержит 
 управление, action остаётся pending_recovery), возвращается
 `receipt.chain_conflict` и создаётся durable diagnostic event; автоматический
 fallback без цепочного receipt запрещён. Отдельный Core receipt-writer mutex —
-process-local mutex singleton внутри одного Core instance; межпроцессную
-сериализацию отдельно обеспечивает SQLite locking, а второй Core instance не
-является поддержанным владельцем этой БД. Mutex охватывает весь критический
-участок от чтения chain
+оптимизация внутри одного Core instance, а не гарантия корректности.
+Единственным владельцем events.db является Core, запущенный supervisor; второй
+Core instance отклоняется по launch context до открытия writer path. Источником
+межпроцессной сериализации остаётся SQLite `BEGIN IMMEDIATE`. Mutex охватывает
+критический участок от чтения chain
 head до SQLite commit, включая predecessor verification, signing, receipt
 insert, action-index update и head update. Поэтому concurrent actions
 получают детерминированный порядок commit, а post receipt не обязан быть
 соседним с собственным pre: связь пары идёт через action_id и receipt_actions,
 chain — через previous_receipt_hash.
+
+Перед append writer сверяет `receipt_chain_heads` с последним durable receipt
+для этого key id. Отсутствующий head для пустого сегмента допускается только
+для genesis; несовпадение head/last receipt, неизвестный key id или нарушение
+`previous_receipt_hash` создаёт `receipt.schema_violation`, переводит Core в
+`read_only_recovery` и запрещает repair/rewrite chain. `SQLITE_BUSY` считается
+временным только в пределах трёх lock retries; превышение лимита даёт
+`receipt.chain_conflict` и метрику busy/retry, но не выполняет fallback без
+receipt.
 
 Receipt transaction и action state commit происходят до IPC event. События
 receipt.prepared, receipt.completed, receipt.refused и
@@ -460,6 +513,21 @@ deterministic sample:
 полные signed receipts; sampling может влиять только на успешные read-only
 actions.
 
+## Monitoring
+
+Core публикует только bounded counters/histograms без task input, arguments или
+result text: `receipt_pre_latency_ms`, `receipt_post_latency_ms`,
+`receipt_append_latency_ms`, `receipt_append_busy_retries`,
+`receipt_chain_conflicts`, `receipt_schema_violations`,
+`approval_pending_count`, `pending_recovery_count`, `quarantined_count`,
+`approval_gc_deleted_count`, `recovery_duration_ms`, `recovery_safe_mode` и
+`read_only_sampled_count`. Метрики имеют labels только для stable enum
+`policy_decision`, `action_status`, `refusal_code`, `recovery_code` и bounded
+tool category. Core/IPC diagnostics возвращают текущие counts, а не raw rows;
+превышение лимита pending actions, рост recovery/quarantine или вход в
+`read_only_recovery` создают bounded alert event. Мониторинг не является
+источником истины: receipts и action rows остаются в SQLite.
+
 ## Recovery procedure
 
 При старте Core до принятия новых mutations:
@@ -470,9 +538,11 @@ actions.
 2. открыть SQLite journal и выполнить bounded integrity check: `PRAGMA
    quick_check(100)` в read-only connection с лимитом **2 секунды** и максимумом
    100 диагностических строк; любое отличие от ровно `ok`, timeout или ошибка
-   чтения означает повреждённое/не готовое хранилище, блокирует новые mutations
-   и требует восстановления из backup. Recovery не чинит SQLite на месте и не
-   переписывает chain;
+   чтения переводит Core в `read_only_recovery` safe mode: новые mutations,
+   ApprovalGC и chain writes блокируются, но разрешены status/diagnostics,
+   export и backup/restore commands. Core не чинит SQLite на месте и не
+   переписывает chain; выход из safe mode возможен только после успешной
+   повторной проверки восстановленной копии;
 3. найти actions в prepared/internal pending_recovery;
 4. сопоставить receipt rows по action id, проверить signature/canonical bytes/
    chain predecessor;
@@ -596,6 +666,15 @@ tool dispatch, tool return, post append и head update. В каждой точк
   исходных bytes в marker/preview и сохранение лимита 1024 bytes;
 - policy-gate tests меняют policy между Prepare и claim и подтверждают, что
   claim использует current policy, а старый approval не обходит новый deny;
+- policy/scope vectors проверяют только `allow|deny|approval_required`,
+  canonical `normalize_scope` PermissionEngine и отказ при неизвестном decision;
+- approval migration tests проверяют idempotent versioned import, новый
+  approval_id, `legacy_approval_ref`, discard неполных/истёкших grants и
+  отсутствие автоматического dispatch;
+- head-integrity tests проверяют genesis-only empty head, mismatch head/last
+  receipt, unknown key id, busy retry budget и переход в read-only safe mode;
+- monitoring tests проверяют bounded latency/throughput, pending/recovery/
+  quarantine counters и отсутствие raw labels;
 
 ## Критерии готовности
 
@@ -606,6 +685,8 @@ tool dispatch, tool return, post append и head update. В каждой точк
   current policy recheck, one-shot claim и двухфазный IPC;
 - `receipt_hash` строится после подписания canonical payload envelope, а
   `payload_hash` и envelope signature не смешиваются в циклической формуле;
+- `policy_decision`, `normalized_scope` и bounded result marker имеют
+  фиксированные enum/форматы, лимиты и shared vectors;
 - SQLite receipt/action tables, chain-head transaction и recovery procedure
   задокументированы и проходят crash/concurrency tests;
 - `receipt_approval_intents.action_id` имеет обязательную связь с
@@ -614,8 +695,8 @@ tool dispatch, tool return, post append и head update. В каждой точк
 - bounded protected action row имеет фиксированный формат, лимит 512 bytes,
   authenticated protection и удаляется только вместе с terminal receipt;
 - bounded recovery integrity check использует `PRAGMA quick_check(100)` с
-  двухсекундным лимитом, не выполняет in-place repair и блокирует mutations при
-  failure;
+  двухсекундным лимитом, не выполняет in-place repair и переводит Core в
+  read-only safe mode при failure;
 - recovery vectors покрывают внешний side effect до/после crash, оба
   authenticated reconciliation flow и отсутствие автоматического повторного
   mutation;
@@ -634,6 +715,11 @@ tool dispatch, tool return, post append и head update. В каждой точк
 - `recovery_code` ограничен enum `signature_failed | external_error | unknown`,
   protected action row использует AES-256-GCM и ApprovalGC очищает только
   истёкшие intents по описанному TTL;
+- post receipt использует фактический head на момент собственного append,
+  проверяется как самостоятельный chain segment, а связь с pre всегда
+  подтверждается `action_id`/action row без требования соседства;
+- bounded monitoring покрывает latency, throughput/busy retries,
+  pending/recovery/quarantine counts и safe-mode state без raw данных;
 - после restart ни один pending action не объявляется success и mutation не
   повторяется автоматически;
 - recovery matrix, bounded diagnostics, schema_version и key-rotation boundary
