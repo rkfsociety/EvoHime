@@ -86,8 +86,14 @@ SQLite-источник переходов и audit, journaled rotation/recovery
 trusted genesis, signed checkpoint contract и `evohime-verify.exe`. Core
 публикует renderer только bounded status/key metadata; private material не
 выходит из Core. JSONL history является post-commit snapshot с manifest и
-статусом stale при ошибке экспорта. Runtime orchestration и receipt signing
-остаются следующими этапами 01.3–01.4.
+статусом stale при ошибке экспорта. Runtime orchestration 01.3 теперь
+выполняется Core-owned `ReceiptRuntime`: mutation path использует durable
+`pre_action` до dispatch, approval хранится как bounded one-shot intent, а
+terminal post/refusal append-ятся в SQLite hash-chain. Startup recovery
+устанавливает guard, истекает старые approval intents и переводит незакрытые
+вызовы в `pending_recovery`; raw input/result в receipt runtime не сохраняются.
+Retention/compaction receipt chain по-прежнему относится к отдельному этапу
+01.4.
 
 ## Context Budget Manager
 
