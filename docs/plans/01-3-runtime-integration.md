@@ -164,7 +164,10 @@ sleep/resume и перевод часов не должны продлить TTL
 1. authenticated session/task check;
 2. exact tool, permission и normalized scope comparison;
 3. recompute canonical_call_hash from current input;
-4. current hard-deny/policy check;
+4. current hard-deny/policy check. Policy из claim-time является
+   authoritative: policy snapshot/digest из Prepare сохраняется только для
+   аудита, а при изменении policy Core повторно применяет новую версию и не
+   считает старое approval разрешением обхода;
 5. approval state and TTL check;
 6. signer trust/availability check.
 
@@ -174,7 +177,12 @@ Claim, durable pre receipt и обновление `receipt_actions` выпол�
 Эта транзакция не охватывает permission wait, IPC, signer retry или выполнение
 tool. Post receipt и перевод action в terminal state выполняются в другой
 короткой `BEGIN IMMEDIATE` transaction с обновлением той же строки
-`receipt_actions`; tool execution не удерживает SQLite transaction. При
+`receipt_actions`; tool execution не удерживает SQLite transaction. Непосредственно
+перед вызовом tool Core в отдельной короткой transaction меняет
+`dispatch_state=not_started` на `dispatch_state=started` и записывает
+`tool_started_at_ms`; только после durable commit этой строки выполняется
+dispatch. Возврат tool меняет состояние на `returned` вместе с bounded
+result marker. При
 коллизии action id или lock failure до pre tool не запускается.
 Повторный retry не может выполнить mutation дважды. Failure после claim не
 возвращает approval: новая попытка получает новый action_id и новый approval.
@@ -192,6 +200,7 @@ tool. Post receipt и перевод action в terminal state выполняют
     refused             ─> terminal
     succeeded/failed/cancelled ─> terminal
     pending_recovery    ─> post terminal или explicit refusal after reconciliation
+    quarantined         ─> manual recovery only
 
 `pending_recovery` — internal action-store state, не новый receipt kind или
 автоматически создаваемый signed refusal. `recovery_code` — закрытый enum
@@ -225,8 +234,12 @@ Receipt не утверждает correctness результата, что tool 
 
 `bounded preview` означает UTF-8 не более 1024 bytes, с truncation только по
 границе Unicode scalar value и суффиксом `[truncated]`; исходный input никогда
-не сохраняется. Preview проходит тот же case-insensitive secret-like scan, а
-секретные значения заменяются на `[REDACTED]` до truncation. Recovery/error
+не сохраняется. Перед scan входные bytes декодируются как UTF-8 в режиме
+replacement: каждая некорректная последовательность заменяется одним `U+FFFD`,
+а bounded diagnostic marker получает `invalid_utf8=true`. Исходные bytes не
+попадают ни в preview, ни в marker. Preview проходит тот же
+case-insensitive secret-like scan, а секретные значения заменяются на
+`[REDACTED]` до truncation. Recovery/error
 diagnostics — не более 512 bytes, только enum-коды и counters; error text,
 stdout/stderr, paths и raw results запрещены. Превышение bound отбрасывает
 контент, но не action.
@@ -246,14 +259,30 @@ append-only таблицах:
   canonical payload/envelope blobs, receipt hash, previous hash, timestamp;
 - receipt_actions: action id, pre receipt hash, terminal receipt hash,
   current internal state, approval id, approval call hash, approval outcome,
-  tool args hash и bounded recovery code;
+  tool args hash, `dispatch_state=not_started|started|returned`,
+  `tool_started_at_ms`, bounded result marker и bounded recovery code;
 - receipt_chain_heads: один head на key id с последним receipt hash;
-- receipt_approval_intents: bounded pending intents, TTL и recovery marker.
+- receipt_approval_intents: bounded pending intents, TTL и recovery marker;
+  `action_id` — обязательный foreign key на `receipt_actions(action_id)`,
+  `approval_id` уникален, а terminal decision записывается в обе строки одной
+  transaction. Intent не может существовать без action и не может ссылаться
+  на другой action после claim;
+- receipt_runtime_guard: singleton row для фаз `recovery_in_progress` и
+  `ready`, generation/owner/timestamps и последнего GC run.
 
 В одном task допускается не более **1024** одновременно pending actions или
 approval intents; превышение возвращает receipt.pending_limit до запуска tool.
 Размер каждой receipt ограничен 01.1, поэтому writer не принимает blobs вне
 canonical envelope bounds.
+
+`bounded approval intent` — это одна SQLite row размером не более **4096 bytes**:
+UUID `approval_id` и `action_id`, task/session/tool identifiers в пределах
+256 bytes каждый, permission и normalized scope не более 2048 bytes суммарно,
+64-byte lowercase `call_hash`, preview не более 1024 UTF-8 bytes, policy
+snapshot/digest, clock fields из раздела TTL и enum state. Raw input, raw
+arguments, secrets и result в intent запрещены. Intent живёт не дольше 10
+минут, одноразово переходит `claimed|expired|denied|lost`, после чего
+удаляется только ApprovalGC по правилам ниже.
 
 Append выполняется в составе короткой SQLite `BEGIN IMMEDIATE` transaction:
 прочитать chain head, canonicalize/sign envelope, вставить receipt, обновить
@@ -289,13 +318,24 @@ Existing EventJournal остаётся projection/diagnostic sink: после re
 
 ### ApprovalGC
 
-Core запускает один bounded `ApprovalGC` после успешной проверки хранилища и
-затем не чаще одного раза в минуту. В одной короткой transaction он удаляет
+На старте Core сначала устанавливает в singleton `receipt_runtime_guard`
+`phase=recovery_in_progress` через `BEGIN IMMEDIATE` и выполняет всю Recovery
+procedure. До атомарной записи `phase=ready` ApprovalGC не запускается. Каждый
+проход GC в одной короткой transaction повторно проверяет `phase=ready`,
+generation и отсутствие recovery lease; поэтому GC и Recovery не могут удалить
+один intent одновременно. Если Recovery стартует во время ожидания GC, она
+увеличивает generation, а GC откатывает удаление и повторяет проход позже.
+
+После успешной проверки хранилища и только при `phase=ready` Core запускает
+один bounded `ApprovalGC` не чаще одного раза в минуту. В одной короткой
+transaction он удаляет
 только истёкшие `receipt_approval_intents` в состояниях `expired`, `lost` или
 `claimed`, если с момента terminal decision прошло не менее 10 минут, и
 сохраняет aggregate audit marker `{run_id, deleted_count, cutoff_ms}` без raw
 данных. Pending intents, связанные с `pending_recovery`, не удаляются до
-authenticated closure. GC не удаляет `receipt_records`, `receipt_actions` или
+authenticated closure. При незавершённом recovery даже истёкшие intents
+остаются до следующего прохода после `phase=ready`. GC не удаляет
+`receipt_records`, `receipt_actions` или
 protected rows: их retention/compaction и срок хранения определяет 01.4.
 Сбой GC создаёт bounded diagnostic и повторяет проход на следующем интервале.
 
@@ -372,6 +412,15 @@ pending_limit=1011, action_id_conflict=1012. В signed receipt использу�
 `signer_unavailable=2006`, `key_untrusted=2007`, `recovery_pending=2008`.
 Эти aliases не сериализуются в payload и не заменяют строковый enum.
 
+Terminal signed refusal codes для state machine: `policy_denied`,
+`approval_denied`, `approval_expired`, `approval_stale`, `call_changed`,
+`key_untrusted` и `recovery_pending`. Они закрывают action в `refused` и
+повторный mutation по тому же action запрещают. `signer_unavailable`,
+`chain_conflict`, `pending_recovery` и `receipt.schema_violation` являются
+runtime/diagnostic codes, а не terminal signed refusal: при их возникновении
+без durable terminal receipt action остаётся `pending_recovery` либо
+quarantined, и Core не утверждает результат.
+
 Оба mapping-а являются частью общего
 `contracts/receipts/v1/version-manifest.json`; Rust, Electron и offline
 verifier импортируют один источник и не имеют локальных числовых таблиц.
@@ -415,23 +464,28 @@ actions.
 
 При старте Core до принятия новых mutations:
 
-1. открыть SQLite journal и выполнить bounded integrity check: `PRAGMA
+1. атомарно захватить singleton recovery guard, установить
+   `phase=recovery_in_progress` и увеличить generation; GC до этого момента
+   отключён;
+2. открыть SQLite journal и выполнить bounded integrity check: `PRAGMA
    quick_check(100)` в read-only connection с лимитом **2 секунды** и максимумом
    100 диагностических строк; любое отличие от ровно `ok`, timeout или ошибка
    чтения означает повреждённое/не готовое хранилище, блокирует новые mutations
    и требует восстановления из backup. Recovery не чинит SQLite на месте и не
    переписывает chain;
-2. найти actions в prepared/internal pending_recovery;
-3. сопоставить receipt rows по action id, проверить signature/canonical bytes/
+3. найти actions в prepared/internal pending_recovery;
+4. сопоставить receipt rows по action id, проверить signature/canonical bytes/
    chain predecessor;
-4. если post terminal уже durable, закрыть только index (idempotent replay);
-5. если post отсутствует, оставить pending, создать recovery diagnostic и
+5. если post terminal уже durable, закрыть только index (idempotent replay);
+6. если post отсутствует, оставить pending, создать recovery diagnostic и
    никогда не synthesise succeeded;
-6. восстановить persisted approval intents как expired/lost; для каждого
+7. восстановить persisted approval intents как expired/lost; для каждого
    `pending_recovery` показать выбор reconciliation/read-only check или explicit
    unknown-result refusal, а signed refusal создать только после нового
    authenticated command и при доступном trusted signer;
-7. разрешить mutation path только после signer/trust/chain readiness.
+8. только после успешного завершения шагов 1–7 атомарно установить
+   `phase=ready`; при любой ошибке guard остаётся `recovery_in_progress`, GC и
+   mutation path остаются заблокированными.
 
 ### Recovery state matrix
 
@@ -439,12 +493,19 @@ actions.
 | --- | --- | --- | --- |
 | нет | нет | нет | action не запускался; unsigned marker или signed refusal, новый запуск только новой action |
 | нет | нет | да | orphan post отвергается как `receipt.schema_violation`; chain не переписывается |
-| нет | да | нет | невозможное состояние протокола: `receipt.schema_violation`, chain не переписывается, tool не запускается повторно |
-| нет | да | да | проверить signature/chain, закрыть action idempotently |
 | да | нет | нет | pre остаётся durable; claim/intent expired, tool не запускается повторно |
 | да | нет | да | закрыть index idempotently после проверки post pairing |
 | да | да | нет | `pending_recovery`; reconciliation только новым явным action |
 | да | да | да | проверить post и chain, ровно один terminal state |
+
+Комбинации `pre durable=нет` и `tool started=да` отсутствуют из матрицы:
+они нарушают durable invariant, потому что `tool_started_at_ms` может быть
+записан только после durable pre и dispatch-state transition. Если такая строка
+обнаружена, Recovery создаёт bounded diagnostic/runtime error
+`receipt.schema_violation`, переводит action в `quarantined`, запрещает любой
+повторный dispatch и блокирует mutation path до ручного восстановления из
+backup/checkpoint. `schema_violation` не является signed receipt и не может
+закрыть action как success или refusal.
 
 `pending_recovery` публикуется наружу как bounded event
 `receipt.pending_recovery` с `action_id`, state, reason_code, timestamp и
@@ -492,6 +553,9 @@ tool dispatch, tool return, post append и head update. В каждой точк
 - exact-call tests: изменение tool, task, session, permission, scope, input,
   policy или approval id блокируется; key order equivalent input сохраняет
   call hash;
+- execution-marker tests: `tool_started_at_ms` и `dispatch_state` durable до
+  dispatch, повторный startup не запускает action повторно, а отсутствие pre
+  при `started` переводит action в `quarantined`;
 - two-phase IPC test: approval.required не блокирует pipe, retry с exact
   approval_id проходит один раз, повторный retry отклоняется;
 - TTL tests на 10 минут, monotonic-only expiry under NTP/sleep-resume, restart invalidation и
@@ -528,6 +592,10 @@ tool dispatch, tool return, post append и head update. В каждой точк
   read-only reconciliation capability и оставляет исходный pending action
   исторически видимым;
 - preview vectors покрывают emoji и combining characters на границе 1024 bytes;
+- preview vectors с invalid UTF-8 проверяют замену на `U+FFFD`, отсутствие
+  исходных bytes в marker/preview и сохранение лимита 1024 bytes;
+- policy-gate tests меняют policy между Prepare и claim и подтверждают, что
+  claim использует current policy, а старый approval не обходит новый deny;
 
 ## Критерии готовности
 
@@ -540,6 +608,9 @@ tool dispatch, tool return, post append и head update. В каждой точк
   `payload_hash` и envelope signature не смешиваются в циклической формуле;
 - SQLite receipt/action tables, chain-head transaction и recovery procedure
   задокументированы и проходят crash/concurrency tests;
+- `receipt_approval_intents.action_id` имеет обязательную связь с
+  `receipt_actions.action_id`, а terminal approval decision фиксируется
+  атомарно в обеих таблицах;
 - bounded protected action row имеет фиксированный формат, лимит 512 bytes,
   authenticated protection и удаляется только вместе с terminal receipt;
 - bounded recovery integrity check использует `PRAGMA quick_check(100)` с
@@ -548,6 +619,9 @@ tool dispatch, tool return, post append и head update. В каждой точк
 - recovery vectors покрывают внешний side effect до/после crash, оба
   authenticated reconciliation flow и отсутствие автоматического повторного
   mutation;
+- startup ordering tests подтверждают recovery guard до ApprovalGC,
+  generation/lease protection от race и отсутствие удаления intent до
+  `phase=ready`;
 - action_id, action_status, refusal_code, pre/post pairing и
   previous_receipt_hash проверяются shared vectors/schema из 01.1;
 - старый/новый key id и rotation history корректно проверяются offline;
@@ -564,5 +638,8 @@ tool dispatch, tool return, post append и head update. В каждой точк
   повторяется автоматически;
 - recovery matrix, bounded diagnostics, schema_version и key-rotation boundary
   проверены shared crash/concurrency tests;
+- Recovery явно создаёт и обрабатывает `receipt.schema_violation`,
+  `dispatch_state/tool_started_at_ms` являются durable invariant, а
+  `pre=нет, tool_started=да` не считается обычным recovery-состоянием;
 - критерий correctness ограничен фактически подписанными полями, а raw
   arguments/results/error text отсутствуют в receipt и обычных diagnostics.
