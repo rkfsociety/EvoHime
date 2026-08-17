@@ -76,7 +76,6 @@ describe('task timeline', () => {
         onChatOpened={() => {}}
         identityName={null}
         chatRevision={0}
-        onOpenGit={() => {}}
       />
     )
     expect(screen.queryByLabelText('Задача')).toBeNull()
@@ -91,7 +90,6 @@ describe('task timeline', () => {
         onChatOpened={() => {}}
         identityName={null}
         chatRevision={0}
-        onOpenGit={() => {}}
       />
     )
 
@@ -110,7 +108,6 @@ describe('task timeline', () => {
         onChatOpened={(id) => opened.push(id)}
         identityName="rkfsociety"
         chatRevision={0}
-        onOpenGit={() => {}}
       />
     )
 
@@ -140,7 +137,6 @@ describe('task timeline', () => {
         onChatOpened={() => {}}
         identityName="rkfsociety"
         chatRevision={0}
-        onOpenGit={() => {}}
       />
     )
 
@@ -173,7 +169,6 @@ describe('task timeline', () => {
         onChatOpened={() => {}}
         identityName={null}
         chatRevision={0}
-        onOpenGit={() => {}}
       />
     )
 
@@ -186,7 +181,7 @@ describe('task timeline', () => {
   })
 
   it('starts a task only through the typed bridge', async () => {
-    render(<TaskTimeline connection="connected" events={[]} workspace="C:\work\repo" chatId="chat-1" onChatTouched={() => {}} onChatOpened={() => {}} identityName={null} chatRevision={0} onOpenGit={() => {}} />)
+    render(<TaskTimeline connection="connected" events={[]} workspace="C:\work\repo" chatId="chat-1" onChatTouched={() => {}} onChatOpened={() => {}} identityName={null} chatRevision={0} />)
     await userEvent.type(await screen.findByLabelText('Задача'), 'Проверь тесты')
     await userEvent.click(screen.getByRole('button', { name: 'Запустить задачу' }))
 
@@ -208,7 +203,6 @@ describe('task timeline', () => {
         onChatOpened={() => {}}
         identityName={null}
         chatRevision={0}
-        onOpenGit={() => {}}
       />
     )
 
@@ -227,7 +221,6 @@ describe('task timeline', () => {
         onChatOpened={() => {}}
         identityName={null}
         chatRevision={0}
-        onOpenGit={() => {}}
       />
     )
 
@@ -249,7 +242,6 @@ describe('task timeline', () => {
         onChatOpened={() => {}}
         identityName={null}
         chatRevision={0}
-        onOpenGit={() => {}}
       />
     )
 
@@ -268,7 +260,6 @@ describe('task timeline', () => {
         onChatOpened={() => {}}
         identityName={null}
         chatRevision={0}
-        onOpenGit={() => {}}
       />
     )
 

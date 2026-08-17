@@ -9,7 +9,6 @@ import { UpdateIndicator } from './UpdateIndicator'
 import { UpdateGate } from './UpdateGate'
 import { ProjectSidebar } from './ProjectSidebar'
 import { TaskTimeline } from './TaskTimeline'
-import { DeveloperTools } from './DeveloperTools'
 import { EditorPanel } from './EditorPanel'
 import { SafetyPanel } from './SafetyPanel'
 import { ProviderForm } from './ProviderForm'
@@ -40,7 +39,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'files' | 'editor' | 'operations' | 'terminal' | 'safety' | 'settings'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'editor' | 'operations' | 'terminal' | 'safety' | 'settings'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -55,7 +54,6 @@ interface ViewDescriptor {
 const VIEWS: readonly ViewDescriptor[] = [
   { id: 'overview', label: 'Обзор', icon: '◉' },
   { id: 'reviews', label: 'Ревью планов', icon: '✓' },
-  { id: 'files', label: 'Файлы и Git', icon: '▤' },
   { id: 'editor', label: 'Редактор', icon: '✎' },
   { id: 'operations', label: 'Память и Pulse', icon: '◌' },
   { id: 'terminal', label: 'Терминал', icon: '❯' },
@@ -227,11 +225,9 @@ export function App(): React.JSX.Element {
               }}
               identityName={identity?.name ?? null}
               chatRevision={chatRevision}
-              onOpenGit={() => setView('files')}
             />
           ) : (
             <div className="main__scroll">
-              {view === 'files' ? <DeveloperTools connection={connection} events={events} /> : null}
               {view === 'overview' ? <OverviewPanel connection={connection} events={events} workspace={workspace} /> : null}
               {view === 'reviews' ? <PlanReviewPanel connection={connection} events={events} /> : null}
               {view === 'editor' ? <EditorPanel connection={connection} events={events} /> : null}

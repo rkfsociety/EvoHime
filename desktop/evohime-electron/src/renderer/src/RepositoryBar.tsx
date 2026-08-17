@@ -16,13 +16,11 @@ export interface RepositoryBarProps {
   readonly workspace: string
   /** Rises whenever the agent finishes work, so the counts stay current. */
   readonly refreshKey: number
-  readonly onOpenGit: () => void
 }
 
 export function RepositoryBar({
   workspace,
-  refreshKey,
-  onOpenGit
+  refreshKey
 }: RepositoryBarProps): React.JSX.Element | null {
   const api = useShellApi()
   const [repository, setRepository] = useState<RepositorySummary | null>(null)
@@ -58,9 +56,6 @@ export function RepositoryBar({
       ) : (
         <span className="repobar__clean">без изменений</span>
       )}
-      <button type="button" className="repobar__action" onClick={onOpenGit}>
-        Показать diff
-      </button>
       <button
         type="button"
         className="repobar__close"

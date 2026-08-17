@@ -30,8 +30,6 @@ export interface TaskTimelineProps {
   readonly onChatOpened: (chatId: string) => void
   readonly identityName: string | null
   readonly chatRevision: number
-  /** Opens the Files and Git section from the project row. */
-  readonly onOpenGit: () => void
 }
 
 export function TaskTimeline({
@@ -42,8 +40,7 @@ export function TaskTimeline({
   onChatTouched,
   onChatOpened,
   identityName,
-  chatRevision,
-  onOpenGit
+  chatRevision
 }: TaskTimelineProps): React.JSX.Element {
   const api = useShellApi()
   const [chat, setChat] = useState<ChatRecord | null>(null)
@@ -291,7 +288,6 @@ export function TaskTimeline({
           <RepositoryBar
             workspace={workspace}
             refreshKey={finished ? entries.length : 0}
-            onOpenGit={onOpenGit}
           />
           <div className="composer__box">
             <label htmlFor="task-prompt" className="visually-hidden">Задача</label>
