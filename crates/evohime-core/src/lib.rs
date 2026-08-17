@@ -3314,6 +3314,7 @@ impl AgentRunError {
 pub struct ApprovalCoordinator {
     pending: Arc<Mutex<HashMap<uuid::Uuid, oneshot::Sender<bool>>>>,
     approved: Arc<Mutex<HashMap<uuid::Uuid, bool>>>,
+    resolved: Arc<Mutex<HashSet<uuid::Uuid>>>,
 }
 
 impl ApprovalCoordinator {
@@ -3325,7 +3326,14 @@ impl ApprovalCoordinator {
 
     pub async fn resolve(&self, approval_id: uuid::Uuid, granted: bool) -> bool {
         if let Some(sender) = self.pending.lock().await.remove(&approval_id) {
-            return sender.send(granted).is_ok();
+            let delivered = sender.send(granted).is_ok();
+            self.resolved.lock().await.insert(approval_id);
+            return delivered;
+        }
+
+        let mut resolved = self.resolved.lock().await;
+        if !resolved.insert(approval_id) {
+            return false;
         }
         self.approved.lock().await.insert(approval_id, granted);
         true
