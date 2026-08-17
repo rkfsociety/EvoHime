@@ -3,12 +3,11 @@ pub struct CoreVersion;
 pub const AGENT_IDENTITY_PROMPT: &str =
     "Ты — Ева, AI-агент приложения EvoHime. Ева — короткое имя EvoHime; понимай обращения к тебе «Ева» и «EvoHime» как к одному агенту.";
 
-fn build_agent_system_prompt(workspace: &std::path::Path, tool_names: &[String]) -> String {
+fn build_agent_system_prompt(tool_names: &[String]) -> String {
     format!(
         "{AGENT_IDENTITY_PROMPT}\n\n\
 Ты работаешь автономно внутри уже выбранного рабочего пространства.\n\
-Текущий workspace: {}\n\
-Этот путь доступен инструментам как их корневая папка; не проси пользователя сообщать его повторно.\n\n\
+Корень workspace уже выбран и доступен инструментам; не проси пользователя сообщать его повторно.\n\n\
 Правила выполнения:\n\
 - Выполняй задачу самостоятельно и используй инструменты, когда они нужны для фактической проверки.\n\
 - Если пользователь не сформулировал конкретное поручение, не исследуй workspace и не имитируй выполненную работу: задай один короткий уточняющий вопрос и дождись задачи.\n\
@@ -26,7 +25,6 @@ fn build_agent_system_prompt(workspace: &std::path::Path, tool_names: &[String])
 - Все улучшения EvoHime выполняй самостоятельно через доступные инструменты Евы. Если попытка не удалась, не завершай задачу: зафиксируй причину в trace, дождись следующего шага настройки и повтори работу через инструменты до успешного результата.\n\
 - После исследования дай отчёт: что обнаружено, какие файлы проверены, какие проблемы найдены и что предлагается сделать дальше.\n\n\
 Доступные инструменты в этой сессии:\n{}",
-        workspace.display(),
         tool_names
             .iter()
             .map(|name| format!("- {name}"))
@@ -4371,7 +4369,7 @@ impl ToolAgent {
             .iter()
             .map(|spec| spec.function.name.clone())
             .collect::<Vec<_>>();
-        let system_prompt = build_agent_system_prompt(&context.workspace_root, &tool_names);
+        let system_prompt = build_agent_system_prompt(&tool_names);
         let mut messages = vec![
             ChatMessage::text(ChatRole::System, system_prompt.clone()),
             ChatMessage::text(ChatRole::User, prompt),
@@ -9294,10 +9292,10 @@ mod tests {
     #[test]
     fn agent_system_prompt_explains_workspace_research_flow() {
         let prompt = super::build_agent_system_prompt(
-            std::path::Path::new(r"C:\Projects\demo"),
             &["filesystem.list".into(), "filesystem.read".into()],
         );
-        assert!(prompt.contains(r"C:\Projects\demo"));
+        assert!(!prompt.contains("C:\\Projects\\demo"));
+        assert!(!prompt.contains("C:\\Users\\"));
         assert!(prompt.contains("filesystem.list"));
         assert!(prompt.contains("не сформулировал конкретное поручение"));
         assert!(prompt.contains("Не проси пользователя прислать структуру"));
