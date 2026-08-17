@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
+use std::collections::BTreeMap;
 use std::time::Instant;
 use thiserror::Error;
 use uuid::Uuid;
@@ -205,6 +206,11 @@ pub struct RuntimeCounts {
     pub approval_pending: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RuntimeMetrics {
+    pub counters: BTreeMap<String, i64>,
+}
+
 /// Signing boundary.  The signer receives the SHA-256 digest of canonical
 /// payload bytes, never raw tool input or a mutable JSON representation.
 pub trait ReceiptSigner: Send + Sync {
@@ -311,6 +317,10 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
            sampling_policy_version INTEGER NOT NULL,
            created_at_ms INTEGER NOT NULL
          );
+         CREATE TABLE IF NOT EXISTS receipt_runtime_metrics (
+           metric TEXT PRIMARY KEY NOT NULL,
+           value INTEGER NOT NULL
+         );
          INSERT OR IGNORE INTO receipt_runtime_guard(id,phase,generation,updated_at_ms)
            VALUES(1,'ready',0,0);",
     )?;
@@ -352,6 +362,12 @@ pub fn canonical_call_hash(tool_name: &str, normalized_scope: &str, input: &Valu
 }
 
 fn now_ms() -> i64 { Utc::now().timestamp_millis() }
+
+fn increment_metric_tx(tx: &Transaction<'_>, metric: &str, amount: i64) -> Result<(), RuntimeError> {
+    if metric.is_empty() || metric.len() > 64 || !metric.bytes().all(|value| value.is_ascii_alphanumeric() || value == b'_' || value == b'.') { return Err(RuntimeError::Code("schema_violation")); }
+    tx.execute("INSERT INTO receipt_runtime_metrics(metric,value) VALUES(?1,?2) ON CONFLICT(metric) DO UPDATE SET value=value+excluded.value", params![metric, amount])?;
+    Ok(())
+}
 
 fn bounded_preview(value: &str) -> String {
     let mut out = String::new();
@@ -402,6 +418,7 @@ fn signed_receipt(tx: &Transaction<'_>, signer: &dyn ReceiptSigner, request: &Ac
     let object = payload.as_object().unwrap();
     tx.execute("INSERT INTO receipt_records(schema_version,receipt_id,action_id,receipt_kind,action_status,task_id,run_id,key_id,canonical_payload,canonical_envelope,receipt_hash,previous_receipt_hash,created_at_ms) VALUES(1,?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)", params![object["receipt_id"].as_str(), request.action_id.to_string(), kind, status, request.task_id, request.run_id, key_id, payload_bytes, envelope_bytes, hash, previous, now_ms()])?;
     tx.execute("INSERT INTO receipt_chain_heads(key_id,receipt_hash,updated_at_ms) VALUES(?1,?2,?3) ON CONFLICT(key_id) DO UPDATE SET receipt_hash=excluded.receipt_hash,updated_at_ms=excluded.updated_at_ms", params![key_id, hash, now_ms()])?;
+    increment_metric_tx(tx, "receipt_append_count", 1)?;
     Ok((hash, payload_hash))
 }
 
@@ -683,6 +700,14 @@ impl<'a> ReceiptRuntime<'a> {
             quarantined: self.connection.query_row("SELECT COUNT(*) FROM receipt_actions WHERE state='quarantined'", [], |r| r.get(0))?,
             approval_pending: self.connection.query_row("SELECT COUNT(*) FROM receipt_approval_intents WHERE state='pending'", [], |r| r.get(0))?,
         })
+    }
+
+    pub fn metrics(&self) -> Result<RuntimeMetrics, RuntimeError> {
+        let mut statement = self.connection.prepare("SELECT metric,value FROM receipt_runtime_metrics ORDER BY metric LIMIT 128")?;
+        let rows = statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))?;
+        let mut counters = BTreeMap::new();
+        for row in rows { let (metric, value) = row?; counters.insert(metric, value); }
+        Ok(RuntimeMetrics { counters })
     }
 }
 

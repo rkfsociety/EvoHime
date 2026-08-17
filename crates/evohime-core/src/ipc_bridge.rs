@@ -355,6 +355,9 @@ impl IpcBridge {
                                 if let Ok((rate, version)) = runtime.audit_sampling_config() {
                                     object.insert("audit_sampling".into(), serde_json::json!({"rate": rate, "policy_version": version}));
                                 }
+                                if let Ok(metrics) = runtime.metrics() {
+                                    object.insert("runtime_metrics".into(), serde_json::json!(metrics.counters));
+                                }
                             }
                         }
                     }
