@@ -11,5 +11,30 @@
     "receipt.schema_violation", "receipt.secret_field", "receipt.non_canonical",
     "receipt.chain_incomplete", "receipt.key_unknown", "receipt.signature_invalid",
     "receipt.hash_mismatch", "receipt.timestamp_skew"
-  ]
+  ],
+  "transport_runtime_error_codes": {
+    "receipt.policy_denied": 1001,
+    "receipt.approval_required": 1002,
+    "receipt.approval_denied": 1003,
+    "receipt.approval_expired": 1004,
+    "receipt.approval_stale": 1005,
+    "receipt.call_changed": 1006,
+    "receipt.signer_unavailable": 1007,
+    "receipt.key_untrusted": 1008,
+    "receipt.chain_conflict": 1009,
+    "receipt.pending_recovery": 1010,
+    "receipt.pending_limit": 1011,
+    "receipt.action_id_conflict": 1012,
+    "receipt.storage_key_unavailable": 1013
+  },
+  "canonical_refusal_aliases": {
+    "policy_denied": 2001,
+    "approval_denied": 2002,
+    "approval_expired": 2003,
+    "approval_stale": 2004,
+    "call_changed": 2005,
+    "signer_unavailable": 2006,
+    "key_untrusted": 2007,
+    "recovery_pending": 2008
+  }
 }
