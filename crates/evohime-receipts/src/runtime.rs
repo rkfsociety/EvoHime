@@ -22,6 +22,13 @@ pub const MAX_PENDING_ACTIONS: i64 = 1024;
 pub const MAX_PREVIEW_BYTES: usize = crate::CONTRACT_MAX_PREVIEW_BYTES;
 pub const MAX_CALL_INPUT_BYTES: usize = 262_144;
 pub const MAX_PROTECTED_ROW_BYTES: usize = 512;
+const BOUNDED_METRICS: &[&str] = &[
+    "receipt_pre_latency_ms", "receipt_post_latency_ms", "receipt_append_latency_ms",
+    "receipt_append_busy_retries", "receipt_chain_conflicts", "receipt_schema_violations",
+    "approval_pending_count", "pending_recovery_count", "quarantined_count",
+    "approval_gc_deleted_count", "recovery_duration_ms", "recovery_safe_mode",
+    "read_only_sampled_count", "read_only_unsampled_count", "receipt_append_count",
+];
 static PROCESS_BOOT: OnceLock<Instant> = OnceLock::new();
 static BOOT_ID: OnceLock<String> = OnceLock::new();
 
@@ -108,6 +115,7 @@ pub fn recover_database(connection: &mut Connection) -> Result<i64, RuntimeError
     )?;
     if invariant_count > 0 || orphan_count > 0 {
         increment_metric_tx(&tx, "receipt_schema_violations", invariant_count.saturating_add(orphan_count))?;
+        if invariant_count > 0 { increment_metric_tx(&tx, "quarantined_count", invariant_count)?; }
         increment_metric_tx(&tx, "recovery_safe_mode", 1)?;
         tx.execute("UPDATE receipt_runtime_guard SET phase='read_only_recovery',updated_at_ms=?1", [now_ms()])?;
         tx.commit()?;
@@ -504,6 +512,9 @@ fn signed_receipt(tx: &Transaction<'_>, signer: &dyn ReceiptSigner, request: &Ac
     let elapsed = append_started.elapsed().as_millis().min(i64::MAX as u128) as i64;
     increment_metric_tx(tx, "receipt_append_latency_ms", elapsed)?;
     increment_metric_tx(tx, if kind == "pre_action" { "receipt_pre_latency_ms" } else if kind == "post_action" { "receipt_post_latency_ms" } else { "receipt_refusal_latency_ms" }, elapsed)?;
+    if kind == "pre_action" && matches!(request.tool_name.as_str(), "filesystem.read" | "filesystem.list" | "git.status" | "git.diff" | "workspace.list" | "workspace.read" | "workspace.search") {
+        increment_metric_tx(tx, "read_only_sampled_count", 1)?;
+    }
     Ok((hash, payload_hash))
 }
 
@@ -576,6 +587,7 @@ impl<'a> ReceiptRuntime<'a> {
                 let expires = created + APPROVAL_TTL_MS;
                 let deadline = created_monotonic + APPROVAL_TTL_MS;
                 tx.execute("INSERT INTO receipt_approval_intents(approval_id,action_id,task_id,run_id,tool_name,normalized_scope,call_hash,preview,state,created_wall_at_ms,expires_at_ms,clock_boot_id,created_monotonic_ms,deadline_monotonic_ms) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'pending',?9,?10,?11,?12,?13)", params![approval_id.to_string(), action, request.task_id, request.run_id, request.tool_name, request.normalized_scope, args_hash, request.preview, created, expires, boot_id(), created_monotonic, deadline])?;
+                increment_metric_tx(&tx, "approval_pending_count", 1)?;
                 tx.commit()?;
                 Ok(PrepareOutcome::ApprovalRequired { action_id: request.action_id, approval_id, expires_at_ms: expires })
             }
@@ -884,6 +896,7 @@ impl<'a> ReceiptRuntime<'a> {
         if reason.is_empty() || reason.len() > 128 { return Err(RuntimeError::Code("schema_violation")); }
         let changed = self.connection.execute("UPDATE receipt_actions SET state='quarantined',recovery_code='unknown' WHERE action_id=?1 AND state IN ('prepared','pending_recovery')", [action_id.to_string()])?;
         if changed != 1 { return Err(RuntimeError::Code("schema_violation")); }
+        self.connection.execute("INSERT INTO receipt_runtime_metrics(metric,value) VALUES('quarantined_count',1) ON CONFLICT(metric) DO UPDATE SET value=value+1", [])?;
         Ok(())
     }
 
@@ -949,6 +962,9 @@ impl<'a> ReceiptRuntime<'a> {
         let rows = statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))?;
         let mut counters = BTreeMap::new();
         for row in rows { let (metric, value) = row?; counters.insert(metric, value); }
+        for metric in BOUNDED_METRICS {
+            counters.entry((*metric).to_owned()).or_insert(0);
+        }
         Ok(RuntimeMetrics { counters })
     }
 
