@@ -309,6 +309,16 @@ message ReconcilePendingReceiptAction {
   string workspace_path = 4;
 }
 
+// Authenticated manual closure for an invariant-violating quarantined action.
+// This command can only produce a signed recovery refusal; it never resumes
+// or dispatches the original action.
+message UnquarantineReceiptAction {
+  string action_id = 1;
+  string input_json = 2;
+  bool operator_confirmed = 3;
+  string checkpoint = 4;
+}
+
 // Bounded, read-only Core Doctor diagnostic. project_id is optional; when
 // set, the permissions check is grounded in that project's real workspace.
 // detail_level is user-configurable verbosity: 0 = SUMMARY (default),
@@ -856,6 +866,7 @@ message CommandEnvelope {
     ClosePendingReceiptAction close_pending_receipt_action = 96;
     SetReceiptAuditSamplingRate set_receipt_audit_sampling_rate = 97;
     ReconcilePendingReceiptAction reconcile_pending_receipt_action = 98;
+    UnquarantineReceiptAction unquarantine_receipt_action = 99;
   }
 }
 

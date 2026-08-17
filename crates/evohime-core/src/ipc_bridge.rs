@@ -551,6 +551,69 @@ impl IpcBridge {
                 };
                 self.write_response(writer, "receipt.reconciliation", serde_json::to_vec(&serde_json::json!({"ok":true,"old_action_id":old_action_id.to_string(),"action_id":new_action_id.to_string(),"status":status,"receipt_hash":receipt_hash,"completion_source":"reconciliation"}))?).await?;
             }
+            Some(generated::command_envelope::Command::UnquarantineReceiptAction(request)) => {
+                if !request.operator_confirmed
+                    || request.action_id.is_empty()
+                    || request.input_json.len() > evohime_receipts::runtime::MAX_CALL_INPUT_BYTES
+                    || request.checkpoint.is_empty()
+                    || request.checkpoint.len() > 256
+                    || request.checkpoint.contains('\n')
+                {
+                    self.write_response(writer, "receipt.unquarantine", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.schema_violation"}))?).await?;
+                    return Ok(());
+                }
+                let action_id = match uuid::Uuid::parse_str(&request.action_id) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        self.write_response(writer, "receipt.unquarantine", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.schema_violation"}))?).await?;
+                        return Ok(());
+                    }
+                };
+                let input: serde_json::Value = match serde_json::from_str(&request.input_json) {
+                    Ok(value) => value,
+                    Err(_) => {
+                        self.write_response(writer, "receipt.unquarantine", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.schema_violation"}))?).await?;
+                        return Ok(());
+                    }
+                };
+                let mut database = self.journal.database().lock().await;
+                let (task_id, run_id, tool_name, normalized_scope, policy_id, decision, state, approval_id, parent_approval_ref): (String,String,String,String,String,String,String,Option<String>,Option<String>) = database.connection().query_row(
+                    "SELECT task_id,run_id,tool_name,normalized_scope,policy_id,state,approval_id,parent_approval_ref FROM receipt_actions WHERE action_id=?1",
+                    [action_id.to_string()], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?,row.get(7)?,row.get(8)?)),
+                ).map_err(|error| FrameError::Io(error.to_string()))?;
+                if state != "quarantined" {
+                    self.write_response(writer, "receipt.unquarantine", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.schema_violation"}))?).await?;
+                    return Ok(());
+                }
+                let policy_decision = match decision.as_str() {
+                    "allow" => evohime_receipts::runtime::PolicyDecision::Allow,
+                    "approval_required" => evohime_receipts::runtime::PolicyDecision::ApprovalRequired,
+                    "deny" => evohime_receipts::runtime::PolicyDecision::Deny,
+                    _ => {
+                        self.write_response(writer, "receipt.unquarantine", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.schema_violation"}))?).await?;
+                        return Ok(());
+                    }
+                };
+                let receipt_request = evohime_receipts::runtime::ActionRequest {
+                    action_id,
+                    task_id,
+                    run_id,
+                    tool_name,
+                    policy_id,
+                    normalized_scope,
+                    input,
+                    policy_decision,
+                    approval_id: approval_id.and_then(|value| uuid::Uuid::parse_str(&value).ok()),
+                    parent_approval_ref,
+                    preview: "manual quarantine closure".into(),
+                };
+                let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
+                let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                let receipt_hash = runtime.unquarantine(&receipt_request, true, &request.checkpoint)
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                self.write_response(writer, "receipt.unquarantine", serde_json::to_vec(&serde_json::json!({"ok":true,"action_id":request.action_id,"receipt_hash":receipt_hash,"state":"refused","dispatch_allowed":false}))?).await?;
+            }
             Some(generated::command_envelope::Command::TrustReceiptGenesis(request)) => {
                 if !self
                     .take_receipt_approval(writer, &request.approval_id, "TrustReceiptGenesis")

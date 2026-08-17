@@ -943,9 +943,25 @@ impl<'a> ReceiptRuntime<'a> {
         if !authenticated_operator || checkpoint.is_empty() || checkpoint.len() > 256 { return Err(RuntimeError::Code("key_untrusted")); }
         let args_hash = canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input)?;
         let tx = self.connection.unchecked_transaction()?;
-        let state: String = tx.query_row("SELECT state FROM receipt_actions WHERE action_id=?1", [request.action_id.to_string()], |row| row.get(0))?;
-        if state != "quarantined" { return Err(RuntimeError::Code("schema_violation")); }
-        let (hash, _) = signed_receipt(&tx, self.signer, request, "refusal", "refused", &args_hash, None, Some("recovery_pending"))?;
+        let binding: (String,String,String,String,String,String,i64,Option<String>,Option<String>,String,Option<String>) = tx.query_row(
+            "SELECT task_id,run_id,tool_name,normalized_scope,policy_id,policy_decision,fingerprint_input_version,approval_id,parent_approval_ref,state,terminal_receipt_hash FROM receipt_actions WHERE action_id=?1",
+            [request.action_id.to_string()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?,r.get(10)?)))?;
+        if binding.9 != "quarantined" || binding.10.is_some()
+            || request.task_id != binding.0
+            || request.run_id != binding.1
+            || request.tool_name != binding.2
+            || request.normalized_scope != binding.3
+            || request.policy_id != binding.4
+            || request.policy_decision.as_str() != binding.5
+            || binding.6 != crate::FINGERPRINT_INPUT_VERSION as i64
+            || request.approval_id.map(|value| value.to_string()) != binding.7
+            || request.parent_approval_ref != binding.8
+        {
+            return Err(RuntimeError::Code("schema_violation"));
+        }
+        let stored_hash: String = tx.query_row("SELECT tool_args_hash FROM receipt_actions WHERE action_id=?1", [request.action_id.to_string()], |row| row.get(0))?;
+        if stored_hash != args_hash { return Err(RuntimeError::Code("schema_violation")); }
+        let (hash, _) = signed_receipt(&tx, self.signer, request, "refusal", "refused", &stored_hash, None, Some("recovery_pending"))?;
         tx.execute("UPDATE receipt_actions SET state='refused',recovery_code='unknown',completion_source='reconciliation',terminal_receipt_hash=?2 WHERE action_id=?1 AND state='quarantined'", params![request.action_id.to_string(), hash])?;
         tx.execute("DELETE FROM receipt_protected_actions WHERE action_id=?1", [request.action_id.to_string()])?;
         tx.commit()?;
@@ -1145,6 +1161,23 @@ mod tests {
         assert!(matches!(runtime.complete(&request, "succeeded", &"b".repeat(64), None), Err(RuntimeError::Code("action_id_conflict"))));
         drop(runtime);
         assert_eq!(db.query_row("SELECT COUNT(*) FROM receipt_records WHERE action_id=?1", [id.to_string()], |row| row.get::<_, i64>(0)).unwrap(), 2);
+    }
+
+    #[test]
+    fn authenticated_unquarantine_is_terminal_and_never_dispatchable() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let request = request(PolicyDecision::Allow);
+        let id = request.action_id;
+        runtime.prepare(request.clone()).unwrap();
+        runtime.mark_started(id).unwrap();
+        runtime.mark_pending_recovery(id, "unknown").unwrap();
+        runtime.quarantine(id, "invariant").unwrap();
+        runtime.unquarantine(&request, true, "checkpoint-1").unwrap();
+        assert_eq!(runtime.action(id).unwrap().unwrap().state, "refused");
+        assert!(runtime.mark_started(id).is_err());
+        assert!(runtime.unquarantine(&request, true, "checkpoint-1").is_err());
     }
 
     #[test]
