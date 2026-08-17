@@ -48,12 +48,9 @@ pwsh -File .\start-dev.ps1 -SkipBuild
 # Разовый прогон одной задачи через консольный режим Core
 .\scripts\test-agent.ps1 -Prompt 'проверь репозиторий'
 
-# Smoke-тесты packaging, версии, workflow и release retention
+# Smoke-тест упаковки
 $pwsh = Join-Path $PSHOME 'pwsh.exe'
 & $pwsh -NoProfile -File scripts\native-package.tests.ps1
-& $pwsh -NoProfile -File scripts\version.tests.ps1
-& $pwsh -NoProfile -File scripts\native-workflow.tests.ps1
-& $pwsh -NoProfile -File scripts\github-retention.tests.ps1
 
 # Desktop UI/IPC tests (в переходный период сохраняется compatibility suite)
 & 'C:\Program Files\dotnet\dotnet.exe' test desktop\EvoHime.Tests\EvoHime.Tests.csproj -p:Platform=x64

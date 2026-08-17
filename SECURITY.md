@@ -36,7 +36,6 @@ EvoHime — локальный single-user Windows-клиент. Пользов�
 ## Проверки перед релизом
 
 ```powershell
-.\scripts\native-workflow.tests.ps1
 .\scripts\native-package.tests.ps1
 cargo test --locked -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc
 cd desktop\evohime-electron; npm run check:protocol; npm test; npm run build; npm run check:bundle

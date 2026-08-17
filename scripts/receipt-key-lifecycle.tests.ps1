@@ -15,7 +15,9 @@ foreach ($path in @(
 Push-Location $root
 try {
     cargo test -p evohime-receipts --lib
+    if ($LASTEXITCODE -ne 0) { throw "Receipt lifecycle tests failed with exit code $LASTEXITCODE" }
     cargo build -p evohime-receipts --bin evohime-verify
+    if ($LASTEXITCODE -ne 0) { throw "Receipt verifier build failed with exit code $LASTEXITCODE" }
 
     $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("evohime-key-lifecycle-" + [guid]::NewGuid())
     New-Item -ItemType Directory -Path $temp | Out-Null
