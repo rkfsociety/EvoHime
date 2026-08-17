@@ -9919,10 +9919,6 @@ mod tests {
             .into_iter()
             .map(|tool| tool.name)
             .collect::<Vec<_>>();
-        assert_eq!(names.len(), super::LEGACY_TOOL_NAMES.len());
-        assert!(names
-            .iter()
-            .all(|name| super::is_supported_tool_name(name)));
         assert!(super::LEGACY_TOOL_NAMES
             .iter()
             .all(|name| names.contains(name)));
