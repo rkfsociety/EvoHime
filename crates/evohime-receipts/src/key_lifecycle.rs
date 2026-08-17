@@ -589,6 +589,18 @@ impl ReceiptKeyManager {
         Ok((metadata.key_id, signer.sign(&bytes)))
     }
 
+    /// Signs the 32-byte SHA-256 payload digest used by Runtime Receipt v1.
+    /// This is intentionally separate from the legacy contract helper above:
+    /// changing its input would invalidate the already published vectors.
+    pub fn sign_payload_hash(&self, payload_hash: &str) -> Result<(String, String), KeyError> {
+        if payload_hash.len() != 64 || !payload_hash.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
+            return Err(KeyError::InvalidTransition);
+        }
+        let (metadata, signer) = self.load_signer()?;
+        let bytes = hex::decode(payload_hash).map_err(|_| KeyError::InvalidTransition)?;
+        Ok((metadata.key_id, signer.sign(&bytes)))
+    }
+
     pub fn rotate(&self, reason: &str, actor: &str) -> Result<String, KeyError> {
         if !matches!(reason, "scheduled" | "manual" | "compromise")
             || !matches!(actor, "system" | "user")

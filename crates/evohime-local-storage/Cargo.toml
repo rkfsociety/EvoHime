@@ -8,6 +8,7 @@ path = "src/lib.rs"
 
 [dependencies]
 evohime-context-budget = { path = "../context-budget" }
+evohime-receipts = { path = "../evohime-receipts" }
 rusqlite = { version = "0.32.1", features = ["backup", "bundled"] }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"

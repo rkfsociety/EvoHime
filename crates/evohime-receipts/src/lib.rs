@@ -10,6 +10,7 @@ use std::collections::HashSet;
 use thiserror::Error;
 
 pub mod key_lifecycle;
+pub mod runtime;
 
 pub const RECEIPT_VERSION: u64 = 1;
 include!(concat!(env!("OUT_DIR"), "/receipt_limits.rs"));
@@ -193,6 +194,19 @@ pub fn verify_ed25519(envelope: &Envelope, public_key: &[u8]) -> Result<(), Rece
         decode_base64url(&envelope.signature).ok_or(ReceiptError::SignatureInvalid)?;
     signature::UnparsedPublicKey::new(&signature::ED25519, public_key)
         .verify(&payload, &signature_bytes)
+        .map_err(|_| ReceiptError::SignatureInvalid)
+}
+
+/// Runtime v1 verification: the Ed25519 message is the raw SHA-256 digest of
+/// canonical payload bytes.  `verify_ed25519` remains available for the
+/// contract vectors whose historical signature message is canonical payload.
+pub fn verify_runtime_signature(envelope: &Envelope, public_key: &[u8]) -> Result<(), ReceiptError> {
+    if envelope.signature_algorithm != "Ed25519" { return Err(ReceiptError::SchemaViolation); }
+    validate_payload_v1(&envelope.payload)?;
+    let digest = Sha256::digest(payload_bytes(&envelope.payload)?);
+    let signature_bytes = decode_base64url(&envelope.signature).ok_or(ReceiptError::SignatureInvalid)?;
+    signature::UnparsedPublicKey::new(&signature::ED25519, public_key)
+        .verify(&digest, &signature_bytes)
         .map_err(|_| ReceiptError::SignatureInvalid)
 }
 

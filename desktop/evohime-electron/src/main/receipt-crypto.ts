@@ -20,3 +20,12 @@ export function verifyEd25519(envelope: ReceiptEnvelope, publicKeyRaw: Uint8Arra
   const signature = Buffer.from(envelope.signature.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(envelope.signature.length / 4) * 4, '='), 'base64')
   return verify(null, Buffer.from(payloadBytes(envelope.payload)), key, signature)
 }
+
+/** Runtime Receipt v1 signs the raw SHA-256 digest, not the canonical payload bytes. */
+export function verifyRuntimeEd25519(envelope: ReceiptEnvelope, publicKeyRaw: Uint8Array): boolean {
+  validatePayloadV1(envelope.payload)
+  const key = createPublicKey({ key: Buffer.concat([Buffer.from('302a300506032b6570032100', 'hex'), Buffer.from(publicKeyRaw)]), format: 'der', type: 'spki' })
+  const signature = Buffer.from(envelope.signature.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(envelope.signature.length / 4) * 4, '='), 'base64')
+  const digest = createHash('sha256').update(Buffer.from(payloadBytes(envelope.payload))).digest()
+  return verify(null, digest, key, signature)
+}

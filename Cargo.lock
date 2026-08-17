@@ -548,6 +548,7 @@ name = "evohime-local-storage"
 version = "0.1.0"
 dependencies = [
  "evohime-context-budget",
+ "evohime-receipts",
  "rusqlite",
  "serde",
  "serde_json",

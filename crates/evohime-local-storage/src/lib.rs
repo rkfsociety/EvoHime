@@ -26,7 +26,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 21;
+pub const SCHEMA_VERSION: u32 = 22;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -390,6 +390,8 @@ impl LocalDatabase {
             }
         }
         connection.pragma_update(None, "journal_mode", "WAL")?;
+        evohime_receipts::runtime::install_schema(&connection)
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
         Ok(Self { path, connection })
     }
 
@@ -2881,6 +2883,9 @@ impl LocalDatabase {
                  );
                  PRAGMA user_version = 21;",
             )?;
+        }
+        if current < 22 {
+            transaction.execute_batch("PRAGMA user_version = 22;")?;
         }
         transaction.commit()?;
         Ok(())
