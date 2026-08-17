@@ -180,6 +180,52 @@ describe('task timeline', () => {
     expect(screen.getByRole('button', { name: 'Сообщение скопировано' })).toBeTruthy()
   })
 
+  it('keeps each next prompt after the previous agent response', async () => {
+    const firstAtMs = new Date('2026-08-14T13:20:00.000Z').getTime()
+    const secondAtMs = new Date('2026-08-14T13:21:00.000Z').getTime()
+    const chat = {
+      id: 'chat-1',
+      workspacePath: 'C:\\work\\repo',
+      title: 'Чат',
+      createdMs: firstAtMs,
+      updatedMs: secondAtMs,
+      taskIds: ['task-1', 'task-2'],
+      messages: [
+        { taskId: 'task-1', prompt: 'Первый вопрос', atMs: firstAtMs },
+        { taskId: 'task-2', prompt: 'Второй вопрос', atMs: secondAtMs }
+      ]
+    }
+    respond = (command) => command === 'chat.open' ? ok(chat) : ok([])
+    render(
+      <TaskTimeline
+        connection="connected"
+        events={[
+          event('agent.message.delta', { content: 'Ответ на первый вопрос' }, 'task-1'),
+          event('agent.message.delta', { content: 'Ответ на второй вопрос' }, 'task-2')
+        ]}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+
+    await waitFor(() => expect(screen.getByText('Первый вопрос')).toBeTruthy())
+    const items = screen.getAllByRole('listitem')
+    const text = items.map((item) => item.textContent ?? '')
+    expect(text.findIndex((item) => item.includes('Первый вопрос'))).toBeLessThan(
+      text.findIndex((item) => item.includes('Ответ на первый вопрос'))
+    )
+    expect(text.findIndex((item) => item.includes('Ответ на первый вопрос'))).toBeLessThan(
+      text.findIndex((item) => item.includes('Второй вопрос'))
+    )
+    expect(text.findIndex((item) => item.includes('Второй вопрос'))).toBeLessThan(
+      text.findIndex((item) => item.includes('Ответ на второй вопрос'))
+    )
+  })
+
   it('starts a task only through the typed bridge', async () => {
     render(<TaskTimeline connection="connected" events={[]} workspace="C:\work\repo" chatId="chat-1" onChatTouched={() => {}} onChatOpened={() => {}} identityName={null} chatRevision={0} />)
     await userEvent.type(await screen.findByLabelText('Задача'), 'Проверь тесты')

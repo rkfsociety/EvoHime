@@ -79,6 +79,17 @@ export function TaskTimeline({
     [taskEvents]
   )
 
+  const conversation = useMemo(() => {
+    const messages = [...(chat?.messages ?? [])]
+    if (sentPrompt !== null && taskId !== null && !messages.some((message) => message.taskId === taskId)) {
+      messages.push({ taskId, prompt: sentPrompt, atMs: sentPromptAtMs ?? Date.now() })
+    }
+    return messages.map((message) => ({
+      message,
+      transcript: buildTranscript(taskEvents.filter((event) => event.taskId === message.taskId))
+    }))
+  }, [chat?.messages, sentPrompt, sentPromptAtMs, taskId, taskEvents])
+
   useEffect(() => {
     // scrollIntoView отсутствует в jsdom, поэтому вызов защищён проверкой.
     const anchor = bottomRef.current
@@ -175,81 +186,32 @@ export function TaskTimeline({
           />
         ) : (
           <ol className="chat__stream">
-            {history.map((message) => (
-              <li key={`${message.taskId}-${message.atMs}`} className="message message--user">
-                <div className="message__bubble">{message.prompt}</div>
-                <MessageActions
-                  id={`user-${message.taskId}-${message.atMs}`}
-                  text={message.prompt}
-                  atMs={message.atMs}
-                  copied={copiedMessageId === `user-${message.taskId}-${message.atMs}`}
-                  onCopy={setCopiedMessageId}
-                />
-              </li>
-            ))}
-            {sentPrompt && !history.some((message) => message.prompt === sentPrompt) ? (
-              <li className="message message--user" key={`sent-${sentPromptAtMs ?? 'pending'}`}>
-                <div className="message__bubble">{sentPrompt}</div>
-                <MessageActions
-                  id={`sent-${sentPromptAtMs ?? 'pending'}`}
-                  text={sentPrompt}
-                  atMs={sentPromptAtMs}
-                  copied={copiedMessageId === `sent-${sentPromptAtMs ?? 'pending'}`}
-                  onCopy={setCopiedMessageId}
-                />
-              </li>
-            ) : null}
-
-            {entries.map((entry, index) => {
-              if (entry.kind === 'activity') {
-                return (
-                  <li key={`${entry.kind}-${entry.id}-${index}`} className="message message--activity">
-                    <ActivityLine calls={entry.calls} running={entry.running} />
-                  </li>
-                )
-              }
-              if (entry.kind === 'stopped') {
-                return (
-                  <li key={`${entry.kind}-${entry.id}-${index}`} className="message message--note">
-                    <span className="message__note">Задача остановлена</span>
-                  </li>
-                )
-              }
-              if (entry.kind === 'result') {
-                const messageId = `${entry.kind}-${entry.id}-${index}`
-                const atMs = messageTime(entryTimes, messageId)
-                return (
-                  <li
-                    key={messageId}
-                    className={`message message--agent${entry.failed ? ' message--error' : ''}`}
-                  >
-                    <div className="message__bubble"><MarkdownMessage text={entry.text} /></div>
-                    <MessageActions
-                      id={messageId}
-                      text={entry.text}
-                      atMs={atMs}
-                      copied={copiedMessageId === messageId}
-                      onCopy={setCopiedMessageId}
-                    />
-                  </li>
-                )
-              }
-              const messageId = `${entry.kind}-${entry.id}-${index}`
-              return (
-                <li key={messageId} className="message message--agent">
-                  <div className="message__bubble"><MarkdownMessage text={entry.text} /></div>
+            {conversation.flatMap(({ message, transcript }) => {
+              const messageId = `user-${message.taskId}-${message.atMs}`
+              return [
+                <li key={messageId} className="message message--user">
+                  <div className="message__bubble">{message.prompt}</div>
                   <MessageActions
                     id={messageId}
-                    text={entry.text}
-                    atMs={messageTime(entryTimes, messageId)}
+                    text={message.prompt}
+                    atMs={message.atMs}
                     copied={copiedMessageId === messageId}
                     onCopy={setCopiedMessageId}
                   />
-                </li>
-              )
+                </li>,
+                ...transcript.entries.map((entry, index) =>
+                  renderTranscriptEntry(entry, `${message.taskId}-${index}`, entryTimes, copiedMessageId, setCopiedMessageId)
+                )
+              ]
             })}
 
-            {running && !approval && !entries.some(
+            {conversation.length === 0
+              ? entries.map((entry, index) =>
+                  renderTranscriptEntry(entry, String(index), entryTimes, copiedMessageId, setCopiedMessageId)
+                )
+              : null}
+
+            {conversation.length > 0 && running && !approval && !conversation.at(-1)?.transcript.entries.some(
               (entry) => entry.kind === 'activity' && entry.running
             ) ? (
               <li className="message message--working" role="status" aria-label="Агент формирует ответ">
@@ -336,6 +298,45 @@ export function TaskTimeline({
       </div>
       )}
     </section>
+  )
+}
+
+function renderTranscriptEntry(
+  entry: ReturnType<typeof buildTranscript>['entries'][number],
+  keySuffix: string,
+  entryTimes: React.MutableRefObject<Map<string, number>>,
+  copiedMessageId: string | null,
+  onCopy: (id: string) => void
+): React.JSX.Element {
+  if (entry.kind === 'activity') {
+    return (
+      <li key={`${entry.kind}-${entry.id}-${keySuffix}`} className="message message--activity">
+        <ActivityLine calls={entry.calls} running={entry.running} />
+      </li>
+    )
+  }
+  if (entry.kind === 'stopped') {
+    return (
+      <li key={`${entry.kind}-${entry.id}-${keySuffix}`} className="message message--note">
+        <span className="message__note">Задача остановлена</span>
+      </li>
+    )
+  }
+  const messageId = `${entry.kind}-${entry.id}-${keySuffix}`
+  return (
+    <li
+      key={messageId}
+      className={`message message--agent${entry.kind === 'result' && entry.failed ? ' message--error' : ''}`}
+    >
+      <div className="message__bubble"><MarkdownMessage text={entry.text} /></div>
+      <MessageActions
+        id={messageId}
+        text={entry.text}
+        atMs={messageTime(entryTimes, messageId)}
+        copied={copiedMessageId === messageId}
+        onCopy={onCopy}
+      />
+    </li>
   )
 }
 
