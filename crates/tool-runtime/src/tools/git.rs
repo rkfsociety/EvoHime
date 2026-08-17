@@ -31,6 +31,26 @@ pub const PUSH_DESCRIPTION: &str = "Push commits to the configured remote";
 pub const PUSH_PERMISSIONS: &[Permission] = &[Permission::GitWrite];
 pub const PUSH_TIMEOUT: Duration = Duration::from_secs(30);
 
+pub const LOG_NAME: &str = "git.log";
+pub const LOG_DESCRIPTION: &str = "Show bounded repository history";
+pub const LOG_PERMISSIONS: &[Permission] = &[Permission::GitRead];
+pub const LOG_TIMEOUT: Duration = Duration::from_secs(10);
+
+pub const SHOW_NAME: &str = "git.show";
+pub const SHOW_DESCRIPTION: &str = "Show a bounded commit or object diff";
+pub const SHOW_PERMISSIONS: &[Permission] = &[Permission::GitRead];
+pub const SHOW_TIMEOUT: Duration = Duration::from_secs(10);
+
+pub const BLAME_NAME: &str = "git.blame";
+pub const BLAME_DESCRIPTION: &str = "Show line ownership for a workspace file range";
+pub const BLAME_PERMISSIONS: &[Permission] = &[Permission::GitRead];
+pub const BLAME_TIMEOUT: Duration = Duration::from_secs(10);
+
+pub const CHANGED_FILES_NAME: &str = "git.changed_files";
+pub const CHANGED_FILES_DESCRIPTION: &str = "List changed files with status";
+pub const CHANGED_FILES_PERMISSIONS: &[Permission] = &[Permission::GitRead];
+pub const CHANGED_FILES_TIMEOUT: Duration = Duration::from_secs(10);
+
 #[derive(Debug, Deserialize, Default)]
 struct DiffInput {
     path: Option<String>,
@@ -47,6 +67,28 @@ struct RemoteInput {
     branch: Option<String>,
     #[serde(default)]
     force: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct LogInput {
+    #[serde(default = "default_log_count")]
+    max_count: u16,
+    path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ShowInput {
+    #[serde(default = "default_ref")]
+    reference: String,
+    #[serde(default)]
+    stat_only: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct BlameInput {
+    path: String,
+    start_line: Option<u32>,
+    end_line: Option<u32>,
 }
 
 pub async fn status(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
@@ -115,6 +157,107 @@ pub async fn push(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolErr
         args.push(branch);
     }
     run_git(ctx, &args).await
+}
+
+pub async fn log(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
+    let input: LogInput =
+        serde_json::from_value(input).map_err(|error| ToolError::InvalidInput {
+            tool: LOG_NAME.to_string(),
+            message: error.to_string(),
+        })?;
+    if !(1..=100).contains(&input.max_count) {
+        return Err(ToolError::InvalidInput {
+            tool: LOG_NAME.to_string(),
+            message: "max_count must be between 1 and 100".into(),
+        });
+    }
+    let count = format!("-{}", input.max_count);
+    let mut args = vec![
+        "log",
+        "--no-ext-diff",
+        "--date=iso-strict",
+        "--format=fuller",
+        count.as_str(),
+    ];
+    if let Some(path) = input.path.as_deref() {
+        args.extend(["--", path]);
+    }
+    run_git(ctx, &args).await
+}
+
+pub async fn show(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
+    let input: ShowInput =
+        serde_json::from_value(input).map_err(|error| ToolError::InvalidInput {
+            tool: SHOW_NAME.to_string(),
+            message: error.to_string(),
+        })?;
+    validate_revision(&input.reference, SHOW_NAME)?;
+    let mut args = vec!["show", "--no-ext-diff", "--format=fuller"];
+    if input.stat_only {
+        args.push("--stat");
+    }
+    args.push(&input.reference);
+    run_git(ctx, &args).await
+}
+
+pub async fn blame(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
+    let input: BlameInput =
+        serde_json::from_value(input).map_err(|error| ToolError::InvalidInput {
+            tool: BLAME_NAME.to_string(),
+            message: error.to_string(),
+        })?;
+    let path = input.path.trim();
+    if path.is_empty() || path.starts_with('-') {
+        return Err(ToolError::InvalidInput {
+            tool: BLAME_NAME.into(),
+            message: "path must be a non-empty workspace-relative path".into(),
+        });
+    }
+    let range = match (input.start_line, input.end_line) {
+        (Some(start), Some(end)) if start >= 1 && end >= start && end - start < 500 => {
+            Some(format!("{start},{end}"))
+        }
+        (None, None) => None,
+        _ => {
+            return Err(ToolError::InvalidInput {
+                tool: BLAME_NAME.into(),
+                message: "line range must be 1..500 lines and end_line >= start_line".into(),
+            })
+        }
+    };
+    let mut args = vec!["blame", "--", path];
+    if let Some(range) = range.as_deref() {
+        args = vec!["blame", "-L", range, "--", path];
+    }
+    run_git(ctx, &args).await
+}
+
+pub async fn changed_files(ctx: &ToolContext, input: Value) -> Result<ToolResult, ToolError> {
+    ensure_no_input_for(input, CHANGED_FILES_NAME)?;
+    run_git(ctx, &["status", "--short", "--untracked-files=all"]).await
+}
+
+fn default_log_count() -> u16 {
+    20
+}
+
+fn default_ref() -> String {
+    "HEAD".into()
+}
+
+fn validate_revision(reference: &str, tool: &str) -> Result<(), ToolError> {
+    let value = reference.trim();
+    if value.is_empty()
+        || value.starts_with('-')
+        || value.contains(['\n', '\r', '\0'])
+        || value.len() > 256
+    {
+        return Err(ToolError::InvalidInput {
+            tool: tool.into(),
+            message: "reference is empty or unsafe".into(),
+        });
+    }
+    Ok(())
 }
 
 /// Validate git push network policy: block force push and enforce remote/branch restrictions (7.12)
@@ -335,6 +478,10 @@ fn parse_optional_input<T: for<'de> Deserialize<'de> + Default>(
 }
 
 fn ensure_no_input(input: Value) -> Result<(), ToolError> {
+    ensure_no_input_for(input, STATUS_NAME)
+}
+
+fn ensure_no_input_for(input: Value, tool: &str) -> Result<(), ToolError> {
     if input.is_null()
         || input
             .as_object()
@@ -344,7 +491,7 @@ fn ensure_no_input(input: Value) -> Result<(), ToolError> {
         Ok(())
     } else {
         Err(ToolError::InvalidInput {
-            tool: STATUS_NAME.to_string(),
+            tool: tool.to_string(),
             message: "this tool does not accept input".to_string(),
         })
     }
@@ -434,6 +581,52 @@ mod tests {
         .expect("diff succeeds");
 
         assert!(result.output.contains("world"));
+    }
+
+    #[tokio::test]
+    async fn history_and_inspection_tools_return_repository_evidence() {
+        let (_dir, ctx, _) = init_repo();
+        std_fs::write(ctx.workspace_root.join("notes.txt"), "hello\nworld\n").expect("write");
+        let commit = commit(&ctx, json!({"message": "Add notes"}))
+            .await
+            .expect("commit");
+
+        let log_result = log(&ctx, json!({"max_count": 5})).await.expect("log");
+        assert!(log_result.output.contains("Add notes"));
+
+        let show_result = show(&ctx, json!({"reference": "HEAD", "stat_only": true}))
+            .await
+            .expect("show");
+        assert!(show_result.output.contains("notes.txt"));
+
+        let blame_result = blame(
+            &ctx,
+            json!({"path": "notes.txt", "start_line": 1, "end_line": 1}),
+        )
+        .await
+        .expect("blame");
+        assert!(blame_result.output.contains("hello"));
+
+        let changed_result = changed_files(&ctx, Value::Null)
+            .await
+            .expect("changed files");
+        assert!(changed_result.output.contains("completed successfully"));
+        assert!(commit.structured["status_code"].is_number());
+    }
+
+    #[tokio::test]
+    async fn history_inputs_are_bounded_and_revision_is_not_a_flag() {
+        let (_dir, ctx, _) = init_repo();
+        assert!(log(&ctx, json!({"max_count": 101})).await.is_err());
+        assert!(show(&ctx, json!({"reference": "--format=oneline"}))
+            .await
+            .is_err());
+        assert!(blame(
+            &ctx,
+            json!({"path": "notes.txt", "start_line": 1, "end_line": 501})
+        )
+        .await
+        .is_err());
     }
 
     #[tokio::test]

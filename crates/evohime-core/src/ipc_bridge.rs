@@ -444,7 +444,7 @@ impl IpcBridge {
             }
             Some(generated::command_envelope::Command::ReconcilePendingReceiptAction(request)) => {
                 const MAX_RECONCILIATION_INPUT_BYTES: usize = evohime_receipts::runtime::MAX_CALL_INPUT_BYTES;
-                let read_only = matches!(request.tool_name.as_str(), "filesystem.read" | "filesystem.list" | "git.status" | "git.diff" | "workspace.list" | "workspace.read" | "workspace.search");
+                let read_only = matches!(request.tool_name.as_str(), "filesystem.read" | "filesystem.list" | "git.status" | "git.diff" | "git.log" | "git.show" | "git.blame" | "git.changed_files" | "workspace.list" | "workspace.read" | "workspace.search");
                 if request.old_action_id.is_empty()
                     || request.tool_name.len() > 128
                     || !read_only

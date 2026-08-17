@@ -16,6 +16,10 @@ const LEGACY_TOOL_NAMES: &[&str] = &[
     "git.commit",
     "git.pull",
     "git.push",
+    "git.log",
+    "git.show",
+    "git.blame",
+    "git.changed_files",
     "mcp.call",
     "memory.search",
     "browser.open",
@@ -232,6 +236,36 @@ fn tool_parameters(name: &str) -> serde_json::Value {
                 "branch": { "type": "string", "description": "Optional branch name, usually the current branch" },
                 "force": { "type": "boolean", "description": "Must remain false; force push is forbidden" }
             },
+            "additionalProperties": false
+        }),
+        "git.log" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "max_count": { "type": "integer", "minimum": 1, "maximum": 100 },
+                "path": { "type": "string", "description": "Optional workspace-relative path" }
+            },
+            "additionalProperties": false
+        }),
+        "git.show" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "reference": { "type": "string", "description": "Commit or safe Git revision, usually HEAD" },
+                "stat_only": { "type": "boolean" }
+            },
+            "additionalProperties": false
+        }),
+        "git.blame" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "Workspace-relative file path" },
+                "start_line": { "type": "integer", "minimum": 1 },
+                "end_line": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["path"],
+            "additionalProperties": false
+        }),
+        "git.changed_files" => serde_json::json!({
+            "type": "object",
             "additionalProperties": false
         }),
         "shell.execute" => serde_json::json!({
@@ -607,6 +641,7 @@ fn parse_plain_tool_call(content: &str, iteration: usize) -> Option<NativeToolCa
         "query",
         "remote",
         "branch",
+        "reference",
         "force",
         "command",
         "prompt",
@@ -621,6 +656,9 @@ fn parse_plain_tool_call(content: &str, iteration: usize) -> Option<NativeToolCa
         "timeout_ms",
         "max_chars",
         "limit",
+        "max_count",
+        "start_line",
+        "end_line",
         "settle_ms",
         "full_page",
     ];

@@ -123,7 +123,17 @@ pub fn default_tool_specs() -> Vec<evohime_model_gateway::ToolSpec> {
 pub fn filter_readonly_tools(
     tools: &[evohime_model_gateway::ToolSpec],
 ) -> Vec<evohime_model_gateway::ToolSpec> {
-    let readonly_names = ["filesystem.list", "filesystem.read", "filesystem.search"];
+    let readonly_names = [
+        "filesystem.list",
+        "filesystem.read",
+        "filesystem.search",
+        "git.status",
+        "git.diff",
+        "git.log",
+        "git.show",
+        "git.blame",
+        "git.changed_files",
+    ];
     tools
         .iter()
         .filter(|tool| readonly_names.contains(&tool.function.name.as_str()))

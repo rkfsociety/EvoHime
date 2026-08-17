@@ -533,7 +533,7 @@ fn signed_receipt(tx: &Transaction<'_>, signer: &dyn ReceiptSigner, request: &Ac
     let elapsed = append_started.elapsed().as_millis().min(i64::MAX as u128) as i64;
     increment_metric_tx(tx, "receipt_append_latency_ms", elapsed)?;
     increment_metric_tx(tx, if kind == "pre_action" { "receipt_pre_latency_ms" } else if kind == "post_action" { "receipt_post_latency_ms" } else { "receipt_refusal_latency_ms" }, elapsed)?;
-    if kind == "pre_action" && matches!(request.tool_name.as_str(), "filesystem.read" | "filesystem.list" | "git.status" | "git.diff" | "workspace.list" | "workspace.read" | "workspace.search") {
+    if kind == "pre_action" && matches!(request.tool_name.as_str(), "filesystem.read" | "filesystem.list" | "git.status" | "git.diff" | "git.log" | "git.show" | "git.blame" | "git.changed_files" | "workspace.list" | "workspace.read" | "workspace.search") {
         increment_metric_tx(tx, "read_only_sampled_count", 1)?;
     }
     Ok((hash, payload_hash))

@@ -177,6 +177,30 @@ impl ToolRegistry {
             timeout: tools::git::PUSH_TIMEOUT,
         });
         registry.register(ToolDefinition {
+            name: tools::git::LOG_NAME,
+            description: tools::git::LOG_DESCRIPTION,
+            permissions: tools::git::LOG_PERMISSIONS,
+            timeout: tools::git::LOG_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::git::SHOW_NAME,
+            description: tools::git::SHOW_DESCRIPTION,
+            permissions: tools::git::SHOW_PERMISSIONS,
+            timeout: tools::git::SHOW_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::git::BLAME_NAME,
+            description: tools::git::BLAME_DESCRIPTION,
+            permissions: tools::git::BLAME_PERMISSIONS,
+            timeout: tools::git::BLAME_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::git::CHANGED_FILES_NAME,
+            description: tools::git::CHANGED_FILES_DESCRIPTION,
+            permissions: tools::git::CHANGED_FILES_PERMISSIONS,
+            timeout: tools::git::CHANGED_FILES_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
             name: tools::mcp::NAME,
             description: tools::mcp::DESCRIPTION,
             permissions: tools::mcp::PERMISSIONS,
@@ -377,6 +401,10 @@ impl ToolRegistry {
                 tools::git::COMMIT_NAME => tools::git::commit(ctx, input).await,
                 tools::git::PULL_NAME => tools::git::pull(ctx, input).await,
                 tools::git::PUSH_NAME => tools::git::push(ctx, input).await,
+                tools::git::LOG_NAME => tools::git::log(ctx, input).await,
+                tools::git::SHOW_NAME => tools::git::show(ctx, input).await,
+                tools::git::BLAME_NAME => tools::git::blame(ctx, input).await,
+                tools::git::CHANGED_FILES_NAME => tools::git::changed_files(ctx, input).await,
                 tools::mcp::NAME => tools::mcp::execute(ctx, input).await,
                 tools::memory::NAME => tools::memory::execute(ctx, input).await,
                 tools::agent::NAME => tools::agent::execute(ctx, input).await,
@@ -794,7 +822,7 @@ mod tests {
     fn bootstrap_registers_filesystem_read() {
         let registry = ToolRegistry::bootstrap();
         let tools = registry.list();
-        assert_eq!(tools.len(), 23);
+        assert_eq!(tools.len(), 27);
         assert_eq!(tools[0].name, "agent.run");
         assert_eq!(tools[1].name, "browser.extract");
         assert_eq!(tools[2].name, "browser.open");
@@ -809,15 +837,19 @@ mod tests {
         assert_eq!(tools[11].name, "filesystem.read");
         assert_eq!(tools[12].name, "filesystem.search");
         assert_eq!(tools[13].name, "filesystem.write");
-        assert_eq!(tools[14].name, "git.commit");
-        assert_eq!(tools[15].name, "git.diff");
-        assert_eq!(tools[16].name, "git.pull");
-        assert_eq!(tools[17].name, "git.push");
-        assert_eq!(tools[18].name, "git.status");
-        assert_eq!(tools[19].name, "http.fetch");
-        assert_eq!(tools[20].name, "mcp.call");
-        assert_eq!(tools[21].name, "memory.search");
-        assert_eq!(tools[22].name, "shell.execute");
+        assert_eq!(tools[14].name, "git.blame");
+        assert_eq!(tools[15].name, "git.changed_files");
+        assert_eq!(tools[16].name, "git.commit");
+        assert_eq!(tools[17].name, "git.diff");
+        assert_eq!(tools[18].name, "git.log");
+        assert_eq!(tools[19].name, "git.pull");
+        assert_eq!(tools[20].name, "git.push");
+        assert_eq!(tools[21].name, "git.show");
+        assert_eq!(tools[22].name, "git.status");
+        assert_eq!(tools[23].name, "http.fetch");
+        assert_eq!(tools[24].name, "mcp.call");
+        assert_eq!(tools[25].name, "memory.search");
+        assert_eq!(tools[26].name, "shell.execute");
     }
 
     #[tokio::test]
