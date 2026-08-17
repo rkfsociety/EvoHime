@@ -12,7 +12,6 @@ import { TaskTimeline } from './TaskTimeline'
 import { EditorPanel } from './EditorPanel'
 import { SafetyPanel } from './SafetyPanel'
 import { ProviderForm } from './ProviderForm'
-import { TerminalPanel } from './TerminalPanel'
 import { RecoveryBanner } from './RecoveryBanner'
 import { OperationsPanel } from './OperationsPanel'
 import { PlanReviewPanel } from './PlanReviewPanel'
@@ -39,7 +38,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'editor' | 'operations' | 'terminal' | 'safety' | 'settings'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'editor' | 'operations' | 'safety' | 'settings'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -56,7 +55,6 @@ const VIEWS: readonly ViewDescriptor[] = [
   { id: 'reviews', label: 'Ревью планов', icon: '✓' },
   { id: 'editor', label: 'Редактор', icon: '✎' },
   { id: 'operations', label: 'Память и Pulse', icon: '◌' },
-  { id: 'terminal', label: 'Терминал', icon: '❯' },
   { id: 'safety', label: 'Безопасность', icon: '◈' }
 ]
 
@@ -232,7 +230,6 @@ export function App(): React.JSX.Element {
               {view === 'reviews' ? <PlanReviewPanel connection={connection} events={events} /> : null}
               {view === 'editor' ? <EditorPanel connection={connection} events={events} /> : null}
               {view === 'operations' ? <OperationsPanel connection={connection} events={events} /> : null}
-              {view === 'terminal' ? <TerminalPanel connection={connection} events={events} /> : null}
               {view === 'safety' ? <SafetyPanel connection={connection} events={events} /> : null}
               {view === 'settings' ? <ProviderForm /> : null}
             </div>
