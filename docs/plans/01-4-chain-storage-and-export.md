@@ -42,14 +42,14 @@ migration runner с backup до изменения схемы. Foreign keys и W
 | action_id | TEXT NOT NULL; lowercase UUIDv7 |
 | receipt_kind | TEXT NOT NULL CHECK pre_action/post_action/refusal |
 | action_status | TEXT NOT NULL CHECK prepared/succeeded/failed/cancelled/refused |
-| task_id, run_id, tool_name | TEXT NOT NULL; bounded values from 01.1 |
+| task_id, run_id, tool_name | TEXT NOT NULL; length 1–128 and exact 01.1 typed-identifier pattern `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` |
 | key_id | TEXT NOT NULL; ed25519:<64 lowercase hex> |
 | receipt_hash | TEXT NOT NULL UNIQUE; 64 lowercase hex |
 | previous_receipt_hash | TEXT NULL only for a genesis row or the first row of a new key segment after an explicitly recorded key rotation; the latter is not genesis and is marked by key-history transition metadata |
 | canonical_payload | BLOB NOT NULL; 1–4096 bytes; checked at write time and by migration invariants |
 | canonical_envelope | BLOB NOT NULL; 1–8192 bytes; checked at write time and by migration invariants |
 | created_at_ms | INTEGER NOT NULL; derived from canonical timestamp |
-| source | TEXT NOT NULL CHECK signed; legacy audit is exposed by a separate adapter |
+| source | TEXT NOT NULL CHECK (`source = 'signed'`); legacy audit is exposed by a separate adapter and is never inserted here |
 
 canonical_payload and canonical_envelope are exact bytes used for signature
 and hash verification, not a reserialization cache. Database NULL is allowed
@@ -58,7 +58,9 @@ serializes those as null.
 
 `canonical_timestamp` is an RFC3339 timestamp with `Z` UTC suffix and exactly
 three fractional milliseconds (`YYYY-MM-DDTHH:MM:SS.sssZ`). `created_at_ms` is
-derived from it and is never used to recreate signed bytes. In a rotated key
+derived from it and is never used to recreate signed bytes. Core obtains this
+timestamp from a UTC clock immediately before canonicalization; clock
+conversion/overflow and non-UTC values are rejected. In a rotated key
 segment, the absent predecessor is valid only when the signed key-history
 transition explicitly declares the segment boundary.
 
@@ -83,7 +85,7 @@ Indexes:
 | approval_call_hash | TEXT NULL; 64 lowercase hex |
 | approval_state | TEXT NOT NULL CHECK (`approval_state IN ('none','pending','granted','denied','expired','claimed')`) |
 | tool_args_hash | TEXT NOT NULL; 64 lowercase hex |
-| recovery_code | TEXT NULL; stable enum, no free error text |
+| recovery_code | TEXT NULL; `CHECK (recovery_code IS NULL OR recovery_code IN ('signature_failed','external_error','unknown','missing_pre','missing_terminal','approval_expired','chain_conflict','stale_head'))`; no free error text |
 | created_at_ms, updated_at_ms | INTEGER NOT NULL |
 
 The row is updated only in the same transaction as its receipt append. A
@@ -162,7 +164,8 @@ Retention v1:
 
 Legacy unsigned audit records remain available through a separate adapter as
 source=legacy until existing audit retention removes them; they are always
-unverified and never inserted into receipt_records.
+unverified and never inserted into receipt_records. The receipts table itself
+therefore stores only `source=signed`; `legacy` is an adapter-level source.
 
 ## JSONL export bundle v1
 
@@ -199,14 +202,21 @@ The embedded payload supplies action_id, previous_receipt_hash, approval_id and
 all other signed fields.
 
 key-history.jsonl contains exact canonical KeyTransitionV1 records from 01.2,
-one per line. checkpoints.jsonl contains exact signed ReceiptCheckpointV1
-records. trusted-roots.json is optional, user-selected trust metadata and is
-never silently treated as a trust root on another machine.
+one per line, with its version, transition id, timestamp, reason, actor, new
+key/public key, continuity, signer and signature fields (plus only the optional
+previous-key/hash fields). checkpoints.jsonl contains exact signed
+ReceiptCheckpointV1 records. trusted-roots.json is the canonical
+`{schema_version:1,roots:[...]}` object from
+`contracts/receipts/v1/trusted-roots.schema.json`; it is optional user-selected
+metadata and is never silently treated as a trust root on another machine.
 
 `actions.jsonl` содержит bounded projection action rows, включая
 `pending_recovery`, `recovery_code` и `requires_reconciliation`; raw input,
 result и error text запрещены. Эта projection signed receipt не является и
-проверяется только на согласованность с `receipt_actions`. Отсутствие
+проверяется только на согласованность с `receipt_actions`. В offline bundle
+такая проверка означает согласованность projection с action_id, pre/terminal
+hashes, status и approval fields embedded in receipts; проверка SQLite
+источника выполняется только в Core snapshot mode. Отсутствие
 `actions.jsonl` в архиве без action projection не является ошибкой.
 
 ### manifest.json
@@ -245,7 +255,12 @@ Export algorithm:
    valid bundle returns `receipts.export_exists`; it never silently reuses or
    overwrites it. A future replace operation must be a separate, explicit
    user-confirmed command and is not part of v1;
-2. begin SQLite read transaction and capture snapshot sequence;
+2. begin a SQLite `BEGIN DEFERRED` read transaction and capture
+   `snapshot_last_sequence`; the first read fixes one SQLite snapshot, so
+   concurrent appends are excluded rather than mixed into the export. The
+   snapshot need not be the newest commit. On `SQLITE_BUSY`, `SQLITE_IOERR` or
+   an equivalent transient snapshot error, roll back and retry the whole export
+   a bounded number of times; never continue from a partial snapshot;
 3. stream bounded rows into staging directory without loading full export into
    memory;
 4. copy the complete public-key path and checkpoint boundary required by the
@@ -258,8 +273,12 @@ Export algorithm:
 
 Failure removes only the uniquely named staging directory, never source rows.
 Crash leaves no directory with a valid manifest until the final rename; the next
-startup scans the export parent for uniquely named staging directories and
-removes them automatically after validating that they are owned by EvoHime and
+startup scans only configured export roots for uniquely named staging
+directories, validates the EvoHime ownership marker, and removes a staging
+directory older than 24 hours or one without a manifest after its staging write
+failed. A fresh staging directory is retained for one bounded retry window and
+is never mistaken for a completed destination. The scan removes them after
+validating that they are owned by EvoHime and
 contain no committed destination marker. A destination directory with a valid
 manifest but without the bounded `receipts.exported` audit event is treated as
 an orphaned completed bundle: startup verifies ownership and manifest hashes,
@@ -293,6 +312,13 @@ Verification operates on a consistent SQLite snapshot or an export bundle:
 Default verification is full for the selected range. An incremental cache may
 skip an unchanged prefix only after rechecking its stored head hash, public
 history hash and checkpoint; cache is an optimization, never a trust source.
+
+**Chain closure** is the minimal set of receipt rows containing every filtered
+row and, for each included row, recursively its predecessor until the first
+receipt in that key segment or an explicitly supplied trusted checkpoint/trust
+anchor sequence. A signed key-history boundary ends closure; an absent
+predecessor inside a segment is `receipts.chain_incomplete`. Closure is finite,
+sequence-ordered and deduplicated and never crosses a key segment.
 
 Фильтры task/run/action не могут скрыть predecessor: VerifyReceipts расширяет
 выбранный диапазон до chain closure между первой и последней sequence (либо до
@@ -374,12 +400,15 @@ Request:
 - same filters as ListReceipts;
 - limit 1–2,000 (default 500);
 - optional trust key id;
+- optional `trust_anchor_sequence`, a bounded decimal sequence that may end
+  closure only when authenticated by the matching trusted key/checkpoint;
 - include_pending boolean.
 
 Response:
 
 - overall status and stable code;
-- requested_count, actual_verified_count, snapshot sequence;
+- requested_count, actual_verified_count, snapshot sequence and the effective
+  closure start/anchor sequence;
 - per-receipt bounded status/code/hash/key id;
 - chain_start_hash and chain_end_hash.
 
@@ -510,6 +539,8 @@ renders canonical payload automatically and never labels a receipt as correct.
 ## Критерии готовности
 
 - DDL, indexes, constraints and migration are implemented and tested;
+- `receipt_records.source` is constrained to `signed`; legacy remains visible
+  only through the adapter-level `source=legacy` view;
 - SQLite is documented and tested as source of truth; export is an atomic,
   snapshot-consistent derived bundle;
 - JSONL/manifest/key-history/checkpoint formats and exact byte rules are
