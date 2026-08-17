@@ -10,6 +10,7 @@ if ($manifest.architecture -ne 'x64') { throw 'manifest architecture must be x64
 if ($manifest.components.core -ne 'evohime-core.exe') { throw 'core component is missing' }
 if ($manifest.components.supervisor -ne 'evohime-supervisor.exe') { throw 'supervisor component is missing' }
 if ($manifest.components.updater -ne 'evohime-transaction.exe') { throw 'updater component is missing' }
+if ($manifest.components.verifier -ne 'evohime-verify.exe') { throw 'verifier component is missing' }
 if ($manifest.components.ui -ne 'EvoHime.exe') { throw 'UI component is missing' }
 if ($manifest.PSObject.Properties.Name -contains 'web') { throw 'web component must not be packaged' }
 if ($manifest.PSObject.Properties.Name -contains 'postgresql') { throw 'PostgreSQL must not be packaged' }
@@ -23,6 +24,7 @@ Set-Content -LiteralPath (Join-Path $packageRoot 'EvoHime.exe') -Value 'ui'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-core.exe') -Value 'core'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-supervisor.exe') -Value 'supervisor'
 Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-transaction.exe') -Value 'updater'
+Set-Content -LiteralPath (Join-Path $packageRoot 'evohime-verify.exe') -Value 'verifier'
 
 $commit = 'a' * 40
 & (Join-Path $PSScriptRoot 'build-windows-native.ps1') -SkipBuild -OutputPath $packageRoot -Commit $commit | Out-Null

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "evohime://contracts/receipts/v1/key-transition",
+  "title": "KeyTransitionV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["transition_version", "transition_id", "created_at", "reason", "actor", "new_key_id", "new_public_key", "continuity", "signed_by_key_id", "signature"],
+  "properties": {
+    "transition_version": {"const": 1},
+    "transition_id": {"type": "string", "format": "uuid"},
+    "created_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"},
+    "reason": {"enum": ["initial", "scheduled", "manual", "compromise", "recovery"]},
+    "actor": {"enum": ["system", "user"]},
+    "previous_key_id": {"type": "string", "pattern": "^ed25519:[0-9a-f]{64}$"},
+    "new_key_id": {"type": "string", "pattern": "^ed25519:[0-9a-f]{64}$"},
+    "new_public_key": {"type": "string", "pattern": "^[A-Za-z0-9_-]{43}$"},
+    "continuity": {"enum": ["genesis", "chained", "compromised", "broken"]},
+    "signed_by_key_id": {"type": "string", "pattern": "^ed25519:[0-9a-f]{64}$"},
+    "signature": {"type": "string", "pattern": "^[A-Za-z0-9_-]{86}$"},
+    "previous_transition_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

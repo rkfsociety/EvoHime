@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "evohime://contracts/receipts/v1/trusted-roots",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "roots"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "roots": {"type": "array", "maxItems": 16, "items": {"type": "object", "additionalProperties": false, "required": ["root_version", "root_id", "genesis_key_id", "pinned_at", "source", "status"], "properties": {
+      "root_version": {"const": 1}, "root_id": {"type": "string", "maxLength": 128}, "genesis_key_id": {"type": "string", "pattern": "^ed25519:[0-9a-f]{64}$"}, "pinned_at": {"type": "string"}, "source": {"type": "string", "maxLength": 64}, "status": {"enum": ["active", "revoked", "superseded"]}, "superseded_by": {"type": ["string", "null"], "maxLength": 128}
+    }}}
+  }
+}

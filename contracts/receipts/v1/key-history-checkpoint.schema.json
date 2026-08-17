@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "evohime://contracts/receipts/v1/key-history-checkpoint",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["checkpoint_version", "checkpoint_id", "created_at", "genesis_key_id", "lineage_id", "covered_first_sequence", "covered_last_sequence", "covered_prefix_hash", "last_transition_hash", "retained_from_sequence", "signed_by_key_id", "signature"],
+  "properties": {
+    "checkpoint_version": {"const": 1}, "checkpoint_id": {"type": "string", "format": "uuid"}, "created_at": {"type": "string"},
+    "genesis_key_id": {"type": "string", "pattern": "^ed25519:[0-9a-f]{64}$"}, "lineage_id": {"type": "string", "maxLength": 128},
+    "covered_first_sequence": {"type": "integer", "minimum": 0}, "covered_last_sequence": {"type": "integer", "minimum": 0},
+    "covered_prefix_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "last_transition_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "retained_from_sequence": {"type": "integer", "minimum": 0}, "signed_by_key_id": {"type": "string", "pattern": "^ed25519:[0-9a-f]{64}$"}, "signature": {"type": "string", "pattern": "^[A-Za-z0-9_-]{86}$"}
+  }
+}

@@ -9,6 +9,8 @@ use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use thiserror::Error;
 
+pub mod key_lifecycle;
+
 pub const RECEIPT_VERSION: u64 = 1;
 include!(concat!(env!("OUT_DIR"), "/receipt_limits.rs"));
 pub const RESULT_DOMAIN: &[u8] = b"evohime-result-v1\0";

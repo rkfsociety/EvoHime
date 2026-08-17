@@ -93,7 +93,7 @@ jobs:
         with:
           toolchain: stable-x86_64-pc-windows-msvc
       - name: Test native Rust foundation
-        run: cargo test --locked -p evohime-permissions -p evohime-tool-runtime -p evohime-model-gateway -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc -p evohime-updater
+        run: cargo test --locked -p evohime-permissions -p evohime-tool-runtime -p evohime-model-gateway -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc -p evohime-updater -p evohime-receipts
       - name: Check supervisor
         run: cargo check --locked -p evohime-supervisor -p evohime-updater
       - name: Deterministic evaluation and fixture security gate
@@ -239,7 +239,7 @@ jobs:
           $setup = Join-Path $env:GITHUB_WORKSPACE 'installer-output\EvoHime-Setup.exe'
           & $setup /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$installPath"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($component in @('EvoHime.exe', 'resources\app.asar', 'resources\evohime-agent.ico', 'evohime-core.exe', 'evohime-supervisor.exe', 'evohime-transaction.exe', 'evohime.manifest.json', 'evohime.build.json')) {
+          foreach ($component in @('EvoHime.exe', 'resources\app.asar', 'resources\evohime-agent.ico', 'evohime-core.exe', 'evohime-supervisor.exe', 'evohime-transaction.exe', 'evohime-verify.exe', 'evohime.manifest.json', 'evohime.build.json')) {
             if (-not (Test-Path -LiteralPath (Join-Path $installPath $component))) { throw "Installed component missing: $component" }
           }
           # Маркер сборки — то, по чему установленный клиент понимает, отстал ли он от ветки.
