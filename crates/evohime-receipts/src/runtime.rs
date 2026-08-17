@@ -1002,6 +1002,14 @@ impl<'a> ReceiptRuntime<'a> {
             }),
         ).optional()?)
     }
+
+    pub fn diagnostic_counts(&self) -> Result<BTreeMap<String, i64>, RuntimeError> {
+        let mut statement = self.connection.prepare("SELECT code,COUNT(*) FROM receipt_runtime_diagnostics GROUP BY code ORDER BY code LIMIT 16")?;
+        let rows = statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))?;
+        let mut counts = BTreeMap::new();
+        for row in rows { let (code, count) = row?; counts.insert(code, count); }
+        Ok(counts)
+    }
 }
 
 #[cfg(test)]

@@ -3753,7 +3753,12 @@ impl ToolAgent {
         let status = if outcome.ok { "succeeded" } else { "failed" };
         runtime.mark_returned(request.action_id).ok();
         if runtime.complete(request, status, &output_digest, (!outcome.ok).then_some("tool_error")).is_err() {
+            let mut recovery_code = "signature_failed";
             let pre_hash = runtime.action(request.action_id).ok().flatten().and_then(|row| row.pre_receipt_hash).unwrap_or_default();
+            let key_id = match keys.storage_key_id() {
+                Ok(value) => value,
+                Err(_) => { recovery_code = "storage_key_unavailable"; "unavailable".to_owned() }
+            };
             let row = ProtectedActionRow {
                 schema_version: 1,
                 action_id: request.action_id.to_string(),
@@ -3765,16 +3770,20 @@ impl ToolAgent {
                 } else {
                     serde_json::json!({"status":"failed","error_category":"tool_error"})
                 }).unwrap_or_else(|_| evohime_receipts::sha256_hex(b"tool_error")),
-                recovery_code: "signature_failed".to_owned(),
+                recovery_code: recovery_code.to_owned(),
                 created_at_ms: SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|value| value.as_millis() as i64).unwrap_or_default(),
-                key_id: keys.storage_key_id().unwrap_or_else(|_| "unavailable".to_owned()),
+                key_id,
             };
             if let Ok(plain) = serde_json::to_vec(&row) {
-                if let Ok(envelope) = keys.protect_storage(&plain) {
-                    let _ = runtime.store_protected_envelope(&row, envelope);
+                match keys.protect_storage(&plain) {
+                    Ok(envelope) => if runtime.store_protected_envelope(&row, envelope).is_err() { recovery_code = "storage_key_unavailable"; },
+                    Err(_) => recovery_code = "storage_key_unavailable",
                 }
+            } else { recovery_code = "storage_key_unavailable"; }
+            if recovery_code == "storage_key_unavailable" {
+                let _ = runtime.store_unsigned_runtime_marker(request.action_id, "storage_key_unavailable");
             }
-            let _ = runtime.mark_pending_recovery(request.action_id, "signature_failed");
+            let _ = runtime.mark_pending_recovery(request.action_id, recovery_code);
         }
     }
 

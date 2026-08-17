@@ -372,6 +372,12 @@ impl IpcBridge {
                                 if let Ok(metrics) = runtime.metrics() {
                                     object.insert("runtime_metrics".into(), serde_json::json!(metrics.counters));
                                 }
+                                if let Ok(diagnostics) = runtime.diagnostic_counts() {
+                                    object.insert("runtime_diagnostics".into(), serde_json::json!(diagnostics));
+                                }
+                                if let Ok(rotation) = runtime.storage_rotation_job() {
+                                    object.insert("storage_rotation".into(), serde_json::json!(rotation.map(|job| serde_json::json!({"job_id": job.job_id, "old_key_id": job.old_key_id, "new_key_id": job.new_key_id, "cursor": job.cursor, "generation": job.generation, "state": job.state}))));
+                                }
                             }
                         }
                     }
@@ -3207,7 +3213,12 @@ impl IpcBridge {
                         if runtime.complete(&request, "failed", &failed_digest, Some("tool_error")).is_ok() {
                             return result;
                         }
+                        let mut recovery_code = "signature_failed";
                         let pre_hash = runtime.action(request.action_id).ok().flatten().and_then(|row| row.pre_receipt_hash).unwrap_or_default();
+                        let key_id = match self.receipt_keys.storage_key_id() {
+                            Ok(value) => value,
+                            Err(_) => { recovery_code = "storage_key_unavailable"; "unavailable".to_owned() }
+                        };
                         let row = ProtectedActionRow {
                             schema_version: 1,
                             action_id: request.action_id.to_string(),
@@ -3215,14 +3226,19 @@ impl IpcBridge {
                             tool_args_hash: evohime_receipts::runtime::canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input).unwrap_or_default(),
                             result_status: "failed".into(),
                             result_hash: evohime_receipts::result_hash(&serde_json::json!({"status":"failed","error_category":"tool_error"})).unwrap_or_else(|_| evohime_receipts::sha256_hex(b"tool_error")),
-                            recovery_code: "unknown".into(),
+                            recovery_code: recovery_code.into(),
                             created_at_ms: SystemTime::now().duration_since(UNIX_EPOCH).map(|value| value.as_millis() as i64).unwrap_or_default(),
-                            key_id: self.receipt_keys.storage_key_id().unwrap_or_else(|_| "unavailable".into()),
+                            key_id,
                         };
                         if let Ok(plain) = serde_json::to_vec(&row) {
-                            if let Ok(envelope) = self.receipt_keys.protect_storage(&plain) { let _ = runtime.store_protected_envelope(&row, envelope); }
+                            if let Ok(envelope) = self.receipt_keys.protect_storage(&plain) {
+                                if runtime.store_protected_envelope(&row, envelope).is_err() { recovery_code = "storage_key_unavailable"; }
+                            } else { recovery_code = "storage_key_unavailable"; }
+                        } else { recovery_code = "storage_key_unavailable"; }
+                        if recovery_code == "storage_key_unavailable" {
+                            let _ = runtime.store_unsigned_runtime_marker(request.action_id, "storage_key_unavailable");
                         }
-                        let _ = runtime.mark_pending_recovery(request.action_id, "unknown");
+                        let _ = runtime.mark_pending_recovery(request.action_id, recovery_code);
                     }
                 }
                 result
@@ -3994,6 +4010,81 @@ mod tests {
         assert!(result_json.get("error").is_none());
         let _ = std::fs::remove_dir_all(root);
         let _ = std::fs::remove_dir_all(data_root);
+    }
+
+    #[tokio::test]
+    async fn reconciliation_command_executes_only_new_read_only_action() {
+        let root = std::env::temp_dir().join(format!("evohime-ipc-reconcile-root-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("reconcile root");
+        std::fs::write(root.join("observed.txt"), "observed state\n").expect("observed file");
+        let data_root = std::env::temp_dir().join(format!("evohime-ipc-reconcile-data-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&data_root);
+        std::fs::create_dir_all(&data_root).expect("reconcile data root");
+        let journal_path = data_root.join("events.db");
+        let keys = ReceiptKeyManager::new(&data_root);
+        keys.initialize().expect("keys initialize");
+        let journal = EventJournal::open(&journal_path).expect("journal opens");
+        let (coordinator, _events) = TaskCoordinator::new_with_journal(8, None, journal.clone());
+        let bridge = IpcBridge::with_coordinator_and_approvals(
+            journal.clone(),
+            coordinator,
+            ApprovalCoordinator::default(),
+            Arc::new(ToolRegistry::bootstrap()),
+            None,
+            None,
+        );
+        let task_id = uuid::Uuid::new_v4();
+        let old_action_id = uuid::Uuid::now_v7();
+        {
+            let mut database = journal.database().lock().await;
+            let signer = crate::CoreReceiptSigner(Arc::new(keys));
+            let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).unwrap();
+            let old_request = evohime_receipts::runtime::ActionRequest {
+                action_id: old_action_id,
+                task_id: task_id.to_string(),
+                run_id: task_id.to_string(),
+                tool_name: "shell.execute".into(),
+                policy_id: "permission:ShellExecute".into(),
+                normalized_scope: "workspace".into(),
+                input: serde_json::json!({"program":"echo","args":[]}),
+                policy_decision: evohime_receipts::runtime::PolicyDecision::Allow,
+                approval_id: None,
+                parent_approval_ref: None,
+                preview: "old mutation".into(),
+            };
+            runtime.prepare(old_request).unwrap();
+            runtime.mark_started(old_action_id).unwrap();
+            runtime.mark_returned(old_action_id).unwrap();
+            runtime.mark_pending_recovery(old_action_id, "unknown").unwrap();
+        }
+        let command = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "reconcile-read-only".into(),
+            client_id: "test-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::ReconcilePendingReceiptAction(
+                generated::ReconcilePendingReceiptAction {
+                    old_action_id: old_action_id.to_string(),
+                    tool_name: "filesystem.read".into(),
+                    input_json: r#"{"path":"observed.txt"}"#.into(),
+                    workspace_path: root.display().to_string(),
+                },
+            )),
+        };
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+        transport::write_frame(&mut client, &command.encode_to_vec()).await.unwrap();
+        bridge.process_once(&mut server_reader, &mut server_writer).await.unwrap();
+        let response = generated::EventEnvelope::decode(transport::read_frame(&mut client).await.unwrap().as_slice()).unwrap();
+        assert_eq!(response.event_type, "receipt.reconciliation");
+        let payload: serde_json::Value = serde_json::from_slice(&response.payload).unwrap();
+        assert_eq!(payload["ok"], true);
+        assert_eq!(payload["status"], "succeeded");
+        assert_ne!(payload["action_id"], old_action_id.to_string());
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&data_root);
     }
 
     #[tokio::test]
