@@ -379,7 +379,9 @@ body {
 .main__scroll {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 20px;
 }
 
@@ -599,6 +601,11 @@ body {
 
 .markdown-message > :first-child { margin-top: 0; }
 .markdown-message > :last-child { margin-bottom: 0; }
+.markdown-message {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
 
 .markdown-message p,
 .markdown-message ul,
@@ -645,8 +652,10 @@ body {
 }
 
 .markdown-message pre {
+  box-sizing: border-box;
+  max-width: 100%;
   padding: 12px;
-  overflow-x: auto;
+  overflow: hidden;
   background: var(--bg-sunken);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -657,7 +666,8 @@ body {
   background: none;
   color: var(--fg-muted);
   font-size: 12px;
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .markdown-message a {
@@ -672,12 +682,16 @@ body {
 }
 
 .markdown-message table {
+  box-sizing: border-box;
+  max-width: 100%;
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
 }
 
 .markdown-message th,
 .markdown-message td {
+  overflow-wrap: anywhere;
   padding: 6px 8px;
   border: 1px solid var(--border);
   text-align: left;
@@ -1854,11 +1868,21 @@ select:focus {
   .operations-grid { grid-template-columns: 1fr; }
 }
 .review-panel {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
   max-width: 980px;
   margin: 0 auto;
   padding: 24px;
   display: grid;
   gap: 18px;
+}
+
+.review-panel > *,
+.review-panel__result,
+.review-panel__result-heading,
+.review-panel__result details {
+  min-width: 0;
 }
 
 .review-panel__toolbar,
@@ -1897,7 +1921,8 @@ select:focus {
 .review-panel__progress-bar { height: 7px; overflow: hidden; border-radius: 999px; background: var(--border, #334155); }
 .review-panel__progress-bar span { display: block; height: 100%; border-radius: inherit; background: #60a5fa; transition: width 180ms ease; }
 .review-panel__progress ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
-.review-panel__progress li { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.review-panel__progress li { display: flex; justify-content: space-between; gap: 12px; min-width: 0; font-size: 13px; }
+.review-panel__progress li > :first-child { min-width: 0; overflow-wrap: anywhere; }
 .review-panel__progress-heading .review-panel__elapsed { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--muted, #94a3b8); }
 .review-panel__reviewer-status { color: var(--muted, #94a3b8); }
 .review-panel__reviewer-status--cancelled { color: #fbbf24; }
