@@ -664,7 +664,9 @@ impl ReceiptKeyManager {
     pub fn unprotect_storage(&self, bytes: &[u8]) -> Result<Vec<u8>, KeyError> {
         if bytes.len() < STORAGE_NONCE_BYTES + aead::AES_256_GCM.tag_len() { return Err(KeyError::Corrupt); }
         let mut candidates = Vec::new();
-        if let Ok((_, key)) = self.active_storage_key() { candidates.push(key); }
+        if self.storage_key_path().exists() {
+            if let Ok((_, key)) = self.read_storage_metadata(&self.storage_key_path()) { candidates.push(key); }
+        }
         if let Ok(raw) = fs::read(self.storage_key_history_path()) {
             if let Ok(history) = serde_json::from_slice::<Vec<StorageKeyMetadata>>(&raw) {
                 for metadata in history.into_iter().rev().take(8) {
