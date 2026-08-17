@@ -1,8 +1,8 @@
 name: Windows CI
 
-# Клиент обновляется из исходников по коммитам, а не релизами: workflow
-# проверяет сборку и установщик, но ничего не публикует. Установщик нужен
-# только для первой установки и доступен как артефакт прогона.
+# Клиент обновляется из исходников по коммитам, а постоянный релиз содержит
+# последний проверенный установщик. Workflow публикует его только после
+# успешной сборки и acceptance-проверок на push в main или ручном запуске.
 on:
   push:
     branches: [main]
@@ -348,6 +348,7 @@ jobs:
   publish-installer:
     needs: build-native
     if: >-
+      !cancelled() &&
       needs.build-native.result == 'success' &&
       (github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
