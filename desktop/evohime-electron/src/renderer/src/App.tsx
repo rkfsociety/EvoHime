@@ -10,7 +10,6 @@ import { UpdateGate } from './UpdateGate'
 import { ProjectSidebar } from './ProjectSidebar'
 import { TaskTimeline } from './TaskTimeline'
 import { EditorPanel } from './EditorPanel'
-import { SafetyPanel } from './SafetyPanel'
 import { ProviderForm } from './ProviderForm'
 import { RecoveryBanner } from './RecoveryBanner'
 import { OperationsPanel } from './OperationsPanel'
@@ -38,7 +37,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'editor' | 'operations' | 'safety' | 'settings'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'editor' | 'operations' | 'settings'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -55,7 +54,6 @@ const VIEWS: readonly ViewDescriptor[] = [
   { id: 'reviews', label: 'Ревью планов', icon: '✓' },
   { id: 'editor', label: 'Редактор', icon: '✎' },
   { id: 'operations', label: 'Память и Pulse', icon: '◌' },
-  { id: 'safety', label: 'Безопасность', icon: '◈' }
 ]
 
 /** Not a nav row: reached through the gear next to the account. */
@@ -230,7 +228,6 @@ export function App(): React.JSX.Element {
               {view === 'reviews' ? <PlanReviewPanel connection={connection} events={events} /> : null}
               {view === 'editor' ? <EditorPanel connection={connection} events={events} /> : null}
               {view === 'operations' ? <OperationsPanel connection={connection} events={events} /> : null}
-              {view === 'safety' ? <SafetyPanel connection={connection} events={events} /> : null}
               {view === 'settings' ? <ProviderForm /> : null}
             </div>
           )}
