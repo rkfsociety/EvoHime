@@ -1,7 +1,7 @@
 use evohime_desktop_ipc::{generated, transport, FrameError};
 use prost::Message;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::{SystemTime, UNIX_EPOCH}};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_util::sync::CancellationToken;
 
@@ -11,7 +11,7 @@ use crate::{
 use evohime_local_storage::WorkItemRecord;
 use evohime_model_gateway::ModelGatewayConfig;
 use evohime_permissions::{Permission, PermissionMode};
-use evohime_receipts::key_lifecycle::{ReceiptKeyManager, VerificationStatus};
+use evohime_receipts::{key_lifecycle::{ReceiptKeyManager, VerificationStatus}, runtime::{ProtectedActionRow, ReceiptSigner}};
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -2952,7 +2952,24 @@ impl IpcBridge {
                 let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
                 match &result {
                     Ok(value) => { runtime.mark_returned(request.action_id).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?; let digest = evohime_receipts::sha256_hex(value.output.as_bytes()); runtime.complete(&request, "succeeded", &digest, None).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?; }
-                    Err(_) => { let _ = runtime.mark_pending_recovery(request.action_id, "unknown"); }
+                    Err(error) => {
+                        let pre_hash = runtime.action(request.action_id).ok().flatten().and_then(|row| row.pre_receipt_hash).unwrap_or_default();
+                        let row = ProtectedActionRow {
+                            schema_version: 1,
+                            action_id: request.action_id.to_string(),
+                            pre_receipt_hash: pre_hash,
+                            tool_args_hash: evohime_receipts::runtime::canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input).unwrap_or_default(),
+                            result_status: "failed".into(),
+                            result_hash: evohime_receipts::sha256_hex(error.to_string().as_bytes()),
+                            recovery_code: "unknown".into(),
+                            created_at_ms: SystemTime::now().duration_since(UNIX_EPOCH).map(|value| value.as_millis() as i64).unwrap_or_default(),
+                            key_id: signer.key_id().unwrap_or_else(|_| "unavailable".into()),
+                        };
+                        if let Ok(plain) = serde_json::to_vec(&row) {
+                            if let Ok(envelope) = self.receipt_keys.protect_storage(&plain) { let _ = runtime.store_protected_envelope(&row, envelope); }
+                        }
+                        let _ = runtime.mark_pending_recovery(request.action_id, "unknown");
+                    }
                 }
                 result
             }
