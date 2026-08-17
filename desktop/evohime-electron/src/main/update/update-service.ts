@@ -25,7 +25,7 @@ import {
 } from './commit-status'
 import { readBuildMarker, type UpdateConfig } from './config'
 import { resolveGithubToken } from './github-token'
-import { downloadReleaseInstaller } from './release-installer'
+import { downloadReleaseInstaller, readReleaseInstallerCommit } from './release-installer'
 import { readRemoteHead, syncCheckout } from './source-checkout'
 import { detectToolchain, ensureToolchain, toolPath, type ToolchainReport } from './toolchain'
 
@@ -63,6 +63,7 @@ export interface UpdateServiceDeps {
   readonly sync?: typeof syncCheckout
   readonly build?: typeof buildStagedPackage
   readonly downloadInstaller?: typeof downloadReleaseInstaller
+  readonly publishedInstallerCommit?: typeof readReleaseInstallerCommit
   readonly reset?: typeof clearDerivedState
   readonly buildLog?: BuildLogWriter
   readonly spawnWorker?: (file: string, args: readonly string[]) => void
@@ -218,6 +219,23 @@ export class UpdateService {
           remoteCommit: candidate.commit,
           checkedAtMs: this.time()
         })
+      }
+
+      if (config.launchPolicy === 'installer') {
+        const published = await (this.deps.publishedInstallerCommit ?? readReleaseInstallerCommit)(
+          config.repositoryUrl,
+          config.branch,
+          await this.githubToken()
+        )
+        if (published !== candidate.commit) {
+          this.deps.log('info', 'update.installer_pending', { candidate: candidate.commit, published })
+          return this.patch({
+            phase: 'up-to-date',
+            message: 'Проверенный установщик для последнего зелёного коммита ещё публикуется.',
+            remoteCommit: null,
+            checkedAtMs: this.time()
+          })
+        }
       }
 
       if (installedCommit !== null && !(await this.changesProduct(installedCommit, candidate.commit))) {

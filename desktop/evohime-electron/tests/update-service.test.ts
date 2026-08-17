@@ -99,6 +99,7 @@ function harness(
     // The default branch tip is green and touches product code; tests that care
     // override these.
     selectGreen: async () => ({ commit: REMOTE, tipState: 'success' as const }),
+    publishedInstallerCommit: async () => REMOTE,
     productChanges: async () => true,
     // No test may shell out to the real gh CLI for a credential.
     resolveToken: async () => null,
@@ -176,6 +177,22 @@ describe('launch gate', () => {
     expect(test.service.status.phase).toBe('ready')
     expect(test.service.status.restartRequired).toBe(true)
     expect(test.service.status.blocking).toBe(false)
+  })
+
+  it('waits when CI is green but the shared installer is still from an older commit', async () => {
+    const downloadInstaller = vi.fn()
+    const test = harness({
+      downloadInstaller,
+      remoteBranchHead: async () => REMOTE,
+      publishedInstallerCommit: async () => INSTALLED
+    }, INSTALLED, { launchPolicy: 'installer' })
+
+    const status = await test.service.check()
+
+    expect(status.phase).toBe('up-to-date')
+    expect(status.remoteCommit).toBeNull()
+    expect(status.message).toContain('ещё публикуется')
+    expect(downloadInstaller).not.toHaveBeenCalled()
   })
 
   it('does nothing when updates are disabled', async () => {

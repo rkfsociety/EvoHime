@@ -30,6 +30,29 @@ export interface ReleaseInstallerDeps {
   readonly now?: () => number
 }
 
+/** Reads the commit represented by the currently published installer. */
+export async function readReleaseInstallerCommit(
+  repositoryUrl: string,
+  branch: string,
+  token: string | null,
+  deps: ReleaseInstallerDeps = {}
+): Promise<string> {
+  const apiBase = githubApiBase(repositoryUrl)
+  if (!apiBase) throw new Error('GitHub installer: поддерживаются только GitHub-репозитории.')
+  const request = deps.fetch ?? globalThis.fetch
+  const headers = apiHeaders(token)
+  const release = await getJson(`${apiBase}/releases/tags/${RELEASE_TAG}`, request, headers)
+  const manifestUrl = releaseAssetUrl(release, MANIFEST_ASSET, apiBase)
+  if (!manifestUrl) throw new Error('GitHub installer: релиз ещё не содержит манифест.')
+  const manifestText = await downloadText(manifestUrl, request, { ...headers, accept: 'application/octet-stream' })
+  if (manifestText.length > MAX_MANIFEST_BYTES) throw new Error('GitHub installer: манифест слишком большой.')
+  const manifest = parseManifest(manifestText)
+  if (manifest.branch !== branch) {
+    throw new Error(`GitHub installer: манифест относится к ветке ${manifest.branch}, ожидалась ${branch}.`)
+  }
+  return manifest.commit
+}
+
 interface ReleaseAsset {
   readonly name?: unknown
   readonly url?: unknown
@@ -79,6 +102,12 @@ export async function downloadReleaseInstaller(
   const marker: BuildMarker = { commit: manifest.commit, branch: manifest.branch, builtAtMs: (deps.now ?? Date.now)() }
   await writeFile(join(destination, 'evohime.build.json'), `${JSON.stringify(marker, null, 2)}\n`, 'utf8')
   return { installer, marker }
+}
+
+function releaseAssetUrl(release: any, name: string, apiBase: string): string | null {
+  const assets: readonly ReleaseAsset[] = Array.isArray(release?.assets) ? release.assets : []
+  const asset = assets.find((candidate: ReleaseAsset) => candidate.name === name)
+  return assetUrl(asset?.url, apiBase)
 }
 
 function apiHeaders(token: string | null): Record<string, string> {
