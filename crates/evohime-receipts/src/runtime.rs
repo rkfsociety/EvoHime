@@ -243,6 +243,9 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
            recovery_code TEXT,
            result_hash TEXT,
            result_marker BLOB,
+           reconciliation_action_id TEXT,
+           reconciles_action_id TEXT,
+           completion_source TEXT NOT NULL DEFAULT 'execution' CHECK(completion_source IN ('execution','reconciliation')),
            tool_started_at_ms INTEGER,
            UNIQUE(action_id)
          );
@@ -296,6 +299,9 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
         ("receipt_actions", "normalized_scope", "TEXT NOT NULL DEFAULT ''"),
         ("receipt_actions", "fingerprint_input_version", "INTEGER NOT NULL DEFAULT 1"),
         ("receipt_approval_intents", "schema_version", "INTEGER NOT NULL DEFAULT 1"),
+        ("receipt_actions", "reconciliation_action_id", "TEXT"),
+        ("receipt_actions", "reconciles_action_id", "TEXT"),
+        ("receipt_actions", "completion_source", "TEXT NOT NULL DEFAULT 'execution'"),
     ] {
         let exists: Option<String> = connection.query_row(
             &format!("SELECT name FROM pragma_table_info('{table}') WHERE name='{column}'"),
@@ -521,6 +527,23 @@ impl<'a> ReceiptRuntime<'a> {
     pub fn mark_pending_recovery(&self, action_id: Uuid, code: &str) -> Result<(), RuntimeError> {
         if !valid_recovery_code(code) { return Err(RuntimeError::Code("schema_violation")); }
         self.connection.execute("UPDATE receipt_actions SET state='pending_recovery',recovery_code=?2 WHERE action_id=?1 AND dispatch_state IN ('started','returned')", params![action_id.to_string(), code])?;
+        Ok(())
+    }
+
+    /// Links a new, separately authorized read-only reconciliation action to a
+    /// pending historical action. The original action is never dispatched by
+    /// this operation and remains visible in its original audit state.
+    pub fn link_reconciliation(&self, old_action_id: Uuid, new_action_id: Uuid) -> Result<(), RuntimeError> {
+        if old_action_id == new_action_id { return Err(RuntimeError::Code("schema_violation")); }
+        let tx = self.connection.unchecked_transaction()?;
+        let old_state: String = tx.query_row("SELECT state FROM receipt_actions WHERE action_id=?1", [old_action_id.to_string()], |row| row.get(0))?;
+        let new_state: String = tx.query_row("SELECT state FROM receipt_actions WHERE action_id=?1", [new_action_id.to_string()], |row| row.get(0))?;
+        if old_state != "pending_recovery" || !matches!(new_state.as_str(), "prepared"|"succeeded"|"failed"|"cancelled") {
+            return Err(RuntimeError::Code("pending_recovery"));
+        }
+        tx.execute("UPDATE receipt_actions SET reconciliation_action_id=?2 WHERE action_id=?1 AND reconciliation_action_id IS NULL", params![old_action_id.to_string(), new_action_id.to_string()])?;
+        tx.execute("UPDATE receipt_actions SET reconciles_action_id=?2,completion_source='reconciliation' WHERE action_id=?1 AND reconciles_action_id IS NULL", params![new_action_id.to_string(), old_action_id.to_string()])?;
+        tx.commit()?;
         Ok(())
     }
 
