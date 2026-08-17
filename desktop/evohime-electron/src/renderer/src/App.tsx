@@ -14,6 +14,7 @@ import { RecoveryBanner } from './RecoveryBanner'
 import { OperationsPanel } from './OperationsPanel'
 import { PlanReviewPanel } from './PlanReviewPanel'
 import { OverviewPanel } from './OverviewPanel'
+import { TracePanel } from './TracePanel'
 
 /**
  * Stage 0 shell surface: it only renders the connection state owned by the main
@@ -68,6 +69,7 @@ export function App(): React.JSX.Element {
   const [chatRevision, setChatRevision] = useState(0)
   const [identity, setIdentity] = useState<UserIdentity | null>(null)
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
+  const [traceOpen, setTraceOpen] = useState(false)
 
   const api = useShellApi()
 
@@ -197,6 +199,15 @@ export function App(): React.JSX.Element {
           ) : null}
           <span className="topbar__path">{workspace ?? 'папка не выбрана'}</span>
           <span className="topbar__spacer" />
+          <button
+            type="button"
+            className={`topbar__trace${traceOpen ? ' topbar__trace--active' : ''}`}
+            aria-label={traceOpen ? 'Закрыть трейс' : 'Открыть трейс'}
+            aria-pressed={traceOpen}
+            onClick={() => setTraceOpen((value) => !value)}
+          >
+            Трейс
+          </button>
           <span className={`status-pill status-pill--${connection}`}>{STATE_LABELS[connection]}</span>
         </header>
 
@@ -230,6 +241,8 @@ export function App(): React.JSX.Element {
           )}
         </div>
       </main>
+
+      {traceOpen ? <TracePanel events={events} state={state} workspace={workspace} onClose={() => setTraceOpen(false)} /> : null}
 
       <footer className="statusbar">
         <span>Протокол {state?.protocol ? `v${state.protocol.major}.${state.protocol.minor}` : '—'}</span>
