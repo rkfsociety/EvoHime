@@ -562,6 +562,20 @@ impl IpcBridge {
                     self.write_response(writer, "receipt.unquarantine", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.schema_violation"}))?).await?;
                     return Ok(());
                 }
+                let checkpoint_valid = std::fs::read(self.receipt_keys.checkpoint_path())
+                    .ok()
+                    .and_then(|bytes| serde_json::from_slice::<evohime_receipts::key_lifecycle::KeyHistoryCheckpoint>(&bytes).ok())
+                    .and_then(|checkpoint| {
+                        if checkpoint.checkpoint_id != request.checkpoint { return None; }
+                        if !self.receipt_keys.trusted_genesis(&checkpoint.genesis_key_id).ok()? { return Some(false); }
+                        let history = self.receipt_keys.load_history().ok()?;
+                        Some(evohime_receipts::key_lifecycle::verify_checkpoint(&checkpoint, &history, Some(&checkpoint.genesis_key_id)).is_ok())
+                    })
+                    .unwrap_or(false);
+                if !checkpoint_valid {
+                    self.write_response(writer, "receipt.unquarantine", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.key_untrusted"}))?).await?;
+                    return Ok(());
+                }
                 let action_id = match uuid::Uuid::parse_str(&request.action_id) {
                     Ok(value) => value,
                     Err(_) => {
