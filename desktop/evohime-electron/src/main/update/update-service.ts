@@ -432,7 +432,8 @@ export class UpdateService {
       phase: 'preparing',
       message: 'Скачиваю проверенный установщик…',
       steps: initialInstallerUpdateSteps(),
-      error: null
+      error: null,
+      downloadProgress: 0
     })
     this.step('download', 'active')
     try {
@@ -441,13 +442,19 @@ export class UpdateService {
         config.branch,
         target,
         config.stagingDirectory,
-        await this.githubToken()
+        await this.githubToken(),
+        {
+          onProgress: (downloadedBytes, totalBytes) => {
+            if (totalBytes > 0) this.patch({ downloadProgress: Math.min(1, downloadedBytes / totalBytes) })
+          }
+        }
       )
       this.step('download', 'done')
       this.deps.log('info', 'update.installer_downloaded', { commit: downloaded.marker.commit })
       return this.patch({
         phase: 'ready',
         message: 'Установщик скачан — нужен перезапуск.',
+        downloadProgress: 1,
         restartRequired: true,
         detail: ''
       })

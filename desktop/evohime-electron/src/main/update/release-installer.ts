@@ -28,6 +28,7 @@ export interface DownloadedInstaller {
 export interface ReleaseInstallerDeps {
   readonly fetch?: typeof globalThis.fetch
   readonly now?: () => number
+  readonly onProgress?: (downloadedBytes: number, totalBytes: number) => void
 }
 
 /** Reads the commit represented by the currently published installer. */
@@ -65,7 +66,8 @@ export async function downloadReleaseInstaller(
   commit: string,
   destination: string,
   token: string | null,
-  deps: ReleaseInstallerDeps = {}
+  deps: ReleaseInstallerDeps = {},
+  onProgress?: (downloadedBytes: number, totalBytes: number) => void
 ): Promise<DownloadedInstaller> {
   const normalized = normalizeCommit(commit)
   if (!normalized) throw new Error('GitHub installer: некорректный commit.')
@@ -94,7 +96,14 @@ export async function downloadReleaseInstaller(
 
   await mkdir(destination, { recursive: true })
   const installer = join(destination, INSTALLER_ASSET)
-  const bytes = await downloadBytes(installerUrl, installer, request, { ...headers, accept: 'application/octet-stream' })
+  const bytes = await downloadBytes(
+    installerUrl,
+    installer,
+    request,
+    { ...headers, accept: 'application/octet-stream' },
+    onProgress ?? deps.onProgress,
+    manifest.size
+  )
   if (bytes !== manifest.size) throw new Error('GitHub installer: размер установщика не совпадает с манифестом.')
   const digest = await sha256(installer)
   if (digest !== manifest.sha256) throw new Error('GitHub installer: SHA-256 установщика не совпадает с манифестом.')
@@ -143,10 +152,29 @@ async function downloadText(url: string, request: typeof globalThis.fetch, heade
   return response.text()
 }
 
-async function downloadBytes(url: string, path: string, request: typeof globalThis.fetch, headers: Record<string, string>): Promise<number> {
+async function downloadBytes(
+  url: string,
+  path: string,
+  request: typeof globalThis.fetch,
+  headers: Record<string, string>,
+  onProgress?: (downloadedBytes: number, totalBytes: number) => void,
+  expectedBytes?: number
+): Promise<number> {
   const response = await request(url, { headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
   if (!response.ok || !response.body) throw new Error(`GitHub installer: не удалось скачать установщик (${response.status}).`)
-  const data = Buffer.from(await response.arrayBuffer())
+  const totalBytes = Number(response.headers.get('content-length')) || expectedBytes || 0
+  const chunks: Buffer[] = []
+  let downloadedBytes = 0
+  const reader = response.body.getReader()
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    const chunk = Buffer.from(value)
+    chunks.push(chunk)
+    downloadedBytes += chunk.byteLength
+    onProgress?.(downloadedBytes, totalBytes)
+  }
+  const data = Buffer.concat(chunks)
   if (data.byteLength > MAX_INSTALLER_BYTES) throw new Error('GitHub installer: установщик слишком большой.')
   await writeFile(path, data)
   return data.byteLength

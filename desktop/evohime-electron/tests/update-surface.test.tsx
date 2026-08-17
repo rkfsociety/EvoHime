@@ -129,28 +129,36 @@ describe('update banner', () => {
 })
 
 describe('sidebar update indicator', () => {
-  it('opens a detailed, closable status popover for a running rebuild', () => {
+  it('shows the download percentage directly inside the circular control', () => {
     installApi()
     render(
       <UpdateIndicator
         status={status({
           phase: 'preparing',
-          message: 'Пересобираю Еву…',
-          detail: 'Compiling evohime-core',
-          steps: initialUpdateSteps().map((step) =>
-            step.id === 'core' ? { ...step, state: 'active' as const } : step
-          )
+          message: 'Скачиваю проверенный установщик…',
+          downloadProgress: 0.3,
+          steps: initialUpdateSteps().slice(0, 2).map((step, index) => ({
+            ...step,
+            state: index === 0 ? 'active' as const : 'pending' as const
+          }))
         })}
       />
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Показать статус фонового обновления' }))
-    expect(screen.getByRole('dialog')).toBeTruthy()
-    expect(screen.getByText('Compiling evohime-core')).toBeTruthy()
-    expect(screen.getByText('Сборка Core').getAttribute('data-state')).toBe('active')
-
-    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.getByText('30%')).toBeTruthy()
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('opens only the update confirmation after the installer is ready', () => {
+    const invoke = installApi()
+    render(<UpdateIndicator status={status({ phase: 'ready', restartRequired: true, downloadProgress: 1 })} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Подтвердить установку обновления' }))
+    expect(screen.getByRole('dialog', { name: 'Подтверждение обновления' })).toBeTruthy()
+    expect(screen.getByText('Установщик скачан и проверен. Перезапустить Еву сейчас?')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Перезапустить и обновить' }))
+    expect(invoke).toHaveBeenCalledWith('update.restart', {})
   })
 
   it('keeps the compact control out of the sidebar when there is no update to show', () => {

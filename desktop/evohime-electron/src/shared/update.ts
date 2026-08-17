@@ -67,6 +67,8 @@ export interface UpdateStatus {
   /** Redacted failure reason, present only in the `failed` phase. */
   readonly error: string | null
   readonly checkedAtMs: number | null
+  /** Fraction of the verified installer downloaded, when an installer is being fetched. */
+  readonly downloadProgress: number | null
   /** True once a staged package is waiting for the restart. */
   readonly restartRequired: boolean
 }
@@ -111,6 +113,7 @@ export function disabledUpdateStatus(branch = 'main'): UpdateStatus {
     branch,
     error: null,
     checkedAtMs: null,
+    downloadProgress: null,
     restartRequired: false
   }
 }
