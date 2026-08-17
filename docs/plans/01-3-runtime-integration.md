@@ -27,9 +27,18 @@
 | `post_action` | `action_id`, terminal status, `tool_args_hash`, `result_hash`, policy fields | `refusal_code`, `parent_approval_ref` | approval binding переносится из pre, если он был |
 | `refusal` | `action_id`, `action_status=refused`, `tool_args_hash`, policy fields, `refusal_code` | `result_hash` | approval refs только для отказа существующего approval |
 
-`receipt_hash` — SHA-256 canonical signed envelope, а `previous_receipt_hash`
-берётся из текущего chain head. `pending_recovery` и unsigned refusal не
-являются receipt kinds.
+Канонизация receipt выполняется в два строго разделённых шага. Сначала Core
+строит `canonical_payload` со всеми полями payload, включая
+`previous_receipt_hash`, и вычисляет `payload_hash = SHA-256(canonical_payload)`.
+Затем signer подписывает именно `payload_hash`; envelope имеет вид
+`{payload, signature, key_id, signature_algorithm}`. После этого Core
+канонизирует весь envelope и вычисляет `receipt_hash =
+SHA-256(canonical_envelope)`. Подпись не входит в `payload_hash`, но входит в
+`receipt_hash`; verifier сначала проверяет `receipt_hash`, затем подпись по
+`key_id` и `payload_hash`. Таким образом, circular dependency отсутствует, а
+`previous_receipt_hash` берётся из текущего chain head до подписи. Нельзя
+вычислять `receipt_hash` от «подписанного payload» до того, как подпись уже
+существует. `pending_recovery` и unsigned refusal не являются receipt kinds.
 
 ## Что этап отдаёт наружу
 
@@ -67,9 +76,13 @@ projection использует `output_digest`, а не `result_hash` само�
 формула и JCS bytes нормативно определены в 01.1.
 
 `action_id` уникален в `receipt_actions` и имеет UNIQUE constraint. Prepare при
-коллизии не переиспользует action: если digest и binding совпадают, выполняется
-идемпотентное чтение существующего состояния; при любом расхождении возвращается
-`receipt.action_id_conflict` и tool не запускается.
+коллизии не переиспользует action. Если digest и binding совпадают, выполняется
+идемпотентное чтение существующего состояния. Если action уже находится в
+`pending_recovery` либо любое поле binding расходится, Core возвращает
+`receipt.action_id_conflict` и tool не запускается. Клиент обязан создать новый
+UUIDv7 `action_id` для следующей попытки; повторять тот же `action_id` с новым
+`approval_id` запрещено. Старый action остаётся исторической записью, а
+reconciliation использует отдельные action/approval/call hash.
 
 После создания `pre_action` поля `action_id`, `tool_args_hash`, версия
 `fingerprint_input` и `canonical_call_hash` immutable для данного action_id.
@@ -123,25 +136,27 @@ call_hash и сохраняет pending/granted/denied/expired decision. In-memo
 record может быть погашен, но эта bounded audit row остаётся для offline
 проверки binding; raw input в неё не попадает.
 
-TTL v1 — **10 минут** от создания approval; clock checks используют monotonic
-deadline, wall expires_at_ms служит только для UI/diagnostics. В persisted intent
-хранятся monotonic deadline и момент его фиксации; hibernate/sleep учитываются
-как прошедшее время. Restart не продлевает и не пересоздаёт deadline: claim
-сравнивает текущее monotonic значение с сохранённым deadline. Если monotonic
-epoch после restart нельзя надёжно сопоставить, Core fail-closed переводит
-intent в expired/lost, а не выдаёт новый TTL. После TTL claim атомарно переводит
-approval в expired и action получает signed refusal_code=approval_expired.
+TTL v1 — **10 минут** от создания approval. В persisted intent сохраняются
+`created_wall_at_ms`, `expires_at_ms`, `clock_boot_id`, `created_monotonic_ms` и
+`deadline_monotonic_ms`. В течение одного boot authorization claim использует
+только `deadline_monotonic_ms`; sleep/hibernate считаются прошедшим временем.
+После restart новый monotonic epoch не сопоставляется со старым: Core проверяет
+`expires_at_ms` по wall clock только как fail-closed recovery boundary. Если
+wall clock ушёл назад, timestamp повреждён или boot identity не совпадает,
+intent переводится в `expired/lost`; новый TTL не создаётся. Restart никогда
+не продлевает и не пересоздаёт deadline. После TTL claim атомарно переводит
+approval в expired и action получает signed `refusal_code=approval_expired`.
 Restart инвалидирует pending in-memory approval; persisted intent получает
-recovery_pending refusal только после recovery/authenticated closure, а не
+`recovery_pending` refusal только после recovery/authenticated closure, а не
 автоматически возобновляет mutation.
 
-Нормативное race rule: `expires_at_ms` хранится в БД вместе с intent только для
-UI/diagnostics. В одной `BEGIN IMMEDIATE` transaction claim проверяет единый
-persisted monotonic deadline/monotonic elapsed value и только если текущее
-monotonic время строго меньше deadline условно меняет `pending` на `claimed`;
-истёкший на границе claim approval получает `approval_expired` и не запускает
-tool. Wall clock нельзя использовать для authorization claim: NTP, sleep/resume
-и перевод часов не должны продлить или сократить TTL. Это правило имеет
+Нормативное race rule: в одной короткой `BEGIN IMMEDIATE` transaction claim
+проверяет `clock_boot_id` и deadline, и только если текущее monotonic время
+строго меньше `deadline_monotonic_ms` условно меняет `pending` на `claimed`.
+Истёкший на границе claim approval получает `approval_expired` и не запускает
+tool. Wall clock нельзя использовать для authorization claim в том же boot;
+после restart он используется только для fail-closed invalidation. NTP,
+sleep/resume и перевод часов не должны продлить TTL. Это правило имеет
 приоритет над любым описательным clock wording выше.
 
 Перед claim Core обязан в одном execution gate заново выполнить:
@@ -155,9 +170,12 @@ tool. Wall clock нельзя использовать для authorization clai
 
 После успешного claim approval удаляется/переходит в claimed до запуска tool.
 Claim, durable pre receipt и обновление `receipt_actions` выполняются в одной
-BEGIN IMMEDIATE transaction. Post receipt и перевод action в terminal state
-выполняются в одной BEGIN IMMEDIATE transaction с обновлением той же строки
-`receipt_actions`; tool execution не удерживает SQLite transaction.
+короткой `BEGIN IMMEDIATE` transaction, которая завершается до dispatch tool.
+Эта транзакция не охватывает permission wait, IPC, signer retry или выполнение
+tool. Post receipt и перевод action в terminal state выполняются в другой
+короткой `BEGIN IMMEDIATE` transaction с обновлением той же строки
+`receipt_actions`; tool execution не удерживает SQLite transaction. При
+коллизии action id или lock failure до pre tool не запускается.
 Повторный retry не может выполнить mutation дважды. Failure после claim не
 возвращает approval: новая попытка получает новый action_id и новый approval.
 
@@ -176,9 +194,11 @@ BEGIN IMMEDIATE transaction. Post receipt и перевод action в terminal s
     pending_recovery    ─> post terminal или explicit refusal after reconciliation
 
 `pending_recovery` — internal action-store state, не новый receipt kind или
-автоматически создаваемый signed refusal. Для него
-Core сохраняет только action id, pre hash, tool args hash и bounded recovery
-code; raw arguments/results не сохраняются. Recovery не повторяет mutation
+автоматически создаваемый signed refusal. `recovery_code` — закрытый enum
+`signature_failed | external_error | unknown`; неизвестные будущие значения
+отвергаются fail-closed. Для него Core сохраняет только action id, pre hash,
+tool args hash и bounded recovery code; raw arguments/results не сохраняются.
+Recovery не повторяет mutation
 автоматически. Пользователь видит tool id, время, recovery code и предупреждение,
 что внешний side effect мог произойти; Core не утверждает ни успех, ни его
 отсутствие. Допустимы два authenticated flow: (1) новый read-only
@@ -235,9 +255,11 @@ approval intents; превышение возвращает receipt.pending_limi
 Размер каждой receipt ограничен 01.1, поэтому writer не принимает blobs вне
 canonical envelope bounds.
 
-Append выполняется одной SQLite BEGIN IMMEDIATE transaction: прочитать chain
-head, canonicalize/sign envelope, вставить receipt, обновить head и action
-index. Нормативная последовательность lock retry: попытка 1 сразу, затем
+Append выполняется в составе короткой SQLite `BEGIN IMMEDIATE` transaction:
+прочитать chain head, canonicalize/sign envelope, вставить receipt, обновить
+head и action index. Для pre эта transaction также содержит claim, но никогда
+не охватывает выполнение tool; post всегда записывается отдельной transaction.
+Нормативная последовательность lock retry: попытка 1 сразу, затем
 повтор через 10 ms; попытка 2 через 50 ms; попытка 3 через 250 ms. Если
 конфликт сохраняется, mutation не запускается (либо, если tool уже вернул
 управление, action остаётся pending_recovery), возвращается
@@ -265,6 +287,18 @@ Existing EventJournal остаётся projection/diagnostic sink: после re
 и может удалять только старые сегменты с signed checkpoint; pending actions
 никогда не удаляются автоматически.
 
+### ApprovalGC
+
+Core запускает один bounded `ApprovalGC` после успешной проверки хранилища и
+затем не чаще одного раза в минуту. В одной короткой transaction он удаляет
+только истёкшие `receipt_approval_intents` в состояниях `expired`, `lost` или
+`claimed`, если с момента terminal decision прошло не менее 10 минут, и
+сохраняет aggregate audit marker `{run_id, deleted_count, cutoff_ms}` без raw
+данных. Pending intents, связанные с `pending_recovery`, не удаляются до
+authenticated closure. GC не удаляет `receipt_records`, `receipt_actions` или
+protected rows: их retention/compaction и срок хранения определяет 01.4.
+Сбой GC создаёт bounded diagnostic и повторяет проход на следующем интервале.
+
 ## Mutation, refusal и signer failures
 
 ### Bounded protected action row
@@ -275,10 +309,13 @@ Existing EventJournal остаётся projection/diagnostic sink: после re
 **512 bytes** и содержит только `schema_version`, `action_id`, `pre_receipt_hash`,
 `tool_args_hash`, typed `result_status`, `result_hash`, `recovery_code`,
 `created_at_ms` и `key_id`. Raw arguments, raw result, error text, stdout/stderr
-и paths запрещены. Представитель защищён authenticated encryption с
-Core-owned storage key (ciphertext, nonce и authentication tag входят в лимит);
-при недоступном или повреждённом ключе row не принимается за достоверную и
-action остаётся pending без synthetic success. Row удаляется только после
+и paths запрещены. Представитель защищён **AES-256-GCM** с Core-owned 256-bit
+storage key; ciphertext, 12-byte nonce и 16-byte authentication tag входят в
+лимит 512 bytes. Ключ хранится отдельно от events.db и защищается
+платформенным хранилищем секретов согласно 01.2; plaintext row в SQLite
+запрещён. При недоступном или повреждённом ключе row не принимается за
+достоверную и action остаётся pending без synthetic success. Row удаляется
+только после
 durable terminal receipt в одной транзакции; повторная подпись использует лишь
 проверенный digest/status из row.
 
@@ -348,9 +385,10 @@ key/trust events или recovery. Для successful read-only actions v1 хра�
 deterministic sample:
 
 - configuration — Core-owned audit_sampling_v1 с rate **10%** по умолчанию,
-  integer 0–100, изменяемый только authenticated Core command
-  `SetAuditSamplingRate`; команда проверяет role/session и пишет bounded audit
-  event до применения нового значения; marker
+  integer 0–100, применяемый ко всем successful read-only actions Core и
+  изменяемый только authenticated Core command `SetAuditSamplingRate`;
+  команда проверяет role/session и пишет bounded audit event до применения
+  нового значения; marker
   всегда содержит `sampling_policy_version`, поэтому изменение rate не меняет
   интерпретацию старых действий;
 - decision — SHA-256 от UTF-8 строки
@@ -447,6 +485,10 @@ tool dispatch, tool return, post append и head update. В каждой точк
 
 - schema/vector tests: pre, post success/failure/cancelled, refusal для каждого
   refusal_code, action id pairing и status conditions;
+- envelope/hash tests: одинаковый canonical payload даёт одинаковый
+  `payload_hash`, подпись проверяется по `key_id`, изменение подписи меняет
+  `receipt_hash`, а попытка вычислить receipt hash до формирования envelope
+  отвергается;
 - exact-call tests: изменение tool, task, session, permission, scope, input,
   policy или approval id блокируется; key order equivalent input сохраняет
   call hash;
@@ -454,6 +496,9 @@ tool dispatch, tool return, post append и head update. В каждой точк
   approval_id проходит один раз, повторный retry отклоняется;
 - TTL tests на 10 минут, monotonic-only expiry under NTP/sleep-resume, restart invalidation и
   approval_expired;
+- restart clock tests: совпадающий boot использует monotonic deadline, новый
+  boot проверяет только persisted wall-clock boundary, rollback/битый timestamp
+  даёт `expired/lost` и никогда не создаёт новый TTL;
 - pre-before-mutation test: при storage/signer failure tool не вызывается;
 - hash-chain tests: concurrent append, deletion/reorder/tamper, wrong previous
   hash, duplicate action id и chain-head conflict;
@@ -475,8 +520,10 @@ tool dispatch, tool return, post append и head update. В каждой точк
 - post-signature failure test сохраняет `pending_recovery` с
   `signature_failed` и исключает повторное выполнение tool;
 - protected-action-row tests проверяют размер 512 bytes, authenticated
-  protection, повреждённый/отсутствующий storage key и удаление row только
+  AES-256-GCM protection, повреждённый/отсутствующий storage key и удаление row только
   вместе с terminal receipt;
+- approval GC tests проверяют TTL, повторяемость прохода, сохранение pending
+  recovery rows и отсутствие удаления receipt chain/action rows;
 - reconciliation test требует новый action/approval/call hash, проверяет
   read-only reconciliation capability и оставляет исходный pending action
   исторически видимым;
@@ -489,6 +536,8 @@ tool dispatch, tool return, post append и head update. В каждой точк
   runtime error и unsigned audit marker, но не unsigned receipt;
 - approval binding использует существующий exact call_hash, TTL 10 минут,
   current policy recheck, one-shot claim и двухфазный IPC;
+- `receipt_hash` строится после подписания canonical payload envelope, а
+  `payload_hash` и envelope signature не смешиваются в циклической формуле;
 - SQLite receipt/action tables, chain-head transaction и recovery procedure
   задокументированы и проходят crash/concurrency tests;
 - bounded protected action row имеет фиксированный формат, лимит 512 bytes,
@@ -506,6 +555,11 @@ tool dispatch, tool return, post append и head update. В каждой точк
   mutations/refusals/failures всегда полностью аудируются;
 - restart не продлевает persisted monotonic deadline, а chain append при
   pending_recovery использует фактический head и не создаёт виртуальных узлов;
+- claim+pre и post используют отдельные короткие SQLite transactions, tool
+  никогда не выполняется под удерживаемой transaction;
+- `recovery_code` ограничен enum `signature_failed | external_error | unknown`,
+  protected action row использует AES-256-GCM и ApprovalGC очищает только
+  истёкшие intents по описанному TTL;
 - после restart ни один pending action не объявляется success и mutation не
   повторяется автоматически;
 - recovery matrix, bounded diagnostics, schema_version и key-rotation boundary
