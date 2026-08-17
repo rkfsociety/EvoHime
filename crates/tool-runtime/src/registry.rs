@@ -86,9 +86,16 @@ pub struct ToolDefinition {
 
 #[derive(Debug, Clone)]
 pub enum ToolPreflightDecision {
-    Allowed { scope: String, preview: ApprovalPreview },
+    Allowed {
+        scope: String,
+        preview: ApprovalPreview,
+    },
     Denied(Permission),
-    ApprovalRequired { permission: Permission, scope: String, preview: ApprovalPreview },
+    ApprovalRequired {
+        permission: Permission,
+        scope: String,
+        preview: ApprovalPreview,
+    },
 }
 
 #[derive(Clone)]
@@ -266,6 +273,169 @@ impl ToolRegistry {
             permissions: tools::http::PERMISSIONS,
             timeout: tools::http::TIMEOUT,
         });
+
+        // ======== Advanced Git Operations ========
+        registry.register(ToolDefinition {
+            name: tools::git_advanced::BRANCH_NAME,
+            description: tools::git_advanced::BRANCH_DESCRIPTION,
+            permissions: tools::git_advanced::BRANCH_PERMISSIONS,
+            timeout: tools::git_advanced::BRANCH_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::git_advanced::MERGE_NAME,
+            description: tools::git_advanced::MERGE_DESCRIPTION,
+            permissions: tools::git_advanced::MERGE_PERMISSIONS,
+            timeout: tools::git_advanced::MERGE_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::git_advanced::RESET_NAME,
+            description: tools::git_advanced::RESET_DESCRIPTION,
+            permissions: tools::git_advanced::RESET_PERMISSIONS,
+            timeout: tools::git_advanced::RESET_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::git_advanced::REVERT_NAME,
+            description: tools::git_advanced::REVERT_DESCRIPTION,
+            permissions: tools::git_advanced::REVERT_PERMISSIONS,
+            timeout: tools::git_advanced::REVERT_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::git_advanced::CHERRY_PICK_NAME,
+            description: tools::git_advanced::CHERRY_PICK_DESCRIPTION,
+            permissions: tools::git_advanced::CHERRY_PICK_PERMISSIONS,
+            timeout: tools::git_advanced::CHERRY_PICK_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::git_advanced::REBASE_NAME,
+            description: tools::git_advanced::REBASE_DESCRIPTION,
+            permissions: tools::git_advanced::REBASE_PERMISSIONS,
+            timeout: tools::git_advanced::REBASE_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::git_advanced::TAG_NAME,
+            description: tools::git_advanced::TAG_DESCRIPTION,
+            permissions: tools::git_advanced::TAG_PERMISSIONS,
+            timeout: tools::git_advanced::TAG_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::git_advanced::STASH_NAME,
+            description: tools::git_advanced::STASH_DESCRIPTION,
+            permissions: tools::git_advanced::STASH_PERMISSIONS,
+            timeout: tools::git_advanced::STASH_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::git_advanced::REMOTE_NAME,
+            description: tools::git_advanced::REMOTE_DESCRIPTION,
+            permissions: tools::git_advanced::REMOTE_PERMISSIONS,
+            timeout: tools::git_advanced::REMOTE_TIMEOUT,
+        });
+
+        // ======== Advanced Filesystem Operations ========
+        registry.register(ToolDefinition {
+            name: tools::filesystem_advanced::DELETE_NAME,
+            description: tools::filesystem_advanced::DELETE_DESCRIPTION,
+            permissions: tools::filesystem_advanced::DELETE_PERMISSIONS,
+            timeout: tools::filesystem_advanced::DELETE_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::filesystem_advanced::MOVE_NAME,
+            description: tools::filesystem_advanced::MOVE_DESCRIPTION,
+            permissions: tools::filesystem_advanced::MOVE_PERMISSIONS,
+            timeout: tools::filesystem_advanced::MOVE_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::filesystem_advanced::COPY_NAME,
+            description: tools::filesystem_advanced::COPY_DESCRIPTION,
+            permissions: tools::filesystem_advanced::COPY_PERMISSIONS,
+            timeout: tools::filesystem_advanced::COPY_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::filesystem_advanced::STAT_NAME,
+            description: tools::filesystem_advanced::STAT_DESCRIPTION,
+            permissions: tools::filesystem_advanced::STAT_PERMISSIONS,
+            timeout: tools::filesystem_advanced::STAT_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::filesystem_advanced::MKDIR_NAME,
+            description: tools::filesystem_advanced::MKDIR_DESCRIPTION,
+            permissions: tools::filesystem_advanced::MKDIR_PERMISSIONS,
+            timeout: tools::filesystem_advanced::MKDIR_TIMEOUT,
+        });
+
+        // ======== Process Operations ========
+        registry.register(ToolDefinition {
+            name: tools::process::NAME,
+            description: tools::process::DESCRIPTION,
+            permissions: tools::process::PERMISSIONS,
+            timeout: tools::process::TIMEOUT,
+        });
+
+        // ======== Cargo/Rust Build Tools ========
+        registry.register(ToolDefinition {
+            name: tools::cargo::BUILD_NAME,
+            description: tools::cargo::BUILD_DESCRIPTION,
+            permissions: tools::cargo::BUILD_PERMISSIONS,
+            timeout: tools::cargo::BUILD_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::cargo::TEST_NAME,
+            description: tools::cargo::TEST_DESCRIPTION,
+            permissions: tools::cargo::TEST_PERMISSIONS,
+            timeout: tools::cargo::TEST_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::cargo::FMT_NAME,
+            description: tools::cargo::FMT_DESCRIPTION,
+            permissions: tools::cargo::FMT_PERMISSIONS,
+            timeout: tools::cargo::FMT_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::cargo::CLIPPY_NAME,
+            description: tools::cargo::CLIPPY_DESCRIPTION,
+            permissions: tools::cargo::CLIPPY_PERMISSIONS,
+            timeout: tools::cargo::CLIPPY_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::cargo::CHECK_NAME,
+            description: tools::cargo::CHECK_DESCRIPTION,
+            permissions: tools::cargo::CHECK_PERMISSIONS,
+            timeout: tools::cargo::CHECK_TIMEOUT,
+        });
+
+        // ======== Archive Operations ========
+        registry.register(ToolDefinition {
+            name: tools::archive::CREATE_NAME,
+            description: tools::archive::CREATE_DESCRIPTION,
+            permissions: tools::archive::CREATE_PERMISSIONS,
+            timeout: tools::archive::CREATE_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::archive::EXTRACT_NAME,
+            description: tools::archive::EXTRACT_DESCRIPTION,
+            permissions: tools::archive::EXTRACT_PERMISSIONS,
+            timeout: tools::archive::EXTRACT_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::archive::LIST_NAME,
+            description: tools::archive::LIST_DESCRIPTION,
+            permissions: tools::archive::LIST_PERMISSIONS,
+            timeout: tools::archive::LIST_TIMEOUT,
+        });
+
+        // ======== Logs Operations ========
+        registry.register(ToolDefinition {
+            name: tools::logs::TAIL_NAME,
+            description: tools::logs::TAIL_DESCRIPTION,
+            permissions: tools::logs::TAIL_PERMISSIONS,
+            timeout: tools::logs::TAIL_TIMEOUT,
+        });
+        registry.register(ToolDefinition {
+            name: tools::logs::GREP_NAME,
+            description: tools::logs::GREP_DESCRIPTION,
+            permissions: tools::logs::GREP_PERMISSIONS,
+            timeout: tools::logs::GREP_TIMEOUT,
+        });
+
         registry
     }
 
@@ -293,23 +463,49 @@ impl ToolRegistry {
     /// Performs the exact policy/scope check without creating an in-memory
     /// approval and without dispatching a tool. Core uses this boundary to
     /// append a durable pre receipt before any effect.
-    pub async fn preflight(&self, ctx: &ToolContext, name: &str, input: &Value) -> Result<ToolPreflightDecision, ToolError> {
-        let definition = self.tools.get(name).ok_or_else(|| ToolError::UnknownTool(name.to_owned()))?;
-        if name == tools::patch::NAME { tools::patch::validate_input(input)?; }
+    pub async fn preflight(
+        &self,
+        ctx: &ToolContext,
+        name: &str,
+        input: &Value,
+    ) -> Result<ToolPreflightDecision, ToolError> {
+        let definition = self
+            .tools
+            .get(name)
+            .ok_or_else(|| ToolError::UnknownTool(name.to_owned()))?;
+        if name == tools::patch::NAME {
+            tools::patch::validate_input(input)?;
+        }
         let scope = scope_from_input(name, input);
         let command = command_from_input(name, input);
         let subject = canonical_policy_subject(ctx, name, input, command.as_deref())?;
         let preview = approval_preview(name, &scope, command.as_deref(), input);
         for permission in definition.permissions {
-            let check = evohime_permissions::PermissionCheck { session_id: ctx.session_id, path: Some(scope.as_str()), command: command.as_deref() };
+            let check = evohime_permissions::PermissionCheck {
+                session_id: ctx.session_id,
+                path: Some(scope.as_str()),
+                command: command.as_deref(),
+            };
             let decision = match subject.as_deref() {
-                Some(value) => self.permissions.check_scoped_with_subject(*permission, &check, value).await,
+                Some(value) => {
+                    self.permissions
+                        .check_scoped_with_subject(*permission, &check, value)
+                        .await
+                }
                 None => self.permissions.check_scoped(*permission, &check).await,
             };
             match decision {
                 PermissionDecision::Allowed => {}
-                PermissionDecision::Denied => return Ok(ToolPreflightDecision::Denied(*permission)),
-                PermissionDecision::NeedsApproval => return Ok(ToolPreflightDecision::ApprovalRequired { permission: *permission, scope, preview }),
+                PermissionDecision::Denied => {
+                    return Ok(ToolPreflightDecision::Denied(*permission))
+                }
+                PermissionDecision::NeedsApproval => {
+                    return Ok(ToolPreflightDecision::ApprovalRequired {
+                        permission: *permission,
+                        scope,
+                        preview,
+                    })
+                }
             }
         }
         Ok(ToolPreflightDecision::Allowed { scope, preview })
@@ -427,6 +623,56 @@ impl ToolRegistry {
                     tools::browser_session::close(ctx, input).await
                 }
                 tools::http::NAME => tools::http::fetch(ctx, input).await,
+
+                // Advanced Git Operations
+                tools::git_advanced::BRANCH_NAME => tools::git_advanced::branch(ctx, input).await,
+                tools::git_advanced::MERGE_NAME => tools::git_advanced::merge(ctx, input).await,
+                tools::git_advanced::RESET_NAME => tools::git_advanced::reset(ctx, input).await,
+                tools::git_advanced::REVERT_NAME => tools::git_advanced::revert(ctx, input).await,
+                tools::git_advanced::CHERRY_PICK_NAME => {
+                    tools::git_advanced::cherry_pick(ctx, input).await
+                }
+                tools::git_advanced::REBASE_NAME => tools::git_advanced::rebase(ctx, input).await,
+                tools::git_advanced::TAG_NAME => tools::git_advanced::tag(ctx, input).await,
+                tools::git_advanced::STASH_NAME => tools::git_advanced::stash(ctx, input).await,
+                tools::git_advanced::REMOTE_NAME => tools::git_advanced::remote(ctx, input).await,
+
+                // Advanced Filesystem Operations
+                tools::filesystem_advanced::DELETE_NAME => {
+                    tools::filesystem_advanced::delete(ctx, input).await
+                }
+                tools::filesystem_advanced::MOVE_NAME => {
+                    tools::filesystem_advanced::move_file(ctx, input).await
+                }
+                tools::filesystem_advanced::COPY_NAME => {
+                    tools::filesystem_advanced::copy(ctx, input).await
+                }
+                tools::filesystem_advanced::STAT_NAME => {
+                    tools::filesystem_advanced::stat(ctx, input).await
+                }
+                tools::filesystem_advanced::MKDIR_NAME => {
+                    tools::filesystem_advanced::mkdir(ctx, input).await
+                }
+
+                // Process Operations
+                tools::process::NAME => tools::process::execute(ctx, input).await,
+
+                // Cargo/Rust Build Tools
+                tools::cargo::BUILD_NAME => tools::cargo::build(ctx, input).await,
+                tools::cargo::TEST_NAME => tools::cargo::test(ctx, input).await,
+                tools::cargo::FMT_NAME => tools::cargo::fmt(ctx, input).await,
+                tools::cargo::CLIPPY_NAME => tools::cargo::clippy(ctx, input).await,
+                tools::cargo::CHECK_NAME => tools::cargo::check(ctx, input).await,
+
+                // Archive Operations
+                tools::archive::CREATE_NAME => tools::archive::create(ctx, input).await,
+                tools::archive::EXTRACT_NAME => tools::archive::extract(ctx, input).await,
+                tools::archive::LIST_NAME => tools::archive::list(ctx, input).await,
+
+                // Logs Operations
+                tools::logs::TAIL_NAME => tools::logs::tail(ctx, input).await,
+                tools::logs::GREP_NAME => tools::logs::grep(ctx, input).await,
+
                 _ => Err(ToolError::UnknownTool(name.to_string())),
             }
         };
@@ -537,6 +783,56 @@ impl ToolRegistry {
                     tools::browser_session::close(ctx, input).await
                 }
                 tools::http::NAME => tools::http::fetch(ctx, input).await,
+
+                // Advanced Git Operations
+                tools::git_advanced::BRANCH_NAME => tools::git_advanced::branch(ctx, input).await,
+                tools::git_advanced::MERGE_NAME => tools::git_advanced::merge(ctx, input).await,
+                tools::git_advanced::RESET_NAME => tools::git_advanced::reset(ctx, input).await,
+                tools::git_advanced::REVERT_NAME => tools::git_advanced::revert(ctx, input).await,
+                tools::git_advanced::CHERRY_PICK_NAME => {
+                    tools::git_advanced::cherry_pick(ctx, input).await
+                }
+                tools::git_advanced::REBASE_NAME => tools::git_advanced::rebase(ctx, input).await,
+                tools::git_advanced::TAG_NAME => tools::git_advanced::tag(ctx, input).await,
+                tools::git_advanced::STASH_NAME => tools::git_advanced::stash(ctx, input).await,
+                tools::git_advanced::REMOTE_NAME => tools::git_advanced::remote(ctx, input).await,
+
+                // Advanced Filesystem Operations
+                tools::filesystem_advanced::DELETE_NAME => {
+                    tools::filesystem_advanced::delete(ctx, input).await
+                }
+                tools::filesystem_advanced::MOVE_NAME => {
+                    tools::filesystem_advanced::move_file(ctx, input).await
+                }
+                tools::filesystem_advanced::COPY_NAME => {
+                    tools::filesystem_advanced::copy(ctx, input).await
+                }
+                tools::filesystem_advanced::STAT_NAME => {
+                    tools::filesystem_advanced::stat(ctx, input).await
+                }
+                tools::filesystem_advanced::MKDIR_NAME => {
+                    tools::filesystem_advanced::mkdir(ctx, input).await
+                }
+
+                // Process Operations
+                tools::process::NAME => tools::process::execute(ctx, input).await,
+
+                // Cargo/Rust Build Tools
+                tools::cargo::BUILD_NAME => tools::cargo::build(ctx, input).await,
+                tools::cargo::TEST_NAME => tools::cargo::test(ctx, input).await,
+                tools::cargo::FMT_NAME => tools::cargo::fmt(ctx, input).await,
+                tools::cargo::CLIPPY_NAME => tools::cargo::clippy(ctx, input).await,
+                tools::cargo::CHECK_NAME => tools::cargo::check(ctx, input).await,
+
+                // Archive Operations
+                tools::archive::CREATE_NAME => tools::archive::create(ctx, input).await,
+                tools::archive::EXTRACT_NAME => tools::archive::extract(ctx, input).await,
+                tools::archive::LIST_NAME => tools::archive::list(ctx, input).await,
+
+                // Logs Operations
+                tools::logs::TAIL_NAME => tools::logs::tail(ctx, input).await,
+                tools::logs::GREP_NAME => tools::logs::grep(ctx, input).await,
+
                 _ => Err(ToolError::UnknownTool(name.to_string())),
             }
         };
@@ -822,34 +1118,60 @@ mod tests {
     fn bootstrap_registers_filesystem_read() {
         let registry = ToolRegistry::bootstrap();
         let tools = registry.list();
-        assert_eq!(tools.len(), 27);
-        assert_eq!(tools[0].name, "agent.run");
-        assert_eq!(tools[1].name, "browser.extract");
-        assert_eq!(tools[2].name, "browser.open");
-        assert_eq!(tools[3].name, "browser.session.click");
-        assert_eq!(tools[4].name, "browser.session.close");
-        assert_eq!(tools[5].name, "browser.session.navigate");
-        assert_eq!(tools[6].name, "browser.session.read");
-        assert_eq!(tools[7].name, "browser.session.screenshot");
-        assert_eq!(tools[8].name, "browser.session.type");
-        assert_eq!(tools[9].name, "filesystem.list");
-        assert_eq!(tools[10].name, "filesystem.patch");
-        assert_eq!(tools[11].name, "filesystem.read");
-        assert_eq!(tools[12].name, "filesystem.search");
-        assert_eq!(tools[13].name, "filesystem.write");
-        assert_eq!(tools[14].name, "git.blame");
-        assert_eq!(tools[15].name, "git.changed_files");
-        assert_eq!(tools[16].name, "git.commit");
-        assert_eq!(tools[17].name, "git.diff");
-        assert_eq!(tools[18].name, "git.log");
-        assert_eq!(tools[19].name, "git.pull");
-        assert_eq!(tools[20].name, "git.push");
-        assert_eq!(tools[21].name, "git.show");
-        assert_eq!(tools[22].name, "git.status");
-        assert_eq!(tools[23].name, "http.fetch");
-        assert_eq!(tools[24].name, "mcp.call");
-        assert_eq!(tools[25].name, "memory.search");
-        assert_eq!(tools[26].name, "shell.execute");
+        assert_eq!(tools.len(), 52);
+        for name in [
+            "agent.run",
+            "archive.create",
+            "archive.extract",
+            "archive.list",
+            "browser.extract",
+            "browser.open",
+            "cargo.build",
+            "cargo.check",
+            "cargo.clippy",
+            "cargo.fmt",
+            "cargo.test",
+            "filesystem.copy",
+            "filesystem.delete",
+            "filesystem.list",
+            "filesystem.mkdir",
+            "filesystem.move",
+            "filesystem.patch",
+            "filesystem.read",
+            "filesystem.search",
+            "filesystem.stat",
+            "filesystem.write",
+            "git.blame",
+            "git.branch",
+            "git.changed_files",
+            "git.cherry_pick",
+            "git.commit",
+            "git.diff",
+            "git.log",
+            "git.merge",
+            "git.pull",
+            "git.push",
+            "git.rebase",
+            "git.remote",
+            "git.reset",
+            "git.revert",
+            "git.show",
+            "git.stash",
+            "git.status",
+            "git.tag",
+            "http.fetch",
+            "logs.grep",
+            "logs.tail",
+            "mcp.call",
+            "memory.search",
+            "process.run",
+            "shell.execute",
+        ] {
+            assert!(
+                tools.iter().any(|tool| tool.name == name),
+                "missing tool {name}"
+            );
+        }
     }
 
     #[tokio::test]

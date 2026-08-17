@@ -15,9 +15,15 @@ pub use ssrf::{
     lock_host_allowlist, lock_private_override, HostAllowlistGuard, PrivateOverrideGuard,
 };
 pub use tools::agent;
+pub use tools::archive;
 pub use tools::browser;
+pub use tools::cargo;
 pub use tools::filesystem;
+pub use tools::filesystem_advanced;
 pub use tools::git;
+pub use tools::git_advanced;
+pub use tools::logs;
 pub use tools::mcp;
 pub use tools::memory;
+pub use tools::process;
 pub use tools::{patch, search, shell, write};
