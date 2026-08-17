@@ -697,9 +697,9 @@ impl<'a> ReceiptRuntime<'a> {
         let result = result_hash(&projection)?;
         let marker = bounded_result_marker(status, &result, error_category, now_ms(), status == "succeeded")?;
         let tx = self.connection.unchecked_transaction()?;
-        let (state, dispatch, stored_hash, task_id, run_id, tool_name, normalized_scope, policy_id, policy_decision, fingerprint_version, stored_approval, stored_parent): (String,String,String,String,String,String,String,String,String,i64,Option<String>,Option<String>) = tx.query_row(
-            "SELECT state,dispatch_state,tool_args_hash,task_id,run_id,tool_name,normalized_scope,policy_id,policy_decision,fingerprint_input_version,approval_id,parent_approval_ref FROM receipt_actions WHERE action_id=?1",
-            [request.action_id.to_string()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?,r.get(10)?,r.get(11)?)))?;
+        let (state, dispatch, stored_hash, task_id, run_id, tool_name, normalized_scope, policy_id, policy_decision, fingerprint_version, stored_approval, stored_parent, terminal_hash): (String,String,String,String,String,String,String,String,String,i64,Option<String>,Option<String>,Option<String>) = tx.query_row(
+            "SELECT state,dispatch_state,tool_args_hash,task_id,run_id,tool_name,normalized_scope,policy_id,policy_decision,fingerprint_input_version,approval_id,parent_approval_ref,terminal_receipt_hash FROM receipt_actions WHERE action_id=?1",
+            [request.action_id.to_string()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?,r.get(10)?,r.get(11)?,r.get(12)?)))?;
         let binding_matches = state == "prepared"
             || state == "pending_recovery";
         let identity_matches = request.task_id == task_id
@@ -712,6 +712,7 @@ impl<'a> ReceiptRuntime<'a> {
             && request.approval_id.map(|value| value.to_string()) == stored_approval
             && request.parent_approval_ref == stored_parent
             && stored_hash == args_hash;
+        if terminal_hash.is_some() { return Err(RuntimeError::Code("action_id_conflict")); }
         if !binding_matches || dispatch != "started" && dispatch != "returned" || !identity_matches {
             if binding_matches {
                 tx.execute("UPDATE receipt_actions SET state='quarantined',recovery_code='unknown' WHERE action_id=?1 AND state IN ('prepared','pending_recovery')", [request.action_id.to_string()])?;
@@ -741,9 +742,9 @@ impl<'a> ReceiptRuntime<'a> {
         if !matches!(code, "policy_denied"|"approval_denied"|"approval_expired"|"approval_stale"|"call_changed"|"key_untrusted"|"recovery_pending") { return Err(RuntimeError::Code("schema_violation")); }
         let args_hash = canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input)?;
         let tx = self.connection.unchecked_transaction()?;
-        let binding: (String,String,String,String,String,String,i64,Option<String>,Option<String>,String) = tx.query_row(
-            "SELECT task_id,run_id,tool_name,normalized_scope,policy_id,policy_decision,fingerprint_input_version,approval_id,parent_approval_ref,state FROM receipt_actions WHERE action_id=?1",
-            [request.action_id.to_string()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?)))?;
+        let binding: (String,String,String,String,String,String,i64,Option<String>,Option<String>,String,Option<String>) = tx.query_row(
+            "SELECT task_id,run_id,tool_name,normalized_scope,policy_id,policy_decision,fingerprint_input_version,approval_id,parent_approval_ref,state,terminal_receipt_hash FROM receipt_actions WHERE action_id=?1",
+            [request.action_id.to_string()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?,r.get(10)?)))?;
         let identity_matches = request.task_id == binding.0
             && request.run_id == binding.1
             && request.tool_name == binding.2
@@ -753,6 +754,7 @@ impl<'a> ReceiptRuntime<'a> {
             && binding.6 == crate::FINGERPRINT_INPUT_VERSION as i64
             && request.approval_id.map(|value| value.to_string()) == binding.7
             && request.parent_approval_ref == binding.8;
+        if binding.10.is_some() { return Err(RuntimeError::Code("action_id_conflict")); }
         if !identity_matches || !matches!(binding.9.as_str(), "awaiting_approval" | "prepared" | "pending_recovery") {
             if matches!(binding.9.as_str(), "prepared" | "pending_recovery") {
                 tx.execute("UPDATE receipt_actions SET state='quarantined',recovery_code='unknown' WHERE action_id=?1", [request.action_id.to_string()])?;
@@ -1127,6 +1129,22 @@ mod tests {
         let state = runtime.action(id).unwrap().unwrap();
         assert_eq!(state.state, "quarantined");
         assert!(state.terminal_receipt_hash.is_none());
+    }
+
+    #[test]
+    fn durable_terminal_hash_blocks_duplicate_post_append() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let request = request(PolicyDecision::Allow);
+        let id = request.action_id;
+        runtime.prepare(request.clone()).unwrap();
+        runtime.mark_started(id).unwrap();
+        runtime.mark_returned(id).unwrap();
+        runtime.complete(&request, "succeeded", &"a".repeat(64), None).unwrap();
+        assert!(matches!(runtime.complete(&request, "succeeded", &"b".repeat(64), None), Err(RuntimeError::Code("action_id_conflict"))));
+        drop(runtime);
+        assert_eq!(db.query_row("SELECT COUNT(*) FROM receipt_records WHERE action_id=?1", [id.to_string()], |row| row.get::<_, i64>(0)).unwrap(), 2);
     }
 
     #[test]
