@@ -134,6 +134,10 @@ SQLite и не блокирует read/verify Core, но публикует
 export как `stale`. Runtime не импортирует и не исправляет SQLite по JSONL.
 Offline verifier работает только с явно переданным snapshot/export и при
 missing, truncated или damaged history возвращает `key.history_incomplete`.
+Export manifest рядом с JSONL содержит schema/version и bounded export status.
+Если status равен `key.history_export_failed`, verifier не принимает snapshot
+как актуальный: он возвращает exit code `2` и diagnostic о рассинхроне между
+SQLite commit и snapshot. Наличие старого snapshot не снижает этот результат.
 
 История имеет bounded compaction policy. После достижения лимита transition
 records Core создаёт signed `KeyHistoryCheckpointV1`, содержащий hash полного
@@ -174,17 +178,27 @@ possession; self-signature не делает его trusted. При reason `comp
 trust не наследуется даже при доступном old key: continuity становится
 `compromised`, и новый fingerprint должен быть подтверждён отдельно. Если old
 key потерян, recovery создаёт self-signed transition с `continuity=broken`.
+Schema дополнительно запрещает `genesis` с любым reason кроме `initial` и
+actor кроме `system`, `broken` с reason кроме `recovery` и `compromised` с
+reason кроме `compromise`; `chained` разрешён только для `scheduled` или
+`manual` и подписывается предыдущим key.
 
 Удаление или частичное повреждение `public-history-v1.jsonl` обнаруживается по
 невозможности построить и проверить непрерывную цепочку
 `previous_transition_hash` между pinned genesis и key receipt; файл проверяется
 построчно, с обнаружением обрыва, дубликата и trailing partial line. Подмена
 полей ломает signature; перестановка строк не меняет граф доверия, но duplicate
-transition id, fork от одного active key и cycle отклоняются. Active key определяется единственным terminal
-transition независимо от его continuity и обязан совпадать с
-`active-key-v1.json`.
+transition id, fork от одного active key и cycle отклоняются. Terminal
+transition — единственный transition без successor по `previous_key_id`;
+verifier требует ровно один terminal transition, проверяет его signature и
+обязан сверить `new_key_id` с `active-key-v1.json` metadata, включённым в
+export. Отсутствие active metadata, несколько terminal transitions или
+mismatch дают `key.history_incomplete`/`key.rotation_incomplete`, а не новый
+genesis.
 
-История ограничена максимум 100 transition records на key lineage. При
+История ограничена максимум 100 transition records на key lineage и максимум
+16 MiB на один `public-history-v1.jsonl` export; превышение любого лимита
+останавливает export/rotation с `key.rotation_limit`. При
 достижении лимита rotation блокируется с `key.rotation_limit`; pruning
 истории без отдельного подписанного `KeyHistoryCheckpointV1` запрещён.
 Checkpoint — canonical JSON не более 4096 bytes с полями `checkpoint_version`,
@@ -246,6 +260,14 @@ diagnostics и read-only verification, но запрещает любую под
 terminal receipt, пока authenticated approved `TrustReceiptGenesis` не создаст
 новый explicit trust anchor `TrustReceiptGenesis` для нового сегмента. Сам
 transition или self-signature не может снять этот запрет.
+`TrustReceiptGenesis` — authenticated Core command, доступная именно в
+`key.trust_required` и не требующая подписи текущим receipt key: supervisor
+передаёт её через уже аутентифицированный desktop IPC, Core проверяет approval,
+получает полный `key_id` (`ed25519:` + 64 lowercase hex) либо нормализует
+переданные 64 hex в этот формат, сверяет его с verified genesis/transition и
+атомарно добавляет root в `trusted-roots-v1.json`. Команда не создаёт terminal
+receipt, а пишет bounded audit event; только после успешного commit trust store
+Core снимает `key.trust_required` для нового сегмента.
 
 Результаты различаются как минимум на `verified`, `untrusted`, `broken` и
 `unsupported`. Verifier никогда не преобразует `untrusted` в `verified`
@@ -268,7 +290,10 @@ Binary не линкует model gateway, tool runtime, SQLite writer или HTT
 - `4` — invalid arguments, unreadable input или unsupported version;
 - `5` — цепочка математически проверяема, но содержит `stale_key` boundary;
   это warning-as-failure для offline verification, чтобы revoked/compromised
-  segment нельзя было принять как полностью verified.
+  segment нельзя было принять как полностью verified. `stale_key`
+  определяется только по sequence boundary checkpoint/transition, никогда не
+  по wall-clock или позиции строки; verifier не выдаёт для него status
+  `verified`.
 
 До этапа 01.4 команда проверяется на shared/synthetic receipts. 01.4 добавляет
 производственный JSONL export и упаковку соответствующего public history.
@@ -292,6 +317,11 @@ Recovery сверяет journal с SQLite transition/audit и active-key metadat
 `continuity=broken` или `compromised` journal не может разрешить подпись новым
 ключом. Несогласованный или повреждённый journal даёт
 `key.rotation_incomplete` и блокирует mutation/rotation до manual recovery.
+`active_key_observed` — boolean, устанавливаемый при durable записи journal:
+он показывает, что на этот момент прочитанный active-key metadata совпадал с
+`old_key_id`. Recovery использует его только для consistency-проверки journal
+с SQLite и active key; он не является доказательством trust и не заменяет
+подпись transition.
 
 ## Rotation policy
 
@@ -308,10 +338,13 @@ Rotation — journaled transaction:
 
 1. сгенерировать new key, DPAPI-protect его во temporary file и проверить
    decrypt/sign/verify round trip;
-2. старым key подписать transition, выполнить SQLite commit и записать
-   owner-only `rotation-state-v1.json` с phase и hashes;
-3. durable append transition и bounded audit event;
-4. atomic replace active key, повторно проверить DACL и соответствие key id;
+2. старым key подписать transition, записать journal с phase `prepared`,
+   `active_key_observed=true` и hashes, выполнить flush/fsync и atomic replace;
+3. выполнить SQLite `BEGIN IMMEDIATE` и commit transition, active-key
+   metadata и audit reference как одну durable конфигурацию; после commit
+   отметить journal phases `transition_durable` и `audit_durable`;
+4. atomic replace active key, повторно проверить DACL и соответствие key id,
+   затем отметить `active_key_replaced`;
 5. удалить old protected private material и journal, затем выполнить
    self-verification public history.
 
@@ -322,7 +355,9 @@ cryptographic signer — только new key, но Core разрешает rece
 идемпотентно продолжает либо откатывает transaction по
 journal; состояние, где active key сменился без transition и audit, не
 допускается. Ошибка удаления old private material оставляет status
-`cleanup_required`, блокирует следующую rotation и не объявляется успехом.
+`cleanup_required`, блокирует только следующую rotation и объявление rotation
+успешной; signing receipts текущим active key разрешён, если transition,
+audit, trust и active metadata согласованы. Recovery повторяет только cleanup.
 После успешной rotation `rotation-state-v1.json` удаляется только после
 повторной проверки active key, signed transition, audit event и DACL. Если
 очистка не завершилась, файл сохраняется с bounded phase/error code и recovery
@@ -418,6 +453,10 @@ receipt; read-only диагностика и offline verification продолж
   (`verified`), после boundary (`stale_key`) и новый key до/после explicit pin;
 - verifier возвращает exit code `5` для `stale_key`, а stale export после
   неудачного JSONL export не объявляется verified;
+- synthetic verifier suite после shutdown Core и при отключённой сети покрывает
+  exit codes `0`, `2`, `3`, `4` и `5`, включая unsupported schema/version,
+  duplicate `transition_id`, `key.history_export_failed`, отсутствующий или
+  дублирующий terminal transition и mismatch с exported active-key metadata;
 - rotation-state schema и crash tests покрывают каждую phase, а checkpoint
   vectors покрывают prefix hash, retained suffix и signature;
 - другой Windows user и скопированный data directory не decrypt private key;

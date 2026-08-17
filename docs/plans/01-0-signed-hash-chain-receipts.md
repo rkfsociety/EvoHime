@@ -128,6 +128,15 @@ retention и offline verify. Целевой smoke-budget: sign/append не бл�
   одноразовый approval claim обеспечивают identity/anti-replay binding;
 - public-key history и rotation checkpoints экспортируются вместе с chain и
   защищаются тем же trusted verification path;
+- verifier перед разбором отклоняет неизвестную или неподдерживаемую версию
+  schema/manifest с exit code `4`; duplicate `transition_id` всегда является
+  ошибкой истории, даже если подписи отдельных строк корректны;
+- `continuity=genesis` разрешён только с `reason=initial` и `actor=system`,
+  `continuity=broken` — только с `reason=recovery`, а
+  `continuity=compromised` — только с `reason=compromise`; иные комбинации
+  отклоняются как invalid transition;
+- `key.history_export_failed` имеет приоритет над результатом математической
+  проверки snapshot и даёт offline verifier exit code `2`, а не `0`;
 - все mutation-записи receipt, action и chain head выполняются в одной
   `BEGIN IMMEDIATE`-транзакции; частичный commit этих таблиц запрещён;
 - SQLite Core является источником истины, а JSONL — только атомарный экспортный
@@ -159,6 +168,16 @@ retention и offline verify. Целевой smoke-budget: sign/append не бл�
 9. Verifier не repair-ит malformed, non-canonical, broken или incomplete input.
 10. Любой terminal receipt требует matching pre receipt, который находится
     раньше него по durable sequence; `pending_recovery` не является terminal.
+11. Terminal transition — единственный transition lineage, для которого в
+    проверяемом наборе нет successor по `previous_key_id`; verifier обязан
+    найти ровно один такой transition, сверить его `new_key_id` с
+    экспортированным `active-key-v1.json` metadata (или с подписанным
+    active-key checkpoint, если active metadata входит в export) и отклонить
+    набор при отсутствии, дубликате или несовпадении terminal transition.
+12. `stale_key` вычисляется по sequence boundary из checkpoint/transition
+    metadata, а не по wall-clock и не по порядку строк JSONL; checkpoint
+    sequence имеет приоритет, а при его отсутствии verifier возвращает
+    `key.history_incomplete`.
 
 Версии схем, лимиты и все stable error codes публикуются единым manifest
 `contracts/receipts/v1/version-manifest.json`; реализации не поддерживают
