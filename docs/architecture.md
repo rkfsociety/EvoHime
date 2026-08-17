@@ -80,8 +80,14 @@ consumer `desktop/evohime-electron/src/main/receipt-crypto.ts`. Норматив
 JCS bytes, envelope `receipt_hash`, Ed25519, result domain, schema, limits,
 stable error codes и cross-language vectors находятся в
 `contracts/receipts/v1/`; подробное правило — `docs/security/receipt-canonical-v1.md`.
-Этап 01.1 фиксирует bytes и проверку контракта, а key lifecycle, runtime
-orchestration и storage остаются последующими этапами 01.2–01.4.
+Этап 01.1 фиксирует bytes и проверку контракта. Key lifecycle реализован в
+`crates/evohime-receipts`: Windows DPAPI CurrentUser, owner-only DACL,
+SQLite-источник переходов и audit, journaled rotation/recovery, explicit
+trusted genesis, signed checkpoint contract и `evohime-verify.exe`. Core
+публикует renderer только bounded status/key metadata; private material не
+выходит из Core. JSONL history является post-commit snapshot с manifest и
+статусом stale при ошибке экспорта. Runtime orchestration и receipt signing
+остаются следующими этапами 01.3–01.4.
 
 ## Context Budget Manager
 

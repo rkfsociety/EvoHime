@@ -496,6 +496,7 @@ dependencies = [
  "evohime-local-storage",
  "evohime-model-gateway",
  "evohime-permissions",
+ "evohime-receipts",
  "evohime-tool-runtime",
  "futures-util",
  "prost",
@@ -589,6 +590,7 @@ dependencies = [
  "chrono",
  "hex",
  "ring",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -603,6 +605,7 @@ name = "evohime-supervisor"
 version = "0.1.0"
 dependencies = [
  "evohime-desktop-ipc",
+ "evohime-receipts",
  "evohime-updater",
  "serde",
  "serde_json",

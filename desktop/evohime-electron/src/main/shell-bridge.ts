@@ -1,5 +1,6 @@
 import { BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { readFile, stat } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { basename, dirname, extname, isAbsolute, join } from 'node:path'
 
 import {
@@ -399,6 +400,40 @@ function dispatch(
         return failure('invalid-payload', 'Некорректный идентификатор модели.')
       }
       return accepted(client.send({ selectModel: { model } }))
+    }
+
+    case 'core.getReceiptKeyStatus':
+      return accepted(client.send({ getReceiptKeyStatus: {} }))
+
+    case 'core.trustReceiptGenesis': {
+      const value = asRecord(payload)
+      const genesisKeyId = asBoundedString(value['genesisKeyId'])
+      const approvalId = asBoundedString(value['approvalId']) ?? randomUUID()
+      const source = value['source'] === undefined ? '' : asBoundedString(value['source'])
+      if (genesisKeyId === null || approvalId === null || source === null) {
+        return failure('invalid-payload', 'Некорректные параметры доверенного genesis.')
+      }
+      return accepted(client.send({ trustReceiptGenesis: { genesisKeyId, approvalId, source } }))
+    }
+
+    case 'core.rotateReceiptKey': {
+      const value = asRecord(payload)
+      const reason = value['reason'] === 'compromise' ? 'compromise' : value['reason'] === 'manual' ? 'manual' : null
+      const approvalId = asBoundedString(value['approvalId']) ?? randomUUID()
+      if (reason === null || approvalId === null) {
+        return failure('invalid-payload', 'Некорректные параметры ротации ключа.')
+      }
+      return accepted(client.send({ rotateReceiptKey: { reason, approvalId } }))
+    }
+
+    case 'core.createNewReceiptGenesis': {
+      const value = asRecord(payload)
+      const approvalId = asBoundedString(value['approvalId']) ?? randomUUID()
+      const source = value['source'] === undefined ? '' : asBoundedString(value['source'])
+      if (approvalId === null || source === null) {
+        return failure('invalid-payload', 'Некорректные параметры восстановления ключа.')
+      }
+      return accepted(client.send({ createNewReceiptGenesis: { approvalId, source } }))
     }
 
     case 'core.listMemoryPending':

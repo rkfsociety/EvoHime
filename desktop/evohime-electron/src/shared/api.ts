@@ -182,6 +182,10 @@ export const RENDERER_COMMANDS = [
   'core.getModelConfig',
   'core.listModelCatalog',
   'core.selectModel',
+  'core.getReceiptKeyStatus',
+  'core.trustReceiptGenesis',
+  'core.rotateReceiptKey',
+  'core.createNewReceiptGenesis',
   'core.listMemoryPending',
   'core.getMemoryConflicts',
   'core.getMemory',
@@ -289,6 +293,10 @@ export interface CommandPayloads {
   'core.getModelConfig': Record<string, never>
   'core.listModelCatalog': { mode: ModelTier }
   'core.selectModel': { model: string }
+  'core.getReceiptKeyStatus': Record<string, never>
+  'core.trustReceiptGenesis': { genesisKeyId: string; approvalId?: string; source?: string }
+  'core.rotateReceiptKey': { reason: 'manual' | 'compromise'; approvalId?: string }
+  'core.createNewReceiptGenesis': { approvalId?: string; source?: string }
   /** Pending-confirmation queue and per-state counters; metadata only. */
   'core.listMemoryPending': { scopeKind: string; projectId: string; secondaryId?: string; limit?: number; workspacePath?: string }
   'core.getMemoryConflicts': { scopeKind: string; projectId: string; secondaryId?: string; limit?: number; workspacePath?: string }
@@ -369,6 +377,10 @@ export interface CommandResults {
   'core.getModelConfig': { accepted: boolean }
   'core.listModelCatalog': { accepted: boolean }
   'core.selectModel': { accepted: boolean }
+  'core.getReceiptKeyStatus': { accepted: boolean }
+  'core.trustReceiptGenesis': { accepted: boolean }
+  'core.rotateReceiptKey': { accepted: boolean }
+  'core.createNewReceiptGenesis': { accepted: boolean }
   'core.listMemoryPending': { accepted: boolean }
   'core.getMemoryConflicts': { accepted: boolean }
   'core.getMemory': { accepted: boolean }

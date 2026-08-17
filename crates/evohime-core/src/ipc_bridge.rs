@@ -11,6 +11,7 @@ use crate::{
 use evohime_local_storage::WorkItemRecord;
 use evohime_model_gateway::ModelGatewayConfig;
 use evohime_permissions::{Permission, PermissionMode};
+use evohime_receipts::key_lifecycle::{ReceiptKeyManager, VerificationStatus};
 use evohime_tool_runtime::{ToolContext, ToolRegistry};
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -42,6 +43,7 @@ pub struct ModelConfigSnapshot {
 
 pub struct IpcBridge {
     journal: EventJournal,
+    receipt_keys: Arc<ReceiptKeyManager>,
     coordinator: Option<TaskCoordinator>,
     approvals: Option<ApprovalCoordinator>,
     tools: Option<Arc<ToolRegistry>>,
@@ -65,6 +67,13 @@ fn runtime_identity() -> (String, u64) {
 }
 
 impl IpcBridge {
+    fn manager_for(journal: &EventJournal) -> Arc<ReceiptKeyManager> {
+        let data_dir = journal
+            .database_path()
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
+        Arc::new(ReceiptKeyManager::new(data_dir))
+    }
     /// Записывает лимиты каталога в локальную базу. Это подсказка для
     /// планировщика контекста, а не условие работы: провайдер может не сообщить
     /// окно, а база — быть занята другим писателем, и ни то, ни другое не повод
@@ -99,8 +108,10 @@ impl IpcBridge {
 
     pub fn new(journal: EventJournal) -> Self {
         let (core_instance_id, session_epoch) = runtime_identity();
+        let receipt_keys = Self::manager_for(&journal);
         Self {
             journal,
+            receipt_keys,
             coordinator: None,
             approvals: None,
             tools: None,
@@ -116,8 +127,10 @@ impl IpcBridge {
 
     pub fn with_coordinator(journal: EventJournal, coordinator: TaskCoordinator) -> Self {
         let (core_instance_id, session_epoch) = runtime_identity();
+        let receipt_keys = Self::manager_for(&journal);
         Self {
             journal,
+            receipt_keys,
             coordinator: Some(coordinator),
             approvals: None,
             tools: None,
@@ -140,8 +153,10 @@ impl IpcBridge {
         gateway_config: Option<ModelGatewayConfig>,
     ) -> Self {
         let (core_instance_id, session_epoch) = runtime_identity();
+        let receipt_keys = Self::manager_for(&journal);
         Self {
             journal,
+            receipt_keys,
             coordinator: Some(coordinator),
             approvals: Some(approvals),
             tools: Some(tools),
@@ -211,6 +226,92 @@ impl IpcBridge {
             .map(|coordinator| coordinator.journalled())
     }
 
+    fn receipt_status(&self) -> serde_json::Value {
+        let manager = &self.receipt_keys;
+        let active = manager.active_path().exists();
+        let history = manager.history_path().exists();
+        let status = if !active && !history {
+            "not_initialized".to_string()
+        } else if !active || !history {
+            "key.recovery_required".to_string()
+        } else if manager.journal_path().exists() {
+            "key.rotation_incomplete".to_string()
+        } else {
+            match manager.verify_history(None) {
+                Ok(VerificationStatus::Verified) => "verified_unpinned".to_string(),
+                Ok(VerificationStatus::Untrusted) => {
+                    let loaded = manager.load_history().ok();
+                    if loaded.as_ref().is_some_and(|items| {
+                        items.iter().any(|item| {
+                            matches!(item.continuity.as_str(), "broken" | "compromised")
+                        })
+                    }) {
+                        return serde_json::json!({
+                            "status": "key.trust_required",
+                            "key_id": manager.load_signer().ok().map(|(metadata, _)| metadata.key_id),
+                            "history_present": history,
+                            "active_present": active,
+                            "rotation_journal_present": manager.journal_path().exists(),
+                        });
+                    }
+                    let genesis =
+                        loaded.and_then(|items| items.first().map(|item| item.new_key_id.clone()));
+                    match genesis.and_then(|key| manager.trusted_genesis(&key).ok()) {
+                        Some(true) => "trusted".to_string(),
+                        _ => "key.trust_required".to_string(),
+                    }
+                }
+                Ok(VerificationStatus::Broken) => "key.history_incomplete".to_string(),
+                Ok(VerificationStatus::Unsupported) => "unsupported".to_string(),
+                Err(error) => error.to_string(),
+            }
+        };
+        let key_id = std::fs::read(manager.active_path())
+            .ok()
+            .and_then(|bytes| {
+                serde_json::from_slice::<evohime_receipts::key_lifecycle::ActiveKeyMetadata>(&bytes)
+                    .ok()
+            })
+            .map(|metadata| metadata.key_id);
+        serde_json::json!({"status": status, "key_id": key_id, "history_present": history, "active_present": active, "rotation_journal_present": manager.journal_path().exists()})
+    }
+
+    async fn take_receipt_approval<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        approval_id: &str,
+        operation: &str,
+    ) -> Result<bool, IpcBridgeError> {
+        let Some(approvals) = &self.approvals else {
+            self.write_response(
+                writer,
+                "key.approval_required",
+                serde_json::to_vec(
+                    &serde_json::json!({"operation": operation, "error_code":"approval.required"}),
+                )?,
+            )
+            .await?;
+            return Ok(false);
+        };
+        let Ok(id) = uuid::Uuid::parse_str(approval_id) else {
+            self.write_response(
+                writer,
+                "key.approval_required",
+                serde_json::to_vec(
+                    &serde_json::json!({"operation": operation, "error_code":"approval.required"}),
+                )?,
+            )
+            .await?;
+            return Ok(false);
+        };
+        if approvals.consume_approved(id).await {
+            Ok(true)
+        } else {
+            self.write_response(writer, "key.approval_required", serde_json::to_vec(&serde_json::json!({"operation": operation, "approval_id": id.to_string(), "error_code":"approval.required"}))?).await?;
+            Ok(false)
+        }
+    }
+
     pub async fn process_once<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
         &self,
         reader: &mut R,
@@ -237,6 +338,102 @@ impl IpcBridge {
                     })),
                 };
                 transport::write_frame(writer, &event.encode_to_vec()).await?;
+            }
+            Some(generated::command_envelope::Command::GetReceiptKeyStatus(_)) => {
+                self.write_response(
+                    writer,
+                    "key.status",
+                    serde_json::to_vec(&self.receipt_status())?,
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::TrustReceiptGenesis(request)) => {
+                if !self
+                    .take_receipt_approval(writer, &request.approval_id, "TrustReceiptGenesis")
+                    .await?
+                {
+                    return Ok(());
+                }
+                let result = self
+                    .receipt_keys
+                    .trust_genesis(&request.genesis_key_id, &request.source);
+                let payload = match result {
+                    Ok(()) => {
+                        serde_json::json!({"status": "trusted", "genesis_key_id": request.genesis_key_id})
+                    }
+                    Err(error) => {
+                        serde_json::json!({"status": error.to_string(), "error_code": error.to_string()})
+                    }
+                };
+                self.write_response(writer, "key.trust", serde_json::to_vec(&payload)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::CreateNewReceiptGenesis(request)) => {
+                if !self
+                    .take_receipt_approval(writer, &request.approval_id, "CreateNewReceiptGenesis")
+                    .await?
+                {
+                    return Ok(());
+                }
+                let manager = self.receipt_keys.clone();
+                let database = self.journal.database().clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    let mut database = database.blocking_lock();
+                    manager.create_new_genesis_with_database(database.connection_mut(), "user")
+                })
+                .await
+                .map_err(|error| FrameError::Io(error.to_string()))?;
+                let payload = match result {
+                    Ok(key_id) => {
+                        serde_json::json!({"status":"recovered", "key_id":key_id, "trust_required":true})
+                    }
+                    Err(error) => {
+                        serde_json::json!({"status":"failed", "error_code":error.to_string()})
+                    }
+                };
+                self.write_response(writer, "key.recovery", serde_json::to_vec(&payload)?)
+                    .await?;
+            }
+            Some(generated::command_envelope::Command::RotateReceiptKey(request)) => {
+                if !self
+                    .take_receipt_approval(writer, &request.approval_id, "RotateReceiptKey")
+                    .await?
+                {
+                    return Ok(());
+                }
+                let reason = request.reason.trim().to_string();
+                if !matches!(reason.as_str(), "manual" | "compromise") {
+                    self.write_response(
+                        writer,
+                        "key.rotation_failed",
+                        br#"{"error_code":"key.rotation_failed"}"#.to_vec(),
+                    )
+                    .await?;
+                } else {
+                    let manager = self.receipt_keys.clone();
+                    let database = self.journal.database().clone();
+                    let rotation_reason = reason.clone();
+                    let result = tokio::task::spawn_blocking(move || {
+                        let mut database = database.blocking_lock();
+                        manager.rotate_with_database(
+                            database.connection_mut(),
+                            &rotation_reason,
+                            "user",
+                        )
+                    })
+                    .await
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                    let payload = match result {
+                        Ok(key_id) => {
+                            serde_json::json!({"status":"rotated", "key_id":key_id, "reason":reason})
+                        }
+                        Err(error) => {
+                            serde_json::json!({"status":"failed", "error_code":error.to_string()})
+                        }
+                    };
+                    self.write_response(writer, "key.rotation", serde_json::to_vec(&payload)?)
+                        .await?;
+                }
             }
             Some(generated::command_envelope::Command::ResyncRequest(request)) => {
                 evohime_desktop_ipc::validate_resync_request(&request)
@@ -1113,15 +1310,14 @@ impl IpcBridge {
             Some(generated::command_envelope::Command::ResolveApproval(resolve)) => {
                 let approval_id = uuid::Uuid::parse_str(&resolve.approval_id)
                     .map_err(|error| FrameError::Io(format!("invalid approval id: {error}")))?;
-                if let (Some(approvals), Some(tools)) = (&self.approvals, &self.tools) {
-                    if tools
+                if let Some(tools) = &self.tools {
+                    let _ = tools
                         .permissions()
                         .resolve(approval_id, resolve.granted)
-                        .await
-                        .is_some()
-                    {
-                        let _ = approvals.resolve(approval_id, resolve.granted).await;
-                    }
+                        .await;
+                }
+                if let Some(approvals) = &self.approvals {
+                    let _ = approvals.resolve(approval_id, resolve.granted).await;
                 }
             }
             None => {}

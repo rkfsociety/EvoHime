@@ -264,6 +264,27 @@ message ResolveApproval {
   bool granted = 2;
 }
 
+// Receipt key lifecycle commands are accepted only on the authenticated Core
+// channel. The approval id is mandatory for mutations and is never persisted
+// with key material.
+message RotateReceiptKey {
+  string reason = 1;
+  string approval_id = 2;
+}
+
+message TrustReceiptGenesis {
+  string genesis_key_id = 1;
+  string approval_id = 2;
+  string source = 3;
+}
+
+message GetReceiptKeyStatus {}
+
+message CreateNewReceiptGenesis {
+  string approval_id = 1;
+  string source = 2;
+}
+
 // Bounded, read-only Core Doctor diagnostic. project_id is optional; when
 // set, the permissions check is grounded in that project's real workspace.
 // detail_level is user-configurable verbosity: 0 = SUMMARY (default),
@@ -804,6 +825,10 @@ message CommandEnvelope {
     SearchWorkspaceKnowledge search_workspace_knowledge = 89;
     GetIndexStatus get_index_status = 90;
     CancelWorkspaceIndex cancel_workspace_index = 91;
+    RotateReceiptKey rotate_receipt_key = 92;
+    TrustReceiptGenesis trust_receipt_genesis = 93;
+    GetReceiptKeyStatus get_receipt_key_status = 94;
+    CreateNewReceiptGenesis create_new_receipt_genesis = 95;
   }
 }
 

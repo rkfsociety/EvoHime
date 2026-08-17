@@ -58,7 +58,7 @@ receipt. Каждый `(key_id, chain)` имеет ровно один genesis; 
 | Этап | Файл | Что отдаёт наружу | Кто потребляет |
 | --- | --- | --- | --- |
 | 01.1 | [Canonical contract](../security/receipt-canonical-v1.md) | canonical encoding payload и known-answer vectors | 01.2–01.4 |
-| 01.2 | [Key lifecycle](01-2-key-lifecycle.md) | key pair, rotation и offline verification | 01.3, 01.4 |
+| 01.2 | [Key lifecycle contract](../security/receipt-key-lifecycle-v1.md) | key pair, rotation и offline verification | 01.3, 01.4 |
 | 01.3 | [Runtime integration](01-3-runtime-integration.md) | pre/post-action receipts и approval binding | 03.1 |
 | 01.4 | [Chain storage и export](01-4-chain-storage-and-export.md) | verify-chain, IPC и UI | UI |
 

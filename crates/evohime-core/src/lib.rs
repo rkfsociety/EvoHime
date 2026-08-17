@@ -1487,6 +1487,10 @@ impl EventJournal {
         &self.database
     }
 
+    pub fn database_path(&self) -> &std::path::Path {
+        self.database_path.as_ref()
+    }
+
     /// Builds and atomically publishes one Core-owned workspace RAG
     /// generation. Progress is bounded by the scanner contract; callers may
     /// forward the returned final projection to UI without exposing paths
@@ -3309,6 +3313,7 @@ impl AgentRunError {
 #[derive(Clone, Default)]
 pub struct ApprovalCoordinator {
     pending: Arc<Mutex<HashMap<uuid::Uuid, oneshot::Sender<bool>>>>,
+    approved: Arc<Mutex<HashMap<uuid::Uuid, bool>>>,
 }
 
 impl ApprovalCoordinator {
@@ -3319,11 +3324,18 @@ impl ApprovalCoordinator {
     }
 
     pub async fn resolve(&self, approval_id: uuid::Uuid, granted: bool) -> bool {
-        self.pending
+        if let Some(sender) = self.pending.lock().await.remove(&approval_id) {
+            return sender.send(granted).is_ok();
+        }
+        self.approved.lock().await.insert(approval_id, granted);
+        true
+    }
+
+    pub async fn consume_approved(&self, approval_id: uuid::Uuid) -> bool {
+        self.approved
             .lock()
             .await
             .remove(&approval_id)
-            .map(|sender| sender.send(granted).is_ok())
             .unwrap_or(false)
     }
 }
@@ -8376,12 +8388,11 @@ impl TaskCoordinator {
                             },
                             hybrid,
                             move |progress| {
-                                let _ = progress_sender.send(
-                                    CoreEvent::WorkspaceRetrievalProgress {
+                                let _ =
+                                    progress_sender.send(CoreEvent::WorkspaceRetrievalProgress {
                                         workspace_path: progress_workspace.clone(),
                                         progress,
-                                    },
-                                );
+                                    });
                             },
                         )
                         .await

@@ -329,6 +329,28 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let backoff_cap = restart_backoff_cap();
     let mut restarts = 0;
     let heartbeat_path = core_data_dir().join("core-heartbeat");
+    let rotation_journal = core_data_dir()
+        .join(evohime_receipts::key_lifecycle::KEY_DIR)
+        .join(evohime_receipts::key_lifecycle::JOURNAL_FILE);
+    if rotation_journal.exists() {
+        match std::fs::read(&rotation_journal).ok().and_then(|bytes| {
+            serde_json::from_slice::<evohime_receipts::key_lifecycle::RotationState>(&bytes).ok()
+        }) {
+            Some(state) => {
+                let _ = logger.write(
+                    "key.rotation_recovery_detected",
+                    json!({"phase": state.phase, "rotation_id": state.rotation_id}),
+                );
+            }
+            None => {
+                let _ = logger.write(
+                    "key.recovery_required",
+                    json!({"error_code":"key.rotation_incomplete"}),
+                );
+                return Err("invalid receipt rotation journal".into());
+            }
+        }
+    }
 
     // In-memory bounded scheduler/schedule contracts for this supervisor process's
     // lifetime (no persistence backing yet). They mirror the real spawn/health/exit

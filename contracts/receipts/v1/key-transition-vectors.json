@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "positive": [
+    {
+      "name": "rfc8032-seed-genesis",
+      "seed_hex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+      "canonical_unsigned": "{\"transition_version\":1,\"transition_id\":\"018c4f4e-5c00-7abc-8def-0123456789ab\",\"created_at\":\"2025-01-15T12:34:56.789Z\",\"reason\":\"initial\",\"actor\":\"system\",\"new_key_id\":\"ed25519:21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9\",\"new_public_key\":\"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo\",\"continuity\":\"genesis\",\"signed_by_key_id\":\"ed25519:21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9\"}",
+      "new_key_id": "ed25519:21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+      "new_public_key": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+      "signature": "gY9xvbg6A1HCUyaILJCJfdZA8SaeNJgSxFTADH7k1rZYcyQUZy_mx7aJ9PxnjwndR96yu2dBARouMsnxh0ewBg"
+    }
+  ],
+  "negative": ["duplicate_transition_id", "fork", "cycle", "tampered_signature", "missing_predecessor"]
+}

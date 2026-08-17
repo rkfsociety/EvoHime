@@ -14,6 +14,40 @@ async fn main() {
             std::process::exit(1);
         }
     };
+    let receipt_keys = evohime_receipts::key_lifecycle::ReceiptKeyManager::new(&data_dir);
+    {
+        let mut database = journal.database().lock().await;
+        if let Err(error) = receipt_keys.startup_with_database(database.connection_mut()) {
+            eprintln!("evohime-core receipt key lifecycle failed: {error}");
+            std::process::exit(1);
+        }
+        if receipt_keys.scheduled_rotation_due().unwrap_or(false) {
+            let trusted = receipt_keys
+                .load_history()
+                .ok()
+                .and_then(|items| {
+                    items.first().map(|item| {
+                        receipt_keys
+                            .trusted_genesis(&item.new_key_id)
+                            .unwrap_or(false)
+                    })
+                })
+                .unwrap_or(false);
+            if trusted {
+                if let Err(error) = receipt_keys.rotate_with_database(
+                    database.connection_mut(),
+                    "scheduled",
+                    "system",
+                ) {
+                    eprintln!("scheduled receipt key rotation failed: {error}");
+                } else {
+                    let _ = receipt_keys.record_rotation_check();
+                }
+            } else {
+                eprintln!("scheduled receipt key rotation blocked: key.trust_required");
+            }
+        }
+    }
     if let Err(error) = journal.recover_and_reconcile_after_restart().await {
         eprintln!("evohime-core recovery failed: {error}");
         std::process::exit(1);

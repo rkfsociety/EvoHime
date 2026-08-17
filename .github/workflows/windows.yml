@@ -94,6 +94,9 @@ jobs:
           toolchain: stable-x86_64-pc-windows-msvc
       - name: Test native Rust foundation
         run: cargo test --locked -p evohime-permissions -p evohime-tool-runtime -p evohime-model-gateway -p evohime-core -p evohime-local-storage -p evohime-desktop-ipc -p evohime-updater -p evohime-receipts
+      - name: Receipt key lifecycle contract and verifier tests
+        shell: pwsh
+        run: ./scripts/receipt-key-lifecycle.tests.ps1
       - name: Check supervisor
         run: cargo check --locked -p evohime-supervisor -p evohime-updater
       - name: Deterministic evaluation and fixture security gate
