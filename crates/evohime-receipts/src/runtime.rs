@@ -273,6 +273,34 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(())
     }
 
+    pub fn mark_returned(&self, action_id: Uuid) -> Result<(), RuntimeError> {
+        let changed = self.connection.execute(
+            "UPDATE receipt_actions SET dispatch_state='returned' WHERE action_id=?1 AND state='prepared' AND dispatch_state='started'",
+            [action_id.to_string()],
+        )?;
+        if changed != 1 { return Err(RuntimeError::Code("action_id_conflict")); }
+        Ok(())
+    }
+
+    /// Recovery never synthesizes a successful result.  It only expires
+    /// in-flight approvals and leaves started actions available for an
+    /// authenticated reconciliation path.
+    pub fn recover_on_startup(&mut self) -> Result<i64, RuntimeError> {
+        let tx = self.connection.unchecked_transaction()?;
+        tx.execute("UPDATE receipt_runtime_guard SET phase='recovery_in_progress',generation=generation+1,updated_at_ms=?1 WHERE id=1", [now_ms()])?;
+        let quick: String = tx.query_row("PRAGMA quick_check(100)", [], |r| r.get(0))?;
+        if quick != "ok" {
+            tx.execute("UPDATE receipt_runtime_guard SET phase='read_only_recovery',updated_at_ms=?1 WHERE id=1", [now_ms()])?;
+            tx.commit()?;
+            return Err(RuntimeError::Code("schema_violation"));
+        }
+        tx.execute("UPDATE receipt_approval_intents SET state='expired' WHERE state IN ('pending','granted') AND expires_at_ms<=?1", [now_ms()])?;
+        let pending: i64 = tx.query_row("SELECT COUNT(*) FROM receipt_actions WHERE state IN ('prepared','pending_recovery')", [], |r| r.get(0))?;
+        tx.execute("UPDATE receipt_runtime_guard SET phase='ready',updated_at_ms=?1 WHERE id=1", [now_ms()])?;
+        tx.commit()?;
+        Ok(pending)
+    }
+
     /// Records the UI decision without holding the IPC request open.  A
     /// decision is one-way and does not itself authorize dispatch.
     pub fn grant_approval(&self, approval_id: Uuid) -> Result<(), RuntimeError> {
@@ -309,11 +337,12 @@ impl<'a> ReceiptRuntime<'a> {
     pub fn complete(&self, request: &ActionRequest, status: &str, output_digest: &str, error_category: Option<&str>) -> Result<String, RuntimeError> {
         if !matches!(status, "succeeded"|"failed"|"cancelled") { return Err(RuntimeError::Code("schema_violation")); }
         let args_hash = canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input)?;
+        if output_digest.len() != 64 || !output_digest.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) { return Err(RuntimeError::Code("schema_violation")); }
         let projection = if status == "succeeded" { json!({"status":"succeeded","output_digest":output_digest}) } else { json!({"status":status,"error_category":error_category.ok_or(RuntimeError::Code("schema_violation"))?}) };
         let result = result_hash(&projection)?;
         let tx = self.connection.unchecked_transaction()?;
-        let (state, stored_hash): (String,String) = tx.query_row("SELECT state,tool_args_hash FROM receipt_actions WHERE action_id=?1", [request.action_id.to_string()], |r| Ok((r.get(0)?,r.get(1)?)))?;
-        if state != "prepared" && state != "pending_recovery" || stored_hash != args_hash { return Err(RuntimeError::Code("schema_violation")); }
+        let (state, dispatch, stored_hash): (String,String,String) = tx.query_row("SELECT state,dispatch_state,tool_args_hash FROM receipt_actions WHERE action_id=?1", [request.action_id.to_string()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
+        if (state != "prepared" && state != "pending_recovery") || (dispatch != "started" && dispatch != "returned") || stored_hash != args_hash { return Err(RuntimeError::Code("schema_violation")); }
         let (hash, _) = signed_receipt(&tx, self.signer, request, "post_action", status, &stored_hash, Some(&result), None)?;
         tx.execute("UPDATE receipt_actions SET state=?2,dispatch_state='returned',result_hash=?3,terminal_receipt_hash=?4 WHERE action_id=?1", params![request.action_id.to_string(), status, result, hash])?;
         tx.commit()?;
