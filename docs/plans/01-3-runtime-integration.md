@@ -23,7 +23,7 @@
 
 | kind | Обязательные поля | Запрещённые поля | Дополнительное условие |
 | --- | --- | --- | --- |
-| `pre_action` | `action_id`, `action_status=prepared`, `tool_args_hash`, policy fields, chain predecessor | `result_hash`, `refusal_code` | `approval_id` только при `policy_decision=approval_required` |
+| `pre_action` | `action_id`, `action_status=prepared`, `tool_args_hash`, policy fields, chain predecessor | `result_hash`, `refusal_code` | `approval_id` и approval outcome только при `policy_decision=approval_required` |
 | `post_action` | `action_id`, terminal status, `tool_args_hash`, `result_hash`, policy fields | `refusal_code`, `parent_approval_ref` | approval binding переносится из pre, если он был |
 | `refusal` | `action_id`, `action_status=refused`, `tool_args_hash`, policy fields, `refusal_code` | `result_hash` | approval refs только для отказа существующего approval |
 
@@ -34,6 +34,25 @@ signed refusal с `policy_denied`; `approval_required` создаёт bounded in
 `action_status=prepared` допустим только для `allow` или успешно claimed
 `approval_required`; `deny` никогда не создаёт prepared action. Неизвестное
 значение policy decision является `receipt.schema_violation`.
+
+`approval_id` всегда UUIDv7 в canonical lowercase hyphenated text form
+(36 ASCII bytes), генерируется Core, имеет `UNIQUE` constraint в
+`receipt_approval_intents` и не переиспользуется после любого terminal/lost
+состояния. Electron/UI не может прислать произвольный approval id для нового
+intent.
+
+Для `refusal` approval refs разрешены только если ранее существовал approval:
+это `approval_id` UUIDv7, `approval_call_hash` lowercase SHA-256 и
+`approval_outcome=pending|granted|denied|expired|claimed`, все значения
+сверяются с immutable `receipt_approval_intents`/`receipt_actions`. При
+`policy_decision=deny` без существующего approval эти поля отсутствуют.
+
+`parent_approval_ref` — optional bounded reference для child workflow: он
+входит в canonical pre/refusal payload ребёнка только при handoff от
+authenticated parent approval и содержит parent action/approval reference, но
+не raw parent payload. Для обычных actions поле отсутствует; post получает эту
+связь из durable action row. Child reconciliation не может заменить parent ref
+новым raw input.
 
 Канонизация receipt выполняется в два строго разделённых шага. Сначала Core
 строит `canonical_payload` со всеми полями payload, включая
@@ -140,6 +159,11 @@ Post/refusal используют значения из durable `receipt_actions
 их из нового input. Изменение правил fingerprint между pre и post считается
 schema/configuration violation; такой action не закрывается успешным post без
 явного reconciliation.
+Перед записью post Core сравнивает `action_id`, `tool_args_hash`,
+`fingerprint_input_version` и `canonical_call_hash` с durable pre/action row.
+Любое расхождение создаёт `receipt.schema_violation`, запрещает terminal
+success/refusal по этой подменённой записи и переводит action в `quarantined`;
+повторный tool dispatch не допускается.
 
 ## Execution protocol
 
@@ -193,6 +217,11 @@ TTL v1 — **10 минут от момента создания `receipt_approva
 `created_wall_at_ms`, `expires_at_ms`, `clock_boot_id`, `created_monotonic_ms` и
 `deadline_monotonic_ms`. В течение одного boot authorization claim использует
 только `deadline_monotonic_ms`; sleep/hibernate считаются прошедшим временем.
+Нормативная формула создания: `ttl_ms = 600000`,
+`deadline_monotonic_ms = created_monotonic_ms + ttl_ms`, а
+`expires_at_ms = created_wall_at_ms + ttl_ms` служит UI/diagnostics mirror.
+Разница между wall и monotonic часами никогда не пересчитывает deadline после
+создания intent.
 `clock_boot_id` — стабильный идентификатор OS boot session, полученный через
 platform clock API, а не случайный process id; Core проверяет его при каждом
 расчёте monotonic deadline. Если платформа не предоставляет надёжный boot id,
@@ -277,7 +306,17 @@ tool, permission, normalized scope, exact call hash, created/expires timestamps
     refused             ─> terminal
     succeeded/failed/cancelled ─> terminal
     pending_recovery    ─> post terminal или explicit refusal after reconciliation
-    quarantined         ─> manual recovery only
+    quarantined         ─> refused(recovery_pending) через UnquarantineAction
+    quarantined         ─> quarantined при повторной неудаче проверки
+
+`quarantined` не является dispatchable state и не может перейти обратно в
+`prepared`, `started` или `pending_recovery`. `UnquarantineAction` — отдельная
+authenticated operator command с `action_id`, checkpoint/backup reference,
+bounded reason и новым command id. Она доступна только после `phase=ready`,
+проверки chain/schema и trusted signer; выполняет только закрытие старого
+action terminal signed refusal `recovery_pending` либо оставляет его
+quarantined. Повторный tool dispatch, изменение старого payload и удаление
+истории запрещены.
 
 `pending_recovery` — internal action-store state, не новый receipt kind или
 автоматически создаваемый signed refusal. `recovery_code` — закрытый enum
@@ -320,6 +359,14 @@ case-insensitive secret-like scan, а секретные значения зам
 diagnostics — не более 512 bytes, только enum-коды и counters; error text,
 stdout/stderr, paths и raw results запрещены. Превышение bound отбрасывает
 контент, но не action.
+
+Preview содержит только bounded human-readable описание предполагаемого
+действия: tool display name, operation/category, безопасные redacted scalar
+поля и scope summary, необходимые UI для approval decision. Он не содержит
+output, result hash, raw arguments, paths, secrets, provider response или
+результат выполнения. При `approval.required` preview фиксируется в intent и
+approval audit row; при retry он не является источником input и не участвует в
+`result_hash`/result marker.
 
 `bounded result marker` — canonical JSON row не более **256 bytes** с полями
 `schema_version=1`, `result_status=succeeded|failed|cancelled`,
@@ -483,6 +530,10 @@ Mutation policy:
   runtime error `receipt.signer_unavailable` и создаёт durable unsigned audit
   marker (bounded code/action_id/timestamp), но **не создаёт receipt**, не
   выдаёт marker за signed refusal и не продвигает chain;
+- если Core-owned keyring/storage key недоступен до protected-row write,
+  mutation не запускается либо уже начатый action остаётся pending; Core
+  возвращает runtime error `receipt.storage_key_unavailable`, не использует
+  fallback plaintext и не объявляет synthetic success;
 - если внешний tool уже вернул управление, но post signer/storage недоступен,
   Core сохраняет pending_recovery, result hash/status только в bounded protected
   action row и не объявляет success; повторная подпись выполняется только
@@ -708,6 +759,9 @@ tool dispatch, tool return, post append и head update. В каждой точк
   при `started` переводит action в `quarantined`;
 - two-phase IPC test: approval.required не блокирует pipe, retry с exact
   approval_id проходит один раз, повторный retry отклоняется;
+- approval-id/TTL tests проверяют UUIDv7 lowercase format, UNIQUE constraint,
+  `deadline_monotonic_ms=created_monotonic_ms+600000`, wall-clock mirror и
+  запрет повторного использования id;
 - TTL tests на 10 минут, monotonic-only expiry under NTP/sleep-resume, restart invalidation и
   approval_expired;
 - restart clock tests: совпадающий boot использует monotonic deadline, новый
@@ -736,6 +790,9 @@ tool dispatch, tool return, post append и head update. В каждой точк
 - protected-action-row tests проверяют размер 512 bytes, authenticated
   AES-256-GCM protection, повреждённый/отсутствующий storage key и удаление row только
   вместе с terminal receipt;
+- quarantine tests проверяют все переходы `quarantined`, права и checkpoint
+  validation `UnquarantineAction`, отсутствие возврата в dispatchable state и
+  отсутствие удаления истории;
 - approval GC tests проверяют TTL, повторяемость прохода, сохранение pending
   recovery rows и отсутствие удаления receipt chain/action rows;
 - reconciliation test требует новый action/approval/call hash, проверяет
@@ -768,6 +825,9 @@ tool dispatch, tool return, post append и head update. В каждой точк
   runtime error и unsigned audit marker, но не unsigned receipt;
 - approval binding использует существующий exact call_hash, TTL 10 минут,
   current policy recheck, one-shot claim и двухфазный IPC;
+- `approval_id` — Core-generated UUIDv7 с UNIQUE constraint, а deadline
+  вычисляется от monotonic creation time intent с wall-clock mirror только для
+  UI/recovery;
 - `receipt_hash` строится после подписания canonical payload envelope, а
   `payload_hash` и envelope signature не смешиваются в циклической формуле;
 - `policy_decision`, `normalized_scope` и bounded result marker имеют
@@ -802,6 +862,9 @@ tool dispatch, tool return, post append и head update. В каждой точк
 - `recovery_code` ограничен enum `signature_failed | external_error | unknown`,
   protected action row использует AES-256-GCM и ApprovalGC очищает только
   истёкшие intents по описанному TTL;
+- protected-row/keyring failure даёт `receipt.storage_key_unavailable` без
+  plaintext fallback, а `UnquarantineAction` закрывает quarantine только
+  authenticated manual flow и никогда не возобновляет mutation;
 - post receipt использует фактический head на момент собственного append,
   проверяется как самостоятельный chain segment, а связь с pre всегда
   подтверждается `action_id`/action row без требования соседства;
@@ -810,6 +873,8 @@ tool dispatch, tool return, post append и head update. В каждой точк
 - pre approval-ref tests подтверждают, что approval refs отсутствуют для
   `allow`, присутствуют только для `approval_required`, а `deny` создаёт
   refusal без pre;
+- post-binding tests меняют action/tool hash или fingerprint version между pre
+  и post и подтверждают `receipt.schema_violation`/quarantine;
 - после restart ни один pending action не объявляется success и mutation не
   повторяется автоматически;
 - recovery matrix, bounded diagnostics, schema_version и key-rotation boundary
