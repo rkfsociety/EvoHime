@@ -48,6 +48,24 @@ SHA-256(canonical_envelope)`. Подпись не входит в `payload_hash`
 вычислять `receipt_hash` от «подписанного payload» до того, как подпись уже
 существует. `pending_recovery` и unsigned refusal не являются receipt kinds.
 
+### Canonical Payload Format v1
+
+`canonical_payload` и `canonical_envelope` сериализуются в UTF-8 по RFC 8785
+JCS: object keys сортируются по JCS UTF-16 ordering, пробелы не допускаются,
+строки используют обязательное JSON escaping, числа — только допустимую JCS
+репрезентацию без `NaN`, `Infinity` или ведущих нулей. Поля payload и их
+обязательность берутся из schema v1 в 01.1; неизвестные поля, пропущенные
+обязательные поля и иное представление числа отвергаются. Binary values сначала
+кодируются base64url без padding и помечаются своим schema type, а не
+интерпретируются как локальная строка. Лимит canonical bytes проверяется до
+hash.
+
+`payload_hash = SHA-256(UTF8(JCS(payload)))`, подпись создаётся над
+`payload_hash`, а `receipt_hash = SHA-256(UTF8(JCS(envelope)))`. Shared vectors
+01.1 являются нормативными примерами для Rust, Electron и offline verifier;
+компонент не может заменить JCS protobuf, обычной `serde_json` сериализацией
+или порядком полей структуры.
+
 ## Что этап отдаёт наружу
 
 Один Core-owned execution path, который для каждого mutation action создаёт
@@ -75,19 +93,37 @@ lowercase-ит и не меняет scope самостоятельно; при �
 обязан побайтно совпадать с tool_args_hash. Этот digest связывает approval
 preview, pre receipt, execution claim и post/refusal receipt.
 
+`fingerprint_input` принимает typed input value, а не platform string. Для
+JSON-like input он применяет versioned JCS canonicalization; пустой input —
+typed `null`; UTF-8 text сохраняет string type; binary —
+`{type:"bytes",encoding:"base64url",value:<unpadded>}`. Object keys
+сортируются JCS, array order сохраняется, `-0` нормализуется по JCS. Invalid
+UTF-8 bytes не заменяются молча и дают `receipt.schema_violation` до
+claim/pre. Версия правил фиксируется `fingerprint_input_version=1`; изменение
+между pre и post является schema violation.
+
 До `fingerprint_input` Core применяет общий лимит
 `canonical_call_input_max_bytes` из `contracts/receipts/v1/limits.json` (v1:
 262144 bytes после нормализации). Размер считается по UTF-8 canonical input до
 SHA-256; превышение даёт `receipt.call_input_too_large`, не создаёт claim/pre
 receipt и не запускает tool. Один и тот же лимит обязателен для PermissionEngine,
 Core и Electron adapter; renderer не может увеличить его.
+Значение лимита и `fingerprint_input_version` входят в version manifest
+receipt v1 и загружаются всеми тремя компонентами из одного контракта. 01.4 не
+изменяет их для существующей chain segment: изменение лимита создаёт новую
+schema/contract version после migration с backup и не смешивает старые и новые
+fingerprints в одном action.
 
-result_hash вычисляется как lowercase SHA-256 от bounded canonical result
-projection с domain prefix evohime-result-v1\0. Raw result никогда не попадает
-в receipt, journal, IPC или diagnostics; для failed/cancelled result хешируется
-только typed projection {status, error_category} без error text. Для success
-projection использует `output_digest`, а не `result_hash` самого себя; точная
-формула и JCS bytes нормативно определены в 01.1.
+`result_hash` вычисляется как lowercase SHA-256 от UTF-8 JCS projection с domain
+prefix `evohime-result-v1\0`. Для `failed` и `cancelled` projection имеет
+строго такой объект: `{ "status": "failed|cancelled", "error_category":
+"<enum>" }`; keys сериализуются JCS, `error_category` обязателен и не может
+содержать текст. Для success projection используется typed
+`{ "status":"succeeded", "output_digest":"<lowercase sha256>" }`.
+Raw result никогда не попадает в receipt, journal, IPC или diagnostics; для
+failed/cancelled хешируется только эта projection без error text.
+`output_digest` не является `result_hash` самого себя; domain prefix, JCS bytes
+и shared vectors нормативно определены в 01.1 и повторены тестом 01.3.
 
 `action_id` уникален в `receipt_actions` и имеет UNIQUE constraint. Prepare при
 коллизии не переиспользует action. Если digest и binding совпадают, выполняется
@@ -122,7 +158,7 @@ schema/configuration violation; такой action не закрывается у
    соответствующий refusal code.
 4. **Pre receipt.** До входа в mutation tool append transaction записывает
    signed pre_action с action_status=prepared, action_id, tool_args_hash,
-   policy decision, approval refs и chain predecessor.
+   policy decision, conditional approval refs и chain predecessor.
 5. **Execute.** Только после durable pre receipt запускается tool. Вызов
    получает тот же canonical input; второй parser или пользовательский preview
    не может заменить его.
@@ -150,14 +186,21 @@ call_hash и сохраняет pending/granted/denied/expired decision. In-memo
 record может быть погашен, но эта bounded audit row остаётся для offline
 проверки binding; raw input в неё не попадает.
 
-TTL v1 — **10 минут** от создания approval. В persisted intent сохраняются
+TTL v1 — **10 минут от момента создания `receipt_approval_intents` row**.
+`created_wall_at_ms` и `created_monotonic_ms` записываются в той же transaction,
+которая публикует `approval.required`; решение UI, migration и retry не
+перезапускают TTL. В persisted intent сохраняются
 `created_wall_at_ms`, `expires_at_ms`, `clock_boot_id`, `created_monotonic_ms` и
 `deadline_monotonic_ms`. В течение одного boot authorization claim использует
 только `deadline_monotonic_ms`; sleep/hibernate считаются прошедшим временем.
 `clock_boot_id` — стабильный идентификатор OS boot session, полученный через
 platform clock API, а не случайный process id; Core проверяет его при каждом
 расчёте monotonic deadline. Если платформа не предоставляет надёжный boot id,
-Core не создаёт новый approval intent и возвращает fail-closed runtime error.
+Core использует owner-only boot marker в `%LOCALAPPDATA%/EvoHime/runtime/` с
+атомарной заменой и checksum; marker содержит только boot id и schema version.
+Если platform id и marker недоступны, Core не создаёт новый approval intent и
+возвращает fail-closed runtime error. Потеря или rollback marker считается
+новым boot и инвалидирует старые intents, но не продлевает их TTL.
 После restart новый monotonic epoch не сопоставляется со старым: Core проверяет
 `expires_at_ms` по wall clock только как fail-closed recovery boundary. Если
 wall clock ушёл назад, timestamp повреждён или boot identity не совпадает,
@@ -279,13 +322,22 @@ stdout/stderr, paths и raw results запрещены. Превышение bou
 контент, но не action.
 
 `bounded result marker` — canonical JSON row не более **256 bytes** с полями
-`schema_version=1`, `result_status=success|failed|cancelled`,
+`schema_version=1`, `result_status=succeeded|failed|cancelled`,
 `result_hash` (lowercase SHA-256), `error_category` (enum или `null`),
 `returned_at_ms` и `output_present` (boolean). Он хранится в
 `receipt_actions`/protected action row только для recovery и не содержит raw
 output, error text, paths или provider metadata. Если marker не помещается в
 лимит или не проходит schema validation, Core сохраняет `pending_recovery` с
-`recovery_code=external_error`, а не создаёт synthetic result.
+`recovery_code=external_error`, а не создаёт synthetic result. Marker — это
+ровно JCS UTF-8 bytes без padding; truncation, field omission и implicit
+default values запрещены. Если полная JCS representation превышает 256 bytes,
+row не сохраняется.
+
+Preview используется только в approval/UI projection и никогда не становится
+`result_hash`, `output_digest` или result marker. После `tool return` marker
+строится заново из typed status/hash; поэтому truncation, `[truncated]` и
+`invalid_utf8=true` preview не меняют result projection и не переносят raw bytes
+между approval и recovery.
 
 Лимит 1024 pending actions на task ограничивает память и незавершённые
 approval rows; при достижении Core возвращает `receipt.pending_limit` и
@@ -411,6 +463,16 @@ storage key; ciphertext, 12-byte nonce и 16-byte authentication tag входя�
 только после
 durable terminal receipt в одной транзакции; повторная подпись использует лишь
 проверенный digest/status из row.
+
+Storage key имеет versioned `storage_key_id` и отдельный Core-owned keyring.
+При ротации Core записывает новый key metadata, затем в короткой transaction
+rewrap-ит каждый protected row как новый AES-256-GCM envelope с новым key id;
+plaintext и raw result не раскрываются. Старый key сохраняется как
+decrypt-only fallback до проверки всех rows и удаления старых envelopes, после
+чего отзывается. Если rotation прервана, recovery читает оба authenticated key
+id и повторяет rewrap; недоступный или повреждённый ключ переводит row в
+`pending_recovery`/`read_only_recovery`, не создавая success. Rotation audit
+marker содержит только old/new key id, counts и outcome.
 
 Mutation policy:
 
@@ -597,6 +659,18 @@ reconciliation capability либо явно закрыть состояние к
 `reconciled_manually`/`unknown_result`; она никогда не dispatch-ит исходный
 mutation автоматически и не превращает pending в synthetic success.
 
+Алгоритм закрытия: UI получает `receipt.pending_recovery` и показывает
+`tool_id`, timestamp, recovery code, предупреждение о возможном external side
+effect и кнопки «Проверить»/«Признать неизвестным». Core проверяет новую
+authenticated session, read-only capability, новый `action_id`, новый
+`approval_id` и новый call hash; старый action id повторно использовать нельзя.
+После успешной read-only проверки Core в одной transaction подписывает
+terminal post с фактическим `result_status`/`result_hash`, переводит старый
+action из `pending_recovery` в terminal и удаляет protected row. При явном
+`unknown_result` подписывается terminal refusal `recovery_pending` без
+утверждения успеха. Пока transaction не committed, UI и diagnostics показывают
+`requires_reconciliation=true`; автоматического или таймерного закрытия нет.
+
 Persisted receipt/action rows имеют `schema_version=1`; миграция повышает версию
 транзакционно с backup, не меняет canonical blobs и не смешивает версии в одной
 chain segment. Если ключ отозван или ротирован между pre и post, каждый receipt
@@ -620,6 +694,12 @@ tool dispatch, tool return, post append и head update. В каждой точк
   `payload_hash`, подпись проверяется по `key_id`, изменение подписи меняет
   `receipt_hash`, а попытка вычислить receipt hash до формирования envelope
   отвергается;
+- canonical-format tests проверяют RFC 8785 JCS, UTF-8, escaping, numeric
+  edge cases, base64url binary values, неизвестные поля и размер до hash;
+- result-hash tests проверяют exact failed/cancelled JCS projection,
+  `output_digest` для success и отсутствие error text/raw result;
+- fingerprint tests проверяют null/empty input, typed text, binary base64url,
+  object/array ordering, invalid UTF-8 и version mismatch;
 - exact-call tests: изменение tool, task, session, permission, scope, input,
   policy или approval id блокируется; key order equivalent input сохраняет
   call hash;
@@ -666,6 +746,11 @@ tool dispatch, tool return, post append и head update. В каждой точк
   исходных bytes в marker/preview и сохранение лимита 1024 bytes;
 - policy-gate tests меняют policy между Prepare и claim и подтверждают, что
   claim использует current policy, а старый approval не обходит новый deny;
+- post-claim policy tests подтверждают, что policy change после claim не
+  создаёт retroactive refusal/rollback, а непроверяемый external result даёт
+  `pending_recovery`;
+- protected-key rotation tests проверяют rewrap новым key id, decrypt-only
+  fallback, interrupted rotation и отказ при повреждённых ключах;
 - policy/scope vectors проверяют только `allow|deny|approval_required`,
   canonical `normalize_scope` PermissionEngine и отказ при неизвестном decision;
 - approval migration tests проверяют idempotent versioned import, новый
@@ -687,6 +772,8 @@ tool dispatch, tool return, post append и head update. В каждой точк
   `payload_hash` и envelope signature не смешиваются в циклической формуле;
 - `policy_decision`, `normalized_scope` и bounded result marker имеют
   фиксированные enum/форматы, лимиты и shared vectors;
+- canonical payload/envelope используют RFC 8785 JCS, а result/fingerprint
+  hashes имеют детерминированные typed projections для всех terminal statuses;
 - SQLite receipt/action tables, chain-head transaction и recovery procedure
   задокументированы и проходят crash/concurrency tests;
 - `receipt_approval_intents.action_id` имеет обязательную связь с
@@ -720,6 +807,9 @@ tool dispatch, tool return, post append и head update. В каждой точк
   подтверждается `action_id`/action row без требования соседства;
 - bounded monitoring покрывает latency, throughput/busy retries,
   pending/recovery/quarantine counts и safe-mode state без raw данных;
+- pre approval-ref tests подтверждают, что approval refs отсутствуют для
+  `allow`, присутствуют только для `approval_required`, а `deny` создаёт
+  refusal без pre;
 - после restart ни один pending action не объявляется success и mutation не
   повторяется автоматически;
 - recovery matrix, bounded diagnostics, schema_version и key-rotation boundary
@@ -727,5 +817,9 @@ tool dispatch, tool return, post append и head update. В каждой точк
 - Recovery явно создаёт и обрабатывает `receipt.schema_violation`,
   `dispatch_state/tool_started_at_ms` являются durable invariant, а
   `pre=нет, tool_started=да` не считается обычным recovery-состоянием;
+- protected action rows поддерживают versioned storage-key rotation с
+  decrypt-only fallback и не теряют проверяемые rows при interrupted rotation;
+- `read_only_recovery` разрешает только status/diagnostics, ReadOnlyExport,
+  Backup и staging Restore; mutation/GC/chain write остаются заблокированы;
 - критерий correctness ограничен фактически подписанными полями, а raw
   arguments/results/error text отсутствуют в receipt и обычных diagnostics.
