@@ -58,6 +58,12 @@ pub fn recover_database(connection: &mut Connection) -> Result<i64, RuntimeError
     }
     let wall_now = now_ms(); let mono_now = monotonic_ms();
     tx.execute("UPDATE receipt_approval_intents SET state='expired' WHERE state IN ('pending','granted') AND ((clock_boot_id=?1 AND deadline_monotonic_ms<=?2) OR (clock_boot_id<>?1 AND expires_at_ms<=?3))", params![boot_id(), mono_now, wall_now])?;
+    // A dispatch transition is valid only after a durable pre receipt. These
+    // rows are invariant violations, not recoverable executions.
+    tx.execute("UPDATE receipt_actions SET state='quarantined',recovery_code='unknown' WHERE state IN ('prepared','pending_recovery') AND dispatch_state IN ('started','returned') AND pre_receipt_hash IS NULL", [])?;
+    // A crash after the pre transaction but before/around dispatch must never
+    // cause an automatic retry. Preserve the action as an unknown result.
+    tx.execute("UPDATE receipt_actions SET state='pending_recovery',recovery_code='unknown' WHERE state='prepared' AND dispatch_state IN ('started','returned') AND pre_receipt_hash IS NOT NULL AND terminal_receipt_hash IS NULL", [])?;
     let pending: i64 = tx.query_row("SELECT COUNT(*) FROM receipt_actions WHERE state IN ('prepared','pending_recovery','quarantined')", [], |r| r.get(0))?;
     tx.execute("UPDATE receipt_runtime_guard SET phase='ready',updated_at_ms=?1 WHERE id=1", [now_ms()])?;
     tx.commit()?;
@@ -727,5 +733,17 @@ mod tests {
         assert_eq!(pending, 0);
         let phase: String = db.query_row("SELECT phase FROM receipt_runtime_guard WHERE id=1", [], |row| row.get(0)).unwrap();
         assert_eq!(phase, "ready");
+    }
+
+    #[test]
+    fn startup_recovery_quarantines_started_without_pre_and_preserves_unknown_result() {
+        let mut db = Connection::open_in_memory().unwrap();
+        install_schema(&db).unwrap();
+        db.execute("INSERT INTO receipt_actions(schema_version,action_id,task_id,run_id,tool_name,normalized_scope,fingerprint_input_version,tool_args_hash,policy_id,policy_decision,state,dispatch_state) VALUES(1,?1,'task','run','shell.execute','workspace',1,?2,'policy','allow','prepared','started')", params![Uuid::now_v7().to_string(), "a".repeat(64)]).unwrap();
+        let action_id = db.query_row("SELECT action_id FROM receipt_actions LIMIT 1", [], |row| row.get::<_, String>(0)).unwrap();
+        recover_database(&mut db).unwrap();
+        let (state, code): (String, Option<String>) = db.query_row("SELECT state,recovery_code FROM receipt_actions WHERE action_id=?1", [action_id], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
+        assert_eq!(state, "quarantined");
+        assert_eq!(code.as_deref(), Some("unknown"));
     }
 }
