@@ -3,6 +3,36 @@ pub struct CoreVersion;
 pub const AGENT_IDENTITY_PROMPT: &str =
     "Ты — Ева, AI-агент приложения EvoHime. Ева — короткое имя EvoHime; понимай обращения к тебе «Ева» и «EvoHime» как к одному агенту.";
 
+const LEGACY_TOOL_NAMES: &[&str] = &[
+    "agent.run",
+    "filesystem.list",
+    "filesystem.read",
+    "filesystem.search",
+    "filesystem.write",
+    "filesystem.patch",
+    "shell.execute",
+    "git.status",
+    "git.diff",
+    "git.commit",
+    "git.pull",
+    "git.push",
+    "mcp.call",
+    "memory.search",
+    "browser.open",
+    "browser.extract",
+    "browser.session.navigate",
+    "browser.session.read",
+    "browser.session.click",
+    "browser.session.screenshot",
+    "browser.session.type",
+    "browser.session.close",
+    "http.fetch",
+];
+
+fn is_supported_tool_name(name: &str) -> bool {
+    LEGACY_TOOL_NAMES.contains(&name)
+}
+
 fn build_agent_system_prompt(tool_names: &[String]) -> String {
     format!(
         "{AGENT_IDENTITY_PROMPT}\n\n\
@@ -70,6 +100,117 @@ fn tool_parameters(name: &str) -> serde_json::Value {
                 "limit": { "type": "integer", "minimum": 1, "maximum": 200 }
             },
             "required": ["query"]
+        }),
+        "agent.run" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "prompt": { "type": "string" },
+                "max_steps": { "type": "integer", "minimum": 1 },
+                "timeout_ms": { "type": "integer", "minimum": 1 },
+                "model_route": { "type": "string" }
+            },
+            "required": ["prompt"],
+            "additionalProperties": false
+        }),
+        "mcp.call" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "url": { "type": "string" },
+                "method": { "type": "string" },
+                "params": {},
+                "timeout_ms": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["url", "method"],
+            "additionalProperties": false
+        }),
+        "memory.search" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string" },
+                "limit": { "type": "integer", "minimum": 1, "maximum": 50 }
+            },
+            "required": ["query"],
+            "additionalProperties": false
+        }),
+        "browser.open" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "url": { "type": "string" },
+                "max_chars": { "type": "integer", "minimum": 1 },
+                "timeout_ms": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["url"],
+            "additionalProperties": false
+        }),
+        "browser.extract" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "url": { "type": "string" },
+                "selector": { "type": "string" },
+                "attribute": { "type": "string" },
+                "limit": { "type": "integer", "minimum": 1 },
+                "timeout_ms": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["url", "selector"],
+            "additionalProperties": false
+        }),
+        "browser.session.navigate" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "url": { "type": "string" },
+                "max_chars": { "type": "integer", "minimum": 1 },
+                "timeout_ms": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["url"],
+            "additionalProperties": false
+        }),
+        "browser.session.read" => serde_json::json!({
+            "type": "object",
+            "properties": { "max_chars": { "type": "integer", "minimum": 1 } },
+            "additionalProperties": false
+        }),
+        "browser.session.click" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "selector": { "type": "string" },
+                "max_chars": { "type": "integer", "minimum": 1 },
+                "settle_ms": { "type": "integer", "minimum": 0 }
+            },
+            "required": ["selector"],
+            "additionalProperties": false
+        }),
+        "browser.session.screenshot" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string" },
+                "full_page": { "type": "boolean" }
+            },
+            "additionalProperties": false
+        }),
+        "browser.session.type" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "selector": { "type": "string" },
+                "text": { "type": "string" },
+                "max_chars": { "type": "integer", "minimum": 1 },
+                "settle_ms": { "type": "integer", "minimum": 0 }
+            },
+            "required": ["selector", "text"],
+            "additionalProperties": false
+        }),
+        "browser.session.close" => serde_json::json!({
+            "type": "object",
+            "additionalProperties": false
+        }),
+        "http.fetch" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "url": { "type": "string" },
+                "max_chars": { "type": "integer", "minimum": 1 },
+                "timeout_ms": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["url"],
+            "additionalProperties": false
         }),
         "git.diff" => serde_json::json!({
             "type": "object",
@@ -241,20 +382,6 @@ pub fn visible_agent_text(content: &str) -> String {
 
 fn parse_legacy_function_calls(content: &str, iteration: usize) -> Vec<NativeToolCall> {
     let mut calls = Vec::new();
-    let supported_names = [
-        "filesystem.list",
-        "filesystem.read",
-        "filesystem.search",
-        "filesystem.write",
-        "filesystem.patch",
-        "shell.execute",
-        "git.status",
-        "git.diff",
-        "git.commit",
-        "git.pull",
-        "git.push",
-    ];
-
     let mut json_cursor = 0;
     while let Some(relative_start) = content[json_cursor..].find("<function_calls>") {
         let start = json_cursor + relative_start + "<function_calls>".len();
@@ -272,7 +399,7 @@ fn parse_legacy_function_calls(content: &str, iteration: usize) -> Vec<NativeToo
                 else {
                     continue;
                 };
-                if !supported_names.contains(&name) {
+                if !is_supported_tool_name(name) {
                     continue;
                 }
                 let arguments = item
@@ -301,10 +428,7 @@ fn parse_legacy_function_calls(content: &str, iteration: usize) -> Vec<NativeToo
             cursor = tag_end + 1;
             continue;
         };
-        let legacy_read_only = matches!(
-            name.as_str(),
-            "filesystem.list" | "filesystem.read" | "filesystem.search"
-        );
+        let supported = is_supported_tool_name(&name);
         let body_start = tag_end + 1;
         let Some(body_end_relative) = content[body_start..].find("</invoke>") else {
             break;
@@ -335,7 +459,7 @@ fn parse_legacy_function_calls(content: &str, iteration: usize) -> Vec<NativeToo
             );
             parameter_cursor = value_end + "</parameter>".len();
         }
-        if legacy_read_only {
+        if supported {
             calls.push(NativeToolCall {
                 id: format!("legacy-{iteration}-{}", calls.len()),
                 name,
@@ -352,7 +476,7 @@ fn parse_natural_tool_intent(content: &str, iteration: usize) -> Option<NativeTo
     let explicit_action = ["вызываю", "вызову", "вызвать", "запрашиваю"]
         .iter()
         .any(|marker| lower.contains(marker));
-    let name = ["filesystem.list", "filesystem.read", "filesystem.search"]
+    let name = LEGACY_TOOL_NAMES
         .iter()
         .find(|candidate| content.contains(**candidate))
         .copied()?;
@@ -421,17 +545,7 @@ fn parse_tagged_tool_call(content: &str, iteration: usize) -> Option<NativeToolC
         let input_start = input_start + "<tool_input>".len();
         let input_end = content[input_start..].find("</tool_input>")? + input_start;
         let name = content[name_start..name_end].trim();
-        if !matches!(
-            name,
-            "filesystem.list"
-                | "filesystem.read"
-                | "filesystem.search"
-                | "git.status"
-                | "git.diff"
-                | "git.commit"
-                | "git.pull"
-                | "git.push"
-        ) {
+        if !is_supported_tool_name(name) {
             return None;
         }
         let arguments =
@@ -484,29 +598,61 @@ fn parse_tagged_tool_call(content: &str, iteration: usize) -> Option<NativeToolC
 }
 
 fn parse_plain_tool_call(content: &str, iteration: usize) -> Option<NativeToolCall> {
-    let name = [
-        "filesystem.list",
-        "filesystem.read",
-        "filesystem.search",
-        "git.status",
-        "git.diff",
-        "git.commit",
-        "git.pull",
-        "git.push",
-    ]
-    .iter()
-    .find(|candidate| content.lines().any(|line| line.trim() == **candidate))
-    .copied()?;
-    let argument = content
+    let name = LEGACY_TOOL_NAMES
+        .iter()
+        .find(|candidate| content.lines().any(|line| line.trim() == **candidate))
+        .copied()?;
+    let argument_keys = [
+        "path",
+        "query",
+        "remote",
+        "branch",
+        "force",
+        "command",
+        "prompt",
+        "model_route",
+        "url",
+        "method",
+        "selector",
+        "attribute",
+        "text",
+        "params",
+        "max_steps",
+        "timeout_ms",
+        "max_chars",
+        "limit",
+        "settle_ms",
+        "full_page",
+    ];
+    let mut parsed_arguments = serde_json::Map::new();
+    for (key, value) in content
         .lines()
         .filter_map(|line| line.split_once(':'))
         .map(|(key, value)| (key.trim(), value.trim()))
-        .find(|(key, _)| matches!(*key, "path" | "query" | "remote" | "branch" | "force"));
-    let arguments = match argument {
-        Some((key, value)) => serde_json::json!({ key: value }),
-        None if name.starts_with("git.") => serde_json::json!({}),
-        None => return None,
-    };
+        .filter(|(key, _)| argument_keys.contains(key))
+    {
+        let json_value = match key {
+            "force" | "full_page" => value
+                .parse::<bool>()
+                .map(serde_json::Value::Bool)
+                .unwrap_or_else(|_| serde_json::Value::String(value.to_string())),
+            "max_steps" | "timeout_ms" | "max_chars" | "limit" | "settle_ms" => value
+                .parse::<u64>()
+                .map(|number| serde_json::Value::Number(number.into()))
+                .unwrap_or_else(|_| serde_json::Value::String(value.to_string())),
+            "params" => serde_json::from_str(value)
+                .unwrap_or_else(|_| serde_json::Value::String(value.to_string())),
+            _ => serde_json::Value::String(value.trim_matches(['"', '\'']).to_string()),
+        };
+        parsed_arguments.insert(key.to_string(), json_value);
+    }
+    if parsed_arguments.is_empty()
+        && !name.starts_with("git.")
+        && !matches!(name, "browser.session.read" | "browser.session.close")
+    {
+        return None;
+    }
+    let arguments = serde_json::Value::Object(parsed_arguments).to_string();
     Some(NativeToolCall {
         id: format!("plain-{iteration}"),
         name: name.to_string(),
@@ -515,21 +661,22 @@ fn parse_plain_tool_call(content: &str, iteration: usize) -> Option<NativeToolCa
 }
 
 fn parse_xml_named_tool_call(content: &str, iteration: usize) -> Option<NativeToolCall> {
-    let name = [
-        "filesystem.list",
-        "filesystem.read",
-        "filesystem.search",
-        "git.status",
-        "git.diff",
-    ]
-    .iter()
-    .find(|candidate| content.contains(&format!("<{}>", candidate)))
-    .copied()?;
+    let name = LEGACY_TOOL_NAMES
+        .iter()
+        .find(|candidate| content.contains(&format!("<{}>", candidate)))
+        .copied()?;
     let start_marker = format!("<{}>", name);
     let end_marker = format!("</{}>", name);
     let start = content.find(&start_marker)? + start_marker.len();
     let end = content[start..].find(&end_marker)? + start;
     let body = &content[start..end];
+    if body.trim().is_empty() && matches!(name, "browser.session.read" | "browser.session.close") {
+        return Some(NativeToolCall {
+            id: format!("xml-{iteration}"),
+            name: name.to_string(),
+            arguments: "{}".to_string(),
+        });
+    }
     let parameter_start = body.find("<parameter")?;
     let tag_end = body[parameter_start..].find('>')? + parameter_start;
     let value_end = body[tag_end + 1..].find("</parameter>")? + tag_end + 1;
@@ -9727,6 +9874,42 @@ mod tests {
     }
 
     #[test]
+    fn legacy_tool_allowlist_covers_the_runtime_registry() {
+        let registry = ToolRegistry::bootstrap();
+        let names = registry
+            .list()
+            .into_iter()
+            .map(|tool| tool.name)
+            .collect::<Vec<_>>();
+        assert_eq!(names.len(), super::LEGACY_TOOL_NAMES.len());
+        assert!(names
+            .iter()
+            .all(|name| super::is_supported_tool_name(name)));
+        assert!(super::LEGACY_TOOL_NAMES
+            .iter()
+            .all(|name| names.contains(name)));
+    }
+
+    #[test]
+    fn parses_plain_no_argument_browser_tool_calls() {
+        let call = super::parse_plain_tool_call(
+            "Открываю текущую вкладку.\n\nbrowser.session.read\n\nЖду результата.",
+            10,
+        )
+        .expect("plain browser read call");
+        assert_eq!(call.name, "browser.session.read");
+        assert_eq!(call.arguments, "{}");
+
+        let xml = super::parse_xml_named_tool_call(
+            "<browser.session.close></browser.session.close>",
+            11,
+        )
+        .expect("xml browser close call");
+        assert_eq!(xml.name, "browser.session.close");
+        assert_eq!(xml.arguments, "{}");
+    }
+
+    #[test]
     fn parses_legacy_text_function_calls() {
         let content = r#"
 <function_calls>
@@ -9736,12 +9919,14 @@ mod tests {
 <invoke name="shell.execute">
 <parameter name="command">dir /B</parameter>
 </invoke>
-</function_calls>
+        </function_calls>
 "#;
         let calls = super::parse_legacy_function_calls(content, 2);
-        assert_eq!(calls.len(), 1);
+        assert_eq!(calls.len(), 2);
         assert_eq!(calls[0].name, "filesystem.list");
         assert_eq!(calls[0].arguments, r#"{"path":"."}"#);
+        assert_eq!(calls[1].name, "shell.execute");
+        assert_eq!(calls[1].arguments, r#"{"command":"dir /B"}"#);
     }
 
     #[test]
