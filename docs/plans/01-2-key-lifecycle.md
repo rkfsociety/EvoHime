@@ -72,8 +72,12 @@ EvoHime. DPAPI CurrentUser не создаёт границу между про�
   зафиксировано в 01.1. UUID или mutable alias не допускаются.
 - Signature: raw 64 bytes, в JSON — unpadded base64url; Ed25519 получает ровно
   canonical bytes из 01.1, без pre-hash.
-- Используется библиотечная constant-time verification. Private seed/key type
-  не реализует `Debug`, `Display`, `Serialize` или unrestricted `Clone`;
+- Все операции, принимающие private key или signature material, используют
+  cryptographic library primitives с constant-time key/signature handling;
+  project code не выполняет secret-dependent branching, indexing или сравнение.
+  Verification обязана быть constant-time; это не обещает защиту от
+  administrator/kernel compromise из threat model. Private seed/key type не
+  реализует `Debug`, `Display`, `Serialize` или unrestricted `Clone`;
   временные plaintext buffers обёрнуты в zeroizing storage и очищаются после
   построения signer. Signer очищается при controlled shutdown.
 
@@ -81,12 +85,23 @@ Ed25519 не имеет установленного проектом лимит
 через 90 дней ограничивает период экспозиции, а не исправляет nonce reuse:
 Ed25519 deterministic и не принимает внешний nonce.
 
+Все JSON в этом этапе используют один canonical encoder: поля следуют порядку
+соответствующей нормативной schema, отсутствуют пробелы и завершающий перевод
+строки, кодировка UTF-8 без BOM, duplicate keys запрещены. Для signed object
+сначала строится canonical object без поля `signature`, затем подписываются его
+bytes; `signature` добавляется только в envelope. Timestamp — RFC 3339 UTC с
+ровно миллисекундами, например `2025-01-15T12:34:56.789Z`; offsets, local time и
+отсутствующие миллисекунды запрещены.
+
 ## Защищённое хранение
 
 Private file:
 `%LOCALAPPDATA%\EvoHime\receipts\keys\active-key-v1.json`.
 
-Он содержит только bounded metadata и DPAPI blob:
+Он содержит только bounded metadata и DPAPI blob. `bounded metadata` означает
+только поля таблицы ниже, schema-defined length limits, один key id и один
+public key; произвольные поля, comments, paths, labels и private material
+запрещены:
 
 | Поле | Правило |
 | --- | --- |
@@ -108,6 +123,17 @@ Public history:
 не секретны, но файл лежит в том же protected directory для уменьшения риска
 локальной подмены. Его криптографическая целостность определяется signed
 transition records, а не ACL.
+
+`public-history-v1.jsonl` не является runtime source of truth и не участвует в
+dual-write. Core коммитит transition, active-key metadata и audit reference в
+SQLite одной транзакцией; после commit строит JSONL snapshot из read
+transaction, записывает временный файл, flush/fsync-ит файл и directory, затем
+делает atomic replace и повторно проверяет DACL. Ошибка export не откатывает
+SQLite и не блокирует read/verify Core, но публикует
+`key.history_export_failed`, оставляет предыдущий snapshot и помечает offline
+export как `stale`. Runtime не импортирует и не исправляет SQLite по JSONL.
+Offline verifier работает только с явно переданным snapshot/export и при
+missing, truncated или damaged history возвращает `key.history_incomplete`.
 
 История имеет bounded compaction policy. После достижения лимита transition
 records Core создаёт signed `KeyHistoryCheckpointV1`, содержащий hash полного
@@ -161,6 +187,14 @@ transition независимо от его continuity и обязан совп�
 История ограничена максимум 100 transition records на key lineage. При
 достижении лимита rotation блокируется с `key.rotation_limit`; pruning
 истории без отдельного подписанного `KeyHistoryCheckpointV1` запрещён.
+Checkpoint — canonical JSON не более 4096 bytes с полями `checkpoint_version`,
+`checkpoint_id`, `created_at`, `genesis_key_id`, `lineage_id`,
+`covered_first_sequence`, `covered_last_sequence`, `covered_prefix_hash`,
+`last_transition_hash`, `retained_from_sequence`, `signed_by_key_id` и
+`signature`. Signature строится по canonical object без `signature`, а hash —
+lowercase SHA-256 от полной canonical record. Verifier требует pinned genesis,
+проверяет checkpoint signature, prefix hash и retained suffix; history нельзя
+удалять или compact-ить без этого checkpoint.
 `ReceiptCheckpointV1` из 01.4 не заменяет его: receipt prefix и
 key-transition lineage — независимые структуры и компактифицируются раздельно.
 
@@ -172,6 +206,8 @@ commit в read transaction.
 
 - `contracts/receipts/v1/key-transition.schema.json`;
 - `contracts/receipts/v1/key-history-checkpoint.schema.json`;
+- `contracts/receipts/v1/rotation-state-v1.schema.json`;
+- `contracts/receipts/v1/trusted-roots.schema.json`;
 - `contracts/receipts/v1/key-transition-vectors.json`;
 - `docs/security/receipt-key-lifecycle-v1.md`.
 
@@ -201,6 +237,16 @@ version, duplicate roots, schema, DACL и revoked/superseded markers. Удалё
 автоматический повторный TOFU запрещён. Self-signed genesis/transition — это
 только proof of possession и никогда не trust без pin.
 
+Нормативная `trusted-roots.schema.json` ограничивает root запись полями
+`root_version`, `root_id`, `genesis_key_id`, `pinned_at`, `source`, `status` и
+`superseded_by`; private/protected key, receipt payload и произвольный channel
+text запрещены. `continuity=broken` и `continuity=compromised` в terminal
+transition всегда переводят Core в `key.trust_required`: Core разрешает
+diagnostics и read-only verification, но запрещает любую подпись, включая
+terminal receipt, пока authenticated approved `TrustReceiptGenesis` не создаст
+новый explicit trust anchor `TrustReceiptGenesis` для нового сегмента. Сам
+transition или self-signature не может снять этот запрет.
+
 Результаты различаются как минимум на `verified`, `untrusted`, `broken` и
 `unsupported`. Verifier никогда не преобразует `untrusted` в `verified`
 только потому, что registry и receipts лежат в одном каталоге.
@@ -219,10 +265,33 @@ Binary не линкует model gateway, tool runtime, SQLite writer или HTT
 - `0` — вся выбранная цепочка verified;
 - `2` — broken/invalid signature/hash/transition;
 - `3` — signatures корректны, но trust anchor отсутствует;
-- `4` — invalid arguments, unreadable input или unsupported version.
+- `4` — invalid arguments, unreadable input или unsupported version;
+- `5` — цепочка математически проверяема, но содержит `stale_key` boundary;
+  это warning-as-failure для offline verification, чтобы revoked/compromised
+  segment нельзя было принять как полностью verified.
 
 До этапа 01.4 команда проверяется на shared/synthetic receipts. 01.4 добавляет
 производственный JSONL export и упаковку соответствующего public history.
+
+## Rotation journal schema и crash recovery
+
+`%LOCALAPPDATA%\EvoHime\receipts\keys\rotation-state-v1.json` — owner-only
+bounded journal, не runtime source of truth. Его schema `rotation-state-v1`
+имеет ровно следующие поля: `state_version` (integer `1`), `rotation_id`
+(UUIDv7), `phase`, `old_key_id`, `new_key_id`, `transition_hash`, `error_code`,
+`created_at`, `updated_at`, `reason`, `actor`, `active_key_observed` и
+`audit_event_id`. `phase` принимает только `prepared`, `transition_durable`,
+`audit_durable`, `active_key_replaced`, `cleanup_required` и `complete`.
+`old_key_id`/`new_key_id`/`transition_hash` обязательны после `prepared`,
+`error_code` обязателен только для error phase; private key, DPAPI blob и
+arbitrary paths запрещены. Timestamps используют RFC 3339 UTC milliseconds.
+
+Recovery сверяет journal с SQLite transition/audit и active-key metadata, затем
+идемпотентно продолжает ровно следующую фазу. `active_key_replaced` допускается
+только если durable transition и audit уже подтверждены; при
+`continuity=broken` или `compromised` journal не может разрешить подпись новым
+ключом. Несогласованный или повреждённый journal даёт
+`key.rotation_incomplete` и блокирует mutation/rotation до manual recovery.
 
 ## Rotation policy
 
@@ -239,15 +308,18 @@ Rotation — journaled transaction:
 
 1. сгенерировать new key, DPAPI-protect его во temporary file и проверить
    decrypt/sign/verify round trip;
-2. старым key подписать transition и записать owner-only
-   `rotation-state-v1.json` с phase и hashes;
+2. старым key подписать transition, выполнить SQLite commit и записать
+   owner-only `rotation-state-v1.json` с phase и hashes;
 3. durable append transition и bounded audit event;
 4. atomic replace active key, повторно проверить DACL и соответствие key id;
 5. удалить old protected private material и journal, затем выполнить
    self-verification public history.
 
-До завершения шага 4 Core подписывает только old key. После шага 4 — только new
-key. Crash recovery идемпотентно продолжает либо откатывает transaction по
+До завершения шага 4 Core подписывает только old key. После шага 4
+cryptographic signer — только new key, но Core разрешает receipt signing только
+для `continuity=chained` с действующим trust; для `broken` и `compromised` он
+немедленно остаётся в `key.trust_required` до explicit pin. Crash recovery
+идемпотентно продолжает либо откатывает transaction по
 journal; состояние, где active key сменился без transition и audit, не
 допускается. Ошибка удаления old private material оставляет status
 `cleanup_required`, блокирует следующую rotation и не объявляется успехом.
@@ -268,6 +340,12 @@ DACL. Core обязан прочитать и проверить journal при 
 Rotation пишет bounded structured event в существующий Core audit trail
 `%LOCALAPPDATA%\EvoHime\logs\audit.jsonl`:
 
+`bounded` означает не более 4096 bytes, UTF-8 без BOM, один event object,
+поля только из schema, без prompt, paths, public/private key bytes, signatures,
+DPAPI blob или arbitrary error text. Поля `old_key_id`, `new_key_id` и
+`transition_hash` — bounded identifiers/digests; подробности остаются в
+стабильном `error_code`.
+
 - `event_type`: `key.generated`, `key.rotated`,
   `key.recovery_required` или `key.rotation_failed`;
 - `timestamp`, `old_key_id` при наличии, `new_key_id` при наличии;
@@ -286,7 +364,8 @@ Rotation считается завершённой только после durab
 Стабильные error codes: `key.not_initialized`, `key.dpapi_failed`,
 `key.dacl_invalid`, `key.corrupt`, `key.public_mismatch`,
 `key.rotation_incomplete`, `key.rotation_fork`, `key.cleanup_required`,
-`key.trust_required`.
+`key.trust_required`, `key.rotation_limit`, `key.history_export_failed`,
+`key.history_incomplete`.
 
 ## Потеря, повреждение и компрометация
 
@@ -337,6 +416,10 @@ receipt; read-only диагностика и offline verification продолж
   broken boundary и новый untrusted до pin сегмент;
 - compromise vectors различают old receipts до transition sequence
   (`verified`), после boundary (`stale_key`) и новый key до/после explicit pin;
+- verifier возвращает exit code `5` для `stale_key`, а stale export после
+  неудачного JSONL export не объявляется verified;
+- rotation-state schema и crash tests покрывают каждую phase, а checkpoint
+  vectors покрывают prefix hash, retained suffix и signature;
 - другой Windows user и скопированный data directory не decrypt private key;
 - shutdown/restart очищает plaintext buffers; secret types не поддерживают
   debug/serialization и покрыты compile-time/API tests;
@@ -359,5 +442,6 @@ receipt; read-only диагностика и offline verification продолж
 - потеря key fail-closed и никогда не маскируется автоматическим replacement;
 - private material отсутствует в renderer, IPC, environment, logs, audit,
   diagnostics и export;
-- offline verifier, key-transition schemas/vectors и threat-model document
-  существуют и входят в packaging/CI.
+- offline verifier, key-transition, rotation-state и trusted-roots schemas,
+  checkpoint/key-transition vectors и threat-model document существуют и
+  входят в packaging/CI.
