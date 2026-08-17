@@ -3681,6 +3681,27 @@ impl ToolAgent {
                 self.tools.execute_with_cancellation(context, name, input, cancellation).await
             }
             evohime_tool_runtime::ToolPreflightDecision::Allowed { scope, preview } => {
+                let read_only = matches!(name, "filesystem.read" | "filesystem.list" | "git.status" | "git.diff" | "workspace.list" | "workspace.read" | "workspace.search");
+                if read_only {
+                    let candidate_id = Uuid::now_v7();
+                    if let Some((false, policy_version)) = self.receipt_sampling_decision(candidate_id, name).await {
+                        let result = self.tools.execute_with_cancellation(context, name, input.clone(), cancellation).await;
+                        if result.is_ok() {
+                            self.receipt_unsampled_marker(candidate_id, name, &scope, &input, policy_version).await;
+                            return result;
+                        }
+                        let request = self.receipt_prepare_allowed(&context.task_id.to_string(), name, &scope, &input, &preview).await
+                            .map_err(evohime_tool_runtime::ToolError::Execution)?;
+                        if let Some(request) = request {
+                            let outcome = match &result {
+                                Ok(value) => recovery::ToolOutcome::success(value.clone()),
+                                Err(error) => recovery::ToolOutcome::from_error(evohime_tool_runtime::ToolError::Execution(error.to_string())),
+                            };
+                            self.receipt_complete(&request, &outcome).await;
+                        }
+                        return result;
+                    }
+                }
                 let request = self.receipt_prepare_allowed(&context.task_id.to_string(), name, &scope, &input, &preview).await
                     .map_err(evohime_tool_runtime::ToolError::Execution)?;
                 let result = self.tools.execute_with_cancellation(context, name, input, cancellation).await;
@@ -3740,6 +3761,23 @@ impl ToolAgent {
         let mut database = journal.database().lock().await;
         let signer = CoreReceiptSigner(Arc::clone(keys));
         if let Ok(runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) { let _ = runtime.mark_pending_recovery(request.action_id, code); }
+    }
+
+    async fn receipt_sampling_decision(&self, action_id: Uuid, tool: &str) -> Option<(bool, u8)> {
+        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else { return None; };
+        let mut database = journal.database().lock().await;
+        let signer = CoreReceiptSigner(Arc::clone(keys));
+        let runtime = ReceiptRuntime::new(database.connection_mut(), &signer).ok()?;
+        let (rate, version) = runtime.audit_sampling_config().ok()?;
+        Some((evohime_receipts::runtime::sampled_read_only(&action_id.to_string(), tool, rate), version))
+    }
+
+    async fn receipt_unsampled_marker(&self, action_id: Uuid, tool: &str, scope: &str, input: &serde_json::Value, policy_version: u8) {
+        let (Some(journal), Some(keys)) = (&self.journal, &self.receipt_keys) else { return; };
+        let Ok(call_hash) = evohime_receipts::runtime::canonical_call_hash(tool, scope, input) else { return; };
+        let mut database = journal.database().lock().await;
+        let signer = CoreReceiptSigner(Arc::clone(keys));
+        if let Ok(runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) { let _ = runtime.store_unsampled_read_only_marker(action_id, tool, &call_hash, policy_version); }
     }
 
     async fn persist_lesson(&self, task_id: &str, workspace_root: &std::path::Path) {

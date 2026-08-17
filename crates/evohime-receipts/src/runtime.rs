@@ -296,6 +296,14 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
            audit_sampling_rate INTEGER NOT NULL CHECK(audit_sampling_rate BETWEEN 0 AND 100),
            sampling_policy_version INTEGER NOT NULL
          );
+         CREATE TABLE IF NOT EXISTS receipt_audit_markers (
+           action_id TEXT PRIMARY KEY NOT NULL,
+           tool_name TEXT NOT NULL,
+           call_hash TEXT NOT NULL,
+           sampled INTEGER NOT NULL CHECK(sampled=0),
+           sampling_policy_version INTEGER NOT NULL,
+           created_at_ms INTEGER NOT NULL
+         );
          INSERT OR IGNORE INTO receipt_runtime_guard(id,phase,generation,updated_at_ms)
            VALUES(1,'ready',0,0);",
     )?;
@@ -642,6 +650,12 @@ impl<'a> ReceiptRuntime<'a> {
     pub fn set_audit_sampling_rate(&self, authenticated_core_command: bool, rate: u8) -> Result<(), RuntimeError> {
         if !authenticated_core_command || rate > 100 { return Err(RuntimeError::Code("key_untrusted")); }
         self.connection.execute("UPDATE receipt_runtime_config SET audit_sampling_rate=?1,sampling_policy_version=?2 WHERE id=1", params![rate as i64, crate::SAMPLING_POLICY_VERSION as i64])?;
+        Ok(())
+    }
+
+    pub fn store_unsampled_read_only_marker(&self, action_id: Uuid, tool_name: &str, call_hash: &str, policy_version: u8) -> Result<(), RuntimeError> {
+        if tool_name.is_empty() || tool_name.len() > crate::MAX_IDENTIFIER_BYTES || call_hash.len() != 64 || !call_hash.bytes().all(|value| value.is_ascii_hexdigit() && !value.is_ascii_uppercase()) { return Err(RuntimeError::Code("schema_violation")); }
+        self.connection.execute("INSERT INTO receipt_audit_markers(action_id,tool_name,call_hash,sampled,sampling_policy_version,created_at_ms) VALUES(?1,?2,?3,0,?4,?5)", params![action_id.to_string(), tool_name, call_hash, policy_version as i64, now_ms()])?;
         Ok(())
     }
 
