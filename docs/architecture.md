@@ -96,7 +96,9 @@ terminal post/refusal append-ятся в SQLite hash-chain. Startup recovery
 `ReconcilePendingReceiptAction`: он создаёт новый read-only action с собственным
 hash/call binding и атомарно связывает его с историческим action; исходный tool
 повторно не запускается. `ClosePendingReceiptAction` закрывает только explicit
-unknown-result как signed refusal. Protected recovery rows шифруются
+unknown-result как signed refusal, а authenticated `UnquarantineReceiptAction`
+проверяет trusted signed checkpoint и закрывает только invariant violation как
+refusal. Protected recovery rows шифруются
 AES-256-GCM, а storage-key rotation выполняется возобновляемыми bounded batch с
 durable cursor. Read-only sampling, recovery state и bounded runtime counters
 доступны только через Core diagnostics.
