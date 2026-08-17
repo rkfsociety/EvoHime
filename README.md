@@ -43,3 +43,5 @@ Ethereum (ERC20) на адрес:
 `0x806f0f84059d506ca017501c504693509680960d`
 
 Пожалуйста, убедитесь, что выбрана именно сеть Ethereum (ERC20).
+
+![QR-код для пожертвования USDT в сети Ethereum (ERC20)](assets/donations-usdt-erc20.png)
