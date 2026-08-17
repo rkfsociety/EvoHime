@@ -255,6 +255,7 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
            approval_id TEXT,
            approval_call_hash TEXT,
            parent_approval_ref TEXT,
+           legacy_approval_ref TEXT,
            pre_receipt_hash TEXT,
            terminal_receipt_hash TEXT,
            recovery_code TEXT,
@@ -281,7 +282,8 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
            expires_at_ms INTEGER NOT NULL,
            clock_boot_id TEXT NOT NULL DEFAULT 'runtime-boot-v1',
            created_monotonic_ms INTEGER NOT NULL,
-           deadline_monotonic_ms INTEGER NOT NULL
+           deadline_monotonic_ms INTEGER NOT NULL,
+           legacy_approval_ref TEXT
          );
          CREATE TABLE IF NOT EXISTS receipt_chain_heads (
            key_id TEXT PRIMARY KEY NOT NULL,
@@ -341,10 +343,12 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
         ("receipt_actions", "normalized_scope", "TEXT NOT NULL DEFAULT ''"),
         ("receipt_actions", "fingerprint_input_version", "INTEGER NOT NULL DEFAULT 1"),
         ("receipt_approval_intents", "schema_version", "INTEGER NOT NULL DEFAULT 1"),
+        ("receipt_approval_intents", "legacy_approval_ref", "TEXT"),
         ("receipt_actions", "reconciliation_action_id", "TEXT"),
         ("receipt_actions", "reconciles_action_id", "TEXT"),
         ("receipt_actions", "completion_source", "TEXT NOT NULL DEFAULT 'execution'"),
         ("receipt_actions", "parent_approval_ref", "TEXT"),
+        ("receipt_actions", "legacy_approval_ref", "TEXT"),
     ] {
         let exists: Option<String> = connection.query_row(
             &format!("SELECT name FROM pragma_table_info('{table}') WHERE name='{column}'"),
@@ -445,6 +449,18 @@ impl<'a> ReceiptRuntime<'a> {
     /// still cannot choose an id.
     pub fn prepare_existing_approval(&self, request: ActionRequest) -> Result<PrepareOutcome, RuntimeError> {
         self.prepare_inner(request, true)
+    }
+
+    /// Imports a legacy in-memory approval as a new pending Core approval.
+    /// The legacy identifier is audit-only and cannot authorize the new claim.
+    pub fn import_legacy_approval(&self, legacy_ref: &str, request: ActionRequest) -> Result<PrepareOutcome, RuntimeError> {
+        if legacy_ref.is_empty() || legacy_ref.len() > 128 { return Err(RuntimeError::Code("schema_violation")); }
+        if !matches!(request.policy_decision, PolicyDecision::ApprovalRequired) || request.approval_id.is_some() { return Err(RuntimeError::Code("approval_stale")); }
+        let outcome = self.prepare(request)?;
+        let PrepareOutcome::ApprovalRequired { action_id, approval_id, expires_at_ms } = outcome else { return Err(RuntimeError::Code("schema_violation")); };
+        self.connection.execute("UPDATE receipt_actions SET legacy_approval_ref=?2 WHERE action_id=?1", params![action_id.to_string(), legacy_ref])?;
+        self.connection.execute("UPDATE receipt_approval_intents SET legacy_approval_ref=?2 WHERE approval_id=?1", params![approval_id.to_string(), legacy_ref])?;
+        Ok(PrepareOutcome::ApprovalRequired { action_id, approval_id, expires_at_ms })
     }
 
     fn prepare_inner(&self, mut request: ActionRequest, existing_approval: bool) -> Result<PrepareOutcome, RuntimeError> {
@@ -755,6 +771,20 @@ mod tests {
         runtime.grant_approval(approval).unwrap();
         assert!(matches!(runtime.claim_approval(&req, approval), Ok(PrepareOutcome::Prepared { .. })));
         assert!(runtime.claim_approval(&req, approval).is_err());
+    }
+
+    #[test]
+    fn legacy_approval_import_creates_new_pending_id_without_auto_grant() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let req = request(PolicyDecision::ApprovalRequired);
+        let outcome = runtime.import_legacy_approval("legacy-approval-1", req).unwrap();
+        let (approval_id, action_id) = match outcome { PrepareOutcome::ApprovalRequired { approval_id, action_id, .. } => (approval_id, action_id), _ => panic!() };
+        let (state, legacy): (String, String) = db.query_row("SELECT state,legacy_approval_ref FROM receipt_approval_intents WHERE approval_id=?1", [approval_id.to_string()], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
+        assert_eq!(state, "pending");
+        assert_eq!(legacy, "legacy-approval-1");
+        assert_eq!(db.query_row("SELECT legacy_approval_ref FROM receipt_actions WHERE action_id=?1", [action_id.to_string()], |row| row.get::<_, String>(0)).unwrap(), "legacy-approval-1");
     }
 
     #[test]
