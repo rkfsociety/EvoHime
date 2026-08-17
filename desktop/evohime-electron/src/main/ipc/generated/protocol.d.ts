@@ -695,6 +695,9 @@ export namespace evohime {
                 /** StartPlanReview synthesisModel. */
                 synthesisModel: string;
 
+                /** StartPlanReview fileNames. */
+                fileNames: string[];
+
                 /**
                  * Encodes the specified StartPlanReview message. Does not implicitly {@link evohime.desktop.v1.StartPlanReview.verify|verify} messages.
                  * @param message StartPlanReview message or plain object to encode
@@ -740,6 +743,9 @@ export namespace evohime {
 
                     /** StartPlanReview synthesisModel */
                     synthesisModel?: (string|null);
+
+                    /** StartPlanReview fileNames */
+                    fileNames?: (string[]|null);
 
                     /** Unknown fields preserved while decoding when enabled */
                     $unknowns?: Uint8Array[];

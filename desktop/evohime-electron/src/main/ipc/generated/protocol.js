@@ -1496,6 +1496,7 @@ export const evohime = $root.evohime = (() => {
                  * @property {string|null} [sourceMarkdown] StartPlanReview sourceMarkdown
                  * @property {Array.<string>|null} [reviewerModels] StartPlanReview reviewerModels
                  * @property {string|null} [synthesisModel] StartPlanReview synthesisModel
+                 * @property {Array.<string>|null} [fileNames] StartPlanReview fileNames
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -1522,6 +1523,7 @@ export const evohime = $root.evohime = (() => {
                  */
                 const StartPlanReview = function (properties) {
                     this.reviewerModels = [];
+                    this.fileNames = [];
                     if (properties)
                         for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
                             if (properties[keys[i]] != null && keys[i] !== "__proto__")
@@ -1569,6 +1571,14 @@ export const evohime = $root.evohime = (() => {
                 StartPlanReview.prototype.synthesisModel = "";
 
                 /**
+                 * StartPlanReview fileNames.
+                 * @member {Array.<string>} fileNames
+                 * @memberof evohime.desktop.v1.StartPlanReview
+                 * @instance
+                 */
+                StartPlanReview.prototype.fileNames = $util.emptyArray;
+
+                /**
                  * Encodes the specified StartPlanReview message. Does not implicitly {@link evohime.desktop.v1.StartPlanReview.verify|verify} messages.
                  * @function encode
                  * @memberof evohime.desktop.v1.StartPlanReview
@@ -1595,6 +1605,9 @@ export const evohime = $root.evohime = (() => {
                             writer.uint32(/* id 4, wireType 2 =*/34).string(message.reviewerModels[i]);
                     if (message.synthesisModel != null && $Object.hasOwnProperty.call(message, "synthesisModel") && message.synthesisModel !== "")
                         writer.uint32(/* id 5, wireType 2 =*/42).string(message.synthesisModel);
+                    if (message.fileNames != null && message.fileNames.length)
+                        for (let i = 0; i < message.fileNames.length; ++i)
+                            writer.uint32(/* id 6, wireType 2 =*/50).string(message.fileNames[i]);
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -1671,6 +1684,14 @@ export const evohime = $root.evohime = (() => {
                                     message.synthesisModel = value;
                                 else
                                     delete message.synthesisModel;
+                                continue;
+                            }
+                        case 6: {
+                                if (wireType !== 2)
+                                    break;
+                                if (!(message.fileNames && message.fileNames.length))
+                                    message.fileNames = [];
+                                message.fileNames.push(reader.stringVerify());
                                 continue;
                             }
                         }

@@ -75,6 +75,7 @@ message StartPlanReview {
   string source_markdown = 3;
   repeated string reviewer_models = 4;
   string synthesis_model = 5;
+  repeated string file_names = 6;
 }
 
 message StopPlanReview {

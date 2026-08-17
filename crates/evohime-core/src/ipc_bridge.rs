@@ -2901,6 +2901,7 @@ impl IpcBridge {
         let review = crate::plan_review::ReviewRequest {
             review_id: request.review_id,
             file_name: request.file_name,
+            file_names: request.file_names,
             source_markdown: request.source_markdown,
             reviewer_models: request.reviewer_models,
             synthesis_model: request.synthesis_model,

@@ -22,6 +22,7 @@ pub const MAX_REVIEW_OUTPUT_BYTES: usize = 256 * 1024;
 pub struct ReviewRequest {
     pub review_id: String,
     pub file_name: String,
+    pub file_names: Vec<String>,
     pub source_markdown: String,
     pub reviewer_models: Vec<String>,
     pub synthesis_model: String,
@@ -39,6 +40,8 @@ pub struct ReviewerResult {
 pub struct ReviewResult {
     pub review_id: String,
     pub file_name: String,
+    #[serde(default)]
+    pub file_names: Vec<String>,
     pub synthesis_model: String,
     pub reviewers: Vec<ReviewerResult>,
     pub final_markdown: String,
@@ -256,21 +259,42 @@ pub async fn run_review_with_progress(
         completed: total,
         total,
     });
-    let final_markdown = collect_model_response(
+    let synthesized_markdown = collect_model_response(
         gateway,
         &request.synthesis_model,
         synthesis_messages(&source, &synthesis_input),
         cancellation,
     )
     .await?;
+    let final_markdown = format_review_markdown(&request.file_names, &synthesized_markdown);
 
     Ok(ReviewResult {
         review_id: request.review_id,
         file_name: request.file_name,
+        file_names: request.file_names,
         synthesis_model: request.synthesis_model,
         reviewers,
         final_markdown,
     })
+}
+
+fn format_review_markdown(file_names: &[String], final_markdown: &str) -> String {
+    let names = if file_names.is_empty() {
+        vec!["(имя файла не передано)".to_string()]
+    } else {
+        file_names
+            .iter()
+            .map(|name| {
+                let safe = name.replace(['`', '\r', '\n'], " ");
+                format!("- `{safe}`")
+            })
+            .collect()
+    };
+    format!(
+        "<!-- Контекст EvoHime: это ревью сделано по указанным файлам. -->\n\n## Файлы, которые проверялись\n\n{}\n\n---\n\n{}",
+        names.join("\n"),
+        final_markdown.trim_start()
+    )
 }
 
 async fn collect_model_response(
@@ -340,6 +364,7 @@ mod tests {
         ReviewRequest {
             review_id: "review-1".into(),
             file_name: "plan.md".into(),
+            file_names: vec!["plan.md".into()],
             source_markdown: "# Plan\n\nDo the thing".into(),
             reviewer_models: vec!["one".into(), "two".into()],
             synthesis_model: "main".into(),
@@ -378,7 +403,8 @@ mod tests {
             .reviewers
             .iter()
             .all(|review| review.status == "completed"));
-        assert_eq!(result.final_markdown, "mock response");
+        assert!(result.final_markdown.contains("## Файлы, которые проверялись"));
+        assert!(result.final_markdown.contains("`plan.md`"));
     }
 
     /// Reviewers share one provider key, so they are queued rather than fanned

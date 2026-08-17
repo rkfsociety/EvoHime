@@ -330,7 +330,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
     setStartedAt(Date.now())
     setNow(Date.now())
     setLastChangeAt(Date.now())
-    const outcome = await api.invoke('review.start', { reviewId: id, fileName, sourceMarkdown, reviewerModels: reviewers, synthesisModel })
+    const outcome = await api.invoke('review.start', { reviewId: id, fileName, fileNames: plans.map((plan) => plan.fileName), sourceMarkdown, reviewerModels: reviewers, synthesisModel })
     if (!outcome.ok) setError(`Ядро отклонило запрос: ${outcome.message}`)
   }
 
@@ -616,9 +616,10 @@ function latestReviewResult(events: readonly CoreEvent[]): PlanReviewResult | nu
 }
 
 function normalizeResult(value: Record<string, unknown>): PlanReviewResult | null {
-  const reviewId = value.review_id ?? value.reviewId; const fileName = value.file_name ?? value.fileName; const synthesisModel = value.synthesis_model ?? value.synthesisModel; const finalMarkdown = value.final_markdown ?? value.finalMarkdown
+  const reviewId = value.review_id ?? value.reviewId; const fileName = value.file_name ?? value.fileName; const rawFileNames = value.file_names ?? value.fileNames; const synthesisModel = value.synthesis_model ?? value.synthesisModel; const finalMarkdown = value.final_markdown ?? value.finalMarkdown
   if (typeof reviewId !== 'string' || typeof fileName !== 'string' || typeof synthesisModel !== 'string' || typeof finalMarkdown !== 'string' || !Array.isArray(value.reviewers)) return null
-  return { reviewId, fileName, synthesisModel, finalMarkdown, reviewers: value.reviewers.map((item) => { const review = item as Record<string, unknown>; return { model: String(review.model ?? ''), status: String(review.status ?? ''), content: String(review.content ?? ''), error: typeof review.error === 'string' ? review.error : null } }) }
+  const fileNames = Array.isArray(rawFileNames) ? rawFileNames.filter((item): item is string => typeof item === 'string') : [fileName]
+  return { reviewId, fileName, fileNames, synthesisModel, finalMarkdown, reviewers: value.reviewers.map((item) => { const review = item as Record<string, unknown>; return { model: String(review.model ?? ''), status: String(review.status ?? ''), content: String(review.content ?? ''), error: typeof review.error === 'string' ? review.error : null } }) }
 }
 
 /**

@@ -549,14 +549,15 @@ function dispatch(
       const value = asRecord(payload)
       const reviewId = asBoundedString(value['reviewId'])
       const fileName = asBoundedString(value['fileName'])
+      const fileNames = asReviewFileNames(value['fileNames'])
       const sourceMarkdown = asReviewMarkdown(value['sourceMarkdown'])
       const reviewerModels = asReviewModels(value['reviewerModels'])
       const synthesisModel = asBoundedString(value['synthesisModel'])
-      if (reviewId === null || fileName === null || sourceMarkdown === null || reviewerModels === null || synthesisModel === null) {
+      if (reviewId === null || fileName === null || fileNames === null || sourceMarkdown === null || reviewerModels === null || synthesisModel === null) {
         return failure('invalid-payload', 'Некорректные параметры ревью плана.')
       }
       return accepted(client.send({
-        startPlanReview: { reviewId, fileName, sourceMarkdown, reviewerModels: [...reviewerModels], synthesisModel }
+        startPlanReview: { reviewId, fileName, fileNames: [...fileNames], sourceMarkdown, reviewerModels: [...reviewerModels], synthesisModel }
       }))
     }
 
@@ -798,6 +799,12 @@ function asReviewMarkdown(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 && Buffer.byteLength(value, 'utf8') <= MAX_REVIEW_PLAN_BYTES
     ? value
     : null
+}
+
+function asReviewFileNames(value: unknown): readonly string[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 64) return null
+  const names = value.map((item) => asBoundedString(item))
+  return names.every((name): name is string => name !== null) ? names : null
 }
 
 function asReviewDestinationPath(value: unknown): string | null {

@@ -147,6 +147,7 @@ export interface PlanReviewReviewer {
 export interface PlanReviewResult {
   readonly reviewId: string
   readonly fileName: string
+  readonly fileNames: readonly string[]
   readonly synthesisModel: string
   readonly reviewers: readonly PlanReviewReviewer[]
   readonly finalMarkdown: string
@@ -323,7 +324,7 @@ export interface CommandPayloads {
   'chat.remove': { chatId: string }
   /** `directory` — папка, открытая в диалоге; пустая строка = выбор системы. */
   'review.pickPlan': { directory?: string }
-  'review.start': { reviewId: string; fileName: string; sourceMarkdown: string; reviewerModels: readonly string[]; synthesisModel: string }
+  'review.start': { reviewId: string; fileName: string; fileNames: readonly string[]; sourceMarkdown: string; reviewerModels: readonly string[]; synthesisModel: string }
   'review.stop': { reviewId: string }
   'review.list': { limit?: number }
   'review.get': { reviewId: string }
