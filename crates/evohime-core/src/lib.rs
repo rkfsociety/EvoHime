@@ -22,6 +22,7 @@ fn build_agent_system_prompt(tool_names: &[String]) -> String {
 - Если инструмент вернул ошибку, не завершай задачу: исправь аргументы по тексту ошибки и повтори вызов.\n\
 - filesystem.patch принимает только JSON {{\"path\":\"relative/file.rs\",\"patch\":\"--- a/relative/file.rs\\n+++ b/relative/file.rs\\n@@ ...\"}}; поля edits и patches недопустимы.\n\
 - Если пользователь просит исправить, изменить или реализовать код, обязательно внеси изменение через filesystem.patch или filesystem.write; для просьбы о проверке запусти соответствующий тест/сборку, а для просьбы о commit вызови git.commit. Не выдавай план за результат.\n\
+- Для Git используй специализированные инструменты: сначала git.status, затем git.diff для проверки изменений; git.commit — только с task-only сообщением и после успешной проверки; git.pull — для обновления checkout; git.push — только если пользователь явно попросил опубликовать изменения. Не заменяй эти вызовы shell.execute и не выполняй git-команды из неправильной директории.\n\
 - Все улучшения EvoHime выполняй самостоятельно через доступные инструменты Евы. Если попытка не удалась, не завершай задачу: зафиксируй причину в trace, дождись следующего шага настройки и повтори работу через инструменты до успешного результата.\n\
 - После исследования дай отчёт: что обнаружено, какие файлы проверены, какие проблемы найдены и что предлагается сделать дальше.\n\n\
 Доступные инструменты в этой сессии:\n{}",
@@ -74,10 +75,23 @@ fn tool_parameters(name: &str) -> serde_json::Value {
             "type": "object",
             "properties": { "path": { "type": "string", "description": "Optional workspace-relative path" } }
         }),
+        "git.status" => serde_json::json!({
+            "type": "object",
+            "additionalProperties": false
+        }),
         "git.commit" => serde_json::json!({
             "type": "object",
             "properties": { "message": { "type": "string", "description": "Commit message" } },
             "required": ["message"]
+        }),
+        "git.pull" | "git.push" => serde_json::json!({
+            "type": "object",
+            "properties": {
+                "remote": { "type": "string", "description": "Optional configured remote name, usually origin" },
+                "branch": { "type": "string", "description": "Optional branch name, usually the current branch" },
+                "force": { "type": "boolean", "description": "Must remain false; force push is forbidden" }
+            },
+            "additionalProperties": false
         }),
         "shell.execute" => serde_json::json!({
             "type": "object",
@@ -237,6 +251,8 @@ fn parse_legacy_function_calls(content: &str, iteration: usize) -> Vec<NativeToo
         "git.status",
         "git.diff",
         "git.commit",
+        "git.pull",
+        "git.push",
     ];
 
     let mut json_cursor = 0;
@@ -407,7 +423,14 @@ fn parse_tagged_tool_call(content: &str, iteration: usize) -> Option<NativeToolC
         let name = content[name_start..name_end].trim();
         if !matches!(
             name,
-            "filesystem.list" | "filesystem.read" | "filesystem.search" | "git.status" | "git.diff"
+            "filesystem.list"
+                | "filesystem.read"
+                | "filesystem.search"
+                | "git.status"
+                | "git.diff"
+                | "git.commit"
+                | "git.pull"
+                | "git.push"
         ) {
             return None;
         }
@@ -9631,6 +9654,49 @@ mod tests {
         assert!(prompt.contains("не сформулировал конкретное поручение"));
         assert!(prompt.contains("Не проси пользователя прислать структуру"));
         assert!(prompt.contains("до успешного результата"));
+    }
+
+    #[test]
+    fn git_tool_contract_exposes_safe_repository_workflow() {
+        let prompt = super::build_agent_system_prompt(
+            &[
+                "git.status".into(),
+                "git.diff".into(),
+                "git.commit".into(),
+                "git.pull".into(),
+                "git.push".into(),
+            ],
+        );
+        assert!(prompt.contains("git.pull"));
+        assert!(prompt.contains("git.push"));
+        assert!(prompt.contains("только если пользователь явно попросил"));
+
+        let pull = super::tool_parameters("git.pull");
+        assert_eq!(pull["properties"]["remote"]["type"], "string");
+        assert_eq!(pull["additionalProperties"], false);
+        let push = super::tool_parameters("git.push");
+        assert_eq!(push["properties"]["force"]["type"], "boolean");
+        assert_eq!(push["additionalProperties"], false);
+    }
+
+    #[test]
+    fn parses_legacy_git_mutation_calls() {
+        let content = r#"
+<function_calls>
+[{"tool_name":"git.pull","arguments":{"remote":"origin","branch":"main"}},
+ {"tool_name":"git.push","arguments":{"remote":"origin","branch":"main","force":false}}]
+</function_calls>
+        "#;
+        let calls = super::parse_legacy_function_calls(content, 5);
+        assert_eq!(
+            calls
+                .iter()
+                .map(|call| call.name.as_str())
+                .collect::<Vec<_>>(),
+            ["git.pull", "git.push"]
+        );
+        assert!(calls[0].arguments.contains("origin"));
+        assert!(calls[1].arguments.contains("force"));
     }
 
     #[test]
