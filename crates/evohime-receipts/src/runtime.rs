@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::sync::OnceLock;
 use std::collections::BTreeMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -49,6 +49,9 @@ fn boot_id() -> &'static str {
 /// is unavailable, while all writes to the chain remain blocked by the guard.
 pub fn recover_database(connection: &mut Connection) -> Result<i64, RuntimeError> {
     install_schema(connection)?;
+    // Recovery must not wait indefinitely behind another writer. SQLite still
+    // reports a busy/error condition; the guard remains non-ready on failure.
+    connection.busy_timeout(Duration::from_secs(2))?;
     let tx = connection.unchecked_transaction()?;
     tx.execute("UPDATE receipt_runtime_guard SET phase='recovery_in_progress',generation=generation+1,updated_at_ms=?1 WHERE id=1", [now_ms()])?;
     let quick: String = tx.query_row("PRAGMA quick_check(100)", [], |r| r.get(0))?;
