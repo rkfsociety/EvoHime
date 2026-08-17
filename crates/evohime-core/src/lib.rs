@@ -490,19 +490,27 @@ fn parse_plain_tool_call(content: &str, iteration: usize) -> Option<NativeToolCa
         "filesystem.search",
         "git.status",
         "git.diff",
+        "git.commit",
+        "git.pull",
+        "git.push",
     ]
     .iter()
     .find(|candidate| content.lines().any(|line| line.trim() == **candidate))
     .copied()?;
-    let (key, value) = content
+    let argument = content
         .lines()
         .filter_map(|line| line.split_once(':'))
         .map(|(key, value)| (key.trim(), value.trim()))
-        .find(|(key, _)| matches!(*key, "path" | "query"))?;
+        .find(|(key, _)| matches!(*key, "path" | "query" | "remote" | "branch" | "force"));
+    let arguments = match argument {
+        Some((key, value)) => serde_json::json!({ key: value }),
+        None if name.starts_with("git.") => serde_json::json!({}),
+        None => return None,
+    };
     Some(NativeToolCall {
         id: format!("plain-{iteration}"),
         name: name.to_string(),
-        arguments: serde_json::json!({ key: value }).to_string(),
+        arguments: arguments.to_string(),
     })
 }
 
@@ -9697,6 +9705,25 @@ mod tests {
         );
         assert!(calls[0].arguments.contains("origin"));
         assert!(calls[1].arguments.contains("force"));
+    }
+
+    #[test]
+    fn parses_plain_git_calls_without_read_only_arguments() {
+        let status = super::parse_plain_tool_call(
+            "Выполняю последовательно.\n\ngit.status\n\nЖду результата.",
+            8,
+        )
+        .expect("plain git status call");
+        assert_eq!(status.name, "git.status");
+        assert_eq!(status.arguments, "{}");
+
+        let pull = super::parse_plain_tool_call(
+            "Выполняю обновление.\n\ngit.pull\n\nЖду результата.",
+            9,
+        )
+        .expect("plain git pull call");
+        assert_eq!(pull.name, "git.pull");
+        assert_eq!(pull.arguments, "{}");
     }
 
     #[test]
