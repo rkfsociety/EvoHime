@@ -120,7 +120,11 @@ export class UpdateService {
     // user that a restart is ready.
     if (config.launchPolicy === 'installer') {
       const stagedInstaller = this.stagedInstallerMarker()
-      if (stagedInstaller && stagedInstaller.commit === checked.remoteCommit) {
+      if (
+        stagedInstaller &&
+        stagedInstaller.commit === checked.remoteCommit &&
+        stagedInstaller.commit !== checked.installedCommit
+      ) {
         this.patch({
           phase: 'ready',
           message: 'Проверенный установщик уже скачан — можно перезапустить Еву.',

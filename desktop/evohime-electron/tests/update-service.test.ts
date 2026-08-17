@@ -195,6 +195,29 @@ describe('launch gate', () => {
     expect(downloadInstaller).not.toHaveBeenCalled()
   })
 
+  it('does not keep showing a staged installer after that commit is installed', async () => {
+    const downloadInstaller = vi.fn()
+    const test = harness({
+      downloadInstaller,
+      remoteBranchHead: async () => REMOTE,
+      publishedInstallerCommit: async () => REMOTE
+    }, REMOTE, { launchPolicy: 'installer' })
+    mkdirSync(test.config.stagingDirectory, { recursive: true })
+    writeFileSync(join(test.config.stagingDirectory, 'EvoHime-Setup.exe'), 'installer')
+    writeFileSync(
+      join(test.config.stagingDirectory, 'evohime.build.json'),
+      JSON.stringify({ commit: REMOTE, branch: 'main', builtAtMs: 2 })
+    )
+
+    const outcome = await test.service.runLaunchGate()
+
+    expect(outcome).toBe('continue')
+    expect(test.service.status.phase).toBe('up-to-date')
+    expect(test.service.status.restartRequired).toBe(false)
+    expect(downloadInstaller).not.toHaveBeenCalled()
+    expect(test.quit).not.toHaveBeenCalled()
+  })
+
   it('does nothing when updates are disabled', async () => {
     const { config, build } = harness()
     const disabled = new UpdateService({
