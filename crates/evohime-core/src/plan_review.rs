@@ -197,6 +197,32 @@ pub async fn run_review_with_progress(
             total,
         });
         reviewers.push(reviewer);
+        if reviewers
+            .last()
+            .is_some_and(|review| review.status != "completed")
+        {
+            // A synthesis requires every reviewer. Once one provider fails,
+            // starting later models only delays the same terminal failure and
+            // makes the UI look as if the review is still progressing.
+            for remaining_model in request.reviewer_models.iter().skip(reviewers.len()) {
+                let completed = completed_reviewers.fetch_add(1, Ordering::Relaxed) + 1;
+                progress(ReviewProgress {
+                    review_id: request.review_id.clone(),
+                    stage: "reviewers".into(),
+                    status: "cancelled".into(),
+                    model: Some(remaining_model.clone()),
+                    completed,
+                    total,
+                });
+                reviewers.push(ReviewerResult {
+                    model: remaining_model.clone(),
+                    status: "cancelled".into(),
+                    content: String::new(),
+                    error: Some(ReviewError::Cancelled.to_string()),
+                });
+            }
+            break;
+        }
     }
     if cancellation.is_cancelled() {
         return Err(ReviewError::Cancelled);
@@ -408,6 +434,35 @@ mod tests {
         assert!(events
             .iter()
             .any(|event| event.stage == "synthesis" && event.status == "working"));
+    }
+
+    #[tokio::test]
+    async fn cancels_reviewers_after_the_first_provider_failure() {
+        let gateway = Arc::new(mock_gateway(Vec::new()));
+        let progress_events = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let collected = Arc::clone(&progress_events);
+        let result = run_review_with_progress(
+            gateway,
+            request(),
+            CancellationToken::new(),
+            Arc::new(move |progress| collected.lock().unwrap().push(progress)),
+        )
+        .await;
+
+        assert!(matches!(
+            result,
+            Err(ReviewError::IncompleteReviewers {
+                failed: 2,
+                total: 2
+            })
+        ));
+        let events = progress_events.lock().unwrap();
+        assert!(!events
+            .iter()
+            .any(|event| event.model.as_deref() == Some("two") && event.status == "working"));
+        assert!(events
+            .iter()
+            .any(|event| event.model.as_deref() == Some("two") && event.status == "cancelled"));
     }
 
     #[test]

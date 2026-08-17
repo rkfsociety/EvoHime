@@ -275,6 +275,7 @@ describe('plan review panel', () => {
 
     expect(screen.getByText('Ошибка')).toBeTruthy()
     expect(screen.getByRole('alert').textContent).toContain('401 unauthorized')
+    expect(screen.queryByText('работает')).toBeNull()
     expect(screen.getByRole('button', { name: 'Повторить ревью' }).hasAttribute('disabled')).toBe(false)
   })
 
