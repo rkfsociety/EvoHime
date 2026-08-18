@@ -1,20 +1,40 @@
 import { useEffect, useState } from 'react'
 
-import type { CoreEvent } from '@shared/api'
-import type { ShellState } from '@shared/api'
+import type { ChatRecord, CoreEvent, ShellState } from '@shared/api'
 
 import { useShellApi } from './shell-api'
+import { filterEventsForChat } from './trace-filter'
+
+export { filterEventsForChat } from './trace-filter'
 
 interface Props {
+  readonly chatId: string | null
   readonly events: readonly CoreEvent[]
   readonly state: ShellState | null
   readonly workspace: string | null
   readonly onClose: () => void
 }
 
-export function TracePanel({ events, state, workspace, onClose }: Props): React.JSX.Element {
+export function TracePanel({ chatId, events, state, workspace, onClose }: Props): React.JSX.Element {
   const api = useShellApi()
+  const [chat, setChat] = useState<ChatRecord | null>(null)
   const [copied, setCopied] = useState(false)
+  const traceEvents = filterEventsForChat(events, chat)
+
+  useEffect(() => {
+    if (!api || chatId === null) {
+      setChat(null)
+      return
+    }
+    setChat(null)
+    let active = true
+    void api.invoke('chat.open', { chatId }).then((outcome) => {
+      if (active && outcome.ok) setChat(outcome.value)
+    })
+    return () => {
+      active = false
+    }
+  }, [api, chatId])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -26,20 +46,18 @@ export function TracePanel({ events, state, workspace, onClose }: Props): React.
 
   const copy = async () => {
     if (!api) return
-    const ok = await api.writeClipboardText(formatTrace(state, workspace, events))
+    const ok = await api.writeClipboardText(formatTrace(state, workspace, traceEvents))
     if (!ok) return
     setCopied(true)
     window.setTimeout(() => setCopied(false), 1400)
   }
 
   return (
-    <>
-      <button type="button" className="trace-backdrop" aria-label="Закрыть трейс" onClick={onClose} />
-      <aside className="trace-panel" aria-label="Трейс" aria-live="polite">
+    <aside className="trace-panel" aria-label="Трейс текущего чата" aria-live="polite">
         <header className="trace-panel__header">
           <div>
             <h2>Трейс</h2>
-            <p>{events.length} событий · новые сверху</p>
+            <p>{traceEvents.length} событий текущего чата · новые сверху</p>
           </div>
           <div className="trace-panel__actions">
             <button type="button" onClick={() => void copy()}>{copied ? 'Скопировано' : 'Скопировать трейс'}</button>
@@ -54,11 +72,13 @@ export function TracePanel({ events, state, workspace, onClose }: Props): React.
           <div><dt>Workspace</dt><dd title={workspace ?? undefined}>{workspace ?? 'не выбран'}</dd></div>
         </dl>
         {state?.reason ? <p className="trace-panel__reason">Причина: {state.reason}</p> : null}
-        {events.length === 0 ? (
-          <p className="trace-panel__empty">События появятся после подключения Core.</p>
+        {chatId === null ? (
+          <p className="trace-panel__empty">Выбери чат, чтобы открыть его трейс.</p>
+        ) : traceEvents.length === 0 ? (
+          <p className="trace-panel__empty">События появятся после запуска задачи в этом чате.</p>
         ) : (
           <ol className="trace-panel__events">
-            {events.map((event) => (
+            {traceEvents.map((event) => (
               <li key={`${event.sequenceId}-${event.eventType}`} className="trace-event">
                 <div className="trace-event__meta">
                   <code>{event.eventType}</code>
@@ -70,8 +90,7 @@ export function TracePanel({ events, state, workspace, onClose }: Props): React.
             ))}
           </ol>
         )}
-      </aside>
-    </>
+    </aside>
   )
 }
 

@@ -136,7 +136,7 @@ export function App(): React.JSX.Element {
         : (VIEWS.find((item) => item.id === view)?.label ?? 'Диалог')
 
   return (
-    <div className="shell">
+    <div className={`shell${traceOpen ? ' shell--trace-open' : ''}`}>
       <nav className="sidebar" aria-label="Разделы">
         <div className="sidebar__brand">
           <span className="sidebar__logo" aria-hidden="true">E</span>
@@ -242,7 +242,15 @@ export function App(): React.JSX.Element {
         </div>
       </main>
 
-      {traceOpen ? <TracePanel events={events} state={state} workspace={workspace} onClose={() => setTraceOpen(false)} /> : null}
+      {traceOpen ? (
+        <TracePanel
+          chatId={chatId}
+          events={events}
+          state={state}
+          workspace={workspace}
+          onClose={() => setTraceOpen(false)}
+        />
+      ) : null}
 
       <footer className="statusbar">
         <span>Протокол {state?.protocol ? `v${state.protocol.major}.${state.protocol.minor}` : '—'}</span>

@@ -1,9 +1,38 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { CommandOutcome, EvoHimeApiV1, RendererCommand } from '../src/shared/api'
 import { formatTrace, TracePanel } from '../src/renderer/src/TracePanel'
+
+function ok<C extends RendererCommand>(value: unknown): CommandOutcome<C> {
+  return { ok: true, value } as CommandOutcome<C>
+}
+
+beforeEach(() => {
+  const api: EvoHimeApiV1 = {
+    apiVersion: 1,
+    invoke: (async (command: RendererCommand) => {
+      if (command === 'chat.open') {
+        return ok({
+          id: 'chat-1',
+          workspacePath: 'G:/github/EvoHime',
+          title: 'Чат',
+          createdMs: 0,
+          updatedMs: 0,
+          taskIds: ['task-1'],
+          messages: []
+        })
+      }
+      return ok(null)
+    }) as EvoHimeApiV1['invoke'],
+    subscribe: () => () => {},
+    writeClipboardText: async () => true,
+    openExternal: async () => true
+  }
+  Object.defineProperty(window, 'evohime', { value: Object.freeze({ v1: api }), configurable: true })
+})
 
 afterEach(() => cleanup())
 
@@ -12,6 +41,7 @@ describe('trace panel', () => {
     const onClose = vi.fn()
     render(
       <TracePanel
+        chatId="chat-1"
         state={null}
         workspace="G:/github/EvoHime"
         onClose={onClose}
@@ -24,18 +54,20 @@ describe('trace panel', () => {
       />
     )
 
-    expect(screen.getByRole('complementary', { name: 'Трейс' })).toBeTruthy()
-    expect(screen.getByText('tool.output')).toBeTruthy()
-    expect(screen.getByText('task: task-1')).toBeTruthy()
-    expect(screen.getByText((text) => text.includes('"output": "готово"'))).toBeTruthy()
+    expect(screen.getByRole('complementary', { name: 'Трейс текущего чата' })).toBeTruthy()
+    await waitFor(() => {
+      expect(screen.getByText('tool.output')).toBeTruthy()
+      expect(screen.getByText('task: task-1')).toBeTruthy()
+      expect(screen.getByText((text) => text.includes('"output": "готово"'))).toBeTruthy()
+    })
 
-    await userEvent.click(screen.getByRole('complementary', { name: 'Трейс' }).querySelector('.trace-panel__close')!)
+    await userEvent.click(screen.getByRole('complementary', { name: 'Трейс текущего чата' }).querySelector('.trace-panel__close')!)
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('closes on Escape', async () => {
     const onClose = vi.fn()
-    render(<TracePanel events={[]} state={null} workspace={null} onClose={onClose} />)
+    render(<TracePanel chatId={null} events={[]} state={null} workspace={null} onClose={onClose} />)
 
     await userEvent.keyboard('{Escape}')
     expect(onClose).toHaveBeenCalledTimes(1)
