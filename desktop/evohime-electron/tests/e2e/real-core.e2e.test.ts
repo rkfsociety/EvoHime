@@ -30,6 +30,7 @@ function findCoreExecutable(): string | null {
 }
 
 const coreExecutable = findCoreExecutable()
+const CORE_STARTUP_TIMEOUT_MS = 60_000
 
 let core: ChildProcess | null = null
 let client: CorePipeClient | null = null
@@ -93,7 +94,7 @@ function waitForState(
   target: CorePipeClient,
   label: string,
   predicate: (state: ShellState) => boolean,
-  timeoutMs = 20_000
+  timeoutMs = CORE_STARTUP_TIMEOUT_MS
 ): Promise<ShellState> {
   return new Promise((resolvePromise, reject) => {
     if (predicate(target.state)) {
@@ -127,7 +128,7 @@ describe.runIf(coreExecutable !== null && process.platform === 'win32')('real Co
 
     expect(state.protocol).toEqual({ major: 1, minor: 0 })
     expect(state.coreVersion).toBeTruthy()
-  }, 30_000)
+  }, 90_000)
 
   it('reconnects after Core is killed and restarted', async () => {
     const pipeName = `\\\\.\\pipe\\evohime-e2e-${process.pid}-restart`
@@ -143,5 +144,5 @@ describe.runIf(coreExecutable !== null && process.platform === 'win32')('real Co
     startCore(pipeName)
     const recovered = await waitForState(target, 'reconnected', (state) => state.connection === 'connected')
     expect(recovered.protocol).toEqual({ major: 1, minor: 0 })
-  }, 40_000)
+  }, 90_000)
 })

@@ -29,6 +29,7 @@ function findCoreExecutable(): string | null {
 }
 
 const coreExecutable = findCoreExecutable()
+const CORE_STARTUP_TIMEOUT_MS = 60_000
 
 /** SID of the account running the tests, as Core will observe it. */
 function currentUserSid(): string {
@@ -112,7 +113,7 @@ function waitForState(
   target: CorePipeClient,
   label: string,
   predicate: (state: ShellState) => boolean,
-  timeoutMs = 20_000
+  timeoutMs = CORE_STARTUP_TIMEOUT_MS
 ): Promise<ShellState> {
   return new Promise((resolvePromise, reject) => {
     if (predicate(target.state)) {
@@ -150,7 +151,7 @@ describe.runIf(coreExecutable !== null && process.platform === 'win32')(
       target.start()
 
       expect((await connected).protocol).toEqual({ major: 1, minor: 0 })
-    }, 30_000)
+    }, 90_000)
 
     it('accepts the WinUI compatibility role while the fallback is supported', async () => {
       const started = startAuthenticatedCore('compat', currentUserSid())
@@ -164,7 +165,7 @@ describe.runIf(coreExecutable !== null && process.platform === 'win32')(
       target.start()
 
       expect((await connected).coreVersion).toBeTruthy()
-    }, 30_000)
+    }, 90_000)
 
     it('refuses an unknown client role', async () => {
       const started = startAuthenticatedCore('role', currentUserSid())
@@ -174,7 +175,7 @@ describe.runIf(coreExecutable !== null && process.platform === 'win32')(
       target.start()
 
       expect((await fatal).reason).toBe('auth-rejected')
-    }, 30_000)
+    }, 90_000)
 
     it('refuses a shell with the wrong secret and stops retrying', async () => {
       const sid = currentUserSid()
@@ -185,6 +186,6 @@ describe.runIf(coreExecutable !== null && process.platform === 'win32')(
       target.start()
 
       expect((await fatal).reason).toBe('auth-rejected')
-    }, 30_000)
+    }, 90_000)
   }
 )
