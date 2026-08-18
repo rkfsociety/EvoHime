@@ -733,13 +733,13 @@ body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 24px 0;
+  padding: 12px 0;
 }
 
 .chat__stream {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 8px;
   max-width: 780px;
   margin: 0 auto;
   padding: 0 24px;
@@ -853,7 +853,7 @@ body {
 .message {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 3px;
 }
 
 .message--user {
@@ -897,7 +897,7 @@ body {
   display: flex;
   align-items: center;
   gap: 7px;
-  min-height: 20px;
+  min-height: 14px;
   color: var(--fg-faint);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
@@ -1084,9 +1084,9 @@ body {
 .activity__summary {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  padding: 5px 8px;
+  padding: 3px 6px;
   border: none;
   border-radius: var(--radius-sm);
   background: none;
@@ -1133,8 +1133,8 @@ body {
 .activity__calls {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin: 6px 0 4px;
+  gap: 6px;
+  margin: 4px 0 3px;
   padding: 0 0 0 24px;
   list-style: none;
 }
