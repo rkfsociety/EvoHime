@@ -75,6 +75,11 @@ pub fn recovery_hint(
                 .get("stderr")
                 .and_then(Value::as_str)
                 .unwrap_or("<stderr отсутствует>");
+            if tool_name == "shell.execute"
+                && stderr.contains("could not find `Cargo.toml`")
+            {
+                return "Cargo не нашёл Cargo.toml в выбранном workspace. Не повторяй cargo с теми же аргументами: сначала вызови filesystem.list с {\"path\":\".\"}, прочитай подходящие файлы и создай Cargo.toml через filesystem.write, если это должен быть новый Rust-проект; затем повтори проверку из workspace-relative cwd.".into();
+            }
             format!("Команда завершилась с ошибкой. Первые строки stderr: {}", stderr.lines().take(5).collect::<Vec<_>>().join("\n"))
         }
         ToolFailureKind::Execution => {
@@ -556,6 +561,23 @@ mod tests {
             "выполнить",
         );
         assert!(hint.contains("undefined reference"));
+    }
+
+    #[test]
+    fn recovery_hint_cargo_missing_manifest_requires_setup_before_retry() {
+        let hint = recovery_hint(
+            "shell.execute",
+            ToolFailureKind::NonZeroExit,
+            &json!({
+                "stderr": "error: could not find `Cargo.toml` in `C:\\workspace` or any parent directory"
+            }),
+            &json!({"type": "object"}),
+            "выполнить cargo test",
+        );
+        assert!(hint.contains("Не повторяй cargo"));
+        assert!(hint.contains("filesystem.list"));
+        assert!(hint.contains("Cargo.toml"));
+        assert!(hint.contains("filesystem.write"));
     }
 
     #[test]

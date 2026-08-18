@@ -5861,7 +5861,7 @@ impl ToolAgent {
                     messages.push(ChatMessage::text(
                         ChatRole::User,
                         format!(
-                            "Инструмент {} завершился ошибкой. Не завершай задачу и не повторяй пустые аргументы.{} Повтори один вызов с полным workspace-relative JSON: filesystem.list={{\"path\":\".\"}}; filesystem.read={{\"path\":\"README.md\"}}; filesystem.search={{\"query\":\"нужный текст\",\"path\":\".\"}}. Для другого инструмента укажи все его обязательные поля.",
+                            "Инструмент {} завершился ошибкой. Не завершай задачу и не повторяй тот же неработающий вызов.{} Сделай следующий исправляющий вызов с полным workspace-relative JSON: filesystem.list={{\"path\":\".\"}}; filesystem.read={{\"path\":\"README.md\"}}; filesystem.search={{\"query\":\"нужный текст\",\"path\":\".\"}}. Для другого инструмента укажи все его обязательные поля. Если recovery-подсказка выше запрещает повтор, она имеет приоритет: сначала устрани указанную причину.",
                             call.name, recovery
                         ),
                     ));
