@@ -11,6 +11,7 @@ import { buildTranscript } from './transcript'
 import { MarkdownMessage } from './MarkdownMessage'
 import { RecoveryBanner } from './RecoveryBanner'
 import { PermissionModePicker } from './PermissionModePicker'
+import { ContextUsage } from './ContextUsage'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 const MAX_RENDERED_ITEMS = 80
@@ -320,6 +321,7 @@ export function TaskTimeline({
           </div>
 
           <div className="composer__hint">
+            <ContextUsage events={taskEvents} />
             <PermissionModePicker connection={connection} />
             <ModelPicker connection={connection} events={events} />
             <span className="composer__keys">

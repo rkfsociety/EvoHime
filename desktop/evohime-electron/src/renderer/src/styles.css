@@ -1360,6 +1360,40 @@ body {
   font-size: 12px;
 }
 
+.context-usage {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+
+.context-usage__ring {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: conic-gradient(var(--accent) var(--context-ratio), var(--bg-active) 0);
+}
+
+.context-usage__value {
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--bg-raised);
+  color: var(--fg-muted);
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.context-usage__label {
+  color: var(--fg-muted);
+}
+
 .composer__keys {
   display: inline-flex;
   align-items: center;
