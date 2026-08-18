@@ -153,10 +153,31 @@ pub fn route_intent(rules: &IntentRules, prompt: &str, open_questions: &[String]
 
     // Детерминированный порядок: больше совпадений, затем read-only впереди
     // mutation, затем id лексикографически.
+    // Смешанные задания часто содержат и исследование, и явное изменение
+    // (например, «изучи проект, затем создай файл»). Если у mutation-правила
+    // есть собственное action-слово, оно должно победить read-only этап, иначе
+    // модель увидит только inspect-loadout и будет вынуждена вызывать
+    // отсутствующие filesystem.write/shell.execute.
+    let non_mutation_keywords: std::collections::HashSet<&str> = rules
+        .rules
+        .iter()
+        .filter(|rule| !rule.allows_mutation)
+        .flat_map(|rule| rule.keywords.iter().map(String::as_str))
+        .collect();
+    let explicit_mutation = matches.iter().any(|(rule, _)| {
+        rule.allows_mutation
+            && rule.keywords.iter().any(|keyword| {
+                !non_mutation_keywords.contains(keyword.as_str())
+                    && haystack.contains(keyword.as_str())
+            })
+    });
+
     matches.sort_by(|left, right| {
+        let mutation_priority = |rule: &IntentRule| explicit_mutation && rule.allows_mutation;
         right
             .1
             .cmp(&left.1)
+            .then_with(|| mutation_priority(right.0).cmp(&mutation_priority(left.0)))
             .then_with(|| left.0.allows_mutation.cmp(&right.0.allows_mutation))
             .then_with(|| left.0.id.cmp(&right.0.id))
     });
@@ -490,6 +511,15 @@ mod tests {
     #[test]
     fn mutation_intent_admits_mutation_tools() {
         let decision = route_intent(&rules(), "измени файл", &[]);
+        assert_eq!(decision.intent, "edit");
+        assert!(decision.allows_mutation);
+        let loadout = build_loadout(&registry(), &rules(), decision, limits(), &estimator());
+        assert!(loadout.allows("fs.write"));
+    }
+
+    #[test]
+    fn explicit_mutation_wins_over_an_inspection_step() {
+        let decision = route_intent(&rules(), "проверь проект и измени файл", &[]);
         assert_eq!(decision.intent, "edit");
         assert!(decision.allows_mutation);
         let loadout = build_loadout(&registry(), &rules(), decision, limits(), &estimator());

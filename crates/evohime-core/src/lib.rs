@@ -5864,11 +5864,24 @@ impl ToolAgent {
                         ),
                     ));
                 }
-                if failures_without_success >= 5 {
-                    let message = format!(
-                        "Задача остановлена: 5 последовательных провалов инструментов; последний инструмент {} получил класс {:?}.",
-                        call.name, outcome.kind
-                    );
+                let policy_denied = matches!(
+                    outcome.kind,
+                    Some(recovery::ToolFailureKind::Denied(
+                        recovery::DenialSource::Policy
+                    ))
+                );
+                if policy_denied || failures_without_success >= 5 {
+                    let message = if policy_denied {
+                        format!(
+                            "Задача остановлена: инструмент {} запрещён текущей политикой (класс {:?}); повтор вызова невозможен без изменения permission или loadout.",
+                            call.name, outcome.kind
+                        )
+                    } else {
+                        format!(
+                            "Задача остановлена: 5 последовательных провалов инструментов; последний инструмент {} получил класс {:?}.",
+                            call.name, outcome.kind
+                        )
+                    };
                     write_observability_hook(
                         &task_id,
                         observability_sequence,
