@@ -10,11 +10,12 @@ interface RecoveryBannerProps {
   readonly connection: ConnectionState
   readonly events: readonly CoreEvent[]
   readonly onOpenTask: () => void
+  readonly showOpenTask?: boolean
 }
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 
-export function RecoveryBanner({ connection, events, onOpenTask }: RecoveryBannerProps): React.JSX.Element | null {
+export function RecoveryBanner({ connection, events, onOpenTask, showOpenTask = true }: RecoveryBannerProps): React.JSX.Element | null {
   const api = useShellApi()
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
@@ -81,7 +82,7 @@ export function RecoveryBanner({ connection, events, onOpenTask }: RecoveryBanne
         ) : null}
       </div>
       <div className="recovery-banner__actions">
-        {notice.state === 'WAITING_APPROVAL' ? (
+        {notice.state === 'WAITING_APPROVAL' && showOpenTask ? (
           <button type="button" onClick={onOpenTask}>Открыть подтверждение</button>
         ) : null}
         {notice.state === 'BLOCKED' || notice.state === 'FAILED' ? (

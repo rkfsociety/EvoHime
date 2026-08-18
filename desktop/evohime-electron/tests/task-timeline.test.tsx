@@ -382,7 +382,8 @@ describe('task timeline', () => {
 
     // Служебные события не попадают в ленту, а ошибка читается текстом.
     expect(await screen.findByText('Проверка выполнена')).toBeTruthy()
-    expect(screen.getByText('Провайдер недоступен')).toBeTruthy()
+    expect(screen.getAllByText('Провайдер недоступен')).toHaveLength(2)
+    expect(screen.getByRole('status', { name: 'Состояние восстановления: FAILED' })).toBeTruthy()
     expect(screen.queryByText('task.started')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Остановить' })).toBeNull()
   })

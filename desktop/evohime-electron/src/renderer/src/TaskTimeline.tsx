@@ -9,6 +9,7 @@ import { RepositoryBar } from './RepositoryBar'
 import { ActivityLine } from './ActivityLine'
 import { buildTranscript } from './transcript'
 import { MarkdownMessage } from './MarkdownMessage'
+import { RecoveryBanner } from './RecoveryBanner'
 import { PermissionModePicker } from './PermissionModePicker'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
@@ -192,6 +193,12 @@ export function TaskTimeline({
 
   return (
     <section className="chat" aria-label="Ход задачи">
+      <RecoveryBanner
+        connection={connection}
+        events={taskEvents}
+        onOpenTask={() => {}}
+        showOpenTask={false}
+      />
       <div className="chat__scroll">
         {empty ? (
           <HomeScreen

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import type { ConnectionState, CoreEvent, ShellState, UserIdentity } from '@shared/api'
 import type { UpdateStatus } from '@shared/update'
@@ -10,7 +10,6 @@ import { UpdateGate } from './UpdateGate'
 import { ProjectSidebar } from './ProjectSidebar'
 import { TaskTimeline } from './TaskTimeline'
 import { SettingsModal } from './SettingsModal'
-import { RecoveryBanner } from './RecoveryBanner'
 import { OperationsPanel } from './OperationsPanel'
 import { PlanReviewPanel } from './PlanReviewPanel'
 import { OverviewPanel } from './OverviewPanel'
@@ -114,13 +113,6 @@ export function App(): React.JSX.Element {
     })
   }, [api])
 
-  // Ожидающее разрешение подсвечивается в навигации: пользователь может стоять
-  // в другом разделе, когда Core просит подтверждение.
-  const pendingApprovals = useMemo(
-    () => events.filter((event) => event.eventType === 'approval.required').length,
-    [events]
-  )
-
   if (apiMissing) {
     return (
       <main className="shell shell--recovery">
@@ -186,15 +178,6 @@ export function App(): React.JSX.Element {
       <main className="main">
         <header className="topbar">
           <h2 className="topbar__title">{title}</h2>
-          {pendingApprovals > 0 ? (
-            <button
-              type="button"
-              className="topbar__approvals"
-              onClick={() => setView('chat')}
-            >
-              Нужно разрешение
-            </button>
-          ) : null}
           <span className="topbar__path">{workspace ?? 'папка не выбрана'}</span>
           <span className="topbar__spacer" />
           <button
@@ -210,11 +193,6 @@ export function App(): React.JSX.Element {
         </header>
 
         <div className="main__body">
-          <RecoveryBanner
-            connection={connection}
-            events={events}
-            onOpenTask={() => setView('chat')}
-          />
           {view === 'chat' ? (
             <TaskTimeline
               connection={connection}
