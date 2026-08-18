@@ -884,7 +884,7 @@ fn delivery_next_step(
         } else if !research_has_content {
             "НЕМЕДЛЕННО прочитай один из ключевых файлов: filesystem.read с JSON {\"path\":\"Cargo.toml\"} или {\"path\":\"README.md\"}. Не повторяй filesystem.list и не пиши отчёт."
         } else if !research_has_search {
-            "НЕМЕДЛЕННО вызови filesystem.search с JSON {\"query\":\"TODO\",\"path\":\"crates\"} или найди по коду ключевой компонент. Не повторяй уже выполненное чтение и не пиши отчёт."
+            "НЕМЕДЛЕННО вызови filesystem.search с полным JSON {\"query\":\"TODO\",\"path\":\".\"} или найди по коду ключевой компонент. Не используй предположения о структуре вроде crates; путь должен существовать в текущем workspace. Не повторяй уже выполненное чтение и не пиши отчёт."
         } else if research_observations < 5 {
             "НЕМЕДЛЕННО прочитай ещё один конкретный архитектурный файл через filesystem.read, например docs/architecture.md или docs/current-state.md. Не пиши отчёт."
         } else {
@@ -893,7 +893,7 @@ fn delivery_next_step(
     } else if !mutation_done && requirements.mutation {
         "НЕМЕДЛЕННО вызови filesystem.patch или filesystem.write и внеси требуемое изменение. Не вызывай read/search и не пиши отчёт."
     } else if !verification_done && requirements.verification {
-        "НЕМЕДЛЕННО вызови shell.execute с требуемым тестом/проверкой. Не пиши отчёт."
+        "НЕМЕДЛЕННО вызови shell.execute с полным JSON-объектом, например {\"program\":\"cargo\",\"args\":[\"test\"],\"cwd\":\".\"}. Не вызывай shell.execute с пустыми аргументами и не пиши отчёт."
     } else if !commit_done && requirements.commit {
         "НЕМЕДЛЕННО вызови git.commit с task-only сообщением. Не пиши отчёт."
     } else {
@@ -3714,6 +3714,8 @@ pub struct ToolAgent {
     extraction_guard: Arc<Mutex<crate::memory_extraction::ExtractionGuard>>,
 }
 
+const DEFAULT_TOOL_ITERATIONS: usize = 32;
+
 impl ToolAgent {
     pub fn new(gateway: Arc<ModelGateway>, tools: Arc<ToolRegistry>) -> Self {
         Self::new_with_approvals(gateway, tools, ApprovalCoordinator::default())
@@ -3727,7 +3729,7 @@ impl ToolAgent {
         Self {
             gateway,
             tools,
-            max_iterations: 16,
+            max_iterations: DEFAULT_TOOL_ITERATIONS,
             approvals,
             journal: None,
             selected_model: SelectedModel::default(),
