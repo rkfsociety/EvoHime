@@ -9,7 +9,7 @@ import { UpdateIndicator } from './UpdateIndicator'
 import { UpdateGate } from './UpdateGate'
 import { ProjectSidebar } from './ProjectSidebar'
 import { TaskTimeline } from './TaskTimeline'
-import { ProviderForm } from './ProviderForm'
+import { SettingsModal } from './SettingsModal'
 import { RecoveryBanner } from './RecoveryBanner'
 import { OperationsPanel } from './OperationsPanel'
 import { PlanReviewPanel } from './PlanReviewPanel'
@@ -37,7 +37,7 @@ const STATE_LABELS: Record<ConnectionState, string> = {
   fatal: 'Критическая ошибка'
 }
 
-type ViewId = 'chat' | 'overview' | 'reviews' | 'operations' | 'settings'
+type ViewId = 'chat' | 'overview' | 'reviews' | 'operations'
 
 interface ViewDescriptor {
   readonly id: ViewId
@@ -70,6 +70,7 @@ export function App(): React.JSX.Element {
   const [identity, setIdentity] = useState<UserIdentity | null>(null)
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
   const [traceOpen, setTraceOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const api = useShellApi()
 
@@ -128,12 +129,7 @@ export function App(): React.JSX.Element {
   }
 
   const connection = state?.connection ?? 'starting'
-  const title =
-    view === 'settings'
-      ? SETTINGS_LABEL
-      : view === 'chat'
-        ? 'Диалог'
-        : (VIEWS.find((item) => item.id === view)?.label ?? 'Диалог')
+  const title = view === 'chat' ? 'Диалог' : (VIEWS.find((item) => item.id === view)?.label ?? 'Диалог')
 
   return (
     <div className={`shell${traceOpen ? ' shell--trace-open' : ''}`}>
@@ -177,8 +173,8 @@ export function App(): React.JSX.Element {
             type="button"
             className="account__settings"
             aria-label={SETTINGS_LABEL}
-            aria-current={view === 'settings' ? 'page' : undefined}
-            onClick={() => setView('settings')}
+            aria-expanded={settingsOpen}
+            onClick={() => setSettingsOpen(true)}
           >
             ⚙
           </button>
@@ -236,11 +232,12 @@ export function App(): React.JSX.Element {
               {view === 'overview' ? <OverviewPanel connection={connection} events={events} workspace={workspace} /> : null}
               {view === 'reviews' ? <PlanReviewPanel connection={connection} events={events} /> : null}
               {view === 'operations' ? <OperationsPanel connection={connection} events={events} /> : null}
-              {view === 'settings' ? <ProviderForm /> : null}
             </div>
           )}
         </div>
       </main>
+
+      {settingsOpen ? <SettingsModal workspace={workspace} onClose={() => setSettingsOpen(false)} /> : null}
 
       {traceOpen ? (
         <TracePanel
