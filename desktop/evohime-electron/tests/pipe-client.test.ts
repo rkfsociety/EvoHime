@@ -185,8 +185,13 @@ function waitForEvent(
 describe.runIf(process.platform === 'win32')('core pipe client', () => {
   it('handshakes and reports the negotiated protocol', async () => {
     const pipeName = uniquePipeName()
+    let requestedResync = false
     server = await startStubCore(pipeName, {
-      onCommand: (command) => (command.handshake ? [readyFrame()] : [])
+      onCommand: (command) => {
+        if (command.handshake) return [readyFrame()]
+        if (command.resyncRequest) requestedResync = true
+        return []
+      }
     })
 
     const target = createClient(pipeName)
@@ -197,6 +202,8 @@ describe.runIf(process.platform === 'win32')('core pipe client', () => {
     expect(state.protocol).toEqual({ major: 1, minor: 0 })
     expect(state.coreVersion).toBe('0.1.0-test')
     expect(state.capabilities).toEqual(['replay', 'resync'])
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(requestedResync).toBe(true)
   })
 
   it('streams events and tracks the last sequence', async () => {

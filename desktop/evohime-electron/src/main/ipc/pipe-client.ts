@@ -327,6 +327,10 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
       return
     }
 
+    if (event.eventType === 'resync.end' || event.eventType === 'replay.end') {
+      this.setState('connected', null)
+    }
+
     const sequence = Number(event.sequenceId ?? 0)
     if (sequence > 0) {
       if (sequence > this.lastSequence + 1 && this.lastSequence > 0) {
@@ -376,10 +380,11 @@ export class CorePipeClient extends EventEmitter<PipeClientEvents> {
     this.authRejections = 0
     this.setState('connected', null)
 
-    if (this.lastSequence > 0) {
-      this.setState('replaying', null)
-      this.requestResync(false)
-    }
+    // A fresh Electron process has no local sequence cursor yet. Replay the
+    // bounded Core journal as well, otherwise the renderer starts with an
+    // empty trace after every restart and can only observe future events.
+    this.setState('replaying', null)
+    this.requestResync(false)
     this.flushQueue()
   }
 

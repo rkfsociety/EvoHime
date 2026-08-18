@@ -22,7 +22,9 @@ import { TracePanel } from './TracePanel'
  * workspace, the pipe or a shell (plan 0, rule 2 of AGENTS.md).
  */
 
-const MAX_VISIBLE_EVENTS = 50
+// Keep enough of the replayed Core journal for a useful diagnostic export.
+// Core still bounds replay and redacts sensitive payloads before IPC.
+const MAX_VISIBLE_EVENTS = 2_000
 
 const STATE_LABELS: Record<ConnectionState, string> = {
   starting: 'Запуск',
