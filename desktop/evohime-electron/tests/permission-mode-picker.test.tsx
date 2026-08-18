@@ -34,7 +34,8 @@ describe('permission mode picker', () => {
     render(<PermissionModePicker connection="connected" />)
 
     await userEvent.click(screen.getByRole('button', { name: 'Режим доступа' }))
-    expect(screen.getAllByText('Запрашивать разрешение').length).toBe(2)
+    expect(screen.getAllByText('Подтверждение').length).toBe(1)
+    expect(screen.getByText('Запрашивать разрешение')).toBeTruthy()
     await userEvent.click(screen.getByRole('menuitemradio', { name: /Полный доступ/ }))
 
     expect(calls).toContainEqual({ command: 'core.setPermissionMode', payload: { mode: 'full' } })

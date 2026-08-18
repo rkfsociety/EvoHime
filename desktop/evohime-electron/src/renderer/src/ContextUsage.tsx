@@ -34,7 +34,6 @@ export function ContextUsage({ events }: ContextUsageProps): React.JSX.Element |
       <span className="context-usage__ring" aria-hidden="true">
         <span className="context-usage__value">{percent}</span>
       </span>
-      <span className="context-usage__label">Контекст</span>
     </span>
   )
 }

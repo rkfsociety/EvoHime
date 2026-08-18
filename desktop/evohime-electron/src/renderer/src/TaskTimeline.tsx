@@ -324,9 +324,6 @@ export function TaskTimeline({
             <ContextUsage events={taskEvents} />
             <PermissionModePicker connection={connection} />
             <ModelPicker connection={connection} events={events} />
-            <span className="composer__keys">
-              <kbd>Enter</kbd> отправить · <kbd>Shift</kbd>+<kbd>Enter</kbd> перенос строки
-            </span>
           </div>
 
 

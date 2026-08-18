@@ -10,21 +10,25 @@ type PermissionMode = 'ask' | 'read_only' | 'full'
 const MODES: readonly {
   value: PermissionMode
   label: string
+  compactLabel: string
   description: string
 }[] = [
   {
     value: 'ask',
     label: 'Запрашивать разрешение',
+    compactLabel: 'Подтверждение',
     description: 'Всегда спрашивать перед изменениями и использованием инструментов'
   },
   {
     value: 'read_only',
     label: 'Только чтение',
+    compactLabel: 'Только чтение',
     description: 'Разрешить чтение workspace и Git без записи и запуска команд'
   },
   {
     value: 'full',
     label: 'Полный доступ',
+    compactLabel: 'Полный доступ',
     description: 'Разрешить доступ к инструментам без отдельных подтверждений'
   }
 ]
@@ -78,11 +82,12 @@ export function PermissionModePicker({ connection }: PermissionModePickerProps):
         type="button"
         className={`permission-picker__button permission-picker__button--${mode}`}
         aria-label="Режим доступа"
+        title={current.label}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
         <span aria-hidden="true">◉</span>
-        <span>{current.label}</span>
+        <span>{current.compactLabel}</span>
         <span className="permission-picker__chevron" aria-hidden="true">▾</span>
       </button>
 

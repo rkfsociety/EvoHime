@@ -1390,16 +1390,6 @@ body {
   line-height: 1;
 }
 
-.context-usage__label {
-  color: var(--fg-muted);
-}
-
-.composer__keys {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
 .model-picker {
   position: relative;
 }
