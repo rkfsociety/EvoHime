@@ -949,6 +949,7 @@ pub mod audit;
 pub mod build;
 pub mod capability_registry;
 pub mod capability_selection;
+pub mod child_contracts;
 pub mod child_roles;
 pub mod child_runtime;
 pub mod context_budget;

@@ -35,6 +35,8 @@ tracing = "0.1"
 rusqlite = { version = "0.32.1", features = ["bundled", "hooks"] }
 ring = "0.17"
 unicode-normalization = "0.1"
+sha2 = "0.10"
+rand = "0.8"
 
 [dev-dependencies]
 wiremock = "0.6"
