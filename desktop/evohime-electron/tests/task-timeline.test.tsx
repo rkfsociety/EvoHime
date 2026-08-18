@@ -180,6 +180,60 @@ describe('task timeline', () => {
     expect(screen.getByRole('button', { name: 'Сообщение скопировано' })).toBeTruthy()
   })
 
+  it('clears the previous conversation when another chat is selected', async () => {
+    const firstChat = {
+      id: 'chat-1',
+      workspacePath: 'C:\\work\\repo',
+      title: 'Первый чат',
+      createdMs: 1,
+      updatedMs: 1,
+      taskIds: ['task-1'],
+      messages: [{ taskId: 'task-1', prompt: 'Старый вопрос', atMs: 1 }]
+    }
+    const secondChat = {
+      ...firstChat,
+      id: 'chat-2',
+      title: 'Второй чат',
+      taskIds: [],
+      messages: []
+    }
+    respond = (command) => {
+      if (command !== 'chat.open') return ok([])
+      return ok(firstChat)
+    }
+    const view = render(
+      <TaskTimeline
+        connection="connected"
+        events={[]}
+        workspace="C:\\work\\repo"
+        chatId="chat-1"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+
+    expect(await screen.findByText('Старый вопрос')).toBeTruthy()
+
+    respond = (command) => command === 'chat.open' ? ok(secondChat) : ok([])
+    view.rerender(
+      <TaskTimeline
+        connection="connected"
+        events={[]}
+        workspace="C:\\work\\repo"
+        chatId="chat-2"
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+
+    await waitFor(() => expect(screen.queryByText('Старый вопрос')).toBeNull())
+    expect(screen.getByText('Чем займёмся?')).toBeTruthy()
+  })
+
   it('keeps each next prompt after the previous agent response', async () => {
     const firstAtMs = new Date('2026-08-14T13:20:00.000Z').getTime()
     const secondAtMs = new Date('2026-08-14T13:21:00.000Z').getTime()

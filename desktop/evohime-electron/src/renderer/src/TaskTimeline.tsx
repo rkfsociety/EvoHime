@@ -55,13 +55,29 @@ export function TaskTimeline({
   const entryTimes = useRef(new Map<string, number>())
 
   useEffect(() => {
+    // Chat-local transient state must not leak into another conversation.
+    // Without this reset an empty chat still rendered the previous prompt and
+    // task because both were kept outside the persisted ChatRecord.
+    setChat(null)
+    setTaskId(null)
+    setSentPrompt(null)
+    setSentPromptAtMs(null)
+    setCommandError(null)
+
     if (!api || chatId === null) {
-      setChat(null)
       return
     }
+
+    let cancelled = false
     void api.invoke('chat.open', { chatId }).then((outcome) => {
-      if (outcome.ok) setChat(outcome.value)
+      // A fast second click may complete before the first open request. Never
+      // let an older response restore a previously selected chat.
+      if (!cancelled && outcome.ok) setChat(outcome.value)
     })
+
+    return () => {
+      cancelled = true
+    }
   }, [api, chatId])
 
   // A chat shows only its own tasks; before the first prompt only the task
