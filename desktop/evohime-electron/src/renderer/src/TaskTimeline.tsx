@@ -9,6 +9,7 @@ import { RepositoryBar } from './RepositoryBar'
 import { ActivityLine } from './ActivityLine'
 import { buildTranscript } from './transcript'
 import { MarkdownMessage } from './MarkdownMessage'
+import { PermissionModePicker } from './PermissionModePicker'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 const MAX_RENDERED_ITEMS = 80
@@ -298,6 +299,7 @@ export function TaskTimeline({
           </div>
 
           <div className="composer__hint">
+            <PermissionModePicker connection={connection} />
             <ModelPicker connection={connection} events={events} />
             <span className="composer__keys">
               <kbd>Enter</kbd> отправить · <kbd>Shift</kbd>+<kbd>Enter</kbd> перенос строки
