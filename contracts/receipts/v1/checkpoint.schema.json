@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://evohime.io/contracts/receipts/v1/checkpoint.schema.json",
+  "title": "ReceiptCheckpointV1",
+  "description": "Signed checkpoint object for retention compaction. JCS ReceiptCheckpointV1, signed by the key active at checkpoint creation.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "checkpoint_id",
+    "key_id",
+    "cutoff_sequence",
+    "first_retained_hash",
+    "prefix_last_hash",
+    "last_deleted_receipt_hash",
+    "head_receipt_hash",
+    "created_at",
+    "canonical_checkpoint",
+    "signature"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Checkpoint schema version, always 1 for v1"
+    },
+    "checkpoint_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUIDv7 identifying this checkpoint"
+    },
+    "key_id": {
+      "type": "string",
+      "pattern": "^ed25519:[a-f0-9]{64}$",
+      "description": "Key ID that was active at checkpoint creation"
+    },
+    "cutoff_sequence": {
+      "type": "string",
+      "pattern": "^[0-9]+$",
+      "description": "Decimal string of the sequence cutoff; rows strictly before are deleted"
+    },
+    "first_retained_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 hex hash of the first retained receipt after compaction"
+    },
+    "prefix_last_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 hex hash of the last receipt in the deleted prefix"
+    },
+    "last_deleted_receipt_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 hex hash of the actually last deleted receipt"
+    },
+    "head_receipt_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 hex hash of the chain head at checkpoint creation"
+    },
+    "created_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$",
+      "description": "RFC3339 UTC timestamp with exactly 3 fractional milliseconds"
+    },
+    "canonical_checkpoint": {
+      "type": "string",
+      "description": "Base64url-encoded canonical JCS bytes of the checkpoint object (without signature)"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{128}$",
+      "description": "Ed25519 signature (128 lowercase hex chars) over canonical_checkpoint"
+    }
+  },
+  "additionalProperties": false
+}

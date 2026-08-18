@@ -10,7 +10,16 @@
     "receipt.invalid_json", "receipt.duplicate_key", "receipt.unsupported_version",
     "receipt.schema_violation", "receipt.secret_field", "receipt.non_canonical",
     "receipt.chain_incomplete", "receipt.key_unknown", "receipt.signature_invalid",
-    "receipt.hash_mismatch", "receipt.timestamp_skew"
+    "receipt.hash_mismatch", "receipt.timestamp_skew",
+    "receipts.invalid_json", "receipts.non_canonical", "receipts.manifest_mismatch",
+    "receipts.hash_mismatch", "receipts.signature_invalid", "receipts.chain_incomplete",
+    "receipts.previous_mismatch", "receipts.digest_mismatch", "receipts.approval_unverified",
+    "receipts.missing_receipt", "receipts.key_unknown", "receipts.stale_key",
+    "receipts.chain_fork", "receipts.chain_cycle", "receipts.pending",
+    "receipts.empty_range", "receipts.unsupported_version", "receipts.db_unavailable",
+    "receipts.export_io", "receipts.access_denied", "receipts.invalid_filter",
+    "receipts.limit_exceeded", "receipts.not_found", "receipts.export_exists",
+    "receipts.verify_failed", "receipts.chain_conflict", "receipts.pending_recovery"
   ],
   "transport_runtime_error_codes": {
     "receipt.policy_denied": 1001,

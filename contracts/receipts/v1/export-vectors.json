@@ -1,0 +1,138 @@
+{
+  "export_vectors_version": 1,
+  "description": "Test vectors for receipts export bundle v1 verification",
+  "vectors": [
+    {
+      "id": "export-manifest-valid-001",
+      "description": "Valid minimal export manifest with single receipt file",
+      "manifest": {
+        "manifest_version": 1,
+        "export_id": "01924e3c-8a1b-7f3d-9c5e-4a2b8d6f1e3a",
+        "created_at": "2025-01-15T10:30:00.123Z",
+        "snapshot_last_sequence": "42",
+        "requested_count": 10,
+        "selected_count": 10,
+        "record_count": 12,
+        "actual_exported_count": 12,
+        "first_receipt_hash": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+        "last_receipt_hash": "f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3b2a1f6e5",
+        "files": [
+          {
+            "name": "receipts.jsonl",
+            "bytes": 2048,
+            "sha256": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+          },
+          {
+            "name": "key-history.jsonl",
+            "bytes": 512,
+            "sha256": "cafebabecafebabecafebabecafebabecafebabecafebabecafebabecafebabe"
+          }
+        ]
+      },
+      "expected_valid": true
+    },
+    {
+      "id": "export-receipt-record-valid-001",
+      "description": "Valid export receipt record in JCS format",
+      "record": {
+        "record_version": 1,
+        "record_kind": "receipt",
+        "sequence": "123",
+        "receipt_hash": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+        "canonical_envelope": "eyJrZXlfaWQiOiJlZDI1NTE5OmFiY2RlZjAxMjM0NTY3ODkiLCJyZWNlaXB0X2hhc2giOiJhYmNkZWYwMTIzNDU2Nzg5In0"
+      },
+      "expected_valid": true
+    },
+    {
+      "id": "action-projection-valid-001",
+      "description": "Valid action projection with approval binding",
+      "projection": {
+        "record_version": 1,
+        "record_kind": "action_projection",
+        "action_id": "01924e3c-8a1b-7f3d-9c5e-4a2b8d6f1e3b",
+        "pre_receipt_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+        "terminal_receipt_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+        "state": "terminal",
+        "approval_state": "claimed",
+        "approval_id": "01924e3c-8a1b-7f3d-9c5e-4a2b8d6f1e3c",
+        "approval_call_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+        "tool_args_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+        "created_at_ms": 1736938200123,
+        "updated_at_ms": 1736938260456
+      },
+      "expected_valid": true
+    },
+    {
+      "id": "action-projection-pending-recovery-001",
+      "description": "Action projection in pending_recovery state with recovery code",
+      "projection": {
+        "record_version": 1,
+        "record_kind": "action_projection",
+        "action_id": "01924e3c-8a1b-7f3d-9c5e-4a2b8d6f1e3d",
+        "pre_receipt_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+        "terminal_receipt_hash": null,
+        "state": "pending_recovery",
+        "recovery_code": "chain_conflict",
+        "requires_reconciliation": true,
+        "approval_state": "none",
+        "approval_id": null,
+        "approval_call_hash": null,
+        "tool_args_hash": "6666666666666666666666666666666666666666666666666666666666666666",
+        "created_at_ms": 1736938200123,
+        "updated_at_ms": 1736938260456
+      },
+      "expected_valid": true
+    },
+    {
+      "id": "checkpoint-valid-001",
+      "description": "Valid signed checkpoint for retention compaction",
+      "checkpoint": {
+        "schema_version": 1,
+        "checkpoint_id": "01924e3c-8a1b-7f3d-9c5e-4a2b8d6f1e3e",
+        "key_id": "ed25519:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "cutoff_sequence": "1000",
+        "first_retained_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "prefix_last_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "last_deleted_receipt_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "head_receipt_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "created_at": "2025-01-15T12:00:00.000Z",
+        "canonical_checkpoint": "eyJzY2hlbWFfdmVyc2lvbiI6MSwiY2hlY2twb2ludF9pZCI6IjAxOTI0ZTNjLThhMWItN2YzZC05YzVlLTRhMmI4ZDZmMWUzZSJ9",
+        "signature": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "expected_valid": true
+    },
+    {
+      "id": "verify-status-codes-001",
+      "description": "Verification status codes and their meanings",
+      "statuses": {
+        "verified": "Complete trusted chain with signatures, action/approval binding; no pruned receipts",
+        "verified_pruned": "Trusted signed checkpoint plus valid retained suffix",
+        "pending": "Pre receipt exists without terminal receipt, no success claim",
+        "stale_key": "Signature valid but key trust invalid after compromise",
+        "unverified": "Legacy/unknown key/missing trust or missing approval evidence",
+        "broken": "Tamper, digest mismatch, invalid signature, wrong predecessor, fork, cycle or malformed record"
+      },
+      "error_codes": [
+        "receipts.invalid_json",
+        "receipts.non_canonical",
+        "receipts.manifest_mismatch",
+        "receipts.hash_mismatch",
+        "receipts.signature_invalid",
+        "receipts.chain_incomplete",
+        "receipts.previous_mismatch",
+        "receipts.digest_mismatch",
+        "receipts.approval_unverified",
+        "receipts.missing_receipt",
+        "receipts.key_unknown",
+        "receipts.stale_key",
+        "receipts.chain_fork",
+        "receipts.chain_cycle",
+        "receipts.pending",
+        "receipts.empty_range",
+        "receipts.unsupported_version",
+        "receipts.db_unavailable",
+        "receipts.export_io"
+      ]
+    }
+  ]
+}

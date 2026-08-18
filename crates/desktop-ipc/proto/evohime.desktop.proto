@@ -906,3 +906,120 @@ message FullSnapshot {
   uint64 sequence_id = 1;
   bytes snapshot_json = 2;
 }
+
+// ============================================================================
+// Stage 01.4: Chain storage and export - IPC additions
+// ============================================================================
+
+// ListReceipts: Bounded read-only listing of signed receipts
+message ListReceiptsRequest {
+  optional string task_id = 1;
+  optional string run_id = 2;
+  optional string action_id = 3;
+  optional string from_timestamp = 4;  // RFC3339 UTC inclusive start
+  optional string to_timestamp = 5;    // RFC3339 UTC exclusive end
+  optional string status_filter = 6;   // prepared/succeeded/failed/cancelled/refused
+  optional int32 limit = 7 [default = 100];  // 1-500
+  optional bytes cursor = 8;  // Opaque cursor, max 256 bytes
+}
+
+message ReceiptSummary {
+  string receipt_id = 1;
+  string action_id = 2;
+  string receipt_kind = 3;  // pre_action/post_action/refusal
+  string action_status = 4;
+  string task_id = 5;
+  string run_id = 6;
+  string key_id = 7;
+  string timestamp = 8;  // RFC3339 with milliseconds
+  string receipt_hash = 9;
+  optional string previous_receipt_hash = 10;
+  string verification_status = 11;  // verified/verified_pruned/pending/stale_key/unverified/broken
+}
+
+message ListReceiptsResponse {
+  string snapshot_last_sequence = 1;  // Decimal string
+  repeated ReceiptSummary receipts = 2;
+  optional bytes next_cursor = 3;  // Omitted at end
+}
+
+// VerifyReceipts: Bounded chain verification
+message VerifyReceiptsRequest {
+  optional string task_id = 1;
+  optional string run_id = 2;
+  optional string action_id = 3;
+  optional string from_timestamp = 4;
+  optional string to_timestamp = 5;
+  optional string status_filter = 6;
+  optional int32 limit = 7 [default = 500];  // 1-2000
+  optional string trust_key_id = 8;
+  optional string trust_anchor_sequence = 9;  // Decimal string for closure anchor
+  optional bool include_pending = 10 [default = false];
+}
+
+message VerifyReceiptResult {
+  string overall_status = 1;  // verified/verified_pruned/pending/stale_key/unverified/broken
+  string stable_code = 2;     // Stable error/status code
+  uint64 requested_count = 3;
+  uint64 actual_verified_count = 4;
+  string snapshot_sequence = 5;
+  optional string closure_start_sequence = 6;
+  string chain_start_hash = 7;
+  string chain_end_hash = 8;
+  repeated ReceiptVerifyStatus per_receipt = 9;
+}
+
+message ReceiptVerifyStatus {
+  string receipt_id = 1;
+  string receipt_hash = 2;
+  string key_id = 3;
+  string status = 4;
+  optional string error_code = 5;
+  uint64 sequence = 6;
+}
+
+message VerifyReceiptsResponse {
+  oneof result {
+    VerifyReceiptResult success = 1;
+    string error_code = 2;  // receipts.* error codes
+  }
+}
+
+// ExportReceipts: Create immutable export bundle
+message ExportReceiptsRequest {
+  string destination_directory = 1;  // Canonical absolute path selected by shell
+  optional string task_id = 2;
+  optional string run_id = 3;
+  optional string action_id = 4;
+  optional string from_timestamp = 5;
+  optional string to_timestamp = 6;
+  optional int32 limit = 7 [default = 100000];  // 1-100000
+  optional bool include_public_history = 8 [default = true];
+  optional bool include_trusted_roots = 9 [default = false];
+  optional bool replace = 10 [default = false];  // Must remain false in v1
+}
+
+message ExportReceiptsResponse {
+  oneof result {
+    ExportReceiptSuccess success = 1;
+    string error_code = 2;  // receipts.export_exists, receipts.export_io, etc.
+  }
+}
+
+message ExportReceiptSuccess {
+  string export_id = 1;  // UUIDv7
+  string destination_basename = 2;
+  string snapshot_sequence = 3;
+  uint64 count = 4;
+  uint64 requested_count = 5;
+  uint64 selected_count = 6;
+  uint64 actual_exported_count = 7;
+  string manifest_sha256 = 8;  // SHA-256 hex of manifest.json
+}
+
+// Add new RPC methods to CoreService
+extend CoreService {
+  rpc ListReceipts(ListReceiptsRequest) returns (ListReceiptsResponse);
+  rpc VerifyReceipts(VerifyReceiptsRequest) returns (VerifyReceiptsResponse);
+  rpc ExportReceipts(ExportReceiptsRequest) returns (ExportReceiptsResponse);
+}

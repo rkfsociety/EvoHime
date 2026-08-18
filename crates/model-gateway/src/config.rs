@@ -117,6 +117,7 @@ impl ModelRouteConfig {
             ProviderKind::LiteRouter | ProviderKind::OpenAICompatible => {
                 !self.literouter.api_key.is_empty()
             }
+            ProviderKind::Local => true, // Local provider doesn't use API key
             ProviderKind::Mock => true,
         }
     }
@@ -151,6 +152,7 @@ impl ModelGatewayConfig {
                 let openai = LiteRouterConfig::openai_compatible_from_env();
                 ModelRouteConfig::openai_compatible(openai.api_key, openai.base_url, openai.model)
             }
+            ProviderKind::Local => return Err(ProviderError::Config("local provider must be configured via MODEL_ROUTES_JSON".into())),
             ProviderKind::Mock => return Err(ProviderError::Config("mock provider is available only to tests".into())),
         };
 
@@ -212,6 +214,7 @@ fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, Provid
                     .unwrap_or_else(|| default_base_url.to_string()),
                 model,
             ),
+            ProviderKind::Local => return Err(ProviderError::Config("local provider must be configured via MODEL_ROUTES_JSON".into())),
             ProviderKind::Mock => return Err(ProviderError::Config("mock provider is available only to tests".into())),
         };
         parsed_routes.insert(name, route_config);

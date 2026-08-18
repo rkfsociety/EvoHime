@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://evohime.io/contracts/receipts/v1/action-projection.schema.json",
+  "title": "ActionProjectionV1",
+  "description": "Bounded projection of receipt_actions for actions.jsonl export. Does not contain raw input, result or error text.",
+  "type": "object",
+  "required": [
+    "record_version",
+    "record_kind",
+    "action_id",
+    "state",
+    "pre_receipt_hash",
+    "terminal_receipt_hash",
+    "approval_state",
+    "tool_args_hash",
+    "created_at_ms",
+    "updated_at_ms"
+  ],
+  "properties": {
+    "record_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Record schema version, always 1 for v1 export"
+    },
+    "record_kind": {
+      "type": "string",
+      "const": "action_projection",
+      "description": "Always 'action_projection' for action records"
+    },
+    "action_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UUIDv7 identifying the action"
+    },
+    "pre_receipt_hash": {
+      "type": ["string", "null"],
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 hex hash of the pre-action receipt (null until pre append)"
+    },
+    "terminal_receipt_hash": {
+      "type": ["string", "null"],
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 hex hash of the terminal receipt (null until post/refusal)"
+    },
+    "state": {
+      "type": "string",
+      "enum": ["prepared", "terminal", "pending_recovery"],
+      "description": "Current action state"
+    },
+    "recovery_code": {
+      "type": ["string", "null"],
+      "enum": [
+        "signature_failed",
+        "external_error",
+        "unknown",
+        "missing_pre",
+        "missing_terminal",
+        "approval_expired",
+        "chain_conflict",
+        "stale_head"
+      ],
+      "description": "Bounded recovery code (present only for pending_recovery state)"
+    },
+    "requires_reconciliation": {
+      "type": "boolean",
+      "description": "True when action requires manual reconciliation"
+    },
+    "approval_id": {
+      "type": ["string", "null"],
+      "format": "uuid",
+      "description": "Approval intent UUID (null when approval_state is 'none')"
+    },
+    "approval_call_hash": {
+      "type": ["string", "null"],
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 hex hash of the approved call bytes"
+    },
+    "approval_state": {
+      "type": "string",
+      "enum": ["none", "pending", "granted", "denied", "expired", "claimed"],
+      "description": "Current approval state"
+    },
+    "tool_args_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 hex hash of tool arguments"
+    },
+    "created_at_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Creation timestamp in milliseconds since Unix epoch"
+    },
+    "updated_at_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Last update timestamp in milliseconds since Unix epoch"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://evohime.io/contracts/receipts/v1/export-record.schema.json",
+  "title": "ExportReceiptRecordV1",
+  "description": "Canonical JCS record for receipts.jsonl export",
+  "type": "object",
+  "required": [
+    "record_version",
+    "record_kind",
+    "sequence",
+    "receipt_hash",
+    "canonical_envelope"
+  ],
+  "properties": {
+    "record_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Record schema version, always 1 for v1 export"
+    },
+    "record_kind": {
+      "type": "string",
+      "const": "receipt",
+      "description": "Always 'receipt' for receipt records"
+    },
+    "sequence": {
+      "type": "string",
+      "pattern": "^[0-9]+$",
+      "description": "Decimal string of sequence number to avoid JSON precision drift"
+    },
+    "receipt_hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 hex hash of the canonical envelope bytes"
+    },
+    "canonical_envelope": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "Unpadded base64url encoding of the exact canonical envelope bytes"
+    }
+  },
+  "additionalProperties": false
+}

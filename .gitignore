@@ -1,16 +1,106 @@
+```
+# Dependencies
 target/
-artifacts/
-.evohime-native/
+**/node_modules/
 
-# Local Codex/plugin build output and removed legacy web workspace.
-.evohime/
-frontend/
-node_modules/
-.launcher-logs/
-desktop/**/bin/
-desktop/**/obj/
-.env
-.DS_Store
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.ENV
+.ENV.*
+.venv.bak/
+.env.bak/
+.python-version
+
+# Logs
 *.log
-.claude/worktrees/
-.superpowers/
+**/logs/
+**/log/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Icon?
+.directory
+.folders~
+metadata.json
+
+# Environment specific
+.env
+.env.*
+.env.local
+.env.production
+.env.development
+.env.test
+.env.staging
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Build artifacts
+build/
+dist/
+*.out
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.o
+*.obj
+
+# Rust specific
+Cargo.lock
+**/target/
+
+# Test and coverage
+coverage/
+htmlcov/
+.coverage
+*.coverage
+
+# Cache
+.mypy_cache/
+.pytest_cache/
+.gradle/
+**/.gradle/
+
+# Compressed
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
+```
