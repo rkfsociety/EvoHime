@@ -6,11 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CommandOutcome, EvoHimeApiV1, RendererCommand } from '../src/shared/api'
 import { formatTrace, TracePanel } from '../src/renderer/src/TracePanel'
 
+let taskIds = ['task-1']
+
 function ok<C extends RendererCommand>(value: unknown): CommandOutcome<C> {
   return { ok: true, value } as CommandOutcome<C>
 }
 
 beforeEach(() => {
+  taskIds = ['task-1']
   const api: EvoHimeApiV1 = {
     apiVersion: 1,
     invoke: (async (command: RendererCommand) => {
@@ -21,7 +24,7 @@ beforeEach(() => {
           title: 'Чат',
           createdMs: 0,
           updatedMs: 0,
-          taskIds: ['task-1'],
+          taskIds,
           messages: []
         })
       }
@@ -71,6 +74,46 @@ describe('trace panel', () => {
 
     await userEvent.keyboard('{Escape}')
     expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('reloads task ids after the chat receives a new task', async () => {
+    const view = render(
+      <TracePanel
+        chatId="chat-1"
+        chatRevision={0}
+        state={null}
+        workspace="G:/github/EvoHime"
+        onClose={() => {}}
+        events={[{
+          sequenceId: 12,
+          taskId: 'task-1',
+          eventType: 'tool.output',
+          payload: '{}'
+        }]}
+      />
+    )
+
+    expect(await screen.findByText('tool.output')).toBeTruthy()
+
+    taskIds = ['task-2']
+    view.rerender(
+      <TracePanel
+        chatId="chat-1"
+        chatRevision={1}
+        state={null}
+        workspace="G:/github/EvoHime"
+        onClose={() => {}}
+        events={[{
+          sequenceId: 13,
+          taskId: 'task-2',
+          eventType: 'task.failed',
+          payload: '{"error":"boom"}'
+        }]}
+      />
+    )
+
+    await waitFor(() => expect(screen.getByText('task.failed')).toBeTruthy())
+    expect(screen.queryByText('tool.output')).toBeNull()
   })
 
   it('formats diagnostics and every event for sharing', () => {

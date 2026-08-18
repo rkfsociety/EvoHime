@@ -222,6 +222,7 @@ export function App(): React.JSX.Element {
       {traceOpen ? (
         <TracePanel
           chatId={chatId}
+          chatRevision={chatRevision}
           events={events}
           state={state}
           workspace={workspace}

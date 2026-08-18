@@ -9,13 +9,15 @@ export { filterEventsForChat } from './trace-filter'
 
 interface Props {
   readonly chatId: string | null
+  /** Reloads the persisted task ids after a prompt or task changes the chat. */
+  readonly chatRevision?: number
   readonly events: readonly CoreEvent[]
   readonly state: ShellState | null
   readonly workspace: string | null
   readonly onClose: () => void
 }
 
-export function TracePanel({ chatId, events, state, workspace, onClose }: Props): React.JSX.Element {
+export function TracePanel({ chatId, chatRevision = 0, events, state, workspace, onClose }: Props): React.JSX.Element {
   const api = useShellApi()
   const [chat, setChat] = useState<ChatRecord | null>(null)
   const [copied, setCopied] = useState(false)
@@ -34,7 +36,7 @@ export function TracePanel({ chatId, events, state, workspace, onClose }: Props)
     return () => {
       active = false
     }
-  }, [api, chatId])
+  }, [api, chatId, chatRevision])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
