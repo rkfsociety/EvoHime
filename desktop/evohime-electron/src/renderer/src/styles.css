@@ -739,7 +739,7 @@ body {
 .chat__stream {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   max-width: 780px;
   margin: 0 auto;
   padding: 0 24px;
@@ -1039,6 +1039,7 @@ body {
 .message--activity,
 .message--note {
   gap: 0;
+  margin: -2px 0;
 }
 
 .message__note {
@@ -1078,20 +1079,21 @@ body {
 }
 
 .activity {
-  width: 100%;
+  width: fit-content;
+  max-width: 100%;
 }
 
 .activity__summary {
   display: flex;
   align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 3px 6px;
+  gap: 7px;
+  max-width: 100%;
+  padding: 2px 3px;
   border: none;
   border-radius: var(--radius-sm);
   background: none;
   color: var(--fg-muted);
-  font-size: 12.5px;
+  font-size: 12px;
   text-align: left;
 }
 
@@ -1101,7 +1103,10 @@ body {
 }
 
 .activity__icon {
+  flex: 0 0 14px;
+  width: 14px;
   color: var(--fg-faint);
+  text-align: center;
 }
 
 .activity--running .activity__icon {
@@ -1114,7 +1119,6 @@ body {
 }
 
 .activity--running .activity__label {
-  font-family: var(--mono);
   color: var(--fg-muted);
 }
 
@@ -1133,9 +1137,9 @@ body {
 .activity__calls {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin: 4px 0 3px;
-  padding: 0 0 0 24px;
+  gap: 5px;
+  margin: 3px 0 2px;
+  padding: 0 0 0 21px;
   list-style: none;
 }
 
