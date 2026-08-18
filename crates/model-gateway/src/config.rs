@@ -151,7 +151,7 @@ impl ModelGatewayConfig {
                 let openai = LiteRouterConfig::openai_compatible_from_env();
                 ModelRouteConfig::openai_compatible(openai.api_key, openai.base_url, openai.model)
             }
-            ProviderKind::Mock => ModelRouteConfig::mock(literouter.model),
+            ProviderKind::Mock => return Err(ProviderError::Config("mock provider is available only to tests".into())),
         };
 
         Ok(Self {
@@ -212,7 +212,7 @@ fn parse_routes_from_json(raw_routes: &str) -> Result<ModelGatewayConfig, Provid
                     .unwrap_or_else(|| default_base_url.to_string()),
                 model,
             ),
-            ProviderKind::Mock => ModelRouteConfig::mock(model),
+            ProviderKind::Mock => return Err(ProviderError::Config("mock provider is available only to tests".into())),
         };
         parsed_routes.insert(name, route_config);
     }

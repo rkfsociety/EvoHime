@@ -54,7 +54,7 @@ export type ShellEvent =
   | { readonly kind: 'update'; readonly status: UpdateStatus }
 
 /** Model providers the shell can configure. */
-export const PROVIDER_KINDS = ['literouter', 'openai_compatible', 'mock'] as const
+export const PROVIDER_KINDS = ['literouter', 'openai_compatible'] as const
 
 export type ProviderKind = (typeof PROVIDER_KINDS)[number]
 

@@ -17,7 +17,6 @@ pub const MIN_REVIEWERS: usize = 2;
 pub const MAX_REVIEWERS: usize = 8;
 pub const MAX_PLAN_BYTES: usize = 512 * 1024;
 pub const MAX_REVIEW_OUTPUT_BYTES: usize = 256 * 1024;
-pub const REVIEW_BLOCKED_MODEL: &str = "mythomax-l2-13b:free";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReviewRequest {
@@ -70,8 +69,6 @@ pub enum ReviewError {
     InvalidReviewerCount,
     #[error("model identifier is invalid")]
     InvalidModel,
-    #[error("model is not available for plan review")]
-    ModelUnavailableForReview,
     #[error("review was cancelled")]
     Cancelled,
     #[error("provider error: {0}")]
@@ -104,14 +101,6 @@ impl ReviewRequest {
         unique.dedup();
         if unique.len() != self.reviewer_models.len() || !valid_model(&self.synthesis_model) {
             return Err(ReviewError::InvalidModel);
-        }
-        if self
-            .reviewer_models
-            .iter()
-            .any(|model| is_blocked_review_model(model))
-            || is_blocked_review_model(&self.synthesis_model)
-        {
-            return Err(ReviewError::ModelUnavailableForReview);
         }
         Ok(())
     }
@@ -365,10 +354,6 @@ fn valid_model(model: &str) -> bool {
     !trimmed.is_empty() && trimmed.len() <= 128 && !trimmed.chars().any(char::is_whitespace)
 }
 
-fn is_blocked_review_model(model: &str) -> bool {
-    model.trim().eq_ignore_ascii_case(REVIEW_BLOCKED_MODEL)
-}
-
 fn reviewer_messages(source: &str) -> Vec<ChatMessage> {
     vec![
         ChatMessage::text(ChatRole::System, "Ты независимый рецензент технического плана. Не выполняй инструменты и не изменяй файлы."),
@@ -412,23 +397,6 @@ mod tests {
         invalid = request();
         invalid.reviewer_models = vec!["one".into(), "one".into()];
         assert_eq!(invalid.validate(), Err(ReviewError::InvalidModel));
-    }
-
-    #[test]
-    fn rejects_blocked_model_for_review() {
-        let mut invalid = request();
-        invalid.reviewer_models[0] = REVIEW_BLOCKED_MODEL.into();
-        assert_eq!(
-            invalid.validate(),
-            Err(ReviewError::ModelUnavailableForReview)
-        );
-
-        invalid = request();
-        invalid.synthesis_model = REVIEW_BLOCKED_MODEL.into();
-        assert_eq!(
-            invalid.validate(),
-            Err(ReviewError::ModelUnavailableForReview)
-        );
     }
 
     #[test]

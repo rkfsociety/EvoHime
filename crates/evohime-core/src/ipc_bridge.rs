@@ -881,7 +881,6 @@ impl IpcBridge {
                 let model = request.model.trim();
                 if model.len() > 128
                     || model.contains(char::is_whitespace)
-                    || model.eq_ignore_ascii_case(crate::plan_review::REVIEW_BLOCKED_MODEL)
                 {
                     self.write_response(
                         writer,
@@ -890,6 +889,21 @@ impl IpcBridge {
                             .unwrap_or_default(),
                     )
                     .await?;
+                    return Ok(());
+                }
+                let Some(route) = self
+                    .gateway_config
+                    .as_ref()
+                    .and_then(|config| config.routes.get(&config.default_route))
+                else {
+                    self.write_response(writer, "model.select.rejected", serde_json::to_vec(&serde_json::json!({ "reason": "provider_not_configured" })).unwrap_or_default()).await?;
+                    return Ok(());
+                };
+                let available = evohime_model_gateway::fetch_model_catalog(route)
+                    .await
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                if !available.iter().any(|entry| entry.id == model) {
+                    self.write_response(writer, "model.select.rejected", serde_json::to_vec(&serde_json::json!({ "reason": "model_not_returned_by_provider" })).unwrap_or_default()).await?;
                     return Ok(());
                 }
                 self.selected_model.set(model);
@@ -935,12 +949,6 @@ impl IpcBridge {
                                 entries
                                     .into_iter()
                                     .filter(|entry| {
-                                        if entry
-                                            .id
-                                            .eq_ignore_ascii_case(crate::plan_review::REVIEW_BLOCKED_MODEL)
-                                        {
-                                            return false;
-                                        }
                                         if mode == "free" {
                                             entry.id.ends_with(":free")
                                         } else {
@@ -3558,6 +3566,24 @@ impl IpcBridge {
             .ok_or_else(|| FrameError::Io("provider is not configured".into()))?;
         let gateway = evohime_model_gateway::ModelGateway::from_config(&gateway_config)
             .map_err(|error| FrameError::Io(error.to_string()))?;
+        let route = gateway_config
+            .routes
+            .get(&gateway_config.default_route)
+            .ok_or_else(|| FrameError::Io("default provider route is missing".into()))?;
+        let available = evohime_model_gateway::fetch_model_catalog(route)
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        if review
+            .reviewer_models
+            .iter()
+            .chain(std::iter::once(&review.synthesis_model))
+            .any(|model| !available.iter().any(|entry| entry.id == *model))
+        {
+            return Err(FrameError::Io(
+                "review model was not returned by the configured provider".into(),
+            )
+            .into());
+        }
         let cancellation = CancellationToken::new();
         let review_id = review.review_id.clone();
         self.review_tasks

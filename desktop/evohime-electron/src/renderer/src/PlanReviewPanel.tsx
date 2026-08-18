@@ -34,11 +34,6 @@ const PROMPT_OVERHEAD_TOKENS = 300
 // Ответу нужно место в том же окне. Больше 8k рецензент всё равно не напишет —
 // ядро обрежет его раньше по MAX_REVIEW_OUTPUT_BYTES.
 const OUTPUT_RESERVE_TOKENS = 8_192
-const HIDDEN_MODEL = 'mythomax-l2-13b:free'
-
-function isVisibleModel(model: string): boolean {
-  return model.trim().toLowerCase() !== HIDDEN_MODEL
-}
 
 interface Props {
   readonly connection: ConnectionState
@@ -173,7 +168,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   // so an empty catalogue is treated as "no news", not as "no models".
   useEffect(() => {
     if (catalog.models.length === 0) return
-    const available = catalog.models.filter(isVisibleModel)
+    const available = catalog.models
     setModels(available)
     // Лимиты обновляются только вместе с непустым каталогом — по той же
     // причине, по которой не затирается список моделей.
@@ -327,7 +322,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   }
 
   const start = async (): Promise<void> => {
-    if (!api || !fileName || !sourceMarkdown || reviewers.length < MIN_REVIEWERS || reviewers.some((model) => !model || !isVisibleModel(model)) || new Set(reviewers).size !== reviewers.length || !synthesisModel || !isVisibleModel(synthesisModel) || checks.tooSmall.length > 0) return
+    if (!api || !fileName || !sourceMarkdown || reviewers.length < MIN_REVIEWERS || reviewers.some((model) => !model || !models.includes(model)) || new Set(reviewers).size !== reviewers.length || !synthesisModel || !models.includes(synthesisModel) || checks.tooSmall.length > 0) return
     const id = makeReviewId()
     setReviewId(id)
     setSelectedResult(null)
@@ -381,7 +376,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
     if (!outcome.ok) setError(outcome.message)
   }
 
-  const canStart = CONNECTED.includes(connection) && fileName.length > 0 && reviewers.length >= MIN_REVIEWERS && reviewers.every((model) => Boolean(model) && isVisibleModel(model)) && new Set(reviewers).size === reviewers.length && synthesisModel.length > 0 && isVisibleModel(synthesisModel) && !running && checks.tooSmall.length === 0
+  const canStart = CONNECTED.includes(connection) && fileName.length > 0 && reviewers.length >= MIN_REVIEWERS && reviewers.every((model) => Boolean(model) && models.includes(model)) && new Set(reviewers).size === reviewers.length && synthesisModel.length > 0 && models.includes(synthesisModel) && !running && checks.tooSmall.length === 0
   const status = reviewStatus(progress, reviewFinished, selectedResult !== null, failure, accepted)
   // Without a stall hint a dead core is indistinguishable from a slow model.
   const launchStalled = running && progress === null && elapsed >= SILENT_LAUNCH_SECONDS
@@ -513,7 +508,7 @@ function latestCatalog(events: readonly CoreEvent[], tier: ModelTier): ModelCata
   const payload = readPayload(event)
   const models = payload?.models
   return {
-    models: Array.isArray(models) ? models.filter((model): model is string => typeof model === 'string' && isVisibleModel(model)).sort() : [],
+    models: Array.isArray(models) ? models.filter((model): model is string => typeof model === 'string' && model.trim().length > 0).sort() : [],
     limits: readLimits(payload?.limits),
     error: typeof payload?.error === 'string' && payload.error.length > 0 ? payload.error : null
   }

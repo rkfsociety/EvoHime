@@ -20,8 +20,7 @@ import { useShellApi } from './shell-api'
 
 const PROVIDER_LABELS: Record<ProviderKind, string> = {
   literouter: 'LiteRouter',
-  openai_compatible: 'OpenAI-совместимый',
-  mock: 'Заглушка (без сети)'
+  openai_compatible: 'OpenAI-совместимый'
 }
 
 const TIERS: readonly { readonly id: ModelTier; readonly label: string; readonly hint: string }[] = [
@@ -93,8 +92,7 @@ export function ProviderForm(): React.JSX.Element {
   }, [api, apply])
 
   const busy = status.kind === 'saving'
-  const needsKey = provider !== 'mock'
-  const canSave = !busy && (!needsKey || apiKey.trim().length > 0 || summary?.configured === true)
+  const canSave = !busy && (apiKey.trim().length > 0 || summary?.configured === true)
 
   return (
     <section className="shell__panel provider-form" aria-label="Ключ провайдера">

@@ -10,7 +10,8 @@
 MODEL_PROVIDER=literouter
 LITEROUTER_API_KEY=lr_...
 LITEROUTER_BASE_URL=https://api.literouter.com/v1
-LITEROUTER_MODEL=deepseek:free
+# Модель выбирается из актуального ответа GET /models.
+LITEROUTER_MODEL=
 ```
 
 В пользовательском приложении ключ вводится в настройках, шифруется ОС (DPAPI через Electron `safeStorage`) и хранится в `%LOCALAPPDATA%\EvoHime\shell\provider.json`; Core получает его окружением от supervisor. Прямые переменные окружения допустимы только для локальной разработки (`.env`) и CI secrets. Не записывайте ключ в Git, SQLite, task events или diagnostics.

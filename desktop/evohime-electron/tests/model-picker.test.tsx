@@ -72,7 +72,7 @@ describe('model picker', () => {
     ])
   })
 
-  it('hides the unusable model from the composer catalogue', async () => {
+  it('offers every model returned by the provider catalogue', async () => {
     render(
       <ModelPicker
         connection="connected"
@@ -84,7 +84,7 @@ describe('model picker', () => {
     )
 
     await userEvent.click(await screen.findByRole('button', { name: /Модель/ }))
-    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['usable:free'])
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['mythomax-l2-13b:free', 'usable:free'])
   })
 
   it('requests the configured tier and offers what the provider returned', async () => {
