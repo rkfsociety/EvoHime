@@ -192,10 +192,17 @@ pub fn route_intent(rules: &IntentRules, prompt: &str, open_questions: &[String]
     // выбирается более безопасный read-only результат.
     let conflicting = top.iter().any(|rule| rule.intent != top[0].intent);
     let chosen = if conflicting {
-        top.iter()
-            .find(|rule| !rule.allows_mutation)
-            .copied()
-            .unwrap_or(top[0])
+        if explicit_mutation {
+            top.iter()
+                .find(|rule| rule.allows_mutation)
+                .copied()
+                .unwrap_or(top[0])
+        } else {
+            top.iter()
+                .find(|rule| !rule.allows_mutation)
+                .copied()
+                .unwrap_or(top[0])
+        }
     } else {
         top[0]
     };
@@ -208,7 +215,7 @@ pub fn route_intent(rules: &IntentRules, prompt: &str, open_questions: &[String]
         confidence,
         matched_rules: top.iter().map(|rule| rule.id.clone()).collect(),
         rules_version: rules.version.clone(),
-        allows_mutation: chosen.allows_mutation && !conflicting,
+        allows_mutation: chosen.allows_mutation,
         fallback: false,
     }
 }
@@ -420,7 +427,7 @@ mod tests {
                 IntentRule {
                     id: "edit".to_string(),
                     intent: "edit".to_string(),
-                    keywords: vec!["измени".to_string(), "проверь".to_string()],
+                    keywords: vec!["измени".to_string(), "создай".to_string(), "проверь".to_string()],
                     allows_mutation: true,
                     capabilities: vec!["filesystem".to_string()],
                 },
@@ -524,6 +531,21 @@ mod tests {
         assert!(decision.allows_mutation);
         let loadout = build_loadout(&registry(), &rules(), decision, limits(), &estimator());
         assert!(loadout.allows("fs.write"));
+    }
+
+    #[test]
+    fn explicit_creation_wins_over_a_research_step() {
+        let mut intent_rules = rules();
+        intent_rules.rules.push(IntentRule {
+            id: "research".to_string(),
+            intent: "research".to_string(),
+            keywords: vec!["изучи".to_string()],
+            allows_mutation: false,
+            capabilities: vec!["filesystem".to_string()],
+        });
+        let decision = route_intent(&intent_rules, "изучи проект и создай файл", &[]);
+        assert_eq!(decision.intent, "edit");
+        assert!(decision.allows_mutation);
     }
 
     #[test]
