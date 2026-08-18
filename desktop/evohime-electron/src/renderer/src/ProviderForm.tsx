@@ -135,7 +135,7 @@ export function ProviderForm(): React.JSX.Element {
             spellCheck={false}
             onChange={(event) => setApiKey(event.target.value)}
             placeholder={summary?.configured ? 'сохранён — введи новый, чтобы заменить' : 'sk-…'}
-            disabled={busy || !needsKey}
+            disabled={busy}
           />
         </label>
 
