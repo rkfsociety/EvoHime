@@ -1,6 +1,8 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 
+import type { PermissionMode } from '@shared/api'
+
 /**
  * Persisted workspace preference of the shell (plan 0, stage 3, slice 1).
  *
@@ -19,6 +21,7 @@ export const STORE_VERSION = 1
 export interface WorkspaceEntry {
   readonly path: string
   readonly lastUsedMs: number
+  readonly permissionMode?: PermissionMode
 }
 
 export interface WorkspaceState {
@@ -94,6 +97,24 @@ export class WorkspaceStore {
     return next
   }
 
+  getPermissionMode(path: string): PermissionMode {
+    const normalized = normalizeWorkspacePath(path)
+    if (normalized === null) return 'ask'
+    return this.read().recent.find((entry) => samePath(entry.path, normalized))?.permissionMode ?? 'ask'
+  }
+
+  setPermissionMode(path: string, mode: PermissionMode): WorkspaceState {
+    const normalized = normalizeWorkspacePath(path)
+    const current = this.read()
+    if (normalized === null || !['ask', 'read_only', 'full'].includes(mode)) return current
+    const recent = current.recent.map((entry) =>
+      samePath(entry.path, normalized) ? { ...entry, permissionMode: mode } : entry
+    )
+    const next: WorkspaceState = { selected: current.selected, recent }
+    this.write(next)
+    return next
+  }
+
   /** Drops one workspace from the list, clearing the selection if it was it. */
   forget(path: string): WorkspaceState {
     const normalized = normalizeWorkspacePath(path)
@@ -133,7 +154,14 @@ export class WorkspaceStore {
         continue
       }
       const lastUsedMs = typeof entry['lastUsedMs'] === 'number' ? entry['lastUsedMs'] : 0
-      recent.push({ path, lastUsedMs: Number.isFinite(lastUsedMs) ? lastUsedMs : 0 })
+      const permissionMode = entry['permissionMode']
+      recent.push({
+        path,
+        lastUsedMs: Number.isFinite(lastUsedMs) ? lastUsedMs : 0,
+        ...(permissionMode === 'ask' || permissionMode === 'read_only' || permissionMode === 'full'
+          ? { permissionMode }
+          : {})
+      })
       if (recent.length >= MAX_RECENT_WORKSPACES) {
         break
       }

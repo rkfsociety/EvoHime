@@ -153,6 +153,8 @@ export interface PlanReviewResult {
   readonly finalMarkdown: string
 }
 
+export type PermissionMode = 'ask' | 'read_only' | 'full'
+
 /**
  * Commands the renderer may ask the main process to forward to Core. The main
  * process only forwards; Core re-validates capability, policy and approval for
@@ -241,11 +243,15 @@ export interface WorkspaceOption {
   /** False when the directory is gone or unreadable; the UI says so. */
   readonly available: boolean
   readonly lastUsedMs: number
+  /** Permission mode restored when this workspace is selected. */
+  readonly permissionMode?: PermissionMode
 }
 
 export interface WorkspaceSelection {
   readonly selected: string | null
   readonly options: readonly WorkspaceOption[]
+  /** Mode belonging to the selected workspace, or the safe default. */
+  readonly permissionMode?: PermissionMode
 }
 
 export interface CommandPayloads {
@@ -285,7 +291,7 @@ export interface CommandPayloads {
   'core.cancelWorkspaceIndex': { workspacePath: string }
   'core.gitStatus': { workspacePath: string; maxBytes?: number }
   'core.gitDiff': { workspacePath: string; relativePath?: string; maxBytes?: number }
-  'core.setPermissionMode': { mode: 'ask' | 'read_only' | 'full' }
+  'core.setPermissionMode': { mode: PermissionMode }
   'core.runDoctor': { projectId?: string; detailLevel?: 0 | 1 }
   'core.exportDoctorLogs': { destinationPath: string }
   'core.createDatabaseBackup': { destinationPath: string }

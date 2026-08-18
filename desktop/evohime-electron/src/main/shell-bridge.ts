@@ -7,6 +7,7 @@ import {
   PROVIDER_KINDS,
   RENDERER_COMMANDS,
   type CommandFailure,
+  type PermissionMode,
   type ProviderKind,
   type RendererCommand,
   type ShellEvent
@@ -44,6 +45,11 @@ const MAX_TEXT_FIELD_CHARS = 4_096
 const MAX_CLIPBOARD_CHARS = 64 * 1024
 const MAX_TRACE_EXPORT_BYTES = 16 * 1024 * 1024
 const MAX_REVIEW_PLAN_BYTES = 512 * 1024
+
+function applyWorkspacePermissionMode(client: CorePipeClient, mode: PermissionMode | undefined): void {
+  if (mode === undefined) return
+  client.send({ permissionMode: { mode } })
+}
 
 export interface ShellBridgeOptions {
   readonly client: CorePipeClient
@@ -136,7 +142,10 @@ function dispatch(
     case 'workspace.pick':
       // The native folder dialog lives in the main process; the renderer only
       // ever receives the resulting path.
-      return workspaces.pick().then((value) => ({ ok: true, value }))
+      return workspaces.pick().then((value) => {
+        applyWorkspacePermissionMode(client, value.selection.permissionMode)
+        return { ok: true, value }
+      })
 
     case 'workspace.select': {
       const path = asBoundedString(asRecord(payload)['path'])
@@ -149,6 +158,7 @@ function dispatch(
         return failure('workspace-unavailable', 'Эта папка не выбрана ранее — выбери её заново.')
       }
       log('info', 'shell.workspace_selected', {})
+      applyWorkspacePermissionMode(client, selection.permissionMode)
       return { ok: true, value: selection }
     }
 
@@ -350,6 +360,7 @@ function dispatch(
     case 'core.setPermissionMode': {
       const mode = asPermissionMode(asRecord(payload)['mode'])
       if (mode === null) return failure('invalid-payload', 'Некорректный режим разрешений.')
+      workspaces.setPermissionMode(mode)
       return accepted(client.send({ permissionMode: { mode } }))
     }
 

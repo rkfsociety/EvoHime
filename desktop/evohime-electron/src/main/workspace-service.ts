@@ -2,7 +2,7 @@ import { statSync } from 'node:fs'
 
 import { dialog, type BrowserWindow } from 'electron'
 
-import type { WorkspaceOption, WorkspaceSelection } from '@shared/api'
+import type { PermissionMode, WorkspaceOption, WorkspaceSelection } from '@shared/api'
 
 import { normalizeWorkspacePath, WorkspaceStore } from './workspace-store'
 
@@ -74,14 +74,30 @@ export class WorkspaceService {
     return this.decorate()
   }
 
+  setPermissionMode(mode: PermissionMode): WorkspaceSelection {
+    const selected = this.store.read().selected
+    if (selected !== null) this.store.setPermissionMode(selected, mode)
+    return this.decorate()
+  }
+
   private decorate(): WorkspaceSelection {
     const state = this.store.read()
     const options: WorkspaceOption[] = state.recent.map((entry) => ({
       path: entry.path,
       available: this.isDirectory(entry.path),
-      lastUsedMs: entry.lastUsedMs
+      lastUsedMs: entry.lastUsedMs,
+      ...(entry.permissionMode === undefined ? {} : { permissionMode: entry.permissionMode })
     }))
-    return { selected: state.selected, options }
+    const selectedEntry = state.selected === null
+      ? undefined
+      : state.recent.find((entry) => entry.path.toLowerCase() === state.selected?.toLowerCase())
+    return {
+      selected: state.selected,
+      options,
+      ...(state.selected === null
+        ? {}
+        : { permissionMode: selectedEntry?.permissionMode ?? 'ask' })
+    }
   }
 }
 

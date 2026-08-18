@@ -322,7 +322,7 @@ export function TaskTimeline({
 
           <div className="composer__hint">
             <ContextUsage events={taskEvents} />
-            <PermissionModePicker connection={connection} />
+            <PermissionModePicker connection={connection} workspace={workspace} />
             <ModelPicker connection={connection} events={events} />
           </div>
 

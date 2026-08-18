@@ -72,6 +72,18 @@ describe('workspace store', () => {
     expect(new Set(lowered).size).toBe(lowered.length)
   })
 
+  it('persists a permission mode independently for each workspace', () => {
+    const { store } = newStore()
+    store.select('C:\\work\\ask')
+    store.select('C:\\work\\full')
+    store.setPermissionMode('C:\\work\\full', 'full')
+    store.setPermissionMode('C:\\work\\ask', 'read_only')
+
+    expect(store.getPermissionMode('C:\\work\\full')).toBe('full')
+    expect(store.getPermissionMode('C:\\work\\ask')).toBe('read_only')
+    expect(store.getPermissionMode('C:\\work\\unknown')).toBe('ask')
+  })
+
   it('forgets a workspace and clears the selection when it was selected', () => {
     const { store } = newStore()
     store.select('C:\\work\\a')

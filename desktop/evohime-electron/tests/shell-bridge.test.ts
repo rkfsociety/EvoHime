@@ -152,7 +152,8 @@ const workspaces = {
   list: () => ({ selected: selectedWorkspace, options: [] }),
   pick: async () => ({ cancelled: true, selection: { selected: null, options: [] } }),
   select: () => 'unknown-workspace' as const,
-  forget: () => ({ selected: null, options: [] })
+  forget: () => ({ selected: null, options: [] }),
+  setPermissionMode: () => ({ selected: selectedWorkspace, options: [] })
 }
 
 /** The updater is owned by the main process; the bridge only relays to it. */

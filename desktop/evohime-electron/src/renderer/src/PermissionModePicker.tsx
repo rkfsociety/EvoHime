@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 
-import type { ConnectionState } from '@shared/api'
+import type { ConnectionState, PermissionMode as SharedPermissionMode } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
-type PermissionMode = 'ask' | 'read_only' | 'full'
+type PermissionMode = SharedPermissionMode
 
 const MODES: readonly {
   value: PermissionMode
@@ -35,9 +35,10 @@ const MODES: readonly {
 
 export interface PermissionModePickerProps {
   readonly connection: ConnectionState
+  readonly workspace?: string | null
 }
 
-export function PermissionModePicker({ connection }: PermissionModePickerProps): React.JSX.Element | null {
+export function PermissionModePicker({ connection, workspace = null }: PermissionModePickerProps): React.JSX.Element | null {
   const api = useShellApi()
   const connected = CONNECTED_STATES.includes(connection)
   const [mode, setMode] = useState<PermissionMode>('ask')
@@ -45,6 +46,24 @@ export function PermissionModePicker({ connection }: PermissionModePickerProps):
   const [error, setError] = useState<string | null>(null)
   const root = useRef<HTMLDivElement | null>(null)
   const current = MODES.find((item) => item.value === mode) ?? MODES[0]!
+
+  useEffect(() => {
+    if (!api || !connected || workspace === null) return
+    let cancelled = false
+    setMode('ask')
+    void api.invoke('workspace.list', {}).then((outcome) => {
+      if (cancelled || !outcome.ok) return
+      const saved = outcome.value.selected?.toLowerCase() === workspace.toLowerCase()
+        ? outcome.value.permissionMode
+        : undefined
+      const next = saved ?? 'ask'
+      setMode(next)
+      void api.invoke('core.setPermissionMode', { mode: next })
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [api, connected, workspace])
 
   useEffect(() => {
     if (!open) return
