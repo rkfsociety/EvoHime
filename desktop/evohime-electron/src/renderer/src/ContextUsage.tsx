@@ -42,7 +42,13 @@ function parseSnapshot(payload: string): ContextSnapshot | null {
   try {
     const value: unknown = JSON.parse(payload)
     if (typeof value !== 'object' || value === null) return null
-    const record = value as Record<string, unknown>
+    const root = value as Record<string, unknown>
+    // Core serializes enum events as { ModelContext: { ... } }. Keep accepting
+    // the flat shape as well because older/replayed events may use it.
+    const variant = root['ModelContext']
+    const record = typeof variant === 'object' && variant !== null
+      ? variant as Record<string, unknown>
+      : root
     const used = numberValue(record['estimated_tokens'])
     const limit = numberValue(record['context_limit_tokens'])
     return used !== null && limit !== null && limit > 0 ? { used, limit } : null
