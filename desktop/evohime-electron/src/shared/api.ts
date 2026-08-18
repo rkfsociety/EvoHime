@@ -161,6 +161,7 @@ export interface PlanReviewResult {
 export const RENDERER_COMMANDS = [
   'shell.getState',
   'shell.requestResync',
+  'trace.export',
   'workspace.list',
   'workspace.pick',
   'workspace.select',
@@ -250,6 +251,7 @@ export interface WorkspaceSelection {
 export interface CommandPayloads {
   'shell.getState': Record<string, never>
   'shell.requestResync': Record<string, never>
+  'trace.export': { content: string }
   'workspace.list': Record<string, never>
   'workspace.pick': Record<string, never>
   'workspace.select': { path: string }
@@ -355,6 +357,7 @@ export interface CommandPayloads {
 export interface CommandResults {
   'shell.getState': ShellState
   'shell.requestResync': { accepted: boolean }
+  'trace.export': { cancelled: boolean; path: string }
   'workspace.list': WorkspaceSelection
   /** `cancelled` when the user closed the native folder dialog. */
   'workspace.pick': { cancelled: boolean; selection: WorkspaceSelection }

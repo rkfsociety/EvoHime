@@ -20,7 +20,7 @@ interface Props {
 export function TracePanel({ chatId, chatRevision = 0, events, state, workspace, onClose }: Props): React.JSX.Element {
   const api = useShellApi()
   const [chat, setChat] = useState<ChatRecord | null>(null)
-  const [copied, setCopied] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<string | null>(null)
   const traceEvents = filterEventsForChat(events, chat)
 
   useEffect(() => {
@@ -46,12 +46,15 @@ export function TracePanel({ chatId, chatRevision = 0, events, state, workspace,
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose])
 
-  const copy = async () => {
+  const save = async () => {
     if (!api) return
-    const ok = await api.writeClipboardText(formatTrace(state, workspace, traceEvents))
-    if (!ok) return
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1400)
+    setSaveStatus('Сохраняю…')
+    const outcome = await api.invoke('trace.export', { content: formatTrace(state, workspace, traceEvents) })
+    if (!outcome.ok) {
+      setSaveStatus(outcome.message)
+      return
+    }
+    setSaveStatus(outcome.value.cancelled ? null : 'Трейс сохранён в Markdown-файл.')
   }
 
   return (
@@ -62,7 +65,7 @@ export function TracePanel({ chatId, chatRevision = 0, events, state, workspace,
             <p>{traceEvents.length} событий текущего чата · новые сверху</p>
           </div>
           <div className="trace-panel__actions">
-            <button type="button" onClick={() => void copy()}>{copied ? 'Скопировано' : 'Скопировать трейс'}</button>
+            <button type="button" onClick={() => void save()}>Сохранить .md</button>
             <button type="button" className="trace-panel__close" aria-label="Закрыть трейс" onClick={onClose}>×</button>
           </div>
         </header>
@@ -73,6 +76,7 @@ export function TracePanel({ chatId, chatRevision = 0, events, state, workspace,
           <div><dt>Последний sequence</dt><dd>{state?.lastSequence ?? 0}</dd></div>
           <div><dt>Workspace</dt><dd title={workspace ?? undefined}>{workspace ?? 'не выбран'}</dd></div>
         </dl>
+        {saveStatus ? <p className="trace-panel__reason" role="status">{saveStatus}</p> : null}
         {state?.reason ? <p className="trace-panel__reason">Причина: {state.reason}</p> : null}
         {chatId === null ? (
           <p className="trace-panel__empty">Выбери чат, чтобы открыть его трейс.</p>

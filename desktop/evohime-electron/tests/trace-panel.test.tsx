@@ -76,6 +76,29 @@ describe('trace panel', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('saves the complete trace through the main-process bridge', async () => {
+    const invoke = vi.fn(async (command: RendererCommand) => {
+      if (command === 'chat.open') {
+        return ok({
+          id: 'chat-1', workspacePath: 'G:/github/EvoHime', title: 'Чат',
+          createdMs: 0, updatedMs: 0, taskIds: ['task-1'], messages: []
+        })
+      }
+      return ok({ cancelled: false, path: 'G:/trace.md' })
+    })
+    const current = window.evohime.v1
+    Object.defineProperty(window, 'evohime', {
+      value: Object.freeze({ v1: { ...current, invoke } }), configurable: true
+    })
+    render(
+      <TracePanel chatId="chat-1" state={null} workspace="G:/github/EvoHime" onClose={() => {}}
+        events={[{ sequenceId: 12, taskId: 'task-1', eventType: 'tool.output', payload: '{"output":"готово"}' }]} />
+    )
+    await userEvent.click(await screen.findByRole('button', { name: 'Сохранить .md' }))
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith('trace.export', expect.objectContaining({ content: expect.stringContaining('[12] tool.output') })))
+    expect(await screen.findByText('Трейс сохранён в Markdown-файл.')).toBeTruthy()
+  })
+
   it('reloads task ids after the chat receives a new task', async () => {
     const view = render(
       <TracePanel

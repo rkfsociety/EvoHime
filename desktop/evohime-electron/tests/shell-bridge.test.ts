@@ -47,7 +47,8 @@ vi.mock('electron', () => ({
     showOpenDialog: async (options: { defaultPath?: string }) => {
       dialogOptions.push(options)
       return { canceled: true, filePaths: [] }
-    }
+    },
+    showSaveDialog: async () => ({ canceled: false, filePath: 'G:/evohime-trace.md' })
   }
 }))
 
@@ -57,6 +58,7 @@ const dialogOptions: { defaultPath?: string }[] = []
 
 vi.mock('node:fs/promises', () => ({
   readFile: async () => '',
+  writeFile: async () => undefined,
   stat: async (path: string) => {
     if (!existingDirectories.has(path)) throw new Error('ENOENT')
     return { isDirectory: () => true }
@@ -422,6 +424,13 @@ describe('clipboard and external links', () => {
     expect(await handler({}, 'file:///C:/Windows/System32/cmd.exe')).toBe(false)
     expect(await handler({}, 'javascript:alert(1)')).toBe(false)
     expect(openedUrls).toEqual(['https://github.com/evohime'])
+  })
+})
+
+describe('trace export', () => {
+  it('saves large trace content through the native save dialog', async () => {
+    const result = await invoke('trace.export', { content: '# trace\n\n' + 'x'.repeat(100_000) })
+    expect(result).toEqual({ ok: true, value: { cancelled: false, path: 'G:/evohime-trace.md' } })
   })
 })
 

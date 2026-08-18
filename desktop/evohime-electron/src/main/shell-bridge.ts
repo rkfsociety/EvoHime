@@ -1,5 +1,5 @@
 import { BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, extname, isAbsolute, join } from 'node:path'
 
@@ -42,6 +42,7 @@ import type { WorkspaceService } from './workspace-service'
 
 const MAX_TEXT_FIELD_CHARS = 4_096
 const MAX_CLIPBOARD_CHARS = 64 * 1024
+const MAX_TRACE_EXPORT_BYTES = 16 * 1024 * 1024
 const MAX_REVIEW_PLAN_BYTES = 512 * 1024
 
 export interface ShellBridgeOptions {
@@ -108,6 +109,26 @@ function dispatch(
 
     case 'shell.requestResync':
       return accepted(client.requestResync(true))
+
+    case 'trace.export': {
+      const content = asTraceContent(asRecord(payload)['content'])
+      if (content === null) return failure('invalid-payload', 'Трейс пуст или слишком большой для экспорта.')
+      const window = BrowserWindow.getFocusedWindow()
+      const saveOptions: Electron.SaveDialogOptions = {
+        defaultPath: 'evohime-trace.md',
+        filters: [{ name: 'Markdown', extensions: ['md'] }]
+      }
+      const save = window ? dialog.showSaveDialog(window, saveOptions) : dialog.showSaveDialog(saveOptions)
+      return save.then(async (selected) => {
+        if (selected.canceled || !selected.filePath) return { ok: true, value: { cancelled: true, path: '' } }
+        try {
+          await writeFile(selected.filePath, content, 'utf8')
+          return { ok: true, value: { cancelled: false, path: selected.filePath } }
+        } catch {
+          return failure('protocol-error', 'Не удалось сохранить Markdown-файл трейса.')
+        }
+      })
+    }
 
     case 'workspace.list':
       return { ok: true, value: workspaces.list() }
@@ -763,6 +784,12 @@ function asBoundedString(value: unknown): string | null {
     return null
   }
   return value
+}
+
+function asTraceContent(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 && Buffer.byteLength(value, 'utf8') <= MAX_TRACE_EXPORT_BYTES
+    ? value
+    : null
 }
 
 function asOptionalBoundedString(value: unknown): string | null {
