@@ -96,6 +96,31 @@ describe('task timeline', () => {
     expect(screen.getByLabelText('Задача').hasAttribute('disabled')).toBe(false)
   })
 
+  it('grows the composer with multiline text and shrinks after clearing', async () => {
+    render(
+      <TaskTimeline
+        connection="connected"
+        events={[]}
+        workspace="C:\\work\\repo"
+        chatId={null}
+        onChatTouched={() => {}}
+        onChatOpened={() => {}}
+        identityName={null}
+        chatRevision={0}
+      />
+    )
+
+    const textarea = await screen.findByLabelText('Задача') as HTMLTextAreaElement
+    Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 96 })
+    await userEvent.type(textarea, 'строка 1\\nстрока 2')
+    expect(textarea.style.height).toBe('96px')
+    expect(textarea.style.overflowY).toBe('hidden')
+
+    Object.defineProperty(textarea, 'scrollHeight', { configurable: true, value: 24 })
+    await userEvent.clear(textarea)
+    expect(textarea.style.height).toBe('24px')
+  })
+
   it('creates the chat from the first prompt instead of demanding one', async () => {
     const opened: string[] = []
     render(

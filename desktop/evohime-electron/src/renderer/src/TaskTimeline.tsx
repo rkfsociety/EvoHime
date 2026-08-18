@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import type { ChatRecord, ConnectionState, CoreEvent } from '@shared/api'
 
@@ -14,6 +14,7 @@ import { PermissionModePicker } from './PermissionModePicker'
 
 const CONNECTED_STATES: readonly ConnectionState[] = ['connected', 'replaying', 'resyncing']
 const MAX_RENDERED_ITEMS = 80
+const MAX_COMPOSER_HEIGHT_PX = 200
 
 export interface TaskTimelineProps {
   readonly connection: ConnectionState
@@ -53,6 +54,7 @@ export function TaskTimeline({
   const [commandError, setCommandError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
+  const promptRef = useRef<HTMLTextAreaElement | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
   const entryTimes = useRef(new Map<string, number>())
 
@@ -81,6 +83,17 @@ export function TaskTimeline({
       cancelled = true
     }
   }, [api, chatId])
+
+  useLayoutEffect(() => {
+    const textarea = promptRef.current
+    if (!textarea) return
+    // Reset first so deleting text shrinks the field as well as adding text
+    // grows it. The CSS max-height remains the final safety limit.
+    textarea.style.height = 'auto'
+    const contentHeight = Math.max(textarea.scrollHeight, 24)
+    textarea.style.height = `${Math.min(contentHeight, MAX_COMPOSER_HEIGHT_PX)}px`
+    textarea.style.overflowY = contentHeight > MAX_COMPOSER_HEIGHT_PX ? 'auto' : 'hidden'
+  }, [prompt])
 
   // A chat shows only its own tasks; before the first prompt only the task
   // just started from here belongs to it.
@@ -279,6 +292,7 @@ export function TaskTimeline({
             <label htmlFor="task-prompt" className="visually-hidden">Задача</label>
             <textarea
               id="task-prompt"
+              ref={promptRef}
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
               onKeyDown={(event) => {
