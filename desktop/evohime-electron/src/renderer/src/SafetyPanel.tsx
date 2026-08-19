@@ -24,6 +24,9 @@ export function SafetyPanel({ connection, events }: SafetyPanelProps): React.JSX
   const [restoreApproval, setRestoreApproval] = useState('')
   const [message, setMessage] = useState<string | null>(null)
   const [cancelling, setCancelling] = useState(false)
+  const [receiptRows, setReceiptRows] = useState<readonly Record<string, unknown>[] | null>(null)
+  const [receiptVerification, setReceiptVerification] = useState<Record<string, unknown> | null>(null)
+  const [receiptMessage, setReceiptMessage] = useState<string | null>(null)
 
   useEffect(() => {
     const report = latestEvent(events, 'doctor.report')
@@ -60,6 +63,36 @@ export function SafetyPanel({ connection, events }: SafetyPanelProps): React.JSX
     }
     const exported = latestEvent(events, 'doctor.export.completed')
     if (exported) setMessage('Диагностика экспортирована.')
+
+    const listed = latestEvent(events, 'receipts.listed')
+    if (listed) {
+      const payload = parseJson(listed.payload)
+      if (payload.ok === true && Array.isArray(payload.rows)) {
+        setReceiptRows(payload.rows as Record<string, unknown>[])
+        setReceiptMessage(null)
+      } else {
+        setReceiptMessage(`Ошибка списка receipts: ${String(payload.error_code ?? 'unknown')}`)
+      }
+    }
+    const verified = latestEvent(events, 'receipts.verified')
+    if (verified) {
+      const payload = parseJson(verified.payload)
+      if (payload.ok === true) {
+        setReceiptVerification(payload)
+        setReceiptMessage(null)
+      } else {
+        setReceiptMessage(`Ошибка проверки receipts: ${String(payload.error_code ?? 'unknown')}`)
+      }
+    }
+    const exportedReceipts = latestEvent(events, 'receipts.exported')
+    if (exportedReceipts) {
+      const payload = parseJson(exportedReceipts.payload)
+      setReceiptMessage(
+        payload.ok === true
+          ? `Экспортировано receipts: ${String(payload.actual_exported_count ?? '?')}`
+          : `Ошибка экспорта receipts: ${String(payload.error_code ?? 'unknown')}`
+      )
+    }
   }, [events])
 
   const send = useCallback(
@@ -133,6 +166,26 @@ export function SafetyPanel({ connection, events }: SafetyPanelProps): React.JSX
     await send(() => api.invoke('core.exportDoctorLogs', { destinationPath }))
   }, [api, send])
 
+  const listReceipts = useCallback(async () => {
+    if (!api) return
+    setReceiptMessage(null)
+    await send(() => api.invoke('core.listReceipts', { limit: 100 }))
+  }, [api, send])
+
+  const verifyReceipts = useCallback(async () => {
+    if (!api) return
+    setReceiptMessage(null)
+    await send(() => api.invoke('core.verifyReceipts', { limit: 500 }))
+  }, [api, send])
+
+  const exportReceipts = useCallback(async () => {
+    if (!api) return
+    const destinationPath = window.prompt('Папка для JSONL export bundle receipts (не должна существовать)')
+    if (!destinationPath) return
+    setReceiptMessage(null)
+    await send(() => api.invoke('core.exportReceipts', { destinationPath, limit: 100_000 }))
+  }, [api, send])
+
   return (
     <section className="shell__panel safety-panel" aria-label="Политика и диагностика">
       <div className="safety-panel__heading">
@@ -174,6 +227,50 @@ export function SafetyPanel({ connection, events }: SafetyPanelProps): React.JSX
         {progress ? <p className="safety-panel__progress">{String(progress.phase ?? 'операция')} · {String(progress.completed ?? 0)} / {String(progress.total ?? '?')} · {String(progress.message ?? '')}</p> : null}
         {progress && isCancellablePhase(progress.phase) ? <button type="button" onClick={() => void cancelOperation()} disabled={!connected || cancelling}>{cancelling ? 'Отмена запрошена…' : 'Отменить операцию'}</button> : null}
       </div>
+
+      <div className="safety-panel__receipts">
+        <h3>Подписанные receipts</h3>
+        <div className="safety-panel__receipts-actions">
+          <button type="button" onClick={() => void listReceipts()} disabled={!connected}>Показать последние</button>
+          <button type="button" onClick={() => void verifyReceipts()} disabled={!connected}>Проверить цепочку</button>
+          <button type="button" onClick={() => void exportReceipts()} disabled={!connected}>Экспортировать bundle</button>
+        </div>
+        {receiptMessage ? <p className="shell__reason">{receiptMessage}</p> : null}
+        {receiptVerification ? (
+          <p className={`safety-panel__receipts-status safety-panel__receipts-status--${String(receiptVerification.status ?? 'unverified')}`}>
+            {verificationStatusLabel(receiptVerification.status)}
+            {' · '}
+            {String(receiptVerification.actual_verified_count ?? 0)}/{String(receiptVerification.requested_count ?? 0)}
+            {receiptVerification.code ? ` · ${String(receiptVerification.code)}` : ''}
+          </p>
+        ) : null}
+        {receiptRows && receiptRows.length > 0 ? (
+          <table className="safety-panel__receipts-table">
+            <thead>
+              <tr>
+                <th>Sequence</th>
+                <th>Действие</th>
+                <th>Kind</th>
+                <th>Статус</th>
+                <th>Receipt hash</th>
+              </tr>
+            </thead>
+            <tbody>
+              {receiptRows.map((row) => (
+                <tr key={String(row.receipt_id)}>
+                  <td>{String(row.sequence ?? '')}</td>
+                  <td>{String(row.action_id ?? '')}</td>
+                  <td>{String(row.receipt_kind ?? '')}</td>
+                  <td>{String(row.action_status ?? '')}</td>
+                  <td className="safety-panel__receipts-hash">{String(row.receipt_hash ?? '')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="shell__empty">Receipts ещё не загружены.</p>
+        )}
+      </div>
     </section>
   )
 }
@@ -211,6 +308,19 @@ function formatDoctor(doctor: Record<string, unknown>): string {
     const value = check as Record<string, unknown>
     return `${String(value.id ?? 'check')}: ${String(value.status ?? 'unknown')} — ${String(value.summary ?? '')}`
   }).join('\n') || 'Core не вернул проверки.'
+}
+
+/** 01.4 UI mapping: never claim success for a pending or untrusted chain. */
+function verificationStatusLabel(status: unknown): string {
+  switch (status) {
+    case 'verified': return 'Цепочка проверена'
+    case 'verified_pruned': return 'Проверена, история сжата'
+    case 'pending': return 'Ожидает завершения (pending recovery)'
+    case 'stale_key': return 'Устаревший/скомпрометированный ключ'
+    case 'unverified': return 'Не доверено / legacy'
+    case 'broken': return 'Цепочка нарушена'
+    default: return 'Статус неизвестен'
+  }
 }
 
 function modeLabel(mode: PermissionMode): string {
