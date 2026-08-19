@@ -33,6 +33,18 @@ Export изменяет только внешний destination directory, не 
 migration runner с backup до изменения схемы. Foreign keys и WAL включены.
 Существующие audit rows не переписываются и не объявляются signed receipts.
 
+Rollback procedure: (1) run `PRAGMA integrity_check` before starting and abort
+with no changes if it fails; (2) apply the migration inside one transaction —
+any failure (including a mid-migration crash, since SQLite transactions are
+atomic on restart) leaves the pre-migration schema untouched via automatic
+`ROLLBACK`, no partial `receipts_v1` tables/indexes can persist; (3) run
+`PRAGMA integrity_check` again after commit — a failure here does not roll
+back automatically (data is already committed) but flags the database
+`degraded` and preserves the pre-migration backup for manual recovery; (4) the
+migration runner requires free disk space ≥2× the current database file size
+before starting (for the backup copy plus WAL growth during migration) and
+fails closed with a stable error if that space is unavailable.
+
 ### receipt_records
 
 | Column | Type / constraint |
@@ -45,7 +57,7 @@ migration runner с backup до изменения схемы. Foreign keys и W
 | task_id, run_id, tool_name | TEXT NOT NULL; length 1–128 and exact 01.1 typed-identifier pattern `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` |
 | key_id | TEXT NOT NULL; ed25519:<64 lowercase hex> |
 | receipt_hash | TEXT NOT NULL UNIQUE; 64 lowercase hex |
-| previous_receipt_hash | TEXT NULL only for a genesis row or the first row of a new key segment after an explicitly recorded key rotation; the latter is not genesis and is marked by key-history transition metadata |
+| previous_receipt_hash | TEXT NULL only for a genesis row, or the first row of a new key segment when the signed key-history transition records `continuity='continuous'` and explicitly marks a rotation boundary; the latter is not genesis and is marked by key-history transition metadata. When the transition records `continuity='broken'` or `'compromised'`, the first row of the new segment MUST still set `previous_receipt_hash` to NULL (it has no valid predecessor to reference), but the verifier treats that NULL as a segment break rather than a rotation and does not grant it verified/verified_pruned status — see Verify-chain algorithm |
 | canonical_payload | BLOB NOT NULL; 1–4096 bytes; checked at write time and by migration invariants |
 | canonical_envelope | BLOB NOT NULL; 1–8192 bytes; checked at write time and by migration invariants |
 | created_at_ms | INTEGER NOT NULL; derived from canonical timestamp |
@@ -56,9 +68,12 @@ and hash verification, not a reserialization cache. Database NULL is allowed
 only for the genesis predecessor and internal terminal hashes; JSON/JSONL never
 serializes those as null.
 
-`canonical_timestamp` is an RFC3339 timestamp with `Z` UTC suffix and exactly
-three fractional milliseconds (`YYYY-MM-DDTHH:MM:SS.sssZ`). `created_at_ms` is
-derived from it and is never used to recreate signed bytes. Core obtains this
+The canonical timestamp is not a separate `receipt_records` column: it is a
+field inside the signed `canonical_payload`/`canonical_envelope` bytes (01.1
+schema), an RFC3339 timestamp with `Z` UTC suffix and exactly three fractional
+milliseconds (`YYYY-MM-DDTHH:MM:SS.sssZ`). `created_at_ms` is a plain SQLite
+column derived from that embedded field for indexing/filtering only; it is
+never used to recreate or re-verify signed bytes. Core obtains the embedded
 timestamp from a UTC clock immediately before canonicalization; clock
 conversion/overflow and non-UTC values are rejected. In a rotated key
 segment, the absent predecessor is valid only when the signed key-history
@@ -81,8 +96,8 @@ Indexes:
 | pre_receipt_hash | TEXT NULL until pre append, then `REFERENCES receipt_records(receipt_hash)` |
 | terminal_receipt_hash | TEXT NULL until post/refusal, `REFERENCES receipt_records(receipt_hash)` |
 | state | TEXT NOT NULL CHECK (`state IN ('prepared','terminal','pending_recovery')`) |
-| approval_id | TEXT NULL; bounded typed identifier |
-| approval_call_hash | TEXT NULL; 64 lowercase hex |
+| approval_id | TEXT NULL; bounded typed identifier; `CHECK ((approval_state = 'none' AND approval_id IS NULL) OR (approval_state != 'none' AND approval_id IS NOT NULL))` |
+| approval_call_hash | TEXT NULL; 64 lowercase hex; `CHECK (approval_id IS NULL OR approval_call_hash IS NOT NULL)` |
 | approval_state | TEXT NOT NULL CHECK (`approval_state IN ('none','pending','granted','denied','expired','claimed')`) |
 | tool_args_hash | TEXT NOT NULL; 64 lowercase hex |
 | recovery_code | TEXT NULL; `CHECK (recovery_code IS NULL OR recovery_code IN ('signature_failed','external_error','unknown','missing_pre','missing_terminal','approval_expired','chain_conflict','stale_head'))`; no free error text |
@@ -95,32 +110,43 @@ pre_receipt_hash and no terminal hash. `terminal_receipt_hash != NULL` implies
 `state=pending_recovery` implies a pre hash and no terminal hash. A terminal
 receipt must have exactly one matching pre receipt for the same action, and its
 sequence must be greater than the pre sequence. These invariants are enforced
-by foreign keys plus migration triggers/Rust transaction checks. The schema also enforces
-`approval_id IS NOT NULL` exactly when `approval_state != 'none'`, and `approval_id IS NULL`
-when `approval_state = 'none'`; `approval_call_hash` is required whenever an approval id is
-present. `recovery_code` is required exactly for `state=pending_recovery` and is forbidden for
-other states. approval_call_hash makes offline
-approval-binding verification possible even after in-memory PermissionEngine
-state is gone.
+by foreign keys plus migration triggers/Rust transaction checks. The two `CHECK` constraints on
+`approval_id`/`approval_call_hash` above are the enforcement mechanism for that pairing invariant;
+no separate trigger is required. `recovery_code` is required exactly for `state=pending_recovery`
+and is forbidden for other states (enforced by a `CHECK` mirroring the `state` column).
+`approval_call_hash` is computed from the embedded signed payload at receipt-creation time and
+stored alongside it; verification never depends on an external source, so approval_call_hash
+makes offline approval-binding verification possible even after in-memory PermissionEngine state
+is gone.
 
 ### receipt_chain_heads
 
-key_id TEXT PRIMARY KEY, head_sequence INTEGER NOT NULL,
-head_receipt_hash TEXT NOT NULL REFERENCES receipt_records(receipt_hash),
-updated_at_ms INTEGER NOT NULL.
+| Column | Type / constraint |
+| --- | --- |
+| key_id | TEXT PRIMARY KEY; ed25519:<64 lowercase hex>, matches `receipt_records.key_id` |
+| head_sequence | INTEGER NOT NULL; equals `sequence` of the row `head_receipt_hash` points to |
+| head_receipt_hash | TEXT NOT NULL REFERENCES receipt_records(receipt_hash) |
+| updated_at_ms | INTEGER NOT NULL; wall-clock write time, diagnostic only |
+
+No secondary indexes beyond the primary key; the table has one row per
+currently-or-previously-active key_id and is read/updated only inside the
+append transaction below.
 
 One `BEGIN IMMEDIATE` append reads this row, verifies the predecessor, allocates
 the next sequence and inserts `receipt_records` and the updated head in the same
 transaction. The transaction checks `pre_sequence < sequence` and that the
 predecessor hash equals the head read under the write lock; `AUTOINCREMENT` gaps
 are allowed after rollback, but a committed append can never reuse a sequence.
-A stale head causes bounded retry and then `receipts.chain_conflict`; the tool is
-not run after such a failure. Recovery is explicit: inspect the durable action
-row and current head, re-authorize the operation if its pre receipt was not
-committed, then append a new pre/terminal pair with a new action id; if a pre
-receipt was committed, reconcile from that row and append only the missing
+A stale head causes bounded retry (max 3 attempts, 5-second cumulative timeout
+across all attempts) and then `receipts.chain_conflict`; the tool is not run
+after such a failure. Recovery is explicit: inspect the durable action row and
+current head, re-authorize the operation if its pre receipt was not committed,
+then append a new pre/terminal pair with a new action id; if a pre receipt was
+committed, reconcile from that row and append only the missing
 terminal/refusal. No recovery operation rewrites or deletes a signed receipt,
 and unresolved conflicts remain `pending_recovery` with a stable recovery code.
+The pending_recovery reconciliation flow is specified in full under Metadata,
+privacy и retention.
 
 ### receipt_checkpoints
 
@@ -128,10 +154,18 @@ Used only when retention compacts a prefix:
 
 checkpoint_id, key_id, cutoff_sequence, first_retained_hash,
 prefix_last_hash, last_deleted_receipt_hash, head_receipt_hash, created_at,
-canonical_checkpoint, signature, status. `first_retained_hash`,
-`prefix_last_hash`, `last_deleted_receipt_hash` and `head_receipt_hash` use
-foreign keys to `receipt_records(receipt_hash)` where the referenced row still
-exists; checkpoint metadata preserves the deleted boundary after compaction.
+canonical_checkpoint, signature, status.
+
+Only columns whose referenced row survives compaction carry a foreign key:
+`first_retained_hash` and `head_receipt_hash` are `TEXT NOT NULL REFERENCES
+receipt_records(receipt_hash)`, because compaction only ever deletes rows
+strictly before `cutoff_sequence` and both of these point at or after it.
+`prefix_last_hash` and `last_deleted_receipt_hash` reference the row
+immediately before the cutoff, which compaction deletes in the same
+transaction that writes the checkpoint; they are therefore plain `TEXT NOT
+NULL` hash values with no foreign key, verified only at checkpoint-creation
+time before the delete runs. Checkpoint metadata preserves the deleted
+boundary as an opaque hash after compaction, not as a live row reference.
 
 The checkpoint object is JCS ReceiptCheckpointV1, signed by the key active at
 checkpoint creation and includes `key_id` and `head_receipt_hash` at creation.
@@ -150,8 +184,10 @@ identifiers and bounded canonical bytes are retained.
 
 Retention v1:
 
-- terminal receipts: 90 calendar days and maximum 100,000 retained rows per
-  key, whichever is reached first;
+- terminal receipts: 90 calendar days and maximum 100,000 retained rows,
+  counted independently per `key_id` (each key segment — active or retired —
+  tracks its own row count and compacts on its own schedule; the limit is not
+  a global sum across keys), whichever bound is reached first for that key;
 - pending_recovery and action rows with no terminal: retained until explicit
   reconciliation, never automatic deletion;
 - before deleting a prefix, create and fsync a signed ReceiptCheckpointV1,
@@ -161,6 +197,23 @@ Retention v1:
   row selected by an active export snapshot;
 - explicit user purge is a separate approved operation and leaves checkpoint
   metadata plus an audit event.
+
+`pending_recovery` reconciliation procedure: (1) `ListReceipts`/`VerifyReceipts`
+surface any action row with `state=pending_recovery` and its `recovery_code`
+to the shell/UI so it is visible, not auto-resolved; (2) reconciliation is a
+distinct explicit shell-initiated operation, never automatic on list/verify;
+(3) on reconciliation, Core re-reads the durable `receipt_actions` row and the
+current chain head, then re-validates the original tool/args/approval context
+from durable state (not from any in-memory cache, which may no longer exist);
+(4) if `pre_receipt_hash` was never committed, Core re-authorizes the
+operation end-to-end with a fresh `action_id` and appends a new pre/terminal
+pair; if `pre_receipt_hash` was committed but no terminal exists, Core appends
+only the missing terminal/refusal for the existing `action_id`; (5) if
+re-validation itself fails (e.g. approval evidence expired, tool no longer
+available), the row remains `pending_recovery` with its existing stable
+`recovery_code` — reconciliation never leaves a row in an undefined state, and
+a failed reconciliation attempt is itself a bounded audit event
+(`receipts.failed`) rather than a silent no-op.
 
 Legacy unsigned audit records remain available through a separate adapter as
 source=legacy until existing audit retention removes them; they are always
@@ -216,8 +269,17 @@ result и error text запрещены. Эта projection signed receipt не �
 проверяется только на согласованность с `receipt_actions`. В offline bundle
 такая проверка означает согласованность projection с action_id, pre/terminal
 hashes, status и approval fields embedded in receipts; проверка SQLite
-источника выполняется только в Core snapshot mode. Отсутствие
-`actions.jsonl` в архиве без action projection не является ошибкой.
+источника выполняется только в Core snapshot mode.
+
+Inclusion rule: `actions.jsonl` is written only when at least one row in the
+exported chain closure (the post-closure set, not the pre-closure filter) has
+a matching `action_id` in `receipt_actions`; if no such row exists, the file
+is entirely omitted from the bundle — never written empty. Its absence is
+therefore expected, not an error, for a closure with no action-state rows.
+`actions.jsonl` is an optional UI-facing projection: the offline verifier
+completes full receipt-chain verification using only `receipts.jsonl`,
+`key-history.jsonl` and (when present) `checkpoints.jsonl`; it never requires
+`actions.jsonl` to be present to reach a verified/broken verdict.
 
 ### manifest.json
 
@@ -241,11 +303,16 @@ Manifest is canonical JSON:
       ]
     }
 
-Optional values are omitted, never null. Manifest file hashes are SHA-256 over
-the exact canonical UTF-8 bytes of each file, including its final LF. The
-receipt record hash and the manifest's first/last receipt hashes are SHA-256
-over the exact canonical envelope bytes, while receipt/hash-chain signatures
-determine cryptographic trust.
+Optional values are omitted, never null. Manifest `files[].sha256` values are
+SHA-256 over the exact canonical UTF-8 bytes of the whole named file (e.g.
+`receipts.jsonl`), including its final LF — a whole-file digest, distinct from
+any single record. `first_receipt_hash` and `last_receipt_hash` are copies of
+the `receipt_hash` field (01.1: SHA-256 over the canonical envelope bytes of
+that one receipt) from the first and last row in the exported closure, using
+the identical algorithm already used to compute `receipt_records.receipt_hash`
+— no separate hash definition exists for them. Receipt/hash-chain signatures,
+not these SHA-256 digests, determine cryptographic trust; the digests only
+detect corruption/truncation of the export bundle itself.
 
 Export algorithm:
 
@@ -255,12 +322,17 @@ Export algorithm:
    valid bundle returns `receipts.export_exists`; it never silently reuses or
    overwrites it. A future replace operation must be a separate, explicit
    user-confirmed command and is not part of v1;
-2. begin a SQLite `BEGIN DEFERRED` read transaction and capture
-   `snapshot_last_sequence`; the first read fixes one SQLite snapshot, so
-   concurrent appends are excluded rather than mixed into the export. The
-   snapshot need not be the newest commit. On `SQLITE_BUSY`, `SQLITE_IOERR` or
+2. begin a SQLite `BEGIN DEFERRED` read transaction; its first statement MUST
+   be the read that captures `snapshot_last_sequence` (e.g.
+   `SELECT head_sequence FROM receipt_chain_heads ...`), executed before any
+   other statement in the transaction body — `BEGIN DEFERRED` alone does not
+   acquire a read lock, only the first actual read does. That first read fixes
+   one SQLite snapshot, so concurrent appends are excluded rather than mixed
+   into the export. The snapshot need not be the newest commit. On
+   `SQLITE_BUSY`, `SQLITE_IOERR` or
    an equivalent transient snapshot error, roll back and retry the whole export
-   a bounded number of times; never continue from a partial snapshot;
+   up to 3 times with backoff, then fail with `receipts.export_io`; never
+   continue from a partial snapshot;
 3. stream bounded rows into staging directory without loading full export into
    memory;
 4. copy the complete public-key path and checkpoint boundary required by the
@@ -291,8 +363,8 @@ SQLite.
 Verification operates on a consistent SQLite snapshot or an export bundle:
 
 1. validate input size, manifest file hashes and JSON/JCS bytes; timestamp
-   проверять синтаксически всегда, а skew — только при явно включённом
-   offline policy flag;
+   syntax is always checked, while clock-skew checking runs only when an
+   explicit offline policy flag enables it;
 2. load public key history and explicit trust roots;
 3. for each selected receipt in sequence order, check envelope size,
    canonical bytes, receipt hash and Ed25519 signature over canonical payload;
@@ -300,12 +372,22 @@ Verification operates on a consistent SQLite snapshot or an export bundle:
    pinned genesis;
 5. compare previous_receipt_hash to the preceding selected row or a trusted
    checkpoint boundary; detect deletion, reorder, duplicate, fork and cycle.
-   A new key segment must start with an absent predecessor; verifier MUST NOT
-   connect it to the prior key segment through receipt hash or checkpoint when
-   continuity is `broken`/`compromised`.
+   A new key segment always starts with an absent (`NULL`) predecessor;
+   verifier MUST NOT connect it to the prior key segment through receipt hash
+   or checkpoint. When the key-history transition records
+   `continuity='continuous'`, the absent predecessor is an authorized rotation
+   boundary and the combined chain (prior segment + new segment) can still
+   reach `verified`/`verified_pruned` end-to-end. When the transition records
+   `continuity='broken'` or `'compromised'`, the absent predecessor is a
+   segment break: the new segment can independently reach `verified` for
+   receipts within itself, but the overall multi-segment result is
+   `receipts.chain_incomplete` and status never exceeds `unverified` for any
+   row that depends on crossing that boundary.
 6. verify action_id pairing: exactly one pre exists before terminal by durable
-   `sequence`, tool_args_hash is unchanged, approval_id/approval_call_hash
-   match, and terminal status agrees with receipt_kind;
+   `sequence`, tool_args_hash is unchanged, approval_id/approval_call_hash in
+   the terminal receipt's embedded payload match the pre receipt's (both are
+   self-contained in the signed envelopes being verified — no external
+   lookup), and terminal status agrees with receipt_kind;
 7. classify each row and the chain; never repair input or return partial
    success.
 
@@ -328,8 +410,12 @@ sequence-ordered and deduplicated and never crosses a key segment.
 экспортированное число receipt records. VerifyReceipts также возвращает
 `requested_count` и `actual_verified_count`, чтобы расширение диапазона было
 видно клиенту.
-Если closure превышает limit, операция завершается receipts.limit_exceeded, а
-не выдаёт частично verified chain.
+The `limit` request parameter bounds `actual_exported_count`/`actual_verified_count`
+— the post-closure count, not `requested_count` or `selected_count`. If chain
+closure would produce more rows than `limit`, the operation terminates with
+`receipts.limit_exceeded` before writing any file (export) or returning any
+per-receipt result (verify); it never returns a partially verified chain or a
+partially written bundle.
 
 Approval binding status is binding_verified when receipt_actions contains the
 same approval id and call hash. It is approval_granted only when the durable
@@ -387,8 +473,9 @@ Request:
 Response:
 
 - snapshot_last_sequence as decimal string;
-- bounded ReceiptSummary rows (receipt id, action id, kind/status, task/run,
-  key id, timestamp, receipt hash, previous hash, verification status);
+- ReceiptSummary rows, bounded by the request's `limit` (receipt id, action id,
+  kind/status, task/run, key id, timestamp, receipt hash, previous hash,
+  verification status);
 - next_cursor omitted at end.
 
 No canonical payload or raw content is returned automatically.
@@ -435,11 +522,20 @@ v1 and any future replace action requires a separate user confirmation. The
 Core rejects relative paths, non-canonical paths, network shares, reparse-point
 escapes, private-key files and overwrite.
 
+`replace` enforcement is explicit: if `destination` already contains a
+directory with a valid `manifest.json` (or an orphaned-completed bundle per
+the crash-recovery rule below) and the request's `replace` field is `false`,
+Core returns `receipts.export_exists` without touching the destination. If a
+future client sends `replace=true`, v1 Core rejects the request with
+`receipts.unsupported_operation` rather than performing an overwrite — no v1
+code path ever deletes or replaces an existing export directory.
+
 IPC errors are structured and bounded:
 receipts.access_denied, receipts.invalid_filter,
 receipts.limit_exceeded, receipts.not_found, receipts.db_unavailable,
 receipts.export_exists, receipts.export_io, receipts.verify_failed,
-receipts.chain_conflict, receipts.pending_recovery.
+receipts.chain_conflict, receipts.pending_recovery,
+receipts.unsupported_operation.
 Full paths, payloads and secret-like values never enter error text or audit.
 
 ## Compatibility and migration
@@ -448,7 +544,11 @@ Migration creates receipts_v1 tables and indexes with no destructive rewrite.
 During the transition:
 
 - new runtime receipts write only the new signed tables plus the existing
-  audit event sink;
+  audit event sink; the `receipts.*` audit event insert happens in the same
+  `BEGIN IMMEDIATE` transaction as the `receipt_records`/`receipt_actions`
+  append, so a failed audit insert rolls back the receipt append and vice
+  versa — there is no state where a receipt is committed without its audit
+  event or the reverse;
 - legacy audit events remain queryable through the source=legacy adapter with
   status unverified;
 - old clients receive the previous protocol major/version error rather than
