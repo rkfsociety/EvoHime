@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"C:/github/EvoHime\" 2>/dev/null && git status --short 2>/dev/null | grep -v '^??' | grep -q . && printf '%s' '{\"decision\":\"block\",\"reason\":\"Tracked files in the EvoHime repo (C:/github/EvoHime) have uncommitted changes. Per AGENTS.md rule 11 (commit continuously), commit them now, or explicitly tell the user why they are being left uncommitted, before ending this turn.\"}' || true"
+          }
+        ]
+      }
+    ]
+  }
+}
