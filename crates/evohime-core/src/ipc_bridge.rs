@@ -628,6 +628,96 @@ impl IpcBridge {
                     .map_err(|error| FrameError::Io(error.to_string()))?;
                 self.write_response(writer, "receipt.unquarantine", serde_json::to_vec(&serde_json::json!({"ok":true,"action_id":request.action_id,"receipt_hash":receipt_hash,"state":"refused","dispatch_allowed":false}))?).await?;
             }
+            Some(generated::command_envelope::Command::ListReceipts(request)) => {
+                let filter = match receipt_filter_from_request(&request.task_id, &request.run_id, &request.action_id, &request.from_rfc3339, &request.to_rfc3339) {
+                    Ok(value) => value,
+                    Err(code) => {
+                        self.write_response(writer, "receipts.listed", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":code}))?).await?;
+                        return Ok(());
+                    }
+                };
+                let limit = if request.limit == 0 { 100 } else { request.limit as i64 };
+                let database = self.journal.database().lock().await;
+                match evohime_receipts::export::list_receipts(database.connection(), &filter, limit) {
+                    Ok(result) => {
+                        self.write_response(writer, "receipts.listed", serde_json::to_vec(&serde_json::json!({
+                            "ok": true,
+                            "snapshot_last_sequence": result.snapshot_last_sequence.to_string(),
+                            "rows": result.rows,
+                        }))?).await?;
+                    }
+                    Err(error) => {
+                        self.write_response(writer, "receipts.listed", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":error.to_string()}))?).await?;
+                    }
+                }
+            }
+            Some(generated::command_envelope::Command::VerifyReceipts(request)) => {
+                let filter = match receipt_filter_from_request(&request.task_id, &request.run_id, &request.action_id, &request.from_rfc3339, &request.to_rfc3339) {
+                    Ok(value) => value,
+                    Err(code) => {
+                        self.write_response(writer, "receipts.verified", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":code}))?).await?;
+                        return Ok(());
+                    }
+                };
+                let limit = if request.limit == 0 { 500 } else { request.limit as i64 };
+                let trust_key = if request.trust_key_id.is_empty() { None } else { Some(request.trust_key_id.as_str()) };
+                let key_history = self.receipt_keys.load_history().unwrap_or_default();
+                let database = self.journal.database().lock().await;
+                match evohime_receipts::export::verify_receipts(database.connection(), &key_history, trust_key, &filter, limit) {
+                    Ok(result) => {
+                        self.write_response(writer, "receipts.verified", serde_json::to_vec(&serde_json::json!({
+                            "ok": true,
+                            "status": result.verification.status,
+                            "code": result.verification.code,
+                            "requested_count": result.requested_count,
+                            "actual_verified_count": result.verification.actual_verified_count,
+                            "chain_start_hash": result.verification.chain_start_hash,
+                            "chain_end_hash": result.verification.chain_end_hash,
+                            "rows": result.verification.rows,
+                        }))?).await?;
+                    }
+                    Err(error) => {
+                        self.write_response(writer, "receipts.verified", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":error.to_string()}))?).await?;
+                    }
+                }
+            }
+            Some(generated::command_envelope::Command::ExportReceipts(request)) => {
+                if request.replace || request.destination_path.is_empty() || request.destination_path.len() > 4096 {
+                    self.write_response(writer, "receipts.exported", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":if request.replace { "receipts.unsupported_operation" } else { "receipts.invalid_filter" }}))?).await?;
+                    return Ok(());
+                }
+                let filter = match receipt_filter_from_request(&request.task_id, &request.run_id, &request.action_id, &request.from_rfc3339, &request.to_rfc3339) {
+                    Ok(value) => value,
+                    Err(code) => {
+                        self.write_response(writer, "receipts.exported", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":code}))?).await?;
+                        return Ok(());
+                    }
+                };
+                let limit = if request.limit == 0 { 100_000 } else { request.limit as i64 };
+                let destination = std::path::PathBuf::from(&request.destination_path);
+                let key_history = self.receipt_keys.load_history().unwrap_or_default();
+                let database = self.journal.database().lock().await;
+                match evohime_receipts::export::export_receipts(database.connection(), &key_history, &destination, &filter, limit) {
+                    Ok(manifest) => {
+                        let manifest_sha256 = std::fs::read(destination.join("manifest.json"))
+                            .ok()
+                            .map(|bytes| evohime_receipts::sha256_hex(&bytes));
+                        self.write_response(writer, "receipts.exported", serde_json::to_vec(&serde_json::json!({
+                            "ok": true,
+                            "export_id": manifest.export_id,
+                            "destination_basename": destination.file_name().and_then(|value| value.to_str()),
+                            "snapshot_last_sequence": manifest.snapshot_last_sequence.to_string(),
+                            "requested_count": manifest.requested_count,
+                            "selected_count": manifest.selected_count,
+                            "actual_exported_count": manifest.actual_exported_count,
+                            "manifest_sha256": manifest_sha256,
+                        }))?).await?;
+                    }
+                    Err(error) => {
+                        self.write_response(writer, "receipts.exported", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":error.to_string()}))?).await?;
+                    }
+                }
+            }
             Some(generated::command_envelope::Command::TrustReceiptGenesis(request)) => {
                 if !self
                     .take_receipt_approval(writer, &request.approval_id, "TrustReceiptGenesis")
@@ -3711,6 +3801,34 @@ impl IpcBridge {
     }
 }
 
+/// Builds a stage 01.4 `ReceiptFilter` from bounded IPC request fields. Empty
+/// strings mean "no filter" for that field; a non-empty value must be a valid
+/// 01.1 typed identifier or RFC3339 timestamp, or the whole request is
+/// rejected rather than silently ignored.
+fn receipt_filter_from_request(
+    task_id: &str,
+    run_id: &str,
+    action_id: &str,
+    from_rfc3339: &str,
+    to_rfc3339: &str,
+) -> Result<evohime_receipts::export::ReceiptFilter, &'static str> {
+    let parse_ms = |value: &str| -> Result<Option<i64>, &'static str> {
+        if value.is_empty() {
+            return Ok(None);
+        }
+        chrono::DateTime::parse_from_rfc3339(value)
+            .map(|parsed| Some(parsed.timestamp_millis()))
+            .map_err(|_| "receipts.invalid_filter")
+    };
+    Ok(evohime_receipts::export::ReceiptFilter {
+        task_id: (!task_id.is_empty()).then(|| task_id.to_string()),
+        run_id: (!run_id.is_empty()).then(|| run_id.to_string()),
+        action_id: (!action_id.is_empty()).then(|| action_id.to_string()),
+        from_ms: parse_ms(from_rfc3339)?,
+        to_ms: parse_ms(to_rfc3339)?,
+    })
+}
+
 fn hex_encode(bytes: &[u8]) -> String {
     let mut output = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
@@ -6429,5 +6547,112 @@ mod tests {
         assert_eq!(handoffs[0]["handoff_id"], serde_json::json!("handoff-1"));
 
         let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn list_verify_and_export_receipts_over_ipc() {
+        let data_root = std::env::temp_dir().join(format!("evohime-ipc-receipts-data-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&data_root);
+        std::fs::create_dir_all(&data_root).expect("data root");
+        let journal_path = data_root.join("events.db");
+        let keys = ReceiptKeyManager::new(&data_root);
+        keys.initialize().expect("keys initialize");
+        let journal = EventJournal::open(&journal_path).expect("journal opens");
+        {
+            let mut database = journal.database().lock().await;
+            let signer = crate::CoreReceiptSigner(Arc::new(ReceiptKeyManager::new(&data_root)));
+            let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).unwrap();
+            let action_id = uuid::Uuid::now_v7();
+            let request = evohime_receipts::runtime::ActionRequest {
+                action_id,
+                task_id: "receipts-task".into(),
+                run_id: "receipts-run".into(),
+                tool_name: "filesystem.read".into(),
+                policy_id: "permission:FilesystemRead".into(),
+                normalized_scope: "workspace".into(),
+                input: serde_json::json!({"path":"a.txt"}),
+                policy_decision: evohime_receipts::runtime::PolicyDecision::Allow,
+                approval_id: None,
+                parent_approval_ref: None,
+                preview: "read a.txt".into(),
+            };
+            runtime.prepare(request.clone()).unwrap();
+            runtime.mark_started(action_id).unwrap();
+            runtime.complete(&request, "succeeded", &"a".repeat(64), None).unwrap();
+        }
+        let bridge = IpcBridge::new(journal);
+        let (mut client, server) = duplex(64 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+
+        async fn send(
+            bridge: &IpcBridge,
+            client: &mut tokio::io::DuplexStream,
+            server_reader: &mut (impl tokio::io::AsyncRead + Unpin),
+            server_writer: &mut (impl tokio::io::AsyncWrite + Unpin),
+            request_id: &str,
+            command: generated::command_envelope::Command,
+        ) -> generated::EventEnvelope {
+            let envelope = generated::CommandEnvelope {
+                protocol: Some(protocol()),
+                request_id: request_id.into(),
+                client_id: "receipts-client".into(),
+                core_instance_id: String::new(),
+                session_epoch: 1,
+                command: Some(command),
+            };
+            transport::write_frame(client, &envelope.encode_to_vec())
+                .await
+                .expect("request writes");
+            bridge
+                .process_once(server_reader, server_writer)
+                .await
+                .expect("request serves");
+            let response = transport::read_frame(client).await.expect("response reads");
+            generated::EventEnvelope::decode(response.as_slice()).expect("event decodes")
+        }
+
+        let listed = send(
+            &bridge, &mut client, &mut server_reader, &mut server_writer, "list-1",
+            generated::command_envelope::Command::ListReceipts(generated::ListReceipts {
+                task_id: "receipts-task".into(),
+                ..Default::default()
+            }),
+        ).await;
+        assert_eq!(listed.event_type, "receipts.listed");
+        let listed_payload: serde_json::Value = serde_json::from_slice(&listed.payload).unwrap();
+        assert_eq!(listed_payload["ok"], true);
+        assert_eq!(listed_payload["rows"].as_array().unwrap().len(), 2);
+
+        let verified = send(
+            &bridge, &mut client, &mut server_reader, &mut server_writer, "verify-1",
+            generated::command_envelope::Command::VerifyReceipts(generated::VerifyReceipts {
+                task_id: "receipts-task".into(),
+                ..Default::default()
+            }),
+        ).await;
+        assert_eq!(verified.event_type, "receipts.verified");
+        let verified_payload: serde_json::Value = serde_json::from_slice(&verified.payload).unwrap();
+        assert_eq!(verified_payload["ok"], true);
+        assert_eq!(verified_payload["status"], "verified");
+        assert_eq!(verified_payload["actual_verified_count"], 2);
+
+        let destination = data_root.join("export-bundle");
+        let exported = send(
+            &bridge, &mut client, &mut server_reader, &mut server_writer, "export-1",
+            generated::command_envelope::Command::ExportReceipts(generated::ExportReceipts {
+                destination_path: destination.display().to_string(),
+                task_id: "receipts-task".into(),
+                limit: 1000,
+                ..Default::default()
+            }),
+        ).await;
+        assert_eq!(exported.event_type, "receipts.exported");
+        let exported_payload: serde_json::Value = serde_json::from_slice(&exported.payload).unwrap();
+        assert_eq!(exported_payload["ok"], true, "{exported_payload:?}");
+        assert_eq!(exported_payload["actual_exported_count"], 2);
+        assert!(destination.join("manifest.json").exists());
+        assert!(destination.join("receipts.jsonl").exists());
+
+        let _ = std::fs::remove_dir_all(&data_root);
     }
 }

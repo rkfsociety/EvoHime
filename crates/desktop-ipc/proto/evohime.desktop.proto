@@ -319,6 +319,42 @@ message UnquarantineReceiptAction {
   string checkpoint = 4;
 }
 
+// Stage 01.4: read-only, bounded chain listing. Roles shell and
+// compatibility-shell only; Core never returns raw canonical payload here.
+message ListReceipts {
+  string task_id = 1;
+  string run_id = 2;
+  string action_id = 3;
+  string from_rfc3339 = 4;
+  string to_rfc3339 = 5;
+  uint32 limit = 6;
+}
+
+// Stage 01.4: synchronous, bounded verify-chain over the closure of the
+// filtered range. Larger verification belongs to the offline verifier.
+message VerifyReceipts {
+  string task_id = 1;
+  string run_id = 2;
+  string action_id = 3;
+  string from_rfc3339 = 4;
+  string to_rfc3339 = 5;
+  uint32 limit = 6;
+  string trust_key_id = 7;
+}
+
+// Stage 01.4: atomic JSONL export bundle to a shell-selected destination
+// directory. `replace` must remain false in v1.
+message ExportReceipts {
+  string destination_path = 1;
+  string task_id = 2;
+  string run_id = 3;
+  string action_id = 4;
+  string from_rfc3339 = 5;
+  string to_rfc3339 = 6;
+  uint32 limit = 7;
+  bool replace = 8;
+}
+
 // Bounded, read-only Core Doctor diagnostic. project_id is optional; when
 // set, the permissions check is grounded in that project's real workspace.
 // detail_level is user-configurable verbosity: 0 = SUMMARY (default),
@@ -867,6 +903,9 @@ message CommandEnvelope {
     SetReceiptAuditSamplingRate set_receipt_audit_sampling_rate = 97;
     ReconcilePendingReceiptAction reconcile_pending_receipt_action = 98;
     UnquarantineReceiptAction unquarantine_receipt_action = 99;
+    ListReceipts list_receipts = 100;
+    VerifyReceipts verify_receipts = 101;
+    ExportReceipts export_receipts = 102;
   }
 }
 
