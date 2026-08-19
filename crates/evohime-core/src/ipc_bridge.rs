@@ -68,6 +68,9 @@ pub struct IpcBridge {
     session_epoch: u64,
     review_tasks: Arc<tokio::sync::Mutex<HashMap<String, CancellationToken>>>,
     review_results: Arc<tokio::sync::Mutex<HashMap<String, crate::plan_review::ReviewResult>>>,
+    revision_tasks: Arc<tokio::sync::Mutex<HashMap<String, CancellationToken>>>,
+    revision_results:
+        Arc<tokio::sync::Mutex<HashMap<String, crate::plan_review::RevisionResult>>>,
 }
 
 fn runtime_identity() -> (String, u64) {
@@ -136,6 +139,8 @@ impl IpcBridge {
             session_epoch,
             review_tasks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             review_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            revision_tasks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            revision_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -155,6 +160,8 @@ impl IpcBridge {
             session_epoch,
             review_tasks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             review_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            revision_tasks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            revision_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -181,6 +188,8 @@ impl IpcBridge {
             session_epoch,
             review_tasks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             review_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            revision_tasks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            revision_results: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -1226,6 +1235,58 @@ impl IpcBridge {
                     "review.exported",
                     serde_json::to_vec(&serde_json::json!({
                         "review_id": request.review_id,
+                        "destination_path": request.destination_path,
+                    }))
+                    .unwrap_or_default(),
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::RevisePlan(request)) => {
+                self.revise_plan(request, writer).await?;
+            }
+            Some(generated::command_envelope::Command::StopRevision(request)) => {
+                let cancelled = self
+                    .revision_tasks
+                    .lock()
+                    .await
+                    .get(&request.revision_id)
+                    .cloned();
+                if let Some(ref token) = cancelled {
+                    token.cancel();
+                }
+                self.write_response(
+                    writer,
+                    "revision.stop.accepted",
+                    serde_json::to_vec(&serde_json::json!({
+                        "revision_id": request.revision_id,
+                        "accepted": cancelled.is_some(),
+                    }))
+                    .unwrap_or_default(),
+                )
+                .await?;
+            }
+            Some(generated::command_envelope::Command::SaveRevisedPlan(request)) => {
+                let result = self
+                    .revision_results
+                    .lock()
+                    .await
+                    .get(&request.revision_id)
+                    .cloned()
+                    .ok_or_else(|| FrameError::Io("revision not found".into()))?;
+                let destination = std::path::PathBuf::from(&request.destination_path);
+                if destination.extension().and_then(|value| value.to_str()) != Some("md") {
+                    return Err(
+                        FrameError::Io("revised plan must be a Markdown file".into()).into()
+                    );
+                }
+                tokio::fs::write(&destination, &result.revised_markdown)
+                    .await
+                    .map_err(|error| FrameError::Io(error.to_string()))?;
+                self.write_response(
+                    writer,
+                    "plan.saved",
+                    serde_json::to_vec(&serde_json::json!({
+                        "revision_id": request.revision_id,
                         "destination_path": request.destination_path,
                     }))
                     .unwrap_or_default(),
@@ -3776,6 +3837,139 @@ impl IpcBridge {
         .await
     }
 
+    /// Rewrites the plan a finished review was made for.
+    ///
+    /// The review text comes from Core's own cache or journal rather than from
+    /// the shell: the shell may have been restarted, and a review the user did
+    /// not actually run must never be passed off as one.
+    async fn revise_plan<W: AsyncWrite + Unpin>(
+        &self,
+        request: generated::RevisePlan,
+        writer: &mut W,
+    ) -> Result<(), IpcBridgeError> {
+        if !request.file_name.to_ascii_lowercase().ends_with(".md") {
+            return Err(FrameError::Io("revision accepts Markdown files only".into()).into());
+        }
+        let mut review = self
+            .review_results
+            .lock()
+            .await
+            .get(&request.review_id)
+            .cloned();
+        if review.is_none() {
+            if let Ok(events) = self.journal.task_history(&request.review_id, 10).await {
+                review = events
+                    .iter()
+                    .rev()
+                    .find_map(|event| review_result_from_event(&event.payload));
+            }
+        }
+        let review = review.ok_or_else(|| FrameError::Io("review not found".into()))?;
+        let revision = crate::plan_review::RevisionRequest {
+            revision_id: request.revision_id,
+            review_id: request.review_id,
+            file_name: request.file_name,
+            source_markdown: request.source_markdown,
+            review_markdown: strip_review_header(&review.final_markdown),
+            model: request.model,
+        };
+        revision
+            .validate()
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        let gateway_config = self
+            .gateway_config
+            .clone()
+            .ok_or_else(|| FrameError::Io("provider is not configured".into()))?;
+        let gateway = evohime_model_gateway::ModelGateway::from_config(&gateway_config)
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        let route = gateway_config
+            .routes
+            .get(&gateway_config.default_route)
+            .ok_or_else(|| FrameError::Io("default provider route is missing".into()))?;
+        let available = evohime_model_gateway::fetch_model_catalog(route)
+            .await
+            .map_err(|error| FrameError::Io(error.to_string()))?;
+        if !available.iter().any(|entry| entry.id == revision.model) {
+            return Err(FrameError::Io(
+                "revision model was not returned by the configured provider".into(),
+            )
+            .into());
+        }
+        let cancellation = CancellationToken::new();
+        let revision_id = revision.revision_id.clone();
+        self.revision_tasks
+            .lock()
+            .await
+            .insert(revision_id.clone(), cancellation.clone());
+        let tasks = Arc::clone(&self.revision_tasks);
+        let results = Arc::clone(&self.revision_results);
+        let journal = self.journal.clone();
+        let coordinator = self.coordinator.clone();
+        let task_revision_id = revision_id.clone();
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
+        let progress = Arc::new(move |progress: crate::plan_review::RevisionProgress| {
+            let _ = progress_tx.send(progress);
+        });
+        tokio::spawn(async move {
+            let progress_journal = journal.clone();
+            let progress_coordinator = coordinator.clone();
+            let progress_writer = tokio::spawn(async move {
+                while let Some(progress) = progress_rx.recv().await {
+                    publish_review_event(
+                        &progress_coordinator,
+                        &progress_journal,
+                        CoreEvent::RevisionProgress {
+                            revision_id: progress.revision_id,
+                            status: progress.status,
+                            model: progress.model,
+                        },
+                    )
+                    .await;
+                }
+            });
+            let event = match crate::plan_review::run_revision(
+                Arc::new(gateway),
+                revision,
+                cancellation,
+                progress,
+            )
+            .await
+            {
+                Ok(result) => {
+                    let payload = serde_json::to_string(&result).unwrap_or_default();
+                    results
+                        .lock()
+                        .await
+                        .insert(result.revision_id.clone(), result.clone());
+                    CoreEvent::TaskCompleted {
+                        task_id: result.revision_id,
+                        final_message: payload,
+                    }
+                }
+                Err(crate::plan_review::ReviewError::Cancelled) => CoreEvent::TaskStopped {
+                    task_id: task_revision_id.clone(),
+                },
+                Err(error) => CoreEvent::TaskFailed {
+                    task_id: task_revision_id.clone(),
+                    error: error.to_string(),
+                },
+            };
+            let _ = progress_writer.await;
+            publish_review_event(&coordinator, &journal, event).await;
+            tasks.lock().await.remove(&task_revision_id);
+        });
+        self.write_response(
+            writer,
+            "revision.started",
+            serde_json::to_vec(&serde_json::json!({
+                "revision_id": revision_id,
+                "accepted": true,
+            }))
+            .unwrap_or_default(),
+        )
+        .await
+    }
+
     async fn write_response<W: AsyncWrite + Unpin>(
         &self,
         writer: &mut W,
@@ -3856,6 +4050,16 @@ async fn publish_review_event(
         None => {
             let _ = journal.record(&event).await;
         }
+    }
+}
+
+/// Drops the "which models reviewed which files" preamble that
+/// `format_review_markdown` prepends. It is provenance for the reader, and
+/// feeding it to the editing model invites those model names into the plan.
+fn strip_review_header(final_markdown: &str) -> String {
+    match final_markdown.split_once("\n---\n\n") {
+        Some((header, body)) if header.starts_with("<!-- Контекст EvoHime") => body.to_string(),
+        _ => final_markdown.to_string(),
     }
 }
 
@@ -3991,6 +4195,122 @@ mod tests {
             after["reviews"].as_array().expect("reviews").is_empty(),
             "a cleared history must be empty in the very next listing"
         );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The revised plan is written by Core, not by the shell, so the extension
+    /// guard lives here: a shell bug must not be able to overwrite a `.rs` or a
+    /// `.json` with Markdown.
+    #[tokio::test]
+    async fn saves_a_revised_plan_only_to_a_markdown_path() {
+        let path =
+            std::env::temp_dir().join(format!("evohime-ipc-revision-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let bridge = IpcBridge::new(journal);
+        bridge.revision_results.lock().await.insert(
+            "revision-1".into(),
+            crate::plan_review::RevisionResult {
+                revision_id: "revision-1".into(),
+                review_id: "review-1".into(),
+                file_name: "plan.md".into(),
+                model: "main".into(),
+                revised_markdown: "# Исправленный план".into(),
+            },
+        );
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+        let save = |destination: &str| {
+            generated::CommandEnvelope {
+                protocol: Some(protocol()),
+                request_id: "revision-save".into(),
+                client_id: "test-client".into(),
+                core_instance_id: String::new(),
+                session_epoch: 1,
+                command: Some(generated::command_envelope::Command::SaveRevisedPlan(
+                    generated::SaveRevisedPlan {
+                        revision_id: "revision-1".into(),
+                        destination_path: destination.into(),
+                    },
+                )),
+            }
+            .encode_to_vec()
+        };
+
+        let destination =
+            std::env::temp_dir().join(format!("evohime-revised-{}.md", std::process::id()));
+        let _ = std::fs::remove_file(&destination);
+        transport::write_frame(&mut client, &save(&destination.to_string_lossy()))
+            .await
+            .expect("save writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("save serves");
+        let response = generated::EventEnvelope::decode(
+            transport::read_frame(&mut client)
+                .await
+                .expect("save response")
+                .as_slice(),
+        )
+        .expect("save decodes");
+        assert_eq!(response.event_type, "plan.saved");
+        assert_eq!(
+            std::fs::read_to_string(&destination).expect("revised plan is on disk"),
+            "# Исправленный план"
+        );
+
+        let rejected = std::env::temp_dir().join("evohime-revised.txt");
+        transport::write_frame(&mut client, &save(&rejected.to_string_lossy()))
+            .await
+            .expect("rejected save writes");
+        assert!(
+            bridge
+                .process_once(&mut server_reader, &mut server_writer)
+                .await
+                .is_err(),
+            "a non-Markdown destination must be refused"
+        );
+        assert!(!rejected.exists());
+
+        let _ = std::fs::remove_file(&destination);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Revising a review the core has never seen would let the shell hand the
+    /// editing model an arbitrary text and call it a review.
+    #[tokio::test]
+    async fn refuses_to_revise_an_unknown_review() {
+        let path = std::env::temp_dir()
+            .join(format!("evohime-ipc-revision-missing-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        let bridge = IpcBridge::new(journal);
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+        let command = generated::CommandEnvelope {
+            protocol: Some(protocol()),
+            request_id: "revision-start".into(),
+            client_id: "test-client".into(),
+            core_instance_id: String::new(),
+            session_epoch: 1,
+            command: Some(generated::command_envelope::Command::RevisePlan(
+                generated::RevisePlan {
+                    revision_id: "revision-1".into(),
+                    review_id: "review-missing".into(),
+                    file_name: "plan.md".into(),
+                    source_markdown: "# Plan".into(),
+                    model: "main".into(),
+                },
+            )),
+        };
+        transport::write_frame(&mut client, &command.encode_to_vec())
+            .await
+            .expect("revise writes");
+        assert!(bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .is_err());
         let _ = std::fs::remove_file(&path);
     }
 

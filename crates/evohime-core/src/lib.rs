@@ -1591,6 +1591,11 @@ pub enum CoreEvent {
         completed: usize,
         total: usize,
     },
+    RevisionProgress {
+        revision_id: String,
+        status: String,
+        model: String,
+    },
     StorageProgress {
         operation_id: String,
         progress: BackupProgress,
@@ -2126,6 +2131,7 @@ impl EventJournal {
             | CoreEvent::TaskFailed { task_id, .. }
             | CoreEvent::TaskStopped { task_id } => task_id,
             CoreEvent::ReviewProgress { review_id, .. } => review_id,
+            CoreEvent::RevisionProgress { revision_id, .. } => revision_id,
             CoreEvent::StorageProgress { operation_id, .. } => operation_id,
             CoreEvent::WorkspaceIndexProgress { .. }
             | CoreEvent::WorkspaceRetrievalProgress { .. } => "workspace-rag",
@@ -2142,6 +2148,7 @@ impl EventJournal {
             CoreEvent::TaskFailed { .. } => "task.failed",
             CoreEvent::TaskStopped { .. } => "task.stopped",
             CoreEvent::ReviewProgress { .. } => "review.progress",
+            CoreEvent::RevisionProgress { .. } => "revision.progress",
             CoreEvent::StorageProgress { .. } => "storage.progress",
             CoreEvent::WorkspaceIndexProgress { .. } => "workspace.index_progress",
             CoreEvent::WorkspaceRetrievalProgress { .. } => "workspace.retrieval_progress",

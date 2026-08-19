@@ -125,6 +125,13 @@ export interface ChatSummary {
 export interface PlanFile {
   readonly fileName: string
   readonly sourceMarkdown: string
+  /**
+   * Абсолютный путь файла. Пустая строка означает «путь неизвестен»: так
+   * бывает при перетаскивании из источника без файловой системы. Тогда
+   * исправленный план можно только сохранить через диалог, но не записать
+   * поверх оригинала.
+   */
+  readonly path: string
 }
 
 /**
@@ -151,6 +158,18 @@ export interface PlanReviewResult {
   readonly synthesisModel: string
   readonly reviewers: readonly PlanReviewReviewer[]
   readonly finalMarkdown: string
+}
+
+/**
+ * Исправленный по ревью план. Живёт в памяти ядра до явного сохранения:
+ * показать правку и записать её — намеренно два разных действия.
+ */
+export interface PlanRevisionResult {
+  readonly revisionId: string
+  readonly reviewId: string
+  readonly fileName: string
+  readonly model: string
+  readonly revisedMarkdown: string
 }
 
 export type PermissionMode = 'ask' | 'read_only' | 'full'
@@ -224,6 +243,9 @@ export const RENDERER_COMMANDS = [
   'review.get',
   'review.export',
   'review.clearHistory',
+  'review.revise',
+  'review.stopRevision',
+  'review.saveRevision',
   'provider.get',
   'provider.save',
   'provider.clearKey',
@@ -378,6 +400,10 @@ export interface CommandPayloads {
   'review.get': { reviewId: string }
   'review.export': { reviewId: string; destinationPath: string; includeReviewers?: boolean }
   'review.clearHistory': Record<string, never>
+  'review.revise': { revisionId: string; reviewId: string; fileName: string; sourceMarkdown: string; model: string }
+  'review.stopRevision': { revisionId: string }
+  /** Пустой `destinationPath` означает «спроси путь диалогом сохранения». */
+  'review.saveRevision': { revisionId: string; destinationPath: string; fileName?: string }
   'provider.get': Record<string, never>
   'provider.save': { provider: ProviderKind; apiKey: string; model: string; baseUrl: string; tier: ModelTier }
   'provider.clearKey': Record<string, never>
@@ -463,6 +489,11 @@ export interface CommandResults {
   'review.get': { review: PlanReviewResult | null }
   'review.export': { reviewId: string; destinationPath: string }
   'review.clearHistory': { cleared: boolean }
+  /** Результат приходит событием `task.completed` с `task_id = revisionId`. */
+  'review.revise': { accepted: boolean; revisionId: string }
+  'review.stopRevision': { accepted: boolean }
+  /** `cancelled` приходит вместо `accepted`, когда закрыт диалог сохранения. */
+  'review.saveRevision': { accepted?: boolean; cancelled?: boolean }
   'provider.get': ProviderSummary
   /** `restarted` is false when Core could not be relaunched with the new key. */
   'provider.save': { summary: ProviderSummary; restarted: boolean }

@@ -100,6 +100,27 @@ message ExportPlanReview {
 // clearing records a marker, and listing ignores everything recorded before it.
 message ClearPlanReviewHistory {}
 
+// Rewrites the plan a finished review was made for. The shell resends the plan
+// because Core keeps only the review itself; the rewritten plan is held in
+// memory until SaveRevisedPlan, so nothing reaches disk without a second
+// deliberate step.
+message RevisePlan {
+  string revision_id = 1;
+  string review_id = 2;
+  string file_name = 3;
+  string source_markdown = 4;
+  string model = 5;
+}
+
+message StopRevision {
+  string revision_id = 1;
+}
+
+message SaveRevisedPlan {
+  string revision_id = 1;
+  string destination_path = 2;
+}
+
 message PermissionModeRequest {
   string mode = 1;
 }
@@ -906,6 +927,9 @@ message CommandEnvelope {
     ListReceipts list_receipts = 100;
     VerifyReceipts verify_receipts = 101;
     ExportReceipts export_receipts = 102;
+    RevisePlan revise_plan = 103;
+    StopRevision stop_revision = 104;
+    SaveRevisedPlan save_revised_plan = 105;
   }
 }
 

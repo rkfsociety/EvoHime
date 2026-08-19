@@ -715,6 +715,47 @@ function dispatch(
       return accepted(client.send({ exportPlanReview: { reviewId, destinationPath, includeReviewers } }))
     }
 
+    case 'review.revise': {
+      const value = asRecord(payload)
+      const revisionId = asBoundedString(value['revisionId'])
+      const reviewId = asBoundedString(value['reviewId'])
+      const fileName = asBoundedString(value['fileName'])
+      const sourceMarkdown = asReviewMarkdown(value['sourceMarkdown'])
+      const model = asBoundedString(value['model'])
+      if (revisionId === null || reviewId === null || fileName === null || sourceMarkdown === null || model === null) {
+        return failure('invalid-payload', 'Некорректные параметры правки плана.')
+      }
+      return accepted(client.send({ revisePlan: { revisionId, reviewId, fileName, sourceMarkdown, model } }))
+    }
+
+    case 'review.stopRevision': {
+      const revisionId = asBoundedString(asRecord(payload)['revisionId'])
+      if (revisionId === null) return failure('invalid-payload', 'Некорректный идентификатор правки.')
+      return accepted(client.send({ stopRevision: { revisionId } }))
+    }
+
+    case 'review.saveRevision': {
+      const value = asRecord(payload)
+      const revisionId = asBoundedString(value['revisionId'])
+      const destinationPath = asReviewDestinationPath(value['destinationPath'])
+      const fileName = value['fileName'] === undefined ? '' : asBoundedString(value['fileName'])
+      if (revisionId === null || destinationPath === null || fileName === null) {
+        return failure('invalid-payload', 'Некорректные параметры сохранения плана.')
+      }
+      if (destinationPath.length === 0) {
+        const window = BrowserWindow.getFocusedWindow()
+        const saveOptions: Electron.SaveDialogOptions = {
+          defaultPath: fileName.length > 0 ? fileName : 'plan-revised.md',
+          filters: [{ name: 'Markdown', extensions: ['md'] }]
+        }
+        const save = window ? dialog.showSaveDialog(window, saveOptions) : dialog.showSaveDialog(saveOptions)
+        return save.then((selected) => selected.canceled || !selected.filePath
+          ? { ok: true, value: { cancelled: true } }
+          : accepted(client.send({ saveRevisedPlan: { revisionId, destinationPath: selected.filePath } })))
+      }
+      return accepted(client.send({ saveRevisedPlan: { revisionId, destinationPath } }))
+    }
+
     case 'provider.get':
       return { ok: true, value: providers.summary() }
 
@@ -973,7 +1014,7 @@ async function pickReviewPlan(directory: unknown, workspace: string | null): Pro
   if (selected.canceled || selected.filePaths.length === 0) {
     return { ok: true, value: { cancelled: true, files: [], directory: '' } }
   }
-  const files: { fileName: string; sourceMarkdown: string }[] = []
+  const files: { fileName: string; sourceMarkdown: string; path: string }[] = []
   let total = 0
   for (const path of selected.filePaths) {
     if (extname(path).toLowerCase() !== '.md') return failure('invalid-payload', 'Нужны Markdown-файлы с расширением .md.')
@@ -982,7 +1023,7 @@ async function pickReviewPlan(directory: unknown, workspace: string | null): Pro
     if (total > MAX_REVIEW_PLAN_BYTES) {
       return failure('invalid-payload', 'Выбранные планы в сумме превышают 512 КБ.')
     }
-    files.push({ fileName: basename(path), sourceMarkdown: content })
+    files.push({ fileName: basename(path), sourceMarkdown: content, path })
   }
   const last = selected.filePaths[selected.filePaths.length - 1] as string
   return { ok: true, value: { cancelled: false, files, directory: dirname(last) } }

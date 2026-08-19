@@ -308,6 +308,11 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
             total,
             model.as_deref().unwrap_or("")
         ),
+        evohime_core::CoreEvent::RevisionProgress {
+            revision_id,
+            status,
+            model,
+        } => println!("revision.progress {revision_id}: {status} {model}"),
         evohime_core::CoreEvent::StorageProgress { operation_id, progress } => println!(
             "storage.progress {operation_id}: {:?} {}/{}",
             progress.phase,

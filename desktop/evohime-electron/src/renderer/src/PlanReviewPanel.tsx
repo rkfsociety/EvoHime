@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import type { ConnectionState, CoreEvent, ModelLimits, ModelTier, PlanFile, PlanReviewResult } from '@shared/api'
+import type { ConnectionState, CoreEvent, ModelLimits, ModelTier, PlanFile, PlanReviewResult, PlanRevisionResult } from '@shared/api'
 
 import { useShellApi } from './shell-api'
 import { MarkdownMessage } from './MarkdownMessage'
@@ -134,6 +134,12 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   const [now, setNow] = useState(() => Date.now())
   const [lastChangeAt, setLastChangeAt] = useState(() => Date.now())
   const [copied, setCopied] = useState(false)
+  const [revisionId, setRevisionId] = useState<string | null>(null)
+  const [revision, setRevision] = useState<PlanRevisionResult | null>(null)
+  // Замена исходного файла необратима, поэтому подтверждается вторым нажатием —
+  // как и очистка истории ревью.
+  const [confirmReplace, setConfirmReplace] = useState(false)
+  const [savedPath, setSavedPath] = useState<string | null>(null)
   const [roster, setRoster] = useState<ReviewRoster>({ reviewId: '', models: [], statuses: {} })
   // Перетаскивание над вложенными узлами шлёт dragleave родителю, поэтому
   // подсветка снимается по счётчику входов, а не по первому же выходу.
@@ -147,8 +153,11 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   const checks = useMemo(() => preflight(sourceMarkdown, reviewers, synthesisModel, limits), [limits, reviewers, sourceMarkdown, synthesisModel])
   const reviewResult = useMemo(() => latestReviewResult(events), [events])
   const progress = useMemo(() => reviewId ? latestReviewProgress(events, reviewId) : null, [events, reviewId])
-  const failure = useMemo(() => reviewId ? latestReviewFailure(events, reviewId) : null, [events, reviewId])
+  const failure = useMemo(() => reviewId ? latestTaskFailure(events, reviewId, 'Ревью остановлено.') : null, [events, reviewId])
   const accepted = useMemo(() => reviewId !== null && (progress !== null || events.some((item) => item.eventType === 'review.started' && readPayload(item)?.review_id === reviewId)), [events, progress, reviewId])
+  const revisionResult = useMemo(() => latestRevisionResult(events), [events])
+  const revisionFailure = useMemo(() => revisionId ? latestTaskFailure(events, revisionId, 'Правка остановлена.') : null, [events, revisionId])
+  const revisionRunning = revisionId !== null && revision?.revisionId !== revisionId && revisionFailure === null
   const reviewFinished = reviewResult?.reviewId === reviewId
   const running = reviewId !== null && !reviewFinished && failure === null && progress?.stage !== 'completed' && progress?.stage !== 'failed'
   const progressKey = progress === null ? '' : `${progress.stage}:${progress.status}:${progress.model ?? ''}:${progress.completed}`
@@ -189,6 +198,10 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   useEffect(() => {
     if (reviewResult?.reviewId === reviewId) setSelectedResult(reviewResult)
   }, [reviewId, reviewResult])
+
+  useEffect(() => {
+    if (revisionResult?.revisionId === revisionId) setRevision(revisionResult)
+  }, [revisionId, revisionResult])
 
   useEffect(() => {
     if (!api || !running || !reviewId) return
@@ -281,6 +294,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
     setPlans(merged)
     setSelectedResult(null)
     setReviewId(null)
+    forgetRevision()
     setError(rejected.length > 0 ? `Приняты только .md: пропущены ${rejected.join(', ')}.` : null)
   }
 
@@ -298,18 +312,22 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
       return
     }
     const loaded: PlanFile[] = []
-    for (const file of accepted) loaded.push({ fileName: file.name, sourceMarkdown: await file.text() })
-    // Папку запоминаем и по брошенным файлам: иначе тот, кто планы только
-    // перетаскивает, каждый раз получал бы диалог в папке загрузок. Путь —
-    // удобство, поэтому его отсутствие не мешает добавить сами файлы.
-    const [first] = accepted
-    if (first) {
+    for (const file of accepted) {
+      // Путь нужен, чтобы позже записать исправленный план поверх оригинала.
+      // Файл мог прийти не из файловой системы — тогда пути просто нет, и это
+      // не мешает ни добавить его, ни отправить на ревью.
+      let path = ''
       try {
-        savePlanDirectory(parentDirectory(api?.pathForFile(first) ?? ''))
+        path = api?.pathForFile(file) ?? ''
       } catch {
-        // Файл мог прийти не из файловой системы — папки у него просто нет.
+        path = ''
       }
+      loaded.push({ fileName: file.name, sourceMarkdown: await file.text(), path })
     }
+    // Папку запоминаем и по брошенным файлам: иначе тот, кто планы только
+    // перетаскивает, каждый раз получал бы диалог в папке загрузок.
+    const [first] = loaded
+    if (first && first.path.length > 0) savePlanDirectory(parentDirectory(first.path))
     addPlans(loaded, rejected)
   }
 
@@ -327,6 +345,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
     const id = makeReviewId()
     setReviewId(id)
     setSelectedResult(null)
+    forgetRevision()
     setError(null)
     setStartedAt(Date.now())
     setNow(Date.now())
@@ -346,6 +365,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
     await api.invoke('review.get', { reviewId: id })
     setReviewId(id)
     setSelectedResult(null)
+    forgetRevision()
     setStartedAt(null)
     setError(null)
   }
@@ -376,6 +396,66 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
     const outcome = await api.invoke('review.export', { reviewId: selectedResult.reviewId, destinationPath: '', includeReviewers: false })
     if (!outcome.ok) setError(outcome.message)
   }
+
+  const forgetRevision = (): void => {
+    setRevisionId(null)
+    setRevision(null)
+    setConfirmReplace(false)
+    setSavedPath(null)
+  }
+
+  const revise = async (): Promise<void> => {
+    if (!api || !selectedResult || !canRevise) return
+    const plan = plans[0]
+    if (!plan) return
+    const id = makeRevisionId()
+    setRevisionId(id)
+    setRevision(null)
+    setConfirmReplace(false)
+    setSavedPath(null)
+    setError(null)
+    const outcome = await api.invoke('review.revise', {
+      revisionId: id,
+      reviewId: selectedResult.reviewId,
+      fileName: plan.fileName,
+      sourceMarkdown,
+      model: selectedResult.synthesisModel || synthesisModel
+    })
+    if (!outcome.ok) {
+      setError(`Ядро отклонило правку: ${outcome.message}`)
+      setRevisionId(null)
+    }
+  }
+
+  const stopRevision = async (): Promise<void> => {
+    if (!api || !revisionId) return
+    const outcome = await api.invoke('review.stopRevision', { revisionId })
+    if (!outcome.ok) setError(outcome.message)
+  }
+
+  /**
+   * Пустой `destinationPath` — просьба к оболочке показать диалог сохранения.
+   * Непустой приходит только из пути исходного файла, то есть из подтверждённой
+   * замены оригинала.
+   */
+  const saveRevision = async (destinationPath: string): Promise<void> => {
+    if (!api || !revision) return
+    const outcome = await api.invoke('review.saveRevision', { revisionId: revision.revisionId, destinationPath, fileName: revision.fileName })
+    setConfirmReplace(false)
+    if (!outcome.ok) {
+      setError(outcome.message)
+      return
+    }
+    if (outcome.value.cancelled) return
+    setSavedPath(destinationPath.length > 0 ? destinationPath : revision.fileName)
+  }
+
+  const plan = plans.length === 1 ? plans[0] : undefined
+  // Ревью могло быть открыто из истории — тогда в списке лежит другой файл или
+  // ничего. Править по чужому ревью хуже, чем не править вовсе.
+  const reviewCoversPlan = selectedResult !== null && plan !== undefined && reviewedFileNames(selectedResult).length === 1 && reviewedFileNames(selectedResult)[0] === plan.fileName
+  const canRevise = CONNECTED.includes(connection) && selectedResult !== null && reviewCoversPlan && sourceMarkdown.length > 0 && !running && !revisionRunning
+  const reviseHint = revisionHint(connection, selectedResult, plans.length, reviewCoversPlan)
 
   const canStart = CONNECTED.includes(connection) && fileName.length > 0 && reviewers.length >= MIN_REVIEWERS && reviewers.every((model) => Boolean(model) && models.includes(model)) && new Set(reviewers).size === reviewers.length && synthesisModel.length > 0 && models.includes(synthesisModel) && !running && checks.tooSmall.length === 0
   const status = reviewStatus(progress, reviewFinished, selectedResult !== null, failure, accepted)
@@ -442,7 +522,23 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
       {failure ? <p role="alert" className="shell__reason">{failure.kind === 'stopped' ? 'Ревью остановлено.' : `Ревью завершилось ошибкой: ${failure.message}`}</p> : null}
       {error ? <p role="alert" className="shell__reason">{error}</p> : null}
 
-      {selectedResult ? <div className="review-panel__result"><div className="review-panel__result-heading"><h3>Итоговое ревью</h3><div className="review-panel__result-actions"><button type="button" onClick={() => void copyResult()}>{copied ? 'Скопировано' : 'Скопировать итоговый Markdown'}</button><button type="button" onClick={() => void exportResult()}>Экспортировать итоговый Markdown</button></div></div><MarkdownMessage text={selectedResult.finalMarkdown} /><h3>Исходные ответы</h3>{selectedResult.reviewers.map((review) => <details key={review.model}><summary>{review.model} · {review.status}</summary>{review.error ? <p>{review.error}</p> : <MarkdownMessage text={review.content} />}</details>)}</div> : null}
+      {selectedResult ? <div className="review-panel__result"><div className="review-panel__result-heading"><h3>Итоговое ревью</h3><div className="review-panel__result-actions"><button type="button" onClick={() => void copyResult()}>{copied ? 'Скопировано' : 'Скопировать итоговый Markdown'}</button><button type="button" onClick={() => void exportResult()}>Экспортировать итоговый Markdown</button><button type="button" onClick={() => void revise()} disabled={!canRevise}>{revisionRunning ? 'Ева правит план…' : 'Исправить план по ревью'}</button></div></div>{reviseHint ? <p className="review-panel__hint">{reviseHint}</p> : null}<MarkdownMessage text={selectedResult.finalMarkdown} /><h3>Исходные ответы</h3>{selectedResult.reviewers.map((review) => <details key={review.model}><summary>{review.model} · {review.status}</summary>{review.error ? <p>{review.error}</p> : <MarkdownMessage text={review.content} />}</details>)}</div> : null}
+      {revisionId ? (
+        <RevisionCard
+          revision={revision}
+          running={revisionRunning}
+          failure={revisionFailure}
+          sourceLength={sourceMarkdown.length}
+          targetPath={plan?.path ?? ''}
+          savedPath={savedPath}
+          confirmReplace={confirmReplace}
+          onConfirmReplace={() => setConfirmReplace(true)}
+          onCancelReplace={() => setConfirmReplace(false)}
+          onReplace={() => void saveRevision(plan?.path ?? '')}
+          onSaveAs={() => void saveRevision('')}
+          onStop={() => void stopRevision()}
+        />
+      ) : null}
       <History events={events} onOpen={(id) => void openHistory(id)} onClear={() => void clearHistory()} />
     </section>
   )
@@ -489,6 +585,56 @@ function ProgressCard({ roster, progress, status, reviewers, elapsed, accepted, 
   const working = progress?.stage === 'reviewers' && progress.status === 'working' ? progress.model : null
   const hint = failed ? 'Запуск прерван, подробности ниже' : progress?.stage === 'synthesis' ? `Синтез результата · ${progress.model ?? 'модель'}` : working ? `Рецензенты отвечают по очереди · сейчас ${working}` : progress?.stage === 'reviewers' ? 'Рецензенты отвечают по очереди' : accepted ? 'Ядро приняло план, ждём первый ответ модели' : 'Отправляем план в ядро'
   return <div className="review-panel__progress" role="status" aria-live="polite"><div className="review-panel__progress-heading"><strong>{status}</strong>{elapsed === null ? null : <span className="review-panel__elapsed">{elapsed} с</span>}</div><div className="review-panel__progress-bar"><span style={{ width: `${total ? Math.round((Math.min(completed, total) / total) * 100) : 0}%` }} /></div><p>{hint}</p><ul>{queue.map((model, index) => { const state = roster.statuses[model] ?? 'waiting'; const displayState = failed && (state === 'working' || state === 'waiting') ? 'cancelled' : state; return <li key={`${model}-${index}`}><span>{model || `Рецензент ${index + 1}`}</span><span className={`review-panel__reviewer-status review-panel__reviewer-status--${displayState}`}>{reviewStatusLabel(displayState)}</span></li> })}</ul></div>
+}
+
+/**
+ * Исправленный план и два способа его сохранить.
+ *
+ * Замена оригинала стоит первой, потому что ради неё правка и затевается, но
+ * она же единственное необратимое действие в панели — отсюда подтверждение
+ * вторым нажатием и отдельное предупреждение об оборванной генерации.
+ */
+function RevisionCard({ revision, running, failure, sourceLength, targetPath, savedPath, confirmReplace, onConfirmReplace, onCancelReplace, onReplace, onSaveAs, onStop }: {
+  readonly revision: PlanRevisionResult | null
+  readonly running: boolean
+  readonly failure: ReviewFailure | null
+  readonly sourceLength: number
+  readonly targetPath: string
+  readonly savedPath: string | null
+  readonly confirmReplace: boolean
+  readonly onConfirmReplace: () => void
+  readonly onCancelReplace: () => void
+  readonly onReplace: () => void
+  readonly onSaveAs: () => void
+  readonly onStop: () => void
+}): React.JSX.Element {
+  // Модель обязана вернуть план целиком, поэтому вдвое более короткий ответ —
+  // почти наверняка обрыв генерации, а не удачное сокращение.
+  const truncated = revision !== null && sourceLength > 0 && revision.revisedMarkdown.length * 2 < sourceLength
+  return (
+    <div className="review-panel__revision">
+      <div className="review-panel__result-heading">
+        <h3>Исправленный план</h3>
+        <div className="review-panel__result-actions">
+          {running ? <button type="button" onClick={onStop}>Остановить правку</button> : null}
+          {revision === null ? null : confirmReplace ? (
+            <span className="review-panel__history-confirm">
+              <button type="button" onClick={onReplace}>Заменить</button>
+              <button type="button" onClick={onCancelReplace}>Отмена</button>
+            </span>
+          ) : (
+            <button type="button" onClick={onConfirmReplace} disabled={targetPath.length === 0} title={targetPath.length === 0 ? 'Путь исходного файла неизвестен — доступно только «Сохранить как…».' : targetPath}>Заменить исходный файл</button>
+          )}
+          {revision === null ? null : <button type="button" onClick={onSaveAs}>Сохранить как…</button>}
+        </div>
+      </div>
+      {confirmReplace ? <p className="review-panel__history-note">Файл {targetPath} будет перезаписан целиком. Отменить это можно только средствами системы контроля версий.</p> : null}
+      {truncated ? <p role="alert" className="shell__reason">Исправленный план более чем вдвое короче исходного — похоже, ответ модели оборвался. Проверь текст до сохранения.</p> : null}
+      {failure ? <p role="alert" className="shell__reason">{failure.kind === 'stopped' ? failure.message : `Правка завершилась ошибкой: ${failure.message}`}</p> : null}
+      {savedPath ? <p className="review-panel__hint">Сохранено: {savedPath}</p> : null}
+      {revision === null ? (running ? <p>Ева переписывает план по замечаниям ревью. Это один запрос к модели-синтезатору, он может занять несколько минут.</p> : null) : <MarkdownMessage text={revision.revisedMarkdown} />}
+    </div>
+  )
 }
 
 function History({ events, onOpen, onClear }: { readonly events: readonly CoreEvent[]; readonly onOpen: (id: string) => void; readonly onClear: () => void }): React.JSX.Element {
@@ -595,13 +741,13 @@ function latestReviewProgress(events: readonly CoreEvent[], reviewId: string): R
   return null
 }
 
-function latestReviewFailure(events: readonly CoreEvent[], reviewId: string): ReviewFailure | null {
+function latestTaskFailure(events: readonly CoreEvent[], taskId: string, stoppedMessage: string): ReviewFailure | null {
   for (const event of [...events].reverse()) {
     if (event.eventType !== 'task.failed' && event.eventType !== 'task.stopped') continue
     const payload = readPayload(event)
-    const taskId = event.taskId || String(payload?.task_id ?? '')
-    if (taskId !== reviewId) continue
-    if (event.eventType === 'task.stopped') return { kind: 'stopped', message: 'Ревью остановлено.' }
+    const eventTaskId = event.taskId || String(payload?.task_id ?? '')
+    if (eventTaskId !== taskId) continue
+    if (event.eventType === 'task.stopped') return { kind: 'stopped', message: stoppedMessage }
     const reason = payload?.error
     return { kind: 'failed', message: typeof reason === 'string' && reason.length > 0 ? reason : 'Ядро не сообщило причину.' }
   }
@@ -671,3 +817,40 @@ function unwrapVariant(value: Record<string, unknown>): Record<string, unknown> 
 function reviewStatus(progress: ReviewProgress | null, finished: boolean, hasResult: boolean, failure: ReviewFailure | null, accepted: boolean): string { if (failure) return failure.kind === 'stopped' ? 'Остановлено' : 'Ошибка'; if (hasResult || finished || progress?.stage === 'completed') return 'Готово'; if (progress?.stage === 'failed') return 'Ошибка'; if (progress?.stage === 'synthesis') return 'Синтез результата'; if (progress?.stage === 'reviewers') return `Рецензенты: ${progress.completed}/${progress.total}`; return accepted ? 'Отправлено в ядро' : 'Отправка плана' }
 function reviewStatusLabel(status: string): string { if (status === 'completed') return 'готово'; if (status === 'failed') return 'ошибка'; if (status === 'cancelled') return 'отменено'; if (status === 'working') return 'работает'; return 'ожидает' }
 function makeReviewId(): string { return typeof crypto.randomUUID === 'function' ? `review-${crypto.randomUUID()}` : `review-${Date.now()}` }
+function makeRevisionId(): string { return typeof crypto.randomUUID === 'function' ? `revision-${crypto.randomUUID()}` : `revision-${Date.now()}` }
+
+/**
+ * Файлы, по которым сделано ревью. Старые записи журнала знают только
+ * `file_name`, поэтому пустой список имён — не «файлов не было», а «запись
+ * сделана до того, как их стали перечислять».
+ */
+function reviewedFileNames(result: PlanReviewResult): readonly string[] {
+  return result.fileNames.length > 0 ? result.fileNames : [result.fileName]
+}
+
+function revisionHint(connection: ConnectionState, result: PlanReviewResult | null, planCount: number, covers: boolean): string {
+  if (result === null) return ''
+  if (!CONNECTED.includes(connection)) return 'Правка недоступна: нет связи с ядром.'
+  if (planCount === 0) return 'Чтобы исправить план, добавь его файл в список — ядру нужен исходный текст, а не только ревью.'
+  if (planCount > 1) return 'Правка работает по одному файлу: склеенный документ нельзя разложить обратно. Оставь в списке один план.'
+  if (!covers) return 'В списке лежит не тот файл, по которому сделано это ревью.'
+  return ''
+}
+
+function latestRevisionResult(events: readonly CoreEvent[]): PlanRevisionResult | null {
+  const payload = readPayload(events.find((item) => item.eventType === 'task.completed' && item.taskId.startsWith('revision-')))
+  const finalMessage = payload?.final_message
+  if (typeof finalMessage !== 'string') return null
+  try {
+    const value = JSON.parse(finalMessage) as Record<string, unknown>
+    return {
+      revisionId: String(value.revision_id ?? ''),
+      reviewId: String(value.review_id ?? ''),
+      fileName: String(value.file_name ?? ''),
+      model: String(value.model ?? ''),
+      revisedMarkdown: String(value.revised_markdown ?? '')
+    }
+  } catch {
+    return null
+  }
+}

@@ -1,8 +1,10 @@
-//! Read-only multi-model review of a Markdown implementation plan.
+//! Read-only multi-model review of a Markdown implementation plan, plus the
+//! single-model revision that folds a finished review back into that plan.
 //!
 //! This module deliberately has no tools or workspace access. It owns only
 //! bounded validation, prompt construction and provider fan-out; callers own
-//! persistence and UI events.
+//! persistence and UI events. The revision half returns the rewritten plan as
+//! a string for exactly that reason: writing it to disk belongs to the caller.
 
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -62,6 +64,8 @@ pub enum ReviewError {
     EmptyReviewId,
     #[error("Markdown plan is empty")]
     EmptyPlan,
+    #[error("review text is empty")]
+    EmptyReview,
     #[error("Markdown plan exceeds {MAX_PLAN_BYTES} bytes")]
     PlanTooLarge,
     #[error("review requires between {MIN_REVIEWERS} and {MAX_REVIEWERS} unique models")]
@@ -282,6 +286,124 @@ pub async fn run_review_with_progress(
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RevisionRequest {
+    pub revision_id: String,
+    pub review_id: String,
+    pub file_name: String,
+    pub source_markdown: String,
+    pub review_markdown: String,
+    pub model: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RevisionResult {
+    pub revision_id: String,
+    pub review_id: String,
+    pub file_name: String,
+    pub model: String,
+    pub revised_markdown: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RevisionProgress {
+    pub revision_id: String,
+    pub status: String,
+    pub model: String,
+}
+
+impl RevisionRequest {
+    pub fn validate(&self) -> Result<(), ReviewError> {
+        if self.revision_id.trim().is_empty() || self.review_id.trim().is_empty() {
+            return Err(ReviewError::EmptyReviewId);
+        }
+        if self.source_markdown.trim().is_empty() {
+            return Err(ReviewError::EmptyPlan);
+        }
+        if self.source_markdown.len() > MAX_PLAN_BYTES {
+            return Err(ReviewError::PlanTooLarge);
+        }
+        if self.review_markdown.trim().is_empty() {
+            return Err(ReviewError::EmptyReview);
+        }
+        if !valid_model(&self.model) {
+            return Err(ReviewError::InvalidModel);
+        }
+        Ok(())
+    }
+}
+
+/// Rewrites the plan the review was made for and returns it whole.
+///
+/// A diff would be cheaper to transfer, but models are far more reliable at
+/// reproducing a document than at addressing hunks, and the caller shows the
+/// result before anything touches the original file.
+pub async fn run_revision(
+    gateway: Arc<ModelGateway>,
+    request: RevisionRequest,
+    cancellation: CancellationToken,
+    progress: Arc<dyn Fn(RevisionProgress) + Send + Sync>,
+) -> Result<RevisionResult, ReviewError> {
+    request.validate()?;
+    // Checked before the request rather than only inside the stream: a revision
+    // cancelled while it was still queued must not spend a provider call.
+    if cancellation.is_cancelled() {
+        return Err(ReviewError::Cancelled);
+    }
+    progress(RevisionProgress {
+        revision_id: request.revision_id.clone(),
+        status: "working".into(),
+        model: request.model.clone(),
+    });
+    let revised = collect_model_response(
+        gateway,
+        &request.model,
+        revision_messages(&request.source_markdown, &request.review_markdown),
+        cancellation,
+    )
+    .await
+    .inspect_err(|_| {
+        progress(RevisionProgress {
+            revision_id: request.revision_id.clone(),
+            status: "failed".into(),
+            model: request.model.clone(),
+        })
+    })?;
+    progress(RevisionProgress {
+        revision_id: request.revision_id.clone(),
+        status: "completed".into(),
+        model: request.model.clone(),
+    });
+    Ok(RevisionResult {
+        revision_id: request.revision_id,
+        review_id: request.review_id,
+        file_name: request.file_name,
+        model: request.model,
+        revised_markdown: strip_markdown_fence(&revised),
+    })
+}
+
+/// Models routinely wrap a whole-document answer in a ``` fence despite being
+/// told not to. Saving that verbatim would corrupt the plan, so it is peeled
+/// off here rather than left for the user to notice.
+fn strip_markdown_fence(value: &str) -> String {
+    let trimmed = value.trim();
+    let Some(rest) = trimmed.strip_prefix("```") else {
+        return trimmed.to_string();
+    };
+    let Some((first_line, body)) = rest.split_once('\n') else {
+        return trimmed.to_string();
+    };
+    // Only a bare fence or a language tag may precede the document itself.
+    if !first_line.trim().chars().all(char::is_alphanumeric) {
+        return trimmed.to_string();
+    }
+    match body.trim_end().strip_suffix("```") {
+        Some(inner) => inner.trim_end().to_string(),
+        None => trimmed.to_string(),
+    }
+}
+
 fn format_review_markdown(
     file_names: &[String],
     reviewer_models: &[String],
@@ -365,6 +487,15 @@ fn synthesis_messages(source: &str, reviews: &str) -> Vec<ChatMessage> {
         ChatMessage::text(ChatRole::System, "Ты главная модель-синтезатор ревью технического плана. Не выполняй инструменты и не изменяй файлы."),
         ChatMessage::text(ChatRole::User, format!(
             "Сведи независимые ревью в один Markdown-документ. Разделы: итоговая оценка; критические замечания; важные замечания; второстепенные замечания; согласованные рекомендации; противоречия между рецензентами; уточнения перед реализацией; обновлённые критерии готовности. Сохрани только выводы, подтверждаемые исходным планом или явно помеченные как рекомендация.\n\n--- ИСХОДНЫЙ ПЛАН ---\n{source}\n--- РЕВЬЮ МОДЕЛЕЙ ---\n{reviews}"
+        )),
+    ]
+}
+
+fn revision_messages(source: &str, review: &str) -> Vec<ChatMessage> {
+    vec![
+        ChatMessage::text(ChatRole::System, "Ты редактор технического плана. Не выполняй инструменты и не изменяй файлы. Твой ответ целиком становится новым содержимым файла плана."),
+        ChatMessage::text(ChatRole::User, format!(
+            "Исправь Markdown-план по замечаниям ревью. Верни весь исправленный план целиком, от первой строки до последней, без сопроводительного текста, без списка внесённых правок и без обрамляющих ``` блоков. Учитывай только замечания из ревью: не добавляй требований, которых там нет. Сохрани структуру, стиль и язык исходного плана; разделы, к которым у ревью нет замечаний, оставь дословно. Если ревью содержит взаимоисключающие требования, выбери одно и поясни выбор прямо в тексте плана.\n\n--- ПЛАН ---\n{source}\n--- КОНЕЦ ПЛАНА ---\n--- РЕВЬЮ ---\n{review}\n--- КОНЕЦ РЕВЬЮ ---"
         )),
     ]
 }
@@ -542,6 +673,84 @@ mod tests {
                 failed: 1,
                 total: 2
             }
+        );
+    }
+
+    fn revision() -> RevisionRequest {
+        RevisionRequest {
+            revision_id: "revision-1".into(),
+            review_id: "review-1".into(),
+            file_name: "plan.md".into(),
+            source_markdown: "# Plan\n\nDo the thing".into(),
+            review_markdown: "Раздел про откат отсутствует.".into(),
+            model: "main".into(),
+        }
+    }
+
+    #[test]
+    fn revision_requires_a_plan_a_review_and_a_model() {
+        assert!(revision().validate().is_ok());
+        let mut invalid = revision();
+        invalid.review_markdown = " \n".into();
+        assert_eq!(invalid.validate(), Err(ReviewError::EmptyReview));
+        invalid = revision();
+        invalid.source_markdown = "x".repeat(MAX_PLAN_BYTES + 1);
+        assert_eq!(invalid.validate(), Err(ReviewError::PlanTooLarge));
+        invalid = revision();
+        invalid.model = "two words".into();
+        assert_eq!(invalid.validate(), Err(ReviewError::InvalidModel));
+        invalid = revision();
+        invalid.revision_id = "  ".into();
+        assert_eq!(invalid.validate(), Err(ReviewError::EmptyReviewId));
+    }
+
+    #[tokio::test]
+    async fn revision_returns_the_whole_plan_and_reports_progress() {
+        let gateway = Arc::new(mock_gateway(vec!["# Plan\n\nDo the thing\n\n## Откат".into()]));
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = Arc::clone(&seen);
+        let result = run_revision(
+            gateway,
+            revision(),
+            CancellationToken::new(),
+            Arc::new(move |progress: RevisionProgress| {
+                sink.lock().expect("progress lock").push(progress.status)
+            }),
+        )
+        .await
+        .expect("revision completes");
+
+        assert_eq!(result.revision_id, "revision-1");
+        assert_eq!(result.review_id, "review-1");
+        assert_eq!(result.file_name, "plan.md");
+        assert!(result.revised_markdown.starts_with("# Plan"));
+        assert!(result.revised_markdown.contains("## Откат"));
+        assert_eq!(
+            *seen.lock().expect("progress lock"),
+            vec!["working".to_string(), "completed".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn revision_stops_when_cancelled() {
+        let gateway = Arc::new(mock_gateway(vec!["# Plan".into()]));
+        let cancellation = CancellationToken::new();
+        cancellation.cancel();
+        let error = run_revision(gateway, revision(), cancellation, Arc::new(|_| {}))
+            .await
+            .expect_err("cancelled revision fails");
+
+        assert_eq!(error, ReviewError::Cancelled);
+    }
+
+    #[test]
+    fn revision_peels_off_a_fenced_answer() {
+        assert_eq!(strip_markdown_fence("```markdown\n# Plan\n```"), "# Plan");
+        assert_eq!(strip_markdown_fence("```\n# Plan\n```"), "# Plan");
+        // An unfenced document that merely contains a code block stays intact.
+        assert_eq!(
+            strip_markdown_fence("# Plan\n\n```bash\nls\n```"),
+            "# Plan\n\n```bash\nls\n```"
         );
     }
 }

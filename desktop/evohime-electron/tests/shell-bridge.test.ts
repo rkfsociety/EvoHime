@@ -604,6 +604,40 @@ describe('workspace knowledge commands', () => {
     selectedWorkspace = null
   })
 
+  it('forwards a plan revision and rejects an empty one', async () => {
+    const outcome = await invoke('review.revise', {
+      revisionId: 'revision-1',
+      reviewId: 'review-1',
+      fileName: 'plan.md',
+      sourceMarkdown: '# Plan',
+      model: 'main'
+    })
+
+    expect(outcome).toEqual({ ok: true, value: { accepted: true } })
+    expect(sent).toEqual([{
+      revisePlan: { revisionId: 'revision-1', reviewId: 'review-1', fileName: 'plan.md', sourceMarkdown: '# Plan', model: 'main' }
+    }])
+
+    const empty = await invoke('review.revise', {
+      revisionId: 'revision-2',
+      reviewId: 'review-1',
+      fileName: 'plan.md',
+      sourceMarkdown: '   ',
+      model: 'main'
+    })
+    expect((empty as CommandFailure).ok).toBe(false)
+    expect(sent).toHaveLength(1)
+  })
+
+  it('asks where to save a revised plan only when no path was chosen', async () => {
+    await invoke('review.saveRevision', { revisionId: 'revision-1', destinationPath: 'C:\plans\plan.md' })
+    expect(sent).toEqual([{ saveRevisedPlan: { revisionId: 'revision-1', destinationPath: 'C:\plans\plan.md' } }])
+
+    // Пустой путь — просьба показать диалог сохранения.
+    await invoke('review.saveRevision', { revisionId: 'revision-1', destinationPath: '', fileName: 'plan.md' })
+    expect(sent.at(-1)).toEqual({ saveRevisedPlan: { revisionId: 'revision-1', destinationPath: 'G:/evohime-trace.md' } })
+  })
+
   it('rejects malformed workspace knowledge payloads', () => {
     const outcomes = [
       invoke('core.indexWorkspace', {}),

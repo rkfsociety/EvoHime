@@ -454,4 +454,102 @@ describe('plan review panel', () => {
     await startReview(['a', 'b', 'main'])
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('provider is not configured'))
   })
+
+  it('revises the reviewed plan and writes it over the original', async () => {
+    const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
+    Object.defineProperty(window, 'evohime', {
+      value: Object.freeze({ v1: {
+        apiVersion: 1,
+        invoke: (async (command: RendererCommand, payload: unknown) => {
+          calls.push({ command, payload })
+          return ok(command === 'review.list' ? { reviews: [] } : command === 'review.get' ? { review: null } : command === 'review.pickPlan' ? { cancelled: false, files: [{ fileName: 'plan.md', sourceMarkdown: '# Plan', path: 'C:/plans/plan.md' }], directory: 'C:/plans' } : { accepted: true })
+        }) as EvoHimeApiV1['invoke'],
+        subscribe: () => () => {},
+        writeClipboardText: async () => true,
+        openExternal: async () => true,
+        pathForFile: (file: File) => 'C:/plans/' + file.name
+      } satisfies EvoHimeApiV1 }),
+      configurable: true
+    })
+    const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
+
+    await startReview(['a', 'b', 'main'])
+    const reviewId = startedReviewId()
+    const result = { review_id: reviewId, file_name: 'plan.md', synthesis_model: 'main', final_markdown: '# Итог', reviewers: [] }
+    const reviewDone = [catalog, event('task.completed', { TaskCompleted: { task_id: reviewId, final_message: JSON.stringify(result) } }, reviewId)]
+    view.rerender(<PlanReviewPanel connection="connected" events={reviewDone} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Исправить план по ревью' }))
+    const revision = calls.find((call) => call.command === 'review.revise')?.payload as { revisionId: string; reviewId: string; fileName: string; sourceMarkdown: string; model: string }
+    expect(revision.reviewId).toBe(reviewId)
+    expect(revision.fileName).toBe('plan.md')
+    expect(revision.sourceMarkdown).toBe('# Plan')
+    expect(revision.model).toBe('main')
+
+    const revised = { revision_id: revision.revisionId, review_id: reviewId, file_name: 'plan.md', model: 'main', revised_markdown: '# План после правки' }
+    view.rerender(<PlanReviewPanel connection="connected" events={[
+      event('task.completed', { TaskCompleted: { task_id: revision.revisionId, final_message: JSON.stringify(revised) } }, revision.revisionId),
+      ...reviewDone
+    ]} />)
+
+    await waitFor(() => expect(screen.getByText('План после правки')).toBeTruthy())
+    // Перезапись оригинала необратима, поэтому одного нажатия мало.
+    await userEvent.click(screen.getByRole('button', { name: 'Заменить исходный файл' }))
+    expect(calls.some((call) => call.command === 'review.saveRevision')).toBe(false)
+    await userEvent.click(screen.getByRole('button', { name: 'Заменить' }))
+    expect(calls.find((call) => call.command === 'review.saveRevision')?.payload).toEqual({
+      revisionId: revision.revisionId,
+      destinationPath: 'C:/plans/plan.md',
+      fileName: 'plan.md'
+    })
+  })
+
+  it('refuses to revise when the list holds more than one plan', async () => {
+    const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
+    Object.defineProperty(window, 'evohime', {
+      value: Object.freeze({ v1: {
+        apiVersion: 1,
+        invoke: (async (command: RendererCommand, payload: unknown) => {
+          calls.push({ command, payload })
+          return ok(command === 'review.list' ? { reviews: [] } : command === 'review.get' ? { review: null } : command === 'review.pickPlan' ? { cancelled: false, files: [{ fileName: 'a.md', sourceMarkdown: '# A', path: 'C:/plans/a.md' }, { fileName: 'b.md', sourceMarkdown: '# B', path: 'C:/plans/b.md' }], directory: 'C:/plans' } : { accepted: true })
+        }) as EvoHimeApiV1['invoke'],
+        subscribe: () => () => {},
+        writeClipboardText: async () => true,
+        openExternal: async () => true,
+        pathForFile: (file: File) => 'C:/plans/' + file.name
+      } satisfies EvoHimeApiV1 }),
+      configurable: true
+    })
+    const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
+
+    await startReview(['a', 'b', 'main'])
+    const reviewId = startedReviewId()
+    const result = { review_id: reviewId, file_name: 'combined-plan.md', file_names: ['a.md', 'b.md'], synthesis_model: 'main', final_markdown: '# Итог', reviewers: [] }
+    view.rerender(<PlanReviewPanel connection="connected" events={[
+      catalog,
+      event('task.completed', { TaskCompleted: { task_id: reviewId, final_message: JSON.stringify(result) } }, reviewId)
+    ]} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Исправить план по ревью' })).toBeTruthy())
+    expect(screen.getByRole('button', { name: 'Исправить план по ревью' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText(/Правка работает по одному файлу/)).toBeTruthy()
+  })
+
+  it('refuses to revise a review whose plan is no longer in the list', async () => {
+    const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
+    const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
+
+    await startReview(['a', 'b', 'main'])
+    const reviewId = startedReviewId()
+    const result = { review_id: reviewId, file_name: 'plan.md', synthesis_model: 'main', final_markdown: '# Итог', reviewers: [] }
+    view.rerender(<PlanReviewPanel connection="connected" events={[
+      catalog,
+      event('task.completed', { TaskCompleted: { task_id: reviewId, final_message: JSON.stringify(result) } }, reviewId)
+    ]} />)
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Исправить план по ревью' })).toBeTruthy())
+    await userEvent.click(screen.getByRole('button', { name: 'Очистить список' }))
+    expect(screen.getByRole('button', { name: 'Исправить план по ревью' }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText(/добавь его файл в список/)).toBeTruthy()
+  })
 })
