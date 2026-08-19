@@ -29,7 +29,7 @@
         "timestamp": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$" },
         "task_id": { "$ref": "#/$defs/id" }, "run_id": { "$ref": "#/$defs/id" }, "tool_name": { "$ref": "#/$defs/id" },
         "tool_args_hash": { "$ref": "#/$defs/hash" }, "result_hash": { "$ref": "#/$defs/hash" },
-        "policy_id": { "$ref": "#/$defs/id" }, "policy_decision": { "enum": ["allow", "deny", "approval_required", "allowed"] },
+        "policy_id": { "$ref": "#/$defs/id" }, "policy_decision": { "enum": ["allow", "deny", "approval_required"] },
         "approval_id": { "$ref": "#/$defs/uuidv7" }, "parent_approval_ref": { "$ref": "#/$defs/id" },
         "previous_receipt_hash": { "$ref": "#/$defs/hash" }, "context_ledger_hash": { "$ref": "#/$defs/hash" },
         "model_route": { "type": "object", "additionalProperties": false, "required": ["provider_id", "model_id"], "properties": { "provider_id": { "$ref": "#/$defs/id" }, "model_id": { "$ref": "#/$defs/id" } } }

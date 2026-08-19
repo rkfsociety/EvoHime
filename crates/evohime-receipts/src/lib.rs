@@ -361,7 +361,7 @@ pub fn validate_payload_v1(payload: &Value) -> Result<(), ReceiptError> {
         return Err(ReceiptError::SchemaViolation);
     }
     if let Some(decision) = object.get("policy_decision").and_then(Value::as_str) {
-        if !matches!(decision, "allow" | "deny" | "approval_required" | "allowed") {
+        if !matches!(decision, "allow" | "deny" | "approval_required") {
             return Err(ReceiptError::SchemaViolation);
         }
     } else {
