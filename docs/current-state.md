@@ -56,6 +56,7 @@ Core и supervisor — внутренние компоненты установ�
 - base URL провайдера принимается только по `https`, либо `http` на loopback, чтобы ключ не ушёл на произвольный хост.
 - approval.required передаёт bounded structured preview для команд, записи файлов и unified diff; Electron показывает его в TaskTimeline и Terminal, а Core сохраняет exact-call hash и повторную policy-проверку перед выполнением;
 - approval-токены для tool runtime одноразовые и атомарно погашаются перед выполнением; hard-deny policy проверяет канонический путь, включая вызовы через относительные алиасы;
+- Runtime receipts 01.3 подключены к Core-owned execution path: durable signed pre/post/refusal, UUIDv7 approval intent с monotonic TTL, exact-call recheck, signed refusal для expired/stale/call_changed/policy_denied, bounded parent approval reference, recovery/quarantine/reconciliation и audit call hash; JCS numeric edge cases покрыты shared Rust tests;
 
 ### Desktop shell (Electron)
 

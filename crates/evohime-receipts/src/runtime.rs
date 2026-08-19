@@ -4,7 +4,7 @@
 //! callers prepare/claim a mutation, dispatch it, and then commit exactly one
 //! terminal receipt.  The durable rows are the recovery source of truth.
 
-use crate::{canonicalize_json, receipt_hash, result_hash, Envelope, ReceiptError};
+use crate::{canonicalize_json, receipt_hash, result_hash, validate_uuid_v7, Envelope, ReceiptError};
 use chrono::Utc;
 use ring::{aead, rand::{SecureRandom, SystemRandom}};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -589,6 +589,16 @@ fn require_ready(connection: &Connection) -> Result<(), RuntimeError> {
     Ok(())
 }
 
+fn stored_hash_for_action(connection: &Connection, action_id: &str) -> Result<String, RuntimeError> {
+    connection
+        .query_row(
+            "SELECT tool_args_hash FROM receipt_actions WHERE action_id=?1",
+            [action_id],
+            |row| row.get(0),
+        )
+        .map_err(RuntimeError::from)
+}
+
 /// Normative lock-retry schedule for chain-append transactions: attempt
 /// immediately, then retry after 10ms, 50ms and 250ms before surfacing
 /// `receipt.chain_conflict`. SQLite's own busy handler is disabled around
@@ -734,6 +744,25 @@ fn build_payload(request: &ActionRequest, kind: &str, status: &str, args_hash: &
     payload
 }
 
+/// Child handoffs carry only the two authenticated parent identifiers. A raw
+/// parent payload or arbitrary renderer string is never a valid reference.
+fn valid_parent_approval_ref(value: &str) -> bool {
+    let mut parts = value.split(':');
+    let Some(action_id) = parts.next() else { return false; };
+    let Some(approval_id) = parts.next() else { return false; };
+    parts.next().is_none() && validate_uuid_v7(action_id) && validate_uuid_v7(approval_id)
+}
+
+fn parent_approval_ids(value: &str) -> Option<(&str, &str)> {
+    let mut parts = value.split(':');
+    let action_id = parts.next()?;
+    let approval_id = parts.next()?;
+    if parts.next().is_some() || !validate_uuid_v7(action_id) || !validate_uuid_v7(approval_id) {
+        return None;
+    }
+    Some((action_id, approval_id))
+}
+
 fn signed_receipt(tx: &Connection, signer: &dyn ReceiptSigner, request: &ActionRequest,
                   kind: &str, status: &str, args_hash: &str, result: Option<&str>, refusal: Option<&str>)
                   -> Result<(String, String), RuntimeError> {
@@ -826,9 +855,22 @@ impl<'a> ReceiptRuntime<'a> {
         require_ready(self.connection)?;
         if request.action_id.get_version_num() != 7 { return Err(RuntimeError::Code("schema_violation")); }
         request.preview = bounded_preview(&request.preview);
-        if request.parent_approval_ref.as_ref().is_some_and(|value| value.is_empty() || value.len() > 256) { return Err(RuntimeError::Code("schema_violation")); }
+        if request.parent_approval_ref.as_deref().is_some_and(|value| !valid_parent_approval_ref(value)) { return Err(RuntimeError::Code("schema_violation")); }
         let args_hash = canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input)?;
         let tx = RetryTransaction::begin(self.connection)?;
+        if let Some(parent) = request.parent_approval_ref.as_deref() {
+            let Some((parent_action_id, parent_approval_id)) = parent_approval_ids(parent) else {
+                return Err(RuntimeError::Code("schema_violation"));
+            };
+            let parent_state: Option<(String, String)> = tx.query_row(
+                "SELECT action_id,state FROM receipt_approval_intents WHERE approval_id=?1",
+                [parent_approval_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            ).optional()?;
+            if !parent_state.is_some_and(|(action_id, state)| action_id == parent_action_id && matches!(state.as_str(), "granted" | "claimed")) {
+                return Err(RuntimeError::Code("approval_stale"));
+            }
+        }
         if tx.query_row("SELECT 1 FROM receipt_actions WHERE action_id=?1", [request.action_id.to_string()], |_| Ok(1)).optional()?.is_some() {
             return Err(RuntimeError::Code("action_id_conflict"));
         }
@@ -937,13 +979,28 @@ impl<'a> ReceiptRuntime<'a> {
         // only, never an authorization check in the same boot.
         let expired = if boot == boot_id()? { monotonic_ms()? >= deadline_monotonic_ms } else { true };
         if state != "granted" || expired {
-            tx.execute("UPDATE receipt_approval_intents SET state='expired' WHERE approval_id=?1 AND state IN ('pending','granted')", [approval_id.to_string()])?;
+            let code = if expired { "approval_expired" } else { "approval_stale" };
+            let (hash, _) = signed_receipt(&tx, self.signer, request, "refusal", "refused", &stored_hash_for_action(&tx, &action_id)?, None, Some(code))?;
+            tx.execute("UPDATE receipt_approval_intents SET state=?2 WHERE approval_id=?1 AND state IN ('pending','granted')", params![approval_id.to_string(), if expired { "expired" } else { "lost" }])?;
+            tx.execute("UPDATE receipt_actions SET state='refused',terminal_receipt_hash=?2,completion_source='execution' WHERE action_id=?1 AND terminal_receipt_hash IS NULL", params![action_id, hash])?;
             tx.commit()?;
-            return Err(RuntimeError::Code("approval_expired"));
+            return Err(RuntimeError::Code(code));
         }
         let stored: String = tx.query_row("SELECT tool_args_hash FROM receipt_actions WHERE action_id=?1", [&action_id], |r| r.get(0))?;
-        if stored != args_hash || request.action_id.to_string() != action_id { return Err(RuntimeError::Code("call_changed")); }
-        if !recheck_policy(request) { return Err(RuntimeError::Code("policy_denied")); }
+        if stored != args_hash || request.action_id.to_string() != action_id {
+            let (hash, _) = signed_receipt(&tx, self.signer, request, "refusal", "refused", &stored, None, Some("call_changed"))?;
+            tx.execute("UPDATE receipt_approval_intents SET state='lost' WHERE approval_id=?1 AND state IN ('pending','granted')", [approval_id.to_string()])?;
+            tx.execute("UPDATE receipt_actions SET state='refused',terminal_receipt_hash=?2 WHERE action_id=?1 AND terminal_receipt_hash IS NULL", params![action_id, hash])?;
+            tx.commit()?;
+            return Err(RuntimeError::Code("call_changed"));
+        }
+        if !recheck_policy(request) {
+            let (hash, _) = signed_receipt(&tx, self.signer, request, "refusal", "refused", &stored, None, Some("policy_denied"))?;
+            tx.execute("UPDATE receipt_approval_intents SET state='lost' WHERE approval_id=?1 AND state IN ('pending','granted')", [approval_id.to_string()])?;
+            tx.execute("UPDATE receipt_actions SET state='refused',terminal_receipt_hash=?2 WHERE action_id=?1 AND terminal_receipt_hash IS NULL", params![action_id, hash])?;
+            tx.commit()?;
+            return Err(RuntimeError::Code("policy_denied"));
+        }
         let mut bound = request.clone();
         bound.approval_id = Some(approval_id);
         let (hash, _) = signed_receipt(&tx, self.signer, &bound, "pre_action", "prepared", &stored, None, None)?;
@@ -1891,9 +1948,9 @@ mod tests {
         runtime.grant_approval(approval).unwrap();
         let bound = ActionRequest { approval_id: Some(approval), ..req };
         assert!(matches!(runtime.claim_approval_checked(&bound, approval, |_| false), Err(RuntimeError::Code("policy_denied"))));
-        // The approval stays granted (not silently consumed) so a later,
-        // still-current-policy retry of the same claim can still succeed.
-        assert!(matches!(runtime.claim_approval(&bound, approval), Ok(PrepareOutcome::Prepared { .. })));
+        // Policy denial is durable and terminal: the refusal is signed and
+        // the approval cannot be replayed under a different policy decision.
+        assert!(matches!(runtime.claim_approval(&bound, approval), Err(RuntimeError::Code("approval_stale"))));
     }
 
     #[test]

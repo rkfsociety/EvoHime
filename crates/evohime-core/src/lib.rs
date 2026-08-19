@@ -5697,7 +5697,14 @@ impl ToolAgent {
                                         if action_id != Uuid::nil() { self.receipt_complete(&request, &outcome).await; }
                                         outcome
                                     }
-                                    Err(error) => recovery::ToolOutcome::from_error(evohime_tool_runtime::ToolError::Execution(error)),
+                                    Err(error) => {
+                                        // claim_approval_checked atomically
+                                        // appends the refusal and closes the
+                                        // durable intent before returning the
+                                        // error. Do not append it a second
+                                        // time from the orchestration layer.
+                                        recovery::ToolOutcome::from_error(evohime_tool_runtime::ToolError::Execution(error))
+                                    }
                                 }
                             }
                             }

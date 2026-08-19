@@ -83,7 +83,7 @@ fn write_jcs(value: &Value, out: &mut String, depth: usize) -> Result<(), Receip
     match value {
         Value::Null => out.push_str("null"),
         Value::Bool(v) => out.push_str(if *v { "true" } else { "false" }),
-        Value::Number(v) => out.push_str(&v.to_string()),
+        Value::Number(v) => out.push_str(&canonical_number(v)?),
         Value::String(v) => {
             out.push_str(&serde_json::to_string(v).map_err(|_| ReceiptError::InvalidJson)?)
         }
@@ -113,6 +113,56 @@ fn write_jcs(value: &Value, out: &mut String, depth: usize) -> Result<(), Receip
         }
     }
     Ok(())
+}
+
+fn canonical_number(value: &serde_json::Number) -> Result<String, ReceiptError> {
+    if let Some(integer) = value.as_i64() {
+        return Ok(if integer == 0 { "0".into() } else { integer.to_string() });
+    }
+    if let Some(integer) = value.as_u64() {
+        return Ok(integer.to_string());
+    }
+    let number = value.as_f64().ok_or(ReceiptError::InvalidJson)?;
+    if !number.is_finite() {
+        return Err(ReceiptError::InvalidJson);
+    }
+    if number == 0.0 {
+        return Ok("0".into());
+    }
+    if number.fract() == 0.0 && number.abs() < 1e21 {
+        return Ok(format!("{number:.0}"));
+    }
+    let raw = ryu::Buffer::new().format(number).to_owned();
+    let magnitude = number.abs();
+    if (1e-6..1e21).contains(&magnitude) {
+        return Ok(expand_decimal(&raw));
+    }
+    Ok(normalize_exponent(&raw))
+}
+
+fn normalize_exponent(raw: &str) -> String {
+    let Some((mantissa, exponent)) = raw.split_once('e') else { return raw.into() };
+    let exponent = exponent.parse::<i32>().unwrap_or(0);
+    format!("{}e{}{}", mantissa, if exponent >= 0 { "+" } else { "" }, exponent)
+}
+
+fn expand_decimal(raw: &str) -> String {
+    let Some((mantissa, exponent)) = raw.split_once('e') else { return raw.into() };
+    let exponent = exponent.parse::<i32>().unwrap_or(0);
+    let negative = mantissa.starts_with('-');
+    let digits = mantissa.trim_start_matches('-').replace('.', "");
+    let unsigned_mantissa = mantissa.trim_start_matches('-');
+    let decimal_pos = unsigned_mantissa.find('.').map_or(unsigned_mantissa.len() as i32, |pos| pos as i32) + exponent;
+    let mut result = if decimal_pos <= 0 {
+        format!("0.{}{}", "0".repeat((-decimal_pos) as usize), digits)
+    } else if decimal_pos >= digits.len() as i32 {
+        format!("{}{}", digits, "0".repeat((decimal_pos as usize) - digits.len()))
+    } else {
+        let split = decimal_pos as usize;
+        format!("{}.{}", &digits[..split], &digits[split..])
+    };
+    if negative { result.insert(0, '-'); }
+    result
 }
 
 fn has_duplicate_keys(input: &str) -> bool {
@@ -470,6 +520,13 @@ mod tests {
         assert_eq!(
             canonicalize_json(br#"{"a":1,"a":2}"#),
             Err(ReceiptError::DuplicateKey)
+        );
+    }
+    #[test]
+    fn canonicalizes_jcs_numeric_edges() {
+        assert_eq!(
+            canonicalize_json(br#"{"a":1.0,"b":-0.0,"c":1e20,"d":1e21,"e":1e-7}"#).unwrap(),
+            br#"{"a":1,"b":0,"c":100000000000000000000,"d":1e+21,"e":1e-7}"#
         );
     }
     #[test]

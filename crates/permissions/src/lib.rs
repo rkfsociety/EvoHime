@@ -188,6 +188,8 @@ pub struct ApprovalAuditEntry {
     pub tool_name: String,
     pub permission: Permission,
     pub scope: String,
+    /// Exact canonical call binding retained for offline approval audit.
+    pub call_hash: String,
     pub decision: ApprovalState,
     pub at_ms: u64,
     /// True when grant also installed a temporary path allow for the session.
@@ -588,6 +590,7 @@ impl PermissionEngine {
             tool_name: request.tool_name.clone(),
             permission: request.permission,
             scope: request.scope.clone(),
+            call_hash: request.call_hash.clone(),
             decision: ApprovalState::Pending,
             at_ms: now_ms(),
             remembered_path: false,
@@ -644,6 +647,7 @@ impl PermissionEngine {
             tool_name: request.tool_name,
             permission: request.permission,
             scope: request.scope,
+            call_hash: request.call_hash,
             decision: state,
             at_ms: now_ms(),
             remembered_path,

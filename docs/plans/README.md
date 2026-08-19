@@ -6,7 +6,7 @@
 
 ## С чего начинать
 
-Следующий шаг — **[01.3 Runtime integration](01-3-runtime-integration.md)**.
+Следующий шаг — **[03 Specialized child workflows](03-0-specialized-child-workflows.md)**.
 
 План Local Agentic RAG реализован целиком и удалён из каталога: его контракт
 живёт в [`../architecture.md`](../architecture.md), состояние — в
@@ -73,10 +73,11 @@ Budget Manager и Local Agentic RAG. Их контракты живут в
 нет. Существующий модуль, который никем не вызывается, считается отсутствующим
 поведением: библиотека без подключения не закрывает этап.
 
-Проверка на 2026-08-17: Local Agentic RAG и этап 01.2 Key lifecycle
-реализованы целиком; их контракты живут в `../architecture.md` и
+Проверка на 2026-08-19: Local Agentic RAG, этап 01.2 Key lifecycle и этап
+01.3 Runtime integration реализованы целиком; их контракты живут в
+`../architecture.md`, `../current-state.md` и
 `../security/receipt-key-lifecycle-v1.md`. Следующий незавершённый план —
-01.3 Runtime integration.
+03 Specialized child workflows.
 Частичный код есть в плане 02 (детерминированный выбор маршрута существует, но
 не подключён к агенту) и в плане 03 (роли и lifecycle есть, grants, budget и
 изоляции нет); оба случая отмечены внутри соответствующих этапов.
