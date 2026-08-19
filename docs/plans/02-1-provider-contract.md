@@ -128,8 +128,7 @@ health из реальных ответов провайдера и подклю
   вместо заявленных 4000). Cap должен применяться последним;
 - `compute_backoff` не ограничен `max_elapsed_ms`: решение о том, что пауза не
   помещается в общий лимит, ещё негде принимать — его владелец появится вместе
-  с retry-loop.
-
+  с retry-loop;
 - категории отказов названы по-разному: документ пишет `policy_violation`,
   код — `FailureCategory::PolicyDenied` (`policy_denied` в сериализации).
   Расхождение безобидно ровно до первого trace, который кто-то попытается
@@ -168,16 +167,23 @@ minor-версия может содержать additive fields, которые
 
 ## Snapshot и health lifecycle
 
-В начале run Core в порядке `classify → validate request → collect ready
-providers → create snapshot` один раз создаёт snapshot. Чтение persistent
+В начале run Core в порядке `classify → validate request → collect candidates
+→ create snapshot` один раз создаёт snapshot. «Collect candidates» — это не
+фильтр по health: в snapshot попадает каждый провайдер, прошедший schema и
+probe, вместе со своим health-состоянием, включая `stale`, `unavailable`,
+`open` и `cooldown`. Отбор по здоровью выполняет только `select_route` на
+шаге 1. Иначе нездоровые кандидаты исчезали бы ещё до selection, таблица
+переноса health в overlay была бы недостижима, а `no_candidates` и
+`all_routes_excluded` перестали бы различаться: любой отказ выглядел бы как
+отсутствие конфигурации. Чтение persistent
 health и создание snapshot выполняются атомарно: под одним read lock
 persistent health store Core собирает health для всех ready providers,
 формирует `health_snapshot` и создаёт из него snapshot, после чего lock
 освобождается. Если persistent health изменится между `classify` и созданием
 snapshot, эти изменения не влияют на текущий snapshot и видны только
-следующему run. В него попадают только прошедшие schema/probe candidates, их
-capability epoch, initial health, `policy_hashes`, preference и `budget_id`.
-Snapshot замораживается до terminal result и уничтожается после записи trace.
+следующему run. В snapshot входят candidates, их capability epoch, initial
+health, `policy_hashes`, preference и `budget_id`. Snapshot замораживается до
+terminal result и уничтожается после записи trace.
 
 Health snapshot содержит `status`, `observed_at`, `ttl`, `circuit_state`,
 `cooldown_until` (абсолютный момент, а не длительность; `null`, если route не
@@ -186,18 +192,20 @@ Health snapshot содержит `status`, `observed_at`, `ttl`, `circuit_state`
 конфигурации и меняла бы срок уже наложенного cooldown задним числом.
 
 TTL проверяется в `select_route` от переданного `now_ms`, а не от системных
-часов: просроченное наблюдение даёт `stale`, а не
-автоматически `ready`. Значение `now_ms` попытки пишется в trace, поэтому
-исключение по TTL воспроизводится при повторном разборе того же trace.
+часов: просроченное наблюдение даёт `stale`, а не автоматически `ready`.
+Проверок две, и они не дублируют друг друга: наблюдение, уже просроченное на
+момент создания overlay, даёт `open` по таблице ниже, а проверка в
+`select_route` ловит наблюдение, протухшее между попытками того же run.
+Значение `now_ms` попытки пишется в trace, поэтому исключение по TTL
+воспроизводится при повторном разборе того же trace.
 
 `RunHealthOverlay` создаётся из health snapshot один раз при старте run, до
 первого вызова `select_route`: для каждого candidate из snapshot Core
 инициализирует `circuit_state` из соответствующего `snapshot.health` по
 явной таблице, обнуляет `attempts_per_route` и `failure_count_by_category` и
-заполняет `generation` стартовым значением:
-
-Правила применяются сверху вниз, до первого совпадения; условия намеренно
-пересекаются, и выигрывает более строгое:
+заполняет `generation` стартовым значением. Правила таблицы применяются сверху
+вниз, до первого совпадения; условия намеренно пересекаются, и выигрывает
+более строгое:
 
 | условие в health snapshot | `circuit_state` в overlay |
 | --- | --- |
@@ -211,6 +219,11 @@ TTL проверяется в `select_route` от переданного `now_ms
 route, помеченный cooldown в предыдущем run, немедленно получал бы запрос в
 следующем, и порог rate limit не значил бы ничего. Инициализация локальна для
 run и отдельного lock на persistent health не требует.
+
+`attempts_per_route` увеличивает сам Core: после того как `select_route` вернул
+route, и до отправки запроса — тем же write lock, что и `generation`. Инкремент
+до исполнения, а не после, обязателен: попытка, оборвавшаяся без ответа, иначе
+не считалась бы, и `max_attempts_per_route` не ограничивал бы ничего.
 
 Каждое обновление overlay выполняется через Core-owned mutex/`RwLock` под
 write lock (или эквивалентный CAS в реализации), с проверкой `run_id`,
@@ -256,6 +269,9 @@ circuit после порога категории. `429` увеличивает
 порога переводит route в `cooldown`; policy/approval denial, invalid request и
 cancellation circuit не открывают. При открытии overlay атомарно помечает
 route `open`, увеличивает generation и пишет `circuit_opened_during_run`.
+Перевод в `cooldown` — такое же обновление overlay: `cooldown_until` и
+generation коммитятся одной операцией, но `circuit_opened_during_run` не
+ставится, потому что rate limit не является отказом провайдера.
 
 Открытие circuit прекращает попытки только по этому route, а не весь run:
 retry-loop сразу прерывает текущую попытку, но следующий `select_route`
@@ -368,6 +384,11 @@ diagnostics telemetry с bounded cardinality.
   все без ожидания реального времени;
 - открытие circuit при оставшихся candidates продолжает run следующим route, а
   не завершает его; `no_candidates` и `all_routes_excluded` различаются;
+- snapshot содержит нездоровых кандидатов: провайдер со `stale`/`unavailable`
+  health или непросроченным cooldown попадает в snapshot и исключается только
+  фильтром `select_route`;
+- `attempts_per_route` растёт до отправки запроса: оборванная без ответа
+  попытка расходует лимит route;
 - snapshot serialize/deserialize, unknown fields, migration и round-trip hash;
 - trace/telemetry tests без secrets и raw provider output.
 
