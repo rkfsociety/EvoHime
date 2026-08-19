@@ -77,10 +77,20 @@ reference); `Arc<RoutePolicySnapshot>` допускается для парал�
 
 Есть: `RouteCandidate` с capabilities, privacy class, cost, latency и флагом
 `available`; `select_route` отделён от исполнения; bounded валидация кандидатов
-и запроса.
+и запроса. В `crates/model-gateway/src/provider_contract.rs` реализованы типы и
+машина состояний этого этапа: `CapabilityMetadata` с `schema_version`/
+`capability_epoch`/`execution_class`, `RoutePolicySnapshot` с bounded валидацией
+и `round_trip_hash`, `PolicyHashes` над каноническим JSON, `RunHealthOverlay` с
+circuit breaker, категориями отказов, cooldown и generation-счётчиком,
+`RetryConfig` с детерминированным backoff (jitter выводится из `run_id`/
+`route_id`, а не из случайности) и `RunTrace`/`AttemptTrace` без секретов,
+prompt и raw output. Модуль покрыт 10 тестами.
 
-Нет: полного Core-owned snapshot/overlay contract, TTL health, circuit breaker,
-capability probe и подключения selection/execution к реальному agent run.
+Нет: исполнения capability probe (есть только `ProbeConfig`/`ProbeResult` как
+типы), Core-owned владения snapshot и overlay внутри agent run, TTL-обновления
+health из реальных ответов провайдера и подключения selection/execution к
+реальному agent run. Пока модуль никем не вызывается — по правилу каталога это
+означает отсутствующее поведение, а не закрытый этап.
 
 ## Capability contract и startup probe
 

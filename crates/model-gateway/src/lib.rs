@@ -1,4 +1,5 @@
 pub mod config;
+pub mod provider_contract;
 pub mod providers;
 pub mod retry;
 pub mod routing_policy;
@@ -6,6 +7,11 @@ pub mod routing_runtime;
 pub mod tools;
 
 pub use crate::config::{ModelGatewayConfig, ModelRouteConfig};
+pub use crate::provider_contract::{
+    AttemptTrace, CandidateEntry, CapabilityMetadata, CircuitState, ExecutionClass, FailureCategory,
+    PolicyHashes, ProbeConfig, ProbeFailure, ProbeResult, RetryConfig, RoutePolicySnapshot,
+    RunHealthOverlay, RunResult, RunTrace, SnapshotError,
+};
 use crate::providers::{
     literouter::LiteRouterProvider, mock::MockProvider,
     openai_compatible::OpenAICompatibleProvider, ChatMessage, ModelProvider, ProviderError,
