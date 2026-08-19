@@ -94,6 +94,20 @@ async fn main() {
                 .with_selected_model(selected_model.clone()),
             ) as std::sync::Arc<dyn evohime_core::TaskExecutor>
         });
+    if std::env::args().any(|arg| arg == "--list-models") {
+        list_console_models(gateway_config).await;
+        heartbeat_task.abort();
+        approval_gc_task.abort();
+        receipt_retention_task.abort();
+        return;
+    }
+    if let Some(request) = console_review_request() {
+        run_console_review(request, gateway_config).await;
+        heartbeat_task.abort();
+        approval_gc_task.abort();
+        receipt_retention_task.abort();
+        return;
+    }
     if let Some((prompt, workspace_root, approve_writes)) = console_request() {
         let Some(executor) = executor else {
             eprintln!("evohime-core console: модель не настроена; проверьте .env");
@@ -263,6 +277,228 @@ fn console_request() -> Option<(String, std::path::PathBuf, bool)> {
         std::process::exit(2);
     }
     Some((prompt, workspace, approve_writes))
+}
+
+/// Каталог моделей провайдера. Без него имена моделей для ревью пришлось бы
+/// угадывать, а ключ провайдера в консоль не попадает и попасть не должен.
+#[cfg(windows)]
+async fn list_console_models(
+    gateway_config: Option<evohime_model_gateway::ModelGatewayConfig>,
+) {
+    let Some(config) = gateway_config else {
+        eprintln!("evohime-core console: модель не настроена; проверьте .env");
+        std::process::exit(1);
+    };
+    let Some(route) = config.routes.get(&config.default_route) else {
+        eprintln!("evohime-core console: маршрут по умолчанию не найден");
+        std::process::exit(1);
+    };
+    match evohime_model_gateway::fetch_model_catalog(route).await {
+        Ok(models) => {
+            for model in models {
+                println!(
+                    "{}{}",
+                    model.id,
+                    model
+                        .context_tokens
+                        .map(|tokens| format!("  (окно {tokens})"))
+                        .unwrap_or_default()
+                );
+            }
+        }
+        Err(error) => {
+            eprintln!("evohime-core console: каталог не получен: {error}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Прогон ревью плана и правки по нему без оболочки.
+///
+/// Тот же код, что ходит через IPC, но без protobuf и без UI: это единственный
+/// способ увидеть весь путь целиком в логе, когда проверять нужно ядро, а не
+/// панель.
+#[cfg(windows)]
+struct ConsoleReview {
+    plan: std::path::PathBuf,
+    reviewers: Vec<String>,
+    synthesis: String,
+    revise: bool,
+    out: Option<std::path::PathBuf>,
+}
+
+#[cfg(windows)]
+fn console_review_request() -> Option<ConsoleReview> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if !args.iter().any(|arg| arg == "--console") {
+        return None;
+    }
+    let value = |name: &str| -> Option<String> {
+        args.iter()
+            .position(|arg| arg == name)
+            .and_then(|index| args.get(index + 1))
+            .cloned()
+    };
+    let plan = value("--review-plan")?;
+    let reviewers: Vec<String> = value("--reviewers")
+        .unwrap_or_default()
+        .split(',')
+        .map(|model| model.trim().to_string())
+        .filter(|model| !model.is_empty())
+        .collect();
+    let synthesis = value("--synthesis").unwrap_or_default();
+    if reviewers.len() < evohime_core::plan_review::MIN_REVIEWERS || synthesis.is_empty() {
+        eprintln!(
+            "Использование: evohime-core.exe --console --review-plan <план.md> --reviewers <модель1,модель2> --synthesis <модель> [--revise] [--out <файл.md>]"
+        );
+        std::process::exit(2);
+    }
+    Some(ConsoleReview {
+        plan: std::path::PathBuf::from(plan),
+        reviewers,
+        synthesis,
+        revise: args.iter().any(|arg| arg == "--revise"),
+        out: value("--out").map(std::path::PathBuf::from),
+    })
+}
+
+#[cfg(windows)]
+async fn run_console_review(
+    request: ConsoleReview,
+    gateway_config: Option<evohime_model_gateway::ModelGatewayConfig>,
+) {
+    let Some(config) = gateway_config else {
+        eprintln!("evohime-core console: модель не настроена; проверьте .env");
+        std::process::exit(1);
+    };
+    let gateway = match evohime_model_gateway::ModelGateway::from_config(&config) {
+        Ok(gateway) => std::sync::Arc::new(gateway),
+        Err(error) => {
+            eprintln!("evohime-core console: провайдер не поднялся: {error}");
+            std::process::exit(1);
+        }
+    };
+    let source = match std::fs::read_to_string(&request.plan) {
+        Ok(source) => source,
+        Err(error) => {
+            eprintln!("evohime-core console: план не прочитан: {error}");
+            std::process::exit(1);
+        }
+    };
+    let file_name = request
+        .plan
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "plan.md".to_string());
+    let started = std::time::Instant::now();
+    println!(
+        "план: {} ({} байт); рецензенты: {}; синтез: {}",
+        file_name,
+        source.len(),
+        request.reviewers.join(", "),
+        request.synthesis
+    );
+
+    let review = evohime_core::plan_review::ReviewRequest {
+        review_id: format!("review-{}", uuid::Uuid::new_v4()),
+        file_name: file_name.clone(),
+        file_names: vec![file_name.clone()],
+        source_markdown: source.clone(),
+        reviewer_models: request.reviewers.clone(),
+        synthesis_model: request.synthesis.clone(),
+    };
+    let clock = started;
+    let review_result = evohime_core::plan_review::run_review_with_progress(
+        std::sync::Arc::clone(&gateway),
+        review,
+        tokio_util::sync::CancellationToken::new(),
+        std::sync::Arc::new(move |progress: evohime_core::plan_review::ReviewProgress| {
+            println!(
+                "[{:>6.1}s] review.progress {} {} {}/{} {}",
+                clock.elapsed().as_secs_f32(),
+                progress.stage,
+                progress.status,
+                progress.completed,
+                progress.total,
+                progress.model.as_deref().unwrap_or("")
+            );
+        }),
+    )
+    .await;
+    let review_result = match review_result {
+        Ok(result) => result,
+        Err(error) => {
+            eprintln!("[{:>6.1}s] ✕ ревью не удалось: {error}", started.elapsed().as_secs_f32());
+            std::process::exit(1);
+        }
+    };
+    println!(
+        "[{:>6.1}s] ✓ ревью готово: {} байт итога",
+        started.elapsed().as_secs_f32(),
+        review_result.final_markdown.len()
+    );
+    if !request.revise {
+        println!("\n{}", review_result.final_markdown);
+        return;
+    }
+
+    let revision = evohime_core::plan_review::RevisionRequest {
+        revision_id: format!("revision-{}", uuid::Uuid::new_v4()),
+        review_id: review_result.review_id.clone(),
+        file_name: file_name.clone(),
+        source_markdown: source.clone(),
+        // Тот же срез, что делает IPC: провенанс ревью не должен попасть в план.
+        review_markdown: review_result
+            .final_markdown
+            .split_once("\n---\n\n")
+            .map_or(review_result.final_markdown.clone(), |(_, body)| body.to_string()),
+        model: request.synthesis.clone(),
+    };
+    let clock = started;
+    let revised = evohime_core::plan_review::run_revision(
+        gateway,
+        revision,
+        tokio_util::sync::CancellationToken::new(),
+        std::sync::Arc::new(move |progress: evohime_core::plan_review::RevisionProgress| {
+            println!(
+                "[{:>6.1}s] revision.progress {} {}",
+                clock.elapsed().as_secs_f32(),
+                progress.status,
+                progress.model
+            );
+        }),
+    )
+    .await;
+    let revised = match revised {
+        Ok(result) => result,
+        Err(error) => {
+            eprintln!("[{:>6.1}s] ✕ правка не удалась: {error}", started.elapsed().as_secs_f32());
+            std::process::exit(1);
+        }
+    };
+    println!(
+        "[{:>6.1}s] ✓ план исправлен: было {} байт, стало {}",
+        started.elapsed().as_secs_f32(),
+        source.len(),
+        revised.revised_markdown.len()
+    );
+    if revised.revised_markdown.len() * 2 < source.len() {
+        eprintln!("⚠ исправленный план более чем вдвое короче исходного — вероятен обрыв ответа");
+    }
+    match request.out {
+        Some(destination) => {
+            if destination.extension().and_then(|value| value.to_str()) != Some("md") {
+                eprintln!("evohime-core console: --out принимает только .md");
+                std::process::exit(1);
+            }
+            if let Err(error) = std::fs::write(&destination, &revised.revised_markdown) {
+                eprintln!("evohime-core console: план не записан: {error}");
+                std::process::exit(1);
+            }
+            println!("записано: {}", destination.display());
+        }
+        None => println!("\n{}", revised.revised_markdown),
+    }
 }
 
 #[cfg(windows)]

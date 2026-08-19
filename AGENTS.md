@@ -48,6 +48,10 @@ pwsh -File .\start-dev.ps1 -SkipBuild
 # Разовый прогон одной задачи через консольный режим Core
 .\scripts\test-agent.ps1 -Prompt 'проверь репозиторий'
 
+# Ревью плана и правка по нему без UI (ключ берётся тем же DPAPI-путём)
+.\scripts\test-agent.ps1 -ListModels
+.\scripts\test-agent.ps1 -ReviewPlan docs\plans\03-4-child-ui-and-observability.md -Reviewers 'модель-1,модель-2' -Synthesis 'модель-3' -Revise -Out C:\temp\plan.md
+
 # Smoke-тест упаковки
 $pwsh = Join-Path $PSHOME 'pwsh.exe'
 & $pwsh -NoProfile -File scripts\native-package.tests.ps1

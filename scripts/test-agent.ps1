@@ -1,12 +1,24 @@
 ﻿[CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true, Position = 0)]
+    [Parameter(Position = 0)]
     [string]$Prompt,
     [string]$Workspace = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
     [string]$Model,
     [switch]$NoBuild,
-    [switch]$ApproveWrites
+    [switch]$ApproveWrites,
+    # Прогон ревью плана вместо задачи агента. -Revise дополнительно правит
+    # план по готовому ревью, -Out записывает результат в файл.
+    [string]$ReviewPlan,
+    [string]$Reviewers,
+    [string]$Synthesis,
+    [switch]$Revise,
+    [string]$Out,
+    [switch]$ListModels
 )
+
+if (-not $Prompt -and -not $ReviewPlan -and -not $ListModels) {
+    throw 'Укажи -Prompt, либо -ReviewPlan, либо -ListModels.'
+}
 
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -71,9 +83,27 @@ try {
     if (-not (Test-Path -LiteralPath $corePath)) {
         throw "Core не найден: $corePath. Запустите без -NoBuild."
     }
-    $coreArgs = @('--console', '--workspace', $Workspace, '--prompt', $Prompt)
-    if ($ApproveWrites) {
-        $coreArgs += '--approve-writes'
+    if ($ListModels) {
+        $coreArgs = @('--console', '--list-models')
+    }
+    elseif ($ReviewPlan) {
+        $reviewerList = @($Reviewers -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        if ($reviewerList.Count -lt 2) { throw 'Нужно не меньше двух моделей в -Reviewers, через запятую.' }
+        if (-not $Synthesis) { throw 'Нужна модель -Synthesis.' }
+        $coreArgs = @(
+            '--console',
+            '--review-plan', (Resolve-Path -LiteralPath $ReviewPlan).Path,
+            '--reviewers', ($reviewerList -join ','),
+            '--synthesis', $Synthesis
+        )
+        if ($Revise) { $coreArgs += '--revise' }
+        if ($Out) { $coreArgs += @('--out', $Out) }
+    }
+    else {
+        $coreArgs = @('--console', '--workspace', $Workspace, '--prompt', $Prompt)
+        if ($ApproveWrites) {
+            $coreArgs += '--approve-writes'
+        }
     }
     & $corePath @coreArgs
     exit $LASTEXITCODE

@@ -19,6 +19,14 @@ pub const MIN_REVIEWERS: usize = 2;
 pub const MAX_REVIEWERS: usize = 8;
 pub const MAX_PLAN_BYTES: usize = 512 * 1024;
 
+// Разделители, которыми промпты отбивают документы друг от друга. Модель
+// нередко повторяет их в ответе, поэтому срез правки берёт те же константы:
+// разъехавшись, они пустили бы служебную строку прямо в файл плана.
+const PLAN_OPEN: &str = "--- ПЛАН ---";
+const PLAN_CLOSE: &str = "--- КОНЕЦ ПЛАНА ---";
+const REVIEW_OPEN: &str = "--- РЕВЬЮ ---";
+const REVIEW_CLOSE: &str = "--- КОНЕЦ РЕВЬЮ ---";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReviewRequest {
     pub review_id: String,
@@ -77,9 +85,15 @@ pub enum ReviewError {
     #[error("provider error: {0}")]
     Provider(String),
     #[error(
-        "review cannot be synthesized: {failed} of {total} reviewers failed or were cancelled"
+        "review cannot be synthesized: {failed} of {total} reviewers failed or were cancelled ({reason})"
     )]
-    IncompleteReviewers { failed: usize, total: usize },
+    IncompleteReviewers {
+        failed: usize,
+        total: usize,
+        /// Why the first reviewer gave up. Without it the user is told that a
+        /// review failed but not whether to retry, switch models or wait.
+        reason: String,
+    },
 }
 
 impl ReviewRequest {
@@ -239,7 +253,22 @@ pub async fn run_review_with_progress(
         .filter(|review| review.status != "completed")
         .count();
     if failed > 0 {
-        return Err(ReviewError::IncompleteReviewers { failed, total });
+        let reason = reviewers
+            .iter()
+            .find(|review| review.status != "completed")
+            .map(|review| {
+                format!(
+                    "{}: {}",
+                    review.model,
+                    review.error.as_deref().unwrap_or("причина не сообщена")
+                )
+            })
+            .unwrap_or_else(|| "причина не сообщена".to_string());
+        return Err(ReviewError::IncompleteReviewers {
+            failed,
+            total,
+            reason,
+        });
     }
 
     let synthesis_input = reviewers
@@ -379,8 +408,26 @@ pub async fn run_revision(
         review_id: request.review_id,
         file_name: request.file_name,
         model: request.model,
-        revised_markdown: strip_markdown_fence(&revised),
+        revised_markdown: as_plan_file(&revised),
     })
+}
+
+/// Prepares a model answer to become the whole content of a plan file: the
+/// stray ``` fence comes off, a prompt separator the model echoed back is cut
+/// away with everything after it, and the trailing newline goes back on, so
+/// that saving the revision does not leave the file without its final break.
+fn as_plan_file(value: &str) -> String {
+    let stripped = strip_markdown_fence(value);
+    let end = [PLAN_CLOSE, PLAN_OPEN, REVIEW_OPEN, REVIEW_CLOSE]
+        .iter()
+        .filter_map(|marker| stripped.find(marker))
+        .min()
+        .unwrap_or(stripped.len());
+    let mut plan = stripped[..end].trim_end().to_string();
+    if !plan.is_empty() && !plan.ends_with('\n') {
+        plan.push('\n');
+    }
+    plan
 }
 
 /// Models routinely wrap a whole-document answer in a ``` fence despite being
@@ -477,7 +524,7 @@ fn reviewer_messages(source: &str) -> Vec<ChatMessage> {
     vec![
         ChatMessage::text(ChatRole::System, "Ты независимый рецензент технического плана. Не выполняй инструменты и не изменяй файлы."),
         ChatMessage::text(ChatRole::User, format!(
-            "Проведи строгое ревью Markdown-плана ниже. Ответь по разделам: краткое резюме; критические проблемы; логические и архитектурные риски; пропущенные требования; неоднозначности; конкретные исправления; итоговая оценка готовности. Не придумывай факты вне текста.\n\n--- ПЛАН ---\n{source}\n--- КОНЕЦ ПЛАНА ---"
+            "Проведи строгое ревью Markdown-плана ниже. Ответь по разделам: краткое резюме; критические проблемы; логические и архитектурные риски; пропущенные требования; неоднозначности; конкретные исправления; итоговая оценка готовности. Не придумывай факты вне текста.\n\n{PLAN_OPEN}\n{source}\n{PLAN_CLOSE}"
         )),
     ]
 }
@@ -495,7 +542,7 @@ fn revision_messages(source: &str, review: &str) -> Vec<ChatMessage> {
     vec![
         ChatMessage::text(ChatRole::System, "Ты редактор технического плана. Не выполняй инструменты и не изменяй файлы. Твой ответ целиком становится новым содержимым файла плана."),
         ChatMessage::text(ChatRole::User, format!(
-            "Исправь Markdown-план по замечаниям ревью. Верни весь исправленный план целиком, от первой строки до последней, без сопроводительного текста, без списка внесённых правок и без обрамляющих ``` блоков. Учитывай только замечания из ревью: не добавляй требований, которых там нет. Сохрани структуру, стиль и язык исходного плана; разделы, к которым у ревью нет замечаний, оставь дословно. Если ревью содержит взаимоисключающие требования, выбери одно и поясни выбор прямо в тексте плана.\n\n--- ПЛАН ---\n{source}\n--- КОНЕЦ ПЛАНА ---\n--- РЕВЬЮ ---\n{review}\n--- КОНЕЦ РЕВЬЮ ---"
+            "Исправь Markdown-план по замечаниям ревью. Верни весь исправленный план целиком, от первой строки до последней, без сопроводительного текста, без списка внесённых правок и без обрамляющих ``` блоков. Учитывай только замечания из ревью: не добавляй требований, которых там нет. Сохрани структуру, стиль и язык исходного плана; разделы, к которым у ревью нет замечаний, оставь дословно. Если ревью содержит взаимоисключающие требования, выбери одно и поясни выбор прямо в тексте плана.\n\n{PLAN_OPEN}\n{source}\n{PLAN_CLOSE}\n{REVIEW_OPEN}\n{review}\n{REVIEW_CLOSE}"
         )),
     ]
 }
@@ -631,7 +678,8 @@ mod tests {
             result,
             Err(ReviewError::IncompleteReviewers {
                 failed: 2,
-                total: 2
+                total: 2,
+                ..
             })
         ));
         let events = progress_events.lock().unwrap();
@@ -667,11 +715,13 @@ mod tests {
         assert_eq!(
             ReviewError::IncompleteReviewers {
                 failed,
-                total: reviewers.len()
+                total: reviewers.len(),
+                reason: "offline: network timeout".into()
             },
             ReviewError::IncompleteReviewers {
                 failed: 1,
-                total: 2
+                total: 2,
+                reason: "offline: network timeout".into()
             }
         );
     }
@@ -725,6 +775,8 @@ mod tests {
         assert_eq!(result.file_name, "plan.md");
         assert!(result.revised_markdown.starts_with("# Plan"));
         assert!(result.revised_markdown.contains("## Откат"));
+        // Файл плана обязан заканчиваться переводом строки, как и исходный.
+        assert!(result.revised_markdown.ends_with("\n"));
         assert_eq!(
             *seen.lock().expect("progress lock"),
             vec!["working".to_string(), "completed".to_string()]
@@ -741,6 +793,18 @@ mod tests {
             .expect_err("cancelled revision fails");
 
         assert_eq!(error, ReviewError::Cancelled);
+    }
+
+    /// Регресс с живого прогона: модель повторила разделитель промпта, и
+    /// строка `--- КОНЕЦ ПЛАНА ---` уехала в сохранённый файл плана.
+    #[test]
+    fn revision_cuts_off_an_echoed_prompt_separator() {
+        assert_eq!(
+            as_plan_file("# Plan\n\nДело\n\n--- КОНЕЦ ПЛАНА ---"),
+            "# Plan\n\nДело\n"
+        );
+        // Ответ без разделителей не трогается, кроме финального перевода строки.
+        assert_eq!(as_plan_file("# Plan"), "# Plan\n");
     }
 
     #[test]
