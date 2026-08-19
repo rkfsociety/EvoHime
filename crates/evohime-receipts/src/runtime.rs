@@ -528,6 +528,20 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
            outcome TEXT NOT NULL CHECK(outcome IN ('batch_committed','completed','failed')),
            created_at_ms INTEGER NOT NULL
          );
+         CREATE TABLE IF NOT EXISTS receipt_checkpoints (
+           checkpoint_id TEXT PRIMARY KEY NOT NULL,
+           key_id TEXT NOT NULL,
+           cutoff_sequence INTEGER NOT NULL,
+           first_retained_hash TEXT NOT NULL,
+           prefix_last_hash TEXT NOT NULL,
+           last_deleted_receipt_hash TEXT NOT NULL,
+           head_receipt_hash TEXT NOT NULL,
+           created_at TEXT NOT NULL,
+           canonical_checkpoint BLOB NOT NULL,
+           signature TEXT NOT NULL,
+           status TEXT NOT NULL CHECK(status IN ('active','superseded'))
+         );
+         CREATE INDEX IF NOT EXISTS idx_receipt_checkpoints_key ON receipt_checkpoints(key_id, cutoff_sequence);
          INSERT OR IGNORE INTO receipt_runtime_guard(id,phase,generation,updated_at_ms)
            VALUES(1,'ready',0,0);",
     )?;
@@ -551,6 +565,7 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
         ("receipt_actions", "completion_source", "TEXT NOT NULL DEFAULT 'execution'"),
         ("receipt_actions", "parent_approval_ref", "TEXT"),
         ("receipt_actions", "legacy_approval_ref", "TEXT"),
+        ("receipt_records", "source", "TEXT NOT NULL DEFAULT 'signed'"),
     ] {
         let exists: Option<String> = connection.query_row(
             &format!("SELECT name FROM pragma_table_info('{table}') WHERE name='{column}'"),
