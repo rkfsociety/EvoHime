@@ -207,6 +207,9 @@ export const RENDERER_COMMANDS = [
   'core.searchWorkspaceKnowledge',
   'core.getIndexStatus',
   'core.cancelWorkspaceIndex',
+  'core.listReceipts',
+  'core.verifyReceipts',
+  'core.exportReceipts',
   'identity.get',
   'repository.get',
   'chat.list',
@@ -289,6 +292,35 @@ export interface CommandPayloads {
   }
   'core.getIndexStatus': { workspacePath: string }
   'core.cancelWorkspaceIndex': { workspacePath: string }
+  /** Stage 01.4: bounded, filtered receipt chain listing. */
+  'core.listReceipts': {
+    taskId?: string
+    runId?: string
+    actionId?: string
+    fromRfc3339?: string
+    toRfc3339?: string
+    limit?: number
+  }
+  /** Stage 01.4: synchronous verify-chain over the filtered closure. */
+  'core.verifyReceipts': {
+    taskId?: string
+    runId?: string
+    actionId?: string
+    fromRfc3339?: string
+    toRfc3339?: string
+    limit?: number
+    trustKeyId?: string
+  }
+  /** Stage 01.4: atomic JSONL export bundle to a shell-selected directory. */
+  'core.exportReceipts': {
+    destinationPath: string
+    taskId?: string
+    runId?: string
+    actionId?: string
+    fromRfc3339?: string
+    toRfc3339?: string
+    limit?: number
+  }
   'core.gitStatus': { workspacePath: string; maxBytes?: number }
   'core.gitDiff': { workspacePath: string; relativePath?: string; maxBytes?: number }
   'core.setPermissionMode': { mode: PermissionMode }
@@ -412,6 +444,10 @@ export interface CommandResults {
   'core.searchWorkspaceKnowledge': { accepted: boolean }
   'core.getIndexStatus': { accepted: boolean }
   'core.cancelWorkspaceIndex': { accepted: boolean }
+  /** Responds via the `receipts.listed`/`receipts.verified`/`receipts.exported` core-event; this is only the queue acknowledgement. */
+  'core.listReceipts': { accepted: boolean }
+  'core.verifyReceipts': { accepted: boolean }
+  'core.exportReceipts': { accepted: boolean }
   'identity.get': UserIdentity
   'repository.get': RepositorySummary | null
   'chat.list': readonly ChatSummary[]

@@ -468,6 +468,50 @@ function dispatch(
       return accepted(client.send({ createNewReceiptGenesis: { approvalId, source } }))
     }
 
+    case 'core.listReceipts': {
+      const value = asRecord(payload)
+      const taskId = asOptionalBoundedString(value['taskId'])
+      const runId = asOptionalBoundedString(value['runId'])
+      const actionId = asOptionalBoundedString(value['actionId'])
+      const fromRfc3339 = asOptionalBoundedString(value['fromRfc3339'])
+      const toRfc3339 = asOptionalBoundedString(value['toRfc3339'])
+      const limit = asOptionalLimit(value['limit'], 500)
+      if (taskId === null || runId === null || actionId === null || fromRfc3339 === null || toRfc3339 === null || limit === null) {
+        return failure('invalid-payload', 'Некорректный фильтр списка receipts.')
+      }
+      return accepted(client.send({ listReceipts: { taskId, runId, actionId, fromRfc3339, toRfc3339, limit } }))
+    }
+
+    case 'core.verifyReceipts': {
+      const value = asRecord(payload)
+      const taskId = asOptionalBoundedString(value['taskId'])
+      const runId = asOptionalBoundedString(value['runId'])
+      const actionId = asOptionalBoundedString(value['actionId'])
+      const fromRfc3339 = asOptionalBoundedString(value['fromRfc3339'])
+      const toRfc3339 = asOptionalBoundedString(value['toRfc3339'])
+      const trustKeyId = asOptionalBoundedString(value['trustKeyId'])
+      const limit = asOptionalLimit(value['limit'], 2000)
+      if (taskId === null || runId === null || actionId === null || fromRfc3339 === null || toRfc3339 === null || trustKeyId === null || limit === null) {
+        return failure('invalid-payload', 'Некорректный фильтр проверки receipts.')
+      }
+      return accepted(client.send({ verifyReceipts: { taskId, runId, actionId, fromRfc3339, toRfc3339, limit, trustKeyId } }))
+    }
+
+    case 'core.exportReceipts': {
+      const value = asRecord(payload)
+      const destinationPath = asBoundedString(value['destinationPath'])
+      const taskId = asOptionalBoundedString(value['taskId'])
+      const runId = asOptionalBoundedString(value['runId'])
+      const actionId = asOptionalBoundedString(value['actionId'])
+      const fromRfc3339 = asOptionalBoundedString(value['fromRfc3339'])
+      const toRfc3339 = asOptionalBoundedString(value['toRfc3339'])
+      const limit = asOptionalLimit(value['limit'], 100_000)
+      if (destinationPath === null || taskId === null || runId === null || actionId === null || fromRfc3339 === null || toRfc3339 === null || limit === null) {
+        return failure('invalid-payload', 'Некорректные параметры экспорта receipts.')
+      }
+      return accepted(client.send({ exportReceipts: { destinationPath, taskId, runId, actionId, fromRfc3339, toRfc3339, limit, replace: false } }))
+    }
+
     case 'core.listMemoryPending':
     case 'core.getMemoryConflicts': {
       const value = asRecord(payload)
@@ -834,6 +878,13 @@ function asSupersessionReason(value: unknown): string | null {
 
 function asBoundedNumber(value: unknown, maximum: number): number | null {
   if (value === undefined) return maximum
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= maximum ? value : null
+}
+
+/** Unlike `asBoundedNumber`, an omitted limit means "let Core apply its own
+ * per-command default" (encoded as 0), not "request the maximum". */
+function asOptionalLimit(value: unknown, maximum: number): number | null {
+  if (value === undefined) return 0
   return typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= maximum ? value : null
 }
 

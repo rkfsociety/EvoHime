@@ -258,6 +258,23 @@ describe('renderer command surface', () => {
     ])
   })
 
+  it('forwards stage 01.4 receipt listing, verify and export commands with defaulted filters', () => {
+    expect(invoke('core.listReceipts', { taskId: 'task-1' })).toEqual({ ok: true, value: { accepted: true } })
+    expect(invoke('core.verifyReceipts', { taskId: 'task-1', limit: 200 })).toEqual({ ok: true, value: { accepted: true } })
+    expect(invoke('core.exportReceipts', { destinationPath: 'C:\\export\\bundle' })).toEqual({ ok: true, value: { accepted: true } })
+    expect(sent).toEqual([
+      { listReceipts: { taskId: 'task-1', runId: '', actionId: '', fromRfc3339: '', toRfc3339: '', limit: 0 } },
+      { verifyReceipts: { taskId: 'task-1', runId: '', actionId: '', fromRfc3339: '', toRfc3339: '', limit: 200, trustKeyId: '' } },
+      { exportReceipts: { destinationPath: 'C:\\export\\bundle', taskId: '', runId: '', actionId: '', fromRfc3339: '', toRfc3339: '', limit: 0, replace: false } }
+    ])
+  })
+
+  it('rejects an out-of-range limit or missing export destination', () => {
+    expect((invoke('core.verifyReceipts', { limit: 5_000 }) as CommandFailure).code).toBe('invalid-payload')
+    expect((invoke('core.exportReceipts', { destinationPath: '' }) as CommandFailure).code).toBe('invalid-payload')
+    expect(sent).toHaveLength(0)
+  })
+
   it('forwards policy, diagnostics and backup commands using the canonical proto fields', () => {
     expect(invoke('core.setPermissionMode', { mode: 'read_only' })).toEqual({ ok: true, value: { accepted: true } })
     expect(invoke('core.runDoctor', { detailLevel: 1 })).toEqual({ ok: true, value: { accepted: true } })
