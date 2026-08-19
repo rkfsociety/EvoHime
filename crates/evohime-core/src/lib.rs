@@ -3811,7 +3811,7 @@ impl ToolAgent {
         };
         let mut database = journal.database().lock().await;
         let signer = CoreReceiptSigner(Arc::clone(keys));
-        let runtime = ReceiptRuntime::new(database.connection_mut(), &signer)
+        let mut runtime = ReceiptRuntime::new(database.connection_mut(), &signer)
             .map_err(|error| error.to_string())?;
         let prepared = match runtime.prepare_existing_approval(request.clone()) {
             Ok(value) => value,
@@ -3835,7 +3835,7 @@ impl ToolAgent {
         let request = ReceiptActionRequest { action_id: Uuid::now_v7(), task_id: task_id.to_owned(), run_id: task_id.to_owned(), tool_name: tool.to_owned(), policy_id: "permission-v1".into(), normalized_scope: scope.to_owned(), input: input.clone(), policy_decision: ReceiptPolicyDecision::Allow, approval_id: None, parent_approval_ref: None, preview: serde_json::to_string(preview).unwrap_or_else(|_| "read".into()) };
         let mut database = journal.database().lock().await;
         let signer = CoreReceiptSigner(Arc::clone(keys));
-        let runtime = ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| e.to_string())?;
+        let mut runtime = ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| e.to_string())?;
         let prepared = match runtime.prepare(request.clone()) {
             Ok(value) => value,
             Err(error) => {
@@ -3855,6 +3855,7 @@ impl ToolAgent {
         task_id: &str,
         tool: &str,
         permission: &str,
+        permission_value: evohime_permissions::Permission,
         scope: &str,
         input: &serde_json::Value,
         preview: &evohime_permissions::ApprovalPreview,
@@ -3882,11 +3883,19 @@ impl ToolAgent {
             parent_approval_ref: None,
             preview: serde_json::to_string(preview).unwrap_or_else(|_| "approval".to_owned()),
         };
+        // Execution-gate policy recheck: a stale approval never bypasses a
+        // policy that changed after Prepare. This is a global-mode recheck
+        // (scope-specific rechecks are covered separately by the exact
+        // call-hash comparison inside claim_approval_checked).
+        let policy_ok = matches!(
+            self.tools.permissions().check(permission_value).await,
+            evohime_permissions::PermissionDecision::Allowed | evohime_permissions::PermissionDecision::NeedsApproval
+        );
         let mut database = journal.database().lock().await;
         let signer = CoreReceiptSigner(Arc::clone(keys));
         let mut runtime = ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| e.to_string())?;
         runtime.grant_approval(approval_id).map_err(|e| e.to_string())?;
-        runtime.claim_approval(&request, approval_id).map_err(|e| e.to_string())?;
+        runtime.claim_approval_checked(&request, approval_id, |_| policy_ok).map_err(|e| e.to_string())?;
         Ok((action_id, request))
     }
 
@@ -3917,7 +3926,7 @@ impl ToolAgent {
             preview: serde_json::to_string(preview).unwrap_or_else(|_| "approval".to_owned()),
         };
         let signer = CoreReceiptSigner(Arc::clone(keys));
-        let Ok(runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) else { return; };
+        let Ok(mut runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) else { return; };
         let _ = runtime.refuse(&request, code);
     }
 
@@ -3935,7 +3944,7 @@ impl ToolAgent {
                     let request = ReceiptActionRequest { action_id: Uuid::now_v7(), task_id: context.task_id.to_string(), run_id: context.task_id.to_string(), tool_name: name.to_owned(), policy_id: "permission-v1".into(), normalized_scope: String::new(), input: input.clone(), policy_decision: ReceiptPolicyDecision::Deny, approval_id: None, parent_approval_ref: None, preview: String::new() };
                     let mut database = journal.database().lock().await;
                     let signer = CoreReceiptSigner(Arc::clone(keys));
-                    if let Ok(runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) { let _ = runtime.prepare(request); }
+                    if let Ok(mut runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) { let _ = runtime.prepare(request); }
                 }
                 Err(evohime_tool_runtime::ToolError::PermissionDenied(permission))
             }
@@ -3995,7 +4004,7 @@ impl ToolAgent {
             .map(str::to_owned).unwrap_or_else(|| evohime_receipts::sha256_hex(outcome.output.as_bytes()));
         let mut database = journal.database().lock().await;
         let signer = CoreReceiptSigner(Arc::clone(keys));
-        let runtime = match ReceiptRuntime::new(database.connection_mut(), &signer) { Ok(value) => value, Err(_) => return };
+        let mut runtime = match ReceiptRuntime::new(database.connection_mut(), &signer) { Ok(value) => value, Err(_) => return };
         let status = if outcome.ok { "succeeded" } else { "failed" };
         runtime.mark_returned(request.action_id).ok();
         if runtime.complete(request, status, &output_digest, (!outcome.ok).then_some("tool_error")).is_err() {
@@ -5660,7 +5669,7 @@ impl ToolAgent {
                                 )
                             } else {
                                 match self.receipt_claim_approval(
-                                    &task_id, &tool, &format!("{permission:?}"), &scope,
+                                    &task_id, &tool, &format!("{permission:?}"), permission, &scope,
                                     &input, &preview, approval_id,
                                 ).await {
                                     Ok((action_id, request)) => {

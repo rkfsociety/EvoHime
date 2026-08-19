@@ -423,7 +423,7 @@ impl IpcBridge {
                     preview: "unknown result closure".into(),
                 };
                 let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
+                let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
                     .map_err(|error| FrameError::Io(error.to_string()))?;
                 let receipt_hash = runtime.refuse(&receipt_request, "recovery_pending")
                     .map_err(|error| FrameError::Io(error.to_string()))?;
@@ -523,7 +523,7 @@ impl IpcBridge {
                 {
                     let mut database = self.journal.database().lock().await;
                     let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                    let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|error| FrameError::Io(error.to_string()))?;
+                    let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|error| FrameError::Io(error.to_string()))?;
                     if !matches!(runtime.prepare(receipt_request.clone()).map_err(|error| FrameError::Io(error.to_string()))?, evohime_receipts::runtime::PrepareOutcome::Prepared { .. }) {
                         self.write_response(writer, "receipt.reconciliation", serde_json::to_vec(&serde_json::json!({"ok":false,"error_code":"receipt.precondition_failed"}))?).await?;
                         return Ok(());
@@ -538,7 +538,7 @@ impl IpcBridge {
                 let receipt_hash = {
                     let mut database = self.journal.database().lock().await;
                     let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                    let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|error| FrameError::Io(error.to_string()))?;
+                    let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|error| FrameError::Io(error.to_string()))?;
                     runtime.mark_returned(new_action_id).map_err(|error| FrameError::Io(error.to_string()))?;
                     match runtime.complete_reconciliation(&receipt_request, old_action_id, status, &digest, error_category) {
                         Ok(hash) => hash,
@@ -622,7 +622,7 @@ impl IpcBridge {
                     preview: "manual quarantine closure".into(),
                 };
                 let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
+                let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
                     .map_err(|error| FrameError::Io(error.to_string()))?;
                 let receipt_hash = runtime.unquarantine(&receipt_request, true, &request.checkpoint)
                     .map_err(|error| FrameError::Io(error.to_string()))?;
@@ -3276,7 +3276,7 @@ impl IpcBridge {
                 let request = evohime_receipts::runtime::ActionRequest { action_id: uuid::Uuid::now_v7(), task_id: context.task_id.to_string(), run_id: context.task_id.to_string(), tool_name: "shell.execute".into(), policy_id: "permission:ShellExecute".into(), normalized_scope: scope, input: input.clone(), policy_decision: evohime_receipts::runtime::PolicyDecision::Allow, approval_id: None, parent_approval_ref: None, preview: serde_json::to_string(&preview).unwrap_or_else(|_| "terminal".into()) };
                 let mut database = self.journal.database().lock().await;
                 let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
+                let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
                 let prepared = match runtime.prepare(request.clone()) {
                     Ok(value) => value,
                     Err(error) => {
@@ -3291,7 +3291,7 @@ impl IpcBridge {
                 let result = self.tools.as_ref().unwrap().execute_with_cancellation(context, "shell.execute", input, cancellation).await;
                 let mut database = self.journal.database().lock().await;
                 let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
+                let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?;
                 match &result {
                     Ok(value) => { runtime.mark_returned(request.action_id).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?; let digest = evohime_receipts::sha256_hex(value.output.as_bytes()); runtime.complete(&request, "succeeded", &digest, None).map_err(|e| evohime_tool_runtime::ToolError::Execution(e.to_string()))?; }
                     Err(_error) => {
@@ -3391,7 +3391,7 @@ impl IpcBridge {
                     {
                         let mut database = self.journal.database().lock().await;
                         let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                        let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
+                        let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
                             .map_err(|error| FrameError::Io(error.to_string()))?;
                         runtime.prepare_existing_approval(receipt_request)
                             .map_err(|error| FrameError::Io(error.to_string()))?;
@@ -3461,7 +3461,7 @@ impl IpcBridge {
                     let output_digest = evohime_receipts::sha256_hex(result.output.as_bytes());
                     let mut database = self.journal.database().lock().await;
                     let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
-                    let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
+                    let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer)
                         .map_err(|error| FrameError::Io(error.to_string()))?;
                     runtime.mark_returned(action_id).map_err(|error| FrameError::Io(error.to_string()))?;
                     runtime.complete(&receipt_request, "succeeded", &output_digest, None)
@@ -4144,7 +4144,7 @@ mod tests {
         {
             let mut database = journal.database().lock().await;
             let signer = crate::CoreReceiptSigner(Arc::new(keys));
-            let runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).unwrap();
+            let mut runtime = evohime_receipts::runtime::ReceiptRuntime::new(database.connection_mut(), &signer).unwrap();
             let old_request = evohime_receipts::runtime::ActionRequest {
                 action_id: old_action_id,
                 task_id: task_id.to_string(),

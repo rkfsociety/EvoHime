@@ -7,7 +7,7 @@
 use crate::{canonicalize_json, receipt_hash, result_hash, Envelope, ReceiptError};
 use chrono::Utc;
 use ring::{aead, rand::{SecureRandom, SystemRandom}};
-use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -33,22 +33,101 @@ static PROCESS_BOOT: OnceLock<Instant> = OnceLock::new();
 static BOOT_ID: OnceLock<String> = OnceLock::new();
 
 fn monotonic_ms() -> i64 { PROCESS_BOOT.get_or_init(Instant::now).elapsed().as_millis() as i64 }
-fn boot_id() -> &'static str {
-    BOOT_ID.get_or_init(|| {
-        #[cfg(windows)]
-        {
-            // GetTickCount64 is monotonic from the Windows boot and therefore
-            // distinguishes a reboot without relying on wall-clock changes.
-            return format!("windows-boot-{}", unsafe { windows_sys::Win32::System::SystemInformation::GetTickCount64() });
+
+/// Stable identifier for the current OS boot session. Windows uses
+/// `GetTickCount64`, which resets to zero on every boot and is therefore a
+/// reliable platform clock API. Elsewhere the code first tries a real
+/// platform signal (`/proc/uptime` on Linux) and only falls back to an
+/// owner-only, checksummed boot marker file when no such signal exists. If
+/// neither is available the caller receives a fail-closed runtime error
+/// instead of a silently process-local, unreliable identifier.
+fn boot_id() -> Result<&'static str, RuntimeError> {
+    if let Some(id) = BOOT_ID.get() { return Ok(id); }
+    let computed = compute_boot_id()?;
+    Ok(BOOT_ID.get_or_init(|| computed))
+}
+
+fn compute_boot_id() -> Result<String, RuntimeError> {
+    #[cfg(windows)]
+    {
+        Ok(format!("windows-boot-{}", unsafe { windows_sys::Win32::System::SystemInformation::GetTickCount64() }))
+    }
+    #[cfg(not(windows))]
+    {
+        if let Ok(contents) = std::fs::read_to_string("/proc/uptime") {
+            if let Some(uptime_secs) = contents.split_whitespace().next().and_then(|value| value.parse::<f64>().ok()) {
+                if let Ok(now_secs) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+                    let boot_epoch = (now_secs.as_secs_f64() - uptime_secs).round() as i64;
+                    return Ok(format!("linux-boot-{boot_epoch}"));
+                }
+            }
         }
-        #[cfg(not(windows))]
-        {
-            // The production target is Windows; this fallback keeps non-Windows
-            // contract tests process-local and still prevents stale deadlines
-            // from being compared against a fresh monotonic clock.
-            format!("process-boot-{:p}", &PROCESS_BOOT as *const _)
-        }
-    })
+        boot_marker_id()
+    }
+}
+
+#[cfg(not(windows))]
+const BOOT_MARKER_SCHEMA_VERSION: u8 = 1;
+
+/// Platform data directory for the owner-only boot marker, matching the
+/// paths named in the plan for non-Windows targets.
+#[cfg(not(windows))]
+fn runtime_data_dir() -> Option<std::path::PathBuf> {
+    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+        if !xdg.is_empty() { return Some(std::path::PathBuf::from(xdg).join("EvoHime").join("runtime")); }
+    }
+    let home = std::env::var("HOME").ok()?;
+    if home.is_empty() { return None; }
+    if cfg!(target_os = "macos") {
+        Some(std::path::PathBuf::from(home).join("Library").join("Application Support").join("EvoHime").join("runtime"))
+    } else {
+        Some(std::path::PathBuf::from(home).join(".local").join("share").join("EvoHime").join("runtime"))
+    }
+}
+
+#[cfg(not(windows))]
+fn boot_marker_checksum(id: &str) -> String {
+    crate::sha256_hex(format!("evohime-boot-marker-v1\0{id}").as_bytes())
+}
+
+#[cfg(not(windows))]
+fn parse_boot_marker(bytes: &[u8]) -> Option<String> {
+    let value: Value = serde_json::from_slice(bytes).ok()?;
+    if value.get("schema_version")?.as_u64()? != BOOT_MARKER_SCHEMA_VERSION as u64 { return None; }
+    let id = value.get("boot_id")?.as_str()?.to_string();
+    let checksum = value.get("checksum")?.as_str()?;
+    if checksum != boot_marker_checksum(&id) { return None; }
+    Some(id)
+}
+
+/// Reads or atomically (re)creates the boot marker. Loss, corruption or a
+/// checksum mismatch is treated as a new boot, matching the plan's
+/// invalidation rule; the file is never patched in place.
+#[cfg(not(windows))]
+fn boot_marker_id() -> Result<String, RuntimeError> {
+    let dir = runtime_data_dir().ok_or(RuntimeError::Code("storage_key_unavailable"))?;
+    std::fs::create_dir_all(&dir).map_err(|_| RuntimeError::Code("storage_key_unavailable"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    }
+    let marker_path = dir.join("boot-marker.json");
+    if let Ok(bytes) = std::fs::read(&marker_path) {
+        if let Some(id) = parse_boot_marker(&bytes) { return Ok(id); }
+    }
+    let id = format!("marker-boot-{}", Uuid::now_v7());
+    let value = json!({"schema_version": BOOT_MARKER_SCHEMA_VERSION, "boot_id": id, "checksum": boot_marker_checksum(&id)});
+    let bytes = serde_json::to_vec(&value).map_err(|_| RuntimeError::Code("storage_key_unavailable"))?;
+    let tmp_path = dir.join(format!("boot-marker.{}.tmp", Uuid::now_v7()));
+    std::fs::write(&tmp_path, &bytes).map_err(|_| RuntimeError::Code("storage_key_unavailable"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o600));
+    }
+    std::fs::rename(&tmp_path, &marker_path).map_err(|_| RuntimeError::Code("storage_key_unavailable"))?;
+    Ok(id)
 }
 
 /// Runs before Core accepts any new mutation. This API intentionally does not
@@ -70,7 +149,7 @@ pub fn recover_database(connection: &mut Connection) -> Result<i64, RuntimeError
         return Err(RuntimeError::Code("schema_violation"));
     }
     let wall_now = now_ms(); let mono_now = monotonic_ms();
-    tx.execute("UPDATE receipt_approval_intents SET state='expired' WHERE state IN ('pending','granted') AND ((clock_boot_id=?1 AND deadline_monotonic_ms<=?2) OR (clock_boot_id<>?1 AND expires_at_ms<=?3))", params![boot_id(), mono_now, wall_now])?;
+    tx.execute("UPDATE receipt_approval_intents SET state='expired' WHERE state IN ('pending','granted') AND ((clock_boot_id=?1 AND deadline_monotonic_ms<=?2) OR (clock_boot_id<>?1 AND expires_at_ms<=?3))", params![boot_id()?, mono_now, wall_now])?;
     // A terminal post/refusal may have committed before the action-index
     // update. Reconcile only that durable receipt; never synthesize a result.
     tx.execute(
@@ -473,19 +552,144 @@ pub fn canonical_call_hash(tool_name: &str, normalized_scope: &str, input: &Valu
 
 fn now_ms() -> i64 { Utc::now().timestamp_millis() }
 
-fn increment_metric_tx(tx: &Transaction<'_>, metric: &str, amount: i64) -> Result<(), RuntimeError> {
+fn increment_metric_tx(connection: &Connection, metric: &str, amount: i64) -> Result<(), RuntimeError> {
     if metric.is_empty() || metric.len() > 64 || !metric.bytes().all(|value| value.is_ascii_alphanumeric() || value == b'_' || value == b'.') { return Err(RuntimeError::Code("schema_violation")); }
-    tx.execute("INSERT INTO receipt_runtime_metrics(metric,value) VALUES(?1,?2) ON CONFLICT(metric) DO UPDATE SET value=value+excluded.value", params![metric, amount])?;
+    connection.execute("INSERT INTO receipt_runtime_metrics(metric,value) VALUES(?1,?2) ON CONFLICT(metric) DO UPDATE SET value=value+excluded.value", params![metric, amount])?;
     Ok(())
 }
 
+/// Every mutation/chain-write entry point (claim, complete, refuse,
+/// dispatch-state transitions, GC, unquarantine) must gate on this before
+/// touching `receipt_actions`/`receipt_records`. `read_only_recovery` only
+/// permits status/diagnostics/export/backup/staging-restore; it never lets an
+/// already-prepared action keep progressing through the chain.
+fn require_ready(connection: &Connection) -> Result<(), RuntimeError> {
+    let phase: String = connection.query_row("SELECT phase FROM receipt_runtime_guard WHERE id=1", [], |row| row.get(0))?;
+    if phase != "ready" { return Err(RuntimeError::Code("pending_recovery")); }
+    Ok(())
+}
+
+/// Normative lock-retry schedule for chain-append transactions: attempt
+/// immediately, then retry after 10ms, 50ms and 250ms before surfacing
+/// `receipt.chain_conflict`. SQLite's own busy handler is disabled around
+/// these attempts so this application-level schedule is authoritative.
+const APPEND_RETRY_DELAYS_MS: [u64; 4] = [0, 10, 50, 250];
+
+/// A hand-rolled `BEGIN IMMEDIATE` guard used only by the receipt-append
+/// paths. `rusqlite::Connection::transaction_with_behavior` requires `&mut
+/// self` and keeps that place mutably borrowed for the entire lifetime of
+/// the returned `Transaction`, which makes an in-place retry-with-backoff
+/// loop unrepresentable under NLL (every attempt, including failed ones,
+/// would need the same borrow region as the eventual success). Driving
+/// `BEGIN IMMEDIATE`/`COMMIT`/`ROLLBACK` as raw statements over a shared
+/// `&Connection` sidesteps that: every rusqlite statement method here only
+/// needs `&self`.
+struct RetryTransaction<'a> {
+    connection: &'a Connection,
+    finished: bool,
+}
+
+impl<'a> std::ops::Deref for RetryTransaction<'a> {
+    type Target = Connection;
+    fn deref(&self) -> &Connection { self.connection }
+}
+
+impl<'a> RetryTransaction<'a> {
+    fn begin(connection: &'a Connection) -> Result<Self, RuntimeError> {
+        let _ = connection.busy_timeout(Duration::from_millis(0));
+        for (index, delay) in APPEND_RETRY_DELAYS_MS.iter().enumerate() {
+            if *delay > 0 { std::thread::sleep(Duration::from_millis(*delay)); }
+            match connection.execute_batch("BEGIN IMMEDIATE") {
+                Ok(()) => {
+                    let _ = connection.busy_timeout(Duration::from_secs(2));
+                    if index > 0 { increment_metric_tx(connection, "receipt_append_busy_retries", index as i64)?; }
+                    return Ok(Self { connection, finished: false });
+                }
+                Err(rusqlite::Error::SqliteFailure(err, _))
+                    if matches!(err.code, rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+                       && index + 1 < APPEND_RETRY_DELAYS_MS.len() => continue,
+                Err(rusqlite::Error::SqliteFailure(err, _))
+                    if matches!(err.code, rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked) =>
+                {
+                    // Best-effort only, and deliberately attempted while
+                    // busy_timeout is still 0: the caller already has its
+                    // answer and must not be held up further waiting for a
+                    // diagnostic write against a lock that is still held.
+                    let _ = connection.execute("INSERT INTO receipt_runtime_metrics(metric,value) VALUES('receipt_chain_conflicts',1) ON CONFLICT(metric) DO UPDATE SET value=value+1", []);
+                    let _ = connection.busy_timeout(Duration::from_secs(2));
+                    return Err(RuntimeError::Code("chain_conflict"));
+                }
+                Err(err) => {
+                    let _ = connection.busy_timeout(Duration::from_secs(2));
+                    return Err(RuntimeError::from(err));
+                }
+            }
+        }
+        unreachable!("APPEND_RETRY_DELAYS_MS is non-empty")
+    }
+
+    fn commit(mut self) -> Result<(), RuntimeError> {
+        self.connection.execute_batch("COMMIT")?;
+        self.finished = true;
+        Ok(())
+    }
+}
+
+impl<'a> Drop for RetryTransaction<'a> {
+    fn drop(&mut self) {
+        if !self.finished {
+            let _ = self.connection.execute_batch("ROLLBACK");
+        }
+    }
+}
+
+/// Bounded, case-insensitive scan for secret-shaped substrings. Previews are
+/// human-readable summaries only; anything resembling a credential is
+/// replaced before the byte-bound truncation runs.
+fn redact_secrets(value: &str) -> String {
+    const MARKERS: &[&str] = &["password", "secret", "token", "api_key", "apikey", "private_key", "authorization", "bearer"];
+    let mut out = String::with_capacity(value.len());
+    let mut redact_next = false;
+    for word in value.split_inclusive(char::is_whitespace) {
+        let trailing_start = word.trim_end_matches(char::is_whitespace).len();
+        let (core, trailing) = word.split_at(trailing_start);
+        let lower = core.to_ascii_lowercase();
+        let is_marker = MARKERS.iter().any(|marker| lower.contains(marker));
+        if is_marker {
+            // `key=value` (no space) redacts the value in place; a bare
+            // marker word (optionally ending in `:`) redacts the token that
+            // follows it, since the secret is a separate whitespace-split word.
+            if let Some(delim) = core.find(['=', ':']) {
+                if delim + 1 < core.len() {
+                    out.push_str(&core[..=delim]);
+                    out.push_str("[REDACTED]");
+                } else {
+                    out.push_str(core);
+                    redact_next = true;
+                }
+            } else {
+                out.push_str("[REDACTED]");
+                redact_next = true;
+            }
+        } else if redact_next {
+            out.push_str("[REDACTED]");
+            redact_next = false;
+        } else {
+            out.push_str(core);
+        }
+        out.push_str(trailing);
+    }
+    out
+}
+
 fn bounded_preview(value: &str) -> String {
+    let redacted = redact_secrets(value);
     let mut out = String::new();
-    for ch in value.chars() {
+    for ch in redacted.chars() {
         if out.len() + ch.len_utf8() > MAX_PREVIEW_BYTES.saturating_sub(11) { break; }
         out.push(ch);
     }
-    if out.len() < value.len() { out.push_str("[truncated]"); }
+    if out.len() < redacted.len() { out.push_str("[truncated]"); }
     out
 }
 
@@ -510,7 +714,7 @@ fn build_payload(request: &ActionRequest, kind: &str, status: &str, args_hash: &
     payload
 }
 
-fn signed_receipt(tx: &Transaction<'_>, signer: &dyn ReceiptSigner, request: &ActionRequest,
+fn signed_receipt(tx: &Connection, signer: &dyn ReceiptSigner, request: &ActionRequest,
                   kind: &str, status: &str, args_hash: &str, result: Option<&str>, refusal: Option<&str>)
                   -> Result<(String, String), RuntimeError> {
     let append_started = Instant::now();
@@ -551,20 +755,20 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(Self { connection, signer })
     }
 
-    pub fn prepare(&self, request: ActionRequest) -> Result<PrepareOutcome, RuntimeError> {
+    pub fn prepare(&mut self, request: ActionRequest) -> Result<PrepareOutcome, RuntimeError> {
         self.prepare_inner(request, false)
     }
 
     /// Imports an already Core-created approval id from the PermissionEngine.
     /// This is only for the compatibility approval producer; the renderer
     /// still cannot choose an id.
-    pub fn prepare_existing_approval(&self, request: ActionRequest) -> Result<PrepareOutcome, RuntimeError> {
+    pub fn prepare_existing_approval(&mut self, request: ActionRequest) -> Result<PrepareOutcome, RuntimeError> {
         self.prepare_inner(request, true)
     }
 
     /// Imports a legacy in-memory approval as a new pending Core approval.
     /// The legacy identifier is audit-only and cannot authorize the new claim.
-    pub fn import_legacy_approval(&self, legacy_ref: &str, request: ActionRequest) -> Result<PrepareOutcome, RuntimeError> {
+    pub fn import_legacy_approval(&mut self, legacy_ref: &str, request: ActionRequest) -> Result<PrepareOutcome, RuntimeError> {
         if legacy_ref.is_empty() || legacy_ref.len() > 128 { return Err(RuntimeError::Code("schema_violation")); }
         if !matches!(request.policy_decision, PolicyDecision::ApprovalRequired) || request.approval_id.is_some() { return Err(RuntimeError::Code("approval_stale")); }
         let outcome = self.prepare(request)?;
@@ -574,14 +778,37 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(PrepareOutcome::ApprovalRequired { action_id, approval_id, expires_at_ms })
     }
 
-    fn prepare_inner(&self, mut request: ActionRequest, existing_approval: bool) -> Result<PrepareOutcome, RuntimeError> {
-        let phase: String = self.connection.query_row("SELECT phase FROM receipt_runtime_guard WHERE id=1", [], |row| row.get(0))?;
-        if phase != "ready" { return Err(RuntimeError::Code("pending_recovery")); }
+    /// Idempotent batch migration of legacy pending approval records. Each
+    /// entry is keyed by `migration_version + legacy_approval_ref`: a record
+    /// already imported under that key is skipped rather than reimported,
+    /// and none of them auto-grants or auto-dispatches. Incomplete records
+    /// (missing task/session/tool/scope/hash) must be filtered by the caller
+    /// before calling this — they are marked `lost` and never imported.
+    pub fn migrate_legacy_approvals(&mut self, migration_version: u8, legacy_records: Vec<(String, ActionRequest)>) -> Result<Vec<PrepareOutcome>, RuntimeError> {
+        let mut outcomes = Vec::with_capacity(legacy_records.len());
+        for (legacy_ref, request) in legacy_records {
+            if legacy_ref.is_empty() || legacy_ref.len() > 128 { continue; }
+            let key = format!("{migration_version}:{legacy_ref}");
+            let already: Option<String> = self.connection.query_row(
+                "SELECT legacy_approval_ref FROM receipt_actions WHERE legacy_approval_ref=?1", [&key], |row| row.get(0),
+            ).optional()?;
+            if already.is_some() { continue; }
+            match self.import_legacy_approval(&key, request) {
+                Ok(outcome) => outcomes.push(outcome),
+                Err(RuntimeError::Code("approval_stale")) => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(outcomes)
+    }
+
+    fn prepare_inner(&mut self, mut request: ActionRequest, existing_approval: bool) -> Result<PrepareOutcome, RuntimeError> {
+        require_ready(self.connection)?;
         if request.action_id.get_version_num() != 7 { return Err(RuntimeError::Code("schema_violation")); }
         request.preview = bounded_preview(&request.preview);
         if request.parent_approval_ref.as_ref().is_some_and(|value| value.is_empty() || value.len() > 256) { return Err(RuntimeError::Code("schema_violation")); }
         let args_hash = canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input)?;
-        let tx = self.connection.unchecked_transaction()?;
+        let tx = RetryTransaction::begin(self.connection)?;
         if tx.query_row("SELECT 1 FROM receipt_actions WHERE action_id=?1", [request.action_id.to_string()], |_| Ok(1)).optional()?.is_some() {
             return Err(RuntimeError::Code("action_id_conflict"));
         }
@@ -607,7 +834,7 @@ impl<'a> ReceiptRuntime<'a> {
                 let created_monotonic = monotonic_ms();
                 let expires = created + APPROVAL_TTL_MS;
                 let deadline = created_monotonic + APPROVAL_TTL_MS;
-                tx.execute("INSERT INTO receipt_approval_intents(approval_id,action_id,task_id,run_id,tool_name,normalized_scope,call_hash,preview,state,created_wall_at_ms,expires_at_ms,clock_boot_id,created_monotonic_ms,deadline_monotonic_ms) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'pending',?9,?10,?11,?12,?13)", params![approval_id.to_string(), action, request.task_id, request.run_id, request.tool_name, request.normalized_scope, args_hash, request.preview, created, expires, boot_id(), created_monotonic, deadline])?;
+                tx.execute("INSERT INTO receipt_approval_intents(approval_id,action_id,task_id,run_id,tool_name,normalized_scope,call_hash,preview,state,created_wall_at_ms,expires_at_ms,clock_boot_id,created_monotonic_ms,deadline_monotonic_ms) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'pending',?9,?10,?11,?12,?13)", params![approval_id.to_string(), action, request.task_id, request.run_id, request.tool_name, request.normalized_scope, args_hash, request.preview, created, expires, boot_id()?, created_monotonic, deadline])?;
                 increment_metric_tx(&tx, "approval_pending_count", 1)?;
                 tx.commit()?;
                 Ok(PrepareOutcome::ApprovalRequired { action_id: request.action_id, approval_id, expires_at_ms: expires })
@@ -622,12 +849,14 @@ impl<'a> ReceiptRuntime<'a> {
     }
 
     pub fn mark_started(&self, action_id: Uuid) -> Result<(), RuntimeError> {
+        require_ready(self.connection)?;
         let changed = self.connection.execute("UPDATE receipt_actions SET dispatch_state='started',tool_started_at_ms=?2 WHERE action_id=?1 AND state='prepared' AND dispatch_state='not_started'", params![action_id.to_string(), now_ms()])?;
         if changed != 1 { return Err(RuntimeError::Code("action_id_conflict")); }
         Ok(())
     }
 
     pub fn mark_returned(&self, action_id: Uuid) -> Result<(), RuntimeError> {
+        require_ready(self.connection)?;
         let changed = self.connection.execute(
             "UPDATE receipt_actions SET dispatch_state='returned' WHERE action_id=?1 AND state='prepared' AND dispatch_state='started'",
             [action_id.to_string()],
@@ -650,7 +879,8 @@ impl<'a> ReceiptRuntime<'a> {
             "SELECT clock_boot_id,expires_at_ms,deadline_monotonic_ms FROM receipt_approval_intents WHERE approval_id=?1 AND state='pending'",
             [approval_id.to_string()], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         ).optional()?;
-        let valid = deadline.is_some_and(|(boot, wall, mono)| if boot == boot_id() { monotonic_ms() < mono } else { now_ms() < wall });
+        let current_boot = boot_id()?;
+        let valid = deadline.is_some_and(|(boot, wall, mono)| if boot == current_boot { monotonic_ms() < mono } else { now_ms() < wall });
         let changed = if valid { self.connection.execute("UPDATE receipt_approval_intents SET state='granted' WHERE approval_id=?1 AND state='pending'", [approval_id.to_string()])? } else { self.connection.execute("UPDATE receipt_approval_intents SET state='expired' WHERE approval_id=?1 AND state='pending'", [approval_id.to_string()])?; 0 };
         if changed != 1 { return Err(RuntimeError::Code("approval_expired")); }
         Ok(())
@@ -659,16 +889,41 @@ impl<'a> ReceiptRuntime<'a> {
     /// Claims a granted intent and appends the pre receipt atomically.  The
     /// caller must provide the same call fields that produced the intent.
     pub fn claim_approval(&mut self, request: &ActionRequest, approval_id: Uuid) -> Result<PrepareOutcome, RuntimeError> {
+        self.claim_approval_checked(request, approval_id, |_| true)
+    }
+
+    /// Same as [`Self::claim_approval`] but re-applies the caller's current
+    /// policy decision as part of the atomic claim gate. `recheck_policy`
+    /// receives the request and must return `true` only if the exact same
+    /// call is still `allow`/`approval_required` under the *current* policy
+    /// snapshot — a stale approval never bypasses a policy that changed
+    /// after Prepare.
+    pub fn claim_approval_checked(
+        &mut self,
+        request: &ActionRequest,
+        approval_id: Uuid,
+        recheck_policy: impl FnOnce(&ActionRequest) -> bool,
+    ) -> Result<PrepareOutcome, RuntimeError> {
+        require_ready(self.connection)?;
         let args_hash = canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input)?;
-        let tx = self.connection.unchecked_transaction()?;
-        let row: Option<(String, String, i64)> = tx.query_row(
-            "SELECT action_id,state,expires_at_ms FROM receipt_approval_intents WHERE approval_id=?1",
-            [approval_id.to_string()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        let tx = RetryTransaction::begin(self.connection)?;
+        let row: Option<(String, String, String, i64)> = tx.query_row(
+            "SELECT action_id,state,clock_boot_id,deadline_monotonic_ms FROM receipt_approval_intents WHERE approval_id=?1",
+            [approval_id.to_string()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         ).optional()?;
-        let Some((action_id, state, expires)) = row else { return Err(RuntimeError::Code("approval_stale")); };
-        if state != "granted" || expires <= now_ms() { return Err(RuntimeError::Code("approval_expired")); }
+        let Some((action_id, state, boot, deadline_monotonic_ms)) = row else { return Err(RuntimeError::Code("approval_stale")); };
+        // Normative rule: within one boot, authorization claim uses only the
+        // monotonic deadline. Wall clock is a fail-closed recovery boundary
+        // only, never an authorization check in the same boot.
+        let expired = if boot == boot_id()? { monotonic_ms() >= deadline_monotonic_ms } else { true };
+        if state != "granted" || expired {
+            tx.execute("UPDATE receipt_approval_intents SET state='expired' WHERE approval_id=?1 AND state IN ('pending','granted')", [approval_id.to_string()])?;
+            tx.commit()?;
+            return Err(RuntimeError::Code("approval_expired"));
+        }
         let stored: String = tx.query_row("SELECT tool_args_hash FROM receipt_actions WHERE action_id=?1", [&action_id], |r| r.get(0))?;
         if stored != args_hash || request.action_id.to_string() != action_id { return Err(RuntimeError::Code("call_changed")); }
+        if !recheck_policy(request) { return Err(RuntimeError::Code("policy_denied")); }
         let mut bound = request.clone();
         bound.approval_id = Some(approval_id);
         let (hash, _) = signed_receipt(&tx, self.signer, &bound, "pre_action", "prepared", &stored, None, None)?;
@@ -678,25 +933,26 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(PrepareOutcome::Prepared { action_id: request.action_id, receipt_hash: hash })
     }
 
-    pub fn complete(&self, request: &ActionRequest, status: &str, output_digest: &str, error_category: Option<&str>) -> Result<String, RuntimeError> {
+    pub fn complete(&mut self, request: &ActionRequest, status: &str, output_digest: &str, error_category: Option<&str>) -> Result<String, RuntimeError> {
         self.complete_inner(request, status, output_digest, error_category, None)
     }
 
     /// Completes a separately authorized read-only reconciliation action and
     /// links it to the historical pending action in the same transaction.
-    pub fn complete_reconciliation(&self, request: &ActionRequest, old_action_id: Uuid, status: &str, output_digest: &str, error_category: Option<&str>) -> Result<String, RuntimeError> {
+    pub fn complete_reconciliation(&mut self, request: &ActionRequest, old_action_id: Uuid, status: &str, output_digest: &str, error_category: Option<&str>) -> Result<String, RuntimeError> {
         if old_action_id == request.action_id { return Err(RuntimeError::Code("schema_violation")); }
         self.complete_inner(request, status, output_digest, error_category, Some(old_action_id))
     }
 
-    fn complete_inner(&self, request: &ActionRequest, status: &str, output_digest: &str, error_category: Option<&str>, reconciliation_old_action: Option<Uuid>) -> Result<String, RuntimeError> {
+    fn complete_inner(&mut self, request: &ActionRequest, status: &str, output_digest: &str, error_category: Option<&str>, reconciliation_old_action: Option<Uuid>) -> Result<String, RuntimeError> {
+        require_ready(self.connection)?;
         if !matches!(status, "succeeded"|"failed"|"cancelled") { return Err(RuntimeError::Code("schema_violation")); }
         let args_hash = canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input)?;
         if output_digest.len() != 64 || !output_digest.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) { return Err(RuntimeError::Code("schema_violation")); }
         let projection = if status == "succeeded" { json!({"status":"succeeded","output_digest":output_digest}) } else { json!({"status":status,"error_category":error_category.ok_or(RuntimeError::Code("schema_violation"))?}) };
         let result = result_hash(&projection)?;
         let marker = bounded_result_marker(status, &result, error_category, now_ms(), status == "succeeded")?;
-        let tx = self.connection.unchecked_transaction()?;
+        let tx = RetryTransaction::begin(self.connection)?;
         let (state, dispatch, stored_hash, task_id, run_id, tool_name, normalized_scope, policy_id, policy_decision, fingerprint_version, stored_approval, stored_parent, terminal_hash): (String,String,String,String,String,String,String,String,String,i64,Option<String>,Option<String>,Option<String>) = tx.query_row(
             "SELECT state,dispatch_state,tool_args_hash,task_id,run_id,tool_name,normalized_scope,policy_id,policy_decision,fingerprint_input_version,approval_id,parent_approval_ref,terminal_receipt_hash FROM receipt_actions WHERE action_id=?1",
             [request.action_id.to_string()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?,r.get(10)?,r.get(11)?,r.get(12)?)))?;
@@ -716,6 +972,8 @@ impl<'a> ReceiptRuntime<'a> {
         if !binding_matches || dispatch != "started" && dispatch != "returned" || !identity_matches {
             if binding_matches {
                 tx.execute("UPDATE receipt_actions SET state='quarantined',recovery_code='unknown' WHERE action_id=?1 AND state IN ('prepared','pending_recovery')", [request.action_id.to_string()])?;
+                increment_metric_tx(&tx, "receipt_schema_violations", 1)?;
+                increment_metric_tx(&tx, "quarantined_count", 1)?;
                 tx.commit()?;
             }
             return Err(RuntimeError::Code("schema_violation"));
@@ -738,10 +996,11 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(hash)
     }
 
-    pub fn refuse(&self, request: &ActionRequest, code: &str) -> Result<String, RuntimeError> {
+    pub fn refuse(&mut self, request: &ActionRequest, code: &str) -> Result<String, RuntimeError> {
+        require_ready(self.connection)?;
         if !matches!(code, "policy_denied"|"approval_denied"|"approval_expired"|"approval_stale"|"call_changed"|"key_untrusted"|"recovery_pending") { return Err(RuntimeError::Code("schema_violation")); }
         let args_hash = canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input)?;
-        let tx = self.connection.unchecked_transaction()?;
+        let tx = RetryTransaction::begin(self.connection)?;
         let binding: (String,String,String,String,String,String,i64,Option<String>,Option<String>,String,Option<String>) = tx.query_row(
             "SELECT task_id,run_id,tool_name,normalized_scope,policy_id,policy_decision,fingerprint_input_version,approval_id,parent_approval_ref,state,terminal_receipt_hash FROM receipt_actions WHERE action_id=?1",
             [request.action_id.to_string()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?,r.get(10)?)))?;
@@ -758,6 +1017,8 @@ impl<'a> ReceiptRuntime<'a> {
         if !identity_matches || !matches!(binding.9.as_str(), "awaiting_approval" | "prepared" | "pending_recovery") {
             if matches!(binding.9.as_str(), "prepared" | "pending_recovery") {
                 tx.execute("UPDATE receipt_actions SET state='quarantined',recovery_code='unknown' WHERE action_id=?1", [request.action_id.to_string()])?;
+                increment_metric_tx(&tx, "receipt_schema_violations", 1)?;
+                increment_metric_tx(&tx, "quarantined_count", 1)?;
                 tx.commit()?;
             }
             return Err(RuntimeError::Code("schema_violation"));
@@ -766,6 +1027,8 @@ impl<'a> ReceiptRuntime<'a> {
         if stored_hash != args_hash {
             if matches!(binding.9.as_str(), "prepared" | "pending_recovery") {
                 tx.execute("UPDATE receipt_actions SET state='quarantined',recovery_code='unknown' WHERE action_id=?1", [request.action_id.to_string()])?;
+                increment_metric_tx(&tx, "receipt_schema_violations", 1)?;
+                increment_metric_tx(&tx, "quarantined_count", 1)?;
                 tx.commit()?;
             }
             return Err(RuntimeError::Code("schema_violation"));
@@ -806,15 +1069,30 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(())
     }
 
+    /// Runs one bounded GC pass. If Recovery starts (and bumps
+    /// `receipt_runtime_guard.generation`) between the pre-check and the
+    /// transaction's own first read, the deletion is discarded and the next
+    /// scheduled pass retries — GC and Recovery never race on the same
+    /// intents.
     pub fn approval_gc(&self, now_ms_value: i64) -> Result<i64, RuntimeError> {
-        let phase: String = self.connection.query_row("SELECT phase FROM receipt_runtime_guard WHERE id=1", [], |row| row.get(0))?;
+        let (phase, generation_before): (String, i64) = self.connection.query_row(
+            "SELECT phase,generation FROM receipt_runtime_guard WHERE id=1", [], |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
         if phase != "ready" { return Err(RuntimeError::Code("pending_recovery")); }
         let cutoff = now_ms_value.saturating_sub(APPROVAL_TTL_MS);
-        let deleted = self.connection.execute(
+        let tx = self.connection.unchecked_transaction()?;
+        let (phase_in_tx, generation_in_tx): (String, i64) = tx.query_row(
+            "SELECT phase,generation FROM receipt_runtime_guard WHERE id=1", [], |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if phase_in_tx != "ready" || generation_in_tx != generation_before {
+            return Ok(0);
+        }
+        let deleted = tx.execute(
             "DELETE FROM receipt_approval_intents WHERE state IN ('expired','lost','claimed') AND expires_at_ms<=?1 AND NOT EXISTS (SELECT 1 FROM receipt_actions a WHERE a.action_id=receipt_approval_intents.action_id AND a.state='pending_recovery')",
             [cutoff],
         )?;
-        self.connection.execute("INSERT INTO receipt_runtime_metrics(metric,value) VALUES('approval_gc_deleted_count',?1) ON CONFLICT(metric) DO UPDATE SET value=value+excluded.value", [deleted as i64])?;
+        increment_metric_tx(&tx, "approval_gc_deleted_count", deleted as i64)?;
+        tx.commit()?;
         Ok(deleted as i64)
     }
 
@@ -924,6 +1202,18 @@ impl<'a> ReceiptRuntime<'a> {
         Ok(row)
     }
 
+    /// Reads a protected row during storage-key rotation, trying the new key
+    /// first and falling back to the old key in that fixed order. The order
+    /// is deterministic and never chosen at random: a row rewrapped by a
+    /// concurrent rotation batch must decrypt with the new key, while an
+    /// unrewrapped row still decrypts with the old one.
+    pub fn load_protected_action_with_fallback(&self, action_id: Uuid, new_key: &[u8; 32], old_key: &[u8; 32]) -> Result<ProtectedActionRow, RuntimeError> {
+        match self.load_protected_action(action_id, new_key) {
+            Ok(row) => Ok(row),
+            Err(_) => self.load_protected_action(action_id, old_key),
+        }
+    }
+
     pub fn delete_protected_after_terminal(&self, action_id: Uuid) -> Result<(), RuntimeError> {
         let terminal: Option<String> = self.connection.query_row("SELECT state FROM receipt_actions WHERE action_id=?1", [action_id.to_string()], |row| row.get(0)).optional()?;
         if !matches!(terminal.as_deref(), Some("succeeded"|"failed"|"cancelled"|"refused")) { return Err(RuntimeError::Code("pending_recovery")); }
@@ -941,10 +1231,11 @@ impl<'a> ReceiptRuntime<'a> {
 
     /// Authenticated operator closure for an invariant-violating action. It
     /// can only produce a signed terminal refusal and never re-enables dispatch.
-    pub fn unquarantine(&self, request: &ActionRequest, authenticated_operator: bool, checkpoint: &str) -> Result<String, RuntimeError> {
+    pub fn unquarantine(&mut self, request: &ActionRequest, authenticated_operator: bool, checkpoint: &str) -> Result<String, RuntimeError> {
+        require_ready(self.connection)?;
         if !authenticated_operator || checkpoint.is_empty() || checkpoint.len() > 256 { return Err(RuntimeError::Code("key_untrusted")); }
         let args_hash = canonical_call_hash(&request.tool_name, &request.normalized_scope, &request.input)?;
-        let tx = self.connection.unchecked_transaction()?;
+        let tx = RetryTransaction::begin(self.connection)?;
         let binding: (String,String,String,String,String,String,i64,Option<String>,Option<String>,String,Option<String>) = tx.query_row(
             "SELECT task_id,run_id,tool_name,normalized_scope,policy_id,policy_decision,fingerprint_input_version,approval_id,parent_approval_ref,state,terminal_receipt_hash FROM receipt_actions WHERE action_id=?1",
             [request.action_id.to_string()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?,r.get(8)?,r.get(9)?,r.get(10)?)))?;
@@ -1075,7 +1366,7 @@ mod tests {
     fn deny_is_terminal_and_never_creates_pre() {
         let mut db = Connection::open_in_memory().unwrap();
         let signer = TestSigner;
-        let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
         let req = request(PolicyDecision::Deny);
         let id = req.action_id;
         assert!(matches!(runtime.prepare(req), Ok(PrepareOutcome::Refused { .. })));
@@ -1103,7 +1394,7 @@ mod tests {
     fn legacy_approval_import_creates_new_pending_id_without_auto_grant() {
         let mut db = Connection::open_in_memory().unwrap();
         let signer = TestSigner;
-        let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
         let req = request(PolicyDecision::ApprovalRequired);
         let outcome = runtime.import_legacy_approval("legacy-approval-1", req).unwrap();
         let (approval_id, action_id) = match outcome { PrepareOutcome::ApprovalRequired { approval_id, action_id, .. } => (approval_id, action_id), _ => panic!() };
@@ -1117,7 +1408,7 @@ mod tests {
     fn pre_is_durable_before_started_and_post_uses_chain_head() {
         let mut db = Connection::open_in_memory().unwrap();
         let signer = TestSigner;
-        let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
         let req = request(PolicyDecision::Allow);
         let id = req.action_id;
         let pre = runtime.prepare(req.clone()).unwrap();
@@ -1133,7 +1424,7 @@ mod tests {
     fn post_binding_mismatch_quarantines_without_terminal_success() {
         let mut db = Connection::open_in_memory().unwrap();
         let signer = TestSigner;
-        let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
         let request = request(PolicyDecision::Allow);
         let id = request.action_id;
         runtime.prepare(request.clone()).unwrap();
@@ -1153,7 +1444,7 @@ mod tests {
     fn durable_terminal_hash_blocks_duplicate_post_append() {
         let mut db = Connection::open_in_memory().unwrap();
         let signer = TestSigner;
-        let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
         let request = request(PolicyDecision::Allow);
         let id = request.action_id;
         runtime.prepare(request.clone()).unwrap();
@@ -1169,7 +1460,7 @@ mod tests {
     fn authenticated_unquarantine_is_terminal_and_never_dispatchable() {
         let mut db = Connection::open_in_memory().unwrap();
         let signer = TestSigner;
-        let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
         let request = request(PolicyDecision::Allow);
         let id = request.action_id;
         runtime.prepare(request.clone()).unwrap();
@@ -1180,6 +1471,51 @@ mod tests {
         assert_eq!(runtime.action(id).unwrap().unwrap().state, "refused");
         assert!(runtime.mark_started(id).is_err());
         assert!(runtime.unquarantine(&request, true, "checkpoint-1").is_err());
+    }
+
+    #[test]
+    fn read_only_recovery_blocks_every_mutation_and_chain_write_entry_point() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+
+        let started = request(PolicyDecision::Allow);
+        runtime.prepare(started.clone()).unwrap();
+        runtime.mark_started(started.action_id).unwrap();
+
+        let not_started = request(PolicyDecision::Allow);
+        runtime.prepare(not_started.clone()).unwrap();
+
+        let approval_req = request(PolicyDecision::ApprovalRequired);
+        let approval_id = match runtime.prepare(approval_req.clone()).unwrap() {
+            PrepareOutcome::ApprovalRequired { approval_id, .. } => approval_id,
+            _ => panic!(),
+        };
+        runtime.grant_approval(approval_id).unwrap();
+
+        let refuse_req = request(PolicyDecision::ApprovalRequired);
+        runtime.prepare(refuse_req.clone()).unwrap();
+
+        let quarantined = request(PolicyDecision::Allow);
+        runtime.prepare(quarantined.clone()).unwrap();
+        runtime.mark_started(quarantined.action_id).unwrap();
+        runtime.mark_pending_recovery(quarantined.action_id, "unknown").unwrap();
+        runtime.quarantine(quarantined.action_id, "invariant").unwrap();
+        drop(runtime);
+
+        db.execute("UPDATE receipt_runtime_guard SET phase='read_only_recovery' WHERE id=1", []).unwrap();
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+
+        assert!(matches!(runtime.mark_started(not_started.action_id), Err(RuntimeError::Code("pending_recovery"))));
+        assert!(matches!(runtime.mark_returned(started.action_id), Err(RuntimeError::Code("pending_recovery"))));
+        assert!(matches!(runtime.complete(&started, "succeeded", &"a".repeat(64), None), Err(RuntimeError::Code("pending_recovery"))));
+        assert!(matches!(runtime.claim_approval(&approval_req, approval_id), Err(RuntimeError::Code("pending_recovery"))));
+        assert!(matches!(runtime.refuse(&refuse_req, "approval_expired"), Err(RuntimeError::Code("pending_recovery"))));
+        assert!(matches!(runtime.unquarantine(&quarantined, true, "checkpoint-1"), Err(RuntimeError::Code("pending_recovery"))));
+        assert!(matches!(runtime.prepare(request(PolicyDecision::Allow)), Err(RuntimeError::Code("pending_recovery"))));
+
+        assert_eq!(runtime.action(started.action_id).unwrap().unwrap().dispatch_state, "started");
+        assert_eq!(runtime.action(quarantined.action_id).unwrap().unwrap().state, "quarantined");
     }
 
     #[test]
@@ -1226,7 +1562,7 @@ mod tests {
     fn reconciliation_completion_links_old_and_new_actions_atomically() {
         let mut db = Connection::open_in_memory().unwrap();
         let signer = TestSigner;
-        let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
         let old = request(PolicyDecision::Allow);
         let old_id = old.action_id;
         runtime.prepare(old.clone()).unwrap();
@@ -1309,7 +1645,7 @@ mod tests {
         let signer = TestSigner;
 
         let (claimed_approval, pending_approval, stuck_approval, stuck_action) = {
-            let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+            let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
             let claimed_approval = match runtime.prepare(request(PolicyDecision::ApprovalRequired)).unwrap() {
                 PrepareOutcome::ApprovalRequired { approval_id, .. } => approval_id,
                 _ => panic!(),
@@ -1366,7 +1702,7 @@ mod tests {
         let request = request(PolicyDecision::Allow);
         let id = request.action_id;
         {
-            let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+            let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
             runtime.prepare(request.clone()).unwrap();
             runtime.mark_started(id).unwrap();
             runtime.mark_returned(id).unwrap();
@@ -1386,7 +1722,7 @@ mod tests {
         let request = request(PolicyDecision::Allow);
         let id = request.action_id;
         {
-            let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+            let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
             runtime.prepare(request.clone()).unwrap();
             runtime.mark_started(id).unwrap();
             runtime.mark_returned(id).unwrap();
@@ -1421,7 +1757,7 @@ mod tests {
             let request = request(PolicyDecision::Allow);
             let id = request.action_id;
             {
-                let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+                let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
                 runtime.prepare(request.clone()).unwrap();
                 if started || post {
                     runtime.mark_started(id).unwrap();
@@ -1451,8 +1787,8 @@ mod tests {
         let first = request(PolicyDecision::Allow);
         let second = request(PolicyDecision::Allow);
         std::thread::scope(|scope| {
-            scope.spawn(|| { let mut db = Connection::open(&path).unwrap(); let signer = TestSigner; let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap(); assert!(matches!(runtime.prepare(first), Ok(PrepareOutcome::Prepared { .. }))); });
-            scope.spawn(|| { let mut db = Connection::open(&path).unwrap(); let signer = TestSigner; let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap(); assert!(matches!(runtime.prepare(second), Ok(PrepareOutcome::Prepared { .. }))); });
+            scope.spawn(|| { let mut db = Connection::open(&path).unwrap(); let signer = TestSigner; let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap(); assert!(matches!(runtime.prepare(first), Ok(PrepareOutcome::Prepared { .. }))); });
+            scope.spawn(|| { let mut db = Connection::open(&path).unwrap(); let signer = TestSigner; let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap(); assert!(matches!(runtime.prepare(second), Ok(PrepareOutcome::Prepared { .. }))); });
         });
         let db = Connection::open(&path).unwrap();
         let records: i64 = db.query_row("SELECT COUNT(*) FROM receipt_records", [], |row| row.get(0)).unwrap();
@@ -1463,5 +1799,142 @@ mod tests {
         let last: String = db.query_row("SELECT receipt_hash FROM receipt_records WHERE key_id='test-key' ORDER BY rowid DESC LIMIT 1", [], |row| row.get(0)).unwrap();
         assert_eq!(head, last);
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn secret_like_preview_text_is_redacted_before_truncation() {
+        let preview = bounded_preview("set API_KEY=abc123 for the request; password: hunter2 stays out of receipts");
+        assert!(!preview.contains("abc123"));
+        assert!(!preview.contains("hunter2"));
+        assert!(preview.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn plain_preview_text_is_untouched() {
+        assert_eq!(bounded_preview("write a short readme section"), "write a short readme section");
+    }
+
+    #[test]
+    fn claim_uses_monotonic_deadline_not_wall_clock_within_one_boot() {
+        let path = std::env::temp_dir().join(format!("evohime-receipt-monotonic-{}.db", Uuid::now_v7()));
+        let req = request(PolicyDecision::ApprovalRequired);
+        let approval = {
+            let mut db = Connection::open(&path).unwrap();
+            let signer = TestSigner;
+            let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+            match runtime.prepare(req.clone()).unwrap() { PrepareOutcome::ApprovalRequired { approval_id, .. } => approval_id, _ => panic!() }
+        };
+        {
+            // Simulate a wall clock that already looks expired while the
+            // monotonic deadline (same boot) has not passed.
+            let side = Connection::open(&path).unwrap();
+            side.execute("UPDATE receipt_approval_intents SET state='granted', expires_at_ms=0 WHERE approval_id=?1", [approval.to_string()]).unwrap();
+        }
+        let mut db = Connection::open(&path).unwrap();
+        let signer = TestSigner;
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let bound = ActionRequest { approval_id: Some(approval), ..req };
+        // Claim must still succeed: wall clock is not used for authorization.
+        assert!(matches!(runtime.claim_approval(&bound, approval), Ok(PrepareOutcome::Prepared { .. })));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn claim_expires_once_monotonic_deadline_has_passed_even_with_future_wall_clock() {
+        let path = std::env::temp_dir().join(format!("evohime-receipt-monotonic-expired-{}.db", Uuid::now_v7()));
+        let req = request(PolicyDecision::ApprovalRequired);
+        let approval = {
+            let mut db = Connection::open(&path).unwrap();
+            let signer = TestSigner;
+            let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+            match runtime.prepare(req.clone()).unwrap() { PrepareOutcome::ApprovalRequired { approval_id, .. } => approval_id, _ => panic!() }
+        };
+        {
+            let side = Connection::open(&path).unwrap();
+            side.execute("UPDATE receipt_approval_intents SET state='granted', expires_at_ms=99999999999999, deadline_monotonic_ms=-1 WHERE approval_id=?1", [approval.to_string()]).unwrap();
+        }
+        let mut db = Connection::open(&path).unwrap();
+        let signer = TestSigner;
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let bound = ActionRequest { approval_id: Some(approval), ..req };
+        assert!(matches!(runtime.claim_approval(&bound, approval), Err(RuntimeError::Code("approval_expired"))));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn claim_checked_rejects_when_current_policy_denies() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let req = request(PolicyDecision::ApprovalRequired);
+        let approval = match runtime.prepare(req.clone()).unwrap() { PrepareOutcome::ApprovalRequired { approval_id, .. } => approval_id, _ => panic!() };
+        runtime.grant_approval(approval).unwrap();
+        let bound = ActionRequest { approval_id: Some(approval), ..req };
+        assert!(matches!(runtime.claim_approval_checked(&bound, approval, |_| false), Err(RuntimeError::Code("policy_denied"))));
+        // The approval stays granted (not silently consumed) so a later,
+        // still-current-policy retry of the same claim can still succeed.
+        assert!(matches!(runtime.claim_approval(&bound, approval), Ok(PrepareOutcome::Prepared { .. })));
+    }
+
+    #[test]
+    fn sustained_writer_contention_surfaces_chain_conflict_after_the_retry_budget() {
+        let path = std::env::temp_dir().join(format!("evohime-receipt-busy-{}.db", Uuid::now_v7()));
+        let mut db = Connection::open(&path).unwrap();
+        let signer = TestSigner;
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let blocker = Connection::open(&path).unwrap();
+        blocker.busy_timeout(Duration::from_secs(5)).unwrap();
+        blocker.execute_batch("BEGIN IMMEDIATE").unwrap();
+        let started = Instant::now();
+        let result = runtime.prepare(request(PolicyDecision::Allow));
+        assert!(matches!(result, Err(RuntimeError::Code("chain_conflict"))));
+        // The full 0/10/50/250ms schedule must have actually elapsed.
+        assert!(started.elapsed() >= Duration::from_millis(300));
+        blocker.execute_batch("ROLLBACK").unwrap();
+        drop(blocker);
+        // Once the writer releases the lock, the connection recovers and a
+        // fresh append succeeds normally (busy_timeout was restored, not
+        // left at zero after the failed attempt).
+        assert!(matches!(runtime.prepare(request(PolicyDecision::Allow)), Ok(PrepareOutcome::Prepared { .. })));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn migrate_legacy_approvals_is_idempotent_per_version_and_ref() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let record = ("legacy-42".to_string(), request(PolicyDecision::ApprovalRequired));
+        let first = runtime.migrate_legacy_approvals(1, vec![record.clone()]).unwrap();
+        assert_eq!(first.len(), 1);
+        // Re-running the same batch (e.g. a retried startup pass) must not
+        // create a second pending approval for the same legacy record.
+        let mut second_record = record.clone();
+        second_record.1.action_id = Uuid::now_v7();
+        let second = runtime.migrate_legacy_approvals(1, vec![second_record]).unwrap();
+        assert!(second.is_empty());
+        let count: i64 = db.query_row("SELECT COUNT(*) FROM receipt_actions WHERE legacy_approval_ref='1:legacy-42'", [], |row| row.get(0)).unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn load_protected_action_with_fallback_tries_new_key_then_old_key() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let old_key = [7u8; 32];
+        let new_key = [9u8; 32];
+        let req = request(PolicyDecision::Allow);
+        let action_id = req.action_id;
+        runtime.prepare(req).unwrap();
+        let row = ProtectedActionRow { schema_version: 1, action_id: action_id.to_string(), pre_receipt_hash: "a".repeat(64), tool_args_hash: "b".repeat(64), result_status: "failed".into(), result_hash: "c".repeat(64), recovery_code: "external_error".into(), created_at_ms: now_ms(), key_id: "old-key".into() };
+        // Row was written under the old key and has not been rewrapped yet.
+        runtime.store_protected_action(&row, &old_key).unwrap();
+        let loaded = runtime.load_protected_action_with_fallback(action_id, &new_key, &old_key).unwrap();
+        assert_eq!(loaded.action_id, action_id.to_string());
+        // A rewrapped row must be read via the new key without falling back.
+        runtime.store_protected_action(&row, &new_key).unwrap();
+        let loaded_new = runtime.load_protected_action_with_fallback(action_id, &new_key, &old_key).unwrap();
+        assert_eq!(loaded_new.action_id, action_id.to_string());
     }
 }
