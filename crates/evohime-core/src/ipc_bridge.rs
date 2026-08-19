@@ -1266,32 +1266,74 @@ impl IpcBridge {
                 .await?;
             }
             Some(generated::command_envelope::Command::SaveRevisedPlan(request)) => {
-                let result = self
+                // Правка переживает перезапуск ядра: обновление Евы перезапускает
+                // Core, а нажать «сохранить» пользователь может и после этого.
+                let mut result = self
                     .revision_results
                     .lock()
                     .await
                     .get(&request.revision_id)
-                    .cloned()
-                    .ok_or_else(|| FrameError::Io("revision not found".into()))?;
-                let destination = std::path::PathBuf::from(&request.destination_path);
-                if destination.extension().and_then(|value| value.to_str()) != Some("md") {
-                    return Err(
-                        FrameError::Io("revised plan must be a Markdown file".into()).into()
-                    );
+                    .cloned();
+                if result.is_none() {
+                    if let Ok(events) = self.journal.task_history(&request.revision_id, 10).await {
+                        result = events
+                            .iter()
+                            .rev()
+                            .find_map(|event| revision_result_from_event(&event.payload));
+                    }
                 }
-                tokio::fs::write(&destination, &result.revised_markdown)
-                    .await
-                    .map_err(|error| FrameError::Io(error.to_string()))?;
-                self.write_response(
-                    writer,
-                    "plan.saved",
-                    serde_json::to_vec(&serde_json::json!({
-                        "revision_id": request.revision_id,
-                        "destination_path": request.destination_path,
-                    }))
-                    .unwrap_or_default(),
-                )
-                .await?;
+                // Отказ отвечает событием, а не ошибкой кадра: ошибка кадра рвёт
+                // соединение с оболочкой, и опечатка в имени файла выглядела бы
+                // как падение ядра.
+                let failure = match &result {
+                    None => Some("правка не найдена: запусти её заново".to_string()),
+                    Some(_)
+                        if std::path::Path::new(&request.destination_path)
+                            .extension()
+                            .and_then(|value| value.to_str())
+                            != Some("md") =>
+                    {
+                        Some("сохранить план можно только в файл .md".to_string())
+                    }
+                    Some(_) => None,
+                };
+                let failure = match (failure, result) {
+                    (Some(reason), _) => Some(reason),
+                    (None, Some(result)) => {
+                        tokio::fs::write(&request.destination_path, &result.revised_markdown)
+                            .await
+                            .err()
+                            .map(|error| error.to_string())
+                    }
+                    (None, None) => Some("правка не найдена: запусти её заново".to_string()),
+                };
+                match failure {
+                    Some(error) => {
+                        self.write_response(
+                            writer,
+                            "plan.save_failed",
+                            serde_json::to_vec(&serde_json::json!({
+                                "revision_id": request.revision_id,
+                                "destination_path": request.destination_path,
+                                "error": error,
+                            }))
+                            .unwrap_or_default(),
+                        )
+                        .await?;
+                    }
+                    None => {
+                        self.write_response(
+                            writer,
+                            "plan.saved",
+                            serde_json::to_vec(&serde_json::json!({
+                                "revision_id": request.revision_id,
+                                "destination_path": request.destination_path,
+                            }))
+                            .unwrap_or_default(),
+                        )
+                        .await?;
+                    }
+                }
             }
             Some(generated::command_envelope::Command::PermissionMode(request)) => {
                 if let Some(tools) = &self.tools {
@@ -4063,6 +4105,20 @@ fn strip_review_header(final_markdown: &str) -> String {
     }
 }
 
+fn revision_result_from_event(payload: &[u8]) -> Option<crate::plan_review::RevisionResult> {
+    let value: serde_json::Value = serde_json::from_slice(payload).ok()?;
+    let message = value
+        .get("TaskCompleted")
+        .and_then(|item| item.get("final_message"))
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            value
+                .get("final_message")
+                .and_then(serde_json::Value::as_str)
+        })?;
+    serde_json::from_str(message).ok()
+}
+
 fn review_result_from_event(payload: &[u8]) -> Option<crate::plan_review::ReviewResult> {
     let value: serde_json::Value = serde_json::from_slice(payload).ok()?;
     let message = value
@@ -4260,19 +4316,96 @@ mod tests {
             "# Исправленный план"
         );
 
+        // Отказ приходит событием: ошибка кадра оборвала бы соединение с
+        // оболочкой, и опечатка в имени файла читалась бы как падение ядра.
         let rejected = std::env::temp_dir().join("evohime-revised.txt");
         transport::write_frame(&mut client, &save(&rejected.to_string_lossy()))
             .await
             .expect("rejected save writes");
-        assert!(
-            bridge
-                .process_once(&mut server_reader, &mut server_writer)
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("a refused save keeps the connection");
+        let response = generated::EventEnvelope::decode(
+            transport::read_frame(&mut client)
                 .await
-                .is_err(),
-            "a non-Markdown destination must be refused"
-        );
+                .expect("refusal response")
+                .as_slice(),
+        )
+        .expect("refusal decodes");
+        assert_eq!(response.event_type, "plan.save_failed");
         assert!(!rejected.exists());
 
+        let _ = std::fs::remove_file(&destination);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Обновление Евы перезапускает Core, а нажать «сохранить» пользователь
+    /// может и после этого: правка обязана находиться в журнале, когда кэш уже
+    /// пуст.
+    #[tokio::test]
+    async fn saves_a_revised_plan_recovered_from_the_journal() {
+        let path = std::env::temp_dir().join(format!(
+            "evohime-ipc-revision-journal-{}.db",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let journal = EventJournal::open(&path).expect("journal opens");
+        journal
+            .record(&CoreEvent::TaskCompleted {
+                task_id: "revision-7".into(),
+                final_message: serde_json::json!({
+                    "revision_id": "revision-7",
+                    "review_id": "review-1",
+                    "file_name": "plan.md",
+                    "model": "main",
+                    "revised_markdown": "# Восстановленный план"
+                })
+                .to_string(),
+            })
+            .await
+            .expect("revision records");
+        let bridge = IpcBridge::new(journal);
+        let (mut client, server) = duplex(16 * 1024);
+        let (mut server_reader, mut server_writer) = tokio::io::split(server);
+        let destination = std::env::temp_dir()
+            .join(format!("evohime-revised-journal-{}.md", std::process::id()));
+        let _ = std::fs::remove_file(&destination);
+        transport::write_frame(
+            &mut client,
+            &generated::CommandEnvelope {
+                protocol: Some(protocol()),
+                request_id: "revision-save".into(),
+                client_id: "test-client".into(),
+                core_instance_id: String::new(),
+                session_epoch: 1,
+                command: Some(generated::command_envelope::Command::SaveRevisedPlan(
+                    generated::SaveRevisedPlan {
+                        revision_id: "revision-7".into(),
+                        destination_path: destination.to_string_lossy().into(),
+                    },
+                )),
+            }
+            .encode_to_vec(),
+        )
+        .await
+        .expect("save writes");
+        bridge
+            .process_once(&mut server_reader, &mut server_writer)
+            .await
+            .expect("save serves");
+        let response = generated::EventEnvelope::decode(
+            transport::read_frame(&mut client)
+                .await
+                .expect("save response")
+                .as_slice(),
+        )
+        .expect("save decodes");
+        assert_eq!(response.event_type, "plan.saved");
+        assert_eq!(
+            std::fs::read_to_string(&destination).expect("revised plan is on disk"),
+            "# Восстановленный план"
+        );
         let _ = std::fs::remove_file(&destination);
         let _ = std::fs::remove_file(&path);
     }

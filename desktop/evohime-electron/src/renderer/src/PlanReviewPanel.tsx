@@ -139,7 +139,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   // Замена исходного файла необратима, поэтому подтверждается вторым нажатием —
   // как и очистка истории ревью.
   const [confirmReplace, setConfirmReplace] = useState(false)
-  const [savedPath, setSavedPath] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
   const [roster, setRoster] = useState<ReviewRoster>({ reviewId: '', models: [], statuses: {} })
   // Перетаскивание над вложенными узлами шлёт dragleave родителю, поэтому
   // подсветка снимается по счётчику входов, а не по первому же выходу.
@@ -158,6 +158,10 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   const revisionResult = useMemo(() => latestRevisionResult(events), [events])
   const revisionFailure = useMemo(() => revisionId ? latestTaskFailure(events, revisionId, 'Правка остановлена.') : null, [events, revisionId])
   const revisionRunning = revisionId !== null && revision?.revisionId !== revisionId && revisionFailure === null
+  // Запись делает ядро, поэтому об успехе говорит его событие, а не факт
+  // отправки команды: иначе панель рапортовала бы об успехе раньше, чем файл
+  // вообще попал на диск.
+  const saveOutcome = useMemo(() => revision ? latestSaveOutcome(events, revision.revisionId) : null, [events, revision])
   const reviewFinished = reviewResult?.reviewId === reviewId
   const running = reviewId !== null && !reviewFinished && failure === null && progress?.stage !== 'completed' && progress?.stage !== 'failed'
   const progressKey = progress === null ? '' : `${progress.stage}:${progress.status}:${progress.model ?? ''}:${progress.completed}`
@@ -202,6 +206,10 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
   useEffect(() => {
     if (revisionResult?.revisionId === revisionId) setRevision(revisionResult)
   }, [revisionId, revisionResult])
+
+  useEffect(() => {
+    if (saveOutcome !== null) setSaving(false)
+  }, [saveOutcome])
 
   useEffect(() => {
     if (!api || !running || !reviewId) return
@@ -401,7 +409,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
     setRevisionId(null)
     setRevision(null)
     setConfirmReplace(false)
-    setSavedPath(null)
+    setSaving(false)
   }
 
   const revise = async (): Promise<void> => {
@@ -412,7 +420,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
     setRevisionId(id)
     setRevision(null)
     setConfirmReplace(false)
-    setSavedPath(null)
+    setSaving(false)
     setError(null)
     const outcome = await api.invoke('review.revise', {
       revisionId: id,
@@ -440,14 +448,15 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
    */
   const saveRevision = async (destinationPath: string): Promise<void> => {
     if (!api || !revision) return
+    setSaving(true)
     const outcome = await api.invoke('review.saveRevision', { revisionId: revision.revisionId, destinationPath, fileName: revision.fileName })
     setConfirmReplace(false)
     if (!outcome.ok) {
+      setSaving(false)
       setError(outcome.message)
       return
     }
-    if (outcome.value.cancelled) return
-    setSavedPath(destinationPath.length > 0 ? destinationPath : revision.fileName)
+    if (outcome.value.cancelled) setSaving(false)
   }
 
   const plan = plans.length === 1 ? plans[0] : undefined
@@ -530,7 +539,8 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
           failure={revisionFailure}
           sourceLength={sourceMarkdown.length}
           targetPath={plan?.path ?? ''}
-          savedPath={savedPath}
+          saving={saving}
+          saveOutcome={saveOutcome}
           confirmReplace={confirmReplace}
           onConfirmReplace={() => setConfirmReplace(true)}
           onCancelReplace={() => setConfirmReplace(false)}
@@ -594,13 +604,14 @@ function ProgressCard({ roster, progress, status, reviewers, elapsed, accepted, 
  * она же единственное необратимое действие в панели — отсюда подтверждение
  * вторым нажатием и отдельное предупреждение об оборванной генерации.
  */
-function RevisionCard({ revision, running, failure, sourceLength, targetPath, savedPath, confirmReplace, onConfirmReplace, onCancelReplace, onReplace, onSaveAs, onStop }: {
+function RevisionCard({ revision, running, failure, sourceLength, targetPath, saving, saveOutcome, confirmReplace, onConfirmReplace, onCancelReplace, onReplace, onSaveAs, onStop }: {
   readonly revision: PlanRevisionResult | null
   readonly running: boolean
   readonly failure: ReviewFailure | null
   readonly sourceLength: number
   readonly targetPath: string
-  readonly savedPath: string | null
+  readonly saving: boolean
+  readonly saveOutcome: SaveOutcome | null
   readonly confirmReplace: boolean
   readonly onConfirmReplace: () => void
   readonly onCancelReplace: () => void
@@ -631,7 +642,9 @@ function RevisionCard({ revision, running, failure, sourceLength, targetPath, sa
       {confirmReplace ? <p className="review-panel__history-note">Файл {targetPath} будет перезаписан целиком. Отменить это можно только средствами системы контроля версий.</p> : null}
       {truncated ? <p role="alert" className="shell__reason">Исправленный план более чем вдвое короче исходного — похоже, ответ модели оборвался. Проверь текст до сохранения.</p> : null}
       {failure ? <p role="alert" className="shell__reason">{failure.kind === 'stopped' ? failure.message : `Правка завершилась ошибкой: ${failure.message}`}</p> : null}
-      {savedPath ? <p className="review-panel__hint">Сохранено: {savedPath}</p> : null}
+      {saving ? <p className="review-panel__hint">Сохраняю…</p> : null}
+      {saveOutcome?.ok ? <p className="review-panel__hint">Сохранено: {saveOutcome.destinationPath}</p> : null}
+      {saveOutcome && !saveOutcome.ok ? <p role="alert" className="shell__reason">План не сохранён: {saveOutcome.error}</p> : null}
       {revision === null ? (running ? <p>Ева переписывает план по замечаниям ревью. Это один запрос к модели-синтезатору, он может занять несколько минут.</p> : null) : <MarkdownMessage text={revision.revisedMarkdown} />}
     </div>
   )
@@ -835,6 +848,26 @@ function revisionHint(connection: ConnectionState, result: PlanReviewResult | nu
   if (planCount > 1) return 'Правка работает по одному файлу: склеенный документ нельзя разложить обратно. Оставь в списке один план.'
   if (!covers) return 'В списке лежит не тот файл, по которому сделано это ревью.'
   return ''
+}
+
+interface SaveOutcome {
+  readonly ok: boolean
+  readonly destinationPath: string
+  readonly error: string
+}
+
+function latestSaveOutcome(events: readonly CoreEvent[], revisionId: string): SaveOutcome | null {
+  for (const event of events) {
+    if (event.eventType !== 'plan.saved' && event.eventType !== 'plan.save_failed') continue
+    const payload = readPayload(event)
+    if (payload?.revision_id !== revisionId) continue
+    return {
+      ok: event.eventType === 'plan.saved',
+      destinationPath: String(payload.destination_path ?? ''),
+      error: String(payload.error ?? 'ядро не сообщило причину')
+    }
+  }
+  return null
 }
 
 function latestRevisionResult(events: readonly CoreEvent[]): PlanRevisionResult | null {

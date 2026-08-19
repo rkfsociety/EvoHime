@@ -502,6 +502,38 @@ describe('plan review panel', () => {
       destinationPath: 'C:/plans/plan.md',
       fileName: 'plan.md'
     })
+    // Пишет ядро, поэтому до его ответа панель не имеет права рапортовать.
+    await waitFor(() => expect(screen.getByText('Сохраняю…')).toBeTruthy())
+    expect(screen.queryByText(/^Сохранено:/)).toBeNull()
+
+    view.rerender(<PlanReviewPanel connection="connected" events={[
+      event('plan.saved', { revision_id: revision.revisionId, destination_path: 'C:/plans/plan.md' }),
+      event('task.completed', { TaskCompleted: { task_id: revision.revisionId, final_message: JSON.stringify(revised) } }, revision.revisionId),
+      ...reviewDone
+    ]} />)
+    await waitFor(() => expect(screen.getByText('Сохранено: C:/plans/plan.md')).toBeTruthy())
+  })
+
+  it('shows why the core refused to save the revised plan', async () => {
+    const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
+    const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
+
+    await startReview(['a', 'b', 'main'])
+    const reviewId = startedReviewId()
+    const result = { review_id: reviewId, file_name: 'plan.md', synthesis_model: 'main', final_markdown: '# Итог', reviewers: [] }
+    const reviewDone = [catalog, event('task.completed', { TaskCompleted: { task_id: reviewId, final_message: JSON.stringify(result) } }, reviewId)]
+    view.rerender(<PlanReviewPanel connection="connected" events={reviewDone} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Исправить план по ревью' }))
+    const revisionId = (calls.find((call) => call.command === 'review.revise')?.payload as { revisionId: string }).revisionId
+    const revised = { revision_id: revisionId, review_id: reviewId, file_name: 'plan.md', model: 'main', revised_markdown: '# План после правки' }
+    view.rerender(<PlanReviewPanel connection="connected" events={[
+      event('plan.save_failed', { revision_id: revisionId, destination_path: 'C:/plans/plan.txt', error: 'сохранить план можно только в файл .md' }),
+      event('task.completed', { TaskCompleted: { task_id: revisionId, final_message: JSON.stringify(revised) } }, revisionId),
+      ...reviewDone
+    ]} />)
+
+    await waitFor(() => expect(screen.getByText(/План не сохранён: сохранить план можно только в файл .md/)).toBeTruthy())
   })
 
   it('refuses to revise when the list holds more than one plan', async () => {
