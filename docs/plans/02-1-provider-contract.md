@@ -5,19 +5,25 @@
 ## Зависимости
 
 Блокирующие: существующая provider health model и bounded model-gateway
-интерфейс. Context Budget Manager здесь не требуется: контракт провайдера не
-меняет бюджет.
+интерфейс. Оба уже есть в коде, поэтому блокирующих зависимостей от других
+этапов планов у 02.1 нет.
 
-`budget_id` в snapshot — это ссылка, а не бюджет: Core на этапе создания
-snapshot проверяет, что `budget_id` существует и активен (`is_active == true`);
-при неуспехе run завершается `failed` с причиной `budget_unavailable` и
-selection не запускается. Само распределение бюджета, его убывание и лимиты
-остаются контрактом Context Budget Manager и в 02.1 не реализуются. Внутри
-`select_route` кандидаты, чья заявленная cost превышает remaining budget,
-исключаются тем же фильтром, что и privacy/capability incompatibility — это
-может привести к `route_exhausted`, если исключены все кандидаты.
-`budget_id` входит в каноническую сериализацию snapshot и в `policy_hashes`
-для воспроизводимости.
+Опциональные: Context Budget Manager (реализован). Контракт провайдера не
+меняет бюджет и не распределяет его. `budget_id` в snapshot — это ссылка, а не
+бюджет: при создании snapshot Core проверяет, что `budget_id` существует и
+активен (`is_active == true`); при неуспехе run завершается `failed` с причиной
+`budget_unavailable` и selection не запускается. Внутри `select_route`
+кандидаты, чья заявленная cost превышает remaining budget, исключаются тем же
+фильтром, что и privacy/capability incompatibility — это может привести к
+`route_exhausted`, если исключены все кандидаты. `budget_id` входит в
+каноническую сериализацию snapshot и в `policy_hashes` для воспроизводимости.
+
+Деградация без бюджета: если бюджет для run не создан, snapshot фиксирует
+`budget_id = null`, фильтр по стоимости не применяется, а в trace пишется
+`budget_absent`. Это разрешённый режим — отсутствие бюджета не даёт
+`budget_unavailable`: эта причина означает, что бюджет заявлен, но не найден
+или неактивен. Молча трактовать отсутствие бюджета как безлимитный запрещено:
+без записи `budget_absent` run не считается валидным.
 
 Разблокирует: 02.2 (локальный провайдер объявляет capabilities) и 02.3
 (route selection читает контракт и health overlay).
@@ -34,7 +40,9 @@ Capability metadata провайдеров, разделение route selection
   классификации и создания snapshot до terminal result (`success`, `failed`,
   `cancelled` или `route_exhausted`). Все попытки fallback принадлежат тому же
   run и имеют один `run_id`. Контракт terminal result:
-  - `success` — route ответил в соответствии с retry policy;
+  - `success` — route вернул ответ, прошедший schema- и capability-валидацию;
+    ответ, не прошедший валидацию, является `malformed_response` и success не
+    даёт;
   - `failed` — критическая ошибка самого Core до или вне retry-loop (невалидный
     request, policy violation на этапе validate, `budget_unavailable`);
     retry не выполняется, причина пишется в trace как `failure_category` из
@@ -55,6 +63,12 @@ Capability metadata провайдеров, разделение route selection
   добавляет candidates и не расширяет capabilities/policy snapshot.
 - `capability_epoch` — монотонная версия metadata конкретного провайдера;
   изменение capability увеличивает epoch и требует нового snapshot.
+- `health.status` и `circuit_state` — два независимых измерения, которые нельзя
+  смешивать. `health.status` принимает ровно `ready`, `degraded`, `stale` и
+  `unavailable` и описывает наблюдение за провайдером. `circuit_state`
+  принимает ровно `closed`, `open` и `cooldown` и описывает решение breaker'а.
+  `cooldown` — состояние circuit после rate limit, а не статус health;
+  `half_open` в 02.1 не существует ни как состояние, ни как переход.
 - `privacy boundary` — максимальный класс данных, разрешённый Core policy для
   route; capability провайдера этот класс не расширяет.
 - `policy_hashes` — SHA-256 хэши канонических policy-секций (privacy,
@@ -65,6 +79,11 @@ Capability metadata провайдеров, разделение route selection
   остаётся контрактом Context Budget Manager.
 - `round-trip hash` — SHA-256 канонического представления snapshot после
   serialize → deserialize; hash до и после должен совпадать.
+- `now_ms` — единственный источник времени для selection, TTL и cooldown.
+  Core берёт его один раз на попытку, передаёт в `select_route` и в каждое
+  обновление overlay и записывает в trace вместе с `attempt_id`. Ни snapshot,
+  ни overlay, ни selection не читают системные часы сами: иначе решение зависит
+  от момента исполнения и заявленная воспроизводимость по trace недостижима.
 
 Renderer получает только read-only/redacted projection и не является источником
 ни capability, ни health, ни policy. В Core Rust API snapshot передаётся в
@@ -91,6 +110,24 @@ prompt и raw output. Модуль покрыт 10 тестами.
 health из реальных ответов провайдера и подключения selection/execution к
 реальному agent run. Пока модуль никем не вызывается — по правилу каталога это
 означает отсутствующее поведение, а не закрытый этап.
+
+Расходится с этим документом и должно быть исправлено при подключении:
+
+- `RunHealthOverlay::record_failure`, `is_cooldown_expired` и
+  `CandidateHealthSnapshot::is_fresh` читают системные часы внутри себя вместо
+  того, чтобы принимать `now_ms` аргументом. Пока это так, TTL, cooldown и
+  порядок попыток не воспроизводятся по trace и не проверяются тестом без
+  ожидания реального времени;
+- `RetryConfig::compute_backoff` добавляет jitter поверх cap и возвращает до
+  `max_backoff_ms * (1 + jitter_ratio)` (4800 мс при значениях по умолчанию
+  вместо заявленных 4000). Cap должен применяться последним;
+- `compute_backoff` не ограничен `max_elapsed_ms`: решение о том, что пауза не
+  помещается в общий лимит, ещё негде принимать — его владелец появится вместе
+  с retry-loop.
+
+Дефолты `RetryConfig` в коде совпадают с таблицей параметров ниже, а разделение
+`HealthStatus` (`ready`/`degraded`/`stale`/`unavailable`) и `CircuitState`
+(`closed`/`open`/`cooldown`) соответствует терминам этого документа.
 
 ## Capability contract и startup probe
 
@@ -131,16 +168,30 @@ capability epoch, initial health, `policy_hashes`, preference и `budget_id`.
 Snapshot замораживается до terminal result и уничтожается после записи trace.
 
 Health snapshot содержит `status`, `observed_at`, `ttl`, `circuit_state` и
-`last_failure_category`. TTL проверяется при выборе route; просроченное health
-наблюдение даёт `stale`, а не автоматически `ready`.
+`last_failure_category`. TTL проверяется в `select_route` от переданного
+`now_ms`, а не от системных часов: просроченное наблюдение даёт `stale`, а не
+автоматически `ready`. Значение `now_ms` попытки пишется в trace, поэтому
+исключение по TTL воспроизводится при повторном разборе того же trace.
 
 `RunHealthOverlay` создаётся из health snapshot один раз при старте run, до
 первого вызова `select_route`: для каждого candidate из snapshot Core
-инициализирует `route_status` из соответствующего `snapshot.health` (`open`,
-если health уже `stale`/`open`, иначе `closed`), обнуляет
-`attempts_per_route` и `failure_count_by_category`, и заполняет `generation`
-стартовым значением. Инициализация локальна для run и отдельного lock на
-persistent health не требует.
+инициализирует `circuit_state` из соответствующего `snapshot.health` по
+явной таблице, обнуляет `attempts_per_route` и `failure_count_by_category` и
+заполняет `generation` стартовым значением:
+
+| health snapshot | `circuit_state` в overlay |
+| --- | --- |
+| `status = ready`, `circuit_state = closed` | `closed` |
+| `status = degraded`, `circuit_state = closed` | `closed` |
+| `status = stale` или `unavailable` | `open` |
+| `circuit_state = open` | `open` |
+| `circuit_state = cooldown`, `observed_at + cooldown_ms > now_ms` | `cooldown` с тем же `cooldown_until` |
+| `circuit_state = cooldown`, срок истёк | `closed` |
+
+Незакрытый cooldown из persistent health переносится в run как есть: иначе
+route, помеченный cooldown в предыдущем run, немедленно получал бы запрос в
+следующем, и порог rate limit не значил бы ничего. Инициализация локальна для
+run и отдельного lock на persistent health не требует.
 
 Каждое обновление overlay выполняется через Core-owned mutex/`RwLock` под
 write lock (или эквивалентный CAS в реализации), с проверкой `run_id`,
@@ -161,19 +212,21 @@ policy влияют только на следующий run.
 request, attempt_index)`. Алгоритм:
 
 1. отбрасывает candidates с несовместимой schema, отсутствующей required
-   capability, privacy/approval/tool/sandbox violation, stale/`open` circuit,
-   исчерпанным route или превышенным per-route limit;
+   capability, privacy/approval/tool/sandbox violation, `stale` health,
+   `open` circuit, непросроченным по `now_ms` `cooldown`, исчерпанным route
+   или превышенным per-route limit;
 2. применяет фиксированный порядок policy из обзора плана: privacy → offline →
    approval/tool → context/capability → health/circuit → evaluation → budget →
    user preference → lexical `route_id`;
 3. среди оставшихся candidates выбирает первый по детерминированному
-   tie-break: `health.status` (`ready` > `cooldown`; `open` уже отброшен
-   фильтром на шаге 1, `half_open` в 02.1 не производится) → latency по
-   возрастанию → cost по возрастанию → порядок `user preference` из
-   запроса → lexical `route_id` как финальный break. Score здесь — не
-   числовое значение, а порядок candidates после фильтров и tie-break;
-   «первый route» значит первый в этом порядке. Reason записывается как
-   комбинация применённого фильтра/критерия tie-break;
+   tie-break: `health.status` (`ready` > `degraded`; `stale` и `unavailable`
+   уже отброшены на шаге 1, как и все состояния circuit кроме `closed`) →
+   latency по возрастанию → cost по возрастанию → порядок `user preference` из
+   запроса → lexical `route_id` как финальный break. Состояния circuit в
+   tie-break не участвуют вовсе: до этого шага доходят только `closed`. Score
+   здесь — не числовое значение, а порядок candidates после фильтров и
+   tie-break; «первый route» значит первый в этом порядке. Reason записывается
+   как комбинация применённого фильтра/критерия tie-break;
 4. передаёт тот же snapshot по `&` в execution. Execution не выбирает другой
    route сам.
 
@@ -194,10 +247,14 @@ Lifecycle circuit breaker в пределах run:
   автоматически не копируется; persistent health обновляется отдельно, на
   основе накопленных `failure_category`/`failure_count`, и это остаётся вне
   scope 02.1 (owner — provider health model);
-- `cooldown_ms` относится к persistent health и следующему run: route,
-  помеченный `cooldown`, исключается из selection нового run, пока
-  `observed_at + cooldown_ms < current_time`; в текущем run cooldown route
-  не «размораживается»;
+- `cooldown` блокирует route и внутри текущего run: после превышения
+  `health.rate_limit_threshold` overlay ставит `cooldown_until = now_ms +
+  health.cooldown_ms`, и до этого момента route исключается фильтром шага 1.
+  При значениях по умолчанию (`cooldown_ms = 30000` против
+  `retry.max_elapsed_ms = 15000`) это означает исключение до конца run;
+  досрочное «размораживание» внутри run не предусмотрено;
+- то же значение `cooldown_until` переживает run через persistent health и
+  исключает route в следующем run, пока не истечёт по его `now_ms`;
 - сброс/half-open probe для переподтверждения capabilities закрытого route не
   реализуется в 02.1; переподтверждение выполняется startup probe следующего
   run.
@@ -224,9 +281,19 @@ health.rate_limit_threshold        = 3
 health.cooldown_ms                 = 30000
 ```
 
-Backoff — exponential с cap и deterministic jitter от `hash(run_id | route_id |
-attempt_id)`, поэтому replay воспроизводим. Конфигурация копируется в
-snapshot/policy hash и не меняется внутри run.
+Backoff — exponential с deterministic jitter от `hash(run_id | route_id |
+attempt_id)`, поэтому replay воспроизводим. Порядок вычисления фиксирован:
+`base = initial_backoff_ms * 2^(attempt_id - 1)`, затем jitter в пределах
+`jitter_ratio`, затем cap. Cap применяется последним, поэтому итоговая пауза
+никогда не превышает `max_backoff_ms`; вариант «jitter поверх cap» запрещён —
+иначе заявленный предел не является пределом.
+
+Если `now_ms + backoff` выходит за `run_started_at + retry.max_elapsed_ms`,
+пауза не выдерживается и попытка не выполняется: run немедленно завершается
+`route_exhausted` с `exhaustion_reason = max_elapsed_reached`. Ждать дольше
+общего лимита, чтобы «успеть ещё одну попытку», запрещено.
+
+Конфигурация копируется в snapshot/policy hash и не меняется внутри run.
 
 ## Сериализация, trace и обратная совместимость
 
@@ -242,9 +309,13 @@ unsupported major schema и round-trip hash mismatch. Для предыдуще�
 Неподдерживаемая версия даёт `snapshot_incompatible` и не запускает provider.
 
 Trace — Core-owned redacted JSONL/event record на каждый run. Он содержит
-`run_id`, snapshot/policy hash, schema versions, ordered attempts,
-`route_id`, capability epoch, selection reason, failure category, backoff,
-overlay generation и boolean `circuit_opened_during_run`. Prompt, secrets и
+`run_id`, `run_started_at`, snapshot/policy hash, schema versions, ordered
+attempts, а на каждую попытку — `attempt_id`, `now_ms`, `route_id`, capability
+epoch, selection reason, failure category, backoff и overlay generation; на
+run — terminal result с `exhaustion_reason` либо `failure_category`, boolean
+`circuit_opened_during_run` и `budget_absent`, если бюджета не было. Записанных
+`now_ms` и snapshot достаточно, чтобы повторить решения selection без доступа
+к часам. Prompt, secrets и
 raw output не пишутся. Счётчики `provider_attempts_total`,
 `provider_failures_total{category}`, `circuit_open_total`,
 `route_exhausted_total` и gauge открытых circuits публикуются в локальную
@@ -259,13 +330,22 @@ diagnostics telemetry с bounded cardinality.
 - health TTL, thresholds, cooldown и категории circuit breaker;
 - deterministic next-route/retry tests с backoff, jitter, max attempts и
   `route_exhausted`;
+- backoff-тест на границе: пауза при максимальном jitter не превышает
+  `max_backoff_ms`, а не помещающаяся в `max_elapsed_ms` пауза даёт
+  `max_elapsed_reached` без ожидания;
+- selection-тесты на подставленном `now_ms`: истёкший TTL, активный и истёкший
+  cooldown, перенос незакрытого cooldown из persistent health в новый run —
+  все без ожидания реального времени;
 - snapshot serialize/deserialize, unknown fields, migration и round-trip hash;
 - trace/telemetry tests без secrets и raw provider output.
 
 ## Критерии готовности
 
-- решение route и порядок попыток воспроизводимы по immutable snapshot и
-  deterministic retry policy;
+- решение route и порядок попыток воспроизводимы по immutable snapshot,
+  deterministic retry policy и записанному в trace `now_ms`; ни один компонент
+  selection, TTL или cooldown не читает системные часы сам;
+- ни одна пауза retry не превышает `max_backoff_ms`, а суммарное время попыток
+  не превышает `max_elapsed_ms`;
 - capability провайдера нельзя переопределить из renderer, а частичный набор
   не допускает запрос без всех required capabilities;
 - snapshot policy, overlay ownership и категории circuit breaker определены и
