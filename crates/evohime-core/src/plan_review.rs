@@ -329,10 +329,19 @@ async fn collect_model_response(
         item = stream.next() => item,
     } {
         match item.map_err(provider_error)? {
-            ChatStreamItem::Delta(delta) | ChatStreamItem::Thinking(delta) => {
+            // Reasoning traces are not part of the review answer and must not
+            // eat into the output budget: a reasoning model can emit far more
+            // Thinking text than MAX_REVIEW_OUTPUT_BYTES before it ever gets
+            // to the Delta content, which used to truncate the real answer.
+            ChatStreamItem::Thinking(_) => {}
+            ChatStreamItem::Delta(delta) => {
                 output.push_str(&delta);
                 if output.len() > MAX_REVIEW_OUTPUT_BYTES {
-                    output.truncate(MAX_REVIEW_OUTPUT_BYTES);
+                    let mut cut = MAX_REVIEW_OUTPUT_BYTES;
+                    while !output.is_char_boundary(cut) {
+                        cut -= 1;
+                    }
+                    output.truncate(cut);
                     break;
                 }
             }
