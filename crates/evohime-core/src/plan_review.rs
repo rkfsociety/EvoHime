@@ -16,7 +16,6 @@ use evohime_model_gateway::{ChatStreamItem, ModelGateway};
 pub const MIN_REVIEWERS: usize = 2;
 pub const MAX_REVIEWERS: usize = 8;
 pub const MAX_PLAN_BYTES: usize = 512 * 1024;
-pub const MAX_REVIEW_OUTPUT_BYTES: usize = 256 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReviewRequest {
@@ -329,21 +328,10 @@ async fn collect_model_response(
         item = stream.next() => item,
     } {
         match item.map_err(provider_error)? {
-            // Reasoning traces are not part of the review answer and must not
-            // eat into the output budget: a reasoning model can emit far more
-            // Thinking text than MAX_REVIEW_OUTPUT_BYTES before it ever gets
-            // to the Delta content, which used to truncate the real answer.
+            // Reasoning traces are not part of the review answer.
             ChatStreamItem::Thinking(_) => {}
             ChatStreamItem::Delta(delta) => {
                 output.push_str(&delta);
-                if output.len() > MAX_REVIEW_OUTPUT_BYTES {
-                    let mut cut = MAX_REVIEW_OUTPUT_BYTES;
-                    while !output.is_char_boundary(cut) {
-                        cut -= 1;
-                    }
-                    output.truncate(cut);
-                    break;
-                }
             }
             ChatStreamItem::Usage(_) => {}
         }
