@@ -274,8 +274,36 @@ pub fn verify_receipts(
         return Err(ExportError::InvalidFilter);
     }
     let (rows, requested_count, selected_count) = load_closure_rows(connection, filter, limit)?;
-    let verification = verify_chain(&rows, key_history, trust_key, None);
+    let checkpoint_prefix_hash = active_checkpoint_prefix_for_first_row(connection, &rows)?;
+    let verification = verify_chain(&rows, key_history, trust_key, checkpoint_prefix_hash.as_deref());
     Ok(VerifyResult { verification, requested_count, selected_count })
+}
+
+/// If the closure's first row is exactly the row an active checkpoint's
+/// `cutoff_sequence`/`first_retained_hash` points at (the retained suffix's
+/// boundary), returns that checkpoint's `prefix_last_hash` — the hash of
+/// the deleted predecessor the surviving row's own `previous_receipt_hash`
+/// still carries — so `verify_chain` can authorize that link and classify
+/// the result `verified_pruned` instead of `broken`. Any other relationship
+/// between the closure and a checkpoint is not treated as pruned — a
+/// closure that starts mid-chain for another reason is not this case.
+fn active_checkpoint_prefix_for_first_row(
+    connection: &Connection,
+    rows: &[ChainRow],
+) -> Result<Option<String>, ExportError> {
+    let Some(first) = rows.first() else {
+        return Ok(None);
+    };
+    let checkpoint: Option<(i64, String, String)> = connection
+        .query_row(
+            "SELECT cutoff_sequence, first_retained_hash, prefix_last_hash FROM receipt_checkpoints WHERE key_id=?1 AND status='active'",
+            [&first.key_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    Ok(checkpoint.and_then(|(cutoff_sequence, first_retained_hash, prefix_last_hash)| {
+        (cutoff_sequence == first.sequence && first_retained_hash == first.receipt_hash).then_some(prefix_last_hash)
+    }))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -421,6 +449,49 @@ pub fn export_receipts(
     }
     drop(key_history_file);
 
+    let closure_key_ids: std::collections::HashSet<&str> = rows.iter().map(|row| row.key_id.as_str()).collect();
+    let mut checkpoint_rows: Vec<Vec<u8>> = Vec::new();
+    for key_id in &closure_key_ids {
+        let canonical: Option<Vec<u8>> = match connection.query_row(
+            "SELECT canonical_checkpoint FROM receipt_checkpoints WHERE key_id=?1 AND status='active'",
+            [key_id],
+            |row| row.get(0),
+        ) {
+            Ok(value) => Some(value),
+            Err(rusqlite::Error::QueryReturnedNoRows) => None,
+            Err(_) => {
+                cleanup(&staging);
+                return Err(ExportError::ExportIo);
+            }
+        };
+        if let Some(bytes) = canonical {
+            checkpoint_rows.push(bytes);
+        }
+    }
+    if !checkpoint_rows.is_empty() {
+        let mut checkpoints_file = match std::fs::File::create(staging.join("checkpoints.jsonl")) {
+            Ok(file) => file,
+            Err(_) => {
+                cleanup(&staging);
+                return Err(ExportError::ExportIo);
+            }
+        };
+        for canonical_bytes in &checkpoint_rows {
+            let value: serde_json::Value = match serde_json::from_slice(canonical_bytes) {
+                Ok(value) => value,
+                Err(_) => {
+                    cleanup(&staging);
+                    return Err(ExportError::ExportIo);
+                }
+            };
+            if write_jsonl_line(&mut checkpoints_file, &value).is_err() {
+                cleanup(&staging);
+                return Err(ExportError::ExportIo);
+            }
+        }
+        drop(checkpoints_file);
+    }
+
     let has_action_rows = rows.iter().any(|row| row.approval_id.is_some() || row.approval_call_hash.is_some());
     if has_action_rows {
         // Bounded projection is written from the same closure rows already
@@ -437,11 +508,20 @@ pub fn export_receipts(
             if !seen.insert(row.action_id.clone()) {
                 continue;
             }
+            let (recovery_code, requires_reconciliation): (Option<String>, bool) = connection
+                .query_row(
+                    "SELECT recovery_code, state='pending_recovery' FROM receipt_actions WHERE action_id=?1",
+                    [&row.action_id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap_or((None, false));
             let record = json!({
                 "record_version": 1,
                 "record_kind": "action",
                 "action_id": row.action_id,
                 "approval_id": row.approval_id,
+                "recovery_code": recovery_code,
+                "requires_reconciliation": requires_reconciliation,
             });
             if write_jsonl_line(&mut actions_file, &record).is_err() {
                 cleanup(&staging);
@@ -452,7 +532,7 @@ pub fn export_receipts(
     }
 
     let mut files = Vec::new();
-    for name in ["receipts.jsonl", "key-history.jsonl", "actions.jsonl"] {
+    for name in ["receipts.jsonl", "key-history.jsonl", "actions.jsonl", "checkpoints.jsonl"] {
         let path = staging.join(name);
         if path.exists() {
             match finalize_file(&path) {
@@ -580,6 +660,31 @@ mod tests {
         let result = verify_receipts(&db, &[genesis], None, &ReceiptFilter::default(), 500).unwrap();
         assert_eq!(result.verification.status, crate::chain::ChainStatus::Verified);
         assert_eq!(result.verification.actual_verified_count, 6);
+    }
+
+    #[test]
+    fn compacted_prefix_reports_verified_pruned_and_exports_checkpoint() {
+        let (signer, genesis) = make_signer();
+        let mut db = Connection::open_in_memory().unwrap();
+        seed_chain(&mut db, &signer); // 3 actions, 6 rows (pre+terminal each)
+        let key_id = genesis.new_key_id.clone();
+        {
+            let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+            // Compact the first two actions (rows 1..4); retain the third.
+            runtime.compact_chain(&key_id, 5).unwrap();
+        }
+
+        let result = verify_receipts(&db, &[genesis], None, &ReceiptFilter::default(), 500).unwrap();
+        assert_eq!(result.verification.status, crate::chain::ChainStatus::VerifiedPruned, "{:?}", result.verification);
+        assert_eq!(result.verification.actual_verified_count, 2);
+
+        let destination = std::env::temp_dir().join(format!("evohime-export-pruned-{}", uuid::Uuid::now_v7()));
+        let manifest = export_receipts(&db, &[], &destination, &ReceiptFilter::default(), 1000).unwrap();
+        assert_eq!(manifest.actual_exported_count, 2);
+        assert!(destination.join("checkpoints.jsonl").exists(), "an active checkpoint must be exported alongside the retained suffix");
+        let checkpoints_content = std::fs::read_to_string(destination.join("checkpoints.jsonl")).unwrap();
+        assert!(checkpoints_content.contains("\"key_id\""));
+        std::fs::remove_dir_all(&destination).unwrap();
     }
 
     #[test]

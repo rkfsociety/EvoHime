@@ -388,6 +388,24 @@ pub struct StorageRotationJob {
     pub state: String,
 }
 
+/// Stage 01.4 `ReceiptCheckpointV1` (durable columns; the signed canonical
+/// bytes themselves stay in `receipt_checkpoints.canonical_checkpoint` and
+/// are not duplicated here). `signature` is Ed25519 over the SHA-256 digest
+/// of those canonical bytes, matching the receipt-append signing scheme.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReceiptCheckpointRow {
+    pub checkpoint_id: String,
+    pub key_id: String,
+    pub cutoff_sequence: i64,
+    pub first_retained_hash: String,
+    pub prefix_last_hash: String,
+    pub last_deleted_receipt_hash: String,
+    pub head_receipt_hash: String,
+    pub created_at: String,
+    pub signature: String,
+    pub status: String,
+}
+
 /// Signing boundary.  The signer receives the SHA-256 digest of canonical
 /// payload bytes, never raw tool input or a mutable JSON representation.
 pub trait ReceiptSigner: Send + Sync {
@@ -1186,6 +1204,159 @@ impl<'a> ReceiptRuntime<'a> {
         increment_metric_tx(&tx, "approval_gc_deleted_count", deleted as i64)?;
         tx.commit()?;
         Ok(deleted as i64)
+    }
+
+    /// Retention v1 boundary finder: for each `key_id`, returns the `rowid`
+    /// of the oldest row that must survive compaction — the more
+    /// restrictive of "older than 90 calendar days" and "beyond the newest
+    /// 100,000 rows", so the retained suffix satisfies both bounds at once.
+    /// A row belonging to a `pending`/`pending_recovery`/`awaiting_approval`
+    /// action is never counted as a deletion candidate, so the returned
+    /// cutoff never crosses one — `compact_chain` still re-checks this
+    /// under the transaction before deleting anything. A `key_id` with no
+    /// candidate cutoff (nothing old enough and under budget) is omitted.
+    pub fn retention_candidates(&self, now_ms_value: i64) -> Result<Vec<(String, i64)>, RuntimeError> {
+        const RETENTION_MS: i64 = 90 * 24 * 60 * 60 * 1000;
+        const RETENTION_ROWS: i64 = 100_000;
+        let age_cutoff_ms = now_ms_value.saturating_sub(RETENTION_MS);
+        let mut key_statement = self.connection.prepare(
+            "SELECT key_id FROM receipt_records WHERE source='signed' GROUP BY key_id",
+        )?;
+        let key_ids: Vec<String> = key_statement
+            .query_map([], |row| row.get(0))?
+            .filter_map(|row| row.ok())
+            .collect();
+        let mut out = Vec::new();
+        for key_id in key_ids {
+            // Deletable rows only: blocked-by-pending rows are excluded
+            // up front so neither bound below can ever pick one.
+            let mut deletable_statement = self.connection.prepare(
+                "SELECT r.rowid, r.created_at_ms FROM receipt_records r
+                 LEFT JOIN receipt_actions a ON a.action_id=r.action_id
+                 WHERE r.key_id=?1 AND r.source='signed'
+                   AND (a.state IS NULL OR a.state NOT IN ('prepared','pending_recovery','awaiting_approval'))
+                 ORDER BY r.rowid ASC",
+            )?;
+            let deletable: Vec<(i64, i64)> = deletable_statement
+                .query_map([&key_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .filter_map(|row| row.ok())
+                .collect();
+            let total: i64 = self.connection.query_row(
+                "SELECT COUNT(*) FROM receipt_records WHERE key_id=?1 AND source='signed'", [&key_id], |r| r.get(0),
+            )?;
+            let over_row_budget = (total - RETENTION_ROWS).max(0) as usize;
+            // Index of the first row this key's suffix must retain: the
+            // later (more restrictive) of the age boundary and the count
+            // boundary among the deletable rows.
+            let age_boundary_index = deletable.iter().position(|(_, created_at_ms)| *created_at_ms >= age_cutoff_ms).unwrap_or(deletable.len());
+            let count_boundary_index = over_row_budget.min(deletable.len());
+            // Always retain at least the single newest deletable row so the
+            // suffix never loses the row `receipt_chain_heads` points at,
+            // even if every row happens to be old enough by both bounds.
+            let keep_from_index = age_boundary_index.max(count_boundary_index).min(deletable.len().saturating_sub(1));
+            if keep_from_index > 0 {
+                if let Some(&(cutoff_sequence, _)) = deletable.get(keep_from_index) {
+                    // deletable[keep_from_index] is the first row this key's
+                    // suffix retains — exactly the cutoff `compact_chain`
+                    // expects (rowid < cutoff is deleted, rowid == cutoff
+                    // becomes first_retained_hash).
+                    out.push((key_id, cutoff_sequence));
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Retention v1 compaction: signs a `ReceiptCheckpointV1` for the prefix
+    /// `[genesis, cutoff_sequence)` of `key_id`, then deletes exactly that
+    /// prefix in the same transaction as the checkpoint insert. Refuses
+    /// (`checkpoint_blocked_by_pending`) if any row in that prefix belongs to
+    /// an action that has not reached a terminal state — those rows are
+    /// retained until explicit reconciliation, never purged automatically.
+    pub fn compact_chain(&mut self, key_id: &str, cutoff_sequence: i64) -> Result<ReceiptCheckpointRow, RuntimeError> {
+        require_ready(self.connection)?;
+        let tx = RetryTransaction::begin(self.connection)?;
+        let first_retained_hash: String = tx.query_row(
+            "SELECT receipt_hash FROM receipt_records WHERE key_id=?1 AND rowid=?2",
+            params![key_id, cutoff_sequence], |row| row.get(0),
+        ).map_err(|_| RuntimeError::Code("checkpoint_cutoff_invalid"))?;
+        let prefix_last_hash: String = tx.query_row(
+            "SELECT receipt_hash FROM receipt_records WHERE key_id=?1 AND rowid<?2 ORDER BY rowid DESC LIMIT 1",
+            params![key_id, cutoff_sequence], |row| row.get(0),
+        ).map_err(|_| RuntimeError::Code("checkpoint_cutoff_invalid"))?;
+        let head_receipt_hash: String = tx.query_row(
+            "SELECT receipt_hash FROM receipt_chain_heads WHERE key_id=?1", [key_id], |row| row.get(0),
+        ).map_err(|_| RuntimeError::Code("checkpoint_cutoff_invalid"))?;
+        let blocking: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM receipt_records r LEFT JOIN receipt_actions a ON a.action_id=r.action_id
+             WHERE r.key_id=?1 AND r.rowid<?2
+               AND (a.state IS NULL OR a.state IN ('prepared','pending_recovery','awaiting_approval'))",
+            params![key_id, cutoff_sequence], |row| row.get(0),
+        )?;
+        if blocking > 0 {
+            return Err(RuntimeError::Code("checkpoint_blocked_by_pending"));
+        }
+        let checkpoint_id = Uuid::now_v7().to_string();
+        let created_at = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let unsigned = json!({
+            "checkpoint_version": 1,
+            "checkpoint_id": checkpoint_id,
+            "key_id": key_id,
+            "cutoff_sequence": cutoff_sequence.to_string(),
+            "first_retained_hash": first_retained_hash,
+            "prefix_last_hash": prefix_last_hash,
+            "last_deleted_receipt_hash": prefix_last_hash,
+            "head_receipt_hash": head_receipt_hash,
+            "created_at": created_at,
+        });
+        let canonical = canonicalize_json(&serde_json::to_vec(&unsigned).map_err(|_| ReceiptError::InvalidJson)?)?;
+        let digest = crate::sha256_hex(&canonical);
+        let signature = self.signer.sign_payload_hash(&digest)?;
+        tx.execute(
+            "UPDATE receipt_checkpoints SET status='superseded' WHERE key_id=?1 AND status='active'",
+            [key_id],
+        )?;
+        tx.execute(
+            "INSERT INTO receipt_checkpoints(checkpoint_id,key_id,cutoff_sequence,first_retained_hash,prefix_last_hash,last_deleted_receipt_hash,head_receipt_hash,created_at,canonical_checkpoint,signature,status) \
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'active')",
+            params![checkpoint_id, key_id, cutoff_sequence, first_retained_hash, prefix_last_hash, prefix_last_hash, head_receipt_hash, created_at, canonical, signature],
+        )?;
+        tx.execute("DELETE FROM receipt_records WHERE key_id=?1 AND rowid<?2", params![key_id, cutoff_sequence])?;
+        tx.commit()?;
+        Ok(ReceiptCheckpointRow {
+            checkpoint_id,
+            key_id: key_id.to_string(),
+            cutoff_sequence,
+            first_retained_hash,
+            prefix_last_hash: prefix_last_hash.clone(),
+            last_deleted_receipt_hash: prefix_last_hash,
+            head_receipt_hash,
+            created_at,
+            signature,
+            status: "active".into(),
+        })
+    }
+
+    /// Latest active checkpoint for `key_id`, if retention has ever compacted
+    /// a prefix. `None` means the chain's genesis is still the true start.
+    pub fn active_checkpoint(&self, key_id: &str) -> Result<Option<ReceiptCheckpointRow>, RuntimeError> {
+        self.connection.query_row(
+            "SELECT checkpoint_id,key_id,cutoff_sequence,first_retained_hash,prefix_last_hash,last_deleted_receipt_hash,head_receipt_hash,created_at,signature,status \
+             FROM receipt_checkpoints WHERE key_id=?1 AND status='active'",
+            [key_id],
+            |row| Ok(ReceiptCheckpointRow {
+                checkpoint_id: row.get(0)?,
+                key_id: row.get(1)?,
+                cutoff_sequence: row.get(2)?,
+                first_retained_hash: row.get(3)?,
+                prefix_last_hash: row.get(4)?,
+                last_deleted_receipt_hash: row.get(5)?,
+                head_receipt_hash: row.get(6)?,
+                created_at: row.get(7)?,
+                signature: row.get(8)?,
+                status: row.get(9)?,
+            }),
+        ).optional().map_err(RuntimeError::from)
     }
 
     pub fn store_protected_action(&self, row: &ProtectedActionRow, key: &[u8; 32]) -> Result<(), RuntimeError> {
@@ -2028,5 +2199,86 @@ mod tests {
         runtime.store_protected_action(&row, &new_key).unwrap();
         let loaded_new = runtime.load_protected_action_with_fallback(action_id, &new_key, &old_key).unwrap();
         assert_eq!(loaded_new.action_id, action_id.to_string());
+    }
+
+    #[test]
+    fn compact_chain_signs_a_checkpoint_and_deletes_the_prefix() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        for _ in 0..4 {
+            let req = request(PolicyDecision::Allow);
+            let id = req.action_id;
+            runtime.prepare(req.clone()).unwrap();
+            runtime.mark_started(id).unwrap();
+            runtime.complete(&req, "succeeded", &"a".repeat(64), None).unwrap();
+        }
+        // 4 actions x (pre + terminal) = 8 rows; cutoff 7 deletes the first
+        // 6, retaining the last action's pre/terminal pair.
+        let checkpoint = runtime.compact_chain("test-key", 7).unwrap();
+        assert_eq!(checkpoint.key_id, "test-key");
+        assert_eq!(checkpoint.cutoff_sequence, 7);
+        assert_eq!(checkpoint.status, "active");
+
+        let remaining: i64 = db.query_row("SELECT COUNT(*) FROM receipt_records", [], |r| r.get(0)).unwrap();
+        assert_eq!(remaining, 2, "rows before the cutoff are deleted, cutoff row and after survive");
+        let stored: i64 = db.query_row("SELECT COUNT(*) FROM receipt_checkpoints WHERE status='active'", [], |r| r.get(0)).unwrap();
+        assert_eq!(stored, 1);
+    }
+
+    #[test]
+    fn compact_chain_refuses_to_delete_a_pending_action_prefix() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        // First action stays pending (pre only, no terminal).
+        let pending = request(PolicyDecision::Allow);
+        runtime.prepare(pending.clone()).unwrap();
+        // Second action completes normally, advancing the chain head.
+        let done = request(PolicyDecision::Allow);
+        let done_id = done.action_id;
+        runtime.prepare(done.clone()).unwrap();
+        runtime.mark_started(done_id).unwrap();
+        runtime.complete(&done, "succeeded", &"a".repeat(64), None).unwrap();
+
+        let result = runtime.compact_chain("test-key", 3);
+        assert!(matches!(result, Err(RuntimeError::Code("checkpoint_blocked_by_pending"))), "{result:?}");
+        let remaining: i64 = db.query_row("SELECT COUNT(*) FROM receipt_records", [], |r| r.get(0)).unwrap();
+        assert_eq!(remaining, 3, "nothing is deleted when the prefix is blocked");
+    }
+
+    #[test]
+    fn retention_candidates_skip_a_key_entirely_within_bounds() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let req = request(PolicyDecision::Allow);
+        let id = req.action_id;
+        runtime.prepare(req.clone()).unwrap();
+        runtime.mark_started(id).unwrap();
+        runtime.complete(&req, "succeeded", &"a".repeat(64), None).unwrap();
+
+        let candidates = runtime.retention_candidates(now_ms()).unwrap();
+        assert!(candidates.is_empty(), "a fresh, small chain has nothing to compact yet");
+    }
+
+    #[test]
+    fn retention_candidates_finds_a_cutoff_once_rows_are_old_enough() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+        let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        for _ in 0..3 {
+            let req = request(PolicyDecision::Allow);
+            let id = req.action_id;
+            runtime.prepare(req.clone()).unwrap();
+            runtime.mark_started(id).unwrap();
+            runtime.complete(&req, "succeeded", &"a".repeat(64), None).unwrap();
+        }
+        let far_future = now_ms() + 91 * 24 * 60 * 60 * 1000;
+        let candidates = runtime.retention_candidates(far_future).unwrap();
+        assert_eq!(candidates.len(), 1);
+        let (key_id, cutoff) = &candidates[0];
+        assert_eq!(key_id, "test-key");
+        assert!(*cutoff > 0);
     }
 }

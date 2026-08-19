@@ -137,14 +137,23 @@ pub fn verify_chain(
 
         if status != ChainStatus::Broken {
             if index == 0 {
-                if row.previous_receipt_hash.is_some() && checkpoint_prefix_hash.is_none() {
-                    status = ChainStatus::Broken;
-                    code = Some("receipts.chain_incomplete");
-                } else if row.previous_receipt_hash.is_none() && checkpoint_prefix_hash.is_some() {
-                    // Authorized pruned prefix: continues below as pruned.
-                } else if row.previous_receipt_hash.is_some() {
-                    status = ChainStatus::Broken;
-                    code = Some("receipts.previous_mismatch");
+                // A genuine genesis row has no predecessor at all. A row
+                // that survives compaction keeps its original (non-null)
+                // `previous_receipt_hash` — compaction deletes the rows
+                // before it, it does not rewrite this one — so the pruned
+                // case is authorized only when that hash matches the
+                // trusted checkpoint's `prefix_last_hash` exactly.
+                match (row.previous_receipt_hash.as_deref(), checkpoint_prefix_hash) {
+                    (None, None) => {}
+                    (Some(previous), Some(prefix)) if previous == prefix => {}
+                    _ => {
+                        status = ChainStatus::Broken;
+                        code = Some(if checkpoint_prefix_hash.is_some() {
+                            "receipts.previous_mismatch"
+                        } else {
+                            "receipts.chain_incomplete"
+                        });
+                    }
                 }
             } else {
                 let previous_row = &rows[index - 1];

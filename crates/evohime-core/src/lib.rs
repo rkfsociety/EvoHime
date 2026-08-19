@@ -3510,6 +3510,39 @@ pub fn spawn_approval_gc(
     })
 }
 
+/// Stage 01.4 retention v1: periodically compacts a per-key prefix once it
+/// is both past the 90-day/100,000-row bound and free of any pending
+/// action, signing a `ReceiptCheckpointV1` before deleting anything.
+/// `retention_candidates` never returns a cutoff that would delete a
+/// pending row, and `compact_chain` re-checks that guard itself inside the
+/// same transaction as the delete — this loop only decides *when* to try,
+/// never bypasses either check.
+pub fn spawn_receipt_retention(
+    journal: EventJournal,
+    keys: Arc<ReceiptKeyManager>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(6 * 60 * 60)).await;
+            let now_ms = SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|value| value.as_millis() as i64)
+                .unwrap_or_default();
+            let mut database = journal.database().lock().await;
+            let signer = CoreReceiptSigner(Arc::clone(&keys));
+            let Ok(mut runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) else {
+                continue;
+            };
+            let Ok(candidates) = runtime.retention_candidates(now_ms) else {
+                continue;
+            };
+            for (key_id, cutoff_sequence) in candidates {
+                let _ = runtime.compact_chain(&key_id, cutoff_sequence);
+            }
+        }
+    })
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum AgentRunError {
     #[error("model request failed: {0}")]
