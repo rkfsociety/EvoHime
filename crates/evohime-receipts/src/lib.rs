@@ -262,7 +262,7 @@ pub fn verify_runtime_signature(envelope: &Envelope, public_key: &[u8]) -> Resul
         .map_err(|_| ReceiptError::SignatureInvalid)
 }
 
-fn decode_base64url(value: &str) -> Option<Vec<u8>> {
+pub(crate) fn decode_base64url(value: &str) -> Option<Vec<u8>> {
     if value.contains('=')
         || !value
             .bytes()

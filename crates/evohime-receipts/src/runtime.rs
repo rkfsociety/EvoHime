@@ -402,6 +402,7 @@ pub struct ReceiptCheckpointRow {
     pub last_deleted_receipt_hash: String,
     pub head_receipt_hash: String,
     pub created_at: String,
+    pub signed_by_key_id: String,
     pub signature: String,
     pub status: String,
 }
@@ -556,6 +557,7 @@ pub fn install_schema(connection: &Connection) -> Result<(), RuntimeError> {
            head_receipt_hash TEXT NOT NULL,
            created_at TEXT NOT NULL,
            canonical_checkpoint BLOB NOT NULL,
+           signed_by_key_id TEXT NOT NULL,
            signature TEXT NOT NULL,
            status TEXT NOT NULL CHECK(status IN ('active','superseded'))
          );
@@ -1298,6 +1300,12 @@ impl<'a> ReceiptRuntime<'a> {
         }
         let checkpoint_id = Uuid::now_v7().to_string();
         let created_at = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        // The signing key is whichever key is active right now, which may
+        // differ from `key_id` (the chain segment being compacted) when
+        // compacting a retired key's tail after rotation — the verifier
+        // resolves trust through this field, never by assuming the two
+        // key ids are the same.
+        let signed_by_key_id = self.signer.key_id()?;
         let unsigned = json!({
             "checkpoint_version": 1,
             "checkpoint_id": checkpoint_id,
@@ -1308,6 +1316,7 @@ impl<'a> ReceiptRuntime<'a> {
             "last_deleted_receipt_hash": prefix_last_hash,
             "head_receipt_hash": head_receipt_hash,
             "created_at": created_at,
+            "signed_by_key_id": signed_by_key_id,
         });
         let canonical = canonicalize_json(&serde_json::to_vec(&unsigned).map_err(|_| ReceiptError::InvalidJson)?)?;
         let digest = crate::sha256_hex(&canonical);
@@ -1317,9 +1326,9 @@ impl<'a> ReceiptRuntime<'a> {
             [key_id],
         )?;
         tx.execute(
-            "INSERT INTO receipt_checkpoints(checkpoint_id,key_id,cutoff_sequence,first_retained_hash,prefix_last_hash,last_deleted_receipt_hash,head_receipt_hash,created_at,canonical_checkpoint,signature,status) \
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'active')",
-            params![checkpoint_id, key_id, cutoff_sequence, first_retained_hash, prefix_last_hash, prefix_last_hash, head_receipt_hash, created_at, canonical, signature],
+            "INSERT INTO receipt_checkpoints(checkpoint_id,key_id,cutoff_sequence,first_retained_hash,prefix_last_hash,last_deleted_receipt_hash,head_receipt_hash,created_at,canonical_checkpoint,signed_by_key_id,signature,status) \
+             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,'active')",
+            params![checkpoint_id, key_id, cutoff_sequence, first_retained_hash, prefix_last_hash, prefix_last_hash, head_receipt_hash, created_at, canonical, signed_by_key_id, signature],
         )?;
         tx.execute("DELETE FROM receipt_records WHERE key_id=?1 AND rowid<?2", params![key_id, cutoff_sequence])?;
         tx.commit()?;
@@ -1332,6 +1341,7 @@ impl<'a> ReceiptRuntime<'a> {
             last_deleted_receipt_hash: prefix_last_hash,
             head_receipt_hash,
             created_at,
+            signed_by_key_id,
             signature,
             status: "active".into(),
         })
@@ -1341,7 +1351,7 @@ impl<'a> ReceiptRuntime<'a> {
     /// a prefix. `None` means the chain's genesis is still the true start.
     pub fn active_checkpoint(&self, key_id: &str) -> Result<Option<ReceiptCheckpointRow>, RuntimeError> {
         self.connection.query_row(
-            "SELECT checkpoint_id,key_id,cutoff_sequence,first_retained_hash,prefix_last_hash,last_deleted_receipt_hash,head_receipt_hash,created_at,signature,status \
+            "SELECT checkpoint_id,key_id,cutoff_sequence,first_retained_hash,prefix_last_hash,last_deleted_receipt_hash,head_receipt_hash,created_at,signed_by_key_id,signature,status \
              FROM receipt_checkpoints WHERE key_id=?1 AND status='active'",
             [key_id],
             |row| Ok(ReceiptCheckpointRow {
@@ -1353,8 +1363,9 @@ impl<'a> ReceiptRuntime<'a> {
                 last_deleted_receipt_hash: row.get(5)?,
                 head_receipt_hash: row.get(6)?,
                 created_at: row.get(7)?,
-                signature: row.get(8)?,
-                status: row.get(9)?,
+                signed_by_key_id: row.get(8)?,
+                signature: row.get(9)?,
+                status: row.get(10)?,
             }),
         ).optional().map_err(RuntimeError::from)
     }

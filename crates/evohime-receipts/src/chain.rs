@@ -10,8 +10,48 @@ use crate::key_lifecycle::{
     verify_transitions, KeyTransition, VerificationStatus as KeyVerificationStatus,
 };
 use crate::{receipt_hash, verify_runtime_signature, Envelope};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
+
+/// One line of `checkpoints.jsonl` (`contracts/receipts/v1/checkpoint.schema.json`).
+/// `canonical_checkpoint` is the exact unpadded base64url of the signed
+/// `ReceiptCheckpointV1` bytes; the display fields alongside it are for
+/// human/UI use only and are never trusted over the decoded bytes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportedCheckpoint {
+    pub checkpoint_id: String,
+    pub key_id: String,
+    pub cutoff_sequence: String,
+    pub first_retained_hash: String,
+    pub prefix_last_hash: String,
+    pub last_deleted_receipt_hash: String,
+    pub head_receipt_hash: String,
+    pub created_at: String,
+    pub canonical_checkpoint: String,
+    pub signed_by_key_id: String,
+    pub signature: String,
+    pub status: String,
+}
+
+/// Verifies a `ReceiptCheckpointV1` against the public key of the key that
+/// signed it (`signed_by_key_id`, resolved by the caller through signed key
+/// history — never assumed to equal the checkpoint's own `key_id`). Uses
+/// the same signing scheme as receipts: Ed25519 over the SHA-256 digest of
+/// the canonical bytes. Returns `false` on any malformed or unverifiable
+/// input; it never partially trusts a checkpoint.
+pub fn verify_checkpoint_signature(checkpoint: &ExportedCheckpoint, signer_public_key: &[u8]) -> bool {
+    let Some(canonical) = crate::decode_base64url(&checkpoint.canonical_checkpoint) else {
+        return false;
+    };
+    let Some(signature_bytes) = crate::decode_base64url(&checkpoint.signature) else {
+        return false;
+    };
+    let digest = Sha256::digest(&canonical);
+    ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, signer_public_key)
+        .verify(&digest, &signature_bytes)
+        .is_ok()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]

@@ -450,25 +450,48 @@ pub fn export_receipts(
     drop(key_history_file);
 
     let closure_key_ids: std::collections::HashSet<&str> = rows.iter().map(|row| row.key_id.as_str()).collect();
-    let mut checkpoint_rows: Vec<Vec<u8>> = Vec::new();
+    let mut checkpoint_records: Vec<serde_json::Value> = Vec::new();
     for key_id in &closure_key_ids {
-        let canonical: Option<Vec<u8>> = match connection.query_row(
-            "SELECT canonical_checkpoint FROM receipt_checkpoints WHERE key_id=?1 AND status='active'",
-            [key_id],
-            |row| row.get(0),
-        ) {
-            Ok(value) => Some(value),
-            Err(rusqlite::Error::QueryReturnedNoRows) => None,
-            Err(_) => {
-                cleanup(&staging);
-                return Err(ExportError::ExportIo);
-            }
-        };
-        if let Some(bytes) = canonical {
-            checkpoint_rows.push(bytes);
+        // checkpoint.schema.json's top-level object: the signed canonical
+        // bytes travel base64url-encoded under `canonical_checkpoint`
+        // alongside the detached `signature`, exactly like a receipt
+        // envelope — the offline verifier trusts neither the duplicated
+        // display columns nor an unsigned re-serialization.
+        let row: Option<(String, String, i64, String, String, String, String, String, Vec<u8>, String, String, String)> =
+            match connection.query_row(
+                "SELECT checkpoint_id, key_id, cutoff_sequence, first_retained_hash, prefix_last_hash, last_deleted_receipt_hash, head_receipt_hash, created_at, canonical_checkpoint, signed_by_key_id, signature, status \
+                 FROM receipt_checkpoints WHERE key_id=?1 AND status='active'",
+                [key_id],
+                |row| Ok((
+                    row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?,
+                    row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?, row.get(9)?, row.get(10)?, row.get(11)?,
+                )),
+            ) {
+                Ok(value) => Some(value),
+                Err(rusqlite::Error::QueryReturnedNoRows) => None,
+                Err(_) => {
+                    cleanup(&staging);
+                    return Err(ExportError::ExportIo);
+                }
+            };
+        if let Some((checkpoint_id, key_id, cutoff_sequence, first_retained_hash, prefix_last_hash, last_deleted_receipt_hash, head_receipt_hash, created_at, canonical_checkpoint, signed_by_key_id, signature, status)) = row {
+            checkpoint_records.push(json!({
+                "checkpoint_id": checkpoint_id,
+                "key_id": key_id,
+                "cutoff_sequence": cutoff_sequence.to_string(),
+                "first_retained_hash": first_retained_hash,
+                "prefix_last_hash": prefix_last_hash,
+                "last_deleted_receipt_hash": last_deleted_receipt_hash,
+                "head_receipt_hash": head_receipt_hash,
+                "created_at": created_at,
+                "canonical_checkpoint": base64_url_unpadded(&canonical_checkpoint),
+                "signed_by_key_id": signed_by_key_id,
+                "signature": signature,
+                "status": status,
+            }));
         }
     }
-    if !checkpoint_rows.is_empty() {
+    if !checkpoint_records.is_empty() {
         let mut checkpoints_file = match std::fs::File::create(staging.join("checkpoints.jsonl")) {
             Ok(file) => file,
             Err(_) => {
@@ -476,15 +499,8 @@ pub fn export_receipts(
                 return Err(ExportError::ExportIo);
             }
         };
-        for canonical_bytes in &checkpoint_rows {
-            let value: serde_json::Value = match serde_json::from_slice(canonical_bytes) {
-                Ok(value) => value,
-                Err(_) => {
-                    cleanup(&staging);
-                    return Err(ExportError::ExportIo);
-                }
-            };
-            if write_jsonl_line(&mut checkpoints_file, &value).is_err() {
+        for record in &checkpoint_records {
+            if write_jsonl_line(&mut checkpoints_file, record).is_err() {
                 cleanup(&staging);
                 return Err(ExportError::ExportIo);
             }
@@ -668,13 +684,14 @@ mod tests {
         let mut db = Connection::open_in_memory().unwrap();
         seed_chain(&mut db, &signer); // 3 actions, 6 rows (pre+terminal each)
         let key_id = genesis.new_key_id.clone();
+        let public_key = crate::key_lifecycle::public_key_bytes(&genesis.new_public_key).unwrap();
         {
             let mut runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
             // Compact the first two actions (rows 1..4); retain the third.
             runtime.compact_chain(&key_id, 5).unwrap();
         }
 
-        let result = verify_receipts(&db, &[genesis], None, &ReceiptFilter::default(), 500).unwrap();
+        let result = verify_receipts(&db, &[genesis.clone()], None, &ReceiptFilter::default(), 500).unwrap();
         assert_eq!(result.verification.status, crate::chain::ChainStatus::VerifiedPruned, "{:?}", result.verification);
         assert_eq!(result.verification.actual_verified_count, 2);
 
@@ -683,7 +700,13 @@ mod tests {
         assert_eq!(manifest.actual_exported_count, 2);
         assert!(destination.join("checkpoints.jsonl").exists(), "an active checkpoint must be exported alongside the retained suffix");
         let checkpoints_content = std::fs::read_to_string(destination.join("checkpoints.jsonl")).unwrap();
-        assert!(checkpoints_content.contains("\"key_id\""));
+        let checkpoint: crate::chain::ExportedCheckpoint = serde_json::from_str(checkpoints_content.trim_end()).unwrap();
+        assert_eq!(checkpoint.key_id, key_id);
+        assert_eq!(checkpoint.signed_by_key_id, key_id, "same signer/chain key in this single-key test");
+        assert!(
+            crate::chain::verify_checkpoint_signature(&checkpoint, &public_key),
+            "the exported checkpoint envelope must verify against the signing key's public key"
+        );
         std::fs::remove_dir_all(&destination).unwrap();
     }
 
