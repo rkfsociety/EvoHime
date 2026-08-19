@@ -52,7 +52,12 @@ Capability metadata провайдеров, разделение route selection
   - `route_exhausted` — все candidates исключены или исчерпан retry
     (`max_attempts`/`max_elapsed_ms`); в trace пишется `exhaustion_reason` из
     `[no_candidates, max_attempts_reached, max_elapsed_reached,
-    all_routes_excluded]`. Наружу (Renderer/Caller) отдаётся только safe-текст
+    all_routes_excluded]`. `no_candidates` означает пустой snapshot — ни один
+    провайдер не прошёл schema/probe ещё до первой попытки;
+    `all_routes_excluded` означает, что candidates были, но все исключены
+    фильтрами и overlay в ходе run. Смешивать их нельзя: первый случай — это
+    отсутствие конфигурации, второй — отказы провайдеров. Наружу
+    (Renderer/Caller) отдаётся только safe-текст
     без внутренних деталей провайдера, точных счётчиков ошибок, auth-данных и
     таймингов, пригодных для reconnaissance — например «No suitable providers
     available» или «All providers returned errors».
@@ -125,9 +130,16 @@ health из реальных ответов провайдера и подклю
   помещается в общий лимит, ещё негде принимать — его владелец появится вместе
   с retry-loop.
 
-Дефолты `RetryConfig` в коде совпадают с таблицей параметров ниже, а разделение
-`HealthStatus` (`ready`/`degraded`/`stale`/`unavailable`) и `CircuitState`
-(`closed`/`open`/`cooldown`) соответствует терминам этого документа.
+- категории отказов названы по-разному: документ пишет `policy_violation`,
+  код — `FailureCategory::PolicyDenied` (`policy_denied` в сериализации).
+  Расхождение безобидно ровно до первого trace, который кто-то попытается
+  разобрать по документу; имя выбирается при подключении и правится в одном
+  месте из двух.
+
+Дефолты `RetryConfig` и `ProbeConfig` в коде совпадают с параметрами этого
+документа (3/2/250/4000/0.20/15000/2/3/30000 и 2 s, 10 s, 4 KiB, 64 KiB), а
+разделение `HealthStatus` (`ready`/`degraded`/`stale`/`unavailable`) и
+`CircuitState` (`closed`/`open`/`cooldown`) соответствует его терминам.
 
 ## Capability contract и startup probe
 
@@ -167,9 +179,14 @@ snapshot, эти изменения не влияют на текущий snapsh
 capability epoch, initial health, `policy_hashes`, preference и `budget_id`.
 Snapshot замораживается до terminal result и уничтожается после записи trace.
 
-Health snapshot содержит `status`, `observed_at`, `ttl`, `circuit_state` и
-`last_failure_category`. TTL проверяется в `select_route` от переданного
-`now_ms`, а не от системных часов: просроченное наблюдение даёт `stale`, а не
+Health snapshot содержит `status`, `observed_at`, `ttl`, `circuit_state`,
+`cooldown_until` (абсолютный момент, а не длительность; `null`, если route не
+в cooldown) и `last_failure_category`. Хранится именно абсолютный момент:
+пара «`observed_at` + `cooldown_ms`» пересчитывалась бы при каждом изменении
+конфигурации и меняла бы срок уже наложенного cooldown задним числом.
+
+TTL проверяется в `select_route` от переданного `now_ms`, а не от системных
+часов: просроченное наблюдение даёт `stale`, а не
 автоматически `ready`. Значение `now_ms` попытки пишется в trace, поэтому
 исключение по TTL воспроизводится при повторном разборе того же trace.
 
@@ -179,14 +196,16 @@ Health snapshot содержит `status`, `observed_at`, `ttl`, `circuit_state`
 явной таблице, обнуляет `attempts_per_route` и `failure_count_by_category` и
 заполняет `generation` стартовым значением:
 
-| health snapshot | `circuit_state` в overlay |
+Правила применяются сверху вниз, до первого совпадения; условия намеренно
+пересекаются, и выигрывает более строгое:
+
+| условие в health snapshot | `circuit_state` в overlay |
 | --- | --- |
-| `status = ready`, `circuit_state = closed` | `closed` |
-| `status = degraded`, `circuit_state = closed` | `closed` |
-| `status = stale` или `unavailable` | `open` |
 | `circuit_state = open` | `open` |
-| `circuit_state = cooldown`, `observed_at + cooldown_ms > now_ms` | `cooldown` с тем же `cooldown_until` |
-| `circuit_state = cooldown`, срок истёк | `closed` |
+| `status = stale` или `status = unavailable` | `open` |
+| `circuit_state = cooldown` и `cooldown_until > now_ms` | `cooldown`, `cooldown_until` переносится без изменения |
+| `circuit_state = cooldown` и `cooldown_until <= now_ms` | `closed` |
+| `status = ready` или `status = degraded` | `closed` |
 
 Незакрытый cooldown из persistent health переносится в run как есть: иначе
 route, помеченный cooldown в предыдущем run, немедленно получал бы запрос в
@@ -198,7 +217,7 @@ write lock (или эквивалентный CAS в реализации), с �
 monotonic `attempt_id` и generation: перед записью overlay проверяет, что
 переданный `attempt_id`/`generation` не устарели относительно текущего
 значения, атомарно инкрементирует `generation` и коммитит изменение счётчиков
-и `route_status` одной операцией. Старая generation не может затереть новую;
+и `circuit_state` одной операцией. Старая generation не может затереть новую;
 после commit selection читает overlay под read lock. Overlay никогда не
 публикуется renderer как источник истины.
 
@@ -209,7 +228,9 @@ policy влияют только на следующий run.
 ## Selection, retry и circuit breaker
 
 Перед каждой попыткой Core вызывает `select_route(&snapshot, &overlay,
-request, attempt_index)`. Алгоритм:
+request, attempt_id, now_ms)`. `attempt_id` нумеруется с 1 и монотонно растёт
+в пределах run — на нём же построена формула backoff и проверка устаревания
+overlay, поэтому нумерация с нуля запрещена. Алгоритм:
 
 1. отбрасывает candidates с несовместимой schema, отсутствующей required
    capability, privacy/approval/tool/sandbox violation, `stale` health,
@@ -235,7 +256,12 @@ circuit после порога категории. `429` увеличивает
 порога переводит route в `cooldown`; policy/approval denial, invalid request и
 cancellation circuit не открывают. При открытии overlay атомарно помечает
 route `open`, увеличивает generation и пишет `circuit_opened_during_run`.
-Текущая retry-loop немедленно прекращается; snapshot при этом остаётся тем же.
+
+Открытие circuit прекращает попытки только по этому route, а не весь run:
+retry-loop сразу прерывает текущую попытку, но следующий `select_route`
+выбирает другой candidate, если он остался. Run завершается `route_exhausted`
+лишь тогда, когда после исключения не осталось ни одного candidate или
+исчерпан лимит попыток/времени. Snapshot при этом остаётся тем же.
 
 Lifecycle circuit breaker в пределах run:
 - `circuit_state` открывается в overlay при превышении
@@ -253,8 +279,11 @@ Lifecycle circuit breaker в пределах run:
   При значениях по умолчанию (`cooldown_ms = 30000` против
   `retry.max_elapsed_ms = 15000`) это означает исключение до конца run;
   досрочное «размораживание» внутри run не предусмотрено;
-- то же значение `cooldown_until` переживает run через persistent health и
-  исключает route в следующем run, пока не истечёт по его `now_ms`;
+- `cooldown_until` из overlay сам в persistent health не попадает: запись туда
+  выполняет provider health model по тем же `failure_category`, и это вне
+  scope 02.1. Этап 02.1 определяет только чтение: если persistent health уже
+  содержит непросроченный `cooldown_until`, он переносится в overlay нового
+  run по таблице выше и исключает route, пока не истечёт по `now_ms`;
 - сброс/half-open probe для переподтверждения capabilities закрытого route не
   реализуется в 02.1; переподтверждение выполняется startup probe следующего
   run.
@@ -315,8 +344,9 @@ epoch, selection reason, failure category, backoff и overlay generation; на
 run — terminal result с `exhaustion_reason` либо `failure_category`, boolean
 `circuit_opened_during_run` и `budget_absent`, если бюджета не было. Записанных
 `now_ms` и snapshot достаточно, чтобы повторить решения selection без доступа
-к часам. Prompt, secrets и
-raw output не пишутся. Счётчики `provider_attempts_total`,
+к часам. Prompt, secrets и raw output не пишутся.
+
+Счётчики `provider_attempts_total`,
 `provider_failures_total{category}`, `circuit_open_total`,
 `route_exhausted_total` и gauge открытых circuits публикуются в локальную
 diagnostics telemetry с bounded cardinality.
@@ -336,6 +366,8 @@ diagnostics telemetry с bounded cardinality.
 - selection-тесты на подставленном `now_ms`: истёкший TTL, активный и истёкший
   cooldown, перенос незакрытого cooldown из persistent health в новый run —
   все без ожидания реального времени;
+- открытие circuit при оставшихся candidates продолжает run следующим route, а
+  не завершает его; `no_candidates` и `all_routes_excluded` различаются;
 - snapshot serialize/deserialize, unknown fields, migration и round-trip hash;
 - trace/telemetry tests без secrets и raw provider output.
 
