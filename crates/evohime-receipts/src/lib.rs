@@ -458,6 +458,14 @@ mod tests {
         );
     }
     #[test]
+    fn fingerprint_input_version_matches_permissions_crate() {
+        assert_eq!(
+            FINGERPRINT_INPUT_VERSION,
+            evohime_permissions::FINGERPRINT_INPUT_VERSION,
+            "contracts/receipts/v1/limits.json fingerprint_input_version must stay in sync with evohime_permissions::FINGERPRINT_INPUT_VERSION"
+        );
+    }
+    #[test]
     fn result_uses_domain() {
         assert_ne!(
             result_hash(&serde_json::json!({"status":"succeeded"})).unwrap(),

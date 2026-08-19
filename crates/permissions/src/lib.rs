@@ -807,6 +807,24 @@ impl PermissionEngine {
         self.audit.read().await.clone()
     }
 
+    /// The single normative entry point for scope normalization referenced by
+    /// the receipt runtime (01.3): rejects an embedded `\n` (framing
+    /// invariant shared with `canonical_call_hash`), then normalizes
+    /// filesystem-path-shaped scopes via the existing path rules and leaves
+    /// non-path scopes (URLs, opaque tool identifiers) trimmed but otherwise
+    /// unchanged. Callers must not normalize scope themselves before hashing.
+    pub fn normalize_scope(&self, scope: &str) -> Result<String, String> {
+        if scope.contains('\n') {
+            return Err("scope must not contain a newline".to_owned());
+        }
+        let trimmed = scope.trim();
+        if trimmed.contains('/') || trimmed.contains('\\') {
+            Ok(normalize_scope_path(trimmed))
+        } else {
+            Ok(trimmed.to_owned())
+        }
+    }
+
     async fn find_path_mode(
         &self,
         permission: Permission,
@@ -927,11 +945,25 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// Version of the [`fingerprint_input`] typed-projection rules. Recorded
+/// alongside every receipt action (`receipt_actions.fingerprint_input_version`
+/// in `crates/evohime-receipts`) so a future rule change cannot silently
+/// reinterpret an already-durable hash. Must stay equal to
+/// `fingerprint_input_version` in `contracts/receipts/v1/limits.json`
+/// (cross-checked by a test in `crates/evohime-receipts`).
+pub const FINGERPRINT_INPUT_VERSION: u8 = 1;
+
+/// Largest magnitude integer exactly representable as an IEEE-754 binary64 /
+/// JCS number (2^53 - 1). Integers outside this range are wrapped in a typed
+/// object instead of being written as a bare JSON number, so a JS-based
+/// verifier can never silently round them.
+const SAFE_INTEGER_BOUND: i64 = 9_007_199_254_740_991;
+
 pub fn fingerprint_input(input: &serde_json::Value) -> String {
     match input {
         serde_json::Value::Null => "null".to_string(),
         serde_json::Value::Bool(value) => value.to_string(),
-        serde_json::Value::Number(value) => value.to_string(),
+        serde_json::Value::Number(value) => fingerprint_number(value),
         serde_json::Value::String(value) => serde_json::to_string(value).unwrap_or_default(),
         serde_json::Value::Array(values) => format!(
             "[{}]",
@@ -943,7 +975,10 @@ pub fn fingerprint_input(input: &serde_json::Value) -> String {
         ),
         serde_json::Value::Object(values) => {
             let mut keys = values.keys().collect::<Vec<_>>();
-            keys.sort();
+            // RFC 8785 JCS orders object keys by UTF-16 code unit, not by
+            // Rust's default UTF-8 byte order — the two differ for
+            // characters outside the Basic Multilingual Plane.
+            keys.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
             format!(
                 "{{{}}}",
                 keys.into_iter()
@@ -959,6 +994,39 @@ pub fn fingerprint_input(input: &serde_json::Value) -> String {
             )
         }
     }
+}
+
+/// `serde_json::Value` cannot hold `NaN`/`Infinity` (parsing rejects both),
+/// so no explicit fail-closed branch is needed for them here — the
+/// unreachable case is enforced by the type itself, not by runtime code.
+///
+/// Note: `serde_json::Value` also has no bytes/binary variant, so the plan's
+/// `{"type":"bytes","encoding":"base64url","value":...}` binary projection
+/// is not a distinct code path — a caller that has already base64url-encoded
+/// binary data into a plain JSON object of that shape is fingerprinted by
+/// the generic object rule above and produces the identical bytes.
+fn fingerprint_number(value: &serde_json::Number) -> String {
+    if let Some(int_value) = value.as_i64() {
+        if (-SAFE_INTEGER_BOUND..=SAFE_INTEGER_BOUND).contains(&int_value) {
+            return int_value.to_string();
+        }
+        return typed_int64(int_value.to_string());
+    }
+    if let Some(uint_value) = value.as_u64() {
+        if uint_value <= SAFE_INTEGER_BOUND as u64 {
+            return uint_value.to_string();
+        }
+        return typed_int64(uint_value.to_string());
+    }
+    value.to_string()
+}
+
+fn typed_int64(decimal: String) -> String {
+    // Keys are fixed and already in JCS UTF-16 order ("type" < "value").
+    format!(
+        "{{\"type\":\"int64\",\"value\":{}}}",
+        serde_json::to_string(&decimal).unwrap_or_default()
+    )
 }
 
 pub fn canonical_call_hash(tool_name: &str, scope: &str, input: &serde_json::Value) -> String {
@@ -1914,5 +1982,126 @@ mod tests {
             normalize_scope_path("//?/C:/workspace/secrets/token.txt"),
             "C:/workspace/secrets/token.txt"
         );
+    }
+
+    #[test]
+    fn fingerprint_null_and_empty_string() {
+        assert_eq!(fingerprint_input(&serde_json::Value::Null), "null");
+        assert_eq!(fingerprint_input(&serde_json::json!("")), "\"\"");
+    }
+
+    #[test]
+    fn fingerprint_bool() {
+        assert_eq!(fingerprint_input(&serde_json::json!(true)), "true");
+        assert_eq!(fingerprint_input(&serde_json::json!(false)), "false");
+    }
+
+    #[test]
+    fn fingerprint_int64_within_safe_bound_is_a_bare_number() {
+        assert_eq!(fingerprint_input(&serde_json::json!(9_007_199_254_740_991_i64)), "9007199254740991");
+        assert_eq!(fingerprint_input(&serde_json::json!(-9_007_199_254_740_991_i64)), "-9007199254740991");
+        assert_eq!(fingerprint_input(&serde_json::json!(0)), "0");
+    }
+
+    #[test]
+    fn fingerprint_int64_outside_safe_bound_is_typed_object() {
+        assert_eq!(
+            fingerprint_input(&serde_json::json!(9_007_199_254_740_992_i64)),
+            "{\"type\":\"int64\",\"value\":\"9007199254740992\"}"
+        );
+        assert_eq!(
+            fingerprint_input(&serde_json::json!(-9_007_199_254_740_992_i64)),
+            "{\"type\":\"int64\",\"value\":\"-9007199254740992\"}"
+        );
+        assert_eq!(
+            fingerprint_input(&serde_json::json!(u64::MAX)),
+            format!("{{\"type\":\"int64\",\"value\":\"{}\"}}", u64::MAX)
+        );
+    }
+
+    #[test]
+    fn fingerprint_float_uses_number_representation() {
+        assert_eq!(fingerprint_input(&serde_json::json!(0.1)), "0.1");
+        assert_eq!(fingerprint_input(&serde_json::json!(1.5)), "1.5");
+    }
+
+    #[test]
+    fn fingerprint_unicode_text_preserves_string_type() {
+        assert_eq!(fingerprint_input(&serde_json::json!("héllo")), "\"héllo\"");
+        assert_eq!(fingerprint_input(&serde_json::json!("🦀")), "\"🦀\"");
+    }
+
+    #[test]
+    fn fingerprint_object_key_order_is_insertion_independent() {
+        let a = serde_json::json!({"b": 1, "a": 2});
+        let b = serde_json::json!({"a": 2, "b": 1});
+        assert_eq!(fingerprint_input(&a), fingerprint_input(&b));
+        assert_eq!(fingerprint_input(&a), "{\"a\":2,\"b\":1}");
+    }
+
+    #[test]
+    fn fingerprint_array_order_is_significant() {
+        let a = serde_json::json!([1, 2]);
+        let b = serde_json::json!([2, 1]);
+        assert_ne!(fingerprint_input(&a), fingerprint_input(&b));
+    }
+
+    #[test]
+    fn fingerprint_pre_encoded_bytes_object_round_trips_as_plain_object() {
+        let value = serde_json::json!({"type": "bytes", "encoding": "base64url", "value": "aGVsbG8"});
+        assert_eq!(
+            fingerprint_input(&value),
+            "{\"encoding\":\"base64url\",\"type\":\"bytes\",\"value\":\"aGVsbG8\"}"
+        );
+    }
+
+    #[test]
+    fn canonical_call_hash_is_stable_across_key_order() {
+        let a = serde_json::json!({"b": 1, "a": 2});
+        let b = serde_json::json!({"a": 2, "b": 1});
+        assert_eq!(
+            canonical_call_hash("tool", "scope", &a),
+            canonical_call_hash("tool", "scope", &b)
+        );
+    }
+
+    #[test]
+    fn normalize_scope_rejects_embedded_newline() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            assert!(engine.normalize_scope("a\nb").is_err());
+        });
+    }
+
+    #[test]
+    fn normalize_scope_matches_normalize_scope_path_for_paths() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            assert_eq!(
+                engine.normalize_scope("//?/C:/workspace/secrets/token.txt").unwrap(),
+                normalize_scope_path("//?/C:/workspace/secrets/token.txt")
+            );
+        });
+    }
+
+    #[test]
+    fn normalize_scope_leaves_non_path_scope_trimmed() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            assert_eq!(
+                engine.normalize_scope("  https://example.com  ").unwrap(),
+                "https://example.com"
+            );
+        });
+    }
+
+    #[test]
+    fn normalize_scope_is_idempotent() {
+        block_on(async {
+            let engine = PermissionEngine::new();
+            let once = engine.normalize_scope("src\\lib.rs").unwrap();
+            let twice = engine.normalize_scope(&once).unwrap();
+            assert_eq!(once, twice);
+        });
     }
 }

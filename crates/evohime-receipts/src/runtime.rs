@@ -1304,6 +1304,49 @@ mod tests {
     }
 
     #[test]
+    fn approval_gc_deletes_only_terminal_intents_past_ttl_and_spares_pending_recovery() {
+        let mut db = Connection::open_in_memory().unwrap();
+        let signer = TestSigner;
+
+        let (claimed_approval, pending_approval, stuck_approval, stuck_action) = {
+            let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+            let claimed_approval = match runtime.prepare(request(PolicyDecision::ApprovalRequired)).unwrap() {
+                PrepareOutcome::ApprovalRequired { approval_id, .. } => approval_id,
+                _ => panic!(),
+            };
+            let pending_approval = match runtime.prepare(request(PolicyDecision::ApprovalRequired)).unwrap() {
+                PrepareOutcome::ApprovalRequired { approval_id, .. } => approval_id,
+                _ => panic!(),
+            };
+            let (stuck_approval, stuck_action) = match runtime.prepare(request(PolicyDecision::ApprovalRequired)).unwrap() {
+                PrepareOutcome::ApprovalRequired { approval_id, action_id, .. } => (approval_id, action_id),
+                _ => panic!(),
+            };
+            (claimed_approval, pending_approval, stuck_approval, stuck_action)
+        };
+
+        // Well past the 10-minute TTL cutoff for all three.
+        let past = now_ms() - APPROVAL_TTL_MS * 2;
+        // Terminal + past TTL + action not stuck: must be deleted.
+        db.execute("UPDATE receipt_approval_intents SET state='claimed', expires_at_ms=?1 WHERE approval_id=?2", params![past, claimed_approval.to_string()]).unwrap();
+        // Still pending (not terminal): must survive regardless of age.
+        db.execute("UPDATE receipt_approval_intents SET expires_at_ms=?1 WHERE approval_id=?2", params![past, pending_approval.to_string()]).unwrap();
+        // Terminal + past TTL, but its action is pending_recovery: must survive until authenticated closure.
+        db.execute("UPDATE receipt_approval_intents SET state='expired', expires_at_ms=?1 WHERE approval_id=?2", params![past, stuck_approval.to_string()]).unwrap();
+        db.execute("UPDATE receipt_actions SET state='pending_recovery' WHERE action_id=?1", params![stuck_action.to_string()]).unwrap();
+
+        let runtime = ReceiptRuntime::new(&mut db, &signer).unwrap();
+        let deleted = runtime.approval_gc(now_ms()).unwrap();
+        assert_eq!(deleted, 1);
+        drop(runtime);
+
+        assert_eq!(db.query_row("SELECT COUNT(*) FROM receipt_approval_intents WHERE approval_id=?1", [claimed_approval.to_string()], |row| row.get::<_, i64>(0)).unwrap(), 0);
+        assert_eq!(db.query_row("SELECT COUNT(*) FROM receipt_approval_intents WHERE approval_id=?1", [pending_approval.to_string()], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(db.query_row("SELECT COUNT(*) FROM receipt_approval_intents WHERE approval_id=?1", [stuck_approval.to_string()], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(db.query_row("SELECT value FROM receipt_runtime_metrics WHERE metric='approval_gc_deleted_count'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+    }
+
+    #[test]
     fn startup_recovery_quarantines_started_without_pre_and_preserves_unknown_result() {
         let mut db = Connection::open_in_memory().unwrap();
         install_schema(&db).unwrap();

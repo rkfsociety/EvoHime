@@ -56,6 +56,7 @@ async fn main() {
         std::process::exit(1);
     }
     let heartbeat_task = spawn_heartbeat(data_dir.join("core-heartbeat"));
+    let approval_gc_task = evohime_core::spawn_approval_gc(journal.clone(), receipt_keys.clone());
     let tools = std::sync::Arc::new(evohime_tool_runtime::ToolRegistry::bootstrap());
     let _permission_audit_task =
         evohime_core::attach_permission_audit_sink(journal.clone(), &tools).await;
@@ -139,6 +140,7 @@ async fn main() {
             }
         }
         heartbeat_task.abort();
+        approval_gc_task.abort();
         return;
     }
     let (coordinator, _events) =
@@ -185,6 +187,7 @@ async fn main() {
         std::process::exit(1);
     }
     heartbeat_task.abort();
+    approval_gc_task.abort();
 }
 
 #[cfg(windows)]

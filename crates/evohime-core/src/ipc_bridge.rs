@@ -3271,6 +3271,8 @@ impl IpcBridge {
     ) -> Result<evohime_tool_runtime::ToolResult, evohime_tool_runtime::ToolError> {
         match self.tools.as_ref().ok_or_else(|| evohime_tool_runtime::ToolError::Execution("Terminal tools are not configured".into()))?.preflight(context, "shell.execute", &input).await? {
             evohime_tool_runtime::ToolPreflightDecision::Allowed { scope, preview } => {
+                let scope = self.tools.as_ref().unwrap().permissions().normalize_scope(&scope)
+                    .map_err(evohime_tool_runtime::ToolError::Execution)?;
                 let request = evohime_receipts::runtime::ActionRequest { action_id: uuid::Uuid::now_v7(), task_id: context.task_id.to_string(), run_id: context.task_id.to_string(), tool_name: "shell.execute".into(), policy_id: "permission:ShellExecute".into(), normalized_scope: scope, input: input.clone(), policy_decision: evohime_receipts::runtime::PolicyDecision::Allow, approval_id: None, parent_approval_ref: None, preview: serde_json::to_string(&preview).unwrap_or_else(|_| "terminal".into()) };
                 let mut database = self.journal.database().lock().await;
                 let signer = super::CoreReceiptSigner(Arc::clone(&self.receipt_keys));
