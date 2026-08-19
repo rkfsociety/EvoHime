@@ -37,14 +37,11 @@
 
 | План | Обзор | Блокирующие зависимости |
 | --- | --- | --- |
-| 01 Signed hash-chain receipts | [обзор](01-0-signed-hash-chain-receipts.md) | — |
 | 02 Локальный SLM fallback и routing | [обзор](02-0-local-slm-fallback-routing.md) | — |
-| 03 Специализированные child workflows | [обзор](03-0-specialized-child-workflows.md) | 01.3 |
+| 03 Специализированные child workflows | [обзор](03-0-specialized-child-workflows.md) | — |
 | 04 Постоянное слушание и ambient-память | [обзор](04-0-ambient-listening.md) | — |
 
 ```text
-01.1 Canonical contract ── 01.3 Runtime ── 03 Child workflows
-
 02.1-02.2 provider, 02.3 routing  (независимый путь)
 
 04.1 контракт ── 04.2 хранение ── 04.3 листенер ── 04.4 движок ──
@@ -63,9 +60,13 @@ desktop IPC, local storage и supervisor, поэтому блокирующих 
 а контракт — в [`../architecture.md`](../architecture.md).
 
 Так уже удалены планы Memory Extraction (коммиты `0d67554`, `4b376c6`), Context
-Budget Manager и Local Agentic RAG. Их контракты живут в
+Budget Manager, Local Agentic RAG и план 01 Signed hash-chain receipts
+целиком (этапы 01.1 Canonical contract, 01.2 Key lifecycle,
+01.3 Runtime integration, 01.4 Chain storage и export). Их контракты живут в
 [`../architecture.md`](../architecture.md), подтверждённое состояние — в
-[`../current-state.md`](../current-state.md).
+[`../current-state.md`](../current-state.md),
+`../security/receipt-canonical-v1.md` и
+`../security/receipt-key-lifecycle-v1.md`.
 
 Удаляется только этап, выполненный **целиком**: критерии готовности достигнуты
 и покрыты тестами. Частично сделанное не удаляется, а описывается в секции
@@ -73,11 +74,10 @@ Budget Manager и Local Agentic RAG. Их контракты живут в
 нет. Существующий модуль, который никем не вызывается, считается отсутствующим
 поведением: библиотека без подключения не закрывает этап.
 
-Проверка на 2026-08-19: Local Agentic RAG, этап 01.2 Key lifecycle и этап
-01.3 Runtime integration реализованы целиком; их контракты живут в
-`../architecture.md`, `../current-state.md` и
-`../security/receipt-key-lifecycle-v1.md`. Следующий незавершённый план —
-03 Specialized child workflows.
+Проверка на 2026-08-19: план 01 реализован целиком, включая 01.4 (SQLite
+receipts_v1, signed checkpoints, retention/compaction, verified_pruned,
+chain-aware offline verifier, ListReceipts/VerifyReceipts/ExportReceipts IPC).
+Следующий незавершённый план — 03 Specialized child workflows.
 Частичный код есть в плане 02 (детерминированный выбор маршрута существует, но
 не подключён к агенту) и в плане 03 (роли и lifecycle есть, grants, budget и
 изоляции нет); оба случая отмечены внутри соответствующих этапов.
