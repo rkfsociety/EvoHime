@@ -434,7 +434,9 @@ mod tests {
             command: None,
         }
         .encode_to_vec();
-        encoded.extend_from_slice(&[0xa0, 0x06, 0x01]);
+        // Field 9999, varint wire type — chosen far above any field number
+        // currently defined in the schema so this stays a genuinely unknown field.
+        encoded.extend_from_slice(&[0xf8, 0xf0, 0x04, 0x01]);
         let decoded = generated::CommandEnvelope::decode(encoded.as_slice())
             .expect("unknown field is ignored");
         assert_eq!(decoded.request_id, "request");
