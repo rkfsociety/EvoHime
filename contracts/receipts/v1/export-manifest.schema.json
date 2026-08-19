@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evohime.local/contracts/receipts/v1/export-manifest.schema.json",
+  "title": "EvoHime Receipt Export Manifest v1",
+  "description": "manifest.json at the root of an export bundle. files[].sha256 is a whole-file digest over the exact canonical UTF-8 bytes of that named file, including its final LF. first_receipt_hash/last_receipt_hash copy receipt_records.receipt_hash from the first and last row of the exported closure using the same algorithm; they detect bundle corruption/truncation, not cryptographic trust.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest_version", "export_id", "created_at", "snapshot_last_sequence",
+    "requested_count", "selected_count", "record_count", "actual_exported_count", "files"
+  ],
+  "properties": {
+    "manifest_version": { "const": 1 },
+    "export_id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "created_at": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$" },
+    "snapshot_last_sequence": { "type": "string", "pattern": "^[0-9]{1,20}$" },
+    "requested_count": { "type": "integer", "minimum": 0 },
+    "selected_count": { "type": "integer", "minimum": 0 },
+    "record_count": { "type": "integer", "minimum": 0 },
+    "actual_exported_count": { "type": "integer", "minimum": 0 },
+    "first_receipt_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "last_receipt_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "bytes", "sha256"],
+        "properties": {
+          "name": { "enum": ["receipts.jsonl", "actions.jsonl", "key-history.jsonl", "checkpoints.jsonl"] },
+          "bytes": { "type": "integer", "minimum": 0 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    }
+  }
+}

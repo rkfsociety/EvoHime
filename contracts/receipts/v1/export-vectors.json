@@ -1,0 +1,63 @@
+{
+  "vectors_version": 1,
+  "description": "Shared fixtures for the stage 01.4 JSONL export bundle and verify-chain algorithm. valid_bundle is a real signed two-receipt chain (one action, pre_action + post_action) captured from evohime-receipts::export::tests::dump_export_vectors_for_contract; re-run that ignored test to regenerate after a byte-format change.",
+  "valid_bundle": {
+    "manifest_json": {
+      "manifest_version": 1,
+      "actual_exported_count": 2,
+      "record_count": 2,
+      "requested_count": 2,
+      "selected_count": 2,
+      "snapshot_last_sequence": "2",
+      "first_receipt_hash": "7cafce0c57fa42ede0c8961614cd76e6f9ddc072b11ecb6e1d33046c24c26b96",
+      "last_receipt_hash": "ea1dff63bc73a3ab89ee5e1f4f532aa0c8b20286ca38e4fe303f94dfd009b9dd",
+      "files": [
+        { "name": "receipts.jsonl", "bytes": 2280, "sha256": "b2d09eb08f39b68b17fb1c8b8ea682c462e2cf517952fa70923742232d6e98f0" },
+        { "name": "key-history.jsonl", "bytes": 525, "sha256": "2e26ccff0b23ac63186448a1f60c2265ff71a40ca3f668448b0181bc10c79454" },
+        { "name": "actions.jsonl", "bytes": 114, "sha256": "031f5b5271e7d2ece76c5853da0862ccd8adae64ee0a0514762e849adf1ec4c8" }
+      ]
+    },
+    "receipts_jsonl_lines": [
+      {
+        "record_version": 1,
+        "record_kind": "receipt",
+        "sequence": "1",
+        "receipt_hash": "7cafce0c57fa42ede0c8961614cd76e6f9ddc072b11ecb6e1d33046c24c26b96",
+        "canonical_envelope": "eyJrZXlfaWQiOiJlZDI1NTE5OjIzYTVkYjlhZjNlZjAwMWVlMmFjMmVhY2UwNjcwODg0MzkwOTI1MDNjYzQzYTVkOGI2ZmQ5NDc2ODliN2IxYzkiLCJwYXlsb2FkIjp7ImFjdGlvbl9pZCI6IjAxYTAxYTIxLTliN2QtN2Y1MS1hYmU0LTgwY2RhNDExNGNkNyIsImFjdGlvbl9zdGF0dXMiOiJwcmVwYXJlZCIsInBvbGljeV9kZWNpc2lvbiI6ImFsbG93IiwicG9saWN5X2lkIjoicG9saWN5LTAxIiwicmVjZWlwdF9pZCI6IjAxYTAxYTIxLTliODAtNzg1My1hN2U5LTgxZjg1NTQ4N2UwNSIsInJlY2VpcHRfa2luZCI6InByZV9hY3Rpb24iLCJyZWNlaXB0X3ZlcnNpb24iOjEsInJ1bl9pZCI6InJ1bi0wMSIsInRhc2tfaWQiOiJ0YXNrLTAxIiwidGltZXN0YW1wIjoiMjAyNi0wOC0xOVQxMzowNjo0NS4yNDhaIiwidG9vbF9hcmdzX2hhc2giOiJkZjA4OWZiODQ4ZWNmYmIwNGRmOGRmMzI0ZWIxMDYzNzQwNDEwY2I0MzhmZTI5ODkzZjZiYzZhYjdlYzM1NjM5IiwidG9vbF9uYW1lIjoidG9vbC5yZWFkIn0sInNpZ25hdHVyZSI6InhfRXRpdVFEVnNzSi1UREVoRGxOM3V4ZF9tdkJSblN4T1UwQTgycHJLNk1TUkIzWWYxalFENUtjdEc1eWpNTWlJRWhKX3ZoNXNpR1Q3TC1nVWN0b0NRIiwic2lnbmF0dXJlX2FsZ29yaXRobSI6IkVkMjU1MTkifQ"
+      },
+      {
+        "record_version": 1,
+        "record_kind": "receipt",
+        "sequence": "2",
+        "receipt_hash": "ea1dff63bc73a3ab89ee5e1f4f532aa0c8b20286ca38e4fe303f94dfd009b9dd",
+        "canonical_envelope": "eyJrZXlfaWQiOiJlZDI1NTE5OjIzYTVkYjlhZjNlZjAwMWVlMmFjMmVhY2UwNjcwODg0MzkwOTI1MDNjYzQzYTVkOGI2ZmQ5NDc2ODliN2IxYzkiLCJwYXlsb2FkIjp7ImFjdGlvbl9pZCI6IjAxYTAxYTIxLTliN2QtN2Y1MS1hYmU0LTgwY2RhNDExNGNkNyIsImFjdGlvbl9zdGF0dXMiOiJzdWNjZWVkZWQiLCJwb2xpY3lfZGVjaXNpb24iOiJhbGxvdyIsInBvbGljeV9pZCI6InBvbGljeS0wMSIsInByZXZpb3VzX3JlY2VpcHRfaGFzaCI6IjdjYWZjZTBjNTdmYTQyZWRlMGM4OTYxNjE0Y2Q3NmU2ZjlkZGMwNzJiMTFlY2I2ZTFkMzMwNDZjMjRjMjZiOTYiLCJyZWNlaXB0X2lkIjoiMDFhMDFhMjEtOWI4Ny03MGMxLWJhM2EtMWUxY2IwY2EyODhhIiwicmVjZWlwdF9raW5kIjoicG9zdF9hY3Rpb24iLCJyZWNlaXB0X3ZlcnNpb24iOjEsInJlc3VsdF9oYXNoIjoiYmZmY2QzODhmNzhjMzA3YzQ3ZTJiMjg0ODczZTI5OGZlZTkyMDYwY2I2M2FlMWEyNzNkZDRlNTNlNjUxNTM1NiIsInJ1bl9pZCI6InJ1bi0wMSIsInRhc2tfaWQiOiJ0YXNrLTAxIiwidGltZXN0YW1wIjoiMjAyNi0wOC0xOVQxMzowNjo0NS4yNTVaIiwidG9vbF9hcmdzX2hhc2giOiJkZjA4OWZiODQ4ZWNmYmIwNGRmOGRmMzI0ZWIxMDYzNzQwNDEwY2I0MzhmZTI5ODkzZjZiYzZhYjdlYzM1NjM5IiwidG9vbF9uYW1lIjoidG9vbC5yZWFkIn0sInNpZ25hdHVyZSI6InFVbTBYZlREMC1tWUlHMnEtVWtsRnNuLTE0R0tOUmJSRTlsY2Z4NjAxVzRtS0d5MWUyUUZDMkxrNVF3WnBZSXF3a3ZlWU5feDJyTkFOZ1hCQ2daYkFnIiwic2lnbmF0dXJlX2FsZ29yaXRobSI6IkVkMjU1MTkifQ"
+      }
+    ],
+    "key_history_jsonl_lines": [
+      {
+        "transition_version": 1,
+        "transition_id": "01a01a21-9b63-7053-838b-ed578f7bc9d8",
+        "created_at": "2026-08-19T13:06:45.216Z",
+        "reason": "initial",
+        "actor": "system",
+        "new_key_id": "ed25519:23a5db9af3ef001ee2ac2eace067088439092503cc43a5d8b6fd947689b7b1c9",
+        "new_public_key": "IdnjTBCvlXuT02aKIcdE_r8VcEjBEdQehs6JpPmCPzk",
+        "continuity": "genesis",
+        "signed_by_key_id": "ed25519:23a5db9af3ef001ee2ac2eace067088439092503cc43a5d8b6fd947689b7b1c9",
+        "signature": "_GX6cdjBFGMreO8t5LLjPH0vGI__5Iv5tbrSgjUU_yynorLmqnqkU1R8n__1xmojuFYb_m_4UDs70pKTay_PCA"
+      }
+    ]
+  },
+  "verify_chain_expectations": [
+    { "case": "valid_bundle above, full key history trusted", "expected_status": "verified", "expected_code": null },
+    { "case": "valid_bundle above, empty key history", "expected_status": "unverified", "expected_code": "receipts.key_unknown" },
+    { "case": "first receipt_hash byte flipped", "expected_status": "broken", "expected_code": "receipts.hash_mismatch" },
+    { "case": "second row previous_receipt_hash set to an unrelated hash", "expected_status": "broken", "expected_code": "receipts.previous_mismatch" },
+    { "case": "only the pre_action row present (no terminal)", "expected_status": "pending", "expected_code": "receipts.pending" },
+    { "case": "key_id in key-history marked continuity=compromised for the signing key's predecessor", "expected_status": "stale_key", "expected_code": "receipts.stale_key" }
+  ],
+  "known_gaps": [
+    "checkpoints.jsonl / verified_pruned is exercised only by unit tests today, not by a captured vector, because 01.4 retention/compaction scheduling is not wired up yet.",
+    "actions.jsonl in this vector set only carries {record_version, record_kind, action_id, approval_id}; recovery_code/requires_reconciliation projection is future work."
+  ]
+}

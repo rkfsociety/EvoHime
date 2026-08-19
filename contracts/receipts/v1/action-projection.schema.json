@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evohime.local/contracts/receipts/v1/action-projection.schema.json",
+  "title": "EvoHime Receipt Action Projection v1",
+  "description": "One line of actions.jsonl. A bounded, non-signed projection of receipt_actions for the exported chain closure. Raw tool input, result and error text are never present. This projection is checked for consistency against the embedded receipts.jsonl envelopes; it never determines chain trust by itself.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["record_version", "record_kind", "action_id"],
+  "properties": {
+    "record_version": { "const": 1 },
+    "record_kind": { "const": "action" },
+    "action_id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "approval_id": {
+      "anyOf": [
+        { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+        { "type": "null" }
+      ]
+    },
+    "recovery_code": {
+      "enum": ["signature_failed", "external_error", "unknown", "missing_pre", "missing_terminal", "approval_expired", "chain_conflict", "stale_head", null]
+    },
+    "requires_reconciliation": { "type": "boolean" }
+  }
+}

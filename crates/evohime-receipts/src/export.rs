@@ -606,4 +606,53 @@ mod tests {
         assert_eq!(result.unwrap_err(), ExportError::ExportExists);
         std::fs::remove_dir_all(&destination).unwrap();
     }
+
+    /// Not run by default (`cargo test -- --ignored`). Regenerates the shared
+    /// fixture behind `contracts/receipts/v1/export-vectors.json` from a real
+    /// signed bundle so the vectors never drift from the actual byte shapes
+    /// `export_receipts` produces.
+    #[test]
+    #[ignore]
+    fn dump_export_vectors_for_contract() {
+        let (signer, genesis) = make_signer();
+        let mut db = Connection::open_in_memory().unwrap();
+        seed_chain_single(&mut db, &signer);
+        let destination = std::env::temp_dir().join(format!("evohime-export-vectors-{}", uuid::Uuid::now_v7()));
+        let manifest = export_receipts(&db, &[genesis], &destination, &ReceiptFilter::default(), 1000).unwrap();
+        let receipts_jsonl = std::fs::read_to_string(destination.join("receipts.jsonl")).unwrap();
+        let key_history_jsonl = std::fs::read_to_string(destination.join("key-history.jsonl")).unwrap();
+        let manifest_json = std::fs::read_to_string(destination.join("manifest.json")).unwrap();
+        println!(
+            "{}",
+            json!({
+                "manifest_bytes": manifest_json,
+                "receipts_jsonl_bytes": receipts_jsonl,
+                "key_history_jsonl_bytes": key_history_jsonl,
+                "actual_exported_count": manifest.actual_exported_count,
+            })
+        );
+        std::fs::remove_dir_all(&destination).unwrap();
+    }
+
+    fn seed_chain_single(db: &mut Connection, signer: &TestSigner) {
+        crate::runtime::install_schema(db).unwrap();
+        let mut runtime = ReceiptRuntime::new(db, signer).unwrap();
+        let action_id = uuid::Uuid::now_v7();
+        let request = ActionRequest {
+            action_id,
+            task_id: "task-01".into(),
+            run_id: "run-01".into(),
+            tool_name: "tool.read".into(),
+            policy_id: "policy-01".into(),
+            normalized_scope: "scope".into(),
+            input: serde_json::json!({"x": 1}),
+            policy_decision: PolicyDecision::Allow,
+            approval_id: None,
+            parent_approval_ref: None,
+            preview: "preview".into(),
+        };
+        runtime.prepare(request.clone()).unwrap();
+        runtime.mark_started(action_id).unwrap();
+        runtime.complete(&request, "succeeded", &"a".repeat(64), None).unwrap();
+    }
 }

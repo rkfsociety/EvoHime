@@ -36,5 +36,29 @@
     "signer_unavailable": 2006,
     "key_untrusted": 2007,
     "recovery_pending": 2008
+  },
+  "storage_v1": {
+    "contract": "evohime.receipt.storage",
+    "current_version": 1,
+    "supported_versions": [1],
+    "schemas": {
+      "export_manifest": "export-manifest.schema.json",
+      "export_record": "export-record.schema.json",
+      "action_projection": "action-projection.schema.json",
+      "checkpoint": "checkpoint.schema.json"
+    },
+    "vectors": "export-vectors.json",
+    "stable_error_codes": [
+      "receipts.invalid_json", "receipts.non_canonical", "receipts.manifest_mismatch",
+      "receipts.hash_mismatch", "receipts.signature_invalid", "receipts.chain_incomplete",
+      "receipts.previous_mismatch", "receipts.digest_mismatch", "receipts.approval_unverified",
+      "receipts.missing_receipt", "receipts.key_unknown", "receipts.stale_key",
+      "receipts.chain_fork", "receipts.chain_cycle", "receipts.pending",
+      "receipts.empty_range", "receipts.unsupported_version", "receipts.db_unavailable",
+      "receipts.export_io", "receipts.invalid_filter", "receipts.limit_exceeded",
+      "receipts.not_found", "receipts.export_exists", "receipts.verify_failed",
+      "receipts.chain_conflict", "receipts.pending_recovery", "receipts.unsupported_operation",
+      "receipts.access_denied"
+    ]
   }
 }

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://evohime.local/contracts/receipts/v1/checkpoint.schema.json",
+  "title": "EvoHime Receipt Checkpoint v1",
+  "description": "ReceiptCheckpointV1, stored in receipt_checkpoints and exported as one line of checkpoints.jsonl when retention has compacted a prefix. Signed by the key active at checkpoint creation. Proves the retained suffix begins after prefix_last_hash; does not assert the deleted receipts were individually re-verified at read time.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "checkpoint_id", "key_id", "cutoff_sequence", "first_retained_hash",
+    "prefix_last_hash", "last_deleted_receipt_hash", "head_receipt_hash",
+    "created_at", "canonical_checkpoint", "signature", "status"
+  ],
+  "properties": {
+    "checkpoint_id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "key_id": { "type": "string", "pattern": "^ed25519:[0-9a-f]{64}$" },
+    "cutoff_sequence": { "type": "string", "pattern": "^[0-9]{1,20}$" },
+    "first_retained_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "prefix_last_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "last_deleted_receipt_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "head_receipt_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "created_at": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$" },
+    "canonical_checkpoint": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+    "status": { "enum": ["active", "superseded"] }
+  }
+}
