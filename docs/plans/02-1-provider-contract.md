@@ -8,6 +8,17 @@
 интерфейс. Context Budget Manager здесь не требуется: контракт провайдера не
 меняет бюджет.
 
+`budget_id` в snapshot — это ссылка, а не бюджет: Core на этапе создания
+snapshot проверяет, что `budget_id` существует и активен (`is_active == true`);
+при неуспехе run завершается `failed` с причиной `budget_unavailable` и
+selection не запускается. Само распределение бюджета, его убывание и лимиты
+остаются контрактом Context Budget Manager и в 02.1 не реализуются. Внутри
+`select_route` кандидаты, чья заявленная cost превышает remaining budget,
+исключаются тем же фильтром, что и privacy/capability incompatibility — это
+может привести к `route_exhausted`, если исключены все кандидаты.
+`budget_id` входит в каноническую сериализацию snapshot и в `policy_hashes`
+для воспроизводимости.
+
 Разблокирует: 02.2 (локальный провайдер объявляет capabilities) и 02.3
 (route selection читает контракт и health overlay).
 
@@ -22,7 +33,21 @@ Capability metadata провайдеров, разделение route selection
 - `run` — один Core-owned жизненный цикл пользовательского запроса: от
   классификации и создания snapshot до terminal result (`success`, `failed`,
   `cancelled` или `route_exhausted`). Все попытки fallback принадлежат тому же
-  run и имеют один `run_id`.
+  run и имеют один `run_id`. Контракт terminal result:
+  - `success` — route ответил в соответствии с retry policy;
+  - `failed` — критическая ошибка самого Core до или вне retry-loop (невалидный
+    request, policy violation на этапе validate, `budget_unavailable`);
+    retry не выполняется, причина пишется в trace как `failure_category` из
+    `[invalid_request, policy_violation, budget_unavailable]`;
+  - `cancelled` — внешний сигнал отмены (timeout вызывающей стороны,
+    cancellation token); текущая попытка прерывается, retry не выполняется;
+  - `route_exhausted` — все candidates исключены или исчерпан retry
+    (`max_attempts`/`max_elapsed_ms`); в trace пишется `exhaustion_reason` из
+    `[no_candidates, max_attempts_reached, max_elapsed_reached,
+    all_routes_excluded]`. Наружу (Renderer/Caller) отдаётся только safe-текст
+    без внутренних деталей провайдера, точных счётчиков ошибок, auth-данных и
+    таймингов, пригодных для reconnaissance — например «No suitable providers
+    available» или «All providers returned errors».
 - `RoutePolicySnapshot` — зафиксированный в начале run набор кандидатов,
   policy, preference и начального health. Он не изменяется до завершения run.
 - `RunHealthOverlay` — отдельное изменяемое состояние только этого run:
@@ -85,20 +110,36 @@ minor-версия может содержать additive fields, которые
 ## Snapshot и health lifecycle
 
 В начале run Core в порядке `classify → validate request → collect ready
-providers → create snapshot` один раз создаёт snapshot. В него попадают только
-прошедшие schema/probe candidates, их capability epoch, initial health,
-`policy_hashes`, preference и `budget_id`. Snapshot замораживается до terminal
-result и уничтожается после записи trace.
+providers → create snapshot` один раз создаёт snapshot. Чтение persistent
+health и создание snapshot выполняются атомарно: под одним read lock
+persistent health store Core собирает health для всех ready providers,
+формирует `health_snapshot` и создаёт из него snapshot, после чего lock
+освобождается. Если persistent health изменится между `classify` и созданием
+snapshot, эти изменения не влияют на текущий snapshot и видны только
+следующему run. В него попадают только прошедшие schema/probe candidates, их
+capability epoch, initial health, `policy_hashes`, preference и `budget_id`.
+Snapshot замораживается до terminal result и уничтожается после записи trace.
 
 Health snapshot содержит `status`, `observed_at`, `ttl`, `circuit_state` и
 `last_failure_category`. TTL проверяется при выборе route; просроченное health
 наблюдение даёт `stale`, а не автоматически `ready`.
 
-`RunHealthOverlay` создаётся из health snapshot. Каждое обновление выполняется
-через Core-owned mutex/`RwLock` под write lock (или эквивалентный CAS в
-реализации), с проверкой `run_id`, monotonic `attempt_id` и generation. Старая
-generation не может затереть новую; после commit selection читает overlay под
-read lock. Overlay никогда не публикуется renderer как источник истины.
+`RunHealthOverlay` создаётся из health snapshot один раз при старте run, до
+первого вызова `select_route`: для каждого candidate из snapshot Core
+инициализирует `route_status` из соответствующего `snapshot.health` (`open`,
+если health уже `stale`/`open`, иначе `closed`), обнуляет
+`attempts_per_route` и `failure_count_by_category`, и заполняет `generation`
+стартовым значением. Инициализация локальна для run и отдельного lock на
+persistent health не требует.
+
+Каждое обновление overlay выполняется через Core-owned mutex/`RwLock` под
+write lock (или эквивалентный CAS в реализации), с проверкой `run_id`,
+monotonic `attempt_id` и generation: перед записью overlay проверяет, что
+переданный `attempt_id`/`generation` не устарели относительно текущего
+значения, атомарно инкрементирует `generation` и коммитит изменение счётчиков
+и `route_status` одной операцией. Старая generation не может затереть новую;
+после commit selection читает overlay под read lock. Overlay никогда не
+публикуется renderer как источник истины.
 
 Таким образом, snapshot фиксирует начальное состояние, а overlay отражает
 динамические отказы текущего run. Изменения persistent health, capabilities и
@@ -115,7 +156,14 @@ request, attempt_index)`. Алгоритм:
 2. применяет фиксированный порядок policy из обзора плана: privacy → offline →
    approval/tool → context/capability → health/circuit → evaluation → budget →
    user preference → lexical `route_id`;
-3. выбирает первый route по стабильному score/tie-break и записывает reason;
+3. среди оставшихся candidates выбирает первый по детерминированному
+   tie-break: `health.status` (`ready` > `cooldown`; `open` уже отброшен
+   фильтром на шаге 1, `half_open` в 02.1 не производится) → latency по
+   возрастанию → cost по возрастанию → порядок `user preference` из
+   запроса → lexical `route_id` как финальный break. Score здесь — не
+   числовое значение, а порядок candidates после фильтров и tie-break;
+   «первый route» значит первый в этом порядке. Reason записывается как
+   комбинация применённого фильтра/критерия tie-break;
 4. передаёт тот же snapshot по `&` в execution. Execution не выбирает другой
    route сам.
 
@@ -125,6 +173,24 @@ circuit после порога категории. `429` увеличивает
 cancellation circuit не открывают. При открытии overlay атомарно помечает
 route `open`, увеличивает generation и пишет `circuit_opened_during_run`.
 Текущая retry-loop немедленно прекращается; snapshot при этом остаётся тем же.
+
+Lifecycle circuit breaker в пределах run:
+- `circuit_state` открывается в overlay при превышении
+  `health.failure_threshold`/`health.rate_limit_threshold`; на всё оставшееся
+  время run открытый circuit исключает route из selection и обратно не
+  закрывается — «половинного открытия» (`half-open` retry) внутри run в 02.1
+  нет;
+- по завершении run `circuit_state` из overlay в persistent health
+  автоматически не копируется; persistent health обновляется отдельно, на
+  основе накопленных `failure_category`/`failure_count`, и это остаётся вне
+  scope 02.1 (owner — provider health model);
+- `cooldown_ms` относится к persistent health и следующему run: route,
+  помеченный `cooldown`, исключается из selection нового run, пока
+  `observed_at + cooldown_ms < current_time`; в текущем run cooldown route
+  не «размораживается»;
+- сброс/half-open probe для переподтверждения capabilities закрытого route не
+  реализуется в 02.1; переподтверждение выполняется startup probe следующего
+  run.
 
 Следующая попытка выбирается повторным вызовом `select_route` с тем же
 snapshot и обновлённым overlay. Порядок candidates не перестраивается по
