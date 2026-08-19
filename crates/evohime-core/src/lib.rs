@@ -3944,7 +3944,11 @@ impl ToolAgent {
                     let request = ReceiptActionRequest { action_id: Uuid::now_v7(), task_id: context.task_id.to_string(), run_id: context.task_id.to_string(), tool_name: name.to_owned(), policy_id: "permission-v1".into(), normalized_scope: String::new(), input: input.clone(), policy_decision: ReceiptPolicyDecision::Deny, approval_id: None, parent_approval_ref: None, preview: String::new() };
                     let mut database = journal.database().lock().await;
                     let signer = CoreReceiptSigner(Arc::clone(keys));
-                    if let Ok(mut runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) { let _ = runtime.prepare(request); }
+                    if let Ok(mut runtime) = ReceiptRuntime::new(database.connection_mut(), &signer) {
+                        if runtime.prepare(request.clone()).is_err() {
+                            let _ = runtime.store_unsigned_runtime_marker(request.action_id, "signer_unavailable");
+                        }
+                    }
                 }
                 Err(evohime_tool_runtime::ToolError::PermissionDenied(permission))
             }

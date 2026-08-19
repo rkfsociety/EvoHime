@@ -360,6 +360,21 @@ pub fn validate_payload_v1(payload: &Value) -> Result<(), ReceiptError> {
     if kind == "post_action" && !object.contains_key("result_hash") {
         return Err(ReceiptError::SchemaViolation);
     }
+    if let Some(decision) = object.get("policy_decision").and_then(Value::as_str) {
+        if !matches!(decision, "allow" | "deny" | "approval_required" | "allowed") {
+            return Err(ReceiptError::SchemaViolation);
+        }
+    } else {
+        return Err(ReceiptError::SchemaViolation);
+    }
+    if let Some(approval_id) = object.get("approval_id") {
+        if !approval_id.as_str().is_some_and(validate_uuid_v7) {
+            return Err(ReceiptError::SchemaViolation);
+        }
+    }
+    if kind == "post_action" && object.contains_key("parent_approval_ref") {
+        return Err(ReceiptError::SchemaViolation);
+    }
     if object
         .get("timestamp")
         .and_then(Value::as_str)

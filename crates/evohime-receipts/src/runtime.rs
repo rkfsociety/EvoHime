@@ -29,10 +29,30 @@ const BOUNDED_METRICS: &[&str] = &[
     "approval_gc_deleted_count", "recovery_duration_ms", "recovery_safe_mode",
     "read_only_sampled_count", "read_only_unsampled_count", "receipt_append_count",
 ];
-static PROCESS_BOOT: OnceLock<Instant> = OnceLock::new();
 static BOOT_ID: OnceLock<String> = OnceLock::new();
 
-fn monotonic_ms() -> i64 { PROCESS_BOOT.get_or_init(Instant::now).elapsed().as_millis() as i64 }
+/// Returns the OS monotonic uptime, not a process-local elapsed clock. This
+/// is persisted in approval intents and therefore must remain comparable
+/// across Core restarts within the same OS boot.
+fn monotonic_ms() -> Result<i64, RuntimeError> {
+    #[cfg(windows)]
+    {
+        return Ok(unsafe { windows_sys::Win32::System::SystemInformation::GetTickCount64() as i64 });
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let uptime = std::fs::read_to_string("/proc/uptime")
+            .map_err(|_| RuntimeError::Code("storage_key_unavailable"))?;
+        let seconds = uptime.split_whitespace().next()
+            .and_then(|value| value.parse::<f64>().ok())
+            .ok_or(RuntimeError::Code("storage_key_unavailable"))?;
+        return Ok((seconds * 1000.0).floor() as i64);
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        Err(RuntimeError::Code("storage_key_unavailable"))
+    }
+}
 
 /// Stable identifier for the current OS boot session. Windows uses
 /// `GetTickCount64`, which resets to zero on every boot and is therefore a
@@ -148,7 +168,7 @@ pub fn recover_database(connection: &mut Connection) -> Result<i64, RuntimeError
         tx.commit()?;
         return Err(RuntimeError::Code("schema_violation"));
     }
-    let wall_now = now_ms(); let mono_now = monotonic_ms();
+    let wall_now = now_ms(); let mono_now = monotonic_ms()?;
     tx.execute("UPDATE receipt_approval_intents SET state='expired' WHERE state IN ('pending','granted') AND ((clock_boot_id=?1 AND deadline_monotonic_ms<=?2) OR (clock_boot_id<>?1 AND expires_at_ms<=?3))", params![boot_id()?, mono_now, wall_now])?;
     // A terminal post/refusal may have committed before the action-index
     // update. Reconcile only that durable receipt; never synthesize a result.
@@ -831,7 +851,7 @@ impl<'a> ReceiptRuntime<'a> {
                 let approval_id = request.approval_id.unwrap_or_else(Uuid::now_v7);
                 if approval_id.get_version_num() != 7 { return Err(RuntimeError::Code("schema_violation")); }
                 let created = now_ms();
-                let created_monotonic = monotonic_ms();
+                let created_monotonic = monotonic_ms()?;
                 let expires = created + APPROVAL_TTL_MS;
                 let deadline = created_monotonic + APPROVAL_TTL_MS;
                 tx.execute("INSERT INTO receipt_approval_intents(approval_id,action_id,task_id,run_id,tool_name,normalized_scope,call_hash,preview,state,created_wall_at_ms,expires_at_ms,clock_boot_id,created_monotonic_ms,deadline_monotonic_ms) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,'pending',?9,?10,?11,?12,?13)", params![approval_id.to_string(), action, request.task_id, request.run_id, request.tool_name, request.normalized_scope, args_hash, request.preview, created, expires, boot_id()?, created_monotonic, deadline])?;
@@ -880,7 +900,7 @@ impl<'a> ReceiptRuntime<'a> {
             [approval_id.to_string()], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         ).optional()?;
         let current_boot = boot_id()?;
-        let valid = deadline.is_some_and(|(boot, wall, mono)| if boot == current_boot { monotonic_ms() < mono } else { now_ms() < wall });
+        let valid = deadline.is_some_and(|(boot, wall, mono)| if boot == current_boot { monotonic_ms().is_ok_and(|now| now < mono) } else { now_ms() < wall });
         let changed = if valid { self.connection.execute("UPDATE receipt_approval_intents SET state='granted' WHERE approval_id=?1 AND state='pending'", [approval_id.to_string()])? } else { self.connection.execute("UPDATE receipt_approval_intents SET state='expired' WHERE approval_id=?1 AND state='pending'", [approval_id.to_string()])?; 0 };
         if changed != 1 { return Err(RuntimeError::Code("approval_expired")); }
         Ok(())
@@ -915,7 +935,7 @@ impl<'a> ReceiptRuntime<'a> {
         // Normative rule: within one boot, authorization claim uses only the
         // monotonic deadline. Wall clock is a fail-closed recovery boundary
         // only, never an authorization check in the same boot.
-        let expired = if boot == boot_id()? { monotonic_ms() >= deadline_monotonic_ms } else { true };
+        let expired = if boot == boot_id()? { monotonic_ms()? >= deadline_monotonic_ms } else { true };
         if state != "granted" || expired {
             tx.execute("UPDATE receipt_approval_intents SET state='expired' WHERE approval_id=?1 AND state IN ('pending','granted')", [approval_id.to_string()])?;
             tx.commit()?;
