@@ -158,45 +158,6 @@
   justify-content: flex-end;
   gap: 8px;
 }
-
-.update-banner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 14px;
-  margin: 0 0 12px;
-  border-radius: 10px;
-  border: 1px solid var(--border-subtle, #2a2f3d);
-  background: var(--surface-raised, #171a24);
-}
-
-.update-banner--failed { border-color: var(--danger, #ff7a7a); }
-
-.update-banner__text {
-  flex: 1;
-  min-width: 0;
-}
-
-.update-banner__message {
-  display: block;
-  font-size: 13px;
-}
-
-.update-banner__commits {
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 11px;
-  color: var(--text-muted, #7c8496);
-}
-
-.update-banner__detail {
-  display: block;
-  font-size: 11px;
-  color: var(--text-muted, #7c8496);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* Compact background-update control in the account row. */
 .update-indicator {
   position: relative;

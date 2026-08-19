@@ -352,7 +352,7 @@ mod tests {
 
     #[tokio::test]
     async fn executes_success_path_in_dependency_order() {
-        let mut a = node("a", policy(1, vec![], 1_000, false));
+        let a = node("a", policy(1, vec![], 1_000, false));
         let mut b = node("b", policy(1, vec![], 1_000, false));
         b.inputs.push(Port {
             name: "in".into(),
@@ -419,7 +419,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_timing_out_node_is_marked_timed_out_and_blocks_dependents() {
-        let mut a = node("a", policy(1, vec![], 10, false));
+        let a = node("a", policy(1, vec![], 10, false));
         let mut b = node("b", policy(1, vec![], 1_000, false));
         b.inputs.push(Port {
             name: "in".into(),
@@ -476,7 +476,7 @@ mod tests {
 
     #[tokio::test]
     async fn deterministic_replay_produces_identical_ordering_and_results() {
-        let mut a = node("a", policy(1, vec![], 1_000, false));
+        let a = node("a", policy(1, vec![], 1_000, false));
         let mut b = node("b", policy(1, vec![], 1_000, false));
         let mut c = node("c", policy(1, vec![], 1_000, false));
         b.inputs.push(Port {

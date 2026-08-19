@@ -55,7 +55,7 @@ Renderer состоит из панели проектов и чатов, лен
 | `PlanReviewPanel` | коллективное read-only ревью Markdown-плана несколькими моделями и synthesis-моделью; итог копируется в буфер или экспортируется в Markdown, история очищается кнопкой |
 | `RecoveryBanner` + `recovery-state.ts` | состояние восстановления, выведенное только из подтверждённых Core событий |
 | `OperationsPanel` | очередь подтверждения памяти и конфликты (только metadata), плюс read-only проекция child- и schedule-событий |
-| `DeveloperTools`, `EditorPanel`, `TerminalPanel`, `SafetyPanel` | файлы и Git, редактор, ограниченный терминал, permission policy |
+| `OverviewPanel`, `TracePanel` | сводка событий запуска и фильтруемая трасса |
 
 Бизнес-логики в renderer нет: он отображает состояние, полученное через IPC, и отправляет команды.
 
@@ -189,7 +189,7 @@ SQLite находится в `%LOCALAPPDATA%\EvoHime` либо в `EVOHIME_DATA_
 
 `evohime_core::run_policy` описывает неизменяемый snapshot политики одного запуска: `max_iterations`, `max_wall_clock_ms`, `max_tool_calls`, `max_tokens`, `max_cost_micros` и `approval_required`. Core проверяет счётчики перед отправкой эффекта; превышение любого из них останавливает запуск с `BudgetExceeded`. Renderer может показать snapshot, но не может поднять лимит в середине запуска.
 
-`evohime_supervisor::pulse` сводит события расписаний в локальный digest. Dead-letter даёт `Failed`, пропуски и неуспехи — `Degraded`; успешный счётчик никогда не маскирует отказ.
+`evohime_supervisor::pulse` описывает контракт локального digest расписаний: dead-letter даёт `Failed`, пропуски и неуспехи — `Degraded`; успешный счётчик никогда не маскирует отказ. Модуль пока никем не вызывается: пользователь видит статус Pulse в `OperationsPanel`, где он выводится из событий `runtime.schedule_failed`/`runtime.schedule_dead_letter`.
 
 ## Ключ провайдера
 

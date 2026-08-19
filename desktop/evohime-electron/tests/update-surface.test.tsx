@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 
 import { disabledUpdateStatus, initialUpdateSteps, updateProgress, type UpdateStatus } from '@shared/update'
-import { UpdateBanner } from '../src/renderer/src/UpdateBanner'
 import { UpdateGate } from '../src/renderer/src/UpdateGate'
 import { UpdateIndicator } from '../src/renderer/src/UpdateIndicator'
 
@@ -81,53 +80,6 @@ describe('launch gate', () => {
   })
 })
 
-describe('update banner', () => {
-  it('says nothing while the installation is current', () => {
-    installApi()
-    const { container } = render(<UpdateBanner status={status({ phase: 'up-to-date' })} />)
-
-    expect(container.firstChild).toBeNull()
-  })
-
-  it('offers the rebuild when the branch moved ahead', () => {
-    const invoke = installApi()
-    render(<UpdateBanner status={status({ phase: 'available', message: 'Доступно обновление.' })} />)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
-
-    expect(invoke).toHaveBeenCalledWith('update.prepare', {})
-  })
-
-  it('asks for the restart only once a package is staged', () => {
-    const invoke = installApi()
-    render(
-      <UpdateBanner
-        status={status({ phase: 'ready', restartRequired: true, message: 'Обновление собрано — нужен перезапуск.' })}
-      />
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Обновить' }))
-
-    expect(invoke).toHaveBeenCalledWith('update.restart', {})
-  })
-
-  it('shows a failed rebuild with a retry instead of a restart', () => {
-    installApi()
-    render(<UpdateBanner status={status({ phase: 'failed', error: 'Сборка обновления не удалась: cargo' })} />)
-
-    expect(screen.getByText('Сборка обновления не удалась: cargo')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'Перезапустить' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Повторить' })).toBeTruthy()
-  })
-
-  it('never competes with the blocking gate', () => {
-    installApi()
-    const { container } = render(<UpdateBanner status={status({ phase: 'preparing', blocking: true })} />)
-
-    expect(container.firstChild).toBeNull()
-  })
-})
-
 describe('sidebar update indicator', () => {
   it('shows the download percentage directly inside the circular control', () => {
     installApi()
@@ -168,22 +120,6 @@ describe('sidebar update indicator', () => {
 })
 
 describe('commit tracking', () => {
-  it('names the installed and target commits instead of a version number', () => {
-    installApi()
-    render(
-      <UpdateBanner
-        status={status({
-          phase: 'available',
-          message: 'Доступно обновление.',
-          installedCommit: 'a'.repeat(40),
-          remoteCommit: 'b'.repeat(40)
-        })}
-      />
-    )
-
-    expect(screen.getByText('aaaaaaa → bbbbbbb')).toBeTruthy()
-  })
-
   it('names the commit pair and the branch in the launch gate', () => {
     installApi()
     const commit = 'a'.repeat(40)

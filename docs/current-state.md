@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-16.
+Обновлено: 2026-08-19.
 
 ## Продукт
 
@@ -43,7 +43,7 @@ Core и supervisor — внутренние компоненты установ�
 - Core-owned build policy и её хранение;
 - durable recovery foundation для длительных запусков и reconciliation;
 - `run_policy` — неизменяемый snapshot бюджета запуска (итерации, wall clock, tool calls, токены, стоимость); Core проверяет его перед каждым эффектом, renderer может только показать значения;
-- `pulse` в supervisor — честный локальный digest расписаний: dead-letter даёт `Failed`, пропуски и ошибки — `Degraded`, успех не подменяет отказ.
+- `pulse` в supervisor — контракт локального digest расписаний: dead-letter даёт `Failed`, пропуски и ошибки — `Degraded`, успех не подменяет отказ. Модуль пока не подключён к supervisor loop; пользовательский статус Pulse выводится в `OperationsPanel` из событий расписаний.
 
 ### Безопасность и данные
 
@@ -54,9 +54,10 @@ Core и supervisor — внутренние компоненты установ�
 - каталог моделей отдаёт не только идентификаторы, но и лимиты (`context_length`, `max_completion_tokens`), которые Core сохраняет в таблицу `model_context_limits` (схема 20). Планировщик контекста берёт из неё реальное окно модели: пока провайдер не спрошен, действует встроенный профиль, а расхождение решается в пользу провайдера;
 - вкладка «Ревью планов» принимает Markdown до 512 КБ — одним файлом или несколькими сразу (мультивыбор в диалоге и drag&drop в панель, файлы склеиваются в нумерованные разделы), запускает 2–8 последовательных read-only reviewer calls (по одному запросу за раз, чтобы не упираться в лимиты провайдера) и отдельную synthesis call; ответ каждого рецензента ограничен 256 КБ. Состав и порядок рецензентов сохраняются при неудачном обновлении каталога моделей, итог копируется в буфер или экспортируется в Markdown, а `ClearPlanReviewHistory` очищает историю и в Core, и в UI сразу;
 - base URL провайдера принимается только по `https`, либо `http` на loopback, чтобы ключ не ушёл на произвольный хост.
-- approval.required передаёт bounded structured preview для команд, записи файлов и unified diff; Electron показывает его в TaskTimeline и Terminal, а Core сохраняет exact-call hash и повторную policy-проверку перед выполнением;
+- approval.required передаёт bounded structured preview для команд, записи файлов и unified diff; Electron показывает его в `TaskTimeline`, а Core сохраняет exact-call hash и повторную policy-проверку перед выполнением;
 - approval-токены для tool runtime одноразовые и атомарно погашаются перед выполнением; hard-deny policy проверяет канонический путь, включая вызовы через относительные алиасы;
 - Runtime receipts 01.3 подключены к Core-owned execution path: durable signed pre/post/refusal, UUIDv7 approval intent с monotonic TTL, exact-call recheck, signed refusal для expired/stale/call_changed/policy_denied, bounded parent approval reference, recovery/quarantine/reconciliation и audit call hash; JCS numeric edge cases покрыты shared Rust tests;
+- Receipt chain storage и export 01.4: durable `receipts_v1` в SQLite с `previous_receipt_hash`-цепочкой, подписанные checkpoints и retention/compaction (`verified_pruned` вместо тихого удаления), chain-aware проверка ключевых границ и pre/terminal-пар, атомарный JSONL export bundle с манифестом и chain-aware offline `evohime-verify.exe`. Core отдаёт это командами `ListReceipts`, `VerifyReceipts` и `ExportReceipts`, Electron main-процесс проксирует их (`core.listReceipts`, `core.verifyReceipts`, `core.exportReceipts`); пользовательской поверхности в renderer нет — панель безопасности из UI убрана, поэтому цепочка доступна только через IPC и offline-верификатор. Схемы и векторы: `contracts/receipts/v1/`;
 
 ### Desktop shell (Electron)
 
@@ -86,9 +87,10 @@ Read-only Git loadout расширен операциями git.log, git.show, g
 
 ## Последняя проверка checkout
 
-16 августа 2026 года пройдены Rust, Electron, protocol, bundle, deterministic
-RAG/evaluation и security smoke checks. C#/WinUI compatibility и native package
-проверяются текущим полным acceptance-прогоном. Source-update E2E
+19 августа 2026 года пройдены `cargo check --workspace --all-targets` и полный
+Electron-прогон (typecheck и 321 тест). 16 августа 2026 года были пройдены Rust,
+Electron, protocol, bundle, deterministic RAG/evaluation и security smoke checks;
+C#/WinUI compatibility и native package проверяются полным acceptance-прогоном. Source-update E2E
 остаётся штатно пропущенным без `EVOHIME_UPDATE_E2E=1`, поскольку он выполняет
 реальную пересборку и занимает значительно больше времени. Публикация
 установщика разрешена только после полного Windows CI и release smoke из

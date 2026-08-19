@@ -10,7 +10,7 @@ use thiserror::Error;
 
 #[cfg(not(test))]
 use crate::routing_policy::{
-    select_route, PrivacyClass, RouteCandidate, RoutingDecision, RoutingRequest,
+    select_route, RouteCandidate, RoutingDecision, RoutingRequest,
 };
 
 // Under `cfg(test)` this crate is also built as a standalone integration
