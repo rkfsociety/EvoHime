@@ -2885,6 +2885,16 @@ impl LocalDatabase {
             )?;
         }
         if current < 22 {
+            // Stage 01.4: receipt_records/receipt_actions/receipt_chain_heads
+            // and receipt_checkpoints are owned by evohime-receipts, not
+            // duplicated here, so this migration runs the exact same DDL
+            // `ReceiptRuntime::new` runs on every open. Routing it through
+            // this version-gated block (instead of only the unconditional
+            // post-migrate call below) means a pre-existing database gets
+            // the `open_internal` backup-before-migrate guarantee before
+            // gaining these tables, matching the 01.4 storage contract.
+            evohime_receipts::runtime::install_schema(&transaction)
+                .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
             transaction.execute_batch("PRAGMA user_version = 22;")?;
         }
         if current < 23 {
@@ -3040,6 +3050,40 @@ mod tests {
             .unwrap();
         assert_eq!(exists, 1, "model_context_limits must exist after migration");
         let _ = std::fs::remove_file(path);
+    }
+
+    /// Stage 01.4: a pre-22 database gaining `receipt_records` et al. must go
+    /// through the same backup-before-migrate path as any other schema
+    /// change, not the unconditional idempotent call `open_internal` also
+    /// makes after `migrate` returns.
+    #[test]
+    fn migrates_schema_21_to_receipts_v1_schema_22_with_backup() {
+        let path = temp_database_path("migration-21-to-22-receipts");
+        let _ = std::fs::remove_file(&path);
+        let backup_path = path.with_extension("db.bak");
+        let _ = std::fs::remove_file(&backup_path);
+        {
+            let connection = rusqlite::Connection::open(&path).expect("legacy database opens");
+            connection
+                .execute_batch("CREATE TABLE legacy_marker(id INTEGER); PRAGMA user_version = 21;")
+                .expect("legacy schema seeds");
+        }
+        let database = LocalDatabase::open(&path).expect("migration succeeds");
+        assert_eq!(database.schema_version().unwrap(), SCHEMA_VERSION);
+        assert!(backup_path.exists(), "pre-migration backup must be written before schema 22 applies");
+        for table in ["receipt_records", "receipt_actions", "receipt_chain_heads", "receipt_checkpoints"] {
+            let exists: i64 = database
+                .connection()
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(exists, 1, "{table} must exist after migration to schema 22");
+        }
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&backup_path);
     }
 
     #[test]
