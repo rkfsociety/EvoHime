@@ -20,12 +20,13 @@ table в 02.4 (см. «Локализация» ниже); молчаливое 
 
 `truthful_refusal-family` (используется ниже в критерии degraded mode) — это
 множество всех `terminal_status`, отличных от успешного выбора route:
-`budget_exhausted`, `snapshot_stale`, `policy_violation`,
-`internal_budget_error`, `both_routes_unavailable`,
-`classification_incomplete`, `context_limit_exceeded`,
-`fallback_limit_reached`, `reroute_approval_declined` (полный список — из
-таблиц `BudgetError`/`RouteError`/`run_budget` в 02.3, привязан к тому же
-`schema_version`).
+`budget_unavailable`, `context_assembly_failed`, `context_limit_exceeded`,
+`classification_incomplete`, `both_routes_unavailable`,
+`no_routes_configured`, `fallback_limit_reached`, `run_deadline_exceeded`,
+`policy_violation`, `reroute_approval_declined`, `internal_error` (полный
+список — из таблиц `RouteError` и «Состояния, возникающие вне `select_route`»
+в 02.3, привязан к тому же `schema_version = 1`). `pending_approval` в это
+множество не входит: это промежуточное состояние, а не `terminal_status`.
 
 Это последний этап плана.
 
@@ -51,6 +52,10 @@ diagnostics view, отсутствие не влияет на основной U
 Каждый `candidates[]` элемент обязан содержать `route_id` и `health_state` ∈
 `{healthy, degraded, unavailable}`; `reject_reason` опционален (присутствует,
 когда candidate был отклонён — включая preferred route пользователя).
+`health_state` — производная UI-проекция, вычисляемая Core по таблице из 02.3
+из `health_status` и `circuit_state`. Оба исходных поля тоже приходят в
+`candidates[]`, но используются только в diagnostics view: UI не вычисляет
+проекцию сам и не смешивает эти два измерения.
 
 **Malformed/missing data.** Если обязательное поле отсутствует, имеет
 неверный тип (например, `selected_route` пришёл `null` вместо строки) или не
