@@ -107,6 +107,15 @@ function parentDirectory(path: string): string {
   return cut > 0 ? path.slice(0, cut) : ''
 }
 
+/**
+ * Пути файлов, по которым ядро найдёт соседние планы. Путь приходит из главного
+ * процесса и может отсутствовать — план могли перетащить из источника без
+ * файловой системы, — поэтому список чистится здесь, а не в ядре.
+ */
+function planPaths(plans: readonly PlanFile[]): readonly string[] {
+  return plans.map((plan) => plan.path ?? '').filter((path) => path.length > 0)
+}
+
 function savePlanDirectory(directory: string): void {
   if (typeof directory !== 'string' || directory.length === 0) return
   try {
@@ -358,7 +367,7 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
     setStartedAt(Date.now())
     setNow(Date.now())
     setLastChangeAt(Date.now())
-    const outcome = await api.invoke('review.start', { reviewId: id, fileName, fileNames: plans.map((plan) => plan.fileName), sourceMarkdown, reviewerModels: reviewers, synthesisModel })
+    const outcome = await api.invoke('review.start', { reviewId: id, fileName, fileNames: plans.map((plan) => plan.fileName), sourceMarkdown, reviewerModels: reviewers, synthesisModel, sourcePaths: planPaths(plans) })
     if (!outcome.ok) setError(`Ядро отклонило запрос: ${outcome.message}`)
   }
 
@@ -427,7 +436,8 @@ export function PlanReviewPanel({ connection, events }: Props): React.JSX.Elemen
       reviewId: selectedResult.reviewId,
       fileName: plan.fileName,
       sourceMarkdown,
-      model: selectedResult.synthesisModel || synthesisModel
+      model: selectedResult.synthesisModel || synthesisModel,
+      sourcePath: plan.path ?? ''
     })
     if (!outcome.ok) {
       setError(`Ядро отклонило правку: ${outcome.message}`)
@@ -622,6 +632,11 @@ function RevisionCard({ revision, running, failure, sourceLength, targetPath, sa
   // Модель обязана вернуть план целиком, поэтому вдвое более короткий ответ —
   // почти наверняка обрыв генерации, а не удачное сокращение.
   const truncated = revision !== null && sourceLength > 0 && revision.revisedMarkdown.length * 2 < sourceLength
+  // Симметричная беда: слабая модель вместо точечной правки переписывает план
+  // вдвое длиннее, дописывая выдуманные подробности. Порог тот же, потому что
+  // ревью правит формулировки, а не удваивает объём.
+  const inflated = revision !== null && sourceLength > 0 && revision.revisedMarkdown.length > sourceLength * 2
+  const blind = revision !== null && revision.contextFiles.length === 0
   return (
     <div className="review-panel__revision">
       <div className="review-panel__result-heading">
@@ -640,7 +655,10 @@ function RevisionCard({ revision, running, failure, sourceLength, targetPath, sa
         </div>
       </div>
       {confirmReplace ? <p className="review-panel__history-note">Файл {targetPath} будет перезаписан целиком. Отменить это можно только средствами системы контроля версий.</p> : null}
+      {revision !== null && revision.contextFiles.length > 0 ? <p className="review-panel__hint">Сверено с соседними планами: {revision.contextFiles.join(', ')}.</p> : null}
+      {blind ? <p className="review-panel__hint">Соседние планы не читались: путь исходного файла неизвестен или в плане нет ссылок на них. Правка могла разойтись с соседним этапом — проверь текст до сохранения.</p> : null}
       {truncated ? <p role="alert" className="shell__reason">Исправленный план более чем вдвое короче исходного — похоже, ответ модели оборвался. Проверь текст до сохранения.</p> : null}
+      {inflated ? <p role="alert" className="shell__reason">Исправленный план более чем вдвое длиннее исходного — модель дописала лишнее вместо точечной правки. Проверь текст до сохранения.</p> : null}
       {failure ? <p role="alert" className="shell__reason">{failure.kind === 'stopped' ? failure.message : `Правка завершилась ошибкой: ${failure.message}`}</p> : null}
       {saving ? <p className="review-panel__hint">Сохраняю…</p> : null}
       {saveOutcome?.ok ? <p className="review-panel__hint">Сохранено: {saveOutcome.destinationPath}</p> : null}
@@ -881,7 +899,8 @@ function latestRevisionResult(events: readonly CoreEvent[]): PlanRevisionResult 
       reviewId: String(value.review_id ?? ''),
       fileName: String(value.file_name ?? ''),
       model: String(value.model ?? ''),
-      revisedMarkdown: String(value.revised_markdown ?? '')
+      revisedMarkdown: String(value.revised_markdown ?? ''),
+      contextFiles: Array.isArray(value.context_files) ? value.context_files.map(String) : []
     }
   } catch {
     return null

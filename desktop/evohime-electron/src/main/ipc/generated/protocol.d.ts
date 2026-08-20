@@ -698,6 +698,9 @@ export namespace evohime {
                 /** StartPlanReview fileNames. */
                 fileNames: string[];
 
+                /** StartPlanReview sourcePaths. */
+                sourcePaths: string[];
+
                 /**
                  * Encodes the specified StartPlanReview message. Does not implicitly {@link evohime.desktop.v1.StartPlanReview.verify|verify} messages.
                  * @param message StartPlanReview message or plain object to encode
@@ -746,6 +749,9 @@ export namespace evohime {
 
                     /** StartPlanReview fileNames */
                     fileNames?: (string[]|null);
+
+                    /** StartPlanReview sourcePaths */
+                    sourcePaths?: (string[]|null);
 
                     /** Unknown fields preserved while decoding when enabled */
                     $unknowns?: Uint8Array[];
@@ -1115,6 +1121,9 @@ export namespace evohime {
                 /** RevisePlan model. */
                 model: string;
 
+                /** RevisePlan sourcePath. */
+                sourcePath: string;
+
                 /**
                  * Encodes the specified RevisePlan message. Does not implicitly {@link evohime.desktop.v1.RevisePlan.verify|verify} messages.
                  * @param message RevisePlan message or plain object to encode
@@ -1160,6 +1169,9 @@ export namespace evohime {
 
                     /** RevisePlan model */
                     model?: (string|null);
+
+                    /** RevisePlan sourcePath */
+                    sourcePath?: (string|null);
 
                     /** Unknown fields preserved while decoding when enabled */
                     $unknowns?: Uint8Array[];

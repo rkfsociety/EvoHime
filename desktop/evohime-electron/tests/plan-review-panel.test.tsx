@@ -480,11 +480,13 @@ describe('plan review panel', () => {
     view.rerender(<PlanReviewPanel connection="connected" events={reviewDone} />)
 
     await userEvent.click(screen.getByRole('button', { name: 'Исправить план по ревью' }))
-    const revision = calls.find((call) => call.command === 'review.revise')?.payload as { revisionId: string; reviewId: string; fileName: string; sourceMarkdown: string; model: string }
+    const revision = calls.find((call) => call.command === 'review.revise')?.payload as { revisionId: string; reviewId: string; fileName: string; sourceMarkdown: string; model: string; sourcePath: string }
     expect(revision.reviewId).toBe(reviewId)
     expect(revision.fileName).toBe('plan.md')
     expect(revision.sourceMarkdown).toBe('# Plan')
     expect(revision.model).toBe('main')
+    // По этому пути ядро находит соседние планы, с которыми сверяется правка.
+    expect(revision.sourcePath).toBe('C:/plans/plan.md')
 
     const revised = { revision_id: revision.revisionId, review_id: reviewId, file_name: 'plan.md', model: 'main', revised_markdown: '# План после правки' }
     view.rerender(<PlanReviewPanel connection="connected" events={[
@@ -512,6 +514,58 @@ describe('plan review panel', () => {
       ...reviewDone
     ]} />)
     await waitFor(() => expect(screen.getByText('Сохранено: C:/plans/plan.md')).toBeTruthy())
+  })
+
+  // Правка без соседних планов внутренне складна и при этом расходится с
+  // соседним этапом — пользователь должен видеть разницу до сохранения.
+  it('tells whether the revision was checked against the neighbouring plans', async () => {
+    const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
+    const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
+
+    await startReview(['a', 'b', 'main'])
+    const reviewId = startedReviewId()
+    const result = { review_id: reviewId, file_name: 'plan.md', synthesis_model: 'main', final_markdown: '# Итог', reviewers: [] }
+    const reviewDone = [catalog, event('task.completed', { TaskCompleted: { task_id: reviewId, final_message: JSON.stringify(result) } }, reviewId)]
+    view.rerender(<PlanReviewPanel connection="connected" events={reviewDone} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Исправить план по ревью' }))
+    const revisionId = (calls.find((call) => call.command === 'review.revise')?.payload as { revisionId: string }).revisionId
+
+    const checked = { revision_id: revisionId, review_id: reviewId, file_name: 'plan.md', model: 'main', revised_markdown: '# План', context_files: ['04-1.md', '04-5.md'] }
+    view.rerender(<PlanReviewPanel connection="connected" events={[
+      event('task.completed', { TaskCompleted: { task_id: revisionId, final_message: JSON.stringify(checked) } }, revisionId),
+      ...reviewDone
+    ]} />)
+    await waitFor(() => expect(screen.getByText('Сверено с соседними планами: 04-1.md, 04-5.md.')).toBeTruthy())
+
+    const blind = { revision_id: revisionId, review_id: reviewId, file_name: 'plan.md', model: 'main', revised_markdown: '# План', context_files: [] }
+    view.rerender(<PlanReviewPanel connection="connected" events={[
+      event('task.completed', { TaskCompleted: { task_id: revisionId, final_message: JSON.stringify(blind) } }, revisionId),
+      ...reviewDone
+    ]} />)
+    await waitFor(() => expect(screen.getByText(/Соседние планы не читались/)).toBeTruthy())
+  })
+
+  // Слабая модель вместо точечной правки переписывает план вдвое длиннее и
+  // дописывает выдуманные подробности: это так же опасно, как обрыв ответа.
+  it('warns when the revision grew far beyond the source plan', async () => {
+    const catalog = event('model.catalog', { mode: 'free', models: ['a', 'b', 'main'] })
+    const view = render(<PlanReviewPanel connection="connected" events={[catalog]} />)
+
+    await startReview(['a', 'b', 'main'])
+    const reviewId = startedReviewId()
+    const result = { review_id: reviewId, file_name: 'plan.md', synthesis_model: 'main', final_markdown: '# Итог', reviewers: [] }
+    const reviewDone = [catalog, event('task.completed', { TaskCompleted: { task_id: reviewId, final_message: JSON.stringify(result) } }, reviewId)]
+    view.rerender(<PlanReviewPanel connection="connected" events={reviewDone} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Исправить план по ревью' }))
+    const revisionId = (calls.find((call) => call.command === 'review.revise')?.payload as { revisionId: string }).revisionId
+
+    const inflated = { revision_id: revisionId, review_id: reviewId, file_name: 'plan.md', model: 'main', revised_markdown: '# План '.repeat(200), context_files: ['04-1.md'] }
+    view.rerender(<PlanReviewPanel connection="connected" events={[
+      event('task.completed', { TaskCompleted: { task_id: revisionId, final_message: JSON.stringify(inflated) } }, revisionId),
+      ...reviewDone
+    ]} />)
+
+    await waitFor(() => expect(screen.getByText(/более чем вдвое длиннее/)).toBeTruthy())
   })
 
   it('shows why the core refused to save the revised plan', async () => {

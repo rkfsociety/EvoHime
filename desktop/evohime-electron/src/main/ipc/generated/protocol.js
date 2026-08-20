@@ -1497,6 +1497,7 @@ export const evohime = $root.evohime = (() => {
                  * @property {Array.<string>|null} [reviewerModels] StartPlanReview reviewerModels
                  * @property {string|null} [synthesisModel] StartPlanReview synthesisModel
                  * @property {Array.<string>|null} [fileNames] StartPlanReview fileNames
+                 * @property {Array.<string>|null} [sourcePaths] StartPlanReview sourcePaths
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -1524,6 +1525,7 @@ export const evohime = $root.evohime = (() => {
                 const StartPlanReview = function (properties) {
                     this.reviewerModels = [];
                     this.fileNames = [];
+                    this.sourcePaths = [];
                     if (properties)
                         for (let keys = $Object.keys(properties), i = 0; i < keys.length; ++i)
                             if (properties[keys[i]] != null && keys[i] !== "__proto__")
@@ -1579,6 +1581,14 @@ export const evohime = $root.evohime = (() => {
                 StartPlanReview.prototype.fileNames = $util.emptyArray;
 
                 /**
+                 * StartPlanReview sourcePaths.
+                 * @member {Array.<string>} sourcePaths
+                 * @memberof evohime.desktop.v1.StartPlanReview
+                 * @instance
+                 */
+                StartPlanReview.prototype.sourcePaths = $util.emptyArray;
+
+                /**
                  * Encodes the specified StartPlanReview message. Does not implicitly {@link evohime.desktop.v1.StartPlanReview.verify|verify} messages.
                  * @function encode
                  * @memberof evohime.desktop.v1.StartPlanReview
@@ -1608,6 +1618,9 @@ export const evohime = $root.evohime = (() => {
                     if (message.fileNames != null && message.fileNames.length)
                         for (let i = 0; i < message.fileNames.length; ++i)
                             writer.uint32(/* id 6, wireType 2 =*/50).string(message.fileNames[i]);
+                    if (message.sourcePaths != null && message.sourcePaths.length)
+                        for (let i = 0; i < message.sourcePaths.length; ++i)
+                            writer.uint32(/* id 7, wireType 2 =*/58).string(message.sourcePaths[i]);
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -1692,6 +1705,14 @@ export const evohime = $root.evohime = (() => {
                                 if (!(message.fileNames && message.fileNames.length))
                                     message.fileNames = [];
                                 message.fileNames.push(reader.stringVerify());
+                                continue;
+                            }
+                        case 7: {
+                                if (wireType !== 2)
+                                    break;
+                                if (!(message.sourcePaths && message.sourcePaths.length))
+                                    message.sourcePaths = [];
+                                message.sourcePaths.push(reader.stringVerify());
                                 continue;
                             }
                         }
@@ -2425,6 +2446,7 @@ export const evohime = $root.evohime = (() => {
                  * @property {string|null} [fileName] RevisePlan fileName
                  * @property {string|null} [sourceMarkdown] RevisePlan sourceMarkdown
                  * @property {string|null} [model] RevisePlan model
+                 * @property {string|null} [sourcePath] RevisePlan sourcePath
                  * @property {Array.<Uint8Array>} [$unknowns] Unknown fields preserved while decoding when enabled
                  */
 
@@ -2497,6 +2519,14 @@ export const evohime = $root.evohime = (() => {
                 RevisePlan.prototype.model = "";
 
                 /**
+                 * RevisePlan sourcePath.
+                 * @member {string} sourcePath
+                 * @memberof evohime.desktop.v1.RevisePlan
+                 * @instance
+                 */
+                RevisePlan.prototype.sourcePath = "";
+
+                /**
                  * Encodes the specified RevisePlan message. Does not implicitly {@link evohime.desktop.v1.RevisePlan.verify|verify} messages.
                  * @function encode
                  * @memberof evohime.desktop.v1.RevisePlan
@@ -2522,6 +2552,8 @@ export const evohime = $root.evohime = (() => {
                         writer.uint32(/* id 4, wireType 2 =*/34).string(message.sourceMarkdown);
                     if (message.model != null && $Object.hasOwnProperty.call(message, "model") && message.model !== "")
                         writer.uint32(/* id 5, wireType 2 =*/42).string(message.model);
+                    if (message.sourcePath != null && $Object.hasOwnProperty.call(message, "sourcePath") && message.sourcePath !== "")
+                        writer.uint32(/* id 6, wireType 2 =*/50).string(message.sourcePath);
                     if (message.$unknowns != null && $Object.hasOwnProperty.call(message, "$unknowns"))
                         for (let i = 0; i < message.$unknowns.length; ++i)
                             writer.raw(message.$unknowns[i]);
@@ -2599,6 +2631,15 @@ export const evohime = $root.evohime = (() => {
                                     message.model = value;
                                 else
                                     delete message.model;
+                                continue;
+                            }
+                        case 6: {
+                                if (wireType !== 2)
+                                    break;
+                                if ((value = reader.stringVerify()).length)
+                                    message.sourcePath = value;
+                                else
+                                    delete message.sourcePath;
                                 continue;
                             }
                         }

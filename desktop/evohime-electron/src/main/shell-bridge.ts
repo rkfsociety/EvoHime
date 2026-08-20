@@ -664,11 +664,14 @@ function dispatch(
       const sourceMarkdown = asReviewMarkdown(value['sourceMarkdown'])
       const reviewerModels = asReviewModels(value['reviewerModels'])
       const synthesisModel = asBoundedString(value['synthesisModel'])
-      if (reviewId === null || fileName === null || fileNames === null || sourceMarkdown === null || reviewerModels === null || synthesisModel === null) {
+      // Путей может не быть вовсе: план могли перетащить из источника без
+      // файловой системы. Тогда ядро читает только сам план.
+      const sourcePaths = asReviewSourcePaths(value['sourcePaths'])
+      if (reviewId === null || fileName === null || fileNames === null || sourceMarkdown === null || reviewerModels === null || synthesisModel === null || sourcePaths === null) {
         return failure('invalid-payload', 'Некорректные параметры ревью плана.')
       }
       return accepted(client.send({
-        startPlanReview: { reviewId, fileName, fileNames: [...fileNames], sourceMarkdown, reviewerModels: [...reviewerModels], synthesisModel }
+        startPlanReview: { reviewId, fileName, fileNames: [...fileNames], sourceMarkdown, reviewerModels: [...reviewerModels], synthesisModel, sourcePaths: [...sourcePaths] }
       }))
     }
 
@@ -722,10 +725,13 @@ function dispatch(
       const fileName = asBoundedString(value['fileName'])
       const sourceMarkdown = asReviewMarkdown(value['sourceMarkdown'])
       const model = asBoundedString(value['model'])
-      if (revisionId === null || reviewId === null || fileName === null || sourceMarkdown === null || model === null) {
+      // Путь может быть пустым — план мог прийти перетаскиванием из источника
+      // без файловой системы. Тогда ядро правит без соседних планов.
+      const sourcePath = asOptionalBoundedString(value['sourcePath'])
+      if (revisionId === null || reviewId === null || fileName === null || sourceMarkdown === null || model === null || sourcePath === null) {
         return failure('invalid-payload', 'Некорректные параметры правки плана.')
       }
-      return accepted(client.send({ revisePlan: { revisionId, reviewId, fileName, sourceMarkdown, model } }))
+      return accepted(client.send({ revisePlan: { revisionId, reviewId, fileName, sourceMarkdown, model, sourcePath } }))
     }
 
     case 'review.stopRevision': {
@@ -970,6 +976,17 @@ function asReviewFileNames(value: unknown): readonly string[] | null {
   if (!Array.isArray(value) || value.length === 0 || value.length > 64) return null
   const names = value.map((item) => asBoundedString(item))
   return names.every((name): name is string => name !== null) ? names : null
+}
+
+/**
+ * Пути проверяемых планов. В отличие от списка имён, пустой список допустим:
+ * ревью запускают и по документу, у которого нет файла на диске.
+ */
+function asReviewSourcePaths(value: unknown): readonly string[] | null {
+  if (value === undefined) return []
+  if (!Array.isArray(value) || value.length > 64) return null
+  const paths = value.map((item) => asBoundedString(item))
+  return paths.every((path): path is string => path !== null) ? paths : null
 }
 
 function asReviewDestinationPath(value: unknown): string | null {

@@ -170,6 +170,12 @@ export interface PlanRevisionResult {
   readonly fileName: string
   readonly model: string
   readonly revisedMarkdown: string
+  /**
+   * Соседние планы, с которыми ядро сверяло правку. Пустой список означает, что
+   * редактор работал по одному файлу и мог разойтись с соседним этапом, — это
+   * видно в карточке до сохранения.
+   */
+  readonly contextFiles: readonly string[]
 }
 
 export type PermissionMode = 'ask' | 'read_only' | 'full'
@@ -394,13 +400,15 @@ export interface CommandPayloads {
   'chat.remove': { chatId: string }
   /** `directory` — папка, открытая в диалоге; пустая строка = выбор системы. */
   'review.pickPlan': { directory?: string }
-  'review.start': { reviewId: string; fileName: string; fileNames: readonly string[]; sourceMarkdown: string; reviewerModels: readonly string[]; synthesisModel: string }
+  /** `sourcePaths` — пути проверяемых файлов: по ним ядро читает соседние планы, на которые они ссылаются. */
+  'review.start': { reviewId: string; fileName: string; fileNames: readonly string[]; sourceMarkdown: string; reviewerModels: readonly string[]; synthesisModel: string; sourcePaths: readonly string[] }
   'review.stop': { reviewId: string }
   'review.list': { limit?: number }
   'review.get': { reviewId: string }
   'review.export': { reviewId: string; destinationPath: string; includeReviewers?: boolean }
   'review.clearHistory': Record<string, never>
-  'review.revise': { revisionId: string; reviewId: string; fileName: string; sourceMarkdown: string; model: string }
+  /** `sourcePath` — путь исходного файла: по нему ядро находит соседние планы. Пустой означает «путь неизвестен». */
+  'review.revise': { revisionId: string; reviewId: string; fileName: string; sourceMarkdown: string; model: string; sourcePath: string }
   'review.stopRevision': { revisionId: string }
   /** Пустой `destinationPath` означает «спроси путь диалогом сохранения». */
   'review.saveRevision': { revisionId: string; destinationPath: string; fileName?: string }

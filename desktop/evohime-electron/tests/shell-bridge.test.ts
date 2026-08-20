@@ -614,8 +614,10 @@ describe('workspace knowledge commands', () => {
     })
 
     expect(outcome).toEqual({ ok: true, value: { accepted: true } })
+    // Путь может отсутствовать: план мог прийти перетаскиванием из источника
+    // без файловой системы, и правка обязана работать без соседних планов.
     expect(sent).toEqual([{
-      revisePlan: { revisionId: 'revision-1', reviewId: 'review-1', fileName: 'plan.md', sourceMarkdown: '# Plan', model: 'main' }
+      revisePlan: { revisionId: 'revision-1', reviewId: 'review-1', fileName: 'plan.md', sourceMarkdown: '# Plan', model: 'main', sourcePath: '' }
     }])
 
     const empty = await invoke('review.revise', {
@@ -627,6 +629,35 @@ describe('workspace knowledge commands', () => {
     })
     expect((empty as CommandFailure).ok).toBe(false)
     expect(sent).toHaveLength(1)
+  })
+
+  // Путь исходного файла — единственное, по чему ядро находит соседние планы:
+  // потеряв его в оболочке, правка молча снова станет слепой.
+  it('forwards the plan path so the core can read the neighbouring plans', async () => {
+    await invoke('review.revise', {
+      revisionId: 'revision-3',
+      reviewId: 'review-1',
+      fileName: '04-7.md',
+      sourceMarkdown: '# План',
+      model: 'main',
+      sourcePath: 'C:/docs/plans/04-7.md'
+    })
+    expect(sent.at(-1)).toEqual({
+      revisePlan: { revisionId: 'revision-3', reviewId: 'review-1', fileName: '04-7.md', sourceMarkdown: '# План', model: 'main', sourcePath: 'C:/docs/plans/04-7.md' }
+    })
+
+    await invoke('review.start', {
+      reviewId: 'review-2',
+      fileName: '04-7.md',
+      fileNames: ['04-7.md'],
+      sourceMarkdown: '# План',
+      reviewerModels: ['one', 'two'],
+      synthesisModel: 'main',
+      sourcePaths: ['C:/docs/plans/04-7.md']
+    })
+    expect(sent.at(-1)).toEqual({
+      startPlanReview: { reviewId: 'review-2', fileName: '04-7.md', fileNames: ['04-7.md'], sourceMarkdown: '# План', reviewerModels: ['one', 'two'], synthesisModel: 'main', sourcePaths: ['C:/docs/plans/04-7.md'] }
+    })
   })
 
   it('asks where to save a revised plan only when no path was chosen', async () => {
