@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-20.
+Обновлено: 2026-08-20 (аудит плана 02).
 
 ## Продукт
 
@@ -66,15 +66,44 @@ Core и supervisor — внутренние компоненты установ�
   selector и runtime-режимы `LocalFirst`/`Offline`; provider contract также
   содержит типы capability metadata, policy snapshot, health overlay, retry и
   trace.
-- Этот код пока не образует завершённое пользовательское поведение: selector
-  вызывается из evaluation-контуров, а `ToolAgent` продолжает отправлять
-  запросы через фиксированный route `"default"`. Local provider, supervisor-
-  owned lifecycle/канал команд, routing trace в desktop IPC и route UI ещё не
-  подключены.
+- Этот код уже подключён к `ToolAgent` и desktop IPC для базового routing slice.
+  Local provider, supervisor-owned lifecycle/канал команд, полноценный approval
+  workflow и полный replayable trace остаются незавершёнными; актуальные
+  ограничения перечислены в аудите выше.
 - Канонический целевой контракт и порядок реализации описаны в [плане 02](plans/02-0-local-slm-fallback-routing.md):
   `02.1` provider contract → `02.2` local provider → `02.3` routing и budget →
   `02.4` UI. Наличие типов или библиотеки без подключения к agent loop не
   считается завершением этапа.
+
+### Аудит реализации плана 02 от 20.08.2026
+
+Подтверждено кодом и тестами: `ToolAgent` использует policy routing; Core
+передаёт preferred-route hint как непривилегированную подсказку; snapshot/overlay
+selector применяет offline, classification, privacy, capability, health/circuit,
+context estimate и evaluation gate; встроенный подписанный catalog проходит
+SHA-256 проверку; UI показывает terminal trace, fallback, отказ и transport
+unavailable; IPC proto и typed bridge поддерживают routing decision.
+
+Незавершённые обязательные пункты, поэтому планы 02 пока не удаляются:
+
+- supervisor не запускает local model adapter, не создаёт Windows Job Object для
+  него и не обслуживает authenticated Core↔supervisor lifecycle pipe;
+- `pending_approval` и `ResolveRoutingDecision` пока не образуют реальный
+  suspend/resume/timeout workflow; команда только принимает решение в памяти;
+- catalog встроен в binary как fallback, но не имеет отдельного проверяемого
+  runtime resource path в установленном пакете и atomic update pipeline;
+- trace содержит terminal projection, но не полный immutable attempt/replay
+  журнал с реальными `now_ms`, policy/catalog/snapshot связями для каждого шага;
+- pre-flight context check использует только доступный context limit и ещё не
+  учитывает полные profile reserves; route-specific replan и post-analysis
+  reroute отсутствуют;
+- UI и Core не покрывают полной acceptance-матрицей все состояния из 02.4,
+  включая реальное pending approval подтверждение, отказ и истечение таймаута.
+
+Проверки аудита: `cargo check -p evohime-core -p evohime-model-gateway`,
+model-gateway 56 тестов, Core 361 тест; Electron 333 теста проходили ранее.
+Эти проверки доказывают рабочую базу, но не закрывают перечисленные
+интеграционные критерии.
 
 ### Desktop shell (Electron)
 

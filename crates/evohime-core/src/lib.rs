@@ -10,7 +10,18 @@ fn routing_success_trace(
     estimated_input_tokens: u32,
     profile_version: &str,
     context_ledger_hash: &str,
+    classification: &str,
+    decision: Option<&evohime_model_gateway::SnapshotRouteDecision>,
+    snapshot_hash: Option<&str>,
 ) -> evohime_model_gateway::RoutingTrace {
+    let candidates = decision.map(|decision| decision.candidates.iter().map(|candidate| {
+        let health_state = match candidate.health_status {
+            evohime_model_gateway::HealthStatus::Ready => evohime_model_gateway::HealthState::Healthy,
+            evohime_model_gateway::HealthStatus::Degraded => evohime_model_gateway::HealthState::Degraded,
+            evohime_model_gateway::HealthStatus::Stale | evohime_model_gateway::HealthStatus::Unavailable => evohime_model_gateway::HealthState::Unavailable,
+        };
+        evohime_model_gateway::TraceCandidate { route_id: candidate.route_id.clone(), capability_epoch: candidate.capability_epoch, health_status: candidate.health_status, circuit_state: candidate.circuit_state, health_state, reject_reason: candidate.reject_reason.clone() }
+    }).collect()).unwrap_or_default();
     evohime_model_gateway::RoutingTrace {
         schema_version: 1,
         trace_id: run_id.to_owned(),
@@ -20,12 +31,12 @@ fn routing_success_trace(
         now_ms: task_memory::now_millis(),
         policy_version: "routing-policy-v1".into(),
         catalog_version: "builtin-v1".into(),
-        snapshot_hash: "runtime-selection".into(),
-        classification: "complex".into(),
+        snapshot_hash: snapshot_hash.unwrap_or("runtime-selection").into(),
+        classification: classification.into(),
         privacy_label: evohime_model_gateway::PrivacyLabel::NonSensitive,
-        candidates: Vec::new(),
+        candidates,
         selected_route: Some(selected_route.to_owned()),
-        reason_code: if fallback_count > 0 { "fallback_rank_preferred" } else { "only_candidate" }.into(),
+        reason_code: decision.map(|decision| decision.reason_code.clone()).unwrap_or_else(|| if fallback_count > 0 { "fallback_rank_preferred".into() } else { "only_candidate".into() }),
         fallback_count: fallback_count as u32,
         event: "terminal".into(),
         latency_ms: 0,
@@ -56,6 +67,15 @@ fn routing_failure_trace(run_id: &str, error: &AgentRunError) -> evohime_model_g
         terminal_status: Some(status), safe_next_action: action, budget_id: None, budget_absent: true,
         estimated_input_tokens: 0, profile_version: None, context_ledger_hash: None,
     }
+}
+
+fn classify_routing_task(prompt: &str, tools: &[ToolSpec]) -> &'static str {
+    let lower = prompt.to_ascii_lowercase();
+    let mutation_markers = ["запиши", "измени", "удали", "создай", "commit", "push", "write", "patch", "execute"];
+    let read_only = !mutation_markers.iter().any(|marker| lower.contains(marker))
+        && tools.len() <= 8
+        && !lower.contains("multi-hop");
+    if read_only { "simple" } else { "complex" }
 }
 
 const LEGACY_TOOL_NAMES: &[&str] = &[
@@ -3786,6 +3806,7 @@ impl ModelAgent {
                 required_privacy: PrivacyClass::Internal,
                 allow_fallback: true,
                 preferred_route: None,
+                task_class: None, offline: false, allow_cloud: true, estimated_input_tokens: 0, quality_delta: 0.05,
             },
             &messages,
         )?;
@@ -4579,6 +4600,7 @@ impl ToolAgent {
             required_privacy: PrivacyClass::Internal,
             allow_fallback: true,
             preferred_route: None,
+            task_class: None, offline: false, allow_cloud: true, estimated_input_tokens: 0, quality_delta: 0.05,
         };
         for attempt in 0..=extraction::RETRY_DELAYS_MS.len() {
             if attempt > 0 {
@@ -4871,6 +4893,11 @@ impl ToolAgent {
                     required_privacy: PrivacyClass::Internal,
                     allow_fallback: true,
                     preferred_route: None,
+                    task_class: None,
+                    offline: false,
+                    allow_cloud: true,
+                    estimated_input_tokens: 0,
+                    quality_delta: 0.05,
                 },
                 None,
                 &request,
@@ -4951,6 +4978,8 @@ impl ToolAgent {
         specs: &[ToolSpec],
         config: &ProviderResilienceConfig,
         preferred_route: Option<&str>,
+        task_class: Option<&str>,
+        estimated_input_tokens: u32,
     ) -> Result<evohime_model_gateway::PolicyChatResult, AgentRunError> {
         let timeout_duration = Duration::from_secs(config.model_timeout_secs);
         let mut last_error: Option<String> = None;
@@ -4989,6 +5018,11 @@ impl ToolAgent {
                         required_privacy: PrivacyClass::Internal,
                         allow_fallback: true,
                         preferred_route: preferred_route.map(str::to_owned),
+                        task_class: task_class.map(str::to_owned),
+                        offline: false,
+                        allow_cloud: true,
+                        estimated_input_tokens,
+                        quality_delta: 0.05,
                     },
                     self.selected_model.get().as_deref(),
                     messages,
@@ -5112,6 +5146,7 @@ impl ToolAgent {
         ];
 
         let user_prompt = messages[1].content.clone();
+        let task_class = classify_routing_task(&user_prompt, &specs);
         let mut rag_validation: Option<(
             crate::workspace_rag::SearchResult,
             crate::workspace_rag::ContextBuildResult,
@@ -5403,7 +5438,7 @@ impl ToolAgent {
 
             let result = tokio::select! {
                 _ = cancellation.cancelled() => return Err(AgentRunError::Cancelled),
-                result = self.call_model_with_resilience(&task_id, &messages, &specs, &resilience_config, preferred_route.as_deref()) => result?,
+                result = self.call_model_with_resilience(&task_id, &messages, &specs, &resilience_config, preferred_route.as_deref(), Some(task_class), assembled.ledger().estimated_prompt_tokens) => result?,
             };
             let _ = events.send(CoreEvent::RoutingTrace {
                 task_id: task_id.clone(),
@@ -5414,6 +5449,9 @@ impl ToolAgent {
                     assembled.ledger().estimated_prompt_tokens,
                     &assembled.ledger().profile_version,
                     &assembled.ledger().context_ledger_hash,
+                    task_class,
+                    result.decision.as_ref(),
+                    result.snapshot_hash.as_deref(),
                 ),
             });
             let result = result.result;
@@ -10419,6 +10457,10 @@ mod tests {
         ));
         assert!(matches!(
             events.recv().await,
+            Ok(CoreEvent::RoutingTrace { .. })
+        ));
+        assert!(matches!(
+            events.recv().await,
             Ok(CoreEvent::TaskFailed { .. })
         ));
 
@@ -10468,6 +10510,10 @@ mod tests {
             })
             .await
             .expect("stop dispatches");
+        assert!(matches!(
+            events.recv().await.expect("routing trace event"),
+            CoreEvent::RoutingTrace { .. }
+        ));
         assert_eq!(
             events.recv().await.expect("stopped event"),
             CoreEvent::TaskStopped {
@@ -10658,6 +10704,10 @@ mod tests {
             })
             .await
             .expect("stop dispatches");
+        assert!(matches!(
+            events.recv().await.expect("routing trace event"),
+            CoreEvent::RoutingTrace { .. }
+        ));
         assert_eq!(
             events.recv().await.expect("stopped event"),
             CoreEvent::TaskStopped {
@@ -10964,18 +11014,20 @@ mod tests {
             })
             .await
             .expect("stop dispatches");
+        let _ = events.recv().await.expect("routing trace event");
         let _ = events.recv().await.expect("stopped event");
         let mut replay = Vec::new();
         for _ in 0..20 {
             replay = journal.replay(0, 10).await.expect("replay works");
-            if replay.len() >= 2 {
+            if replay.len() >= 3 {
                 break;
             }
             tokio::task::yield_now().await;
         }
-        assert_eq!(replay.len(), 2);
+        assert_eq!(replay.len(), 3);
         assert_eq!(replay[0].event_type, "task.started");
-        assert_eq!(replay[1].event_type, "task.stopped");
+        assert_eq!(replay[1].event_type, "routing.terminal");
+        assert_eq!(replay[2].event_type, "task.stopped");
         let _ = std::fs::remove_file(path);
     }
 

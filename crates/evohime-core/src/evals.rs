@@ -1271,6 +1271,7 @@ mod routing {
             required_privacy: PrivacyClass::Restricted,
             allow_fallback: true,
             preferred_route: None,
+            task_class: None, offline: false, allow_cloud: true, estimated_input_tokens: 0, quality_delta: 0.05,
         };
         let decision = select_route(&request, &candidates)
             .map_err(|error| format!("select_route failed: {error:?}"))?;
@@ -1310,6 +1311,7 @@ mod routing {
             required_privacy: PrivacyClass::Restricted,
             allow_fallback: true,
             preferred_route: None,
+            task_class: None, offline: false, allow_cloud: true, estimated_input_tokens: 0, quality_delta: 0.05,
         };
         let decision = select_route(&request, &candidates)
             .map_err(|error| format!("select_route failed: {error:?}"))?;

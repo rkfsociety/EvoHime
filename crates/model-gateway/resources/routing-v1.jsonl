@@ -1,0 +1,1 @@
+{"catalog_version":"routing-v1","task_class":"simple","dataset_hash":"builtin-routing-smoke-v1","large_route_id":"cloud","small_route_id":"local","metric":"quality","large_score":0.90,"small_score":0.88,"quality_floor":0.80,"generated_at":1,"expires_at":4102444800000,"signature":"b99a86dc2b15939de0652173fdbccd6c81b7ce5a0b10e0de2d926970750561cd"}

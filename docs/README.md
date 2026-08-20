@@ -26,11 +26,12 @@
 Планы отдельных направлений живут в каталоге [`plans/`](plans/); их порядок, граф зависимостей и правило нумерации описаны в [`plans/README.md`](plans/README.md). Один файл — один этап (`NN-M-slug.md`, где `M = 0` — обзор плана), и список файлов в алфавитном порядке и есть порядок реализации. Реализованный план из каталога удаляется: его контракт переезжает в [`architecture.md`](architecture.md), а подтверждённое состояние — в [`current-state.md`](current-state.md).
 
 Текущая незавершённая последовательность — план 02 Local SLM fallback и
-routing: `02.1` provider contract, `02.2` local provider, `02.3` routing и
-budget, `02.4` UI. Статус частично реализованного routing ведётся в
-[`current-state.md`](current-state.md), а целевой контракт — в
-[`architecture.md`](architecture.md); подробные acceptance criteria остаются
-в файлах плана.
+routing: базовые provider contract, selector, local route, Core trace и UI уже
+подключены, но supervisor process lifecycle, реальный pending approval,
+runtime catalog packaging и полный replayable trace ещё не закрыты. Статус
+ведётся в [`current-state.md`](current-state.md), целевой контракт — в
+[`architecture.md`](architecture.md), подробные acceptance criteria остаются
+в файлах плана до подтверждения полного завершения.
 
 Рядом с ними два документа общего цикла:
 

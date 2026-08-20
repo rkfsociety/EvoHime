@@ -110,11 +110,15 @@ payload или несовместимая major-версия не интерпр
 [`plans/02-0-local-slm-fallback-routing.md`](plans/02-0-local-slm-fallback-routing.md)
 и связанных этапах `02-1`–`02-4`.
 
-На текущем checkout базовые routing-типы и детерминированный selector уже есть
-в `crates/model-gateway`, но selector ещё не подключён к `ToolAgent`; local
-provider, supervisor-канал и routing UI остаются незавершёнными. Подтверждённое
-состояние этого перехода ведётся в [`current-state.md`](current-state.md), а не
-в этом целевом контракте.
+На checkout от 20 августа 2026 года provider contract, snapshot/overlay selector,
+loopback local provider, embedded signed evaluation catalog, Core routing trace,
+preferred-route hint и базовая routing UI-проекция подключены к agent loop. Полный
+этап 02 ещё не закрыт: supervisor manager пока является тестируемой state-machine
+без запуска model process и authenticated Core↔supervisor command channel;
+post-analysis reroute/pending approval не доведены до рабочего ожидания решения;
+runtime trace ещё не является полным replayable attempt log. Поэтому файлы
+`docs/plans/02-0`–`02-4` сохраняются как активные acceptance criteria, а
+подтверждённые детали и остаточный долг ведутся в [`current-state.md`](current-state.md).
 
 ## Signed receipts
 

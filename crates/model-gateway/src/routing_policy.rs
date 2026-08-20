@@ -41,7 +41,7 @@ impl Ord for PrivacyClass {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RouteCandidate {
     /// Stable route identifier; this is not a provider credential or URL.
     pub route_id: String,
@@ -55,7 +55,7 @@ pub struct RouteCandidate {
     pub fallback_rank: u16,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RoutingRequest {
     pub required_capabilities: Vec<String>,
     pub max_cost_micros_per_1k_tokens: Option<u64>,
@@ -65,7 +65,19 @@ pub struct RoutingRequest {
     /// Unprivileged user hint; policy filters always take precedence.
     #[serde(default)]
     pub preferred_route: Option<String>,
+    #[serde(default)]
+    pub task_class: Option<String>,
+    #[serde(default)]
+    pub offline: bool,
+    #[serde(default)]
+    pub allow_cloud: bool,
+    #[serde(default)]
+    pub estimated_input_tokens: u32,
+    #[serde(default = "default_quality_delta")]
+    pub quality_delta: f64,
 }
+
+fn default_quality_delta() -> f64 { 0.05 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -266,6 +278,7 @@ mod tests {
             required_privacy: PrivacyClass::Internal,
             allow_fallback: true,
             preferred_route: None,
+            task_class: None, offline: false, allow_cloud: true, estimated_input_tokens: 0, quality_delta: 0.05,
         };
         let mut expensive = candidate("expensive", 90, 200);
         expensive.fallback_rank = 1;
@@ -285,6 +298,7 @@ mod tests {
             required_privacy: PrivacyClass::Restricted,
             allow_fallback: false,
             preferred_route: None,
+            task_class: None, offline: false, allow_cloud: true, estimated_input_tokens: 0, quality_delta: 0.05,
         };
         let mut route = candidate("cloud", 1, 1);
         route.available = false;
@@ -319,6 +333,7 @@ mod tests {
             required_privacy: PrivacyClass::Public,
             allow_fallback: true,
             preferred_route: None,
+            task_class: None, offline: false, allow_cloud: true, estimated_input_tokens: 0, quality_delta: 0.05,
         };
         let routes: Vec<_> = (0..(MAX_FALLBACKS + 4))
             .map(|index| candidate(&format!("route-{index}"), index as u64, 1))

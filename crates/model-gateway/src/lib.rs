@@ -10,9 +10,10 @@ pub mod tools;
 
 pub use crate::config::{ModelGatewayConfig, ModelRouteConfig};
 pub use crate::provider_contract::{
-    AttemptTrace, CandidateEntry, CapabilityMetadata, CircuitState, ExecutionClass, FailureCategory,
+    AttemptTrace, CandidateEntry, CapabilityMetadata, CircuitState, HealthStatus, ExecutionClass, FailureCategory,
     PolicyHashes, ProbeConfig, ProbeFailure, ProbeResult, RetryConfig, RoutePolicySnapshot,
-    RunHealthOverlay, RunResult, RunTrace, SnapshotError,
+    RunHealthOverlay, RunResult, RunTrace, SnapshotError, SnapshotRouteDecision, SnapshotCandidateDecision,
+    select_route_snapshot,
 };
 use crate::providers::{
     literouter::LiteRouterProvider, local::LocalProvider, mock::MockProvider,
@@ -31,7 +32,7 @@ pub use crate::routing_policy::{PrivacyClass, RouteCandidate, RoutingRequest};
 #[cfg(test)]
 pub use crate::routing_runtime::routing_policy::{PrivacyClass, RouteCandidate, RoutingRequest};
 pub use crate::routing_runtime::{RoutingMode, RoutingRuntime, RuntimeError, RuntimeLimits};
-pub use crate::routing_trace::{RoutingTrace, TerminalStatus, SafeNextAction, HealthState, PrivacyLabel};
+pub use crate::routing_trace::{RoutingTrace, TraceCandidate, TerminalStatus, SafeNextAction, HealthState, PrivacyLabel};
 pub use crate::routing_catalog::{EvaluationCatalog, EvaluationRecord, CatalogError};
 pub use crate::tools::{
     ChatResult, ChatStreamItem, FunctionSpec, LlmUsage, NativeToolCall, ToolSpec,
@@ -39,6 +40,16 @@ pub use crate::tools::{
 use async_stream::stream;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
+use std::sync::OnceLock;
+
+fn current_time_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64
+}
+
+fn builtin_routing_catalog() -> Option<&'static EvaluationCatalog> {
+    static CATALOG: OnceLock<Option<EvaluationCatalog>> = OnceLock::new();
+    CATALOG.get_or_init(|| EvaluationCatalog::load_jsonl(include_str!("../resources/routing-v1.jsonl"), None).ok()).as_ref()
+}
 
 /// Entry point for chat completions.
 pub struct ModelGateway {
@@ -75,6 +86,8 @@ pub struct PolicyChatResult {
     pub selected_route: String,
     pub fallback_chain: Vec<String>,
     pub result: ChatResult,
+    pub decision: Option<SnapshotRouteDecision>,
+    pub snapshot_hash: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -376,16 +389,22 @@ impl ModelGateway {
         messages: &[ChatMessage],
         tools: &[ToolSpec],
     ) -> Result<PolicyChatResult, ProviderError> {
-        let runtime = self
-            .plan_route(mode, request, RuntimeLimits::default())
-            .map_err(|error| ProviderError::Config(error.to_string()))?;
-        let route = runtime
-            .decision()
-            .selected_route
-            .as_deref()
-            .ok_or_else(|| ProviderError::Config("routing policy selected no route".into()))?;
+        #[cfg(not(test))]
+        if request.task_class.is_some() || request.offline || request.estimated_input_tokens > 0 {
+            let now_ms = current_time_ms();
+            let snapshot = self.route_policy_snapshot(request, now_ms).map_err(|error| ProviderError::Config(error.to_string()))?;
+            let overlay = RunHealthOverlay::new(&snapshot.run_id);
+            let decision = select_route_snapshot(request, &snapshot, &overlay, builtin_routing_catalog(), 0, now_ms)
+                .map_err(|error| ProviderError::Config(error.to_string()))?;
+            let route = decision.selected_route.as_deref().ok_or_else(|| ProviderError::Config(decision.reason_code.clone()))?;
+            let result = self.chat_with_tools_for_route(route, model, messages, tools).await?;
+            let snapshot_hash = snapshot.round_trip_hash().ok();
+            return Ok(PolicyChatResult { selected_route: route.to_owned(), fallback_chain: decision.fallback_chain.clone(), result, decision: Some(decision), snapshot_hash });
+        }
+        let runtime = self.plan_route(mode, request, RuntimeLimits::default()).map_err(|error| ProviderError::Config(error.to_string()))?;
+        let route = runtime.decision().selected_route.as_deref().ok_or_else(|| ProviderError::Config("routing policy selected no route".into()))?;
         let result = self.chat_with_tools_for_route(route, model, messages, tools).await?;
-        Ok(PolicyChatResult { selected_route: route.to_owned(), fallback_chain: runtime.decision().fallback_chain.clone(), result })
+        Ok(PolicyChatResult { selected_route: route.to_owned(), fallback_chain: runtime.decision().fallback_chain.clone(), result, decision: None, snapshot_hash: None })
     }
 
     /// Plans a route using the bounded routing contract (`routing_policy` /
@@ -402,6 +421,28 @@ impl ModelGateway {
     ) -> Result<RoutingRuntime, RuntimeError> {
         let candidates = self.route_candidates();
         RoutingRuntime::plan(mode, request, &candidates, limits)
+    }
+
+    pub fn route_policy_snapshot(&self, request: &RoutingRequest, now_ms: u64) -> Result<RoutePolicySnapshot, SnapshotError> {
+        let candidates = self.route_candidates().into_iter().map(|candidate| {
+            let execution_class = if self.routes.get(&candidate.route_id).is_some_and(|provider| provider.kind() == ProviderKind::Local) { ExecutionClass::Local } else { ExecutionClass::Cloud };
+            CandidateEntry {
+                route_id: candidate.route_id,
+                model: candidate.model,
+                capabilities: CapabilityMetadata {
+                    schema_version: "capability-metadata-v1".into(), provider_version: "gateway".into(), capability_epoch: 1,
+                    tool_calling: true, structured_output: true, context_limit: None, streaming: true, vision: false,
+                    execution_class, privacy_boundary: crate::provider_contract::PrivacyClass::Internal,
+                },
+                initial_health: crate::provider_contract::CandidateHealthSnapshot::ready_at(30_000, now_ms),
+                cost_micros_per_1k_tokens: candidate.cost_micros_per_1k_tokens,
+                p95_latency_ms: candidate.p95_latency_ms, privacy: crate::provider_contract::PrivacyClass::Internal, fallback_rank: candidate.fallback_rank,
+            }
+        }).collect();
+        let preference = crate::provider_contract::UserPreference { preferred_order: request.preferred_route.clone().into_iter().collect(), avoid: Vec::new() };
+        RoutePolicySnapshot::new_at(format!("run-{now_ms}"), candidates,
+            PolicyHashes::from_canonical_json(b"routing-v1", b"approval-v1", b"tools-v1", b"sandbox-v1", b"retry-v1"),
+            preference, None, now_ms)
     }
 
     /// Streams a chat completion using a route chosen by the routing policy
@@ -545,6 +586,7 @@ mod tests {
             required_privacy: PrivacyClass::Internal,
             allow_fallback: true,
             preferred_route: None,
+            task_class: None, offline: false, allow_cloud: true, estimated_input_tokens: 0, quality_delta: 0.05,
         }
     }
 
@@ -614,6 +656,7 @@ mod tests {
             required_privacy: PrivacyClass::Internal,
             allow_fallback: true,
             preferred_route: None,
+            task_class: None, offline: false, allow_cloud: true, estimated_input_tokens: 0, quality_delta: 0.05,
         };
         let runtime = gateway
             .plan_route(RoutingMode::Balanced, &request, RuntimeLimits::default())

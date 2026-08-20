@@ -36,8 +36,9 @@ Source-update E2E остаётся штатно пропущенным без в
 Foundation текущего цикла завершён: обходы permission policy и approval закрыты
 и проверены; Local Agentic RAG 01.1–01.5 реализован, интегрирован в agent
 loop/IPC/Electron и перенесён в канонические `architecture.md`/
-`current-state.md`. Следующая активная последовательность — план 02 Local SLM
-fallback и routing; его этапы ещё не реализованы целиком.
+`current-state.md`. План 02 частично подключён к agent loop, но остаётся
+активным до завершения supervisor process lifecycle, реального reroute approval,
+runtime catalog packaging и полного replayable trace.
 
 ## Текущий статус
 

@@ -427,6 +427,7 @@ mod tests {
             required_privacy: PrivacyClass::Internal,
             allow_fallback: true,
             preferred_route: None,
+            task_class: None, offline: false, allow_cloud: true, estimated_input_tokens: 0, quality_delta: 0.05,
         }
     }
 
