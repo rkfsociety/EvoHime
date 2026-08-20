@@ -41,9 +41,14 @@ Ambient-контракт и capability ещё не реализованы: в т
     окон, retention) с валидацией и потолками длины. В тихие часы поток
     захвата полностью закрыт: высказывания не распознаются и не сохраняются;
   - `ProactivityBudget` — неизменяемый снимок лимитов (3/час, 10/сутки,
-    10 минут между предложениями) по образцу `run_policy`. Текущие счётчики и
-    время последнего предложения не входят в snapshot и живут в Core-состоянии
-    `ambient_proactivity_state`;
+    10 минут между предложениями) по образцу `run_policy.rs` («immutable
+    bounded policy … renderer may display the snapshot, but cannot increase a
+    limit mid-run»). Текущие счётчики и время последнего предложения не входят
+    в snapshot: они живут в отдельной структуре `AmbientProactivityRegistry` в
+    `evohime-core` — по образцу `RoutingApprovalRegistry`
+    (`lib.rs:3777`, одно поле `Arc<Mutex<…>>`), а не в несуществующем
+    «Core-состоянии». Долговечная часть счётчиков персистится таблицей
+    миграции v26 из 04.7;
   - закрытый набор кодов ошибок.
 - `Permission::MicrophoneListen` (serde `microphone_listen`) добавляется к
   восьми существующим вариантам `Permission`. Дефолт `Deny` прописывается явно

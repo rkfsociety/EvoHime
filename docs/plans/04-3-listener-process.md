@@ -21,8 +21,13 @@ restart budget и завершает цикл после успешного вы
 умеет спавнить локальный adapter-процесс (`LocalAdapterProcess::spawn_with_limits`
 из плана 02), так что «один ребёнок» — не инвариант, а расширяемая схема.
 Листенер добавляется как ещё один ребёнок в том же Job Object с собственным
-restart budget. Основной и listener pipe-серверы работают в отдельных задачах и
-используют общий `Arc<Mutex<CoreState>>`. `ALLOWED_CLIENT_ROLES`
+restart budget. Основной и listener pipe-серверы работают в отдельных задачах.
+Типа `CoreState` в коде нет: разделяются независимые ручки — `EventJournal`
+(`journal.clone()`, внутри `Arc<Mutex<LocalDatabase>>`), `Arc<ToolRegistry>` и
+registry по образцу `RoutingApprovalRegistry`. `IpcBridge` не `Clone`, а
+`run_windows_pipe` берёт его по значению и сейчас `await`-ится в конце
+`main.rs`; поэтому первая правка этапа — сделать мост клонируемым (или собрать
+второй из тех же ручек) и развести оба сервера по `tokio::spawn`. `ALLOWED_CLIENT_ROLES`
 (`crates/desktop-ipc/src/session.rs:35`) объявлен как `[&str; 2]`; добавление
 роли `listener` меняет и размер массива, и аутентификационный тест — это
 отдельная правка перед всем остальным.
@@ -53,8 +58,13 @@ restart budget. Основной и listener pipe-серверы работаю�
   - `crates/evohime-listener-ipc`: `evohime.listener.proto` (`Hello`/`Handshake`,
   `PolicyUpdate`, `StateChanged`, `UtteranceRecognized`, `EngineStatus`,
   `LocalCommand{ pause | reset_buffers }`) поверх того же framing, что
-  desktop-ipc; frame limit 256 KiB.
-- Core: второй pipe-сервер на `<pipe_name>-listener`, роль `listener` в
+  desktop-ipc. Лимит кадра — собственный, 256 KiB: у desktop-ipc
+  `MAX_FRAME_BYTES = 4 MiB` (`crates/desktop-ipc/src/lib.rs:9`), и листенеру
+  такой запас не нужен — распознанное высказывание на порядки меньше, а узкий
+  потолок ограничивает ущерб от скомпрометированного клиента.
+- Core: второй pipe-сервер на `<pipe_name>-listener` (отдельный именно потому,
+  что цикл `run_windows_pipe` обслуживает одно соединение за раз и постоянно
+  подключённый листенер вытеснил бы shell), роль `listener` в
   `ALLOWED_CLIENT_ROLES`, приём высказываний, выдача политики, проверка
   `MicrophoneListen` перед выдачей разрешения на захват.
 - `reset_buffers` в `evohime-listener-ipc` сбрасывает только кольцевой буфер, VAD и

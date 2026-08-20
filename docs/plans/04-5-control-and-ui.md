@@ -89,7 +89,11 @@ per-capability нет, поэтому она создаётся этим эта�
   показывает generic «Ошибка слушателя» и не трактуется как успешное изменение
   состояния.
 - События (через существующий `EventEnvelope.payload`, JSON-полезная
-  нагрузка): `ambient.state` — `{ state, reason, active_device_id }`,
+  нагрузка). Важно: публикация идёт не «в эфир», а через `append_event` в
+  durable-таблицу `events`, откуда клиенты тянут хвост (`push_journal_tail`);
+  таблица append-only и retention не имеет. Поэтому ни одно ambient-событие не
+  несёт текста или `text_hash`, а удаление транскриптов вычищает связанные
+  `ambient.*`-строки журнала — правило и тесты в 04.2. Набор событий: `ambient.state` — `{ state, reason, active_device_id }`,
   публикуется при любом изменении `ListeningState` независимо от источника
   (трей/хоткей/панель/системный sleep); `ambient.engine` — `{ status
   (idle|downloading|verifying|approved|failed), version, progress_pct }`,
@@ -103,7 +107,9 @@ per-capability нет, поэтому она создаётся этим эта�
   `tray.ts` (иконка).
 - `ipc_bridge.rs`: девять веток по образцу `IndexWorkspace` и соответствующие
   `CoreCommand`. `ipc_bridge.rs` хранит `ListeningState` как единственный
-  источник истины (persisted в `evohime-core`, не в Electron main); любая
+  источник истины (в `evohime-core`, не в Electron main; конкретно — в registry
+  по образцу `RoutingApprovalRegistry`, поскольку общего `CoreState` в коде не
+  существует); любая
   из трёх точек входа (`tray.ts`, `globalShortcut`, `ListeningPanel`)
   отправляет одну и ту же команду `SetAmbientListening`, ветка обновляет
   state и публикует `ambient.state` — только это событие меняет UI, точки
@@ -201,6 +207,8 @@ per-capability нет, поэтому она создаётся этим эта�
 ## Проверки
 
 - `npm run check:protocol` зелёный после регенерации;
+- ни одно `ambient.*`-событие не содержит `text`/`text_hash`, а после удаления
+  эпизода его `ambient.*`-строки исчезают из журнала (тест в паре с 04.2);
 - `npm run typecheck` и renderer-тесты покрывают новую панель;
 - unit-тесты `ipc_bridge.rs` покрывают все девять команд, включая
   `error_code`-ветки (`LISTENER_UNAVAILABLE`, `DEVICE_CONFLICT`,
