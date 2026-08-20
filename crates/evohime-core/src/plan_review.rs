@@ -472,10 +472,10 @@ fn as_plan_file(value: &str) -> String {
         CONTEXT_OPEN,
         CONTEXT_CLOSE,
     ]
-        .iter()
-        .filter_map(|marker| stripped.find(marker))
-        .min()
-        .unwrap_or(stripped.len());
+    .iter()
+    .filter_map(|marker| stripped.find(marker))
+    .min()
+    .unwrap_or(stripped.len());
     let mut plan = stripped[..end].trim_end().to_string();
     if !plan.is_empty() && !plan.ends_with('\n') {
         plan.push('\n');
@@ -930,7 +930,9 @@ mod tests {
 
     #[tokio::test]
     async fn revision_returns_the_whole_plan_and_reports_progress() {
-        let gateway = Arc::new(mock_gateway(vec!["# Plan\n\nDo the thing\n\n## Откат".into()]));
+        let gateway = Arc::new(mock_gateway(vec![
+            "# Plan\n\nDo the thing\n\n## Откат".into()
+        ]));
         let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
         let sink = Arc::clone(&seen);
         let result = run_revision(
@@ -980,7 +982,6 @@ mod tests {
         // Ответ без разделителей не трогается, кроме финального перевода строки.
         assert_eq!(as_plan_file("# Plan"), "# Plan\n");
     }
-
 
     fn context(file_name: &str, markdown: &str) -> ContextDocument {
         ContextDocument {
@@ -1049,7 +1050,9 @@ mod tests {
     /// Без соседей промпт не должен упоминать блок, которого в нём нет.
     #[test]
     fn prompts_stay_silent_about_context_when_there_is_none() {
-        let prompt = revision_messages("# Plan", "Замечание", &[])[1].content.clone();
+        let prompt = revision_messages("# Plan", "Замечание", &[])[1]
+            .content
+            .clone();
         assert!(!prompt.contains(CONTEXT_OPEN));
         assert!(!prompt.contains("приложены планы"));
     }
@@ -1078,9 +1081,14 @@ mod tests {
     #[tokio::test]
     async fn revision_leaves_lf_sources_alone() {
         let gateway = Arc::new(mock_gateway(vec!["# Plan\r\n\r\nДело".into()]));
-        let result = run_revision(gateway, revision(), CancellationToken::new(), Arc::new(|_| {}))
-            .await
-            .expect("revision completes");
+        let result = run_revision(
+            gateway,
+            revision(),
+            CancellationToken::new(),
+            Arc::new(|_| {}),
+        )
+        .await
+        .expect("revision completes");
 
         assert!(!result.revised_markdown.contains('\r'));
         assert!(result.context_files.is_empty());
