@@ -27,7 +27,8 @@ capability микрофона и правила логирования.
   `evohime-supervisor::schedule_contract`: без файловой системы, часов и
   процессов. В нём:
   - `ListeningState`: `Stopped`, `Starting`, `Listening`, `PausedByUser`,
-    `PausedByPolicy`, `DeviceConflict`, `EngineUnavailable`, `Denied` и
+    `PausedByPolicy`, `DeviceConflict`, `DeviceDisconnected`,
+    `EngineUnavailable`, `Denied` и
     допустимые переходы;
   - `AmbientLimits`: кадр 30 мс, pre-roll 300 мс, hangover 700 мс, минимум
     400 мс, потолок высказывания 20 с, эпизод 10 мин, окно дедупликации 60 с;

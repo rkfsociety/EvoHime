@@ -17,24 +17,31 @@
 
 ## Что уже есть в коде
 
-`oneof command` занят по тег 91 включительно. События идут через `event_type`
+`oneof command` занят по тег 105 включительно. События идут через `event_type`
 и `payload` (`EventEnvelope`), поэтому новых сообщений в `oneof event` не
 требуется. `tray.ts` уже перехватывает закрытие окна и имеет готовое место для
 индикатора. `SafetyPanel` и `OperationsPanel` существуют.
 
 ## Содержание
 
-- Proto: additive команды 92–100 — `SetAmbientListening`, `GetAmbientStatus`,
+- Proto: additive команды 106–114 — `SetAmbientListening`, `GetAmbientStatus`,
   `ListAmbientEpisodes`, `GetAmbientEpisode`, `DeleteAmbientTranscripts`,
   `ForgetAmbientWindow`, `GetAmbientPolicy`, `SaveAmbientPolicy`,
   `ResolveAmbientProposal`. Теги не переиспользуются и не переставляются;
   `npm run generate:protocol` выполняется в том же коммите, сгенерированные
   файлы руками не правятся. Поля запрос/ответ по каждой команде:
-  - `SetAmbientListening { bool enabled = 1; }` →
-    `SetAmbientListeningResult { ListeningState state = 1; }`;
+  - `SetAmbientListening { bool enabled = 1; bool paused = 2; string
+    device_id = 3; }` →
+    `SetAmbientListeningResult { ListeningState state = 1; string error_code =
+    2; }`. Инвариант полей: `enabled=false` означает `Stopped`, `enabled=true,
+    paused=true` — `PausedByUser`, `enabled=true, paused=false` — запуск или
+    продолжение; `device_id` меняет устройство только после проверки
+    capability и политики;
   - `GetAmbientStatus {}` → `AmbientStatus { ListeningState state = 1;
     ListeningReason reason = 2; string active_device_id = 3; string
-    engine_version = 4; bool engine_ready = 5; }`;
+    engine_version = 4; bool engine_ready = 5; repeated AmbientDevice devices
+    = 6; }`, где `AmbientDevice` содержит только `device_id`, bounded display
+    name, `is_default` и `is_active`;
   - `ListAmbientEpisodes { int64 since_ms = 1; int32 limit = 2; string
     cursor = 3; }` → `AmbientEpisodeList { repeated AmbientEpisodeSummary
     episodes = 1; string next_cursor = 2; }`, где
@@ -104,10 +111,10 @@
   явному клику**, редактор политики (тихие часы, чёрные списки, срок
   хранения), установка движка распознавания, список доступных микрофонов и
   переключение устройства без перезапуска приложения. Список микрофонов
-  обновляется по событию Windows `WM_DEVICECHANGE` (main процесс слушает
-  его через `navigator.mediaDevices.ondevicechange` в скрытом renderer-
-  контексте или нативный хук в `listener-runtime.ts`) и рассылается в
-  панель как обновлённый снимок; если отключено активное устройство,
+  обновляется по событию Windows `WM_DEVICECHANGE` нативным хуком в main/listener
+  и рассылается в панель как обновлённый снимок через
+  `GetAmbientStatus`/`ambient.state`; скрытый renderer не получает доступ к
+  микрофону. Если отключено активное устройство,
   состояние переходит в `DEVICE_DISCONNECTED` и панель предлагает выбрать
   другое. Причины состояния — фиксированный enum `ListeningReason`:
   `ACTIVE`, `PAUSED`, `DEVICE_CONFLICT`, `DEVICE_DISCONNECTED`,
@@ -167,8 +174,8 @@
   (интеграционный тест: команда из одной точки входа немедленно отражается
   в состоянии двух других через `ambient.state`, без локальной рассинхронизации);
 - при потере связи с листенером (таймаут `GetAmbientStatus` > 5с, ошибка
-  ответа, рантайм не загружен) индикатор показывает «слушает», а не
-  «выключено»;
+  ответа, рантайм не загружен) индикатор показывает «проверка состояния» с
+  предупреждением, а не «выключено»;
 - текст высказывания не приходит в списке, только по явному запросу
   (`GetAmbientEpisode`);
 - «забыть последние 5 минут» и «удалить всё» без подтверждения в модальном
