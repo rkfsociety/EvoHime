@@ -26,7 +26,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 23;
+pub const SCHEMA_VERSION: u32 = 24;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -2899,6 +2899,40 @@ impl LocalDatabase {
         }
         if current < 23 {
             transaction.execute_batch("PRAGMA user_version = 23;")?;
+        }
+        if current < 24 {
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS coordinator_child_checkpoint (
+                    schema_version INTEGER NOT NULL DEFAULT 1,
+                    child_task_id TEXT NOT NULL,
+                    parent_task_id TEXT NOT NULL,
+                    revision INTEGER NOT NULL,
+                    state TEXT NOT NULL CHECK(state IN ('created','queued','running','validating','waiting_parent_acceptance','accepted','rejected','failed','cancelled','timed_out','aborted','revise_plan')),
+                    failure_reason TEXT,
+                    dead_letter INTEGER NOT NULL DEFAULT 0 CHECK(dead_letter IN (0,1)),
+                    report_json BLOB,
+                    evidence_locators_json BLOB,
+                    provenance_hashes_json BLOB,
+                    parent_sequence INTEGER NOT NULL,
+                    lease_deadline_monotonic_ms INTEGER,
+                    lease_created_monotonic_ms INTEGER,
+                    lease_clock_boot_id TEXT,
+                    lease_holder_process_id TEXT,
+                    last_transition_event TEXT NOT NULL,
+                    last_transition_at_ms INTEGER NOT NULL,
+                    created_at_ms INTEGER NOT NULL,
+                    PRIMARY KEY(child_task_id, revision)
+                );
+                CREATE INDEX IF NOT EXISTS idx_coordinator_checkpoint_parent
+                    ON coordinator_child_checkpoint(parent_task_id, last_transition_at_ms);
+                CREATE INDEX IF NOT EXISTS idx_coordinator_checkpoint_dead_letter
+                    ON coordinator_child_checkpoint(parent_task_id, dead_letter, created_at_ms);
+                CREATE TABLE IF NOT EXISTS child_parent_sequences (
+                    parent_task_id TEXT PRIMARY KEY NOT NULL,
+                    next_sequence INTEGER NOT NULL DEFAULT 0
+                );
+                PRAGMA user_version = 24;",
+            )?;
         }
         transaction.commit()?;
         Ok(())

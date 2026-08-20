@@ -70,6 +70,32 @@ Renderer состоит из панели проектов и чатов, лен
 
 Бизнес-логики в renderer нет: он отображает состояние, полученное через IPC, и отправляет команды.
 
+## Специализированные child workflows
+
+Child workflow является Core-owned orchestration boundary. `TypedChildTaskRequest`
+и `TypedChildReport` имеют версию контракта, correlation ID и parent sequence;
+Core повторно проверяет JSON Schema, размер, provenance и grant subset при
+создании, каждом tool-call и при fan-in. Роли ограничивают capability loadout:
+implementer может писать только в выданной области, tester — выполнять тесты,
+reviewer получает summary-only и не имеет права записи. Отказ сохраняется в
+audit без исходного payload.
+
+Состояния проходят только через `Created → Queued → Running → Validating →
+WaitingParentAcceptance → terminal`; lease хранит wall-clock и monotonic
+deadline, boot id и holder process id. Transport retry ограничен тремя
+попытками, revision — тремя, а dead-letter хранится 30 дней. SQLite migration
+24 добавляет `coordinator_child_checkpoint` и атомарный per-parent sequence;
+терминальные lease очищаются идемпотентным sweep. После перезапуска checkpoint
+повторно проверяется по lease/boot и provenance, а fan-in детерминированно
+отмечает superseded evidence и unknown conflicts.
+
+Контекст child передаётся только по выбранному allowlist. Большой report можно
+вынести в Core-owned `ArtifactStore` только с явным флагом; Sensitive/Secret
+offload запрещён. Чтение artifact каждый раз проверяет текущую parent chain,
+scope grant и выбранный context, поэтому renderer не получает raw transcript.
+`OperationsPanel` отображает typed projection timeline (role, state, revision,
+budget, lease, reason, dead-letter) и отделяет trace projection от audit.
+
 ## IPC
 
 Контракт находится в `crates/desktop-ipc/proto/evohime.desktop.proto`.

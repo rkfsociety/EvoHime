@@ -41,6 +41,7 @@ pub fn allowed_capabilities(role: ChildRole) -> &'static [&'static str] {
         ChildRole::Implementer => &[
             "workspace.read",
             "workspace.search",
+            "workspace.write",
             "git.status",
             "git.diff",
         ],
@@ -49,6 +50,7 @@ pub fn allowed_capabilities(role: ChildRole) -> &'static [&'static str] {
             "workspace.search",
             "git.status",
             "git.diff",
+            "test.execute",
         ],
         ChildRole::Reviewer => &[
             "workspace.read",

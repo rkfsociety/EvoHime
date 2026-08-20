@@ -638,6 +638,14 @@ fn print_console_event(event: &evohime_core::CoreEvent) {
             progress.iteration,
             progress.result_count
         ),
+        evohime_core::CoreEvent::ChildWorkflowProjection { projection, .. } => println!(
+            "child.workflow {}: {:?} rev={} lease={} dead_letter={}",
+            projection.child_task_id,
+            projection.state,
+            projection.revision,
+            projection.lease_live,
+            projection.dead_letter
+        ),
         evohime_core::CoreEvent::ReviewHistoryCleared { marker_id } => {
             println!("review.history_cleared {marker_id}")
         }

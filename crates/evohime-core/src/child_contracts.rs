@@ -43,6 +43,7 @@ pub const MAX_CHANGED_PATHS: usize = 64;
 pub const MAX_TESTS: usize = 32;
 pub const MAX_RISKS: usize = 32;
 pub const MAX_REVISIONS: u32 = 3;
+pub const DEFAULT_MAX_REVISIONS: u32 = 2;
 pub const CONTRACT_VERSION: ContractVersion = ContractVersion { major: 1, minor: 0 };
 
 // ============================================================================
@@ -555,7 +556,7 @@ impl TypedChildTaskRequest {
             grants: Vec::new(),
             budget: None,
             acceptance_criteria: None,
-            max_revisions: None,
+            max_revisions: Some(DEFAULT_MAX_REVISIONS),
             input_context_ids: Vec::new(),
             allow_output_offload: false,
             output_privacy: None,
@@ -603,7 +604,7 @@ impl TypedChildTaskRequest {
         }
         for cap in &capabilities {
             validate_text("capability", cap, MAX_CAPABILITY_CHARS, true)?;
-            if !is_read_only_capability(cap) {
+            if !capability_name_is_bounded(cap) {
                 return Err(ContractError::ForbiddenCapability(cap.clone()));
             }
         }
@@ -723,7 +724,7 @@ impl TypedChildTaskRequest {
         }
         for cap in &self.requested_capabilities {
             validate_text("capability", cap, MAX_CAPABILITY_CHARS, true)?;
-            if !is_read_only_capability(cap) {
+            if !capability_name_is_bounded(cap) || !role_allows_capability(&self.role, cap) {
                 return Err(ContractError::ForbiddenCapability(cap.clone()));
             }
         }
@@ -1181,6 +1182,15 @@ impl TypedChildReport {
         {
             return Err(ContractError::StaleProvenance);
         }
+        if let Some(schema_version) = &self.provenance.schema_version {
+            let major = schema_version
+                .split('.')
+                .next()
+                .and_then(|value| value.parse::<u32>().ok());
+            if major != Some(request.contract_version.major) {
+                return Err(ContractError::StaleProvenance);
+            }
+        }
 
         Ok(())
     }
@@ -1287,6 +1297,8 @@ pub enum ContractError {
     StaleProvenance,
     ContextIdNotAccessible { id: String },
     TooManyRevisions,
+    GrantDrift,
+    ArtifactOffload(String),
 
     // Capability errors
     ForbiddenCapability(String),
@@ -1335,6 +1347,8 @@ impl fmt::Display for ContractError {
                 write!(f, "child context is not accessible: {id}")
             }
             Self::TooManyRevisions => write!(f, "child revision limit exceeds the maximum"),
+            Self::GrantDrift => write!(f, "parent grant changed and no longer covers child grant"),
+            Self::ArtifactOffload(message) => write!(f, "child output offload failed: {message}"),
             Self::ForbiddenCapability(capability) => {
                 write!(f, "forbidden child capability: {capability}")
             }
@@ -1374,11 +1388,29 @@ fn validate_text(
     Ok(())
 }
 
-fn is_read_only_capability(capability: &str) -> bool {
+fn capability_name_is_bounded(capability: &str) -> bool {
     matches!(
         capability,
-        "workspace.read" | "workspace.search" | "git.diff" | "git.status"
+        "workspace.read"
+            | "workspace.search"
+            | "workspace.write"
+            | "git.diff"
+            | "git.status"
+            | "test.execute"
     )
+}
+
+fn role_allows_capability(role: &str, capability: &str) -> bool {
+    match role {
+        "implementer" => !matches!(capability, "test.execute" | "git.commit" | "git.push"),
+        "tester" => !matches!(capability, "workspace.write" | "git.commit" | "git.push"),
+        "researcher" | "reviewer" | "coordinator" => !matches!(
+            capability,
+            "workspace.write" | "test.execute" | "git.commit" | "git.push"
+        ),
+        _ => capability_name_is_bounded(capability)
+            && !matches!(capability, "workspace.write" | "test.execute"),
+    }
 }
 
 fn reject_secret_like(value: &str) -> Result<(), ContractError> {

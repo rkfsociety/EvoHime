@@ -1708,6 +1708,11 @@ pub enum CoreEvent {
         workspace_path: String,
         progress: crate::workspace_rag::RetrievalProgress,
     },
+    /// Bounded Core-owned child workflow projection for UI/timeline consumers.
+    ChildWorkflowProjection {
+        task_id: String,
+        projection: crate::child_workflow::ChildProjection,
+    },
     /// Marks the point after which review history is shown. The journal is
     /// append-only, so clearing hides earlier reviews instead of deleting them.
     ReviewHistoryCleared {
@@ -2238,6 +2243,7 @@ impl EventJournal {
             CoreEvent::WorkspaceIndexProgress { .. }
             | CoreEvent::WorkspaceRetrievalProgress { .. } => "workspace-rag",
             CoreEvent::ReviewHistoryCleared { marker_id } => marker_id,
+            CoreEvent::ChildWorkflowProjection { task_id, .. } => task_id,
         };
         let event_type = match event {
             CoreEvent::ModelContext { .. } => "model.context",
@@ -2257,6 +2263,7 @@ impl EventJournal {
             CoreEvent::WorkspaceIndexProgress { .. } => "workspace.index_progress",
             CoreEvent::WorkspaceRetrievalProgress { .. } => "workspace.retrieval_progress",
             CoreEvent::ReviewHistoryCleared { .. } => "review.history_cleared",
+            CoreEvent::ChildWorkflowProjection { .. } => "child.workflow",
         };
         let payload = match event {
             CoreEvent::StorageProgress { progress, .. } => {
@@ -2267,6 +2274,9 @@ impl EventJournal {
             }
             CoreEvent::WorkspaceRetrievalProgress { progress, .. } => {
                 serde_json::to_vec(progress).expect("workspace retrieval progress serializes")
+            }
+            CoreEvent::ChildWorkflowProjection { projection, .. } => {
+                serde_json::to_vec(projection).expect("child projection serializes")
             }
             _ => serde_json::to_vec(event).expect("core events serialize"),
         };
@@ -3028,6 +3038,63 @@ impl EventJournal {
         evohime_local_storage::child_store::ChildStoreSql::insert_child_report(
             database.connection(),
             record,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    pub async fn next_child_parent_sequence(&self, parent_task_id: &str) -> Result<u64, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::child_store::ChildStoreSql::next_parent_sequence(
+            database.connection(), parent_task_id,
+        )
+        .map(|value| value as u64)
+        .map_err(|error| error.to_string())
+    }
+
+    pub async fn save_coordinator_checkpoint(
+        &self,
+        record: &evohime_local_storage::child_store::CoordinatorCheckpointRecord,
+    ) -> Result<(), String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::child_store::ChildStoreSql::upsert_coordinator_checkpoint(
+            database.connection(), record,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    pub async fn get_coordinator_checkpoint(
+        &self,
+        child_task_id: &str,
+    ) -> Result<Option<evohime_local_storage::child_store::CoordinatorCheckpointRecord>, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::child_store::ChildStoreSql::latest_coordinator_checkpoint(
+            database.connection(), child_task_id,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    pub async fn list_child_dead_letters(
+        &self,
+        parent_task_id: &str,
+        now_ms: i64,
+        limit: u32,
+    ) -> Result<Vec<evohime_local_storage::child_store::CoordinatorCheckpointRecord>, String> {
+        let database = self.database.lock().await;
+        evohime_local_storage::child_store::ChildStoreSql::list_dead_letter_checkpoints(
+            database.connection(), parent_task_id, now_ms, limit,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    pub async fn accept_typed_child_report(
+        &self,
+        request: &crate::child_contracts::TypedChildTaskRequest,
+        report: &crate::child_contracts::TypedChildReport,
+        now_ms: i64,
+    ) -> Result<crate::child_contracts::TypedChildReport, String> {
+        let database = self.database.lock().await;
+        crate::child_workflow::accept_report_with_offload(
+            database.connection(), request, report, now_ms,
         )
         .map_err(|error| error.to_string())
     }
@@ -9117,12 +9184,13 @@ impl TaskCoordinator {
                     // `ChildTaskRequest::validate` used by the pure unit
                     // tests, now enforced on the live IPC path.
                     request.validate().map_err(|error| error.to_string())?;
+                    let parent_sequence = journal.next_child_parent_sequence(&parent_task_id).await?;
                     let typed_correlation = crate::child_contracts::CorrelationContext::new(
                         crate::child_contracts::CorrelationId::new(parent_task_id.clone())
                             .map_err(|error| error.to_string())?,
                         crate::child_contracts::CorrelationId::new(child_task_id.clone())
                             .map_err(|error| error.to_string())?,
-                        0,
+                        parent_sequence,
                     );
                     let typed_request = crate::child_contracts::TypedChildTaskRequest::new(
                         child_task_id.clone(), parent_task_id.clone(), role.clone(),
@@ -9151,6 +9219,43 @@ impl TaskCoordinator {
                         request_json,
                     };
                     journal.save_child_task_request(&record).await?;
+                    let now_ms = task_memory::now_millis() as i64;
+                    journal.save_coordinator_checkpoint(&evohime_local_storage::child_store::CoordinatorCheckpointRecord {
+                        schema_version: 1,
+                        child_task_id: request.child_task_id.clone(),
+                        parent_task_id: request.parent_task_id.clone(),
+                        revision: 0,
+                        state: "created".into(),
+                        failure_reason: None,
+                        dead_letter: false,
+                        report_json: None,
+                        evidence_locators_json: None,
+                        provenance_hashes_json: None,
+                        parent_sequence: parent_sequence as i64,
+                        lease_deadline_monotonic_ms: Some(now_ms + crate::child_workflow::DEFAULT_LEASE_MS as i64),
+                        lease_created_monotonic_ms: Some(now_ms),
+                        lease_clock_boot_id: Some("current".into()),
+                        lease_holder_process_id: Some(std::process::id().to_string()),
+                        last_transition_event: "child.request.submitted".into(),
+                        last_transition_at_ms: now_ms,
+                        created_at_ms: now_ms,
+                    }).await?;
+                    let _ = state.lock().await.events.send(CoreEvent::ChildWorkflowProjection {
+                        task_id: request.parent_task_id.clone(),
+                        projection: crate::child_workflow::ChildProjection {
+                            event_id: format!("{}:created", request.child_task_id),
+                            parent_task_id: request.parent_task_id.clone(),
+                            child_task_id: request.child_task_id.clone(),
+                            role: request.role.clone(),
+                            revision: 0,
+                            state: crate::child_workflow::CoordinatorState::Created,
+                            reason_code: None,
+                            parent_sequence,
+                            budget: typed_request.budget.clone(),
+                            lease_live: false,
+                            dead_letter: false,
+                        },
+                    });
                     Self::record_audit(
                         &state,
                         crate::audit::AuditKind::Evidence,
@@ -9158,7 +9263,7 @@ impl TaskCoordinator {
                         "child.request.submitted",
                         [
                             ("child_task_id".to_owned(), request.child_task_id.clone()),
-                            ("parent_task_id".to_owned(), parent_task_id),
+                            ("parent_task_id".to_owned(), parent_task_id.clone()),
                             ("role".to_owned(), request.role.clone()),
                         ],
                     )
@@ -9167,6 +9272,15 @@ impl TaskCoordinator {
                         .map_err(|error| error.to_string())
                 }
                 .await;
+                if let Err(error) = &result {
+                    Self::record_audit(
+                        &state,
+                        crate::audit::AuditKind::Evidence,
+                        parent_task_id.clone(),
+                        "child.contract.rejected",
+                        [("reason".to_owned(), error.clone())],
+                    ).await;
+                }
                 let _ = reply.send(result);
             }
             CoreCommand::SubmitChildReport {
@@ -9199,6 +9313,11 @@ impl TaskCoordinator {
                         .ok_or_else(|| {
                             "no matching child task request found for child_task_id".to_string()
                         })?;
+                    let parent_sequence = journal
+                        .get_coordinator_checkpoint(&child_task_id)
+                        .await?
+                        .map(|checkpoint| checkpoint.parent_sequence as u64)
+                        .unwrap_or(0);
                     let request: crate::child_runtime::ChildTaskRequest =
                         serde_json::from_str(&stored_request.request_json)
                             .map_err(|error| error.to_string())?;
@@ -9208,7 +9327,7 @@ impl TaskCoordinator {
                         crate::child_contracts::CorrelationContext::new(
                             crate::child_contracts::CorrelationId::new(request.parent_task_id.clone()).map_err(|error| error.to_string())?,
                             crate::child_contracts::CorrelationId::new(request.child_task_id.clone()).map_err(|error| error.to_string())?,
-                            0,
+                            parent_sequence,
                         ),
                     )
                     .map_err(|error| error.to_string())?
@@ -9226,7 +9345,7 @@ impl TaskCoordinator {
                     let typed_report = crate::child_contracts::TypedChildReport::new(
                         report.child_task_id.clone(), request.parent_task_id.clone(),
                         typed_request.correlation.clone(),
-                        crate::child_contracts::Provenance::new(0).mark_completed(),
+                        crate::child_contracts::Provenance::new(parent_sequence).mark_completed(),
                     )
                     .map_err(|error| error.to_string())?
                     .with_status(typed_status)
@@ -9237,7 +9356,13 @@ impl TaskCoordinator {
                     .with_sources(report.sources.clone())
                     .map_err(|error| error.to_string())?
                     .with_confidence(report.confidence_percent);
-                    crate::child_contracts::accept_typed_report(&typed_request, &typed_report)
+                    let typed_accepted = journal
+                        .accept_typed_child_report(
+                            &typed_request,
+                            &typed_report,
+                            task_memory::now_millis() as i64,
+                        )
+                        .await
                         .map_err(|error| error.to_string())?;
                     // The real bounded contract runs here: re-validates the
                     // request, validates the report's own bounds, rejects
@@ -9257,6 +9382,43 @@ impl TaskCoordinator {
                         report_json,
                     };
                     journal.save_child_report(&record).await?;
+                    let now_ms = task_memory::now_millis() as i64;
+                    journal.save_coordinator_checkpoint(&evohime_local_storage::child_store::CoordinatorCheckpointRecord {
+                        schema_version: 1,
+                        child_task_id: accepted.child_task_id.clone(),
+                        parent_task_id: stored_request.parent_task_id.clone(),
+                        revision: typed_accepted.revision.unwrap_or(0) as i64,
+                        state: "accepted".into(),
+                        failure_reason: None,
+                        dead_letter: false,
+                        report_json: Some(serde_json::to_string(&typed_accepted).map_err(|error| error.to_string())?),
+                        evidence_locators_json: None,
+                        provenance_hashes_json: Some(serde_json::to_string(&typed_accepted.provenance).map_err(|error| error.to_string())?),
+                        parent_sequence: parent_sequence as i64,
+                        lease_deadline_monotonic_ms: None,
+                        lease_created_monotonic_ms: None,
+                        lease_clock_boot_id: None,
+                        lease_holder_process_id: None,
+                        last_transition_event: "child.report.accepted".into(),
+                        last_transition_at_ms: now_ms,
+                        created_at_ms: now_ms,
+                    }).await?;
+                    let _ = state.lock().await.events.send(CoreEvent::ChildWorkflowProjection {
+                        task_id: stored_request.parent_task_id.clone(),
+                        projection: crate::child_workflow::ChildProjection {
+                            event_id: format!("{}:accepted", accepted.child_task_id),
+                            parent_task_id: stored_request.parent_task_id.clone(),
+                            child_task_id: accepted.child_task_id.clone(),
+                            role: request.role.clone(),
+                            revision: typed_accepted.revision.unwrap_or(0),
+                            state: crate::child_workflow::CoordinatorState::Accepted,
+                            reason_code: None,
+                            parent_sequence,
+                            budget: typed_request.budget.clone(),
+                            lease_live: false,
+                            dead_letter: false,
+                        },
+                    });
                     Self::record_audit(
                         &state,
                         crate::audit::AuditKind::Evidence,
@@ -9279,6 +9441,15 @@ impl TaskCoordinator {
                         .map_err(|error| error.to_string())
                 }
                 .await;
+                if let Err(error) = &result {
+                    Self::record_audit(
+                        &state,
+                        crate::audit::AuditKind::Evidence,
+                        child_task_id.clone(),
+                        "child.contract.rejected",
+                        [("reason".to_owned(), error.clone())],
+                    ).await;
+                }
                 let _ = reply.send(result);
             }
             CoreCommand::IndexWorkspace {

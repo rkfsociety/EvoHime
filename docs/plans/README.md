@@ -40,7 +40,7 @@
 
 | План | Обзор | Блокирующие зависимости |
 | --- | --- | --- |
-| 03 Специализированные child workflows | [обзор](03-0-specialized-child-workflows.md) | — |
+| 03 Специализированные child workflows | реализован; контракт перенесён в [`../architecture.md`](../architecture.md) и [`../current-state.md`](../current-state.md) | — |
 | 04 Постоянное слушание и ambient-память | [обзор](04-0-ambient-listening.md) | — |
 
 ```text
