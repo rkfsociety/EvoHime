@@ -17,7 +17,7 @@ graph. Lease-механизма в текущем runtime нет: он созд�
 ## Что уже есть в коде
 
 Есть: `ChildLifecycleState` (`crates/evohime-core/src/child_runtime.rs:47-59`)
-ровно в описанных ниже состояниях (плюс `TimedOut` и `Aborted`), проверяемые
+ровно в описанных ниже состояниях, проверяемые
 переходы (`allowed_transition`, `child_runtime.rs:179-209`) и события
 lifecycle с порядковым номером. `is_terminal` (`child_runtime.rs:167-177`)
 включает `Accepted, Rejected, Failed, Cancelled, TimedOut, Aborted`;
@@ -51,7 +51,7 @@ revision, привязанное к паре часов (`crates/evohime-receipt
 - **Поля lease** (хранятся в checkpoint, см. схему ниже):
   `lease_deadline_monotonic_ms`, `lease_created_monotonic_ms`,
   `lease_clock_boot_id`, `lease_holder_process_id`.
-- **Живой lease** = `lease_deadline_monotonic_ms > now_monotonic_ms` **и**
+- **Живой lease в текущем boot** = `lease_deadline_monotonic_ms > now_monotonic_ms` **и**
   `lease_clock_boot_id == current_clock_boot_id`. Смена `clock_boot_id`
   (перезапуск runtime) делает старый lease недействительным: monotonic
   deadline нельзя безопасно сравнивать между boot-сессиями. Поэтому активный
@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS coordinator_child_checkpoint (
     'failed','cancelled','timed_out','aborted'
   )),
   failure_reason TEXT,
+  dead_letter INTEGER NOT NULL DEFAULT 0 CHECK(dead_letter IN (0,1)),
   report_json BLOB,
   evidence_locators_json BLOB,
   provenance_hashes_json BLOB,
@@ -109,7 +110,7 @@ revision и последнему transition sequence. Дедупликация �
 последнее событие текущей revision.
 
 `report_json`/`evidence_locators_json`/`provenance_hashes_json` хранят typed
-payload из 03.1 (`ChildReport`, evidence locators, `Provenance` hashes) как
+payload из 03.1 (`TypedChildReport`, evidence locators, `Provenance` hashes) как
 canonical JSON — та же canonicalization, что и receipt payload из 01.1, чтобы
 хеши были воспроизводимы при повторной валидации. `parent_sequence`
 копируется из `CorrelationContext`/`Provenance` (`child_contracts.rs:84-132,
@@ -129,27 +130,31 @@ restart coordinator повторяет попытку с последнего з
 
 ## Повторная валидация report/evidence после restart
 
-При restart для каждого child в нетерминальном состоянии coordinator
-выполняет, в этом порядке, до возобновления или перевода в `Failed`:
+При restart для каждого child в нетерминальном состоянии coordinator выполняет
+полную проверку checkpoint. Смена `clock_boot_id` делает process lease
+недействительным, поэтому такой child не возобновляется автоматически: после
+проверок он переводится в `Failed` с `restart_no_live_lease` (либо с первой
+ошибкой целостности). `Queued`/`Created` без lease могут быть поставлены в
+очередь заново; запуск нового child/revision требует обычного coordinator
+решения.
 
-1. **Lease check.** Если lease не живой (см. выше) — сразу `Failed(reason=
-   restart_no_live_lease)`, дальнейшие проверки не выполняются.
-2. **Hash check.** Пересчитать canonical hash `report_json` и каждого
+1. **Hash check.** Пересчитать canonical hash `report_json` и каждого
    evidence locator, сравнить с `provenance_hashes_json`. Несовпадение —
    `Failed(reason=restart_hash_mismatch)`.
-3. **Correlation check.** `parent_sequence` и `child_task_id`/`revision` в
+2. **Correlation check.** `parent_sequence` и `child_task_id`/`revision` в
    checkpoint должны совпадать с последним известным родителю значением
    (родитель — источник истины по order). Несовпадение — `Failed(reason=
    restart_correlation_mismatch)`.
-4. **Schema check.** `report_json` должен проходить ту же typed-валидацию,
+3. **Schema check.** `report_json` должен проходить ту же typed-валидацию,
    что и при первичном приёме в 03.1 (schema version, обязательные поля).
    Несовпадение — `Failed(reason=restart_schema_invalid)`.
 
-Валидация полная (все четыре шага для каждого поля checkpoint), частичной
-ревалидации нет — child либо целиком доверенный после restart, либо
-переводится в `Failed`. Успешное прохождение всех шагов возобновляет child в
-зафиксированном `state` без создания нового перехода (restart не является
-lifecycle event).
+4. **Lease check.** Проверить lease в текущем boot. Если он не живой, причина
+   `restart_no_live_lease` назначается после integrity-проверок.
+
+Валидация полная, частичной ревалидации нет. Успешная проверка не означает
+возобновление процесса: она лишь доказывает целостность checkpoint перед
+переводом в `Failed` из-за недействительного process lease.
 
 ## Restart-переходы и terminal состояния
 
@@ -199,15 +204,20 @@ src/lib.rs:3493-3511`): фоновый цикл на интервале (по у
 
 - `max_revisions` считает только revision, порождённые reviewer `revise`
   (см. 03-0), не restart-переходы;
-- restart не создаёт новую revision и не расходует лимит — это то же
-  число попыток, к которому coordinator возвращается после lease/hash
-  ревалидации;
+- restart не создаёт новую revision и не расходует лимит; после полной
+  проверки checkpoint coordinator переводит потерянный process lease в
+  `Failed`, а повторный запуск child/revision требует отдельного решения;
 - transport/recovery retry ограничен тремя попытками на одну revision и не
   расходует `max_revisions`; после исчерпания попыток исход попадает в
   `Failed`/dead-letter с конкретной причиной;
 - после исчерпания `max_revisions` действует правило 03-0: `revise_plan`,
   если изменились предпосылки/границы, иначе `Failed(reason=
   max_revisions_exceeded)`; новый implementer автоматически не создаётся.
+
+Dead-letter — это durable terminal record для такого `Failed` исхода с
+`dead_letter=true`, причиной, revision, correlation ids и redacted metadata;
+он хранится 30 дней и не содержит raw report/transcript. 03.2 отвечает за
+запись и retention, 03.4 — только за read-only проекцию в UI.
 
 ## Fan-in конфликты
 

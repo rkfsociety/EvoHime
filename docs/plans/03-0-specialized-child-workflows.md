@@ -37,7 +37,8 @@ ownership задачи, approval и финального решения. «Ев�
 расширить исходные grants или budget.
 
 Отчёт содержит `status`, `summary`, `evidence[]`, `changed_paths[]`, `tests[]`,
-`risks[]`, `next_action` и `provenance`. `provenance` обязан включать хеши
+`risks[]`, `next_action` и `provenance`; точные typed-поля и их
+optional/default семантика фиксируются в 03.1. `provenance` обязан включать хеши
 входных данных и evidence, версии схемы и инструментов, model/provider IDs,
 `created_at`/`completed_at` и `parent_sequence`; Core проверяет эти значения
 до принятия отчёта. Raw transcript не передаётся родителю по умолчанию и
@@ -87,11 +88,12 @@ policy-операцией.
 
 `crates/evohime-core/src/child_roles.rs` и `child_runtime.rs` уже содержат
 существенную часть: перечисление ролей (`Coordinator`, `Researcher`,
-`Implementer`, `Reviewer`, `Tester`), lifecycle state machine ровно в тех
-состояниях, что описаны ниже, typed `ChildTaskRequest`/`ChildReport` с
-валидацией до persistence, запрет вложенных детей и базовое разрешение только
-read-only capabilities. 03.1 добавляет typed grants для implementer/tester,
-но не снимает повторную Core-проверку и approval.
+`Implementer`, `Reviewer`, `Tester`), lifecycle state machine и untyped
+`ChildTaskRequest`/`ChildReport` с базовой валидацией до persistence. Отдельный
+модуль `child_contracts.rs` содержит начальную typed-модель; подключение её к
+реальному runtime остаётся задачей 03.1. Запрет вложенных детей и базовое
+разрешение только read-only capabilities уже есть. 03.1 добавляет typed grants
+для implementer/tester, но не снимает повторную Core-проверку и approval.
 
 Есть: Context Budget Manager и content-addressed Artifact Store в Core/SQLite
 (schema v19), включая hash-проверку, task namespace и locator access для
@@ -135,7 +137,9 @@ retrieval для неё уже есть, но grants и budget не заданы
 
 ## Критерии готовности плана
 
-- каждый child имеет typed input/output и отдельный budget;
+- каждый child имеет typed input/output и отдельный budget; offload большого
+  output является отдельно включённой возможностью контракта, а не неявным
+  обходом inline-валидации;
 - parent никогда не принимает child result без validation;
 - child не расширяет права родителя и не обходит approval;
 - restart/cancellation не оставляют orphan processes or leases;

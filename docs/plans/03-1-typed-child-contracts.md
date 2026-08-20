@@ -54,7 +54,12 @@ additive-полями.
 (enforcement на реальном create/report flow), проверки grants на каждом Core
 tool call, stale-provenance проверки, атомарного генератора
 `parent_sequence`, ignore-unknown-fields miграции существующих child-задач и
-audit-логирования отклонений.
+audit-логирования отклонений. Также нужно добавить в typed contract поля,
+которые требуются обзором 03.0, но отсутствуют в текущих структурах:
+`input_context_ids`, structured `evidence[]`, `changed_paths[]`, `tests[]`,
+`risks[]`, `next_action`, а для 03.3 — optional
+`allow_output_offload`/`output_privacy`/`output_artifact`. Их добавление
+должно быть additive с safe default и отражено в contract version.
 
 ## Спецификация контракта
 
@@ -64,7 +69,10 @@ UTF-8 строка в поле `Schema.json_schema` (лимит `MAX_SCHEMA_CHAR
 `application/json`), `Schema.max_bytes` — верхняя граница сериализованного
 значения, проверяемая до валидации по JSON Schema. В обычном inline-пути
 report проходит две проверки в этом порядке: (1) `max_bytes`, (2) JSON Schema
-validation `output_data` против `output_schema.json_schema`, если оно задано;
+validation `output_data` против `output_schema.json_schema`, если оно задано.
+Текущая реализация `Schema::validate_content()` пока проверяет только размер;
+подключение ограниченного draft 2020-12 validator входит в этот этап и не
+считается уже реализованным только потому, что строка схемы уже хранится;
 отсутствие `output_schema` не освобождает report от базовой
 structural-валидации `TypedChildReport::validate()`. Этап 03.3 добавляет
 явный offload-путь: включённый для конкретного child offload перехватывает
@@ -86,8 +94,8 @@ acceptance criteria (JSON-path assertions) не входит в 03.1 и оста
   contract с другим major с ошибкой `ContractError::VersionMismatch` (major
   добавляется к enum ниже); существующий child должен быть явно
   мигрирован, автоматической конвертации нет.
-- **minor-изменение** — добавление optional-поля с safe default. Parent с
-  `contract_version.minor >= child.contract_version.minor` и тем же major
+- **minor-изменение** — добавление optional-поля с safe default. Получатель с
+  `contract_version.minor <= отправителя.contract_version.minor` и тем же major
   принимает contract (`can_accept_additive`); неизвестные для читателя
   optional-поля игнорируются, а не отклоняются (serde default для новых
   optional-полей, `#[serde(skip_serializing_if = "Option::is_none")]` уже
@@ -111,8 +119,10 @@ acceptance criteria (JSON-path assertions) не входит в 03.1 и оста
 - Заполнять correlation ids для task, child и tool call; `receipt_id`
   заполняется `None` до 01.3 и не проверяется этим этапом.
 - Ввести атомарный генератор `parent_sequence` на parent task (monotonic
-  counter per `parent_task_id`, не per process), чтобы конкурентные children
-  не получали повторяющийся или невозрастающий `parent_sequence`.
+  counter per `parent_task_id`, не per process), чтобы успешно сохранённые
+  конкурентные children не получали повторяющийся или невозрастающий
+  `parent_sequence`. Пропуски допустимы при rollback/отмене транзакции;
+  порядок fan-in определяется только сохранёнными sequence.
 - Определить и проверять stale provenance (см. ниже) перед persistence.
 - Проверять `grants_are_subset_of`/`validate_grant_subset` при создании
   child (создание отклоняется при эскалации) и повторно передавать grants в
@@ -171,8 +181,8 @@ Provenance считается stale, если выполняется любое 
 - contract_version: major mismatch отклоняется, minor forward-compat
   (unknown additive-поле) принимается и игнорируется;
 - parent sequence монотонен и уникален в пределах parent task под
-  конкурентной нагрузкой (N children, каждый получает свой sequence без
-  gaps/repeats) и однозначно упорядочивает fan-in по значению
+  конкурентной нагрузкой (у сохранённых children нет repeats; gaps допустимы)
+  и однозначно упорядочивает fan-in по значению
   `parent_sequence`, а не по arrival time;
 - budget escalation (`BudgetExceedsParent`) отклоняется, включая case
   child budget без parent budget;

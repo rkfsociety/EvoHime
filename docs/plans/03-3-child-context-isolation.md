@@ -49,7 +49,8 @@ content-addressed Artifact Store (`crates/context-budget/src/artifact.rs`,
   который Core передаёт в `access_allowed` при чтении, строился из
   `CorrelationContext` (03.1), а не собирался ad hoc на каждом call site.
 
-- **Offload threshold («большой результат»)** — report offload'ится в
+- **Offload threshold («большой результат»)** — если в typed contract явно
+  включён `allow_output_offload`, report offload'ится в
   Artifact Store вместо inline-передачи, если сериализованный `output_data`
   превышает `Schema.max_bytes` запроса (03.1) или, если `output_schema` не
   задан, дефолт `ChildBudget`-независимый `DEFAULT_INLINE_MAX_BYTES = 32 *
@@ -88,8 +89,9 @@ content-addressed Artifact Store (`crates/context-budget/src/artifact.rs`,
   `bounded_summary` (уже реализовано, не переписывается), plus `locator` и
   `content_hash`. Это исключение из inline-валидации 03.1 и должно быть явно
   включено в child contract; без такого флага действует обычный
-  `OutputTooLarge`. Для этого этап добавляет optional additive-поля typed
-  report `output_privacy` и `output_artifact`; их отсутствие означает обычный
+  `OutputTooLarge`. Этап 03.1 определяет optional additive-поля typed
+  request/report `allow_output_offload`, `output_privacy` и `output_artifact`,
+  а 03.3 подключает их к Artifact Store; их отсутствие означает обычный
   inline output и сохраняет совместимость с контрактом 03.1. Данные с
   `Privacy::Sensitive`/`Privacy::Secret` не offload'ятся —
   `ArtifactError::PrivacyForbidsOffload` (уже реализовано в `artifact.rs`)
@@ -162,8 +164,10 @@ content-addressed Artifact Store (`crates/context-budget/src/artifact.rs`,
 - selected context: id/locator, не входящий в `input context ids` child'а,
   недоступен даже если формально принадлежит task namespace (allowlist test);
   создание child с недоступным id отклоняется до persistence;
-- offload: report с `output_data` больше threshold offload'ится, parent
-  получает `ArtifactRef` вместо inline данных; report с `Privacy::Secret`/
+- offload: report с включённым `allow_output_offload` и `output_data` больше
+  threshold offload'ится, parent получает `ArtifactRef` вместо inline данных;
+  без флага тот же report отклоняется как `OutputTooLarge`; report с
+  `Privacy::Secret`/
   `Sensitive` содержимым не offload'ится вообще и не появляется в summary;
 - locator access: child не может прочитать locator другого task namespace
   без grant; повторный tool call с тем же locator проверяется заново (не

@@ -24,7 +24,8 @@ dead-letter; trace переходов состояний.
 ## Содержание
 
 - Task timeline показывает role, status, budget, evidence, approval и reason
-  отказа.
+  отказа из Core-owned projection; она не читает workspace, SQLite или raw
+  report напрямую.
 - OperationsPanel показывает активных children, leases и dead-letter.
 - Dead-letter содержит окончательно не принятые reports/events после
   исчерпания bounded transport/recovery retries или revisions либо после
@@ -32,7 +33,16 @@ dead-letter; trace переходов состояний.
   является новым бесконечным циклом. Запись хранится 30 дней, доступна
   coordinator и администратору, payload redacted и не содержит raw
   transcript.
-- Trace сохраняет state transitions, not raw hidden chain-of-thought.
+- Trace сохраняет state transitions, revision, lease outcome и correlation
+  ids, not raw hidden chain-of-thought.
+
+Минимальное событие projection содержит `event_id`, `parent_task_id`,
+`child_task_id`, `role`, `revision`, `state`, `reason_code`, безопасные budget/
+lease counters, `parent_sequence` и timestamp. `summary`, evidence и
+acceptance criteria передаются только в bounded/redacted projection; raw
+transcript, output payload и секреты запрещены. Dead-letter в UI — это только
+запись с `dead_letter=true` из checkpoint, а не отдельный renderer-owned
+журнал.
 
 Audit и trace различаются: audit отвечает на «кто, когда, что запросил и чем
 закончилось» и содержит actor, parent/child IDs, grants summary, approval,
