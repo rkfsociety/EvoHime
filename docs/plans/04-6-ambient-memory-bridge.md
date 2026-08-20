@@ -26,13 +26,15 @@ Ambient-источника и его policy нет; `run_memory_extraction` жё
 
 ## Содержание
 
-- `SourceTrust::Ambient`: `can_ground_strict_save() = false`,
+- `SourceTrust::Ambient` добавляется к существующему enum; до этой правки его
+  нет в коде. Для него `can_ground_strict_save() = false`,
   `requires_validation() = true`.
 - Явный ранний гейт в `evaluate()`: ambient-кандидат возвращает `Pending` с
   новой причиной `AmbientNeverAutoConfirms` сразу после проверки на секрет.
   Полагаться на то, что «оно и так упадёт ниже по коду», нельзя.
 - Режим `EVOHIME_AMBIENT_MEMORY` (`off` | `pending`, по умолчанию `pending`).
-  Аналога `open` для ambient нет.
+  Значение читается и валидируется Core; неизвестное значение даёт fail-safe
+  `off`, а не молчаливое включение. Аналога `open` для ambient нет.
 - Триггер извлечения — закрытие эпизода, а не пользовательская фраза, со своей
   `TurnContext { user_asserted: false }`. Диалоговый extraction остаётся на
   `detect_explicit_trigger` и не меняется.

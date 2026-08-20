@@ -52,10 +52,14 @@
     string episode_id = 1; repeated Utterance utterances = 2; }` — текст
     отдаётся только здесь, никогда в списке;
   - `DeleteAmbientTranscripts { repeated string episode_ids = 1; bool
-    all = 2; }` → `DeleteAmbientTranscriptsResult { int32 deleted_count = 1;
-    }`;
-  - `ForgetAmbientWindow { int64 window_ms = 1; }` →
-    `ForgetAmbientWindowResult { int32 deleted_count = 1; }`;
+    all = 2; bool confirmed = 3; }` →
+    `DeleteAmbientTranscriptsResult { int32 deleted_count = 1; }`. Для
+    `all=true` и удаления списка Core требует `confirmed=true` (или штатный
+    approval), поэтому модальное окно Electron не является единственной
+    границей безопасности;
+  - `ForgetAmbientWindow { int64 window_ms = 1; bool confirmed = 2; }` →
+    `ForgetAmbientWindowResult { int32 deleted_count = 1; }`; Core отвергает
+    неподтверждённое удаление;
   - `GetAmbientPolicy {}` → `AmbientPolicy { repeated QuietHours quiet_hours
     = 1; repeated string blocklist_patterns = 2; int32 retention_days = 3;
     }`;
@@ -66,9 +70,12 @@
   Команды, способные завершиться ошибкой (`SetAmbientListening`,
   `SaveAmbientPolicy`, скачивание движка), возвращают `error_code` из
   фиксированного набора: `LISTENER_UNAVAILABLE`, `DEVICE_CONFLICT`,
-  `POLICY_INVALID`, `ENGINE_NOT_READY`. `ipc_bridge.rs` транслирует эти коды
-  как есть, renderer сопоставляет их с локализованной строкой в
-  `ListeningPanel`; неизвестный код показывает generic «Ошибка слушателя».
+  `DEVICE_DISCONNECTED`, `PERMISSION_DENIED`, `POLICY_INVALID`,
+  `ENGINE_NOT_READY`, `STORAGE_FAILED`, `CONFIRMATION_REQUIRED` и
+  `INVALID_ARGUMENT`. `ipc_bridge.rs` транслирует эти коды как есть, renderer
+  сопоставляет их с локализованной строкой в `ListeningPanel`; неизвестный код
+  показывает generic «Ошибка слушателя» и не трактуется как успешное изменение
+  состояния.
 - События (через существующий `EventEnvelope.payload`, JSON-полезная
   нагрузка): `ambient.state` — `{ state, reason, active_device_id }`,
   публикуется при любом изменении `ListeningState` независимо от источника
@@ -96,7 +103,8 @@
   `preload/index.ts` не меняется — он проксирует весь список.
 - `tray.ts`: иконка-вариант и заголовок «Ева слушает» / «Микрофон на паузе»,
   пункт паузы; `globalShortcut` `Ctrl+Alt+M`. Индикатор **fail-visible**: при
-  неизвестном состоянии показывается «слушает», а не «выключено». К
+  неизвестном состоянии показывается «проверка состояния», а не «выключено» и
+  не создаётся ложное утверждение, что микрофон активен. К
   «неизвестному состоянию» относятся: таймаут IPC-запроса `GetAmbientStatus`
   дольше 5 секунд, ответ листенера с ошибкой на этот запрос, и рантайм,
   ещё не загруженный при старте приложения — во всех трёх случаях

@@ -65,7 +65,7 @@ nonce-handshake; в `ALLOWED_CLIENT_ROLES` добавляется `listener`. О
 | 04.4 | [Движок распознавания](04-4-speech-engine.md) | whisper.dll в рантайме, транскрипты в хранилище | 04.5–04.7 |
 | 04.5 | [Контроль и UI](04-5-control-and-ui.md) | IPC-команды, индикатор, пауза, панель «Слух» | 04.6, 04.7 |
 | 04.6 | [Мост в память](04-6-ambient-memory-bridge.md) | `SourceTrust::Ambient` и строгая policy | 04.7 |
-| 04.7 | [Проактивность](04-7-bounded-proactivity.md) | bounded предложения с потолком и approval | UI |
+| 04.7 | [Проактивность](04-7-bounded-proactivity.md) | bounded предложения с потолком и approval | Core и Electron UI |
 
 ## IPC и UI
 
@@ -80,13 +80,13 @@ nonce-handshake; в `ALLOWED_CLIENT_ROLES` добавляется `listener`. О
 
 ## Зависимости плана
 
-Блокирующие: нет. План опирается на уже реализованные Memory Extraction,
-permissions, desktop IPC, local storage и supervisor.
+Блокирующие: нет. План опирается на существующие Memory Extraction,
+permissions, desktop IPC, local storage и supervisor; конкретные контракты этих
+слоёв перед реализацией сверяются с кодом, а не считаются неизменными.
 
-Опциональная: план 01 — подписанные receipts для проактивных эффектов.
-До его появления проактивное предложение фиксируется в event journal и его
-lifecycle виден в UI, но офлайн-проверяемого receipt у него нет; на поведение,
-потолки и approval это не влияет.
+Подписанные receipts плана 01 уже входят в текущий runtime-контракт EvoHime.
+Поэтому проактивный эффект обязан проходить существующий receipt/approval путь
+при принятии пользователем; отдельный ambient-receipt не вводится.
 
 ## Что план не делает
 

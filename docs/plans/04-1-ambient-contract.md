@@ -16,8 +16,11 @@ capability микрофона и правила логирования.
 
 ## Что уже есть в коде
 
-Ничего. Ни одного аудио-крейта, ни одной npm-зависимости, ни упоминания в
-`docs/`. В `Permission` (`crates/permissions/src/lib.rs`) микрофона нет.
+Ambient-контракт и capability ещё не реализованы: в текущем checkout нет
+аудио-крейта, ambient-веток в permissions и ambient-раздела в канонической
+архитектурной документации. Существующие `Permission` и `permission_rules`
+являются точками расширения, но их фактический API нужно сверить перед
+изменением.
 Прототип на Web Speech API удалён вместе с веб-фронтендом и к native-архитектуре
 неприменим.
 
@@ -41,7 +44,8 @@ capability микрофона и правила логирования.
     `ambient_proactivity_state`;
   - закрытый набор кодов ошибок.
 - `Permission::MicrophoneListen` (serde `microphone_listen`) с дефолтом `Deny`;
-  правило в `permission_rules.rs` и в `permissions.json.example`.
+  правило в `permission_rules.rs` и в `permissions.json.example`. Capability
+  проверяется Core перед выдачей listener-разрешения, а не только в UI.
 - Правила логирования: закрытый allow-list полей для `listener.jsonl` и для
   событий `ambient.*`. Текст, хеш текста, имя процесса и заголовок окна в логи
   не попадают никогда — короткую фразу по хешу перебирают за секунды, поэтому

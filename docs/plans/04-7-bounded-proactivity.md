@@ -7,10 +7,9 @@
 Блокирующие: этап 04.4 — источник сигнала; этап 04.5 — карточки и
 `ResolveAmbientProposal`; этап 04.6 — кандидаты и их provenance.
 
-Опциональная: план 01 — receipt на проактивный эффект. Без него предложение
-фиксируется в event journal, его lifecycle виден в UI и в timeline, но
-офлайн-проверяемого receipt у него нет. Потолки, набор разрешённых эффектов и
-approval от этого не зависят.
+Подписанные receipts плана 01 уже являются частью текущего runtime-контракта.
+Принятие предложения проходит существующий receipt/approval путь; новый
+ambient-специфичный receipt в этом этапе не создаётся.
 
 Это последний этап плана 04.
 
@@ -39,11 +38,13 @@ approval от этого не зависят.
   mute-ключи и счётчики бюджета; миграция транзакционна и получает обычный
   backup до изменения схемы.
   Минимальные ограничения схемы: уникальный `proposal_id`, уникальный
-  `proposal_key`, `source_episode_id` с проверкой существования эпизода,
+  `proposal_key`, nullable `source_episode_id` с `ON DELETE SET NULL` и
+  обязательным metadata-полем `source_deleted_at`/`source_deleted_reason`,
   `state` только из пяти состояний автомата, а счётчики бюджета — одна строка
   на ambient-профиль. Удаление эпизода атомарно переводит связанные
-  предложения в `Expired`/`source_deleted`, не оставляя активной ссылки на
-  удалённый источник.
+  предложения переводятся в `Expired` с причиной `source_deleted`, не оставляя
+  активной ссылки на удалённый источник. Это изменение выполняется в одной транзакции с
+  tombstone эпизода; действующий FK не должен блокировать удаление источника.
 - Закрытый список разрешённых эффектов:
   1. карточка-предложение в UI;
   2. неисполняемое `pending`-напоминание.
@@ -70,6 +71,7 @@ approval от этого не зависят.
 - создать: `crates/evohime-core/src/ambient_proactivity.rs`;
 - изменить: `crates/evohime-core/src/lib.rs`,
   `crates/evohime-core/src/ipc_bridge.rs`,
+  `crates/evohime-local-storage/src/lib.rs` (миграция v25),
   `crates/evohime-local-storage/src/ambient_store.rs`,
   `desktop/evohime-electron/src/renderer/src/ListeningPanel.tsx`,
   `docs/architecture.md`.
