@@ -61,6 +61,10 @@ async fn main() {
     let approval_gc_task = evohime_core::spawn_approval_gc(journal.clone(), receipt_keys.clone());
     let receipt_retention_task =
         evohime_core::spawn_receipt_retention(journal.clone(), receipt_keys.clone());
+    // Этап 04.2: стартовый прогон ambient-retention выполняется внутри самой
+    // задачи до первого ожидания, поэтому просроченные транскрипты исчезают
+    // при запуске, а не через час.
+    let ambient_retention_task = evohime_core::spawn_ambient_retention(journal.clone());
     let tools = std::sync::Arc::new(evohime_tool_runtime::ToolRegistry::bootstrap());
     let _permission_audit_task =
         evohime_core::attach_permission_audit_sink(journal.clone(), &tools).await;
@@ -103,6 +107,7 @@ async fn main() {
         heartbeat_task.abort();
         approval_gc_task.abort();
         receipt_retention_task.abort();
+        ambient_retention_task.abort();
         return;
     }
     if let Some(request) = console_review_request() {
@@ -110,6 +115,7 @@ async fn main() {
         heartbeat_task.abort();
         approval_gc_task.abort();
         receipt_retention_task.abort();
+        ambient_retention_task.abort();
         return;
     }
     if let Some((prompt, workspace_root, approve_writes)) = console_request() {
@@ -166,6 +172,7 @@ async fn main() {
         heartbeat_task.abort();
         approval_gc_task.abort();
         receipt_retention_task.abort();
+        ambient_retention_task.abort();
         return;
     }
     let (coordinator, _events) =
@@ -220,6 +227,7 @@ async fn main() {
     heartbeat_task.abort();
     approval_gc_task.abort();
     receipt_retention_task.abort();
+    ambient_retention_task.abort();
 }
 
 #[cfg(windows)]

@@ -1120,6 +1120,7 @@ use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+pub mod ambient;
 pub mod audit;
 pub mod build;
 pub mod capability_registry;
@@ -3828,6 +3829,32 @@ pub fn spawn_receipt_retention(
             for (key_id, cutoff_sequence) in candidates {
                 let _ = runtime.compact_chain(&key_id, cutoff_sequence);
             }
+        }
+    })
+}
+
+/// Этап 04.2 ambient retention: истёкший текст транскриптов, истёкшие
+/// метаданные эпизодов, истёкшие tombstone и состарившиеся ambient-строки
+/// durable journal.
+///
+/// В отличие от `spawn_approval_gc` и `spawn_receipt_retention`, стартовый
+/// прогон выполняется **до** первого `sleep`. Там `sleep` стоит перед
+/// работой, поэтому копия того же цикла не почистила бы ничего при запуске:
+/// база, открытая с просроченными строками, оставалась бы грязной ещё час.
+/// Отмену эти задачи сегодня не используют, и ambient не вводит её в
+/// одиночку: `CancellationToken` здесь появится тогда же, когда у остальных.
+pub fn spawn_ambient_retention(journal: EventJournal) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            let now_ms = SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|value| value.as_millis() as u64)
+                .unwrap_or_default();
+            let _ = journal.purge_ambient(now_ms).await;
+            tokio::time::sleep(std::time::Duration::from_secs(
+                crate::ambient::PURGE_INTERVAL_SECONDS,
+            ))
+            .await;
         }
     })
 }

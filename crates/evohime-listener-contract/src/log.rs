@@ -3,7 +3,7 @@ use crate::{
     ids::{DeviceId, EngineVersion, EpisodeId, ProposalId},
     state::{ListeningReason, ListeningState},
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Every field name an ambient log record may carry.
 ///
@@ -41,13 +41,43 @@ pub enum EngineStatus {
     Failed,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+/// Extraction lifecycle of one ambient episode.
+///
+/// The same four values are the `CHECK` constraint of `ambient_episodes`
+/// in storage schema v25: the wire form below is the only spelling, so the
+/// table and the log cannot drift apart.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExtractionState {
     Disabled,
     Pending,
     Done,
     Failed,
+}
+
+impl ExtractionState {
+    pub const ALL: [ExtractionState; 4] = [
+        ExtractionState::Disabled,
+        ExtractionState::Pending,
+        ExtractionState::Done,
+        ExtractionState::Failed,
+    ];
+
+    /// Wire and storage form.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            ExtractionState::Disabled => "disabled",
+            ExtractionState::Pending => "pending",
+            ExtractionState::Done => "done",
+            ExtractionState::Failed => "failed",
+        }
+    }
+
+    /// Parses a stored value; an unknown string stays unknown instead of
+    /// being coerced into a neighbouring meaning.
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|state| state.as_str() == value)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -284,6 +314,18 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn extraction_states_round_trip_through_their_storage_form() {
+        for state in ExtractionState::ALL {
+            assert_eq!(ExtractionState::parse(state.as_str()), Some(state));
+            assert_eq!(
+                serde_json::to_value(state).unwrap(),
+                Value::String(state.as_str().to_owned())
+            );
+        }
+        assert_eq!(ExtractionState::parse("extracted"), None);
     }
 
     #[test]

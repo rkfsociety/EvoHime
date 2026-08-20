@@ -590,6 +590,7 @@ dependencies = [
  "chrono",
  "evohime-context-budget",
  "evohime-desktop-ipc",
+ "evohime-listener-contract",
  "evohime-local-storage",
  "evohime-model-gateway",
  "evohime-permissions",
@@ -656,6 +657,7 @@ name = "evohime-local-storage"
 version = "0.1.0"
 dependencies = [
  "evohime-context-budget",
+ "evohime-listener-contract",
  "evohime-receipts",
  "rusqlite",
  "serde",

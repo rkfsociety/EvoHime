@@ -7,6 +7,7 @@ use std::{
 use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+pub mod ambient_store;
 pub mod artifact_store;
 pub mod backup;
 pub mod capability_selection_store;
@@ -26,7 +27,7 @@ pub use backup::{
     RestoreResult, BACKUP_FORMAT_VERSION,
 };
 
-pub const SCHEMA_VERSION: u32 = 24;
+pub const SCHEMA_VERSION: u32 = 25;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StorageError {
@@ -2940,6 +2941,62 @@ impl LocalDatabase {
                 PRAGMA user_version = 24;",
             )?;
         }
+        if current < 25 {
+            // Этап 04.2: ambient-эпизоды, высказывания и tombstone.
+            // Колонок для аудио здесь нет по конструкции: схема физически не
+            // может хранить PCM, поэтому «аудио не пишется на диск» — свойство
+            // таблицы, а не дисциплины вызывающего кода. `expires_at` есть у
+            // каждой из трёх таблиц, включая tombstone: без собственного срока
+            // «отдельное время хранения метаданных» нечем исполнить.
+            transaction.execute_batch(
+                "CREATE TABLE IF NOT EXISTS ambient_episodes (
+                    episode_id TEXT PRIMARY KEY NOT NULL,
+                    started_at TEXT NOT NULL,
+                    ended_at TEXT,
+                    utterance_count INTEGER NOT NULL,
+                    speech_ms INTEGER NOT NULL,
+                    engine_version TEXT NOT NULL,
+                    model_id TEXT NOT NULL,
+                    extraction_state TEXT NOT NULL CHECK(extraction_state IN
+                        ('disabled','pending','done','failed')),
+                    expires_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS ambient_utterances (
+                    utterance_id TEXT PRIMARY KEY NOT NULL,
+                    episode_id TEXT NOT NULL
+                        REFERENCES ambient_episodes(episode_id) ON DELETE CASCADE,
+                    sequence INTEGER NOT NULL,
+                    started_at TEXT NOT NULL,
+                    duration_ms INTEGER NOT NULL,
+                    text TEXT NOT NULL,
+                    text_hash TEXT NOT NULL,
+                    language TEXT NOT NULL,
+                    avg_logprob REAL NOT NULL,
+                    speaker TEXT NOT NULL,
+                    redacted INTEGER NOT NULL DEFAULT 0,
+                    expires_at TEXT NOT NULL,
+                    UNIQUE(episode_id, sequence)
+                );
+                CREATE TABLE IF NOT EXISTS ambient_tombstones (
+                    tombstone_id TEXT PRIMARY KEY NOT NULL,
+                    episode_id TEXT NOT NULL,
+                    removed_at TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    utterance_count INTEGER NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    UNIQUE(episode_id, removed_at)
+                );
+                CREATE INDEX IF NOT EXISTS idx_ambient_utterances_episode
+                    ON ambient_utterances(episode_id, sequence);
+                CREATE INDEX IF NOT EXISTS idx_ambient_expiry
+                    ON ambient_utterances(expires_at);
+                CREATE INDEX IF NOT EXISTS idx_ambient_episode_expiry
+                    ON ambient_episodes(expires_at);
+                CREATE INDEX IF NOT EXISTS idx_ambient_tombstone_expiry
+                    ON ambient_tombstones(expires_at);
+                PRAGMA user_version = 25;",
+            )?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -3132,6 +3189,93 @@ mod tests {
         }
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_file(&backup_path);
+    }
+
+    /// Этап 04.2: ambient-таблицы приезжают миграцией v25 поверх живой базы,
+    /// не трогая уже существующие строки.
+    #[test]
+    fn migrates_schema_24_to_ambient_schema_25_without_touching_existing_rows() {
+        let path = temp_database_path("migration-24-to-25-ambient");
+        let _ = std::fs::remove_file(&path);
+        let backup_path = path.with_extension("db.bak");
+        let _ = std::fs::remove_file(&backup_path);
+        {
+            let connection = rusqlite::Connection::open(&path).expect("legacy database opens");
+            connection
+                .execute_batch(
+                    "CREATE TABLE legacy_marker(id INTEGER);
+                     INSERT INTO legacy_marker(id) VALUES (7);
+                     PRAGMA user_version = 24;",
+                )
+                .expect("legacy schema seeds");
+        }
+        let database = LocalDatabase::open(&path).expect("migration succeeds");
+        assert_eq!(database.schema_version().unwrap(), SCHEMA_VERSION);
+        assert!(
+            backup_path.exists(),
+            "pre-migration backup must be written before schema 25 applies"
+        );
+        let preserved: i64 = database
+            .connection()
+            .query_row("SELECT id FROM legacy_marker", [], |row| row.get(0))
+            .expect("legacy row survives");
+        assert_eq!(preserved, 7);
+        for table in [
+            "ambient_episodes",
+            "ambient_utterances",
+            "ambient_tombstones",
+        ] {
+            let exists: i64 = database
+                .connection()
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(exists, 1, "{table} must exist after migration to schema 25");
+        }
+        // Повторное открытие не пытается мигрировать второй раз.
+        drop(database);
+        let reopened = LocalDatabase::open(&path).expect("second open is a no-op");
+        assert_eq!(reopened.schema_version().unwrap(), SCHEMA_VERSION);
+        drop(reopened);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&backup_path);
+    }
+
+    /// Схема физически не может хранить аудио: ни одна ambient-колонка не
+    /// объявлена как BLOB, поэтому «PCM не пишется на диск» — свойство
+    /// таблицы, а не дисциплины вызывающего кода.
+    #[test]
+    fn ambient_tables_have_no_blob_column() {
+        let path = temp_database_path("ambient-no-blob");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db.bak"));
+        let database = LocalDatabase::open(&path).expect("database opens");
+        for table in [
+            "ambient_episodes",
+            "ambient_utterances",
+            "ambient_tombstones",
+        ] {
+            let mut statement = database
+                .connection()
+                .prepare(&format!("PRAGMA table_info({table})"))
+                .expect("pragma prepares");
+            let types: Vec<String> = statement
+                .query_map([], |row| row.get::<_, String>(2))
+                .expect("pragma runs")
+                .map(|row| row.expect("column type").to_ascii_uppercase())
+                .collect();
+            assert!(!types.is_empty(), "{table} must exist");
+            assert!(
+                !types.iter().any(|kind| kind.contains("BLOB")),
+                "{table} must not be able to hold audio: {types:?}"
+            );
+        }
+        drop(database);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(path.with_extension("db.bak"));
     }
 
     #[test]

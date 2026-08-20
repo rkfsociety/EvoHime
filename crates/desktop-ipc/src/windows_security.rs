@@ -23,7 +23,8 @@ use windows_sys::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
 };
 use windows_sys::Win32::Security::{
-    GetTokenInformation, RevertToSelf, TokenStatistics, TokenUser, PSECURITY_DESCRIPTOR,
+    GetTokenInformation, RevertToSelf, SetFileSecurityW, TokenStatistics, TokenUser,
+    DACL_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR,
     SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_STATISTICS, TOKEN_USER,
 };
 use windows_sys::Win32::Storage::FileSystem::CreateDirectoryW;
@@ -120,6 +121,109 @@ pub fn create_protected_directory(path: &std::path::Path, user_sid: &str) -> io:
         }
     }
     Ok(())
+}
+
+/// Owner-only, protected DACL for an existing file.
+///
+/// Local state written by Core is not protected by the pipe DACL: a file in
+/// the data directory is only as private as its own descriptor. `SYSTEM` is
+/// kept alongside the owner because backup and antivirus paths need it — the
+/// same descriptor the receipt key material uses.
+///
+/// The DACL is protected, so a permissive ACE inherited from the parent
+/// directory cannot re-open the file.
+pub fn harden_file_owner_only(path: &std::path::Path) -> io::Result<()> {
+    let sid = current_user_sid()?;
+    let sddl = format!("D:P(A;;FA;;;{sid})(A;;FA;;;SY)");
+    let wide_sddl: Vec<u16> = sddl.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+    if unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            wide_sddl.as_ptr(),
+            SDDL_REVISION_1,
+            &mut descriptor,
+            std::ptr::null_mut(),
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    let wide_path: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let applied = unsafe {
+        SetFileSecurityW(
+            wide_path.as_ptr(),
+            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            descriptor,
+        )
+    };
+    let error = io::Error::last_os_error();
+    unsafe { LocalFree(descriptor as HLOCAL) };
+    if applied == 0 {
+        return Err(error);
+    }
+    Ok(())
+}
+
+/// DACL of an existing file in SDDL form.
+///
+/// Reads back what Windows actually stored, so a caller (or a test) can
+/// assert the descriptor instead of trusting that the call to apply it
+/// succeeded.
+pub fn file_dacl_sddl(path: &std::path::Path) -> io::Result<String> {
+    use windows_sys::Win32::Security::Authorization::ConvertSecurityDescriptorToStringSecurityDescriptorW;
+    use windows_sys::Win32::Security::GetFileSecurityW;
+
+    let wide: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let mut required = 0_u32;
+    unsafe {
+        GetFileSecurityW(
+            wide.as_ptr(),
+            DACL_SECURITY_INFORMATION,
+            std::ptr::null_mut(),
+            0,
+            &mut required,
+        )
+    };
+    if required == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut buffer = vec![0_u8; required as usize];
+    let read = unsafe {
+        GetFileSecurityW(
+            wide.as_ptr(),
+            DACL_SECURITY_INFORMATION,
+            buffer.as_mut_ptr().cast(),
+            required,
+            &mut required,
+        )
+    };
+    if read == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mut text = std::ptr::null_mut();
+    let converted = unsafe {
+        ConvertSecurityDescriptorToStringSecurityDescriptorW(
+            buffer.as_mut_ptr().cast(),
+            SDDL_REVISION_1,
+            DACL_SECURITY_INFORMATION,
+            &mut text,
+            std::ptr::null_mut(),
+        )
+    };
+    if converted == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let sddl = unsafe { wide_to_string(text) };
+    unsafe { LocalFree(text as HLOCAL) };
+    Ok(sddl)
 }
 
 struct OwnedHandle(HANDLE);
@@ -265,5 +369,20 @@ mod tests {
         let mut security = PipeSecurity::owner_only(&sid).expect("descriptor");
         assert!(!security.as_raw().is_null());
         assert!(PipeSecurity::owner_only("not-a-sid").is_err());
+    }
+
+    #[test]
+    fn a_hardened_file_is_readable_by_its_owner_only() {
+        let sid = current_user_sid().expect("current user SID");
+        let path = std::env::temp_dir().join(format!(
+            "evohime-harden-{}-{}.json",
+            std::process::id(),
+            line!()
+        ));
+        std::fs::write(&path, b"{}").expect("file writes");
+        harden_file_owner_only(&path).expect("DACL applies");
+        let dacl = file_dacl_sddl(&path).expect("DACL reads back");
+        assert_eq!(dacl, format!("D:P(A;;FA;;;{sid})(A;;FA;;;SY)"));
+        let _ = std::fs::remove_file(&path);
     }
 }
