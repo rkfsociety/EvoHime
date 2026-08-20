@@ -102,7 +102,10 @@ registry по образцу `RoutingApprovalRegistry`. `IpcBridge` не `Clone`
 
 - создать: `crates/evohime-listener-audio/**`, `crates/evohime-listener/**`,
   `crates/evohime-listener-ipc/**`;
-- изменить: `Cargo.toml`, `crates/desktop-ipc/src/session.rs`,
+- изменить: `Cargo.toml` (workspace members) и `Cargo.lock` (в том же
+  коммите: CI строит с `--locked`), `.github/workflows/windows.yml` (новые
+  пакеты в `cargo test`, шаг для privacy-гейта),
+  `crates/desktop-ipc/src/session.rs`,
   `crates/evohime-core/src/pipe_server.rs`, `crates/evohime-core/src/main.rs`,
   `crates/evohime-supervisor/src/windows_supervisor.rs`,
   `scripts/build-windows-native.ps1`.
@@ -118,7 +121,14 @@ registry по образцу `RoutingApprovalRegistry`. `IpcBridge` не `Clone`
 - `listener_audio_has_no_filesystem_io` (скан исходников крейта на `std::fs`,
   `File::`, `OpenOptions`, `tempfile`) и `listener_writes_nothing_but_expected_files`
   (прогон с водяным знаком в PCM, затем обход temp, tools dir и data dir)
-  проходят; оба гоняются гейтом `scripts/ambient-privacy.tests.ps1`.
+  проходят. Второй тест формулируется как **allow-list ожидаемых файлов, а не
+  как «ничего не создано»**: `StructuredLogger` имеет fallback-путь
+  `%TEMP%\evohime-log-<pid>.jsonl` (`logging.rs:54`), и листенер законно его
+  использует. Тест проверяет, что за пределами этого allow-list не появилось
+  файлов и что ни один файл из allow-list не содержит водяного знака PCM.
+  Оба теста гоняются гейтом `scripts/ambient-privacy.tests.ps1`, который
+  получает собственный шаг в job `rust-native` — иначе он не выполняется в CI
+  вовсе.
 
 ## Критерии готовности
 

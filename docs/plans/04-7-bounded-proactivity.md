@@ -75,7 +75,16 @@ ambient-специфичный receipt в этом этапе не создаё�
   `crates/evohime-local-storage/src/lib.rs` (миграция v26),
   `crates/evohime-local-storage/src/ambient_store.rs`,
   `desktop/evohime-electron/src/renderer/src/ListeningPanel.tsx`,
+  `desktop/evohime-electron/src/renderer/src/OperationsPanel.tsx` (карточка
+  предложения в очереди — этап требует её в тексте, но в раннем списке файлов
+  панели не было),
   `docs/architecture.md`.
+
+`OperationsPanel` — event-driven проекция: список строится из полезной нагрузки
+события (`memory.pending`), а действия идут отдельными командами
+(`core.confirmMemory` / `core.rejectMemory`). Ambient-предложения повторяют эту
+схему: собственное событие со списком предложений плюс `ResolveAmbientProposal`
+из 04.5, а не подмешивание в `memory.pending`.
 
 ## Проверки
 

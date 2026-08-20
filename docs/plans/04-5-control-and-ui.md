@@ -209,7 +209,9 @@ per-capability нет, поэтому она создаётся этим эта�
 - `npm run check:protocol` зелёный после регенерации;
 - ни одно `ambient.*`-событие не содержит `text`/`text_hash`, а после удаления
   эпизода его `ambient.*`-строки исчезают из журнала (тест в паре с 04.2);
-- `npm run typecheck` и renderer-тесты покрывают новую панель;
+- `npm run typecheck`, `npm test` и `npm run check:bundle` (статические
+  security-проверки production-бандлов в job `electron-shell`) зелёные с новой
+  панелью, `listener-runtime.ts` и новым `SafetyPanel`;
 - unit-тесты `ipc_bridge.rs` покрывают все девять команд, включая
   `error_code`-ветки (`LISTENER_UNAVAILABLE`, `DEVICE_CONFLICT`,
   `POLICY_INVALID`, `ENGINE_NOT_READY`);

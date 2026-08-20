@@ -84,7 +84,8 @@ CREATE INDEX idx_ambient_episode_expiry ON ambient_episodes(expires_at);
   Metadata-only tombstones удерживаются bounded-сроком (не дольше 30 дней) и
   также удаляются отдельным purge.
 - `ambient-policy.json` в data dir: атомарная запись через временный файл и
-  rename. Повреждённый файл читается как дефолтная политика **с включённой
+  rename — по образцу `atomic_write_json` в
+  `crates/evohime-receipts/src/key_lifecycle.rs`, а не своей реализацией. Повреждённый файл читается как дефолтная политика **с включённой
   паузой** — fail-safe в пользу тишины.
 - Удаление эпизода отклоняет memory-кандидатов с
   `provenance_source_id = episode_id` причиной `source_deleted` — тем же

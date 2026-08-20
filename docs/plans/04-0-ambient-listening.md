@@ -99,6 +99,33 @@ nonce-handshake; в `ALLOWED_CLIENT_ROLES` добавляется `listener`.
   есть только `PermissionModePicker`, отдельной панели capability нет), бейдж
   «услышано» в очереди памяти `OperationsPanel`.
 
+## Что план обязан сделать с CI
+
+CI не обнаруживает новые крейты сам. `.github/workflows/windows.yml:96`
+перечисляет пакеты поимённо (`cargo test --locked -p evohime-permissions …`),
+а `:101` — `cargo check --locked -p evohime-supervisor -p evohime-updater`.
+Крейт, не вписанный в эти строки, просто не собирается и не тестируется в CI,
+и критерий «CI зелёный» ничего не значит. Поэтому:
+
+- каждый новый крейт (`evohime-listener-contract`, `evohime-listener-ipc`,
+  `evohime-listener-audio`, `evohime-listener`) добавляется в строку `cargo
+  test` того этапа, который его создаёт;
+- `scripts/ambient-privacy.tests.ps1` из 04.3 получает собственный шаг в
+  `rust-native` рядом с `receipt-key-lifecycle.tests.ps1` и
+  `security-eval-gate.tests.ps1`;
+- везде используется `--locked`, поэтому новые зависимости (`cpal`, `rubato`,
+  `ort`, `libloading`) требуют обновления `Cargo.lock` в том же коммите — по
+  тому же правилу, что `npm run generate:protocol` для proto;
+- новые файлы Electron проходят `npm run typecheck`, `npm test` и
+  `npm run check:bundle` в job `electron-shell`.
+
+Имя каталога крейта и имя пакета не совпадают: `crates/permissions` — пакет
+`evohime-permissions`, `crates/desktop-ipc` — `evohime-desktop-ipc`. В CI и в
+`-p` используется **имя пакета**.
+
+Раннер `windows-latest` не имеет ни микрофона, ни DLL, ни модели — это и есть
+причина, по которой `FixtureEngine` обязателен, а не удобен.
+
 ## Зависимости плана
 
 Блокирующие: нет. План опирается на существующие Memory Extraction,
@@ -151,7 +178,8 @@ permissions, desktop IPC, local storage и supervisor; конкретные ко
 - «забыть последние N минут» удаляет транскрипты, отклоняет производных
   кандидатов и не оставляет следа в durable event journal;
 - проактивность не превышает потолок и не выполняет действий без клика;
-- CI зелёный без DLL, модели и микрофона.
+- CI зелёный без DLL, модели и микрофона, и при этом фактически прогоняет
+  новые крейты и privacy-гейт, а не пропускает их мимо списка пакетов;
 - ошибка записи в SQLite видна как `storage_failed`/`ambient.storage_error`,
   а не приводит к бесконечному повтору;
 - конфликт устройства, сон и пробуждение имеют отдельные проверяемые состояния;
