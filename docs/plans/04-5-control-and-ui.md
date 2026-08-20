@@ -17,17 +17,29 @@
 
 ## Что уже есть в коде
 
-`oneof command` занят по тег 105 включительно. События идут через `event_type`
-и `payload` (`EventEnvelope`), поэтому новых сообщений в `oneof event` не
-требуется. `tray.ts` уже перехватывает закрытие окна и имеет готовое место для
-индикатора. `SafetyPanel` и `OperationsPanel` существуют.
+`oneof command` занят по тег 106 включительно: 92–102 — receipt-команды,
+103–105 — plan-review, 106 — `ResolveRoutingDecision` из плана 02. События идут
+через `event_type` и `payload` (`EventEnvelope`, поле `bytes payload = 5`),
+поэтому новых сообщений в `oneof event` не требуется. `tray.ts` уже
+перехватывает закрытие окна, создаёт трей из `evohime-agent.ico` и ставит
+`setToolTip('EvoHime')` — готовое место для индикатора. `OperationsPanel`
+существует. **`SafetyPanel` не существует**: в renderer есть только
+`PermissionModePicker` (общий режим ask/read_only/full), отдельной панели
+per-capability нет, поэтому она создаётся этим этапом. `ViewId` в `App.tsx:41`
+— `'chat' | 'overview' | 'reviews' | 'operations'`. `preload/index.ts` не
+меняется: он проксирует любую `RendererCommand` одним generic `invoke`.
 
 ## Содержание
 
-- Proto: additive команды 106–114 — `SetAmbientListening`, `GetAmbientStatus`,
+- Proto: additive команды 107–115 — `SetAmbientListening`, `GetAmbientStatus`,
   `ListAmbientEpisodes`, `GetAmbientEpisode`, `DeleteAmbientTranscripts`,
   `ForgetAmbientWindow`, `GetAmbientPolicy`, `SaveAmbientPolicy`,
   `ResolveAmbientProposal`. Теги не переиспользуются и не переставляются;
+  вместе с ними в `evohime.desktop.proto` заводятся новые типы, на которые
+  ссылаются поля ниже: enum `ListeningState`, `ListeningReason`,
+  `ExtractionState` и сообщения `AmbientDevice`, `AmbientEpisodeSummary`,
+  `Utterance`, `QuietHours`, `AmbientPolicy` (proto-`AmbientPolicy` — транспорт
+  для типа из 04.1, а не второй источник истины);
   `npm run generate:protocol` выполняется в том же коммите, сгенерированные
   файлы руками не правятся. Поля запрос/ответ по каждой команде:
   - `SetAmbientListening { bool enabled = 1; bool paused = 2; string
@@ -98,9 +110,11 @@
   входа не хранят локальную копию состояния и не обновляют себя напрямую.
   При открытии панели renderer сперва вызывает `GetAmbientStatus`, чтобы не
   зависеть от того, застало ли событие открытым окно.
-- `shared/api.ts`: девять записей в `RENDERER_COMMANDS`, `CommandPayloads`,
-  `CommandResults`; `shell-bridge.ts`: девять `case` в `dispatch()`.
-  `preload/index.ts` не меняется — он проксирует весь список.
+- `src/shared/api.ts`: девять записей в `RENDERER_COMMANDS` (список строк
+  вида `'ambient.setListening'`), `CommandPayloads`, `CommandResults`;
+  `shell-bridge.ts`: девять `case` в `dispatch()`. `preload/index.ts` не
+  меняется — generic `invoke<C extends RendererCommand>` покрывает весь
+  список.
 - `tray.ts`: иконка-вариант и заголовок «Ева слушает» / «Микрофон на паузе»,
   пункт паузы; `globalShortcut` `Ctrl+Alt+M`. Индикатор **fail-visible**: при
   неизвестном состоянии показывается «проверка состояния», а не «выключено» и
@@ -110,7 +124,8 @@
   ещё не загруженный при старте приложения — во всех трёх случаях
   показывается «Слушание (проверка состояния…)» с иконкой ⚠️, а не
   «выключено».
-- Renderer: `ViewId` получает `'listening'`, новый `ListeningPanel.tsx` —
+- Renderer: `ViewId` (`App.tsx:41`) получает пятое значение `'listening'`,
+  новый `ListeningPanel.tsx` —
   крупная строка состояния с причиной, переключатель паузы и подсказка про
   хоткей, «забыть последние 5 минут» и «удалить всё» (обе необратимые
   операции требуют подтверждения в модальном диалоге перед выполнением —
@@ -137,8 +152,12 @@
   причины состояния, коды ошибок) заводятся в существующей системе
   локализации теми же ключами, что и остальной UI — новых механизмов
   локализации этот этап не вводит.
-- `SafetyPanel.tsx`: режим capability `microphone_listen` рядом с остальными и
-  строка «за последний час: N высказываний, M кандидатов, K предложений».
+- Новый `SafetyPanel.tsx` (создаётся этим этапом, сегодня его нет): режимы
+  capability по отдельным `Permission`, включая `microphone_listen`, и строка
+  «за последний час: N высказываний, M кандидатов, K предложений». Панель
+  соседствует с существующим `PermissionModePicker` и не подменяет его: общий
+  режим по-прежнему меняется там, но переключение в «Полный доступ» не трогает
+  `microphone_listen` (инвариант из 04.1).
 - `listener-runtime.ts` (Electron main): скачивание рантайма движка —
   контролируемый pinned URL, проверка Authenticode/SHA-256/ABI, атомарный
   staging, approval, прогресс, повторные попытки и сохранение предыдущей
@@ -161,15 +180,23 @@
 
 ## Файлы
 
+Все пути renderer/main — от корня репозитория, префикс
+`desktop/evohime-electron/`.
+
 - изменить: `crates/desktop-ipc/proto/evohime.desktop.proto`,
   `crates/evohime-core/src/ipc_bridge.rs`, `crates/evohime-core/src/lib.rs`,
   `desktop/evohime-electron/src/main/ipc/generated/protocol.{js,d.ts}`
-  (регенерация), `src/shared/api.ts`, `src/main/shell-bridge.ts`,
-  `src/main/tray.ts`, `src/main/index.ts`, `src/renderer/src/App.tsx`,
-  `src/renderer/src/SafetyPanel.tsx`, `src/renderer/src/styles.css`;
-- создать: `src/renderer/src/ListeningPanel.tsx`,
+  (регенерация),
+  `desktop/evohime-electron/src/shared/api.ts`,
+  `desktop/evohime-electron/src/main/shell-bridge.ts`,
+  `desktop/evohime-electron/src/main/tray.ts`,
+  `desktop/evohime-electron/src/main/index.ts`,
+  `desktop/evohime-electron/src/renderer/src/App.tsx`,
+  `desktop/evohime-electron/src/renderer/src/styles.css`;
+- создать: `desktop/evohime-electron/src/renderer/src/ListeningPanel.tsx`,
+  `desktop/evohime-electron/src/renderer/src/SafetyPanel.tsx`,
   `desktop/evohime-electron/resources/evohime-agent-listening.ico`,
-  `src/main/listener-runtime.ts`.
+  `desktop/evohime-electron/src/main/listener-runtime.ts`.
 
 ## Проверки
 

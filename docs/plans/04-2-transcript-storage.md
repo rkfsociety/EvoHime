@@ -15,15 +15,19 @@ tombstone, плюс персистентная политика ambient.
 
 ## Что уже есть в коде
 
-`SCHEMA_VERSION = 23` в `crates/evohime-local-storage/src/lib.rs`; последние
-миграции добавили лимиты моделей и receipt storage. Образцом служат
-`memory_store.rs`
+`SCHEMA_VERSION = 24` в `crates/evohime-local-storage/src/lib.rs:29`;
+последняя миграция (v24) добавила `coordinator_child_checkpoint` и
+`child_parent_sequences` для child workflows. Механика миграций — единственная
+функция `migrate` (`lib.rs:2158`): цепочка блоков `if current < N { … PRAGMA
+user_version = N; }` внутри одной транзакции, с бэкапом базы до применения и
+восстановлением из него при сбое. Образцом для стора служат `memory_store.rs`
 (tombstone, forget, expiry) и `context_ledger_store.rs`. Таблиц ambient нет.
 
 ## Содержание
 
-- Миграция **v24** (после текущей v23; таблица предложений из 04.7 добавляется
-  отдельной v25-миграцией):
+- Миграция **v25** (после текущей v24; таблица предложений из 04.7 добавляется
+  отдельной v26-миграцией) — новый блок `if current < 25` в той же функции
+  `migrate`:
 
 ```sql
 CREATE TABLE ambient_episodes (
@@ -93,15 +97,17 @@ CREATE INDEX idx_ambient_episode_expiry ON ambient_episodes(expires_at);
 
 ## Файлы
 
-- изменить: `crates/evohime-local-storage/src/lib.rs` (миграция v24,
-  `SCHEMA_VERSION = 24`, экспорт модуля);
+- изменить: `crates/evohime-local-storage/src/lib.rs` (миграция v25,
+  `SCHEMA_VERSION = 25`, экспорт модуля);
 - создать: `crates/evohime-local-storage/src/ambient_store.rs`;
 - изменить: `crates/evohime-core/src/lib.rs` (purge-задача).
 
 ## Проверки
 
-- миграция с v23 на v24 (и upgrade с каждой поддерживаемой более ранней версии)
-  не теряет данные и идемпотентна;
+- миграция с v24 на v25 (и upgrade с каждой поддерживаемой более ранней версии)
+  не теряет данные и идемпотентна; при искусственном сбое миграции база
+  восстанавливается из бэкапа, как в существующем тесте
+  `restores_backup_when_migration_fails`;
 - `PRAGMA table_info` для ambient-таблиц не содержит BLOB-колонок;
 - retention удаляет ровно просроченное и оставляет tombstone;
 - удаление эпизода атомарно сохраняет tombstone до каскадного удаления и не

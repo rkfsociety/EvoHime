@@ -16,13 +16,16 @@
 
 ## Что уже есть в коде
 
-Супервизор сейчас спавнит ровно одного ребёнка и завершает цикл после успешного
-выхода Core (`windows_supervisor.rs`). Для ambient он расширяется вторым
-ребёнком в том же Job Object; основной и listener pipe-серверы работают в
-отдельных задачах и используют общий `Arc<Mutex<CoreState>>`. До изменения
-`ALLOWED_CLIENT_ROLES` (`crates/desktop-ipc/src/session.rs`) содержит две роли;
-третья роль `listener` добавляется только после отдельного обновления
-аутентификационного теста и allow-list.
+Супервизор (`windows_supervisor.rs`) держит Job Object, спавнит Core с
+restart budget и завершает цикл после успешного выхода Core; помимо Core он уже
+умеет спавнить локальный adapter-процесс (`LocalAdapterProcess::spawn_with_limits`
+из плана 02), так что «один ребёнок» — не инвариант, а расширяемая схема.
+Листенер добавляется как ещё один ребёнок в том же Job Object с собственным
+restart budget. Основной и listener pipe-серверы работают в отдельных задачах и
+используют общий `Arc<Mutex<CoreState>>`. `ALLOWED_CLIENT_ROLES`
+(`crates/desktop-ipc/src/session.rs:35`) объявлен как `[&str; 2]`; добавление
+роли `listener` меняет и размер массива, и аутентификационный тест — это
+отдельная правка перед всем остальным.
 
 ## Содержание
 
@@ -47,14 +50,14 @@
   backoff, применение политики, опрос активного окна раз в 500 мс
   (`GetForegroundWindow` + `QueryFullProcessImageNameW`), стоп-слово, трейт
   `SpeechEngine` с `FixtureEngine` и `NullEngine`.
-  - `crates/listener-ipc`: `evohime.listener.proto` (`Hello`/`Handshake`,
+  - `crates/evohime-listener-ipc`: `evohime.listener.proto` (`Hello`/`Handshake`,
   `PolicyUpdate`, `StateChanged`, `UtteranceRecognized`, `EngineStatus`,
   `LocalCommand{ pause | reset_buffers }`) поверх того же framing, что
   desktop-ipc; frame limit 256 KiB.
 - Core: второй pipe-сервер на `<pipe_name>-listener`, роль `listener` в
   `ALLOWED_CLIENT_ROLES`, приём высказываний, выдача политики, проверка
   `MicrophoneListen` перед выдачей разрешения на захват.
-- `reset_buffers` в listener-ipc сбрасывает только кольцевой буфер, VAD и
+- `reset_buffers` в `evohime-listener-ipc` сбрасывает только кольцевой буфер, VAD и
   незавершённый сегмент. Удаление транскриптов и производных кандидатов —
   исключительно команда Core/desktop-ipc `ForgetAmbientWindow`.
 - При невозможности открыть выбранное устройство листенер
@@ -69,8 +72,9 @@
 - Супервизор: второй ребёнок в том же Job Object с собственным restart budget.
   Падение листенера не влияет на решение по Core; падение Core не убивает
   листенер до исчерпания реконнектов.
-- Упаковка: `-p evohime-listener` в `scripts/build-windows-native.ps1` и
-  `evohime-listener.exe` в `$requiredNative`.
+- Упаковка: `-p evohime-listener` добавляется в `$cargoArguments`
+  (`scripts/build-windows-native.ps1:31`), а `evohime-listener.exe` — в
+  `$requiredNative` (там же, строка 56).
 
 ## Приватность
 
@@ -87,7 +91,7 @@
 ## Файлы
 
 - создать: `crates/evohime-listener-audio/**`, `crates/evohime-listener/**`,
-  `crates/listener-ipc/**`;
+  `crates/evohime-listener-ipc/**`;
 - изменить: `Cargo.toml`, `crates/desktop-ipc/src/session.rs`,
   `crates/evohime-core/src/pipe_server.rs`, `crates/evohime-core/src/main.rs`,
   `crates/evohime-supervisor/src/windows_supervisor.rs`,

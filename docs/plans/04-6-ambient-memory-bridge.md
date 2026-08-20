@@ -26,9 +26,14 @@ Ambient-источника и его policy нет; `run_memory_extraction` жё
 
 ## Содержание
 
-- `SourceTrust::Ambient` добавляется к существующему enum; до этой правки его
-  нет в коде. Для него `can_ground_strict_save() = false`,
-  `requires_validation() = true`.
+- `SourceTrust::Ambient` добавляется пятым вариантом к существующему enum из
+  четырёх; до этой правки его нет в коде. Правятся `as_str` и обратный разбор
+  (`'ambient'`), а также `requires_validation()` — сейчас это
+  `matches!(Self::ToolOutput | Self::Document)`, ambient добавляется в список.
+  `can_ground_strict_save()` остаётся `matches!(Self::User)` и потому даёт
+  `false` для ambient без правки. Колонка `source_trust` в `memory_entries` —
+  свободный `TEXT` без `CHECK`, поэтому миграции для нового значения не
+  требуется; менять `memory_store.rs` не нужно.
 - Явный ранний гейт в `evaluate()`: ambient-кандидат возвращает `Pending` с
   новой причиной `AmbientNeverAutoConfirms` сразу после проверки на секрет.
   Полагаться на то, что «оно и так упадёт ниже по коду», нельзя.
@@ -36,7 +41,11 @@ Ambient-источника и его policy нет; `run_memory_extraction` жё
   Значение читается и валидируется Core; неизвестное значение даёт fail-safe
   `off`, а не молчаливое включение. Аналога `open` для ambient нет.
 - Триггер извлечения — закрытие эпизода, а не пользовательская фраза, со своей
-  `TurnContext { user_asserted: false }`. Диалоговый extraction остаётся на
+  `TurnContext { user_asserted: false }`. `run_memory_extraction` сегодня
+  жёстко принимает пару (user_prompt, assistant_reply) одного хода, поэтому
+  ambient получает **отдельную точку входа** поверх общего `evaluate`, а не
+  подделанный «ход»: подмена реплики пользователя ambient-текстом сломала бы
+  смысл `user_asserted`. Диалоговый extraction остаётся на
   `detect_explicit_trigger` и не меняется.
 - Из ambient не принимаются `constraint` и `decision`: отбрасываются до
   persistence — слишком дорого ошибиться.
@@ -55,10 +64,9 @@ Ambient-источника и его policy нет; `run_memory_extraction` жё
 
 ## Файлы
 
-- изменить: `crates/evohime-core/src/memory_extraction.rs`,
+- изменить: `crates/evohime-core/src/memory_extraction.rs` (вариант enum,
+  `as_str`/разбор, `requires_validation`, ранний гейт в `evaluate`),
   `crates/evohime-core/src/memory_api.rs`,
-  `crates/evohime-local-storage/src/memory_store.rs` (значение `ambient` в
-  `source_trust`),
   `desktop/evohime-electron/src/renderer/src/OperationsPanel.tsx`,
   `docs/architecture.md`.
 

@@ -33,17 +33,17 @@ ambient-специфичный receipt в этом этапе не создаё�
   состояния `Proposed | Accepted | Declined | Muted | Expired`, дедупликация по
   `proposal_key` (`kind` + `canonical_subject` + округлённое время), окно жизни
   24 часа.
-- Персистентность предложений — additive-таблица в отдельной миграции **v25**,
-  следующей за ambient-хранилищем v24 из 04.2. Она сохраняет предложения,
+- Персистентность предложений — additive-таблица в отдельной миграции **v26**,
+  следующей за ambient-хранилищем v25 из 04.2. Она сохраняет предложения,
   mute-ключи и счётчики бюджета; миграция транзакционна и получает обычный
   backup до изменения схемы.
   Минимальные ограничения схемы: уникальный `proposal_id`, уникальный
   `proposal_key`, nullable `source_episode_id` с `ON DELETE SET NULL` и
   обязательным metadata-полем `source_deleted_at`/`source_deleted_reason`,
   `state` только из пяти состояний автомата, а счётчики бюджета — одна строка
-  на ambient-профиль. Удаление эпизода атомарно переводит связанные
-  предложения переводятся в `Expired` с причиной `source_deleted`, не оставляя
-  активной ссылки на удалённый источник. Это изменение выполняется в одной транзакции с
+  на ambient-профиль. Удаление эпизода переводит связанные
+  предложения в `Expired` с причиной `source_deleted`, не оставляя активной
+  ссылки на удалённый источник. Это изменение выполняется в одной транзакции с
   tombstone эпизода; действующий FK не должен блокировать удаление источника.
 - Закрытый список разрешённых эффектов:
   1. карточка-предложение в UI;
@@ -71,7 +71,7 @@ ambient-специфичный receipt в этом этапе не создаё�
 - создать: `crates/evohime-core/src/ambient_proactivity.rs`;
 - изменить: `crates/evohime-core/src/lib.rs`,
   `crates/evohime-core/src/ipc_bridge.rs`,
-  `crates/evohime-local-storage/src/lib.rs` (миграция v25),
+  `crates/evohime-local-storage/src/lib.rs` (миграция v26),
   `crates/evohime-local-storage/src/ambient_store.rs`,
   `desktop/evohime-electron/src/renderer/src/ListeningPanel.tsx`,
   `docs/architecture.md`.

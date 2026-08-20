@@ -26,7 +26,9 @@ Ambient-контракт и capability ещё не реализованы: в т
 
 ## Содержание
 
-- Новый крейт `crates/evohime-listener-contract` в стиле
+- Новый крейт `crates/evohime-listener-contract` (вся семья листенера носит
+  префикс `evohime-`: `evohime-listener-contract`, `evohime-listener-ipc`,
+  `evohime-listener-audio`, `evohime-listener`) в стиле
   `evohime-supervisor::schedule_contract`: без файловой системы, часов и
   процессов. В нём:
   - `ListeningState`: `Stopped`, `Starting`, `Listening`, `PausedByUser`,
@@ -43,9 +45,20 @@ Ambient-контракт и capability ещё не реализованы: в т
     время последнего предложения не входят в snapshot и живут в Core-состоянии
     `ambient_proactivity_state`;
   - закрытый набор кодов ошибок.
-- `Permission::MicrophoneListen` (serde `microphone_listen`) с дефолтом `Deny`;
-  правило в `permission_rules.rs` и в `permissions.json.example`. Capability
-  проверяется Core перед выдачей listener-разрешения, а не только в UI.
+- `Permission::MicrophoneListen` (serde `microphone_listen`) добавляется к
+  восьми существующим вариантам `Permission`. Дефолт `Deny` прописывается явно
+  в карте `PermissionEngine::new()`: fallback `mode()` — `Ask`, поэтому
+  «просто не добавить» значит «спрашивать», а не «запрещено».
+  `set_all_modes` (её вызывает ветка `PermissionMode` в `ipc_bridge.rs` при
+  выборе режима «Полный доступ») обязана исключать `MicrophoneListen` — иначе
+  переключение общего режима молча откроет микрофон. Это отдельный негативный
+  тест. `permissions.json.example` — список правил вида
+  `{permission, pattern, mode}`, поэтому ambient-правило записывается как
+  `{"permission": "microphone_listen", "pattern": "*", "mode": "deny"}`.
+  `permission_rules.rs` только загружает и применяет этот файл и не
+  перечисляет варианты `Permission`, так что правки в нём не требуется —
+  достаточно расширить enum и дефолты. Capability проверяется Core перед
+  выдачей listener-разрешения, а не только в UI.
 - Правила логирования: закрытый allow-list полей для `listener.jsonl` и для
   событий `ambient.*`. Текст, хеш текста, имя процесса и заголовок окна в логи
   не попадают никогда — короткую фразу по хешу перебирают за секунды, поэтому
@@ -55,8 +68,10 @@ Ambient-контракт и capability ещё не реализованы: в т
 ## Файлы
 
 - создать: `crates/evohime-listener-contract/{Cargo.toml,src/lib.rs}`;
-- изменить: `Cargo.toml` (workspace members), `crates/permissions/src/lib.rs`,
-  `crates/evohime-core/src/permission_rules.rs`, `permissions.json.example`,
+- изменить: `Cargo.toml` (workspace members), `crates/permissions/src/lib.rs`
+  (вариант enum, дефолт в `PermissionEngine::new()`, исключение в
+  `set_all_modes`), `crates/evohime-core/src/ipc_bridge.rs` (ветка
+  `PermissionMode` не трогает микрофон), `permissions.json.example`,
   `docs/architecture.md`.
 
 ## Проверки
@@ -65,6 +80,8 @@ Ambient-контракт и capability ещё не реализованы: в т
 - политика с чрезмерным regex, слишком длинным списком или retention > 90 дней
   отвергается до применения;
 - `MicrophoneListen` по умолчанию `Deny` в чистом профиле;
+- переключение общего режима разрешений в «Полный доступ» не меняет
+  `MicrophoneListen`;
 - logger allow-list: попытка записать произвольный текст в ambient-лог падает
   в тесте.
 

@@ -53,14 +53,14 @@ Core запускает два независимых pipe-сервера в о�
 nonce-handshake; в `ALLOWED_CLIENT_ROLES` добавляется `listener`. Общее
 состояние Core синхронизируется через `Arc<Mutex<CoreState>>`, а обработчики не
 делят сокеты или последовательную очередь приёма. Контракт листенер↔Core живёт
-в отдельном proto (`crates/listener-ipc`) и не попадает в генерацию Electron.
+в отдельном proto (`crates/evohime-listener-ipc`) и не попадает в генерацию Electron.
 
 ## Этапы
 
 | Этап | Файл | Что отдаёт наружу | Кто потребляет |
 | --- | --- | --- | --- |
 | 04.1 | [Контракт и приватность](04-1-ambient-contract.md) | side-effect-free контракт ambient, capability микрофона, правила логирования | 04.2–04.7 |
-| 04.2 | [Хранение транскриптов](04-2-transcript-storage.md) | schema v24, ambient store, retention и удаление | 04.3–04.7 |
+| 04.2 | [Хранение транскриптов](04-2-transcript-storage.md) | schema v25, ambient store, retention и удаление | 04.3–04.7 |
 | 04.3 | [Процесс листенера](04-3-listener-process.md) | захват, VAD, сегментация, пауза и чёрный список | 04.4–04.7 |
 | 04.4 | [Движок распознавания](04-4-speech-engine.md) | whisper.dll в рантайме, транскрипты в хранилище | 04.5–04.7 |
 | 04.5 | [Контроль и UI](04-5-control-and-ui.md) | IPC-команды, индикатор, пауза, панель «Слух» | 04.6, 04.7 |
@@ -69,14 +69,16 @@ nonce-handshake; в `ALLOWED_CLIENT_ROLES` добавляется `listener`. О
 
 ## IPC и UI
 
-- Additive команды 106–114 в `oneof command` (теги 92–105 уже заняты
-  receipt- и plan-review-командами); события идут через
-  `event_type` + JSON и не требуют правки proto.
+- Additive команды 107–115 в `oneof command`. Теги заняты по 106
+  включительно: 92–102 — receipt-команды, 103–105 — plan-review, 106 —
+  `ResolveRoutingDecision` из плана 02. События идут через `event_type` +
+  JSON-`payload` и не требуют новых сообщений в `oneof event`.
 - `npm run generate:protocol` выполняется в том же коммите, что и правка
   `.proto`; сгенерированные файлы не правятся руками.
 - Новый вид `listening` («Слух»), индикатор записи в трее и в шапке окна,
-  режим capability микрофона в `SafetyPanel`, бейдж «услышано» в очереди
-  памяти `OperationsPanel`.
+  режим capability микрофона в новой панели безопасности (сегодня в renderer
+  есть только `PermissionModePicker`, отдельной панели capability нет), бейдж
+  «услышано» в очереди памяти `OperationsPanel`.
 
 ## Зависимости плана
 
