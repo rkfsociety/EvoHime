@@ -86,6 +86,36 @@ Renderer состоит из панели проектов и чатов, лен
 - `StartPlanReview` и `RevisePlan` принимают пути проверяемых файлов (`source_paths`, `source_path`). По ним Core сам читает соседние планы, на которые проверяемый ссылается Markdown-ссылками, и кладёт их в промпт отдельным блоком: план этапа почти никогда не самодостаточен, инвариант соседа в нём только упомянут ссылкой, и модель, не видя соседа, уверенно переписывает план вразрез с ним. Обход идёт вширь на `MAX_CONTEXT_DEPTH` шагов (этапы связаны не напрямую, а через обзорный файл), берёт только `.md` по относительным ссылкам внутри каталога исходного плана (канонизированные пути сверяются с каталогом, поэтому симлинк наружу не проходит) и ограничен `MAX_CONTEXT_DOCUMENTS` файлами и `MAX_CONTEXT_BYTES`. Читает ядро, а не оболочка: иначе за соседний план можно было бы выдать произвольный текст. Единственное место этой файловой операции — `crates/evohime-core/src/plan_context.rs`; `plan_review.rs` остаётся без файловой системы и часов. Пустой путь — не ошибка: план мог прийти перетаскиванием из источника без файловой системы, и правка тогда идёт по одному файлу, а `RevisionResult.context_files` показывает пользователю, что сверки не было;
 - команды памяти `GetMemory`, `ListMemoryPending`, `GetMemoryConflicts`, `ConfirmMemory`, `RejectMemory`, `SupersedeMemory`, `ReviseMemoryCandidate` аддитивны. `ListMemory`, `SearchMemory` и `ListMemoryPending` возвращают только metadata; тело записи доступно исключительно через явный `GetMemory` и маскируется для `sensitive` и забытых записей. Confirm/reject/supersede требуют approval-токен и idempotency key: повтор безопасен и возвращает фактическое состояние записи.
 
+## Model gateway и routing
+
+Core является владельцем model gateway и принимает routing-решения после
+проверки privacy, offline, approval/tool policy, capability, health, evaluation
+gate и budget. User preference передаётся только как hint внутри разрешённого
+множества; renderer не выбирает provider и не может обойти Core policy.
+
+Целевой контракт плана 02 состоит из четырёх последовательных этапов:
+
+1. provider contract — capability metadata, immutable policy snapshot, health и
+   bounded retry/circuit contract;
+2. local provider — loopback-only модель под lifecycle и Job Object supervisor;
+3. routing и budget — подключение selection/execution к agent run, fallback,
+   versioned redacted trace и terminal result;
+4. UI — read-only проекция фактического route и trace-состояния через desktop
+   IPC.
+
+Все этапы сохраняют tool permissions, approval requirements, sandbox и privacy
+границы при fallback. Trace и enum-контракт для UI версионируются; malformed
+payload или несовместимая major-версия не интерпретируются renderer частично.
+Подробный порядок, зависимости и acceptance criteria находятся в
+[`plans/02-0-local-slm-fallback-routing.md`](plans/02-0-local-slm-fallback-routing.md)
+и связанных этапах `02-1`–`02-4`.
+
+На текущем checkout базовые routing-типы и детерминированный selector уже есть
+в `crates/model-gateway`, но selector ещё не подключён к `ToolAgent`; local
+provider, supervisor-канал и routing UI остаются незавершёнными. Подтверждённое
+состояние этого перехода ведётся в [`current-state.md`](current-state.md), а не
+в этом целевом контракте.
+
 ## Signed receipts
 
 Canonical Receipt v1 реализован в `crates/evohime-receipts` и Electron main

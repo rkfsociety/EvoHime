@@ -1,6 +1,6 @@
 # EvoHime — текущее состояние
 
-Обновлено: 2026-08-19.
+Обновлено: 2026-08-20.
 
 ## Продукт
 
@@ -60,6 +60,22 @@ Core и supervisor — внутренние компоненты установ�
 - Runtime receipts 01.3 подключены к Core-owned execution path: durable signed pre/post/refusal, UUIDv7 approval intent с monotonic TTL, exact-call recheck, signed refusal для expired/stale/call_changed/policy_denied, bounded parent approval reference, recovery/quarantine/reconciliation и audit call hash; JCS numeric edge cases покрыты shared Rust tests;
 - Receipt chain storage и export 01.4: durable `receipts_v1` в SQLite с `previous_receipt_hash`-цепочкой, подписанные checkpoints и retention/compaction (`verified_pruned` вместо тихого удаления), chain-aware проверка ключевых границ и pre/terminal-пар, атомарный JSONL export bundle с манифестом и chain-aware offline `evohime-verify.exe`. Core отдаёт это командами `ListReceipts`, `VerifyReceipts` и `ExportReceipts`, Electron main-процесс проксирует их (`core.listReceipts`, `core.verifyReceipts`, `core.exportReceipts`); пользовательской поверхности в renderer нет — панель безопасности из UI убрана, поэтому цепочка доступна только через IPC и offline-верификатор. Схемы и векторы: `contracts/receipts/v1/`;
 
+### Model gateway и routing (частично)
+
+- В `crates/model-gateway` существуют bounded `RouteCandidate`, детерминированный
+  selector и runtime-режимы `LocalFirst`/`Offline`; provider contract также
+  содержит типы capability metadata, policy snapshot, health overlay, retry и
+  trace.
+- Этот код пока не образует завершённое пользовательское поведение: selector
+  вызывается из evaluation-контуров, а `ToolAgent` продолжает отправлять
+  запросы через фиксированный route `"default"`. Local provider, supervisor-
+  owned lifecycle/канал команд, routing trace в desktop IPC и route UI ещё не
+  подключены.
+- Канонический целевой контракт и порядок реализации описаны в [плане 02](plans/02-0-local-slm-fallback-routing.md):
+  `02.1` provider contract → `02.2` local provider → `02.3` routing и budget →
+  `02.4` UI. Наличие типов или библиотеки без подключения к agent loop не
+  считается завершением этапа.
+
 ### Desktop shell (Electron)
 
 - migration acceptance закрыта на Windows: UI-срезы, authenticated Core IPC, package startup, fault recovery, install/upgrade/rollback и acceptance matrix;
@@ -99,9 +115,10 @@ C#/WinUI compatibility и native package проверяются полным acc
 
 ## Следующие направления
 
-1. hardening credentials, recovery и diagnostics;
-2. поддерживать Windows 10/11 CI и compatibility suite, не возвращая web runtime;
-3. informative ARM64/Insider compatibility runs.
+1. План 02: подключить provider contract и затем local SLM fallback/routing;
+2. hardening credentials, recovery и diagnostics;
+3. поддерживать Windows 10/11 CI и compatibility suite, не возвращая web runtime;
+4. informative ARM64/Insider compatibility runs.
 
 ## Граница продукта
 
