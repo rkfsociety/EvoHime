@@ -100,8 +100,14 @@ reference); `Arc<RoutePolicySnapshot>` допускается для парал�
 ## Что уже есть в коде
 
 Есть: `RouteCandidate` с capabilities, privacy class, cost, latency и флагом
-`available`; `select_route` отделён от исполнения; bounded валидация кандидатов
-и запроса. В `crates/model-gateway/src/provider_contract.rs` реализованы типы и
+`available`; `select_route` в `crates/model-gateway/src/routing_policy.rs`
+отделён от исполнения; bounded валидация кандидатов и запроса. Это не тот
+`select_route`, что описан ниже: существующий принимает `(&RoutingRequest,
+&[RouteCandidate])`, не видит ни snapshot, ни overlay, ни `attempt_id`/`now_ms`,
+а его tie-break — cost → latency → `fallback_rank` → `route_id`, то есть без
+health и с cost впереди latency. При подключении этапа эта функция расширяется
+до контракта раздела «Selection, retry и circuit breaker» либо заменяется им:
+двух разных порядков tie-break в кодовой базе быть не должно. В `crates/model-gateway/src/provider_contract.rs` реализованы типы и
 машина состояний этого этапа: `CapabilityMetadata` с `schema_version`/
 `capability_epoch`/`execution_class`, `RoutePolicySnapshot` с bounded валидацией
 и `round_trip_hash`, `PolicyHashes` над каноническим JSON, `RunHealthOverlay` с
@@ -133,7 +139,42 @@ health из реальных ответов провайдера и подклю
   код — `FailureCategory::PolicyDenied` (`policy_denied` в сериализации).
   Расхождение безобидно ровно до первого trace, который кто-то попытается
   разобрать по документу; имя выбирается при подключении и правится в одном
-  месте из двух.
+  месте из двух;
+- `RoutePolicySnapshot::budget_id` объявлен как `String`, а не
+  `Option<String>`, поэтому режим `budget_absent` из раздела «Зависимости»
+  сейчас невыразим: отсутствие бюджета пришлось бы кодировать пустой строкой,
+  то есть тем самым молчаливым «безлимитно», которое документ запрещает;
+- `CandidateHealthSnapshot` не содержит `cooldown_until`. Пока поля нет, строка
+  таблицы инициализации про перенос незакрытого cooldown из persistent health
+  неисполнима, а `circuit_state = cooldown` в snapshot не отличим от истёкшего;
+- `RunHealthOverlay::new(run_id)` создаёт пустой overlay; конструктора «из
+  health snapshot по таблице» нет, `attempts_per_route` в overlay отсутствует
+  как поле. Значит ни таблица переноса health, ни `max_attempts_per_route` не
+  реализованы, хотя `RetryConfig` их лимит уже валидирует;
+- `record_failure`/`exclude_route` не принимают ожидаемую `generation`, не
+  сверяют `run_id` и монотонность `attempt_id` и коммитят изменение через три
+  отдельных lock (`failure_counters`, `circuits`, `excluded_routes`) с
+  `fetch_add` между ними. Это не одна атомарная операция, которую требует
+  раздел «Snapshot и health lifecycle»: между записями overlay наблюдаем в
+  промежуточном состоянии, а stale generation ничем не отбрасывается;
+- пороги `failure_threshold`/`rate_limit_threshold`/`cooldown_ms` в коде живут
+  в `RetryConfig`, а документ называет их `health.*`. Имя выбирается при
+  подключении: либо секция `health` в конфигурации, либо `retry.*` в документе;
+- `RetryConfig::compute_backoff` вычисляет `2_u64.pow(attempt - 1)` без
+  ограничения показателя, а `validate` допускает `max_attempts` до 128. При
+  `attempt > 64` это переполнение: паника в debug, мусорная пауза в release.
+  Показатель должен насыщаться (`checked_shl`/`min`) до применения cap;
+- счётчики порога названы в документе «порог категории», а код считает иначе:
+  circuit открывается по общему `consecutive` (любые opening-категории вместе,
+  сброс на `record_success`), а cooldown — по накопительному счётчику
+  `by_category[rate_limited]`, который за run не сбрасывается. Ниже документ
+  приведён к фактическому поведению; менять его на «по счётчику каждой
+  категории» без изменения кода нельзя;
+- `circuit_opened_during_run` в коде — `Option<timestamp>` от системных часов,
+  а trace-контракт требует boolean. Значение флага и так выводится из наличия
+  события, а лишний timestamp — ещё одно чтение часов мимо `now_ms`;
+- поле TTL в snapshot называется `ttl_ms`, документ пишет `ttl`. Имя в
+  документе приводится к коду.
 
 Дефолты `RetryConfig` и `ProbeConfig` в коде совпадают с параметрами этого
 документа (3/2/250/4000/0.20/15000/2/3/30000 и 2 s, 10 s, 4 KiB, 64 KiB), а
@@ -185,7 +226,7 @@ snapshot, эти изменения не влияют на текущий snapsh
 health, `policy_hashes`, preference и `budget_id`. Snapshot замораживается до
 terminal result и уничтожается после записи trace.
 
-Health snapshot содержит `status`, `observed_at`, `ttl`, `circuit_state`,
+Health snapshot содержит `status`, `observed_at`, `ttl_ms`, `circuit_state`,
 `cooldown_until` (абсолютный момент, а не длительность; `null`, если route не
 в cooldown) и `last_failure_category`. Хранится именно абсолютный момент:
 пара «`observed_at` + `cooldown_ms`» пересчитывалась бы при каждом изменении
@@ -256,7 +297,8 @@ overlay, поэтому нумерация с нуля запрещена. Ал�
    tie-break: `health.status` (`ready` > `degraded`; `stale` и `unavailable`
    уже отброшены на шаге 1, как и все состояния circuit кроме `closed`) →
    latency по возрастанию → cost по возрастанию → порядок `user preference` из
-   запроса → lexical `route_id` как финальный break. Состояния circuit в
+   запроса → `fallback_rank` кандидата (меньше — раньше) → lexical `route_id`
+   как финальный break. Состояния circuit в
    tie-break не участвуют вовсе: до этого шага доходят только `closed`. Score
    здесь — не числовое значение, а порядок candidates после фильтров и
    tie-break; «первый route» значит первый в этом порядке. Reason записывается
@@ -265,8 +307,12 @@ overlay, поэтому нумерация с нуля запрещена. Ал�
    route сам.
 
 Ошибки `timeout`, `connection_refused`, `5xx` и `malformed_response` открывают
-circuit после порога категории. `429` увеличивает отдельный counter и после
-порога переводит route в `cooldown`; policy/approval denial, invalid request и
+circuit по одному общему счётчику подряд идущих отказов: любая из этих
+категорий его увеличивает, успешный ответ по этому route обнуляет, и при
+достижении `health.failure_threshold` circuit открывается. `429` считается
+отдельно и накопительно за весь run (успех его не обнуляет — иначе чередование
+`429`/успех обходило бы rate limit бесконечно) и по достижении
+`health.rate_limit_threshold` переводит route в `cooldown`; policy/approval denial, invalid request и
 cancellation circuit не открывают. При открытии overlay атомарно помечает
 route `open`, увеличивает generation и пишет `circuit_opened_during_run`.
 Перевод в `cooldown` — такое же обновление overlay: `cooldown_until` и
@@ -389,6 +435,15 @@ diagnostics telemetry с bounded cardinality.
   фильтром `select_route`;
 - `attempts_per_route` растёт до отправки запроса: оборванная без ответа
   попытка расходует лимит route;
+- backoff при `attempt`, близком к `max_attempts` верхней границы валидации,
+  не переполняется и не паникует;
+- `budget_id = null` сериализуется и десериализуется как отсутствие бюджета, а
+  не как пустая строка, и даёт `budget_absent` в trace;
+- перенос `cooldown_until` из health snapshot в overlay проверяется на обеих
+  ветках таблицы (непросроченный и просроченный);
+- обновление overlay атомарно: параллельные `record_failure` не оставляют
+  промежуточного состояния между счётчиками, circuit и exclusion, а запись с
+  устаревшей generation отвергается;
 - snapshot serialize/deserialize, unknown fields, migration и round-trip hash;
 - trace/telemetry tests без secrets и raw provider output.
 
