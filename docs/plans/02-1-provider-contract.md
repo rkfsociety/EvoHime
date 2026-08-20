@@ -46,7 +46,10 @@ Capability metadata провайдеров, разделение route selection
   - `failed` — критическая ошибка самого Core до или вне retry-loop (невалидный
     request, policy violation на этапе validate, `budget_unavailable`);
     retry не выполняется, причина пишется в trace как `failure_category` из
-    `[invalid_request, policy_violation, budget_unavailable]`;
+    `[invalid_request, policy_violation, budget_unavailable, internal_error]`.
+    `internal_error` — дефект самого Core, а не отказ провайдера, и не
+    сваливается в `invalid_request`: иначе баг Core в trace неотличим от
+    некорректного запроса пользователя;
   - `cancelled` — внешний сигнал отмены (timeout вызывающей стороны,
     cancellation token); текущая попытка прерывается, retry не выполняется;
   - `route_exhausted` — все candidates исключены или исчерпан retry
@@ -138,8 +141,9 @@ health из реальных ответов провайдера и подклю
 - категории отказов названы по-разному: документ пишет `policy_violation`,
   код — `FailureCategory::PolicyDenied` (`policy_denied` в сериализации).
   Расхождение безобидно ровно до первого trace, который кто-то попытается
-  разобрать по документу; имя выбирается при подключении и правится в одном
-  месте из двух;
+  разобрать по документу. Имя выбрано: `failure_category` (уровень run) —
+  `policy_violation`, как в документе и в таблицах 02.3; `policy_denied`
+  остаётся только как `reject_reason` уровня candidate. Правится в коде;
 - `RoutePolicySnapshot::budget_id` объявлен как `String`, а не
   `Option<String>`, поэтому режим `budget_absent` из раздела «Зависимости»
   сейчас невыразим: отсутствие бюджета пришлось бы кодировать пустой строкой,
@@ -281,8 +285,12 @@ policy влияют только на следующий run.
 
 ## Selection, retry и circuit breaker
 
-Перед каждой попыткой Core вызывает `select_route(&snapshot, &overlay,
-request, attempt_id, now_ms)`. `attempt_id` нумеруется с 1 и монотонно растёт
+Перед каждой попыткой Core вызывает `select_route(request, &snapshot,
+&overlay, attempt_id, now_ms)`. Этап 02.3 добавляет в ту же сигнатуру
+единственный аргумент `catalog: &Catalog` (evaluation gate) — это расширение
+одной функции, а не вторая параллельная; итоговый порядок аргументов и
+поведение зафиксированы в разделе «API contracts» 02.3. `attempt_id`
+нумеруется с 1 и монотонно растёт
 в пределах run — на нём же построена формула backoff и проверка устаревания
 overlay, поэтому нумерация с нуля запрещена. Алгоритм:
 
@@ -391,6 +399,13 @@ attempt_id)`, поэтому replay воспроизводим. Порядок �
 Каноническая сериализация snapshot содержит `schema_version`, `policy_version`,
 `run_id`, candidates/epochs, initial health, policy hashes, preference и
 budget id. Prompt, secrets, raw provider output и credentials запрещены.
+
+Этап 02.3 добавляет в ту же каноническую сериализацию свои замороженные за run
+поля: `catalog_version`, `estimated_input_tokens`, `ModelContextProfile`
+кандидатов и `routing.quality_delta`/`routing.max_reroutes`/
+`routing.reroute_approval_timeout_ms`. Это additive minor-расширение одной
+схемы: поля входят в round-trip hash и в `policy_hashes` на тех же правилах,
+второй снапшот-схемы не заводится.
 
 Deserializer отклоняет неизвестные поля, дубликаты, missing required fields,
 unsupported major schema и round-trip hash mismatch. Для предыдущей

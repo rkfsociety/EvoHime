@@ -10,44 +10,35 @@
 `fallback_count`, `privacy_label`). UI не вводит собственных кодов и не
 переопределяет то, что уже зафиксировано в 02.3.
 
-**Frozen constraint.** Разработка UI начинается только после того, как 02.3
-опубликовал под `schema_version = 1` полный список значений
+**Frozen constraint.** Условие выполнено: 02.3 опубликовал под
+`schema_version = 1` полный список значений
 `terminal_status`/`safe_next_action`/`health_state`/`reason_code`/
 `reject_reason`/`privacy_label`. Любое расширение этих перечислений —
 это новый `schema_version`, требующий согласованного обновления localization
 table в 02.4 (см. «Локализация»); молчаливое изменение набора значений под тем
 же `schema_version` запрещено.
 
-### Открытые вопросы к 02.3 (блокируют старт реализации)
+### Что 02.3 фиксирует для UI
 
-02.3 закрыл `terminal_status`, `safe_next_action` и `health_state` таблицами,
-но для UI контракта пока не хватает пяти вещей:
+Пять вещей, без которых UI-контракт неполон, закреплены в 02.3 (раздел
+«Закрытые перечисления schema v1» и «Что доходит до renderer»), и 02.4 берёт
+их оттуда без переопределения:
 
-1. **Успешное значение `terminal_status`.** Поле объявлено обязательным в
-   каждой записи trace, а перечислены только refusal-значения. UI не может
-   опираться на «поле отсутствует» — нужно явное значение (условно
-   `completed`). Ниже по тексту оно обозначено как `success`.
-2. **`privacy_label` не входит в список обязательных полей trace.** Он
-   упомянут в «Содержании» 02.3 и в правиле логирования sensitive отказов, но
-   в перечне обязательных полей раздела «Формат trace» его нет. Критерий
-   degraded mode ветвится именно на нём; кроме того, само перечисление
-   значений (`sensitive`/`non-sensitive`/…) нигде не зафиксировано.
-3. **`reason_code` и `reject_reason` не опубликованы как закрытые
-   перечисления.** В 02.3 встречаются только отдельные значения
-   (`context_limit_exceeded`, `context_assembly_failed`,
-   `classification_incomplete`, `circuit_open`, `rate_limited`,
-   `budget_absent`, `gate_unavailable`). Без полного списка build-time
-   проверка полноты localization table невозможна, а без неё гарантия «сырой
-   код никогда не виден пользователю» держится только на `unknown_state`.
-4. **Значение `selected_route` при refusal.** Поле обязательное, но при
-   отказе route не выбран. Нужно зафиксировать: `null` или отсутствие. UI
-   обязан отличать это от malformed payload.
-5. **Что именно доходит до UI.** Trace — JSONL с записью на каждую
-   попытку. Контракт IPC должен явно назвать, что renderer получает
-   **терминальную** запись run (последняя по `sequence` для данного
-   `trace_id`), а не поток; промежуточные записи попадают только в
-   diagnostics view. Иначе UI придётся самому решать, какая запись
-   «настоящая», — это ровно та интерпретация, которую этап запрещает.
+1. **Успешное значение `terminal_status`** — `success`. Отдельно существует
+   `cancelled` (внешняя отмена). UI никогда не опирается на «поле
+   отсутствует».
+2. **`privacy_label`** — обязательное поле trace, закрытое перечисление
+   `sensitive` / `non_sensitive` / `unknown`. Критерий degraded mode ветвится
+   именно на нём.
+3. **`reason_code` и `reject_reason`** опубликованы как закрытые перечисления
+   (17 и 18 значений соответственно) — на них опирается build-time проверка
+   полноты localization table.
+4. **`selected_route`** — `route_id` при `success`, строго `null` при любом
+   другом `terminal_status`. Отсутствие ключа — malformed payload.
+5. **Что доходит до UI** — терминальная запись run (последняя по `sequence`
+   для `trace_id`, с непустым `terminal_status`) плюс отдельное нетерминальное
+   IPC-событие `pending_approval`. Поток промежуточных записей renderer не
+   получает; они доступны только diagnostics view по `trace_id`.
 
 `refusal-family` (используется ниже в критериях) — полный набор
 `terminal_status` из таблиц `RouteError` и «Состояния, возникающие вне
@@ -55,7 +46,8 @@ table в 02.4 (см. «Локализация»); молчаливое изме�
 `classification_incomplete`, `context_limit_exceeded`, `policy_violation`,
 `budget_unavailable`, `context_assembly_failed`, `fallback_limit_reached`,
 `run_deadline_exceeded`, `reroute_approval_declined`, `internal_error`.
-`pending_approval` — не `terminal_status` и в семейство не входит; UI не
+`success` и `cancelled` в семейство не входят и рендерятся отдельно.
+`pending_approval` — не `terminal_status`, а отдельное IPC-событие; UI не
 рендерит его как отказ (см. состояние 3 ниже).
 
 Это последний этап плана.
@@ -68,14 +60,17 @@ Core trace — без интерпретации или домысливания
 ## Контракт с Core (вход)
 
 UI получает только то, что Core отдаёт через IPC как терминальную запись
-decision/trace (см. «Формат trace и наблюдаемость» в
-[02-3](02-3-routing-and-budget.md), с учётом вопроса 5 выше).
+decision/trace (см. «Формат trace и наблюдаемость» и «Что доходит до
+renderer» в [02-3](02-3-routing-and-budget.md)).
 
 **Обязательные поля** (отсутствие любого из них — malformed payload):
-`schema_version`, `terminal_status`, `reason_code`, `candidates[]`,
-`fallback_count`, `privacy_label`, `trace_id`, `run_id`, `sequence`, а также
-`selected_route` (при `terminal_status = success`) и `safe_next_action` (при
-`terminal_status ∈ refusal-family`).
+`schema_version`, `terminal_status`, `reason_code`, `selected_route`,
+`candidates[]`, `fallback_count`, `privacy_label`, `trace_id`, `run_id`,
+`sequence`, а также `safe_next_action` (при `terminal_status ∈
+refusal-family`). `selected_route` обязателен как ключ всегда: при
+`success` — `route_id`, при любом другом статусе — `null`. Ключ отсутствует
+или `null` при `success` — malformed payload; непустой `selected_route` при
+статусе из refusal-family разбирается по правилу приоритета ниже.
 
 **Поля, используемые только в diagnostics view:** `attempt_id`, `now_ms`,
 `policy_version`, `catalog_version`, `snapshot_hash`, `latency_ms`, `usage`,
@@ -170,11 +165,12 @@ fallback), поэтому взаимоисключающими их делает
 | --- | --- | --- |
 | 1 | `core_unavailable` | транспортная ошибка IPC, malformed payload или несовместимый major `schema_version` |
 | 2 | `unknown_state` | payload структурно валиден, но содержит значение вне известного перечисления |
-| 3 | `pending_approval` | Core сообщил о промежуточном состоянии подтверждения re-routing |
-| 4 | Refusal | `terminal_status ∈ refusal-family` |
-| 5 | Degraded | критерий degraded mode (см. «Поведение UI») |
-| 6 | Partial fallback | `preferred_route_hint != nil AND selected_route != preferred_route_hint AND terminal_status = success` |
-| 7 | Normal | всё остальное |
+| 3 | `pending_approval` | получено нетерминальное IPC-событие подтверждения re-routing |
+| 4 | Cancelled | `terminal_status = cancelled` |
+| 5 | Refusal | `terminal_status ∈ refusal-family` |
+| 6 | Degraded | критерий degraded mode (см. «Поведение UI») |
+| 7 | Partial fallback | `preferred_route_hint != nil AND selected_route != preferred_route_hint AND terminal_status = success` |
+| 8 | Normal | всё остальное |
 
 1. **`core_unavailable`** — блокирующий баннер поверх области ответа с
    кнопкой retry; route selector в этом состоянии неактивен (disabled, не
@@ -184,29 +180,35 @@ fallback), поэтому взаимоисключающими их делает
 3. **`pending_approval`** — запрос подтверждения перехода на cloud route
    после post-analysis re-routing (02.3). Не отказ и не доставленный ответ:
    две явные кнопки (подтвердить / отклонить), видимый обратный отсчёт до
-   `routing.reroute_approval_timeout_ms` (120 с по 02.3) и указание, какой
+   `expires_at_ms` из самого события (Core вычисляет его как `now_ms +
+   routing.reroute_approval_timeout_ms`, 120 с по 02.3 — UI не считает
+   дедлайн сам и не берёт значение таймаута из своей сборки) и указание, какой
    именно route предлагается. По истечении таймаута UI не решает за
    пользователя и не отправляет подтверждение автоматически: он показывает,
    что время вышло, и ждёт терминальный trace от Core с
    `reroute_approval_declined`, который переводит экран в состояние Refusal.
-4. **Refusal** — общий шаблон «причина + `safe_next_action`», текст причины
+4. **Cancelled** — нейтральное сообщение «запрос отменён», без причины отказа
+   и без `safe_next_action` (по 02.3 он `null` для этого статуса). Это не
+   отказ маршрутизации: отмену инициировали снаружи, и объяснять её
+   пользователю как сбой нельзя.
+5. **Refusal** — общий шаблон «причина + `safe_next_action`», текст причины
    берётся из localization table по `terminal_status`/`reason_code`.
    Отдельный визуальный подтип на каждый статус не заводится: шаблон один,
    различается наполнение. Обязательное требование — `no_routes_configured`
    («маршруты не настроены») и `both_routes_unavailable` («все настроенные
    маршруты сейчас недоступны») имеют разный текст: 02.3 прямо запрещает
    смешивать отсутствие конфигурации с отказами провайдеров.
-5. **Degraded** — индикатор `⚠ Degraded` в заголовке ответа + краткая причина
+6. **Degraded** — индикатор `⚠ Degraded` в заголовке ответа + краткая причина
    (человекочитаемый текст из `reason_code`, не сам код). Не сворачивается
    автоматически; закрывается только явным действием пользователя
    (dismiss-контрол в самом индикаторе), при следующем ответе состояние
    пересчитывается заново из нового trace.
-6. **Partial fallback** — сообщение «ответ получен не через предпочитаемый
+7. **Partial fallback** — сообщение «ответ получен не через предпочитаемый
    маршрут» с указанием фактического `selected_route`. Это не отказ: ответ
    доставлен. Сюда же попадает случай, когда предпочтение было `local`, а
    фактически отработал `cloud` — умалчивать об этом нельзя, случай
    privacy-значимый.
-7. **Normal** — route selector отображает `selected_route`, никаких
+8. **Normal** — route selector отображает `selected_route`, никаких
    предупреждений.
 
 ### Вторичные аннотации
@@ -215,7 +217,7 @@ fallback), поэтому взаимоисключающими их делает
   первую очередь у preferred route пользователя) — его человекочитаемый текст
   показывается рядом с route selector, отдельно от основного состояния и от
   общего terminal reason. Аннотация может сопровождать любое основное
-  состояние из 4–7 и не заменяет его собой. При
+  состояние из 5–8 и не заменяет его собой. При
   `core_unavailable`/`unknown_state` аннотации не показываются: доверять
   содержимому payload в этих состояниях нельзя.
 
@@ -273,13 +275,13 @@ Retry на `core_unavailable` — кнопка в баннере, инициир
   selected_route == local AND
   selected_route != preferred_route_hint AND
   terminal_status == success AND
-  privacy_label == non-sensitive
+  privacy_label == non_sensitive
   ```
   (`privacy_label` — Core-owned значение из trace, UI только ветвится на нём.)
   Если `preferred_route_hint == nil`, degraded mode не активируется — нет
   предпочтения, значит нет отклонения от него. Если критерий выполнен не
   полностью, но выполнено условие partial fallback, показывается partial
-  fallback (состояние 6), а не normal. Визуальный маркер и поведение — см.
+  fallback (состояние 7), а не normal. Визуальный маркер и поведение — см.
   «Визуальная спецификация» выше.
 - **Недоступность Core IPC** — отдельное, нетерминальное UI-состояние (не
   `terminal_status`, а транспортная ошибка): UI показывает
@@ -364,24 +366,25 @@ Retry на `core_unavailable` — кнопка в баннере, инициир
   повреждённый payload), `pending_approval` с подтверждением, с отклонением и
   с истечением таймаута — каждый проверяется на итоговое визуальное
   состояние.
-- **Матрица производных состояний** (обязательна к покрытию; `success` —
-  успешное значение `terminal_status` из вопроса 1 «Открытых вопросов»):
+- **Матрица производных состояний** (обязательна к покрытию; `success` и
+  `cancelled` — значения `terminal_status` вне refusal-family, 02.3):
 
   | `preferred_route_hint` | `selected_route` | `terminal_status` | `privacy_label` | Ожидаемое состояние |
   | --- | --- | --- | --- | --- |
-  | nil | local | success | non-sensitive | normal (не degraded — нет hint) |
-  | cloud | local | success | non-sensitive | degraded |
-  | cloud | cloud | success | non-sensitive | normal |
+  | nil | local | success | non_sensitive | normal (не degraded — нет hint) |
+  | cloud | local | success | non_sensitive | degraded |
+  | cloud | cloud | success | non_sensitive | normal |
   | cloud | local | success | sensitive | partial fallback, не degraded |
-  | local | cloud | success | non-sensitive | partial fallback (предпочтение local не соблюдено) |
-  | local | local | success | non-sensitive | normal (hint совпадает с выбором) |
-  | cloud | — | `both_routes_unavailable`, непустой `candidates[]` | non-sensitive | refusal, не degraded и не partial fallback |
-  | cloud | — | `both_routes_unavailable`, пустой `candidates[]` | non-sensitive | `core_unavailable` (malformed) |
-  | cloud | — | `no_routes_configured`, пустой `candidates[]` | non-sensitive | refusal (текст отличается от `both_routes_unavailable`) |
-  | cloud | — | `budget_unavailable`, пустой `candidates[]` | non-sensitive | refusal, не malformed |
+  | local | cloud | success | non_sensitive | partial fallback (предпочтение local не соблюдено) |
+  | local | local | success | non_sensitive | normal (hint совпадает с выбором) |
+  | cloud | — | `both_routes_unavailable`, непустой `candidates[]` | non_sensitive | refusal, не degraded и не partial fallback |
+  | cloud | — | `both_routes_unavailable`, пустой `candidates[]` | non_sensitive | `core_unavailable` (malformed) |
+  | cloud | — | `no_routes_configured`, пустой `candidates[]` | non_sensitive | refusal (текст отличается от `both_routes_unavailable`) |
+  | cloud | — | `budget_unavailable`, пустой `candidates[]` | non_sensitive | refusal, не malformed |
+  | cloud | — | `cancelled` | non_sensitive | cancelled, не refusal и не partial fallback |
 
-- **E2E:** полный проход по всем семи основным состояниям (normal, partial
-  fallback, degraded, refusal, `pending_approval`, `unknown_state`,
+- **E2E:** полный проход по всем восьми основным состояниям (normal, partial
+  fallback, degraded, refusal, cancelled, `pending_approval`, `unknown_state`,
   `core_unavailable`) плюс вторичная аннотация `reject_reason` у preferred
   route — на реальном (не мокнутом) IPC-канале в staging-конфигурации Core.
   Refusal проверяется как минимум на паре `no_routes_configured` /
@@ -416,6 +419,10 @@ Retry на `core_unavailable` — кнопка в баннере, инициир
   `schema_version` — проверено build-time;
 - `pending_approval` показывает обе кнопки и таймаут, не подтверждает переход
   автоматически ни по истечении времени, ни при разрыве связи;
+- `cancelled` рендерится как отдельное нейтральное состояние: без
+  `safe_next_action`, без текста отказа и без partial fallback;
+- renderer получает только терминальную запись и событие `pending_approval`:
+  поток промежуточных attempt-записей в основной UX не попадает;
 - пустой `candidates[]` считается ошибкой только для
   `both_routes_unavailable`/`context_limit_exceeded`/`context_assembly_failed`;
   для `no_routes_configured` и `budget_unavailable` это штатный случай;
@@ -428,9 +435,9 @@ Retry на `core_unavailable` — кнопка в баннере, инициир
 
 ## Критерии готовности
 
-- 02.3 закрыл «Открытые вопросы» выше и опубликовал полный набор значений
-  перечислений под `schema_version = 1`; UI не начинает реализацию до этой
-  фиксации (frozen constraint выше);
+- 02.3 опубликовал полный набор значений перечислений под
+  `schema_version = 1` и контракт доставки в renderer; UI не начинает
+  реализацию до этой фиксации (frozen constraint выше);
 - UI показывает фактический результат routing, выведенный напрямую из
   терминальной записи Core trace (без собственной интерпретации/новых кодов);
 - cloud outage оставляет usable local degraded mode при выполнении точного
@@ -446,7 +453,7 @@ Retry на `core_unavailable` — кнопка в баннере, инициир
 - недоступность Core IPC, malformed trace payload и несовместимый
   `schema_version` обработаны как одно общее нетерминальное состояние, не как
   один из `terminal_status`;
-- визуальная спецификация (семь основных состояний + вторичные аннотации +
+- визуальная спецификация (восемь основных состояний + вторичные аннотации +
   route selector) и accessibility требования выполнены и покрыты E2E;
 - тестовая стратегия (unit/порядок разрешения/integration/матрица/E2E)
   реализована и проходит в CI.

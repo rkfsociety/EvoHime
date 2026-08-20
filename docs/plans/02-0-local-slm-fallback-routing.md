@@ -78,7 +78,9 @@ Manager.
 Context Budget Manager, evaluation catalog и provider health model считаются
 доступными контрактами; их минимальные интерфейсы зафиксированы в этапах ниже.
 
-Опциональных интеграций нет. Поддержка конкретной SLM/launcher выбирается
+Опциональные зависимости этапов перечислены в самих этапах (02.1 — Context
+Budget Manager, 02.2 — 02.3 routing) и ни одна из них не блокирует старт.
+Поддержка конкретной SLM/launcher выбирается
 отдельным ADR после проверки Windows resource requirements; этот план не
 фиксирует бренд модели.
 
@@ -88,14 +90,20 @@ Context Budget Manager, evaluation catalog и provider health model считаю
 capability не расширяет policy. `approval policy` и `tool policy` — разные
 проверки, обе сохраняются при fallback. Классификацию и redaction sensitive
 данных выполняет локальный Core-owned classifier; неопределённость считается
-`complex`, а multi-hop — complex до доказанного обратного.
+`complex`, а multi-hop — complex до доказанного обратного. Наружу classifier
+отдаёт `privacy_label` из закрытого перечисления `sensitive` /
+`non_sensitive` / `unknown` (02.3, «Закрытые перечисления schema v1»);
+`unknown` означает незавершённую классификацию и блокирует cloud route.
 
 `truthful refusal` — явный отказ с причиной и следующим действием;
 `bounded` означает соблюдение лимитов времени, токенов, контекста, tool calls и
 попыток до отказа. Если routes не осталось, итог не может быть success.
 
-Tie-break — лексикографический по нормализованному UTF-8 `route_id` после всех
-policy scores. Offline mode — effective Core state: пользовательская настройка
+Финальный tie-break — лексикографический по нормализованному UTF-8 `route_id`
+после всех policy scores. Он именно финальный: промежуточные ключи сравнения
+(health → latency → cost → user preference → `fallback_rank`) заданы в 02.1,
+раздел «Selection, retry и circuit breaker», и `route_id` применяется только
+когда все они равны. Offline mode — effective Core state: пользовательская настройка
 может включить его, а автоматический degraded state возникает при cloud outage.
 Supervisor запускается Electron main, владеет Job Object и через
 authenticated named pipe получает от Core команды для local provider.
@@ -106,8 +114,8 @@ authenticated named pipe получает от Core команды для local 
 - sensitive data никогда не уходит в запрещённый provider;
 - fallback не меняет tool permissions, approval или sandbox;
 - UI показывает фактический результат routing;
-- cloud outage оставляет usable local degraded mode, если он настроен.
+- cloud outage оставляет usable local degraded mode, если он настроен;
 - ToolAgent использует `select_route`, а не фиксированный `"default"`;
-- приоритеты правил и разрешение конфликтов определены явно.
+- приоритеты правил и разрешение конфликтов определены явно;
 - при отсутствии обоих routes выдаётся truthful refusal с безопасным действием;
 - trace и evaluation catalog имеют versioned схемы для воспроизводимого replay.

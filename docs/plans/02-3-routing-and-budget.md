@@ -153,11 +153,20 @@ Trace — versioned JSONL, `schema_version = 1`, одна запись на ре
 единственный источник времени решения; RFC3339 `observed_at` допускается
 дополнительно, как человекочитаемая отметка записи, и в replay не участвует),
 `policy_version`, `catalog_version`, `snapshot_hash` (round-trip hash snapshot
-из 02.1), `classification`, `candidates[]`, `selected_route`, `reason_code`,
-`fallback_count`, `event`, `latency_ms`, `usage`, `terminal_status`,
-`safe_next_action` (при refusal). Бюджетная часть: `budget_id` или
-`budget_absent`, `estimated_input_tokens`, `profile_version` выбранного route и
-`context_ledger_hash` после `assemble`.
+из 02.1), `classification`, `privacy_label`, `candidates[]`, `selected_route`,
+`reason_code`, `fallback_count`, `event`, `latency_ms`, `usage`,
+`terminal_status`, `safe_next_action` (при refusal). Бюджетная часть:
+`budget_id` или `budget_absent`, `estimated_input_tokens`, `profile_version`
+выбранного route и `context_ledger_hash` после `assemble`.
+
+Два поля имеют явное значение «нет данных», и потребитель обязан отличать его
+от отсутствующего поля:
+
+- `selected_route` — `route_id` при `terminal_status = success`, иначе строго
+  `null`. Отсутствие ключа — malformed payload, а не refusal;
+- `terminal_status` — присутствует во всех записях: в промежуточных
+  (`event` = попытка) значение `null`, в терминальной записи run — одно из
+  значений перечисления ниже. `null` в терминальной записи запрещён.
 
 Каждый элемент `candidates[]` содержит `route_id`, `capability_epoch`,
 `health_status` ∈ `{ready, degraded, stale, unavailable}`, `circuit_state` ∈
@@ -169,6 +178,71 @@ Prompt, token text, API key и raw model output не записываются; �
 диагностика — в audit log. JSON Schema validation обязательна; replay сортирует
 записи по `(trace_id, sequence)` и получает тот же route при тех же версиях
 policy/catalog и записанных `now_ms`.
+
+### Закрытые перечисления schema v1
+
+Все пять перечислений ниже фиксируются под `schema_version = 1` целиком.
+Добавление значения — новый `schema_version` и согласованное обновление
+localization table 02.4; молчаливое расширение под тем же `schema_version`
+запрещено.
+
+`terminal_status` (13 значений) — `success`, `cancelled` и refusal-family:
+`no_routes_configured`, `both_routes_unavailable`, `classification_incomplete`,
+`context_limit_exceeded`, `policy_violation`, `budget_unavailable`,
+`context_assembly_failed`, `fallback_limit_reached`, `run_deadline_exceeded`,
+`reroute_approval_declined`, `internal_error`.
+
+`safe_next_action` (4 значения) — `retry_later`, `clarify_request`,
+`contact_support`, `manual_review`. Обязателен для каждого значения
+refusal-family (таблица ниже); при `success` и `cancelled` — `null`.
+
+`health_state` (3 значения) — `healthy`, `degraded`, `unavailable`.
+
+`privacy_label` (3 значения) — `sensitive`, `non_sensitive`, `unknown`.
+`unknown` означает незавершённую classification и блокирует cloud route
+(reject reason `classification_incomplete`).
+
+`reject_reason` (18 значений) — причина исключения конкретного candidate:
+`schema_incompatible`, `capability_missing`, `privacy_violation`,
+`policy_denied`, `tool_permission_mismatch`, `sandbox_mismatch`,
+`offline_mode`, `classification_incomplete`, `context_limit_exceeded`,
+`context_assembly_failed`, `health_stale`, `health_unavailable`,
+`circuit_open`, `rate_limited`, `route_attempts_exhausted`, `budget_exceeded`,
+`gate_unavailable`, `gate_quality_below_floor`. Безопасные причины local
+provider из 02.2 (`local_model_not_found`, `capability_probe_failed`,
+`provider_session_invalid`, `loopback_policy_violation`, `port_unavailable`,
+`provider_process_exited`, `resource_limit_exceeded`, `timeout`, `cancelled`,
+`malformed_response`) в поля trace, доходящие до renderer, напрямую не
+попадают: как `reject_reason` они сворачиваются в `health_unavailable`, как
+`reason_code` попытки — в соответствующую категорию 02.1 (`timeout`,
+`malformed_response`, `cancelled`), а исходная безопасная причина остаётся в
+diagnostics. Так внутренние детали провайдера не уходят наружу (правило 02.1).
+
+`reason_code` (17 значений) — причина решения записи. Для записи выбора:
+`only_candidate`, `health_preferred`, `latency_preferred`, `cost_preferred`,
+`preference_preferred`, `fallback_rank_preferred`, `lexical_tie_break`. Для
+записи отказа попытки — категории 02.1: `timeout`, `connection_refused`,
+`provider_5xx`, `rate_limited`, `malformed_response`, `policy_violation`,
+`invalid_request`, `budget_unavailable`, `cancelled`, `internal_error`.
+
+### Что доходит до renderer
+
+Trace целиком — Core-owned артефакт diagnostics. Через IPC renderer получает
+ровно две вещи:
+
+- **терминальную запись run** — последнюю по `sequence` для данного
+  `trace_id`, ту, у которой `terminal_status != null`. Поток промежуточных
+  записей renderer не получает: выбирать «настоящую» запись на стороне UI
+  запрещено;
+- **нетерминальное событие `pending_approval`** — отдельное сообщение с
+  `trace_id`, `run_id`, предлагаемым `route_id` и `expires_at_ms`,
+  вычисленным как `now_ms + routing.reroute_approval_timeout_ms`. Оно не
+  является записью trace и не несёт `terminal_status`. Ответ пользователя
+  приходит обратно как команда `reroute_decision(trace_id, approve|decline)`;
+  и подтверждение, и отказ, и истёкший таймаут завершаются обычной
+  терминальной записью (`success`/`reroute_approval_declined`).
+
+Промежуточные attempt-записи доступны только diagnostics view по `trace_id`.
 
 RoutingTelemetry считает `decision_total`, `route_selected_total`,
 `fallback_total`, `refusal_total`, `provider_failure_total` и latency p50/p95/p99
@@ -223,7 +297,9 @@ evaluation gate → budget/cost → user preference → lexical `route_id`.
 | исчерпан `retry.max_attempts` | `fallback_limit_reached` | `route_exhausted` / `max_attempts_reached` |
 | исчерпан `retry.max_elapsed_ms` или `RunPolicy` | `run_deadline_exceeded` | `route_exhausted` / `max_elapsed_reached` |
 | re-routing в cloud не подтверждён или истёк таймаут | `reroute_approval_declined` | `failed` / `policy_violation` |
-| внутренняя ошибка Core | `internal_error` | `failed` / `invalid_request` |
+| внутренняя ошибка Core | `internal_error` | `failed` / `internal_error` |
+| внешняя отмена (cancellation token, timeout вызывающей стороны) | `cancelled` | `cancelled` |
+| ответ получен и прошёл валидацию | `success` | `success` |
 
 `terminal_status` — уточнение для UI поверх terminal result 02.1, а не второй
 независимый жизненный цикл: каждая строка обязана иметь пару в 02.1, иначе
@@ -267,7 +343,7 @@ config load (fail-fast), а не во время run.
 | --- | --- |
 | `circuit_state ∈ {open, cooldown}` | `unavailable` (reject reason `circuit_open`/`rate_limited`) |
 | `health_status ∈ {stale, unavailable}` | `unavailable` |
-| `health_status = degraded` | `degraded` — gate применяется, small route требует explicit approval |
+| `health_status = degraded` | `degraded` — кандидат остаётся в selection, но в tie-break уступает `ready` (02.1, шаг 3) |
 | `health_status = ready` | `healthy` |
 
 **`safe_next_action`** — закрытое перечисление, обязательное для каждого
