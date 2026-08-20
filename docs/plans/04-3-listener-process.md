@@ -16,21 +16,52 @@
 
 ## Что уже есть в коде
 
-Супервизор (`windows_supervisor.rs`) держит Job Object, спавнит Core с
-restart budget и завершает цикл после успешного выхода Core; помимо Core он уже
-умеет спавнить локальный adapter-процесс (`LocalAdapterProcess::spawn_with_limits`
-из плана 02), так что «один ребёнок» — не инвариант, а расширяемая схема.
-Листенер добавляется как ещё один ребёнок в том же Job Object с собственным
-restart budget. Основной и listener pipe-серверы работают в отдельных задачах.
 Типа `CoreState` в коде нет: разделяются независимые ручки — `EventJournal`
 (`journal.clone()`, внутри `Arc<Mutex<LocalDatabase>>`), `Arc<ToolRegistry>` и
-registry по образцу `RoutingApprovalRegistry`. `IpcBridge` не `Clone`, а
-`run_windows_pipe` берёт его по значению и сейчас `await`-ится в конце
-`main.rs`; поэтому первая правка этапа — сделать мост клонируемым (или собрать
-второй из тех же ручек) и развести оба сервера по `tokio::spawn`. `ALLOWED_CLIENT_ROLES`
-(`crates/desktop-ipc/src/session.rs:35`) объявлен как `[&str; 2]`; добавление
-роли `listener` меняет и размер массива, и аутентификационный тест — это
-отдельная правка перед всем остальным.
+registry по образцу `RoutingApprovalRegistry`.
+
+Сверено с кодом, потому что три пункта этапа на этом стоят:
+
+- **Job Object живёт ровно одно поколение Core.** `JobObject::create()`
+  вызывается **внутри** цикла рестартов (`windows_supervisor.rs:566`), а сам
+  job создан с `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` (`:202`) и убивает всех
+  своих детей в `Drop` (`:251`). Значит формулировка ранней редакции — «ещё
+  один ребёнок в том же Job Object» — прямо противоречит требованию «падение
+  Core не убивает листенер»: на каждом рестарте Core листенер умирал бы вместе
+  с job.
+- Рабочий образец второго ребёнка уже есть: `LocalAdapterProcess::spawn_with_limits`
+  (`local_provider.rs:125`) создаёт **собственный** job через
+  `JobObject::create_with_limits(memory, cpu)` и держит его в поле `_job`
+  рядом с `Child`. Образец второго жизненного цикла рядом с основным циклом —
+  `run_supervisor_command_channel`, запущенный отдельным `tokio::spawn`
+  (`windows_supervisor.rs:501`).
+- `JobObject::create_with_limits` и `assign` — `pub(crate)`, поэтому спавн
+  листенера обязан жить внутри `evohime-supervisor`.
+- Супервизор завершает `run()` при успешном выходе Core или исчерпании
+  restart budget (`:605`); тогда job листенера закрывается вместе с процессом
+  супервизора и листенер гарантированно не переживает своего надзирателя.
+- **`IpcBridge` клонируемым делать не нужно.** `run_windows_pipe` первым
+  действием сама заворачивает мост в `Arc` (`pipe_server.rs:83`). Достаточно
+  сменить сигнатуру на `Arc<IpcBridge>` и передать один и тот же `Arc` в оба
+  сервера. Сегодня функция берёт мост по значению и `await`-ится в конце
+  `main.rs:210`, поэтому перевод на две `tokio::spawn`-задачи с ожиданием
+  обеих остаётся в силе.
+- Цикл `run_windows_pipe` обслуживает **одно соединение за раз**
+  (`pipe_server.rs:99`: `loop { create pipe; server.connect().await; …}`),
+  поэтому постоянно подключённый листенер занял бы единственный слот и отрезал
+  бы shell. Отсюда — второй сервер, а не второй клиент. ACL и nonce-handshake
+  переиспользуются как есть (`PipeSecurity::owner_only`).
+- `ALLOWED_CLIENT_ROLES` (`crates/desktop-ipc/src/session.rs:35`) объявлен как
+  `[&str; 2]` и проверяется в `session.rs:377`; добавление роли `listener`
+  меняет и размер массива, и аутентификационный тест — это отдельная правка
+  перед всем остальным.
+- `MAX_FRAME_BYTES = 4 MiB` (`crates/desktop-ipc/src/lib.rs:9`).
+- Пути журналов, которые понадобятся privacy-тесту: Core пишет в
+  `<data_dir>/logs/core.jsonl`, супервизор — в
+  `%LOCALAPPDATA%\EvoHime\logs\supervisor.jsonl`
+  (`windows_supervisor.rs:108`). Никакого `%TEMP%`-фолбэка у логгеров **нет**
+  (вопреки ранней редакции: путь `%TEMP%\evohime-log-<pid>.jsonl` встречается
+  только в юнит-тесте `logging.rs:54`).
 
 ## Содержание
 
@@ -54,19 +85,20 @@ registry по образцу `RoutingApprovalRegistry`. `IpcBridge` не `Clone`
 - `crates/evohime-listener` (bin): цикл жизни, клиент пайпа с реконнектом и
   backoff, применение политики, опрос активного окна раз в 500 мс
   (`GetForegroundWindow` + `QueryFullProcessImageNameW`), стоп-слово, трейт
-  `SpeechEngine` с `FixtureEngine` и `NullEngine`.
-  - `crates/evohime-listener-ipc`: `evohime.listener.proto` (`Hello`/`Handshake`,
+  `SpeechEngine` с `FixtureEngine` и `NullEngine`. Собственный файл журнала
+  (`<data_dir>/logs/listener.jsonl`) объявляется здесь — на него ссылается
+  allow-list privacy-теста ниже.
+- `crates/evohime-listener-ipc`: `evohime.listener.proto` (`Hello`/`Handshake`,
   `PolicyUpdate`, `StateChanged`, `UtteranceRecognized`, `EngineStatus`,
   `LocalCommand{ pause | reset_buffers }`) поверх того же framing, что
   desktop-ipc. Лимит кадра — собственный, 256 KiB: у desktop-ipc
-  `MAX_FRAME_BYTES = 4 MiB` (`crates/desktop-ipc/src/lib.rs:9`), и листенеру
-  такой запас не нужен — распознанное высказывание на порядки меньше, а узкий
-  потолок ограничивает ущерб от скомпрометированного клиента.
-- Core: второй pipe-сервер на `<pipe_name>-listener` (отдельный именно потому,
-  что цикл `run_windows_pipe` обслуживает одно соединение за раз и постоянно
-  подключённый листенер вытеснил бы shell), роль `listener` в
+  `MAX_FRAME_BYTES = 4 MiB`, и листенеру такой запас не нужен — распознанное
+  высказывание на порядки меньше, а узкий потолок ограничивает ущерб от
+  скомпрометированного клиента.
+- Core: второй pipe-сервер на `<pipe_name>-listener`, роль `listener` в
   `ALLOWED_CLIENT_ROLES`, приём высказываний, выдача политики, проверка
-  `MicrophoneListen` перед выдачей разрешения на захват.
+  `MicrophoneListen` перед выдачей разрешения на захват. Оба сервера получают
+  один и тот же `Arc<IpcBridge>`.
 - `reset_buffers` в `evohime-listener-ipc` сбрасывает только кольцевой буфер, VAD и
   незавершённый сегмент. Удаление транскриптов и производных кандидатов —
   исключительно команда Core/desktop-ipc `ForgetAmbientWindow`.
@@ -79,12 +111,23 @@ registry по образцу `RoutingApprovalRegistry`. `IpcBridge` не `Clone`
   это разрешено пользователем.
 - Стоп-слово определяется отдельным лёгким детектором параллельно с STT и
   закрывает поток захвата до отправки текущего текста в Core.
-- Супервизор: второй ребёнок в том же Job Object с собственным restart budget.
-  Падение листенера не влияет на решение по Core; падение Core не убивает
-  листенер до исчерпания реконнектов.
+- Супервизор: листенер спавнится **не** в job Core, а получает собственный
+  job через `create_with_limits` (память и CPU-потолок пригодятся, когда 04.4
+  подключит STT), который хранится рядом с `Child` — ровно как в
+  `LocalAdapterProcess`. Надзор за листенером живёт в отдельной
+  `tokio::spawn`-задаче с собственным restart budget, по образцу
+  `run_supervisor_command_channel`; основной цикл продолжает владеть только
+  жизненным циклом Core. Следствия, которые и требовались: падение листенера
+  не влияет на решение по Core; рестарт Core не трогает листенер, а тот
+  переподключается по своему backoff; выход самого супервизора закрывает job
+  листенера и гарантированно не оставляет сироту.
 - Упаковка: `-p evohime-listener` добавляется в `$cargoArguments`
-  (`scripts/build-windows-native.ps1:31`), а `evohime-listener.exe` — в
-  `$requiredNative` (там же, строка 56).
+  (`scripts/build-windows-native.ps1:31`), `evohime-listener.exe` — в
+  `$requiredNative` (там же, `:56`), и `listener` — в карту компонентов
+  `New-NativePackageManifest` (`scripts/native-package.ps1:19`), иначе бинарь
+  окажется в пакете, но не в манифесте, который проверяет
+  `scripts/native-package.tests.ps1`. Правок инсталлятора не требуется:
+  `installer/EvoHime.iss:43` копирует каталог целиком (`{#SourceDir}\*`).
 
 ## Приватность
 
@@ -101,14 +144,16 @@ registry по образцу `RoutingApprovalRegistry`. `IpcBridge` не `Clone`
 ## Файлы
 
 - создать: `crates/evohime-listener-audio/**`, `crates/evohime-listener/**`,
-  `crates/evohime-listener-ipc/**`;
+  `crates/evohime-listener-ipc/**`, `scripts/ambient-privacy.tests.ps1`;
 - изменить: `Cargo.toml` (workspace members) и `Cargo.lock` (в том же
   коммите: CI строит с `--locked`), `.github/workflows/windows.yml` (новые
   пакеты в `cargo test`, шаг для privacy-гейта),
   `crates/desktop-ipc/src/session.rs`,
-  `crates/evohime-core/src/pipe_server.rs`, `crates/evohime-core/src/main.rs`,
-  `crates/evohime-supervisor/src/windows_supervisor.rs`,
-  `scripts/build-windows-native.ps1`.
+  `crates/evohime-core/src/pipe_server.rs` (сигнатура `Arc<IpcBridge>`),
+  `crates/evohime-core/src/main.rs` (две `tokio::spawn`-задачи),
+  `crates/evohime-supervisor/src/windows_supervisor.rs` (надзор за листенером
+  отдельной задачей и отдельным job),
+  `scripts/build-windows-native.ps1`, `scripts/native-package.ps1`.
 
 ## Проверки
 
@@ -117,18 +162,20 @@ registry по образцу `RoutingApprovalRegistry`. `IpcBridge` не `Clone`
 - `MicrophoneListen = deny` — устройство не открывается;
 - совпадение чёрного списка закрывает поток, снятие совпадения открывает;
 - стоп-слово даёт паузу, и текущий текст не уходит в Core;
-- рестарт Core: листенер переподключается и не теряет состояние паузы;
+- рестарт Core: листенер переподключается и не теряет состояние паузы. Тест
+  обязан проверять именно **выживание процесса** листенера через рестарт Core
+  — это прямая проверка того, что job у него собственный, а не общий с Core;
 - `listener_audio_has_no_filesystem_io` (скан исходников крейта на `std::fs`,
   `File::`, `OpenOptions`, `tempfile`) и `listener_writes_nothing_but_expected_files`
   (прогон с водяным знаком в PCM, затем обход temp, tools dir и data dir)
   проходят. Второй тест формулируется как **allow-list ожидаемых файлов, а не
-  как «ничего не создано»**: `StructuredLogger` имеет fallback-путь
-  `%TEMP%\evohime-log-<pid>.jsonl` (`logging.rs:54`), и листенер законно его
-  использует. Тест проверяет, что за пределами этого allow-list не появилось
-  файлов и что ни один файл из allow-list не содержит водяного знака PCM.
-  Оба теста гоняются гейтом `scripts/ambient-privacy.tests.ps1`, который
-  получает собственный шаг в job `rust-native` — иначе он не выполняется в CI
-  вовсе.
+  как «ничего не создано»**: листенер законно пишет собственный
+  `<data_dir>/logs/listener.jsonl`, Core — `logs/core.jsonl`, супервизор —
+  `%LOCALAPPDATA%\EvoHime\logs\supervisor.jsonl`. Тест проверяет, что за
+  пределами этого allow-list не появилось файлов и что ни один файл из
+  allow-list не содержит водяного знака PCM. Оба теста гоняются гейтом
+  `scripts/ambient-privacy.tests.ps1`, который получает собственный шаг в job
+  `rust-native` — иначе он не выполняется в CI вовсе.
 
 ## Критерии готовности
 
